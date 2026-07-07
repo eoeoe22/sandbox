@@ -161,15 +161,20 @@ function punchAndLaunch(sim: SimContext, x: number, y: number, dir: number, life
     const nx = cx + dx;
     const ny = cy + dy;
     if (!canEnter(sim, nx, ny)) return;
+    // A tiny radius (< EPICENTER_PUNCH) shouldn't over-reach: the last cell
+    // still in budget becomes the live shard, and the punch stops there
+    // rather than continuing with a meaningless negative `remaining`.
+    const isLast = step === EPICENTER_PUNCH - 1 || remaining <= 0;
     sim.spawn(nx, ny, BLAST.id);
-    if (step === EPICENTER_PUNCH - 1) {
-      sim.setTemp(nx, ny, encodeBlast(remaining, dir));
+    if (isLast) {
+      sim.setTemp(nx, ny, encodeBlast(Math.max(remaining, 0), dir));
     } else {
       collapse(sim, nx, ny);
     }
     cx = nx;
     cy = ny;
     remaining--;
+    if (isLast) return;
   }
 }
 
