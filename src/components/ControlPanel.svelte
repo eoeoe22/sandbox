@@ -10,6 +10,7 @@
     $fpsPeak as fpsPeak,
     $aspectMode as aspectMode,
     $gridDims as gridDims,
+    $borderMode as borderMode,
     requestClear,
     requestStep,
     requestResetAspect,
@@ -163,6 +164,25 @@
 
     <MaterialPalette />
 
+    <div class="row shape border" role="group" aria-label="테두리 모드">
+      <button
+        class:active={$borderMode === 'wall'}
+        onclick={() => borderMode.set('wall')}
+        aria-pressed={$borderMode === 'wall'}
+        title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
+      >
+        🧱 벽
+      </button>
+      <button
+        class:active={$borderMode === 'void'}
+        onclick={() => borderMode.set('void')}
+        aria-pressed={$borderMode === 'void'}
+        title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
+      >
+        🕳 공허
+      </button>
+    </div>
+
     <div class="aspect">
       <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
       <button
@@ -281,6 +301,11 @@
   }
   /* Set the special-brush row a touch apart from the painting controls above. */
   .row.tools {
+    padding-top: 8px;
+    border-top: 1px solid #2a2a33;
+  }
+  /* Separate the sandbox-edge toggle from the palette above it. */
+  .row.border {
     padding-top: 8px;
     border-top: 1px solid #2a2a33;
   }

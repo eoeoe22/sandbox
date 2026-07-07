@@ -19,7 +19,10 @@ import { SMOKE } from './smoke';
 const IGNITE_CHANCE = 0.04; // ~50% ignited after ~17 ticks (~0.3s@60Hz) — a
 // visible crawl, not an instant flash. A value like 0.35 ignites within 1-2
 // ticks (~30ms), which reads as instantaneous and defeats a watchable spread.
-const BURNOUT_CHANCE = 0.012;
+const BURNOUT_CHANCE = 0.02; // flames snuff a bit sooner (was 0.012) so a fire
+// front is shorter-lived and less persistent.
+const SMOKE_CHANCE = 0.3; // …and only some burnouts leave Smoke; the rest clear
+// straight to Empty, so a fire gives off noticeably less smoke than it used to.
 
 function updateFire(x: number, y: number, sim: SimContext): void {
   let extinguished = false;
@@ -49,10 +52,10 @@ function updateFire(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.chance(BURNOUT_CHANCE)) {
-    // Burning out means the heat is spent, so the Smoke starts at ambient
-    // rather than inheriting Fire's temperature (mirrors Steam condensing).
+    // Burning out means the heat is spent, so drop to ambient (and only
+    // sometimes leave Smoke behind — mirrors Steam condensing).
     sim.setTemp(x, y, AMBIENT_TEMP);
-    sim.set(x, y, SMOKE.id);
+    sim.set(x, y, sim.chance(SMOKE_CHANCE) ? SMOKE.id : EMPTY);
     return;
   }
   updateGas(x, y, sim);

@@ -15,8 +15,10 @@ import { STEAM } from './steam';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { ACID } from './acid';
+import { ACID_VAPOR } from './acidvapor';
 import { GUNPOWDER } from './gunpowder';
 import { NITRO } from './nitro';
+import { BLAST } from './blast';
 import { SEED } from './seed';
 import { VINE } from './vine';
 
@@ -33,8 +35,10 @@ export {
   FIRE,
   LAVA,
   ACID,
+  ACID_VAPOR,
   GUNPOWDER,
   NITRO,
+  BLAST,
   SEED,
   VINE,
 };
@@ -53,8 +57,10 @@ export const MATERIALS = [
   FIRE,
   LAVA,
   ACID,
+  ACID_VAPOR,
   GUNPOWDER,
   NITRO,
+  BLAST,
   SEED,
   VINE,
 ];

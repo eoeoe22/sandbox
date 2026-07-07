@@ -3,6 +3,15 @@ import type { SimContext } from './SimContext';
 /** A material identifier — an index into the material registry. */
 export type MatId = number;
 
+/**
+ * How the sandbox edges behave. `wall` (the default) treats the grid boundary as
+ * a solid, indestructible container — nothing can leave, matching the original
+ * behavior. `void` opens the edges: any particle that tries to move out of the
+ * grid falls out of the world and is removed, so a floorless/wall-less sandbox
+ * drains itself. Read by SimContext.tryMove; user-drawn Walls are unaffected.
+ */
+export type BorderMode = 'wall' | 'void';
+
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */
 export enum Phase {
   Empty,
@@ -34,6 +43,14 @@ export interface Material {
   acidResistant?: boolean;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
+  /**
+   * Marks a material that detonates rather than merely burning. A Blast wave
+   * passes *around* these (it doesn't vaporize them) so they get a turn to
+   * detect the adjacent Blast/Fire and trigger their own explosion — that's what
+   * makes a line of Gunpowder chain-detonate instead of being silently erased by
+   * the first blast to reach it (see blast.ts and gunpowder.ts/nitro.ts).
+   */
+  explosive?: boolean;
   /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
