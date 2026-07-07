@@ -1,6 +1,7 @@
 <script lang="ts">
   // Alias the `$`-prefixed atom to a plain name so Svelte's `$store`
   // auto-subscription (`$selected`) resolves to it correctly.
+  import { onDestroy } from 'svelte';
   import { $selectedMaterial as selected, $tool as tool } from '../state/store';
   import { MATERIALS } from '../game/materials';
   import { Phase } from '../game/engine/types';
@@ -37,7 +38,29 @@
   const open = $derived(pinned ?? hovered);
 
   let root: HTMLDivElement;
+  let flyoutEl = $state<HTMLDivElement | null>(null);
   const buttons = new Map<Phase, HTMLButtonElement>();
+
+  // The category button and its flyout are separate elements (the flyout is
+  // portaled to <body>) with a gap between them, so a plain mouseenter/leave
+  // pair would close the flyout the instant the pointer crosses that gap.
+  // Delay the close briefly so the pointer has time to reach the flyout;
+  // entering either the category or the flyout cancels the pending close.
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function openOnHover(phase: Phase): void {
+    clearTimeout(closeTimer);
+    hovered = phase;
+  }
+
+  function scheduleHoverClose(): void {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      hovered = null;
+    }, 150);
+  }
+
+  onDestroy(() => clearTimeout(closeTimer));
 
   // The sidebar (`ASIDE.panel`) sets `backdrop-filter`, which per spec makes
   // it the containing block for `position: fixed` descendants — so a
@@ -70,16 +93,48 @@
   // would get clipped instead of escaping the panel to the right.
   let flyoutPos = $state<{ top: number; left: number } | null>(null);
 
+  const EDGE_MARGIN = 8;
+  const GAP = 8;
+
+  // Prefers opening to the right of the button (the common case, plenty of
+  // room in the canvas area). On narrow/touch viewports — `pinned` mode's
+  // primary use case — the sidebar alone can eat most of the width, so if
+  // the flyout wouldn't fit to the right without also being clamped back
+  // over the button (making it un-clickable), drop it below the button
+  // instead. Falls back to unclamped, right-of-button placement before the
+  // flyout has been measured once (`flyoutEl` still null).
+  function computePosition(anchor: DOMRect): { top: number; left: number } {
+    if (!flyoutEl) return { top: anchor.top, left: anchor.right + GAP };
+    const fw = flyoutEl.offsetWidth;
+    const fh = flyoutEl.offsetHeight;
+    let left = anchor.right + GAP;
+    let top = anchor.top;
+    if (left + fw > window.innerWidth - EDGE_MARGIN) {
+      left = anchor.left;
+      top = anchor.bottom + GAP;
+    }
+    left = Math.min(Math.max(EDGE_MARGIN, left), Math.max(EDGE_MARGIN, window.innerWidth - EDGE_MARGIN - fw));
+    top = Math.min(Math.max(EDGE_MARGIN, top), Math.max(EDGE_MARGIN, window.innerHeight - EDGE_MARGIN - fh));
+    return { top, left };
+  }
+
   function reposition(phase: Phase): void {
     const btn = buttons.get(phase);
     if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    flyoutPos = { top: rect.top, left: rect.right + 8 };
+    flyoutPos = computePosition(btn.getBoundingClientRect());
   }
 
   $effect(() => {
     if (open !== null) reposition(open);
     else flyoutPos = null;
+  });
+
+  // Re-run once the flyout DOM node exists, so `computePosition` can measure
+  // its real size (unavailable on the first pass above) and finalize
+  // placement. Converges immediately since re-measuring the same size twice
+  // yields the same position.
+  $effect(() => {
+    if (open !== null && flyoutEl) reposition(open);
   });
 
   // Sidebar scrolling fires a 'scroll' event that doesn't bubble to window,
@@ -95,6 +150,7 @@
   // Picking a material is also a request to paint it, so snap out of any
   // special brush (heat/cool/mix) back to material mode.
   function pick(id: number): void {
+    clearTimeout(closeTimer);
     selected.set(id);
     tool.set('material');
     pinned = null;
@@ -102,13 +158,27 @@
   }
 
   function toggleCategory(phase: Phase): void {
+    clearTimeout(closeTimer);
     pinned = pinned === phase ? null : phase;
     hovered = null;
   }
 
+  // The flyout is portaled to <body>, so it's not a descendant of `root` —
+  // clicks inside it (e.g. its padding, not on a chip) must also count as
+  // "inside" or they'd incorrectly dismiss a pinned flyout.
   function handleWindowClick(e: MouseEvent): void {
-    if (pinned !== null && root && !root.contains(e.target as Node)) {
+    if (pinned === null) return;
+    const target = e.target as Node;
+    if (root && root.contains(target)) return;
+    if (flyoutEl && flyoutEl.contains(target)) return;
+    pinned = null;
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && (pinned !== null || hovered !== null)) {
+      clearTimeout(closeTimer);
       pinned = null;
+      hovered = null;
     }
   }
 
@@ -118,23 +188,30 @@
   }
 </script>
 
-<svelte:window onclick={handleWindowClick} onresize={handleReflow} />
+<svelte:window
+  onclick={handleWindowClick}
+  onresize={handleReflow}
+  onkeydown={handleWindowKeydown}
+/>
 
 <div class="palette" bind:this={root}>
   {#each categories as cat (cat.phase)}
     <div
       class="category"
-      onmouseenter={() => (hovered = cat.phase)}
-      onmouseleave={() => (hovered = null)}
+      onmouseenter={() => openOnHover(cat.phase)}
+      onmouseleave={scheduleHoverClose}
     >
       <button
         use:registerButton={cat.phase}
+        id={`cat-btn-${cat.phase}`}
         class:active={open === cat.phase}
         class:selected={cat.materials.some(
           (m) => m.id === $selected && $tool === 'material'
         )}
         onclick={() => toggleCategory(cat.phase)}
         aria-expanded={open === cat.phase}
+        aria-haspopup="true"
+        aria-controls={`cat-flyout-${cat.phase}`}
         title={cat.label}
       >
         <span class="icon">{cat.icon}</span>
@@ -150,13 +227,18 @@
       <div
         class="flyout"
         use:portal
+        bind:this={flyoutEl}
+        id={`cat-flyout-${cat.phase}`}
+        role="menu"
+        aria-label={cat.label}
         style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
-        onmouseenter={() => (hovered = cat.phase)}
-        onmouseleave={() => (hovered = null)}
+        onmouseenter={() => openOnHover(cat.phase)}
+        onmouseleave={scheduleHoverClose}
       >
         {#each cat.materials as m (m.id)}
           <button
             class="chip"
+            role="menuitem"
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             title={m.name}
