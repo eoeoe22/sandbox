@@ -4,7 +4,8 @@ import { CanvasRenderer } from './render/CanvasRenderer';
 import { PointerPainter } from './input/PointerPainter';
 import { SandboxResizer } from './input/SandboxResizer';
 import { SandboxLayout } from './layout';
-import { TICK_HZ, MAX_STEPS_PER_FRAME } from './config';
+import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS } from './config';
+import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
 import {
   $running,
   $fps,
@@ -33,10 +34,26 @@ import './materials'; // register all materials (side effect)
  * touching material definitions or the UI.
  */
 export function startGame(canvas: HTMLCanvasElement): void {
+  // Restore saved settings before anything subscribes to the atoms, so the
+  // border-mode subscription below seeds the engine with the restored value.
+  initSettingsPersistence();
+
   const layout = new SandboxLayout();
   layout.setViewport(canvas.clientWidth, canvas.clientHeight);
 
+  // Restore the previous session's world. A saved custom sandbox size is
+  // applied before the grid is built; the saved cells are then copied in with
+  // the same bottom-left-anchored rule a live resize uses, so a saved world
+  // also survives being reopened on a different screen size.
+  const savedWorld = loadWorld();
+  if (savedWorld?.aspect?.mode === 'custom') {
+    layout.setSize(savedWorld.aspect.w, savedWorld.aspect.h);
+  }
+
   const grid = new Grid(layout.gw, layout.gh);
+  if (savedWorld) {
+    grid.resizeFrom(layout.gw, layout.gh, savedWorld.cells, savedWorld.w, savedWorld.h, savedWorld.temp);
+  }
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
@@ -113,6 +130,15 @@ export function startGame(canvas: HTMLCanvasElement): void {
     applyLayout();
   });
 
+  // Auto-save the world: on a fixed interval from the frame loop (below), and
+  // immediately when the tab is hidden or closed so the last few seconds of
+  // painting aren't lost. saveWorld itself skips the write when nothing changed.
+  const saveNow = (): void => saveWorld(grid, layout);
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveNow();
+  });
+
   const stepMs = 1000 / TICK_HZ;
   let last = performance.now();
   let acc = 0;
@@ -124,6 +150,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // so the HUD can show the device's real capability.
   let fpsSmooth = 0;
   let fpsPeak = 0;
+  let lastAutosave = last;
 
   const frame = (now: number): void => {
     // Apply a coalesced drag resize (at most once per frame). Rebuild from the
@@ -182,6 +209,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
       $fpsPeak.set(Math.round(fpsPeak));
       frames = 0;
       fpsLast = now;
+    }
+
+    if (now - lastAutosave >= WORLD_AUTOSAVE_MS) {
+      saveNow();
+      lastAutosave = now;
     }
 
     requestAnimationFrame(frame);
