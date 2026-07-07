@@ -22,6 +22,15 @@ import { BLAST } from './blast';
 import { EMBER } from './ember';
 import { SEED } from './seed';
 import { VINE } from './vine';
+import { BLUE_FLAME } from './blueflame';
+import { METHANE } from './methane';
+import { ICE } from './ice';
+import { SNOW } from './snow';
+import { OIL } from './oil';
+import { GASOLINE } from './gasoline';
+import { COAL } from './coal';
+import { WOOD } from './wood';
+import { SAWDUST } from './sawdust';
 
 export {
   EMPTY_MAT,
@@ -43,6 +52,15 @@ export {
   EMBER,
   SEED,
   VINE,
+  BLUE_FLAME,
+  METHANE,
+  ICE,
+  SNOW,
+  OIL,
+  GASOLINE,
+  COAL,
+  WOOD,
+  SAWDUST,
 };
 
 /** Palette order (also drives the toolbar). EMBER is deliberately absent:
@@ -67,4 +85,13 @@ export const MATERIALS = [
   BLAST,
   SEED,
   VINE,
+  BLUE_FLAME,
+  METHANE,
+  ICE,
+  SNOW,
+  OIL,
+  GASOLINE,
+  COAL,
+  WOOD,
+  SAWDUST,
 ];
