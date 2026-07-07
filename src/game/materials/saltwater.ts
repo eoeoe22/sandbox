@@ -4,8 +4,9 @@ import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
+import { EMPTY } from '../engine/types';
 import { STEAM } from './steam';
-import { SALT } from './salt';
+import { SALT, SALT_WATER_RATIO } from './salt';
 import { WATER_BOIL_TEMP } from './water';
 
 // Liquid: denser than fresh water (3) so it sinks below it, still lighter than
@@ -13,14 +14,17 @@ import { WATER_BOIL_TEMP } from './water';
 // settle on the bottom instead of floating. Flows/spreads like water and, like
 // water, boils to Steam once the heat system drives it to the boiling point.
 //
-// The dissolved salt isn't tracked as a separate quantity — each Saltwater
-// cell instead deterministically *becomes* Salt on boiling (the water leaves,
-// the salt can't), while the departing water is represented by spawning a
-// Steam cell in a free neighbor. This keeps salt mass exactly conserved
-// (every evaporated cell yields exactly one Salt grain) instead of it being
-// randomly destroyed along with the steam. If every neighbor is occupied
-// there's nowhere for the steam to go, so the cell stays Saltwater and tries
-// again next tick rather than losing the salt anyway.
+// The dissolved salt isn't tracked as a separate quantity, and one grain
+// salinates SALT_WATER_RATIO cells' worth of Water (salt.ts), so boiling can't
+// deposit a full grain back per evaporated cell — that would be far too much
+// residue. Instead each boiling cell adds 1/SALT_WATER_RATIO to a shared
+// running total (SimContext.saltDebt); only once that total reaches a whole
+// grain does a Salt cell actually crystallize, elsewhere it evaporates clean.
+// This keeps the round trip's volumes matched without needing a per-cell
+// concentration field, and salt mass still can't be lost: the departing water
+// is always represented by spawning a Steam cell in a free neighbor first —
+// if every neighbor is occupied there's nowhere for the steam to go, so the
+// cell stays Saltwater and retries next tick instead of evaporating anyway.
 function updateSaltwater(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
     for (const [dx, dy] of DIR4) {
@@ -28,7 +32,13 @@ function updateSaltwater(x: number, y: number, sim: SimContext): void {
       const ny = y + dy;
       if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
         sim.spawn(nx, ny, STEAM.id);
-        sim.set(x, y, SALT.id);
+        sim.saltDebt += 1 / SALT_WATER_RATIO;
+        if (sim.saltDebt >= 1) {
+          sim.saltDebt -= 1;
+          sim.set(x, y, SALT.id);
+        } else {
+          sim.set(x, y, EMPTY);
+        }
         return;
       }
     }

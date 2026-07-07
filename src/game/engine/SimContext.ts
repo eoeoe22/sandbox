@@ -27,6 +27,15 @@ export class SimContext {
    */
   tick = 0;
 
+  /**
+   * Fractional salt "owed" to the world by Saltwater evaporations that haven't
+   * added up to a full grain yet (see salt.ts SALT_WATER_RATIO). Dissolved
+   * salt isn't tracked per-cell, so this single running total is what lets one
+   * Salt grain salinate many Water cells while still depositing back roughly
+   * one grain per that many cells boiled off, instead of 1:1 either way.
+   */
+  saltDebt = 0;
+
   constructor(private grid: Grid) {}
 
   inBounds(x: number, y: number): boolean {
