@@ -214,6 +214,7 @@
     left: 12px;
     z-index: 10;
     width: 180px;
+    max-height: calc(100vh - 24px);
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -226,12 +227,35 @@
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
     user-select: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a46 transparent;
+  }
+  .panel::-webkit-scrollbar {
+    width: 8px;
+  }
+  .panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .panel::-webkit-scrollbar-thumb {
+    background: #3a3a46;
+    border-radius: 4px;
+  }
+  .panel::-webkit-scrollbar-thumb:hover {
+    background: #4a4a58;
   }
   .head {
+    position: sticky;
+    top: -12px;
+    margin: -12px -12px 0;
+    padding: 12px 12px 8px;
+    background: rgba(20, 20, 26, 0.92);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    z-index: 1;
   }
   h1 {
     margin: 0;
