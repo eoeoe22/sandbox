@@ -29,7 +29,7 @@ export const STEAM = register({
   id: 8,
   name: 'Steam',
   phase: Phase.Gas,
-  color: rgb(225, 232, 235),
+  color: rgb(0, 202, 235),
   density: 1,
   // Placed/spawned just above boiling; conducts poorly (a gas), so it mostly
   // carries heat by physically rising rather than by conduction.
