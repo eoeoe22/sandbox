@@ -13,14 +13,12 @@ import { ACID } from './acid';
 // materials), and — the mirror of Steam↔Water — condenses back to liquid Acid,
 // noticeably faster when it pools under a ceiling. So heating a puddle of acid
 // sends corrosive fumes up to etch a ceiling, which then drip back down as acid.
-// It also just thins out over time so a room doesn't stay full of it forever.
+// It never just vanishes on its own — boil → rise → corrode → condense always
+// relocates it back to liquid Acid rather than destroying it.
 const CORRODE_CHANCE = 0.015; // vs the liquid's 0.03 — fumes bite more slowly
 const SELF_CONSUME_CHANCE = 0.05; // a puff that corroded may be used up doing so
 const CONDENSE_CHANCE = 0.006; // drifting fumes mostly find their way back to acid…
 const CONDENSE_CHANCE_BLOCKED = 0.03; // pooled under a ceiling → condenses faster
-const DISSIPATE_CHANCE = 0.002; // …and only occasionally fade for good, so heating
-// acid mostly relocates it (boil → rise → corrode → condense) rather than
-// destroying it, while still not letting a room stay fogged forever.
 
 function isCorrodible(id: number): boolean {
   if (id === EMPTY) return false;
@@ -50,10 +48,6 @@ function updateAcidVapor(x: number, y: number, sim: SimContext): void {
     // and instantly flash back to vapor (mirrors Steam→Water).
     sim.setTemp(x, y, AMBIENT_TEMP);
     sim.set(x, y, ACID.id);
-    return;
-  }
-  if (sim.chance(DISSIPATE_CHANCE)) {
-    sim.set(x, y, EMPTY);
     return;
   }
   updateGas(x, y, sim);

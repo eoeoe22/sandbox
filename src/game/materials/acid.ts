@@ -10,16 +10,13 @@ import { ACID_VAPOR } from './acidvapor';
 // non-resistant Solid/Powder neighbor (dissolving it to Empty). If it
 // corroded anything this tick, it also has a chance to consume itself —
 // bounds how much a given puddle of acid can eat through before running out.
-// Separately, if it has tunneled through everything reachable and has no
-// corrodible neighbor left at all, it evaporates outright — otherwise a fully
-// spent puddle with nothing left to eat would never roll SELF_CONSUME_CHANCE
-// (gated on having just corroded something) and could sit inert forever.
+// With no corrodible neighbor, it just sits there — acid only ever shrinks
+// as a byproduct of actually corroding something, never on its own.
 // Heated past its boiling point it flashes to Acid Vapor (corrosive fumes), the
 // gaseous counterpart that rises, etches, and condenses back to acid — the same
 // pattern as Water↔Steam (see acidvapor.ts).
 const CORRODE_CHANCE = 0.03;
 const SELF_CONSUME_CHANCE = 0.08;
-const STRANDED_EVAPORATE_CHANCE = 0.05;
 const ACID_BOIL_TEMP = 100;
 
 function isCorrodible(id: number): boolean {
@@ -38,25 +35,17 @@ function updateAcid(x: number, y: number, sim: SimContext): void {
   }
 
   let corroded = false;
-  let hadTarget = false;
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (isCorrodible(nid)) {
-      hadTarget = true;
-      if (sim.chance(CORRODE_CHANCE)) {
-        sim.set(nx, ny, EMPTY);
-        corroded = true;
-      }
+    if (isCorrodible(nid) && sim.chance(CORRODE_CHANCE)) {
+      sim.set(nx, ny, EMPTY);
+      corroded = true;
     }
   }
   if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
-    sim.set(x, y, EMPTY);
-    return;
-  }
-  if (!hadTarget && sim.chance(STRANDED_EVAPORATE_CHANCE)) {
     sim.set(x, y, EMPTY);
     return;
   }
