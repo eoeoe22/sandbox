@@ -6,7 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
-import { BLAST } from './blast';
+import { BLAST, seedBlast } from './blast';
 
 // Liquid: flows/pools like water (heavier). Same self-triggered detonation
 // pattern as Gunpowder (see gunpowder.ts for why it's id-based, not
@@ -23,7 +23,7 @@ function updateNitro(x: number, y: number, sim: SimContext): void {
     const nid = sim.get(nx, ny);
     if (nid === FIRE.id || nid === LAVA.id || nid === BLAST.id) {
       sim.spawn(x, y, BLAST.id);
-      sim.setTemp(x, y, BLAST_RADIUS);
+      sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
       return;
     }
   }

@@ -1,47 +1,76 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 
 // The explosion *shockwave* — what makes a detonation different from just
 // lighting fuel on fire. Unlike Fire (a gas that only drifts upward and ignites
-// flammables), a Blast:
-//   1. spreads outward on all 8 sides (사방) as an expanding front, and
-//   2. DESTROYS the particles it passes through (sand, water, plants, …), not
-//      just igniting them — carving a crater.
+// flammables), a Blast is a burst of individually-traveling shard particles
+// that fan out from the ignition point and DESTROY the particles they pass
+// through (sand, water, plants, …), not just ignite them — carving a crater.
 //
-// Lifetime without a dedicated `life` field: each cell stores its remaining
-// spread distance in its *temperature* (conductivity 0, so the heat-diffusion
-// pass leaves that value untouched and the blast never bleeds "heat" into its
-// neighbors). A cell with life L seeds its 8 neighbours as life L-1 and
-// then spends itself, so the maximum life strictly decreases by one every tick —
-// the whole wave is guaranteed to die out within L+1 ticks, no matter how it
-// bounces around a cleared crater. A cell seeded at life L reaches L cells out
-// (the life-1 ring still destroys its neighbours; only life-0 cells stop), so
-// the seeded life *is* the blast radius. Gunpowder/Nitro seed the core (see
-// those files); painting Blast directly drops a `thermal.init`-sized charge.
-const BLAST_FIRE_CHANCE = 0.35; // a spent blast cell leaves scattered flames…
+// Directions in angular order (45° apart), so index±1 (mod 8) is always a
+// geometric neighbor — that's what makes the wobble below meaningful (a real
+// small left/right deflection, not a jump to an unrelated direction).
+const ANGLE_DIRS: ReadonlyArray<readonly [number, number]> = [
+  [0, -1], // 0 N
+  [1, -1], // 1 NE
+  [1, 0], // 2 E
+  [1, 1], // 3 SE
+  [0, 1], // 4 S
+  [-1, 1], // 5 SW
+  [-1, 0], // 6 W
+  [-1, -1], // 7 NW
+];
+
+/** Sentinel `dir` meaning "just ignited, hasn't picked a travel direction
+ *  yet" — the one tick where a fresh Blast cell fans out to all 8 directions
+ *  at once (the initial punch), each becoming an independently-traveling
+ *  shard for the rest of its life. */
+const EPICENTER = 8;
+
+// A shard's remaining travel distance and its direction share one float (see
+// blast.ts's thermal.conductivity: 0 — the heat-diffusion pass never touches
+// this cell, so it's free to reuse `temp` as opaque per-cell state instead of
+// real heat). `life` strictly decreases by one every successful step and a
+// shard always spends itself after exactly one tick's turn (see the
+// unconditional collapse at the end of updateBlast), so — no matter how much
+// it wobbles or bounces off obstacles — every shard is guaranteed to stop
+// within `life` ticks of being spawned. That bound is what prevents runaway
+// spread; nothing here can loop indefinitely.
+function encodeBlast(life: number, dir: number): number {
+  return life * 9 + dir;
+}
+function decodeBlast(temp: number): { life: number; dir: number } {
+  return { life: Math.floor(temp / 9), dir: temp % 9 };
+}
+/** Exported so Gunpowder/Nitro (and Blast's own placement radius) seed a
+ *  fresh detonation the same way: an omnidirectional epicenter, not a
+ *  pre-aimed shard. */
+export function seedBlast(life: number): number {
+  return encodeBlast(life, EPICENTER);
+}
+
+const BLAST_FIRE_CHANCE = 0.35; // a spent shard leaves a scattered flame…
 // …otherwise it clears to Empty, so the net result is a crater dusted with fire.
 
+// How often a traveling shard deflects to an adjacent (45°) direction instead
+// of continuing straight — mirrors the rising-gas wobble in engine/behaviors.ts
+// (GAS_WOBBLE_CHANCE) so a shard's path reads the same "not a rigid line"
+// way a flame or wisp of smoke does, just radiating outward instead of up.
+const WOBBLE_CHANCE = 0.4;
+
 // Marker stamped on a cell the wave has already cleared to Empty, so a
-// *later* ring doesn't re-"discover" it and re-spawn Blast there — without
-// this, every ring re-ignites the (already-cleared) ring behind it every tick,
-// since a plain Empty cell is indistinguishable from virgin, never-touched air.
-// That backward bounce is what made the old wave read as slow, patchy flicker
-// instead of a clean radial burst: it wasted most of each tick's "turns"
-// re-visiting ground it already covered instead of only pushing the frontier
-// outward.
-//
-// The marker is *time-bounded*, not permanent: it encodes the tick it was
-// stamped on (`CRATER_MARK_BASE - tick`) and expires after
-// `CRATER_PROTECT_TICKS`. A flat permanent sentinel would work for a single
-// blast but then never un-block that air again — re-detonating explosives
-// inside an old crater (completely normal sandbox play) would find its own
-// surroundings permanently "already cratered" and refuse to spread into them,
-// and a single wave that needs to wrap around an obstacle through ground one
-// of its own earlier arms already cleared would get stuck too. Any value at
+// *later* shard doesn't re-"discover" it and re-spawn Blast there — without
+// this, a shard whose wobble sends it back over already-cleared ground would
+// re-ignite it and get an extra, unearned lease on life. The marker is
+// *time-bounded*, not permanent: it encodes the tick it was stamped
+// (`CRATER_MARK_BASE - tick`) and expires after `CRATER_PROTECT_TICKS`. A
+// flat permanent sentinel would work for a single blast but then never
+// un-block that air again — re-detonating explosives inside an old crater
+// (completely normal sandbox play) would find its own surroundings
+// permanently "already cratered" and refuse to spread into them. Any value at
 // or below `CRATER_MARK_BASE` is unambiguously a marker, never a legitimate
 // temperature (materials stay within roughly [HEAT_BRUSH_MIN, LAVA_TEMP] =
 // [-50, 1500]) — Empty cells are otherwise always exactly AMBIENT_TEMP (20),
@@ -63,34 +92,47 @@ function isActiveCrater(temp: number, tick: number): boolean {
   return tick - markedTick < CRATER_PROTECT_TICKS;
 }
 
+/** Try to advance a shard one cell in `dir` with `life` steps left. Destroys
+ *  whatever's there and spawns the shard's continuation, unless blocked (the
+ *  indestructible Wall, an Explosive waiting for its own turn, a cell
+ *  already mid-blast/freshly embered, or ground this same wave already
+ *  cratered). Returns whether it moved. */
+function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: number): boolean {
+  const [dx, dy] = ANGLE_DIRS[dir];
+  const nx = x + dx;
+  const ny = y + dy;
+  if (!sim.inBounds(nx, ny)) return false; // edge (or void border): nothing to hit
+  const nid = sim.get(nx, ny);
+  if (nid === BLAST.id || nid === FIRE.id) return false;
+  if (nid === EMPTY) {
+    if (isActiveCrater(sim.getTemp(nx, ny), sim.tick)) return false;
+  } else {
+    const m = getMaterial(nid);
+    // Only the indestructible boundary Wall blocks a shard outright. Every
+    // other solid — Stone included — gets destroyed like anything else.
+    if (m.isWall) return false;
+    // Explosives are passed over so they can chain-detonate on their own turn.
+    if (m.explosive) return false;
+  }
+  sim.spawn(nx, ny, BLAST.id);
+  sim.setTemp(nx, ny, encodeBlast(life, dir));
+  return true;
+}
+
 function updateBlast(x: number, y: number, sim: SimContext): void {
-  const life = sim.getTemp(x, y);
+  const { life, dir } = decodeBlast(sim.getTemp(x, y));
   if (life >= 1) {
-    for (const [dx, dy] of DIR8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!sim.inBounds(nx, ny)) continue; // edge (or void border): nothing to hit
-      const nid = sim.get(nx, ny);
-      // Don't re-energize a cell already mid-blast, or one this same wave just
-      // spent (Fire ember / cratered Empty) — see the crater marker above.
-      if (nid === BLAST.id || nid === FIRE.id) continue;
-      if (nid === EMPTY) {
-        if (isActiveCrater(sim.getTemp(nx, ny), sim.tick)) continue;
-      } else {
-        const m = getMaterial(nid);
-        // Only the indestructible boundary Wall blocks the wave outright.
-        // Every other solid — Stone included — gets destroyed like anything else.
-        if (m.isWall) continue;
-        // Explosives are passed over so they can chain-detonate on their own turn.
-        if (m.explosive) continue;
-      }
-      // Destroy whatever was there and carry the wave one cell further out.
-      sim.spawn(nx, ny, BLAST.id);
-      sim.setTemp(nx, ny, life - 1);
+    if (dir === EPICENTER) {
+      // The initial punch: fan out to all 8 directions at once, each
+      // becoming its own independently-traveling shard.
+      for (let d = 0; d < 8; d++) tryAdvance(sim, x, y, d, life - 1);
+    } else {
+      const wobbled = sim.chance(WOBBLE_CHANCE) ? (dir + (sim.chance(0.5) ? 1 : 7)) % 8 : dir;
+      tryAdvance(sim, x, y, wobbled, life - 1);
     }
   }
   // Spent: collapse into a flame, or clear out and mark the crater so later
-  // rings don't bounce back into it.
+  // shards don't bounce back into it.
   if (sim.chance(BLAST_FIRE_CHANCE)) {
     sim.spawn(x, y, FIRE.id);
   } else {
@@ -105,9 +147,10 @@ export const BLAST = register({
   phase: Phase.Gas,
   color: rgb(255, 245, 210),
   density: 1,
-  // `init` doubles as the spread radius when a Blast is placed by the brush.
-  // conductivity 0 is load-bearing: it makes the heat pass treat `temp` as an
-  // inert per-cell counter (the blast's remaining life) instead of real heat.
-  thermal: { init: 5, conductivity: 0 },
+  // The radius when a Blast is placed directly by the brush, seeded as an
+  // epicenter just like Gunpowder/Nitro (see seedBlast above). conductivity 0
+  // is load-bearing: it makes the heat pass treat `temp` as inert per-cell
+  // state (the shard's remaining life + direction) instead of real heat.
+  thermal: { init: seedBlast(5), conductivity: 0 },
   update: updateBlast,
 });

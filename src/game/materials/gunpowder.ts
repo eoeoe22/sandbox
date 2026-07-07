@@ -8,7 +8,7 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
-import { BLAST } from './blast';
+import { BLAST, seedBlast } from './blast';
 
 // Powder: falls/piles like sand. Each tick scans its own 8 neighbors for
 // Fire/Lava/Blast by id (NOT via the generic `flammable` tag — see the plan doc:
@@ -36,7 +36,7 @@ function updateGunpowder(x: number, y: number, sim: SimContext): void {
 
   if (!wet && trigger) {
     sim.spawn(x, y, BLAST.id);
-    sim.setTemp(x, y, BLAST_RADIUS);
+    sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
     return;
   }
   updatePowder(x, y, sim);
