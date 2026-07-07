@@ -1,0 +1,18 @@
+---
+import Base from '../layouts/Base.astro';
+import ControlPanel from '../components/ControlPanel.svelte';
+---
+
+<Base title="Particle Sandbox">
+  <canvas id="game"></canvas>
+  <ControlPanel client:load />
+</Base>
+
+<script>
+  // Processed & bundled by Vite (deferred module script), so the canvas exists
+  // by the time this runs. The engine is plain TypeScript — no framework.
+  import { startGame } from '../game/Game';
+
+  const canvas = document.getElementById('game');
+  if (canvas instanceof HTMLCanvasElement) startGame(canvas);
+</script>
