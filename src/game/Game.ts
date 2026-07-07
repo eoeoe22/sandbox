@@ -14,6 +14,7 @@ import {
   $clearSignal,
   $stepSignal,
   $resetAspectSignal,
+  $borderMode,
 } from '../state/store';
 import './materials'; // register all materials (side effect)
 
@@ -94,6 +95,13 @@ export function startGame(canvas: HTMLCanvasElement): void {
     layout.reset();
     applyLayout();
   };
+
+  // Sandbox edge behavior (wall vs. void). subscribe fires immediately, so this
+  // also seeds the engine and renderer with the current mode on startup.
+  $borderMode.subscribe((mode) => {
+    sim.setBorderMode(mode);
+    renderer.setBorderMode(mode);
+  });
 
   // UI command signals.
   $clearSignal.listen(() => grid.clear());

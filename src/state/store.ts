@@ -2,6 +2,7 @@ import { atom } from 'nanostores';
 import { SAND } from '../game/materials';
 import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX } from '../game/config';
 import type { AspectMode } from '../game/layout';
+import type { BorderMode } from '../game/engine/types';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
 // engine (the Astro-recommended nanostores pattern). The engine reads/listens;
@@ -63,6 +64,14 @@ export const $fpsPeak = atom<number>(0);
 
 /** How the sandbox size is chosen ('device' = fills viewport, 'custom' = dragged). */
 export const $aspectMode = atom<AspectMode>('device');
+
+/**
+ * Sandbox edge behavior: 'wall' (solid indestructible container, the default and
+ * original behavior) or 'void' (open edges — particles that reach an edge fall
+ * out of the world). The engine reads this via Simulation.setBorderMode and the
+ * renderer restyles the boundary outline to signal which mode is active.
+ */
+export const $borderMode = atom<BorderMode>('wall');
 
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });

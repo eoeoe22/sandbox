@@ -1,7 +1,7 @@
 import type { Grid } from './Grid';
 import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
-import { EMPTY } from './types';
+import { EMPTY, type BorderMode } from './types';
 import { HEAT_DIFFUSION_RATE, DEFAULT_CONDUCTIVITY } from '../config';
 
 /**
@@ -28,6 +28,12 @@ export class Simulation {
     for (const m of allMaterials()) {
       this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
     }
+  }
+
+  /** Choose how the sandbox edges behave (solid wall vs. open void). Forwarded
+   *  to the SimContext that all material movement flows through. */
+  setBorderMode(mode: BorderMode): void {
+    this.ctx.borderMode = mode;
   }
 
   step(): void {

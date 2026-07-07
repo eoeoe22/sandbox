@@ -6,12 +6,14 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
+import { BLAST } from './blast';
 
 // Liquid: flows/pools like water (heavier). Same self-triggered detonation
 // pattern as Gunpowder (see gunpowder.ts for why it's id-based, not
 // `flammable`-tagged) but a larger blast radius and no wet/misfire exception
-// — nitroglycerin isn't deactivated by water.
-const BLAST_RADIUS = 7;
+// — nitroglycerin isn't deactivated by water. Detonation seeds a Blast core
+// (see blast.ts): a destructive shockwave, not a fireball.
+const BLAST_RADIUS = 8;
 
 function updateNitro(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
@@ -19,8 +21,9 @@ function updateNitro(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === FIRE.id || nid === LAVA.id) {
-      sim.explode(x, y, BLAST_RADIUS, FIRE.id);
+    if (nid === FIRE.id || nid === LAVA.id || nid === BLAST.id) {
+      sim.spawn(x, y, BLAST.id);
+      sim.setTemp(x, y, BLAST_RADIUS);
       return;
     }
   }
@@ -33,6 +36,7 @@ export const NITRO = register({
   phase: Phase.Liquid,
   color: rgb(225, 225, 140),
   density: 4,
+  explosive: true,
   thermal: { conductivity: 0.4 },
   update: updateNitro,
 });

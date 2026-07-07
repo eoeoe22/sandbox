@@ -2,6 +2,7 @@ import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
+import type { BorderMode } from '../engine/types';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -36,6 +37,8 @@ export class CanvasRenderer implements Renderer {
   private palette: Uint32Array;
   /** id → temperature ramp, or null for materials drawn with a flat color. */
   private glow: (GlowRamp | null)[];
+  /** Current edge mode — only affects how the boundary outline is drawn. */
+  private borderMode: BorderMode = 'wall';
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -130,7 +133,14 @@ export class CanvasRenderer implements Renderer {
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
   }
 
-  /** Outline the real sandbox space so its edges are visible against the page. */
+  /** Pick which edge mode to signal in the boundary outline. */
+  setBorderMode(mode: BorderMode): void {
+    this.borderMode = mode;
+  }
+
+  /** Outline the real sandbox space so its edges are visible against the page.
+   *  A solid glowing frame reads as a closed wall; in 'void' mode the frame is
+   *  drawn dimmer and dashed to signal that the edges are open. */
   private drawBoundary(
     x: number,
     y: number,
@@ -140,11 +150,18 @@ export class CanvasRenderer implements Renderer {
   ): void {
     const lw = Math.max(1, Math.round(1.5 * scale));
     const ctx = this.ctx;
+    const isVoid = this.borderMode === 'void';
     ctx.save();
     ctx.lineWidth = lw;
-    ctx.strokeStyle = 'rgba(110, 168, 254, 0.65)';
-    ctx.shadowColor = 'rgba(110, 168, 254, 0.35)';
-    ctx.shadowBlur = 6 * scale;
+    if (isVoid) {
+      // Open edges: a faint dashed outline, no glow — the box is "not there".
+      ctx.strokeStyle = 'rgba(150, 160, 180, 0.45)';
+      ctx.setLineDash([6 * scale, 5 * scale]);
+    } else {
+      ctx.strokeStyle = 'rgba(110, 168, 254, 0.65)';
+      ctx.shadowColor = 'rgba(110, 168, 254, 0.35)';
+      ctx.shadowBlur = 6 * scale;
+    }
     // Inset by half the line width so the full stroke stays inside the rect.
     const o = lw / 2;
     ctx.strokeRect(x + o, y + o, w - lw, h - lw);
