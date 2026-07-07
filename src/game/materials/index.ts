@@ -10,8 +10,51 @@ import { WATER } from './water';
 import { STONE } from './stone';
 import { SALTWATER } from './saltwater';
 import { SMOKE } from './smoke';
+import { SALT } from './salt';
+import { STEAM } from './steam';
+import { FIRE } from './fire';
+import { LAVA } from './lava';
+import { ACID } from './acid';
+import { GUNPOWDER } from './gunpowder';
+import { NITRO } from './nitro';
+import { SEED } from './seed';
+import { VINE } from './vine';
 
-export { EMPTY_MAT, WALL, SAND, WATER, STONE, SALTWATER, SMOKE };
+export {
+  EMPTY_MAT,
+  WALL,
+  SAND,
+  WATER,
+  STONE,
+  SALTWATER,
+  SMOKE,
+  SALT,
+  STEAM,
+  FIRE,
+  LAVA,
+  ACID,
+  GUNPOWDER,
+  NITRO,
+  SEED,
+  VINE,
+};
 
 /** Palette order (also drives the toolbar). */
-export const MATERIALS = [EMPTY_MAT, WALL, SAND, WATER, STONE, SALTWATER, SMOKE];
+export const MATERIALS = [
+  EMPTY_MAT,
+  WALL,
+  SAND,
+  WATER,
+  STONE,
+  SALTWATER,
+  SMOKE,
+  SALT,
+  STEAM,
+  FIRE,
+  LAVA,
+  ACID,
+  GUNPOWDER,
+  NITRO,
+  SEED,
+  VINE,
+];
