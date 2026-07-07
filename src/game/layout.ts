@@ -95,6 +95,15 @@ export class SandboxLayout {
     this.recompute();
   }
 
+  /**
+   * The current size intent — mode plus the unclamped wanted CSS size — in the
+   * exact shape `setSize` accepts, so persistence can round-trip a custom
+   * sandbox size across sessions.
+   */
+  sizeIntent(): { mode: AspectMode; w: number; h: number } {
+    return { mode: this.mode, w: this.wantW, h: this.wantH };
+  }
+
   /** Snap back to filling the viewport. */
   reset(): void {
     this.mode = 'device';

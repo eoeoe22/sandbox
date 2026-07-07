@@ -63,6 +63,15 @@ export const BRUSH_MAX = 12;
 /** Max simulation steps per animation frame (prevents spiral-of-death after a stall). */
 export const MAX_STEPS_PER_FRAME = 5;
 
+/**
+ * Steady-state cadence for auto-saving the world to localStorage (see
+ * state/persistence.ts). Saves also fire when the tab is hidden or closed;
+ * this interval just bounds how much progress a crash can lose. Encoding is a
+ * single pass over the grid (~ms at the cell budget), so every few seconds is
+ * imperceptible.
+ */
+export const WORLD_AUTOSAVE_MS = 3000;
+
 /** In Particle brush mode, fraction of non-solid cells within the brush area that get filled. */
 export const PARTICLE_FILL_RATE = 0.55;
 
