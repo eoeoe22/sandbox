@@ -19,6 +19,14 @@ export class SimContext {
    */
   borderMode: BorderMode = 'wall';
 
+  /**
+   * Current simulation tick, refreshed once per step by `Simulation`. Lets a
+   * per-cell marker self-expire by comparing against a tick it stamped
+   * earlier (see Blast's crater marker) without needing a dedicated per-cell
+   * field of its own.
+   */
+  tick = 0;
+
   constructor(private grid: Grid) {}
 
   inBounds(x: number, y: number): boolean {

@@ -40,6 +40,7 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     this.diffuseHeat();
+    this.ctx.tick = this.tick;
     const leftToRight = (this.tick++ & 1) === 0;
 
     for (let y = g.height - 1; y >= 0; y--) {
