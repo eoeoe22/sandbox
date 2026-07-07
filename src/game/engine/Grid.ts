@@ -4,21 +4,25 @@ import { EMPTY } from './types';
  * The simulation grid. State is held in flat TypedArrays indexed by
  * `y * width + x` — cache-friendly and cheap to iterate, and ready to be moved
  * into a Web Worker (transfer the ArrayBuffer) or a WASM core later.
+ *
+ * The grid can be resized at runtime (dynamic sandbox aspect ratio). Resizing
+ * reallocates the backing arrays and copies the overlapping region, anchored to
+ * the bottom-left, so settled material keeps sitting on the floor.
  */
 export class Grid {
-  readonly width: number;
-  readonly height: number;
-  readonly size: number;
+  width: number;
+  height: number;
+  size: number;
 
   /** Material id per cell. */
-  readonly cells: Uint8Array;
+  cells: Uint8Array;
   /** Per-tick "already moved" guard so a cell isn't processed twice in one step. */
-  readonly moved: Uint8Array;
+  moved: Uint8Array;
 
   // Reserved for future material properties (temperature, life, velocity, ...).
   // Declared here to document the extension point; not allocated until used.
-  // readonly temp: Uint8Array;
-  // readonly life: Uint8Array;
+  // temp: Uint8Array;
+  // life: Uint8Array;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -46,5 +50,35 @@ export class Grid {
 
   clear(): void {
     this.cells.fill(EMPTY);
+  }
+
+  /**
+   * Resize the grid, preserving the overlapping cells. The kept region is
+   * anchored to the bottom-left: columns from the left, rows from the bottom, so
+   * a pile that had settled on the floor stays on the floor. New area (extra
+   * height above, extra width to the right) starts Empty. No-op if unchanged.
+   */
+  resize(width: number, height: number): void {
+    if (width === this.width && height === this.height) return;
+
+    const oldCells = this.cells;
+    const oldW = this.width;
+    const oldH = this.height;
+    const next = new Uint8Array(width * height);
+
+    const copyW = Math.min(width, oldW);
+    const copyRows = Math.min(height, oldH);
+    for (let r = 0; r < copyRows; r++) {
+      const oldY = oldH - 1 - r;
+      const newY = height - 1 - r;
+      const src = oldY * oldW;
+      next.set(oldCells.subarray(src, src + copyW), newY * width);
+    }
+
+    this.width = width;
+    this.height = height;
+    this.size = width * height;
+    this.cells = next;
+    this.moved = new Uint8Array(this.size);
   }
 }

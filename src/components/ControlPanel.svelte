@@ -3,8 +3,12 @@
     $running as running,
     $brushSize as brushSize,
     $fps as fps,
+    $fpsPeak as fpsPeak,
+    $aspectMode as aspectMode,
+    $gridDims as gridDims,
     requestClear,
     requestStep,
+    requestResetAspect,
   } from '../state/store';
   import MaterialPalette from './MaterialPalette.svelte';
 
@@ -58,8 +62,27 @@
 
     <MaterialPalette />
 
-    <div class="fps">{$fps} FPS</div>
-    <p class="hint">캔버스를 드래그해 물질을 그리세요.</p>
+    <div class="aspect">
+      <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
+      <button
+        class="reset"
+        onclick={requestResetAspect}
+        disabled={$aspectMode === 'device'}
+        title="샌드박스를 기기 화면비에 맞춤"
+      >
+        기기에 맞춤
+      </button>
+    </div>
+
+    <div
+      class="fps"
+      title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
+    >
+      {$fps} FPS{#if $fpsPeak > $fps + 5} · 최대 {$fpsPeak}{/if}
+    </div>
+    <p class="hint">
+      캔버스를 드래그해 물질을 그리세요. 우하단 핸들을 드래그하면 샌드박스 크기·화면비를 조절할 수 있어요.
+    </p>
   </aside>
 {/if}
 
@@ -159,9 +182,37 @@
   .brush input {
     width: 100%;
   }
+  .aspect {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dims {
+    font-variant-numeric: tabular-nums;
+    color: #8a8a99;
+  }
+  .reset {
+    padding: 4px 8px;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #1b1b22;
+    color: #e8e8ee;
+    cursor: pointer;
+    font: inherit;
+    white-space: nowrap;
+  }
+  .reset:hover {
+    border-color: #3a3a46;
+  }
+  .reset:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
   .fps {
     font-variant-numeric: tabular-nums;
     color: #8a8a99;
+    cursor: help;
   }
   .hint {
     margin: 0;

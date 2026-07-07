@@ -1,42 +1,41 @@
 import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
+import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
-import { fitGridRect } from './viewport';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
- * ImageData at grid resolution, then scales it up to the visible canvas with
- * smoothing off (crisp pixels). The grid is letterboxed (fit at a uniform
- * scale, centered) rather than stretched, so cells stay square on any viewport
- * shape — otherwise a circular brush would read as an ellipse on non-16:9
- * screens. Fast enough for a wide range of grid sizes and swappable for a
- * WebGL renderer via the Renderer interface.
+ * ImageData at grid resolution, then scales it up to the sandbox rectangle with
+ * smoothing off (crisp pixels). The rectangle comes from the shared
+ * SandboxLayout, so the grid, its outline, and pointer hit-testing all agree on
+ * where the sandbox is — even as its size and aspect ratio change at runtime.
+ *
+ * The offscreen buffer is rebuilt whenever the grid's dimensions change (the
+ * sandbox was resized). Fast enough for a wide range of grid sizes and
+ * swappable for a WebGL renderer via the Renderer interface.
  */
 export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
   private off: HTMLCanvasElement;
   private offCtx: CanvasRenderingContext2D;
-  private image: ImageData;
-  private buf32: Uint32Array;
+  private image!: ImageData;
+  private buf32!: Uint32Array;
   private palette: Uint32Array;
 
   constructor(
     private canvas: HTMLCanvasElement,
     grid: Grid,
+    private layout: SandboxLayout,
   ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
 
     this.off = document.createElement('canvas');
-    this.off.width = grid.width;
-    this.off.height = grid.height;
     const offCtx = this.off.getContext('2d');
     if (!offCtx) throw new Error('Offscreen 2D context unavailable');
     this.offCtx = offCtx;
-
-    this.image = this.offCtx.createImageData(grid.width, grid.height);
-    this.buf32 = new Uint32Array(this.image.data.buffer);
+    this.allocForGrid(grid);
 
     // Precompute id → color. Materials are registered before the renderer is
     // constructed, so this stays in sync for the milestone's fixed set.
@@ -47,7 +46,19 @@ export class CanvasRenderer implements Renderer {
     }
   }
 
+  /** (Re)size the offscreen buffer to match the grid resolution. */
+  private allocForGrid(grid: Grid): void {
+    this.off.width = grid.width;
+    this.off.height = grid.height;
+    this.image = this.offCtx.createImageData(grid.width, grid.height);
+    this.buf32 = new Uint32Array(this.image.data.buffer);
+  }
+
   render(grid: Grid): void {
+    if (this.off.width !== grid.width || this.off.height !== grid.height) {
+      this.allocForGrid(grid);
+    }
+
     const cells = grid.cells;
     const buf = this.buf32;
     const pal = this.palette;
@@ -56,15 +67,38 @@ export class CanvasRenderer implements Renderer {
     }
     this.offCtx.putImageData(this.image, 0, 0);
 
-    // Letterbox: fit the grid at a uniform scale so cells stay square. The
-    // margins are cleared to transparent, revealing the canvas's CSS
-    // background.
     const cw = this.canvas.width;
     const ch = this.canvas.height;
-    const rect = fitGridRect(cw, ch, grid.width, grid.height);
+    const scale = cw / Math.max(1, this.canvas.clientWidth);
+    const rect = this.layout.deviceRect(scale);
+
+    // Clear to transparent (reveals the page background outside the sandbox),
+    // then draw the grid crisp and outline the play area.
     this.ctx.clearRect(0, 0, cw, ch);
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(this.off, rect.x, rect.y, rect.width, rect.height);
+    this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /** Outline the real sandbox space so its edges are visible against the page. */
+  private drawBoundary(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    scale: number,
+  ): void {
+    const lw = Math.max(1, Math.round(1.5 * scale));
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = 'rgba(110, 168, 254, 0.65)';
+    ctx.shadowColor = 'rgba(110, 168, 254, 0.35)';
+    ctx.shadowBlur = 6 * scale;
+    // Inset by half the line width so the full stroke stays inside the rect.
+    const o = lw / 2;
+    ctx.strokeRect(x + o, y + o, w - lw, h - lw);
+    ctx.restore();
   }
 
   resize(width: number, height: number): void {
