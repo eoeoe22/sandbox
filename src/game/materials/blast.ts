@@ -151,8 +151,15 @@ const EPICENTER_PUNCH = 2;
  *  first `EPICENTER_PUNCH` cells outward (stopping early if blocked), then
  *  the last one reached becomes a normal traveling shard that continues
  *  under its own turn from here on — same bounded-life guarantee as any
- *  other shard, just with a head start. */
-function punchAndLaunch(sim: SimContext, x: number, y: number, dir: number, life: number): void {
+ *  other shard, just with a head start. Returns where that shard landed (and
+ *  its remaining life), or `null` if the very first step was blocked. */
+function punchAndLaunch(
+  sim: SimContext,
+  x: number,
+  y: number,
+  dir: number,
+  life: number,
+): { x: number; y: number; life: number } | null {
   const [dx, dy] = ANGLE_DIRS[dir];
   let cx = x;
   let cy = y;
@@ -160,22 +167,26 @@ function punchAndLaunch(sim: SimContext, x: number, y: number, dir: number, life
   for (let step = 0; step < EPICENTER_PUNCH; step++) {
     const nx = cx + dx;
     const ny = cy + dy;
-    if (!canEnter(sim, nx, ny)) return;
+    if (!canEnter(sim, nx, ny)) return step === 0 ? null : { x: cx, y: cy, life: remaining };
     // A tiny radius (< EPICENTER_PUNCH) shouldn't over-reach: the last cell
     // still in budget becomes the live shard, and the punch stops there
     // rather than continuing with a meaningless negative `remaining`.
     const isLast = step === EPICENTER_PUNCH - 1 || remaining <= 0;
     sim.spawn(nx, ny, BLAST.id);
     if (isLast) {
-      sim.setTemp(nx, ny, encodeBlast(Math.max(remaining, 0), dir));
-    } else {
-      collapse(sim, nx, ny);
+      const finalLife = Math.max(remaining, 0);
+      sim.setTemp(nx, ny, encodeBlast(finalLife, dir));
+      return { x: nx, y: ny, life: finalLife };
     }
+    collapse(sim, nx, ny);
     cx = nx;
     cy = ny;
     remaining--;
-    if (isLast) return;
   }
+  // Unreachable (the loop always returns on its last iteration, since
+  // `step === EPICENTER_PUNCH - 1` forces `isLast`), but keeps the function
+  // total for TypeScript.
+  return { x: cx, y: cy, life: Math.max(remaining, 0) };
 }
 
 function updateBlast(x: number, y: number, sim: SimContext): void {
@@ -183,8 +194,18 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
   if (life >= 1) {
     if (dir === EPICENTER) {
       // The initial punch: fan out to all 8 directions at once, each
-      // becoming its own independently-traveling shard.
-      for (let d = 0; d < 8; d++) punchAndLaunch(sim, x, y, d, life - 1);
+      // becoming its own independently-traveling shard. Each punch tip also
+      // spawns two side shards at ±45° right there — a wider initial cone
+      // per direction (up to 24 shards total from one detonation) so the
+      // blast reads as forceful ("화력") instead of 8 thin, sparse lines,
+      // while every shard still obeys the same bounded-life rule below.
+      for (let d = 0; d < 8; d++) {
+        const tip = punchAndLaunch(sim, x, y, d, life - 1);
+        if (tip && tip.life >= 1) {
+          tryAdvance(sim, tip.x, tip.y, (d + 7) % 8, tip.life - 1);
+          tryAdvance(sim, tip.x, tip.y, (d + 1) % 8, tip.life - 1);
+        }
+      }
     } else {
       const wobbled = sim.chance(WOBBLE_CHANCE) ? (dir + (sim.chance(0.5) ? 1 : 7)) % 8 : dir;
       tryAdvance(sim, x, y, wobbled, life - 1);
