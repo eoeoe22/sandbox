@@ -29,6 +29,17 @@ export type BrushMode = 'full' | 'particle';
 export const $brushMode = atom<BrushMode>('full');
 
 /**
+ * Active brush tool. 'material' (the default) paints the selected material —
+ * the existing behavior. The others are "special brushes" that act on the
+ * cells already under the brush instead of placing material: 'heat'/'cool'
+ * nudge each cell's temperature, and 'mix' shuffles the non-solid particles
+ * (solids stay put). See PointerPainter and config.ts. Selecting a material in
+ * the palette snaps this back to 'material'.
+ */
+export type Tool = 'material' | 'heat' | 'cool' | 'mix';
+export const $tool = atom<Tool>('material');
+
+/**
  * How aggressively the brush overwrites existing (non-Empty) particles, as a
  * step from 0 (never overwrite) to `OVERWRITE_LEVEL_MAX` (overwrite anything,
  * including Wall). Each step also allows every phase the previous steps

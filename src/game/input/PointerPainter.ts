@@ -6,12 +6,21 @@ import {
   $brushShape,
   $brushMode,
   $overwriteLevel,
+  $tool,
 } from '../../state/store';
-import { BRUSH_MIN, BRUSH_MAX, PARTICLE_FILL_RATE } from '../config';
+import {
+  BRUSH_MIN,
+  BRUSH_MAX,
+  PARTICLE_FILL_RATE,
+  HEAT_BRUSH_DELTA,
+  HEAT_BRUSH_MAX,
+  HEAT_BRUSH_MIN,
+  AMBIENT_TEMP,
+} from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { AMBIENT_TEMP } from '../config';
+import { heatCells, mixCells } from '../engine/brushTools';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -47,6 +56,10 @@ function canOverwrite(existingId: number, level: number): boolean {
  */
 export class PointerPainter {
   private down = false;
+  /** Whether the active press is erasing: the secondary (right) button always
+   *  erases, regardless of the selected material or active tool. Latched at
+   *  pointerdown so it persists through moves and per-frame re-stamps. */
+  private erasing = false;
   private px = 0;
   private py = 0;
   private cursorEl: HTMLDivElement;
@@ -71,10 +84,12 @@ export class PointerPainter {
     this.cursorEl = createFloatingOverlay('brush-cursor');
     this.cursorEl.style.display = 'none';
 
-    // Brush size/shape can change from the control panel while the pointer
-    // sits still over the canvas; keep the cursor in sync either way.
+    // Brush size/shape/tool can change from the control panel while the pointer
+    // sits still over the canvas; keep the cursor (size, shape, tool tint) in
+    // sync either way.
     $brushSize.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
+    $tool.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
   }
 
   private lastClientX = 0;
@@ -94,8 +109,49 @@ export class PointerPainter {
     return [gx, gy];
   }
 
+  /** Apply the active brush at (cx,cy). A right-button press always erases; a
+   *  normal press paints the selected material, or — for a special brush —
+   *  heats/cools or mixes the cells already there. */
   private stamp(cx: number, cy: number): void {
-    const id = $selectedMaterial.get();
+    if (this.erasing) return this.paint(cx, cy, true);
+    switch ($tool.get()) {
+      case 'heat':
+        return heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      case 'cool':
+        return heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      case 'mix':
+        return mixCells(this.grid, this.brushCells(cx, cy));
+    }
+    this.paint(cx, cy);
+  }
+
+  /** The in-bounds cells the brush covers at (cx,cy), packed flat as
+   *  [x0,y0,x1,y1,...], masked to the same circle/square the cursor outline
+   *  shows. The special brushes (heat/cool/mix) operate over this footprint;
+   *  paint() keeps its own loop because it also applies the particle-fill and
+   *  overwrite gates per cell. */
+  private brushCells(cx: number, cy: number): number[] {
+    const rad = $brushSize.get();
+    const shape = $brushShape.get();
+    const r2 = rad * rad;
+    const out: number[] = [];
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!this.grid.inBounds(x, y)) continue;
+        out.push(x, y);
+      }
+    }
+    return out;
+  }
+
+  /** Paint the selected material over the brush footprint. When `erase` is set
+   *  (right-button press), Empty is stamped instead, ignoring the material and
+   *  active tool entirely. */
+  private paint(cx: number, cy: number, erase = false): void {
+    const id = erase ? 0 : $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
     const level = $overwriteLevel.get();
@@ -104,8 +160,10 @@ export class PointerPainter {
     const isEraser = id === 0;
     // Solid materials always paint Full — a sparse pile of solid grains
     // reads as a bug, not a feature, so Particle mode only applies to
-    // non-solid materials (sand, water, gases, ...).
-    const particle = $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // non-solid materials (sand, water, gases, ...). A right-button erase also
+    // ignores Particle mode: "always erases" means a clean, gap-free clear.
+    const particle =
+      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
@@ -148,6 +206,10 @@ export class PointerPainter {
 
   private onDown = (e: PointerEvent): void => {
     this.down = true;
+    // Right (secondary) button erases for the whole press; any other button
+    // paints/uses the active tool. `contextmenu` is already suppressed on the
+    // canvas so the right press is a clean erase gesture.
+    this.erasing = e.button === 2;
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -215,6 +277,9 @@ export class PointerPainter {
     this.cursorEl.style.width = `${size}px`;
     this.cursorEl.style.height = `${size}px`;
     this.cursorEl.style.borderRadius = shape === 'circle' ? '50%' : '0';
+    // Tint the outline per tool (heat = warm, cool = cold, mix = violet) so the
+    // active special brush is obvious; 'material' leaves the default neutral.
+    this.cursorEl.dataset.tool = $tool.get();
   }
 
   /**

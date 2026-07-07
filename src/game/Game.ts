@@ -138,22 +138,28 @@ export function startGame(canvas: HTMLCanvasElement): void {
       syncLayoutOutputs();
     }
 
-    // Re-stamp the held brush every frame so a stationary press keeps painting
-    // (pointermove stops firing once the pointer stops moving).
-    painter.update();
-
     acc += now - last;
     last = now;
 
+    // Re-stamp the held brush so a stationary press keeps painting/heating
+    // (pointermove stops firing once the pointer stops moving). While running we
+    // re-stamp once per fixed sim tick, so continuous brushes (the paint "pour"
+    // and the heat/cool/mix tools) accumulate at simulation time rather than the
+    // display refresh rate — otherwise a 144Hz screen would pour/heat ~2.4× as
+    // fast as 60Hz, which matters more for heat since it drives irreversible
+    // phase changes (boil/freeze). While paused, time isn't advancing, so we
+    // re-stamp once per frame to still allow painting and temperature sculpting.
     if ($running.get()) {
       let steps = 0;
       while (acc >= stepMs && steps < MAX_STEPS_PER_FRAME) {
+        painter.update();
         sim.step();
         acc -= stepMs;
         steps++;
       }
       if (acc > stepMs * MAX_STEPS_PER_FRAME) acc = 0; // drop backlog after a stall
     } else {
+      painter.update();
       acc = 0;
     }
 

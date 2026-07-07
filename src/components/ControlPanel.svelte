@@ -5,6 +5,7 @@
     $brushShape as brushShape,
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
+    $tool as tool,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $aspectMode as aspectMode,
@@ -105,6 +106,41 @@
         title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
       >
         ▦ Particle
+      </button>
+    </div>
+
+    <div class="row shape tools" role="group" aria-label="특수 브러시">
+      <button
+        class:active={$tool === 'material'}
+        onclick={() => tool.set('material')}
+        aria-pressed={$tool === 'material'}
+        title="선택한 재료를 그립니다"
+      >
+        🖌 재료
+      </button>
+      <button
+        class:active={$tool === 'heat'}
+        onclick={() => tool.set('heat')}
+        aria-pressed={$tool === 'heat'}
+        title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
+      >
+        🔥 가열
+      </button>
+      <button
+        class:active={$tool === 'cool'}
+        onclick={() => tool.set('cool')}
+        aria-pressed={$tool === 'cool'}
+        title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
+      >
+        ❄️ 냉각
+      </button>
+      <button
+        class:active={$tool === 'mix'}
+        onclick={() => tool.set('mix')}
+        aria-pressed={$tool === 'mix'}
+        title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
+      >
+        🌀 섞기
       </button>
     </div>
 
@@ -242,6 +278,11 @@
   .row.shape button.active {
     border-color: #6ea8fe;
     background: #23324a;
+  }
+  /* Set the special-brush row a touch apart from the painting controls above. */
+  .row.tools {
+    padding-top: 8px;
+    border-top: 1px solid #2a2a33;
   }
   .brush {
     display: flex;

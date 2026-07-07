@@ -6,10 +6,12 @@ import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
 import { WATER_BOIL_TEMP } from './water';
 
-// Liquid: denser than fresh water (3) so it sinks below it, still far lighter
-// than sand (5). Flows/spreads like water and, like water, boils to Steam once
-// the heat system drives it to the boiling point (the dissolved salt is not
-// tracked, so it simply leaves with the steam — a deliberate simplification).
+// Liquid: denser than fresh water (3) so it sinks below it, still lighter than
+// the powders (Salt/Sand at 5), so undissolved Salt grains sink through it and
+// settle on the bottom instead of floating. Flows/spreads like water and, like
+// water, boils to Steam once the heat system drives it to the boiling point (the
+// dissolved salt is not tracked, so it simply leaves with the steam — a
+// deliberate simplification).
 function updateSaltwater(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
     sim.set(x, y, STEAM.id);

@@ -45,6 +45,17 @@ body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
+/* Special-brush tints so the active tool is obvious at the cursor (see
+   PointerPainter.updateCursor, which stamps data-tool on the overlay). */
+.brush-cursor[data-tool='heat'] {
+  border-color: rgba(255, 138, 60, 0.95);
+}
+.brush-cursor[data-tool='cool'] {
+  border-color: rgba(96, 176, 255, 0.95);
+}
+.brush-cursor[data-tool='mix'] {
+  border-color: rgba(198, 128, 255, 0.95);
+}
 
 /* Draggable handle at the sandbox's bottom-right corner (see SandboxResizer).
    Positioned in CSS px by the engine; centered on the corner via the offset. */
