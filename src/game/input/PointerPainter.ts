@@ -29,7 +29,7 @@ const OVERWRITE_PHASE_ORDER = [Phase.Gas, Phase.Liquid, Phase.Powder, Phase.Soli
 function canOverwrite(existingId: number, level: number): boolean {
   if (existingId === 0) return true;
   const existing = getMaterial(existingId);
-  if (existing.isWall) return level >= OVERWRITE_PHASE_ORDER.length;
+  if (existing.isWall) return level >= OVERWRITE_PHASE_ORDER.length + 1;
   const rank = OVERWRITE_PHASE_ORDER.indexOf(existing.phase);
   if (rank === -1) return true; // Empty-phase materials, if any: always paintable
   return level >= rank + 1;
