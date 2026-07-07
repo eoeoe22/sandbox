@@ -1,43 +1,31 @@
 /**
- * Maps the fixed-aspect simulation grid onto an arbitrary display surface.
- *
- * The grid has a fixed aspect ratio (GRID_W:GRID_H, ~16:9), but the canvas
- * fills a viewport of any shape. Stretching the grid to fill the canvas makes
- * cells non-square — on a portrait phone each cell is far taller than wide, so
- * a circular brush renders as a vertical ellipse (height > width). Instead we
- * letterbox: fit the grid at a single uniform scale, centered, so cells stay
- * square and the brush reads as a true circle on every screen.
+ * A rectangle within a display surface. Used for the sandbox's on-screen
+ * placement — in CSS pixels for hit-testing and in device pixels for
+ * rendering. The scale between the two is uniform, so the same rect math works
+ * in either unit.
  */
 export interface ViewRect {
-  /** Left offset within the container (same units as the inputs). */
+  /** Left offset within the container. */
   x: number;
   /** Top offset within the container. */
   y: number;
-  /** Rendered grid width. */
+  /** Rectangle width. */
   width: number;
-  /** Rendered grid height. */
+  /** Rectangle height. */
   height: number;
 }
 
-/**
- * Largest rectangle with the grid's aspect ratio that fits inside the
- * container, centered (letterboxed). Works in any consistent unit — device
- * pixels for rendering, CSS pixels for hit-testing — because the scale is
- * uniform on both axes.
- */
-export function fitGridRect(
+/** A rectangle of the given size, centered inside the container. */
+export function centeredRect(
   containerW: number,
   containerH: number,
-  gridW: number,
-  gridH: number,
+  rectW: number,
+  rectH: number,
 ): ViewRect {
-  const scale = Math.min(containerW / gridW, containerH / gridH);
-  const width = gridW * scale;
-  const height = gridH * scale;
   return {
-    x: (containerW - width) / 2,
-    y: (containerH - height) / 2,
-    width,
-    height,
+    x: (containerW - rectW) / 2,
+    y: (containerH - rectH) / 2,
+    width: rectW,
+    height: rectH,
   };
 }

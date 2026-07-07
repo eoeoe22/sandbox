@@ -29,6 +29,34 @@ body {
   cursor: crosshair;
 }
 
+/* Draggable handle at the sandbox's bottom-right corner (see SandboxResizer).
+   Positioned in CSS px by the engine; centered on the corner via the offset. */
+.sandbox-handle {
+  position: fixed;
+  z-index: 8;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(110, 168, 254, 0.7);
+  border-radius: 6px;
+  background: rgba(20, 20, 26, 0.82);
+  backdrop-filter: blur(6px);
+  color: #6ea8fe;
+  font-size: 12px;
+  line-height: 1;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+}
+.sandbox-handle:hover,
+.sandbox-handle.dragging {
+  border-color: #6ea8fe;
+  background: rgba(35, 43, 58, 0.9);
+}
+
 .notfound {
   display: flex;
   flex-direction: column;

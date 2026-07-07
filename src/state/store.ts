@@ -1,5 +1,7 @@
 import { atom } from 'nanostores';
 import { SAND } from '../game/materials';
+import { GRID_W, GRID_H } from '../game/config';
+import type { AspectMode } from '../game/layout';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
 // engine (the Astro-recommended nanostores pattern). The engine reads/listens;
@@ -17,16 +19,35 @@ export const $brushSize = atom<number>(3);
 /** Whether the simulation is advancing. */
 export const $running = atom<boolean>(true);
 
-/** Most recent measured frames-per-second (for the HUD). */
+/** Smoothed frames-per-second (for the HUD). */
 export const $fps = atom<number>(0);
+
+/**
+ * Peak frame rate observed this session. On adaptive-refresh displays
+ * (ProMotion / Adaptive Sync) the current rate drops when idle to save power,
+ * so showing the peak alongside keeps the HUD honest about the device's real
+ * capability instead of looking like a bug.
+ */
+export const $fpsPeak = atom<number>(0);
+
+/** How the sandbox size is chosen ('device' = fills viewport, 'custom' = dragged). */
+export const $aspectMode = atom<AspectMode>('device');
+
+/** Current grid resolution in cells (for the HUD). */
+export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
 // One-shot command signals: bump the counter to request the action. The engine
 // listens for changes.
 export const $clearSignal = atom<number>(0);
 export const $stepSignal = atom<number>(0);
+export const $resetAspectSignal = atom<number>(0);
 
 /** Clear the whole grid. */
 export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1);
 
 /** Advance the simulation by exactly one tick (used while paused). */
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
+
+/** Reset the sandbox to fill the device viewport (default aspect). */
+export const requestResetAspect = (): void =>
+  $resetAspectSignal.set($resetAspectSignal.get() + 1);
