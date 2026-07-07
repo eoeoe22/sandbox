@@ -6,12 +6,21 @@ import {
   $brushShape,
   $brushMode,
   $overwriteLevel,
+  $tool,
 } from '../../state/store';
-import { BRUSH_MIN, BRUSH_MAX, PARTICLE_FILL_RATE } from '../config';
+import {
+  BRUSH_MIN,
+  BRUSH_MAX,
+  PARTICLE_FILL_RATE,
+  HEAT_BRUSH_DELTA,
+  HEAT_BRUSH_MAX,
+  HEAT_BRUSH_MIN,
+  AMBIENT_TEMP,
+} from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { AMBIENT_TEMP } from '../config';
+import { heatCells, mixCells } from '../engine/brushTools';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -71,10 +80,12 @@ export class PointerPainter {
     this.cursorEl = createFloatingOverlay('brush-cursor');
     this.cursorEl.style.display = 'none';
 
-    // Brush size/shape can change from the control panel while the pointer
-    // sits still over the canvas; keep the cursor in sync either way.
+    // Brush size/shape/tool can change from the control panel while the pointer
+    // sits still over the canvas; keep the cursor (size, shape, tool tint) in
+    // sync either way.
     $brushSize.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
+    $tool.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
   }
 
   private lastClientX = 0;
@@ -94,7 +105,43 @@ export class PointerPainter {
     return [gx, gy];
   }
 
+  /** Apply the active brush at (cx,cy): paint the selected material, or — for a
+   *  special brush — heat/cool or mix the cells already there. */
   private stamp(cx: number, cy: number): void {
+    switch ($tool.get()) {
+      case 'heat':
+        return heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      case 'cool':
+        return heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      case 'mix':
+        return mixCells(this.grid, this.brushCells(cx, cy));
+    }
+    this.paint(cx, cy);
+  }
+
+  /** The in-bounds cells the brush covers at (cx,cy), packed flat as
+   *  [x0,y0,x1,y1,...], masked to the same circle/square the cursor outline
+   *  shows. The special brushes (heat/cool/mix) operate over this footprint;
+   *  paint() keeps its own loop because it also applies the particle-fill and
+   *  overwrite gates per cell. */
+  private brushCells(cx: number, cy: number): number[] {
+    const rad = $brushSize.get();
+    const shape = $brushShape.get();
+    const r2 = rad * rad;
+    const out: number[] = [];
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!this.grid.inBounds(x, y)) continue;
+        out.push(x, y);
+      }
+    }
+    return out;
+  }
+
+  private paint(cx: number, cy: number): void {
     const id = $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
@@ -215,6 +262,9 @@ export class PointerPainter {
     this.cursorEl.style.width = `${size}px`;
     this.cursorEl.style.height = `${size}px`;
     this.cursorEl.style.borderRadius = shape === 'circle' ? '50%' : '0';
+    // Tint the outline per tool (heat = warm, cool = cold, mix = violet) so the
+    // active special brush is obvious; 'material' leaves the default neutral.
+    this.cursorEl.dataset.tool = $tool.get();
   }
 
   /**

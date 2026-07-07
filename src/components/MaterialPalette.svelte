@@ -1,16 +1,23 @@
 <script lang="ts">
   // Alias the `$`-prefixed atom to a plain name so Svelte's `$store`
   // auto-subscription (`$selected`) resolves to it correctly.
-  import { $selectedMaterial as selected } from '../state/store';
+  import { $selectedMaterial as selected, $tool as tool } from '../state/store';
   import { MATERIALS } from '../game/materials';
   import { toCss } from '../game/render/color';
+
+  // Picking a material is also a request to paint it, so snap out of any
+  // special brush (heat/cool/mix) back to material mode.
+  function pick(id: number): void {
+    selected.set(id);
+    tool.set('material');
+  }
 </script>
 
 <div class="palette">
   {#each MATERIALS as m (m.id)}
     <button
-      class:active={$selected === m.id}
-      onclick={() => selected.set(m.id)}
+      class:active={$selected === m.id && $tool === 'material'}
+      onclick={() => pick(m.id)}
       title={m.name}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>

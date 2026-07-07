@@ -11,6 +11,12 @@ import { SALTWATER } from './saltwater';
 // neighbor has a chance to dissolve it each tick — self vanishes, the water
 // cell becomes Saltwater. ~4%/tick ≈ dissolves within roughly a second of
 // contact at 60Hz.
+//
+// Density is deliberately > Saltwater (4): Salt only dissolves in *fresh* Water,
+// so a grain that reaches already-salted water (treated as saturated) should
+// sink through and settle on the bottom rather than float on the surface. Equal
+// densities left it stranded on top — the density sort needs a strict
+// difference to displace (see SimContext.tryMove).
 const DISSOLVE_CHANCE = 0.04;
 
 function updateSalt(x: number, y: number, sim: SimContext): void {
@@ -32,7 +38,7 @@ export const SALT = register({
   name: 'Salt',
   phase: Phase.Powder,
   color: rgb(235, 235, 228),
-  density: 4,
+  density: 5,
   thermal: { conductivity: 0.35 },
   update: updateSalt,
 });

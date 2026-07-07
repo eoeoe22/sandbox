@@ -67,6 +67,23 @@ export const MAX_STEPS_PER_FRAME = 5;
 export const PARTICLE_FILL_RATE = 0.55;
 
 /**
+ * Special (non-painting) brush tools — see the store's `$tool` and
+ * PointerPainter. Instead of placing material, they act on the cells already
+ * under the brush: heat/cool nudge each cell's temperature, mix shuffles the
+ * non-solid particles.
+ */
+/** Temperature change applied per stamp by the heat (+) / cool (−) brush. Held
+ *  presses re-stamp every frame (see PointerPainter.update), so this accumulates
+ *  — sized so a brief hold noticeably warms/cools without instantly saturating. */
+export const HEAT_BRUSH_DELTA = 12;
+/** Upper clamp for the heat brush, comfortably above every material's own
+ *  temperature (Lava ~1500, Fire ~1000) so superheating still has headroom. */
+export const HEAT_BRUSH_MAX = 2000;
+/** Lower clamp for the cool brush — a bit below ambient (20), enough to make a
+ *  cold sink that pulls heat out of neighbors without a runaway to absolute cold. */
+export const HEAT_BRUSH_MIN = -50;
+
+/**
  * Progressive brush overwrite levels, from most conservative to most permissive.
  * Each level also allows everything the previous levels allow (Empty cells are
  * always paintable regardless of level).
