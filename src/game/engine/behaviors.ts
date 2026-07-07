@@ -18,10 +18,26 @@ export function updateLiquid(x: number, y: number, sim: SimContext): void {
   sim.moveSideways(x, y);
 }
 
-/** Gas: rise, else drift diagonally up, else spread sideways. */
+// Gas rise is deliberately imperfect: a chance to stall for a tick (slows the
+// overall ascent) and a chance to prefer a diagonal step over straight-up
+// (sways side to side instead of climbing in a dead-straight column). Shared
+// by every gas material — Fire, Smoke, Steam, Acid Vapor — and by design the
+// hook a future rising/falling particle (e.g. Snow) reuses for the same wobble.
+const GAS_STALL_CHANCE = 0.35; // skip movement entirely this tick → slower rise
+const GAS_WOBBLE_CHANCE = 0.4; // try the diagonal step before the straight one
+
+/** Gas: rise, else drift diagonally up, else spread sideways — with a chance
+ *  to stall (slower climb) and a chance to wobble diagonally instead of
+ *  going straight up (less of a rigid vertical column). */
 export function updateGas(x: number, y: number, sim: SimContext): void {
-  if (sim.moveUp(x, y)) return;
-  if (sim.moveDiagonalUp(x, y)) return;
+  if (sim.chance(GAS_STALL_CHANCE)) return;
+  if (sim.chance(GAS_WOBBLE_CHANCE)) {
+    if (sim.moveDiagonalUp(x, y)) return;
+    if (sim.moveUp(x, y)) return;
+  } else {
+    if (sim.moveUp(x, y)) return;
+    if (sim.moveDiagonalUp(x, y)) return;
+  }
   sim.moveSideways(x, y);
 }
 
