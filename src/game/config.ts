@@ -7,17 +7,20 @@
  * resolution is derived from the sandbox rectangle divided by this value, so a
  * larger sandbox holds proportionally more cells (see layout.ts).
  *
- * 8px reproduces the classic 240×135 grid on a 1920×1080 viewport.
+ * 4px keeps grains crisp and fine — a fit-to-device sandbox is roughly
+ * 480×270 on 1080p, ~97×195 on a 390×780 phone. Smaller = finer/more space.
  */
-export const CELL_PX = 8;
+export const CELL_PX = 4;
 
 /**
  * Upper bound on total cells. The simulation runs on the main thread at
  * TICK_HZ, so an unbounded 4K sandbox would blow the frame budget. When the
  * derived grid would exceed this, the effective cell size is scaled up
- * uniformly (coarser cells, same aspect) to stay under budget.
+ * uniformly (coarser cells, same aspect) to stay under budget. Sized so a
+ * full 1080p viewport (~130k cells) renders at the true cell size uncapped;
+ * only larger screens (QHD/4K fullscreen) get coarsened to protect the tick.
  */
-export const MAX_CELLS = 60_000;
+export const MAX_CELLS = 130_000;
 
 /** Smallest grid dimension, so a tiny drag still leaves a usable sandbox. */
 export const MIN_GRID_SIDE = 16;
