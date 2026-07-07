@@ -1,0 +1,11 @@
+# Cloudflare Workers — Static Assets (assets-only, no server-side code).
+# `name` MUST match the connected Worker's dashboard name exactly, or the
+# Workers Build fails. No `main` / no `binding` => no Worker script runs;
+# Cloudflare serves ./dist straight from the edge.
+name = "sandbox"
+compatibility_date = "2026-07-07"
+
+[assets]
+directory = "./dist"
+# Astro builds src/pages/404.astro -> dist/404.html for unmatched paths.
+not_found_handling = "404-page"

@@ -1,0 +1,43 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #101014;
+  color: #e8e8ee;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+/* Full-viewport simulation canvas. touch-action:none stops the page from
+   scrolling/zooming while painting on touch devices. */
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  background: #101014;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.notfound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 8px;
+  text-align: center;
+}
+.notfound a {
+  color: #6ea8fe;
+}
