@@ -2,9 +2,10 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
-import { updateLiquid } from '../engine/behaviors';
+import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ACID_VAPOR } from './acidvapor';
+import { WATER } from './water';
 
 // Liquid: flows like water, but each tick has a chance to corrode any
 // non-resistant Solid/Powder neighbor (dissolving it to Empty). If it
@@ -15,9 +16,17 @@ import { ACID_VAPOR } from './acidvapor';
 // Heated past its boiling point it flashes to Acid Vapor (corrosive fumes), the
 // gaseous counterpart that rises, etches, and condenses back to acid — the same
 // pattern as Water↔Steam (see acidvapor.ts).
+//
+// Same density as Water, so a poured-in layer of either sits on top of the
+// other instead of sinking through — but same-density fluids never trade
+// places via the normal density-sorted flow, so left alone they'd stay in
+// perfectly flat layers forever. DIFFUSE_CHANCE gives their shared boundary a
+// slow, occasional swap with a neighboring Water cell instead, so the two
+// gradually interdiffuse across the interface like miscible liquids.
 const CORRODE_CHANCE = 0.03;
 const SELF_CONSUME_CHANCE = 0.08;
 const ACID_BOIL_TEMP = 100;
+const DIFFUSE_CHANCE = 0.02;
 
 function isCorrodible(id: number): boolean {
   if (id === EMPTY) return false;
@@ -49,6 +58,7 @@ function updateAcid(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, EMPTY);
     return;
   }
+  if (diffuseWith(x, y, sim, WATER.id, DIFFUSE_CHANCE)) return;
   updateLiquid(x, y, sim);
 }
 
@@ -57,7 +67,7 @@ export const ACID = register({
   name: 'Acid',
   phase: Phase.Liquid,
   color: rgb(150, 225, 70),
-  density: 4,
+  density: 3,
   thermal: { conductivity: 0.5 },
   update: updateAcid,
 });
