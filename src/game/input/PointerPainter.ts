@@ -56,6 +56,10 @@ function canOverwrite(existingId: number, level: number): boolean {
  */
 export class PointerPainter {
   private down = false;
+  /** Whether the active press is erasing: the secondary (right) button always
+   *  erases, regardless of the selected material or active tool. Latched at
+   *  pointerdown so it persists through moves and per-frame re-stamps. */
+  private erasing = false;
   private px = 0;
   private py = 0;
   private cursorEl: HTMLDivElement;
@@ -105,9 +109,11 @@ export class PointerPainter {
     return [gx, gy];
   }
 
-  /** Apply the active brush at (cx,cy): paint the selected material, or — for a
-   *  special brush — heat/cool or mix the cells already there. */
+  /** Apply the active brush at (cx,cy). A right-button press always erases; a
+   *  normal press paints the selected material, or — for a special brush —
+   *  heats/cools or mixes the cells already there. */
   private stamp(cx: number, cy: number): void {
+    if (this.erasing) return this.paint(cx, cy, true);
     switch ($tool.get()) {
       case 'heat':
         return heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
@@ -141,8 +147,11 @@ export class PointerPainter {
     return out;
   }
 
-  private paint(cx: number, cy: number): void {
-    const id = $selectedMaterial.get();
+  /** Paint the selected material over the brush footprint. When `erase` is set
+   *  (right-button press), Empty is stamped instead, ignoring the material and
+   *  active tool entirely. */
+  private paint(cx: number, cy: number, erase = false): void {
+    const id = erase ? 0 : $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
     const level = $overwriteLevel.get();
@@ -195,6 +204,10 @@ export class PointerPainter {
 
   private onDown = (e: PointerEvent): void => {
     this.down = true;
+    // Right (secondary) button erases for the whole press; any other button
+    // paints/uses the active tool. `contextmenu` is already suppressed on the
+    // canvas so the right press is a clean erase gesture.
+    this.erasing = e.button === 2;
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
