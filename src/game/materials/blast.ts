@@ -25,20 +25,43 @@ import { FIRE } from './fire';
 const BLAST_FIRE_CHANCE = 0.35; // a spent blast cell leaves scattered flames…
 // …otherwise it clears to Empty, so the net result is a crater dusted with fire.
 
-// Sentinel temperature stamped on a cell the wave has already cleared to Empty,
-// so a *later* ring doesn't re-"discover" it and re-spawn Blast there — without
+// Marker stamped on a cell the wave has already cleared to Empty, so a
+// *later* ring doesn't re-"discover" it and re-spawn Blast there — without
 // this, every ring re-ignites the (already-cleared) ring behind it every tick,
 // since a plain Empty cell is indistinguishable from virgin, never-touched air.
 // That backward bounce is what made the old wave read as slow, patchy flicker
 // instead of a clean radial burst: it wasted most of each tick's "turns"
 // re-visiting ground it already covered instead of only pushing the frontier
-// outward. Empty cells are always exactly AMBIENT_TEMP (20) otherwise — the
-// heat/cool brush explicitly skips Empty (see brushTools.heatCells) and no
-// other code path leaves Empty at a non-ambient temperature — so any negative
-// value is unambiguous and never collides with a legitimate empty cell.
-// Painting new material over a cratered cell always calls `setTemp` itself
-// (see PointerPainter.paint), so the marker is naturally cleared on reuse.
-const CRATER_TEMP = -1;
+// outward.
+//
+// The marker is *time-bounded*, not permanent: it encodes the tick it was
+// stamped on (`CRATER_MARK_BASE - tick`) and expires after
+// `CRATER_PROTECT_TICKS`. A flat permanent sentinel would work for a single
+// blast but then never un-block that air again — re-detonating explosives
+// inside an old crater (completely normal sandbox play) would find its own
+// surroundings permanently "already cratered" and refuse to spread into them,
+// and a single wave that needs to wrap around an obstacle through ground one
+// of its own earlier arms already cleared would get stuck too. Any value at
+// or below `CRATER_MARK_BASE` is unambiguously a marker, never a legitimate
+// temperature (materials stay within roughly [HEAT_BRUSH_MIN, LAVA_TEMP] =
+// [-50, 1500]) — Empty cells are otherwise always exactly AMBIENT_TEMP (20),
+// since the heat/cool brush explicitly skips Empty (see
+// brushTools.heatCells) and no other code path leaves Empty at a non-ambient
+// temperature. Painting new material over a marked cell always calls
+// `setTemp` itself (see PointerPainter.paint), so reuse clears it instantly
+// regardless of expiry.
+const CRATER_MARK_BASE = -100_000;
+// Comfortably longer than a single blast's full resolution (radius-bounded,
+// well under a second even for Nitro's largest radius) but short enough that
+// the same spot isn't artificially blast-resistant for long.
+const CRATER_PROTECT_TICKS = 120;
+
+/** True if `temp` is a still-active crater marker as of `tick` (see above). */
+function isActiveCrater(temp: number, tick: number): boolean {
+  if (temp > CRATER_MARK_BASE) return false; // not a marker — ordinary air
+  const markedTick = CRATER_MARK_BASE - temp;
+  return tick - markedTick < CRATER_PROTECT_TICKS;
+}
 
 function updateBlast(x: number, y: number, sim: SimContext): void {
   const life = sim.getTemp(x, y);
@@ -49,10 +72,10 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
       if (!sim.inBounds(nx, ny)) continue; // edge (or void border): nothing to hit
       const nid = sim.get(nx, ny);
       // Don't re-energize a cell already mid-blast, or one this same wave just
-      // spent (Fire ember / cratered Empty) — see CRATER_TEMP above.
+      // spent (Fire ember / cratered Empty) — see the crater marker above.
       if (nid === BLAST.id || nid === FIRE.id) continue;
       if (nid === EMPTY) {
-        if (sim.getTemp(nx, ny) === CRATER_TEMP) continue;
+        if (isActiveCrater(sim.getTemp(nx, ny), sim.tick)) continue;
       } else {
         const m = getMaterial(nid);
         // Only the indestructible boundary Wall blocks the wave outright.
@@ -72,7 +95,7 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
     sim.spawn(x, y, FIRE.id);
   } else {
     sim.set(x, y, EMPTY);
-    sim.setTemp(x, y, CRATER_TEMP);
+    sim.setTemp(x, y, CRATER_MARK_BASE - sim.tick);
   }
 }
 
