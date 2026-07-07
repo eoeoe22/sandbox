@@ -63,7 +63,10 @@ const BLAST_FIRE_CHANCE = 0.35; // a spent shard leaves a scattered flame…
 // just carving a hole and stopping. Shards that die early (blocked by a Wall
 // or an unbroken obstacle face) don't spark — an explosion in a sealed cavity
 // stays contained, which is also why this can't leak embers through walls.
-const RIM_EMBER_CHANCE = 0.6;
+// Each launch may also fire a *twin* from the adjacent cell at ±45°, roughly
+// doubling the debris density into an irregular cone per rim shard.
+const RIM_EMBER_CHANCE = 0.9;
+const TWIN_EMBER_CHANCE = 0.5;
 
 // How often a traveling shard deflects to an adjacent (45°) direction instead
 // of continuing straight — mirrors the rising-gas wobble in engine/behaviors.ts
@@ -227,6 +230,17 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
     // cell it vacates next tick resets to plain air).
     const [dx, dy] = ANGLE_DIRS[dir];
     launchEmber(sim, x, y, dx, dy);
+    if (sim.chance(TWIN_EMBER_CHANCE)) {
+      // Twin spray: a second ember departs from the neighboring cell at ±45°,
+      // flying along that rotated direction — a cone, not a doubled-up ray.
+      // Only into open air (never overwrite material), and spawn-marked via
+      // launchEmber so the neighbor can't be reprocessed this tick.
+      const tdir = (dir + (sim.chance(0.5) ? 1 : 7)) % 8;
+      const [tdx, tdy] = ANGLE_DIRS[tdir];
+      const tx = x + tdx;
+      const ty = y + tdy;
+      if (sim.inBounds(tx, ty) && sim.isEmpty(tx, ty)) launchEmber(sim, tx, ty, tdx, tdy);
+    }
     return;
   }
   // Spent: collapse into a flame, or clear out and mark the crater so later
