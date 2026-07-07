@@ -9,3 +9,8 @@ compatibility_date = "2026-07-07"
 directory = "./dist"
 # Astro builds src/pages/404.astro -> dist/404.html for unmatched paths.
 not_found_handling = "404-page"
+
+# Required for PR preview URLs (<branch>-sandbox.<account>.workers.dev).
+# Also enable "Builds for non-production branches" in the dashboard:
+# Settings > Build > Branch control.
+preview_urls = true
