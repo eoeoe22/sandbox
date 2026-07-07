@@ -34,6 +34,28 @@ export interface Material {
   acidResistant?: boolean;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
+  /**
+   * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
+   * Pure self-data — no cross-material references — so it never affects the
+   * material load order. Temperature-driven *reactions* (Lava freezing to
+   * Stone, Water boiling to Steam) live in each material's own `update`, read
+   * off `SimContext.getTemp`, matching how every other reaction is expressed.
+   * Omit entirely for an inert material: it sits at ambient and conducts at the
+   * default rate.
+   */
+  thermal?: {
+    /** Temperature a freshly placed/spawned cell of this material starts at. Default `AMBIENT_TEMP`. */
+    init?: number;
+    /** How readily heat flows through this material, 0..1. 0 = perfect insulator (air/Empty). Default `DEFAULT_CONDUCTIVITY`. */
+    conductivity?: number;
+  };
+  /**
+   * Optional temperature → color ramp for the renderer. The cell is drawn
+   * interpolated from `cool` (at temperature `min`) up to the material's base
+   * `color` (at `max` and above), so a hot material like Lava visibly darkens
+   * as it cools toward setting — making the conduction gradient legible.
+   */
+  glow?: { min: number; max: number; cool: number };
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }

@@ -35,5 +35,6 @@ export const SEED = register({
   color: rgb(120, 90, 60),
   density: 4,
   flammable: true,
+  thermal: { conductivity: 0.3 },
   update: updateSeed,
 });

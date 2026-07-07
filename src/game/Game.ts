@@ -61,7 +61,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // gesture: overshooting inward and back out restores content instead of
   // cropping it away.
   let pendingSize: { w: number; h: number } | null = null;
-  let dragSnapshot: { cells: Uint8Array; w: number; h: number } | null = null;
+  let dragSnapshot: { cells: Uint8Array; temp: Float32Array; w: number; h: number } | null = null;
 
   const resize = (): void => {
     const dpr = window.devicePixelRatio || 1;
@@ -77,7 +77,12 @@ export function startGame(canvas: HTMLCanvasElement): void {
 
   // Drag the corner handle to resize the sandbox; double-click / button resets.
   resizer.onResizeStart = (): void => {
-    dragSnapshot = { cells: grid.cells.slice(), w: grid.width, h: grid.height };
+    dragSnapshot = {
+      cells: grid.cells.slice(),
+      temp: grid.temp.slice(),
+      w: grid.width,
+      h: grid.height,
+    };
   };
   resizer.onResize = (w, h): void => {
     pendingSize = { w, h }; // applied in the frame loop (coalesced)
@@ -119,7 +124,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
       layout.setSize(pendingSize.w, pendingSize.h);
       pendingSize = null;
       if (dragSnapshot) {
-        grid.resizeFrom(layout.gw, layout.gh, dragSnapshot.cells, dragSnapshot.w, dragSnapshot.h);
+        grid.resizeFrom(
+          layout.gw,
+          layout.gh,
+          dragSnapshot.cells,
+          dragSnapshot.w,
+          dragSnapshot.h,
+          dragSnapshot.temp,
+        );
       } else {
         grid.resize(layout.gw, layout.gh);
       }

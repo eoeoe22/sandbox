@@ -33,5 +33,6 @@ export const SALT = register({
   phase: Phase.Powder,
   color: rgb(235, 235, 228),
   density: 4,
+  thermal: { conductivity: 0.35 },
   update: updateSalt,
 });

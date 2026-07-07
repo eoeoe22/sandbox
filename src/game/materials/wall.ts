@@ -12,4 +12,6 @@ export const WALL = register({
   density: 1000,
   acidResistant: true,
   isWall: true,
+  // Mildly insulating, so a walled container holds its heat reasonably well.
+  thermal: { conductivity: 0.35 },
 });

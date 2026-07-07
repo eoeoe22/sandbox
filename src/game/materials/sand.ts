@@ -10,4 +10,5 @@ export const SAND = register({
   phase: Phase.Powder,
   color: rgb(232, 201, 107),
   density: 5,
+  thermal: { conductivity: 0.35 },
 });

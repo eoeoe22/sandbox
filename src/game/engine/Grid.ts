@@ -1,4 +1,5 @@
 import { EMPTY } from './types';
+import { AMBIENT_TEMP } from '../config';
 
 /**
  * The simulation grid. State is held in flat TypedArrays indexed by
@@ -19,9 +20,17 @@ export class Grid {
   /** Per-tick "already moved" guard so a cell isn't processed twice in one step. */
   moved: Uint8Array;
 
-  // Reserved for future material properties (temperature, life, velocity, ...).
-  // Declared here to document the extension point; not allocated until used.
-  // temp: Uint8Array;
+  /**
+   * Per-cell temperature for the heat-conduction system (see config.ts). Floats
+   * because the diffusion pass exchanges fractional amounts of heat each tick.
+   * Starts uniformly at `AMBIENT_TEMP`. `tempScratch` is the double-buffer the
+   * diffusion pass computes the next state into before swapping (so every cell
+   * updates from the same snapshot, order-independently).
+   */
+  temp: Float32Array;
+  tempScratch: Float32Array;
+
+  // Still reserved for future per-cell fields (life countdown, velocity, ...).
   // life: Uint8Array;
 
   constructor(width: number, height: number) {
@@ -30,6 +39,8 @@ export class Grid {
     this.size = width * height;
     this.cells = new Uint8Array(this.size); // initialized to EMPTY (0)
     this.moved = new Uint8Array(this.size);
+    this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
+    this.tempScratch = new Float32Array(this.size);
   }
 
   idx(x: number, y: number): number {
@@ -48,8 +59,17 @@ export class Grid {
     this.cells[y * this.width + x] = id;
   }
 
+  getTemp(x: number, y: number): number {
+    return this.temp[y * this.width + x];
+  }
+
+  setTemp(x: number, y: number, t: number): void {
+    this.temp[y * this.width + x] = t;
+  }
+
   clear(): void {
     this.cells.fill(EMPTY);
+    this.temp.fill(AMBIENT_TEMP);
   }
 
   /**
@@ -58,7 +78,7 @@ export class Grid {
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
-    this.resizeFrom(width, height, this.cells, this.width, this.height);
+    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp);
   }
 
   /**
@@ -78,8 +98,13 @@ export class Grid {
     srcCells: Uint8Array,
     srcW: number,
     srcH: number,
+    srcTemp?: Float32Array,
   ): void {
     const next = new Uint8Array(width * height);
+    // Temperature must follow the cells it belongs to — otherwise preserved
+    // material would snap back to ambient on a resize (e.g. molten lava would
+    // read as cold and instantly solidify). New area starts at ambient.
+    const nextTemp = new Float32Array(width * height).fill(AMBIENT_TEMP);
     const copyW = Math.min(width, srcW);
     const copyRows = Math.min(height, srcH);
     for (let r = 0; r < copyRows; r++) {
@@ -87,6 +112,7 @@ export class Grid {
       const newY = height - 1 - r;
       const src = srcY * srcW;
       next.set(srcCells.subarray(src, src + copyW), newY * width);
+      if (srcTemp) nextTemp.set(srcTemp.subarray(src, src + copyW), newY * width);
     }
 
     this.width = width;
@@ -94,5 +120,7 @@ export class Grid {
     this.size = width * height;
     this.cells = next;
     this.moved = new Uint8Array(this.size);
+    this.temp = nextTemp;
+    this.tempScratch = new Float32Array(this.size);
   }
 }

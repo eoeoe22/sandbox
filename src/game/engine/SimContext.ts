@@ -1,6 +1,7 @@
 import type { Grid } from './Grid';
 import { EMPTY, Phase } from './types';
 import { getMaterial } from '../materials/registry';
+import { AMBIENT_TEMP } from '../config';
 
 /**
  * The narrow surface that material `update` functions operate through. It hides
@@ -21,6 +22,22 @@ export class SimContext {
 
   set(x: number, y: number, id: number): void {
     this.grid.set(x, y, id);
+    // Erasing/emptying a cell resets it to ambient so no stale heat lingers in
+    // air (which conducts nothing and would otherwise be carried around by a
+    // later swap). In-place transforms to a *non-empty* material deliberately
+    // keep the cell's temperature — that's what lets a just-frozen Stone crust
+    // stay cool and a just-boiled Steam cell stay hot.
+    if (id === EMPTY) this.grid.setTemp(x, y, AMBIENT_TEMP);
+  }
+
+  /** Current temperature at a cell. Material `update` rules read this to drive
+   *  temperature-based phase changes (Lava→Stone freeze, Water→Steam boil). */
+  getTemp(x: number, y: number): number {
+    return this.grid.getTemp(x, y);
+  }
+
+  setTemp(x: number, y: number, t: number): void {
+    this.grid.setTemp(x, y, t);
   }
 
   /** Like set(), but also marks the cell moved. Use this for any write to a
@@ -32,7 +49,11 @@ export class SimContext {
    * future caller isn't guaranteed to have checked first. */
   spawn(x: number, y: number, id: number): void {
     if (!this.inBounds(x, y)) return;
-    this.set(x, y, id);
+    this.grid.set(x, y, id);
+    // A spawned cell is newly created material, so it starts at that material's
+    // own initial temperature (hot for Fire/Steam, ambient for the rest) —
+    // mirroring how the brush places fresh material.
+    this.grid.setTemp(x, y, getMaterial(id).thermal?.init ?? AMBIENT_TEMP);
     this.grid.moved[this.grid.idx(x, y)] = 1;
   }
 
@@ -47,7 +68,9 @@ export class SimContext {
     return Math.random() < p;
   }
 
-  /** Swap two cells and mark both as moved this tick. */
+  /** Swap two cells and mark both as moved this tick. Temperature travels with
+   *  the material, so a moving cell carries its heat (a falling drop of cold
+   *  water stays cold, molten lava that flows stays hot). */
   swap(x1: number, y1: number, x2: number, y2: number): void {
     const g = this.grid;
     const a = g.idx(x1, y1);
@@ -55,6 +78,9 @@ export class SimContext {
     const t = g.cells[a];
     g.cells[a] = g.cells[b];
     g.cells[b] = t;
+    const ta = g.temp[a];
+    g.temp[a] = g.temp[b];
+    g.temp[b] = ta;
     g.moved[a] = 1;
     g.moved[b] = 1;
   }

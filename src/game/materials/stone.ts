@@ -11,4 +11,7 @@ export const STONE = register({
   phase: Phase.Solid,
   color: rgb(150, 140, 128),
   density: 1000,
+  // Conducts heat well enough that the crust which forms between water and lava
+  // keeps passing heat through instead of insulating the molten lava beneath.
+  thermal: { conductivity: 0.5 },
 });

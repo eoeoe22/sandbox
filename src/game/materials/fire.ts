@@ -60,5 +60,7 @@ export const FIRE = register({
   phase: Phase.Gas,
   color: rgb(255, 120, 40),
   density: 1,
+  // Burns hot, so it heats what it touches; conducts poorly like other gases.
+  thermal: { init: 1000, conductivity: 0.1 },
   update: updateFire,
 });

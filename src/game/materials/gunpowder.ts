@@ -44,5 +44,6 @@ export const GUNPOWDER = register({
   phase: Phase.Powder,
   color: rgb(60, 60, 65),
   density: 5,
+  thermal: { conductivity: 0.3 },
   update: updateGunpowder,
 });

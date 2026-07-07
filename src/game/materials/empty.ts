@@ -10,4 +10,8 @@ export const EMPTY_MAT = register({
   phase: Phase.Empty,
   color: rgb(16, 16, 22),
   density: 0,
+  // Air conducts no heat here (direct conduction only, no convection): this is
+  // what keeps an isolated hot blob from bleeding heat into empty space, so
+  // lava with nothing cold touching it never spontaneously solidifies.
+  thermal: { conductivity: 0 },
 });

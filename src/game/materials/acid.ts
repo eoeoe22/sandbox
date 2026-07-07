@@ -57,5 +57,6 @@ export const ACID = register({
   phase: Phase.Liquid,
   color: rgb(150, 225, 70),
   density: 4,
+  thermal: { conductivity: 0.5 },
   update: updateAcid,
 });
