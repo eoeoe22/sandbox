@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
+import { AMBIENT_TEMP } from '../config';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
@@ -48,6 +49,9 @@ function updateFire(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.chance(BURNOUT_CHANCE)) {
+    // Burning out means the heat is spent, so the Smoke starts at ambient
+    // rather than inheriting Fire's temperature (mirrors Steam condensing).
+    sim.setTemp(x, y, AMBIENT_TEMP);
     sim.set(x, y, SMOKE.id);
     return;
   }
