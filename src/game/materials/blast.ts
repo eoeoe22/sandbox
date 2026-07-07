@@ -3,6 +3,7 @@ import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
+import { launchEmber } from './ember';
 
 // The explosion *shockwave* — what makes a detonation different from just
 // lighting fuel on fire. Unlike Fire (a gas that only drifts upward and ignites
@@ -54,6 +55,18 @@ export function seedBlast(life: number): number {
 
 const BLAST_FIRE_CHANCE = 0.35; // a spent shard leaves a scattered flame…
 // …otherwise it clears to Empty, so the net result is a crater dusted with fire.
+
+// A shard that spends its *full* travel distance dies at the crater rim — the
+// natural launch point for glowing ejecta (see ember.ts): fast ballistic
+// sparks that carry the shard's outward direction far beyond the destruction
+// radius, so a detonation visibly throws debris in every direction instead of
+// just carving a hole and stopping. Shards that die early (blocked by a Wall
+// or an unbroken obstacle face) don't spark — an explosion in a sealed cavity
+// stays contained, which is also why this can't leak embers through walls.
+// Each launch may also fire a *twin* from the adjacent cell at ±45°, roughly
+// doubling the debris density into an irregular cone per rim shard.
+const RIM_EMBER_CHANCE = 0.9;
+const TWIN_EMBER_CHANCE = 0.5;
 
 // How often a traveling shard deflects to an adjacent (45°) direction instead
 // of continuing straight — mirrors the rising-gas wobble in engine/behaviors.ts
@@ -210,6 +223,25 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
       const wobbled = sim.chance(WOBBLE_CHANCE) ? (dir + (sim.chance(0.5) ? 1 : 7)) % 8 : dir;
       tryAdvance(sim, x, y, wobbled, life - 1);
     }
+  } else if (dir !== EPICENTER && sim.chance(RIM_EMBER_CHANCE)) {
+    // Fully-traveled shard at the crater rim: instead of collapsing, hurl an
+    // ember onward along the shard's outward direction. The ember replaces
+    // this cell outright (no crater mark here — it's flying away, and the
+    // cell it vacates next tick resets to plain air).
+    const [dx, dy] = ANGLE_DIRS[dir];
+    launchEmber(sim, x, y, dx, dy);
+    if (sim.chance(TWIN_EMBER_CHANCE)) {
+      // Twin spray: a second ember departs from the neighboring cell at ±45°,
+      // flying along that rotated direction — a cone, not a doubled-up ray.
+      // Only into open air (never overwrite material), and spawn-marked via
+      // launchEmber so the neighbor can't be reprocessed this tick.
+      const tdir = (dir + (sim.chance(0.5) ? 1 : 7)) % 8;
+      const [tdx, tdy] = ANGLE_DIRS[tdir];
+      const tx = x + tdx;
+      const ty = y + tdy;
+      if (sim.inBounds(tx, ty) && sim.isEmpty(tx, ty)) launchEmber(sim, tx, ty, tdx, tdy);
+    }
+    return;
   }
   // Spent: collapse into a flame, or clear out and mark the crater so later
   // shards don't bounce back into it.
