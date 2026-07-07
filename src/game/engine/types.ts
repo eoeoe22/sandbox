@@ -28,6 +28,10 @@ export interface Material {
   color: number;
   /** Relative density — heavier materials sink through lighter fluids. */
   density: number;
+  /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
+  flammable?: boolean;
+  /** Acid never corrodes this (see acid.ts). */
+  acidResistant?: boolean;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }

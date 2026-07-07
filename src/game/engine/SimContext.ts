@@ -23,6 +23,19 @@ export class SimContext {
     this.grid.set(x, y, id);
   }
 
+  /** Like set(), but also marks the cell moved. Use this for any write to a
+   * neighbor (non-self) cell that isn't Empty — otherwise a not-yet-scanned
+   * neighbor can be reprocessed again within the same tick (runaway spread /
+   * growth / explosion chains). Writes to the material's own (x,y), and
+   * writes of EMPTY to any cell, are always safe via plain set(). Bounds-
+   * checked (unlike a raw grid write) since, unlike today's call sites, a
+   * future caller isn't guaranteed to have checked first. */
+  spawn(x: number, y: number, id: number): void {
+    if (!this.inBounds(x, y)) return;
+    this.set(x, y, id);
+    this.grid.moved[this.grid.idx(x, y)] = 1;
+  }
+
   isEmpty(x: number, y: number): boolean {
     return this.grid.get(x, y) === EMPTY;
   }
@@ -100,5 +113,59 @@ export class SimContext {
   moveSideways(x: number, y: number): boolean {
     const dir = Math.random() < 0.5 ? -1 : 1;
     return this.tryMove(x, y, x + dir, y) || this.tryMove(x, y, x - dir, y);
+  }
+
+  /** A cell blocks/survives an explosion when it's Solid AND not flammable —
+   * Wall/Stone qualify, but a `flammable`-tagged Solid like Vine shouldn't act
+   * as indestructible blast cover just because it's also immobile. */
+  private isBlastResistant(x: number, y: number): boolean {
+    const id = this.get(x, y);
+    if (id === EMPTY) return false;
+    const m = getMaterial(id);
+    return m.phase === Phase.Solid && !m.flammable;
+  }
+
+  /** Round-half-away-from-zero — unlike Math.round (which rounds -0.5 to -0,
+   * not -1), this is symmetric about 0, which blastBlocked's line walk needs
+   * so that mirror-image rays sample mirror-image cells. */
+  private static roundSym(v: number): number {
+    return v >= 0 ? Math.floor(v + 0.5) : Math.ceil(v - 0.5);
+  }
+
+  /** True if a blast-resistant cell sits between (x0,y0) and (x1,y1)
+   * (exclusive of both endpoints) — a coarse line-of-sight check so an
+   * explosion's blast can be shadowed by a wall instead of just leaving the
+   * wall cell itself untouched. Both endpoints are pre-validated in-bounds by
+   * explode()'s caller, and a straight segment between two in-bounds points
+   * on a rectangular grid stays in-bounds, so no bounds check is needed here. */
+  private blastBlocked(x0: number, y0: number, x1: number, y1: number): boolean {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      const x = SimContext.roundSym(x0 + (x1 - x0) * t);
+      const y = SimContext.roundSym(y0 + (y1 - y0) * t);
+      if (this.isBlastResistant(x, y)) return true;
+    }
+    return false;
+  }
+
+  /** Fill a disc of `radius` cells around (cx,cy) with `id`, via spawn() so
+   * the blast is chain-safe within the tick. Blast-resistant cells (Wall/
+   * Stone) are never overwritten and shadow whatever sits behind them
+   * relative to the center, so a wall can shield part of a blast rather than
+   * just surviving as an untouched island. */
+  explode(cx: number, cy: number, radius: number, id: number): void {
+    const r2 = radius * radius;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        if (this.isBlastResistant(nx, ny)) continue;
+        if (this.blastBlocked(cx, cy, nx, ny)) continue;
+        this.spawn(nx, ny, id);
+      }
+    }
   }
 }
