@@ -78,7 +78,7 @@
       class="fps"
       title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
     >
-      {$fps} FPS{#if $fpsPeak > $fps + 5} · 최대 {$fpsPeak}{/if}
+      {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
     </div>
     <p class="hint">
       캔버스를 드래그해 물질을 그리세요. 우하단 핸들을 드래그하면 샌드박스 크기·화면비를 조절할 수 있어요.

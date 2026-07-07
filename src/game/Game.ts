@@ -39,15 +39,28 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   new PointerPainter(canvas, grid, layout);
-  const resizer = new SandboxResizer();
+  const resizer = new SandboxResizer(canvas);
 
-  // Push the current layout onto the grid, handle, and HUD after any change.
-  const applyLayout = (): void => {
-    grid.resize(layout.gw, layout.gh);
+  // Reflect the layout onto the handle and HUD (cheap; runs after any change).
+  const syncLayoutOutputs = (): void => {
     resizer.setRect(layout.cssRect());
     $aspectMode.set(layout.mode);
     $gridDims.set({ w: layout.gw, h: layout.gh });
   };
+  // Resize the grid from its own contents, then sync (window resize / reset).
+  const applyLayout = (): void => {
+    grid.resize(layout.gw, layout.gh);
+    syncLayoutOutputs();
+  };
+
+  // Drag state. A drag emits a size per pointermove (which can outpace the frame
+  // rate), so the requested size is coalesced and applied once per frame — one
+  // grid rebuild per frame instead of per event. The grid is rebuilt from a
+  // snapshot taken at drag start, so the resize is non-destructive within the
+  // gesture: overshooting inward and back out restores content instead of
+  // cropping it away.
+  let pendingSize: { w: number; h: number } | null = null;
+  let dragSnapshot: { cells: Uint8Array; w: number; h: number } | null = null;
 
   const resize = (): void => {
     const dpr = window.devicePixelRatio || 1;
@@ -61,10 +74,15 @@ export function startGame(canvas: HTMLCanvasElement): void {
   resize();
   window.addEventListener('resize', resize);
 
-  // Drag the corner handle to resize the sandbox; double-click to reset.
+  // Drag the corner handle to resize the sandbox; double-click / button resets.
+  resizer.onResizeStart = (): void => {
+    dragSnapshot = { cells: grid.cells.slice(), w: grid.width, h: grid.height };
+  };
   resizer.onResize = (w, h): void => {
-    layout.setSize(w, h);
-    applyLayout();
+    pendingSize = { w, h }; // applied in the frame loop (coalesced)
+  };
+  resizer.onResizeEnd = (): void => {
+    dragSnapshot = null;
   };
   resizer.onReset = (): void => {
     layout.reset();
@@ -94,6 +112,19 @@ export function startGame(canvas: HTMLCanvasElement): void {
   let fpsPeak = 0;
 
   const frame = (now: number): void => {
+    // Apply a coalesced drag resize (at most once per frame). Rebuild from the
+    // drag-start snapshot so the gesture is non-destructive.
+    if (pendingSize) {
+      layout.setSize(pendingSize.w, pendingSize.h);
+      pendingSize = null;
+      if (dragSnapshot) {
+        grid.resizeFrom(layout.gw, layout.gh, dragSnapshot.cells, dragSnapshot.w, dragSnapshot.h);
+      } else {
+        grid.resize(layout.gw, layout.gh);
+      }
+      syncLayoutOutputs();
+    }
+
     acc += now - last;
     last = now;
 

@@ -34,6 +34,13 @@ function deriveGrid(cssW: number, cssH: number): GridDims {
   }
   gw = Math.max(MIN_GRID_SIDE, gw);
   gh = Math.max(MIN_GRID_SIDE, gh);
+  // Safety: keep the cell budget even at an extreme aspect where the MIN clamp
+  // just raised one side (e.g. a wide, one-cell-tall sliver). Cap the long side
+  // so the product never exceeds MAX_CELLS.
+  if (gw * gh > MAX_CELLS) {
+    if (gw >= gh) gw = Math.max(MIN_GRID_SIDE, Math.floor(MAX_CELLS / gh));
+    else gh = Math.max(MIN_GRID_SIDE, Math.floor(MAX_CELLS / gw));
+  }
   return { gw, gh, cell };
 }
 
@@ -53,7 +60,12 @@ export class SandboxLayout {
   private viewW = 0;
   private viewH = 0;
   mode: AspectMode = 'device';
-  /** Desired sandbox size in CSS px (equals the viewport in device mode). */
+  /**
+   * The user's intended sandbox size in CSS px (equals the viewport in device
+   * mode). This is the *intent*, kept unclamped, so the effective size is
+   * `min(want, viewport)`: a viewport that shrinks and grows back restores the
+   * custom size instead of stranding it at the shrunken value.
+   */
   private wantW = 0;
   private wantH = 0;
 
@@ -70,19 +82,16 @@ export class SandboxLayout {
     if (this.mode === 'device') {
       this.wantW = w;
       this.wantH = h;
-    } else {
-      // Keep a custom sandbox from ever exceeding the screen.
-      this.wantW = clamp(this.wantW, MIN_GRID_SIDE, w);
-      this.wantH = clamp(this.wantH, MIN_GRID_SIDE, h);
     }
+    // Custom intent is left untouched; recompute clamps it to the new viewport.
     this.recompute();
   }
 
   /** Set an explicit sandbox size from the resize handle (switches to custom). */
   setSize(w: number, h: number): void {
     this.mode = 'custom';
-    this.wantW = clamp(w, MIN_GRID_SIDE, this.viewW);
-    this.wantH = clamp(h, MIN_GRID_SIDE, this.viewH);
+    this.wantW = Math.max(MIN_GRID_SIDE, w);
+    this.wantH = Math.max(MIN_GRID_SIDE, h);
     this.recompute();
   }
 
@@ -95,7 +104,10 @@ export class SandboxLayout {
   }
 
   private recompute(): void {
-    const { gw, gh, cell } = deriveGrid(this.wantW, this.wantH);
+    // Effective size never exceeds the viewport, but the intent (wantW/H) does.
+    const effW = clamp(this.wantW, MIN_GRID_SIDE, this.viewW);
+    const effH = clamp(this.wantH, MIN_GRID_SIDE, this.viewH);
+    const { gw, gh, cell } = deriveGrid(effW, effH);
     this.gw = gw;
     this.gh = gh;
     this.cell = cell;

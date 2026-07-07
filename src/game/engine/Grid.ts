@@ -53,26 +53,40 @@ export class Grid {
   }
 
   /**
-   * Resize the grid, preserving the overlapping cells. The kept region is
-   * anchored to the bottom-left: columns from the left, rows from the bottom, so
-   * a pile that had settled on the floor stays on the floor. New area (extra
-   * height above, extra width to the right) starts Empty. No-op if unchanged.
+   * Resize the grid, preserving the overlapping cells from its own contents.
+   * No-op if the dimensions are unchanged.
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
+    this.resizeFrom(width, height, this.cells, this.width, this.height);
+  }
 
-    const oldCells = this.cells;
-    const oldW = this.width;
-    const oldH = this.height;
+  /**
+   * Resize to `width×height`, filling from an arbitrary source grid instead of
+   * the current cells. The kept region is anchored to the bottom-left: columns
+   * from the left, rows from the bottom, so a pile that had settled on the floor
+   * stays on the floor. New area (extra height above, extra width to the right)
+   * starts Empty.
+   *
+   * Sourcing from a snapshot lets an interactive drag be non-destructive: every
+   * intermediate size is rebuilt from the pre-drag grid, so overshooting inward
+   * and back out restores content instead of nibbling it away.
+   */
+  resizeFrom(
+    width: number,
+    height: number,
+    srcCells: Uint8Array,
+    srcW: number,
+    srcH: number,
+  ): void {
     const next = new Uint8Array(width * height);
-
-    const copyW = Math.min(width, oldW);
-    const copyRows = Math.min(height, oldH);
+    const copyW = Math.min(width, srcW);
+    const copyRows = Math.min(height, srcH);
     for (let r = 0; r < copyRows; r++) {
-      const oldY = oldH - 1 - r;
+      const srcY = srcH - 1 - r;
       const newY = height - 1 - r;
-      const src = oldY * oldW;
-      next.set(oldCells.subarray(src, src + copyW), newY * width);
+      const src = srcY * srcW;
+      next.set(srcCells.subarray(src, src + copyW), newY * width);
     }
 
     this.width = width;
