@@ -32,5 +32,9 @@ export const GRID_H = 135;
 /** Fixed simulation update rate (Hz). Rendering runs at display refresh rate. */
 export const TICK_HZ = 60;
 
+/** Brush radius bounds, in cells (shared by the store, painter, and UI slider/wheel). */
+export const BRUSH_MIN = 0;
+export const BRUSH_MAX = 12;
+
 /** Max simulation steps per animation frame (prevents spiral-of-death after a stall). */
 export const MAX_STEPS_PER_FRAME = 5;

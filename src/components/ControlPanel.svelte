@@ -2,6 +2,7 @@
   import {
     $running as running,
     $brushSize as brushSize,
+    $brushShape as brushShape,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $aspectMode as aspectMode,
@@ -10,6 +11,7 @@
     requestStep,
     requestResetAspect,
   } from '../state/store';
+  import { BRUSH_MIN, BRUSH_MAX } from '../game/config';
   import MaterialPalette from './MaterialPalette.svelte';
 
   // Collapsed state is local UI — the engine doesn't care about it.
@@ -50,15 +52,34 @@
     </div>
 
     <label class="brush">
-      <span>브러시 크기: {$brushSize}</span>
+      <span>브러시 크기: {$brushSize} (휠로 조절)</span>
       <input
         type="range"
-        min="0"
-        max="12"
+        min={BRUSH_MIN}
+        max={BRUSH_MAX}
         value={$brushSize}
         oninput={(e) => brushSize.set(+e.currentTarget.value)}
       />
     </label>
+
+    <div class="row shape" role="group" aria-label="브러시 모양">
+      <button
+        class:active={$brushShape === 'circle'}
+        onclick={() => brushShape.set('circle')}
+        aria-pressed={$brushShape === 'circle'}
+        title="원형 브러시"
+      >
+        ● 원형
+      </button>
+      <button
+        class:active={$brushShape === 'square'}
+        onclick={() => brushShape.set('square')}
+        aria-pressed={$brushShape === 'square'}
+        title="사각형 브러시"
+      >
+        ■ 사각형
+      </button>
+    </div>
 
     <MaterialPalette />
 
@@ -173,6 +194,10 @@
   .row button:disabled {
     opacity: 0.45;
     cursor: default;
+  }
+  .row.shape button.active {
+    border-color: #6ea8fe;
+    background: #23324a;
   }
   .brush {
     display: flex;

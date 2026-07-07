@@ -26,7 +26,24 @@ body {
   display: block;
   background: #101014;
   touch-action: none;
+  /* Fallback for the moment before a pointerenter/pointermove has fired (e.g.
+     the mouse is already resting over the canvas on page load, so the custom
+     .brush-cursor overlay hasn't appeared yet). PointerPainter swaps this to
+     'none' once the overlay is actually visible, so there's never a gap with
+     no cursor shown at all. */
   cursor: crosshair;
+}
+
+/* Brush-size cursor outline (see PointerPainter). Follows the pointer while it
+   hovers the canvas, sized and shaped to match the active brush so the user
+   can see exactly what a stamp will cover before painting. */
+.brush-cursor {
+  position: fixed;
+  z-index: 9;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(232, 232, 238, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 
 /* Draggable handle at the sandbox's bottom-right corner (see SandboxResizer).

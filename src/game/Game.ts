@@ -38,12 +38,13 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const grid = new Grid(layout.gw, layout.gh);
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
-  new PointerPainter(canvas, grid, layout);
+  const painter = new PointerPainter(canvas, grid, layout);
   const resizer = new SandboxResizer(canvas);
 
   // Reflect the layout onto the handle and HUD (cheap; runs after any change).
   const syncLayoutOutputs = (): void => {
     resizer.setRect(layout.cssRect());
+    painter.refreshCursor();
     $aspectMode.set(layout.mode);
     $gridDims.set({ w: layout.gw, h: layout.gh });
   };
@@ -124,6 +125,10 @@ export function startGame(canvas: HTMLCanvasElement): void {
       }
       syncLayoutOutputs();
     }
+
+    // Re-stamp the held brush every frame so a stationary press keeps painting
+    // (pointermove stops firing once the pointer stops moving).
+    painter.update();
 
     acc += now - last;
     last = now;
