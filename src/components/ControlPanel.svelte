@@ -3,6 +3,8 @@
     $running as running,
     $brushSize as brushSize,
     $brushShape as brushShape,
+    $brushMode as brushMode,
+    $overwriteLevel as overwriteLevel,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $aspectMode as aspectMode,
@@ -11,7 +13,13 @@
     requestStep,
     requestResetAspect,
   } from '../state/store';
-  import { BRUSH_MIN, BRUSH_MAX } from '../game/config';
+  import {
+    BRUSH_MIN,
+    BRUSH_MAX,
+    OVERWRITE_LEVELS,
+    OVERWRITE_LEVEL_MIN,
+    OVERWRITE_LEVEL_MAX,
+  } from '../game/config';
   import MaterialPalette from './MaterialPalette.svelte';
 
   // Collapsed state is local UI — the engine doesn't care about it.
@@ -80,6 +88,42 @@
         ■ 사각형
       </button>
     </div>
+
+    <div class="row shape" role="group" aria-label="브러시 채우기 방식">
+      <button
+        class:active={$brushMode === 'full'}
+        onclick={() => brushMode.set('full')}
+        aria-pressed={$brushMode === 'full'}
+        title="브러시 영역을 빈틈없이 채웁니다"
+      >
+        ▣ Full
+      </button>
+      <button
+        class:active={$brushMode === 'particle'}
+        onclick={() => brushMode.set('particle')}
+        aria-pressed={$brushMode === 'particle'}
+        title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
+      >
+        ▦ Particle
+      </button>
+    </div>
+
+    <label class="brush">
+      <span>덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
+      <input
+        type="range"
+        min={OVERWRITE_LEVEL_MIN}
+        max={OVERWRITE_LEVEL_MAX}
+        step="1"
+        value={$overwriteLevel}
+        oninput={(e) => overwriteLevel.set(+e.currentTarget.value)}
+      />
+      <div class="overwrite-steps" aria-hidden="true">
+        {#each OVERWRITE_LEVELS as _, i}
+          <span class="step" class:filled={i <= $overwriteLevel}></span>
+        {/each}
+      </div>
+    </label>
 
     <MaterialPalette />
 
@@ -206,6 +250,19 @@
   }
   .brush input {
     width: 100%;
+  }
+  .overwrite-steps {
+    display: flex;
+    gap: 3px;
+  }
+  .overwrite-steps .step {
+    flex: 1 1 0;
+    height: 4px;
+    border-radius: 2px;
+    background: #2a2a33;
+  }
+  .overwrite-steps .step.filled {
+    background: #6ea8fe;
   }
   .aspect {
     display: flex;

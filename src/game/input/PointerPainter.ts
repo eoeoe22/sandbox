@@ -1,8 +1,39 @@
 import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
-import { $selectedMaterial, $brushSize, $brushShape } from '../../state/store';
-import { BRUSH_MIN, BRUSH_MAX } from '../config';
+import {
+  $selectedMaterial,
+  $brushSize,
+  $brushShape,
+  $brushMode,
+  $overwriteLevel,
+} from '../../state/store';
+import { BRUSH_MIN, BRUSH_MAX, PARTICLE_FILL_RATE } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
+import { getMaterial } from '../materials';
+import { Phase } from '../engine/types';
+
+/**
+ * Ordering of phases from "easiest to overwrite" to "hardest", used by the
+ * brush overwrite gate. Wall is a tag on top of Phase.Solid rather than its
+ * own phase, so it's checked separately and always sits at the top.
+ */
+const OVERWRITE_PHASE_ORDER = [Phase.Gas, Phase.Liquid, Phase.Powder, Phase.Solid];
+
+/**
+ * Whether the brush may paint over whatever currently occupies (x, y), given
+ * the current overwrite level. Empty cells are always paintable. Level 0
+ * means "never overwrite anything non-empty"; each level above that allows
+ * one more phase, in `OVERWRITE_PHASE_ORDER`, with Wall gated behind the max
+ * level regardless of its (Solid) phase.
+ */
+function canOverwrite(existingId: number, level: number): boolean {
+  if (existingId === 0) return true;
+  const existing = getMaterial(existingId);
+  if (existing.isWall) return level >= OVERWRITE_PHASE_ORDER.length;
+  const rank = OVERWRITE_PHASE_ORDER.indexOf(existing.phase);
+  if (rank === -1) return true; // Empty-phase materials, if any: always paintable
+  return level >= rank + 1;
+}
 
 /**
  * Translates pointer (mouse/touch/pen) input into grid painting. Reads the
@@ -66,13 +97,24 @@ export class PointerPainter {
     const id = $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
+    const level = $overwriteLevel.get();
+    // The overwrite gate is about new material displacing existing particles;
+    // the eraser (Empty) always erases regardless of the setting.
+    const isEraser = id === 0;
+    // Solid materials always paint Full — a sparse pile of solid grains
+    // reads as a bug, not a feature, so Particle mode only applies to
+    // non-solid materials (sand, water, gases, ...).
+    const particle = $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
     const r2 = rad * rad;
     for (let dy = -rad; dy <= rad; dy++) {
       for (let dx = -rad; dx <= rad; dx++) {
         if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
+        if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
         const x = cx + dx;
         const y = cy + dy;
-        if (this.grid.inBounds(x, y)) this.grid.set(x, y, id);
+        if (!this.grid.inBounds(x, y)) continue;
+        if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
+        this.grid.set(x, y, id);
       }
     }
   }

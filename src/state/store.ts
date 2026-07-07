@@ -1,6 +1,6 @@
 import { atom } from 'nanostores';
 import { SAND } from '../game/materials';
-import { GRID_W, GRID_H } from '../game/config';
+import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX } from '../game/config';
 import type { AspectMode } from '../game/layout';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
@@ -19,6 +19,22 @@ export const $brushSize = atom<number>(3);
 /** Brush stamp shape. */
 export type BrushShape = 'circle' | 'square';
 export const $brushShape = atom<BrushShape>('circle');
+
+/**
+ * Brush fill mode. 'full' fills every eligible cell in the brush area;
+ * 'particle' randomly leaves gaps. Solid materials always paint as 'full'
+ * regardless of this setting (see PointerPainter.stamp).
+ */
+export type BrushMode = 'full' | 'particle';
+export const $brushMode = atom<BrushMode>('full');
+
+/**
+ * How aggressively the brush overwrites existing (non-Empty) particles, as a
+ * step from 0 (never overwrite) to `OVERWRITE_LEVEL_MAX` (overwrite anything,
+ * including Wall). Each step also allows every phase the previous steps
+ * allow — see `OVERWRITE_LEVELS` in config.ts for the level labels.
+ */
+export const $overwriteLevel = atom<number>(OVERWRITE_LEVEL_MAX);
 
 /** Whether the simulation is advancing. */
 export const $running = atom<boolean>(true);

@@ -11,4 +11,5 @@ export const WALL = register({
   color: rgb(120, 124, 130),
   density: 1000,
   acidResistant: true,
+  isWall: true,
 });

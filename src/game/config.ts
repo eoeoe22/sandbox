@@ -38,3 +38,22 @@ export const BRUSH_MAX = 12;
 
 /** Max simulation steps per animation frame (prevents spiral-of-death after a stall). */
 export const MAX_STEPS_PER_FRAME = 5;
+
+/** In Particle brush mode, fraction of non-solid cells within the brush area that get filled. */
+export const PARTICLE_FILL_RATE = 0.55;
+
+/**
+ * Progressive brush overwrite levels, from most conservative to most permissive.
+ * Each level also allows everything the previous levels allow (Empty cells are
+ * always paintable regardless of level).
+ */
+export const OVERWRITE_LEVELS = [
+  '덮어쓰기 없음',
+  '기체만',
+  '기체+액체',
+  '기체+가루+액체',
+  '기체+가루+액체+고체',
+  '전체 (Wall 포함)',
+] as const;
+export const OVERWRITE_LEVEL_MIN = 0;
+export const OVERWRITE_LEVEL_MAX = OVERWRITE_LEVELS.length - 1;
