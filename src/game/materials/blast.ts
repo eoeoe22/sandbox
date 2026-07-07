@@ -36,8 +36,9 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
       if (nid === BLAST.id) continue; // don't re-energize a cell already blasting
       if (nid !== EMPTY) {
         const m = getMaterial(nid);
-        // Walls/Stone (immobile, non-flammable solids) block the wave entirely.
-        if (m.phase === Phase.Solid && !m.flammable) continue;
+        // Only the indestructible boundary Wall blocks the wave outright.
+        // Every other solid — Stone included — gets destroyed like anything else.
+        if (m.isWall) continue;
         // Explosives are passed over so they can chain-detonate on their own turn.
         if (m.explosive) continue;
       }
