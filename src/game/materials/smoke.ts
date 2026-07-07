@@ -10,7 +10,7 @@ import type { SimContext } from '../engine/SimContext';
 const DECAY_CHANCE = 0.006;
 
 function updateSmoke(x: number, y: number, sim: SimContext): void {
-  if (Math.random() < DECAY_CHANCE) {
+  if (sim.chance(DECAY_CHANCE)) {
     sim.set(x, y, EMPTY);
     return;
   }

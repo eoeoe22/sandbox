@@ -27,6 +27,13 @@ export class SimContext {
     return this.grid.get(x, y) === EMPTY;
   }
 
+  /** True with probability `p` (0-1). Routes material randomness through the
+   * same seam as movement, so a future deterministic/worker RNG swap only
+   * touches this file. */
+  chance(p: number): boolean {
+    return Math.random() < p;
+  }
+
   /** Swap two cells and mark both as moved this tick. */
   swap(x1: number, y1: number, x2: number, y2: number): void {
     const g = this.grid;
@@ -47,8 +54,11 @@ export class SimContext {
   }
 
   /**
-   * Try to move the cell at (x,y) into (tx,ty). Moves into empty space, or sinks
-   * through a lighter fluid/gas (density swap). Returns true if it moved.
+   * Try to move the cell at (x,y) into (tx,ty). Moves into empty space, or
+   * displaces a fluid/gas cell when doing so sorts the pair by density: a
+   * denser cell sinks through a lighter one below it (ty > y), and a lighter
+   * cell rises through a denser one above it (ty < y) — e.g. gas bubbling up
+   * through a liquid. Returns true if it moved.
    */
   tryMove(x: number, y: number, tx: number, ty: number): boolean {
     if (!this.inBounds(tx, ty)) return false;
@@ -60,7 +70,8 @@ export class SimContext {
     if (this.isDisplaceable(targetId)) {
       const src = getMaterial(this.get(x, y));
       const tgt = getMaterial(targetId);
-      if (src.density > tgt.density) {
+      const displaces = ty < y ? src.density < tgt.density : src.density > tgt.density;
+      if (displaces) {
         this.swap(x, y, tx, ty);
         return true;
       }
