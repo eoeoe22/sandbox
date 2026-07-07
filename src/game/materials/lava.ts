@@ -1,5 +1,5 @@
 import { register, getMaterial } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
@@ -39,7 +39,6 @@ function updateLava(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === EMPTY) continue;
     if (getMaterial(nid).flammable && sim.chance(IGNITE_CHANCE)) {
       sim.spawn(nx, ny, FIRE.id);
     }
