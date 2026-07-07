@@ -19,6 +19,7 @@ import { ACID_VAPOR } from './acidvapor';
 import { GUNPOWDER } from './gunpowder';
 import { NITRO } from './nitro';
 import { BLAST } from './blast';
+import { EMBER } from './ember';
 import { SEED } from './seed';
 import { VINE } from './vine';
 
@@ -39,11 +40,14 @@ export {
   GUNPOWDER,
   NITRO,
   BLAST,
+  EMBER,
   SEED,
   VINE,
 };
 
-/** Palette order (also drives the toolbar). */
+/** Palette order (also drives the toolbar). EMBER is deliberately absent:
+ *  it's blast ejecta that only an explosion launches with a real velocity
+ *  (see ember.ts) — painted by brush it would just die on its first turn. */
 export const MATERIALS = [
   EMPTY_MAT,
   WALL,

@@ -85,6 +85,13 @@ export class SimContext {
     return Math.random() < p;
   }
 
+  /** Uniform integer in [0, n). Same seam rationale as chance() — materials
+   * that need a random magnitude (e.g. an ember's launch speed) draw it here
+   * instead of reaching for Math.random themselves. */
+  randInt(n: number): number {
+    return Math.floor(Math.random() * n);
+  }
+
   /** Swap two cells and mark both as moved this tick. Temperature travels with
    *  the material, so a moving cell carries its heat (a falling drop of cold
    *  water stays cold, molten lava that flows stays hot). */
