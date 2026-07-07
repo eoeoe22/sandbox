@@ -1,12 +1,16 @@
 import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
 import { getMaterial } from '../materials/registry';
+import { fitGridRect } from './viewport';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
  * ImageData at grid resolution, then scales it up to the visible canvas with
- * smoothing off (crisp pixels). Fast enough for a wide range of grid sizes and
- * swappable for a WebGL renderer via the Renderer interface.
+ * smoothing off (crisp pixels). The grid is letterboxed (fit at a uniform
+ * scale, centered) rather than stretched, so cells stay square on any viewport
+ * shape — otherwise a circular brush would read as an ellipse on non-16:9
+ * screens. Fast enough for a wide range of grid sizes and swappable for a
+ * WebGL renderer via the Renderer interface.
  */
 export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -51,8 +55,16 @@ export class CanvasRenderer implements Renderer {
       buf[i] = pal[cells[i]];
     }
     this.offCtx.putImageData(this.image, 0, 0);
+
+    // Letterbox: fit the grid at a uniform scale so cells stay square. The
+    // margins are cleared to transparent, revealing the canvas's CSS
+    // background.
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const rect = fitGridRect(cw, ch, grid.width, grid.height);
+    this.ctx.clearRect(0, 0, cw, ch);
     this.ctx.imageSmoothingEnabled = false;
-    this.ctx.drawImage(this.off, 0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this.off, rect.x, rect.y, rect.width, rect.height);
   }
 
   resize(width: number, height: number): void {

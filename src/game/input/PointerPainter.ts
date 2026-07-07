@@ -1,5 +1,6 @@
 import type { Grid } from '../engine/Grid';
 import { $selectedMaterial, $brushSize } from '../../state/store';
+import { fitGridRect } from '../render/viewport';
 
 /**
  * Translates pointer (mouse/touch/pen) input into grid painting. Reads the
@@ -24,8 +25,13 @@ export class PointerPainter {
 
   private toCell(e: PointerEvent): [number, number] {
     const r = this.canvas.getBoundingClientRect();
-    const gx = Math.floor(((e.clientX - r.left) / r.width) * this.grid.width);
-    const gy = Math.floor(((e.clientY - r.top) / r.height) * this.grid.height);
+    // Match the renderer's letterbox so pointer coords land on the right cell.
+    // Taps in the letterbox margin map out of bounds and get filtered by stamp.
+    const rect = fitGridRect(r.width, r.height, this.grid.width, this.grid.height);
+    const localX = e.clientX - r.left - rect.x;
+    const localY = e.clientY - r.top - rect.y;
+    const gx = Math.floor((localX / rect.width) * this.grid.width);
+    const gy = Math.floor((localY / rect.height) * this.grid.height);
     return [gx, gy];
   }
 
