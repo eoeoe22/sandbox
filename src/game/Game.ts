@@ -44,6 +44,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // Reflect the layout onto the handle and HUD (cheap; runs after any change).
   const syncLayoutOutputs = (): void => {
     resizer.setRect(layout.cssRect());
+    painter.refreshCursor();
     $aspectMode.set(layout.mode);
     $gridDims.set({ w: layout.gw, h: layout.gh });
   };

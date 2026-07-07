@@ -26,8 +26,12 @@ body {
   display: block;
   background: #101014;
   touch-action: none;
-  /* Custom brush-outline cursor (see .brush-cursor) replaces the native one. */
-  cursor: none;
+  /* Fallback for the moment before a pointerenter/pointermove has fired (e.g.
+     the mouse is already resting over the canvas on page load, so the custom
+     .brush-cursor overlay hasn't appeared yet). PointerPainter swaps this to
+     'none' once the overlay is actually visible, so there's never a gap with
+     no cursor shown at all. */
+  cursor: crosshair;
 }
 
 /* Brush-size cursor outline (see PointerPainter). Follows the pointer while it

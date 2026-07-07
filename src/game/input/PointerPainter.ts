@@ -2,6 +2,7 @@ import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { $selectedMaterial, $brushSize, $brushShape } from '../../state/store';
 import { BRUSH_MIN, BRUSH_MAX } from '../config';
+import { createFloatingOverlay } from './floatingOverlay';
 
 /**
  * Translates pointer (mouse/touch/pen) input into grid painting. Reads the
@@ -26,15 +27,17 @@ export class PointerPainter {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
+    // A gesture can end without a pointerup (browser/OS takes it over for
+    // scrolling, palm rejection, lost capture); without this, `down` would
+    // stay stuck true and the per-frame `update()` would paint forever.
+    window.addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('pointerenter', this.onEnter);
     canvas.addEventListener('pointerleave', this.onLeave);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
 
-    this.cursorEl = document.createElement('div');
-    this.cursorEl.className = 'brush-cursor';
+    this.cursorEl = createFloatingOverlay('brush-cursor');
     this.cursorEl.style.display = 'none';
-    document.body.appendChild(this.cursorEl);
 
     // Brush size/shape can change from the control panel while the pointer
     // sits still over the canvas; keep the cursor in sync either way.
@@ -130,9 +133,14 @@ export class PointerPainter {
   private onLeave = (): void => {
     this.hovering = false;
     this.cursorEl.style.display = 'none';
+    // Restore the CSS fallback cursor now that our overlay is hidden again.
+    this.canvas.style.cursor = 'crosshair';
   };
 
   private onWheel = (e: WheelEvent): void => {
+    // Trackpad pinch-zoom and ctrl+scroll-zoom are also reported as `wheel`
+    // with ctrlKey set; leave those alone so the browser's zoom still works.
+    if (e.ctrlKey) return;
     e.preventDefault();
     const cur = $brushSize.get();
     const dir = e.deltaY > 0 ? -1 : 1;
@@ -151,6 +159,9 @@ export class PointerPainter {
     const cell = this.layout.cell;
     const size = (2 * rad + 1) * cell;
 
+    // Only hide the native cursor once the overlay is actually in place, so
+    // there's no moment with neither cursor visible.
+    this.canvas.style.cursor = 'none';
     this.cursorEl.style.display = 'block';
     this.cursorEl.style.left = `${clientX}px`;
     this.cursorEl.style.top = `${clientY}px`;
@@ -160,10 +171,22 @@ export class PointerPainter {
   }
 
   /**
+   * Re-syncs the cursor overlay after the sandbox layout changes (window
+   * resize, drag-resize handle) — cell size may have changed even though the
+   * pointer didn't move. No-ops while not hovering.
+   */
+  refreshCursor(): void {
+    this.updateCursor(this.lastClientX, this.lastClientY);
+  }
+
+  /**
    * Called once per animation frame from the main loop. Holding a pointer down
    * without moving it stops emitting pointermove events, so without this the
    * brush would silently stop painting while held still; re-stamping every
-   * frame keeps it active for the whole press.
+   * frame keeps it active for the whole press. This has to run every frame
+   * rather than only on change: the simulation keeps moving the painted
+   * material out of the brush's cells (e.g. falling sand), so re-stamping is
+   * what makes holding still read as "pouring" instead of a single splat.
    */
   update(): void {
     if (this.down) this.stamp(this.px, this.py);

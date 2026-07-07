@@ -1,4 +1,5 @@
 import type { ViewRect } from '../render/viewport';
+import { createFloatingOverlay } from './floatingOverlay';
 
 /**
  * A draggable handle at the sandbox's bottom-right corner that resizes the play
@@ -27,13 +28,11 @@ export class SandboxResizer {
   onReset: () => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement) {
-    const el = document.createElement('div');
-    el.className = 'sandbox-handle';
+    const el = createFloatingOverlay('sandbox-handle');
     el.setAttribute('role', 'slider');
     el.setAttribute('aria-label', '샌드박스 크기 조절');
     el.title = '드래그: 크기·화면비 조절 · 더블클릭: 기기에 맞춤';
     el.innerHTML = '<i class="bi bi-arrows-angle-expand"></i>';
-    document.body.appendChild(el);
     this.el = el;
 
     el.addEventListener('pointerdown', this.onDown);
