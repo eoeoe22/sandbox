@@ -251,7 +251,6 @@
     margin: -12px -12px 0;
     padding: 12px 12px 8px;
     background: rgba(20, 20, 26, 0.92);
-    backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: space-between;
