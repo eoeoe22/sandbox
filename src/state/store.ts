@@ -16,6 +16,10 @@ export const $selectedMaterial = atom<number>(SAND.id);
 /** Brush radius in cells. */
 export const $brushSize = atom<number>(3);
 
+/** Brush stamp shape. */
+export type BrushShape = 'circle' | 'square';
+export const $brushShape = atom<BrushShape>('circle');
+
 /** Whether the simulation is advancing. */
 export const $running = atom<boolean>(true);
 
