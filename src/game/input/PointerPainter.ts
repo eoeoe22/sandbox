@@ -11,6 +11,7 @@ import { BRUSH_MIN, BRUSH_MAX, PARTICLE_FILL_RATE } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
+import { AMBIENT_TEMP } from '../config';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -105,6 +106,9 @@ export class PointerPainter {
     // reads as a bug, not a feature, so Particle mode only applies to
     // non-solid materials (sand, water, gases, ...).
     const particle = $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // Fresh material is placed at its own initial temperature (e.g. Lava lands
+    // molten, Water cool) so the heat system starts from a sensible state.
+    const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
     const r2 = rad * rad;
     for (let dy = -rad; dy <= rad; dy++) {
       for (let dx = -rad; dx <= rad; dx++) {
@@ -115,6 +119,7 @@ export class PointerPainter {
         if (!this.grid.inBounds(x, y)) continue;
         if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
         this.grid.set(x, y, id);
+        this.grid.setTemp(x, y, initTemp);
       }
     }
   }

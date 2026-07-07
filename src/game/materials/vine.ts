@@ -36,5 +36,6 @@ export const VINE = register({
   color: rgb(70, 150, 60),
   density: 1000,
   flammable: true,
+  thermal: { conductivity: 0.3 },
   update: updateVine,
 });

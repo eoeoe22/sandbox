@@ -23,5 +23,6 @@ export const SMOKE = register({
   phase: Phase.Gas,
   color: rgb(180, 180, 188),
   density: 1,
+  thermal: { conductivity: 0.05 },
   update: updateSmoke,
 });

@@ -33,5 +33,6 @@ export const NITRO = register({
   phase: Phase.Liquid,
   color: rgb(225, 225, 140),
   density: 4,
+  thermal: { conductivity: 0.4 },
   update: updateNitro,
 });

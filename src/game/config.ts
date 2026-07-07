@@ -32,6 +32,30 @@ export const GRID_H = 135;
 /** Fixed simulation update rate (Hz). Rendering runs at display refresh rate. */
 export const TICK_HZ = 60;
 
+/**
+ * Heat conduction (direct conduction only — no convection or radiation).
+ *
+ * Every cell carries a temperature on an arbitrary unitless scale where
+ * `AMBIENT_TEMP` is the room baseline every cell starts at. Each tick, cells
+ * exchange heat with their 4 orthogonal neighbors in proportion to both cells'
+ * conductivities — that, and material cells physically moving, are the only
+ * ways heat travels. `EMPTY` (air) has zero conductivity, so a blob with no
+ * conductive cold sink touching it never loses heat (lava alone stays molten);
+ * it only cools when something like water bridges the heat out.
+ */
+export const AMBIENT_TEMP = 20;
+
+/**
+ * Base per-neighbor heat-exchange fraction, scaled by the two cells'
+ * conductivities (0..1). Kept at 0.2 so that even four maximally-conductive
+ * neighbors exchange < 1.0 of the gap per tick, which keeps the explicit
+ * finite-difference diffusion numerically stable (no runaway oscillation).
+ */
+export const HEAT_DIFFUSION_RATE = 0.2;
+
+/** Conductivity (0..1) for a material that doesn't declare `thermal.conductivity`. */
+export const DEFAULT_CONDUCTIVITY = 0.3;
+
 /** Brush radius bounds, in cells (shared by the store, painter, and UI slider/wheel). */
 export const BRUSH_MIN = 0;
 export const BRUSH_MAX = 12;

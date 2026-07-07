@@ -14,6 +14,19 @@ import { getMaterial } from '../materials/registry';
  * sandbox was resized). Fast enough for a wide range of grid sizes and
  * swappable for a WebGL renderer via the Renderer interface.
  */
+/** Precomputed temperature→color ramp for a glowing material (see Material.glow). */
+interface GlowRamp {
+  min: number;
+  invRange: number;
+  // cool-end channels and the per-channel delta up to the hot (base) color.
+  cr: number;
+  cg: number;
+  cb: number;
+  dr: number;
+  dg: number;
+  db: number;
+}
+
 export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
   private off: HTMLCanvasElement;
@@ -21,6 +34,8 @@ export class CanvasRenderer implements Renderer {
   private image!: ImageData;
   private buf32!: Uint32Array;
   private palette: Uint32Array;
+  /** id → temperature ramp, or null for materials drawn with a flat color. */
+  private glow: (GlowRamp | null)[];
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -40,10 +55,41 @@ export class CanvasRenderer implements Renderer {
     // Precompute id → color. Materials are registered before the renderer is
     // constructed, so this stays in sync for the milestone's fixed set.
     this.palette = new Uint32Array(256);
+    this.glow = new Array(256).fill(null);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
+      if (m?.glow) this.glow[i] = CanvasRenderer.buildGlow(m.glow, m.color);
     }
+  }
+
+  /** Split the cool and base (hot) colors into channels so the render loop can
+   *  lerp between them per cell without unpacking on every pixel. */
+  private static buildGlow(
+    glow: { min: number; max: number; cool: number },
+    hot: number,
+  ): GlowRamp {
+    return {
+      min: glow.min,
+      invRange: 1 / Math.max(1, glow.max - glow.min),
+      cr: glow.cool & 0xff,
+      cg: (glow.cool >> 8) & 0xff,
+      cb: (glow.cool >> 16) & 0xff,
+      dr: (hot & 0xff) - (glow.cool & 0xff),
+      dg: ((hot >> 8) & 0xff) - ((glow.cool >> 8) & 0xff),
+      db: ((hot >> 16) & 0xff) - ((glow.cool >> 16) & 0xff),
+    };
+  }
+
+  /** Interpolate a glow ramp at temperature `t` into a packed 0xAABBGGRR color. */
+  private static shade(g: GlowRamp, t: number): number {
+    let f = (t - g.min) * g.invRange;
+    if (f < 0) f = 0;
+    else if (f > 1) f = 1;
+    const r = (g.cr + g.dr * f) & 0xff;
+    const gr = (g.cg + g.dg * f) & 0xff;
+    const b = (g.cb + g.db * f) & 0xff;
+    return (0xff000000 | (b << 16) | (gr << 8) | r) >>> 0;
   }
 
   /** (Re)size the offscreen buffer to match the grid resolution. */
@@ -60,10 +106,14 @@ export class CanvasRenderer implements Renderer {
     }
 
     const cells = grid.cells;
+    const temp = grid.temp;
     const buf = this.buf32;
     const pal = this.palette;
+    const glow = this.glow;
     for (let i = 0; i < cells.length; i++) {
-      buf[i] = pal[cells[i]];
+      const id = cells[i];
+      const g = glow[id];
+      buf[i] = g ? CanvasRenderer.shade(g, temp[i]) : pal[id];
     }
     this.offCtx.putImageData(this.image, 0, 0);
 
