@@ -160,8 +160,10 @@ export class PointerPainter {
     const isEraser = id === 0;
     // Solid materials always paint Full — a sparse pile of solid grains
     // reads as a bug, not a feature, so Particle mode only applies to
-    // non-solid materials (sand, water, gases, ...).
-    const particle = $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // non-solid materials (sand, water, gases, ...). A right-button erase also
+    // ignores Particle mode: "always erases" means a clean, gap-free clear.
+    const particle =
+      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
