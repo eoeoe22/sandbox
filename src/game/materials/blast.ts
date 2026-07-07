@@ -92,15 +92,11 @@ function isActiveCrater(temp: number, tick: number): boolean {
   return tick - markedTick < CRATER_PROTECT_TICKS;
 }
 
-/** Try to advance a shard one cell in `dir` with `life` steps left. Destroys
- *  whatever's there and spawns the shard's continuation, unless blocked (the
- *  indestructible Wall, an Explosive waiting for its own turn, a cell
- *  already mid-blast/freshly embered, or ground this same wave already
- *  cratered). Returns whether it moved. */
-function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: number): boolean {
-  const [dx, dy] = ANGLE_DIRS[dir];
-  const nx = x + dx;
-  const ny = y + dy;
+/** Whether a shard can enter (nx,ny) — blocked by the indestructible Wall, an
+ *  Explosive waiting for its own turn, a cell already mid-blast/freshly
+ *  embered, or ground this same wave already cratered. Everything else
+ *  (Stone included) is fair game to destroy. */
+function canEnter(sim: SimContext, nx: number, ny: number): boolean {
   if (!sim.inBounds(nx, ny)) return false; // edge (or void border): nothing to hit
   const nid = sim.get(nx, ny);
   if (nid === BLAST.id || nid === FIRE.id) return false;
@@ -114,9 +110,67 @@ function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: nu
     // Explosives are passed over so they can chain-detonate on their own turn.
     if (m.explosive) return false;
   }
+  return true;
+}
+
+/** Instantly destroy (x,y) the same way a spent shard does: an ember, or an
+ *  Empty cell stamped with the crater marker. Shared by the shard's normal
+ *  end-of-turn collapse and the epicenter's immediate punch below. */
+function collapse(sim: SimContext, x: number, y: number): void {
+  if (sim.chance(BLAST_FIRE_CHANCE)) {
+    sim.spawn(x, y, FIRE.id);
+  } else {
+    sim.set(x, y, EMPTY);
+    sim.setTemp(x, y, CRATER_MARK_BASE - sim.tick);
+  }
+}
+
+/** Try to advance a shard one cell in `dir` with `life` steps left. Destroys
+ *  whatever's there and spawns the shard's continuation. Returns whether it
+ *  moved. */
+function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: number): boolean {
+  const [dx, dy] = ANGLE_DIRS[dir];
+  const nx = x + dx;
+  const ny = y + dy;
+  if (!canEnter(sim, nx, ny)) return false;
   sim.spawn(nx, ny, BLAST.id);
   sim.setTemp(nx, ny, encodeBlast(life, dir));
   return true;
+}
+
+// How many cells deep the epicenter instantly punches through, in every
+// direction, before handing off to a normal one-cell-per-tick traveling
+// shard. Without this, a *lone* trigger (a single Gunpowder/Nitro cell, or a
+// small painted Blast) reads as a sparse asterisk of thin rays from tick one
+// — a dense pile still looks like a proper crater (many overlapping
+// epicenters fill each other's gaps), but an isolated trigger needs its own
+// small solid core to read as a punchy blast rather than a firework.
+const EPICENTER_PUNCH = 2;
+
+/** The epicenter's initial hit in one direction: instantly destroys the
+ *  first `EPICENTER_PUNCH` cells outward (stopping early if blocked), then
+ *  the last one reached becomes a normal traveling shard that continues
+ *  under its own turn from here on — same bounded-life guarantee as any
+ *  other shard, just with a head start. */
+function punchAndLaunch(sim: SimContext, x: number, y: number, dir: number, life: number): void {
+  const [dx, dy] = ANGLE_DIRS[dir];
+  let cx = x;
+  let cy = y;
+  let remaining = life;
+  for (let step = 0; step < EPICENTER_PUNCH; step++) {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    if (!canEnter(sim, nx, ny)) return;
+    sim.spawn(nx, ny, BLAST.id);
+    if (step === EPICENTER_PUNCH - 1) {
+      sim.setTemp(nx, ny, encodeBlast(remaining, dir));
+    } else {
+      collapse(sim, nx, ny);
+    }
+    cx = nx;
+    cy = ny;
+    remaining--;
+  }
 }
 
 function updateBlast(x: number, y: number, sim: SimContext): void {
@@ -125,7 +179,7 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
     if (dir === EPICENTER) {
       // The initial punch: fan out to all 8 directions at once, each
       // becoming its own independently-traveling shard.
-      for (let d = 0; d < 8; d++) tryAdvance(sim, x, y, d, life - 1);
+      for (let d = 0; d < 8; d++) punchAndLaunch(sim, x, y, d, life - 1);
     } else {
       const wobbled = sim.chance(WOBBLE_CHANCE) ? (dir + (sim.chance(0.5) ? 1 : 7)) % 8 : dir;
       tryAdvance(sim, x, y, wobbled, life - 1);
@@ -133,12 +187,7 @@ function updateBlast(x: number, y: number, sim: SimContext): void {
   }
   // Spent: collapse into a flame, or clear out and mark the crater so later
   // shards don't bounce back into it.
-  if (sim.chance(BLAST_FIRE_CHANCE)) {
-    sim.spawn(x, y, FIRE.id);
-  } else {
-    sim.set(x, y, EMPTY);
-    sim.setTemp(x, y, CRATER_MARK_BASE - sim.tick);
-  }
+  collapse(sim, x, y);
 }
 
 export const BLAST = register({
