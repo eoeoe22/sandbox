@@ -32,6 +32,8 @@ export interface Material {
   flammable?: boolean;
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
+  /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
+  isWall?: boolean;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }
