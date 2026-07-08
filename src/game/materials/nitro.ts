@@ -40,6 +40,7 @@ export const NITRO = register({
   color: rgb(225, 225, 140),
   density: 4.8,
   explosive: true,
+  category: '폭발',
   thermal: { conductivity: 0.4 },
   update: updateNitro,
 });

@@ -37,6 +37,22 @@ export interface Material {
   color: number;
   /** Relative density — heavier materials sink through lighter fluids. */
   density: number;
+  /**
+   * Palette grouping. The toolbar builds one tab per distinct category in a
+   * fixed thematic order (see MaterialPalette). Omit to fall back to a label
+   * derived from `phase` — so an untagged material still lands in a sensible
+   * default group and the "add material = one file" rule holds. Purely a UI
+   * hint; the simulation never reads it.
+   */
+  category?: string;
+  /**
+   * Carries an electric charge: a Spark propagates from cell to cell only
+   * through `conductive` materials (Metal, Mercury), the same tag-based,
+   * scan-order-independent approach `flammable`/`combustible` use. A conductor
+   * also uses its per-cell `aux` byte as a post-spark refractory countdown so a
+   * pulse travels one way down a wire instead of bouncing back (see spark.ts).
+   */
+  conductive?: boolean;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
   flammable?: boolean;
   /**

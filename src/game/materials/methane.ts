@@ -56,6 +56,7 @@ export const METHANE = register({
   color: rgb(224, 224, 168),
   density: 1,
   explosive: true,
+  category: '폭발',
   // A gas: conducts poorly, so autoignition by conduction takes real sustained
   // heat rather than a single brief brush of it.
   thermal: { conductivity: 0.07 },

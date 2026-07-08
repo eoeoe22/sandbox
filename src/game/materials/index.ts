@@ -31,6 +31,34 @@ import { GASOLINE } from './gasoline';
 import { COAL } from './coal';
 import { WOOD } from './wood';
 import { SAWDUST } from './sawdust';
+import { IRON } from './iron';
+import { MOLTEN_METAL } from './moltenmetal';
+import { RUST } from './rust';
+import { MOLTEN_GLASS } from './moltenglass';
+import { GLASS } from './glass';
+import { LIQUID_NITROGEN } from './liquidnitrogen';
+import { DRY_ICE } from './dryice';
+import { CO2 } from './co2';
+import { OXYGEN } from './oxygen';
+import { HYDROGEN } from './hydrogen';
+import { SPARK } from './spark';
+import { BATTERY } from './battery';
+import { MERCURY } from './mercury';
+import { HONEY } from './honey';
+import { ALCOHOL } from './alcohol';
+import { DIRT } from './dirt';
+import { MUD } from './mud';
+import { CEMENT } from './cement';
+import { CONCRETE } from './concrete';
+import { MOSS } from './moss';
+import { VIRUS } from './virus';
+import { CLONE } from './clone';
+import { VOID } from './void';
+import { ANTIMATTER } from './antimatter';
+import { TNT } from './tnt';
+import { FUSE } from './fuse';
+import { THERMITE } from './thermite';
+import { ASH } from './ash';
 
 export {
   EMPTY_MAT,
@@ -61,11 +89,44 @@ export {
   COAL,
   WOOD,
   SAWDUST,
+  IRON,
+  MOLTEN_METAL,
+  RUST,
+  MOLTEN_GLASS,
+  GLASS,
+  LIQUID_NITROGEN,
+  DRY_ICE,
+  CO2,
+  OXYGEN,
+  HYDROGEN,
+  SPARK,
+  BATTERY,
+  MERCURY,
+  HONEY,
+  ALCOHOL,
+  DIRT,
+  MUD,
+  CEMENT,
+  CONCRETE,
+  MOSS,
+  VIRUS,
+  CLONE,
+  VOID,
+  ANTIMATTER,
+  TNT,
+  FUSE,
+  THERMITE,
+  ASH,
 };
 
-/** Palette order (also drives the toolbar). EMBER is deliberately absent:
- *  it's blast ejecta that only an explosion launches with a real velocity
- *  (see ember.ts) — painted by brush it would just die on its first turn. */
+/** Palette order (also drives the toolbar). Two materials are deliberately
+ *  absent — both are transient effect particles that only make sense when the
+ *  simulation spawns them, never when painted by hand:
+ *   • EMBER — blast ejecta an explosion launches with a real velocity (see
+ *     ember.ts); painted by brush it would just die on its first turn.
+ *   • SPARK — the one-tick electric pulse that only exists while a conductor is
+ *     energized (see spark.ts); it's produced by a Battery or handed on from a
+ *     neighboring spark, and painted onto bare ground it would simply fizzle. */
 export const MATERIALS = [
   EMPTY_MAT,
   WALL,
@@ -94,4 +155,31 @@ export const MATERIALS = [
   COAL,
   WOOD,
   SAWDUST,
+  IRON,
+  MOLTEN_METAL,
+  RUST,
+  MOLTEN_GLASS,
+  GLASS,
+  LIQUID_NITROGEN,
+  DRY_ICE,
+  CO2,
+  OXYGEN,
+  HYDROGEN,
+  BATTERY,
+  MERCURY,
+  HONEY,
+  ALCOHOL,
+  DIRT,
+  MUD,
+  CEMENT,
+  CONCRETE,
+  MOSS,
+  VIRUS,
+  CLONE,
+  VOID,
+  ANTIMATTER,
+  TNT,
+  FUSE,
+  THERMITE,
+  ASH,
 ];

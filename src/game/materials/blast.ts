@@ -254,6 +254,7 @@ export const BLAST = register({
   phase: Phase.Gas,
   color: rgb(255, 245, 210),
   density: 1,
+  category: '폭발',
   // The radius when a Blast is placed directly by the brush, seeded as an
   // epicenter just like Gunpowder/Nitro (see seedBlast above). conductivity 0
   // is load-bearing: it makes the heat pass treat `temp` as inert per-cell

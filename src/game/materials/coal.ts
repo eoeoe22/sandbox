@@ -28,6 +28,7 @@ export const COAL = register({
   // completeness alongside the other materials.
   density: 5,
   combustible: true,
+  category: '불·열',
   thermal: { conductivity: 0.2 },
   update: updateCoal,
 });

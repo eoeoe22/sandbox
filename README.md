@@ -64,6 +64,30 @@ src/
 팔레트 버튼은 `MATERIALS` 에서 자동 생성된다. 특수 거동이 필요하면 `update(x, y, sim)` 를
 직접 작성한다.
 
+### 물질 데이터 필드
+
+`register({...})` 는 순수 데이터 태그로 대부분의 상호작용을 표현한다 — 로직이 아니라
+플래그다:
+
+- `flammable` — 불/용암이 접촉 시 점화 (전역 확률 패스).
+- `combustible` — 연료. 공유 "표면 화염 전선" 모델로 서서히 탄다 (`combustion.ts`).
+- `explosive` — 폭발물. Blast 파동이 이 셀을 *돌아가서* 연쇄 기폭이 가능하게 한다.
+- `acidResistant` — 산이 부식하지 않음.
+- `conductive` — 전기 도체. Spark 가 이 물질을 타고 전파된다 (금속·수은).
+- `thermal: { init, conductivity }` — 온도장/열전도.
+- `glow: { min, max, cool }` — 온도 → 색 그라데이션 (용암·용융물).
+- `category` — 팔레트 탭 분류 (생략 시 `phase` 로 자동 유도). 시뮬레이션은 무시.
+
+### 셀 상태 (`temp` / `aux`)
+
+셀당 두 개의 상태 슬롯이 있어 상태 기계형 물질을 만들 수 있다:
+
+- `temp` (Float32) — 온도. `conductivity: 0` 물질은 이 슬롯을 불투명 상태로 재사용한다
+  (Blast 의 수명·방향, Ember 의 속도).
+- `aux` (Uint8) — 정수 상태 바이트. 도체의 스파크 불응 카운트다운, Battery 펄스 주기,
+  Clone 이 복제할 물질 id, Thermite 연소 타이머 등. `swap` 시 물질을 따라가고
+  셀이 비워지면 초기화된다 (`temp` 과 동일 수명). 런타임 전용(비영속).
+
 ## 배포
 
 `main` 브랜치에 푸시하면 Cloudflare Workers Builds가 `npm run build` 후

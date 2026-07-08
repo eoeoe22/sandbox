@@ -25,6 +25,7 @@ export const WOOD = register({
   color: rgb(140, 96, 56),
   density: 1000,
   combustible: true,
+  category: '불·열',
   thermal: { conductivity: 0.2 },
   update: updateWood,
 });

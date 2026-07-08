@@ -65,5 +65,8 @@ export function mixCells(grid: Grid, cells: readonly number[], rand: () => numbe
     const t = grid.temp[a];
     grid.temp[a] = grid.temp[b];
     grid.temp[b] = t;
+    const x = grid.aux[a];
+    grid.aux[a] = grid.aux[b];
+    grid.aux[b] = x;
   }
 }

@@ -4,42 +4,72 @@
   import { onDestroy } from 'svelte';
   import { $selectedMaterial as selected, $tool as tool } from '../state/store';
   import { MATERIALS } from '../game/materials';
-  import { Phase } from '../game/engine/types';
+  import { Phase, type Material } from '../game/engine/types';
   import { toCss } from '../game/render/color';
 
-  const PHASE_LABELS: Record<Phase, string> = {
+  // Thematic palette tabs, in display order, each with an icon. A material shows
+  // up under its declared `category`; a material that declares none falls back
+  // to the tab derived from its phase (so untagged materials still land
+  // somewhere sensible and the "add a material = one file" rule is preserved).
+  const CATEGORY_META: { key: string; icon: string }[] = [
+    { key: '지우개', icon: '🧹' },
+    { key: '고체', icon: '🪨' },
+    { key: '가루', icon: '🏖️' },
+    { key: '액체', icon: '💧' },
+    { key: '기체', icon: '💨' },
+    { key: '불·열', icon: '🔥' },
+    { key: '폭발', icon: '💥' },
+    { key: '냉각', icon: '❄️' },
+    { key: '전기', icon: '⚡' },
+    { key: '생명', icon: '🌱' },
+    { key: '특수', icon: '✨' },
+  ];
+
+  const PHASE_FALLBACK: Record<Phase, string> = {
     [Phase.Empty]: '지우개',
     [Phase.Solid]: '고체',
     [Phase.Powder]: '가루',
     [Phase.Liquid]: '액체',
     [Phase.Gas]: '기체',
   };
-  const PHASE_ICONS: Record<Phase, string> = {
-    [Phase.Empty]: '🧹',
-    [Phase.Solid]: '🪨',
-    [Phase.Powder]: '🏖️',
-    [Phase.Liquid]: '💧',
-    [Phase.Gas]: '💨',
-  };
-  const PHASE_ORDER = [Phase.Empty, Phase.Solid, Phase.Powder, Phase.Liquid, Phase.Gas];
 
-  const categories = PHASE_ORDER.map((phase) => ({
-    phase,
-    label: PHASE_LABELS[phase],
-    icon: PHASE_ICONS[phase],
-    materials: MATERIALS.filter((m) => m.phase === phase),
-  })).filter((c) => c.materials.length > 0);
+  const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
+  const iconFor = (key: string): string =>
+    CATEGORY_META.find((c) => c.key === key)?.icon ?? '•';
+
+  // Bucket every palette material by resolved category, then order the tabs:
+  // the known categories (in CATEGORY_META order) that actually have members,
+  // followed by any not-yet-known category present (future materials can
+  // introduce a new tab just by naming it — nothing here needs editing).
+  const grouped = new Map<string, Material[]>();
+  for (const m of MATERIALS) {
+    const key = categoryOf(m);
+    const bucket = grouped.get(key);
+    if (bucket) bucket.push(m);
+    else grouped.set(key, [m]);
+  }
+  const orderedKeys = [
+    ...CATEGORY_META.map((c) => c.key).filter((k) => grouped.has(k)),
+    ...[...grouped.keys()].filter((k) => !CATEGORY_META.some((c) => c.key === k)),
+  ];
+  const categories = orderedKeys.map((key, index) => ({
+    key,
+    index,
+    label: key,
+    icon: iconFor(key),
+    materials: grouped.get(key)!,
+  }));
 
   // Which category's flyout is showing. `hovered` follows the pointer (mouse);
   // `pinned` is a click-to-lock override so touch devices (no hover) can open
   // and keep a category's material list on screen.
-  let hovered = $state<Phase | null>(null);
-  let pinned = $state<Phase | null>(null);
+  let hovered = $state<string | null>(null);
+  let pinned = $state<string | null>(null);
   const open = $derived(pinned ?? hovered);
 
   let root: HTMLDivElement;
   let flyoutEl = $state<HTMLDivElement | null>(null);
-  const buttons = new Map<Phase, HTMLButtonElement>();
+  const buttons = new Map<string, HTMLButtonElement>();
 
   // The category button and its flyout are separate elements (the flyout is
   // portaled to <body>) with a gap between them, so a plain mouseenter/leave
@@ -48,9 +78,9 @@
   // entering either the category or the flyout cancels the pending close.
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function openOnHover(phase: Phase): void {
+  function openOnHover(key: string): void {
     clearTimeout(closeTimer);
-    hovered = phase;
+    hovered = key;
   }
 
   function scheduleHoverClose(): void {
@@ -78,11 +108,11 @@
 
   // Svelte action: records each category button's element so its position
   // can be read on demand (no bind:this into a Map key).
-  function registerButton(node: HTMLButtonElement, phase: Phase) {
-    buttons.set(phase, node);
+  function registerButton(node: HTMLButtonElement, key: string) {
+    buttons.set(key, node);
     return {
       destroy() {
-        buttons.delete(phase);
+        buttons.delete(key);
       },
     };
   }
@@ -118,8 +148,8 @@
     return { top, left };
   }
 
-  function reposition(phase: Phase): void {
-    const btn = buttons.get(phase);
+  function reposition(key: string): void {
+    const btn = buttons.get(key);
     if (!btn) return;
     flyoutPos = computePosition(btn.getBoundingClientRect());
   }
@@ -157,9 +187,9 @@
     hovered = null;
   }
 
-  function toggleCategory(phase: Phase): void {
+  function toggleCategory(key: string): void {
     clearTimeout(closeTimer);
-    pinned = pinned === phase ? null : phase;
+    pinned = pinned === key ? null : key;
     hovered = null;
   }
 
@@ -195,23 +225,23 @@
 />
 
 <div class="palette" bind:this={root}>
-  {#each categories as cat (cat.phase)}
+  {#each categories as cat (cat.key)}
     <div
       class="category"
-      onmouseenter={() => openOnHover(cat.phase)}
+      onmouseenter={() => openOnHover(cat.key)}
       onmouseleave={scheduleHoverClose}
     >
       <button
-        use:registerButton={cat.phase}
-        id={`cat-btn-${cat.phase}`}
-        class:active={open === cat.phase}
+        use:registerButton={cat.key}
+        id={`cat-btn-${cat.index}`}
+        class:active={open === cat.key}
         class:selected={cat.materials.some(
           (m) => m.id === $selected && $tool === 'material'
         )}
-        onclick={() => toggleCategory(cat.phase)}
-        aria-expanded={open === cat.phase}
+        onclick={() => toggleCategory(cat.key)}
+        aria-expanded={open === cat.key}
         aria-haspopup="true"
-        aria-controls={`cat-flyout-${cat.phase}`}
+        aria-controls={`cat-flyout-${cat.index}`}
         title={cat.label}
       >
         <span class="icon">{cat.icon}</span>
@@ -222,17 +252,17 @@
   {/each}
 
   {#if open !== null && flyoutPos}
-    {@const cat = categories.find((c) => c.phase === open)}
+    {@const cat = categories.find((c) => c.key === open)}
     {#if cat}
       <div
         class="flyout"
         use:portal
         bind:this={flyoutEl}
-        id={`cat-flyout-${cat.phase}`}
+        id={`cat-flyout-${cat.index}`}
         role="menu"
         aria-label={cat.label}
         style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
-        onmouseenter={() => openOnHover(cat.phase)}
+        onmouseenter={() => openOnHover(cat.key)}
         onmouseleave={scheduleHoverClose}
       >
         {#each cat.materials as m (m.id)}
@@ -298,10 +328,14 @@
     position: fixed;
     z-index: 20;
     display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
     gap: 6px;
-    max-width: min(70vw, 480px);
+    width: max-content;
+    max-width: min(80vw, 384px);
+    max-height: min(70vh, 420px);
     padding: 8px;
-    overflow-x: auto;
+    overflow-y: auto;
     background: rgba(20, 20, 26, 0.95);
     backdrop-filter: blur(6px);
     border: 1px solid #2a2a33;

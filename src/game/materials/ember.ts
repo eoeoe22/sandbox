@@ -192,6 +192,7 @@ export const EMBER = register({
   phase: Phase.Gas,
   color: rgb(255, 200, 90),
   density: 1,
+  category: '불·열',
   // conductivity 0 is load-bearing, exactly as in Blast: the heat pass leaves
   // `temp` alone so it can hold the packed life+velocity state. init 0
   // decodes to life 0 → an ember placed without launchEmber dies quietly on

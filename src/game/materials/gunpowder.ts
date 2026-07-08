@@ -49,6 +49,7 @@ export const GUNPOWDER = register({
   color: rgb(60, 60, 65),
   density: 5,
   explosive: true,
+  category: '폭발',
   thermal: { conductivity: 0.3 },
   update: updateGunpowder,
 });
