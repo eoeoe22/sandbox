@@ -102,7 +102,7 @@ export class SandboxResizer {
   private onMove = (e: PointerEvent): void => {
     if (!this.dragging) return;
     e.preventDefault();
-    // Symmetric about the viewport center: half-extent = pointer − center.
+    // Symmetric about the sandbox's own center: half-extent = pointer − center.
     const { cx, cy } = this.center();
     this.onResize(2 * Math.abs(e.clientX - cx), 2 * Math.abs(e.clientY - cy));
   };
