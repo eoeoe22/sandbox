@@ -23,7 +23,9 @@ function updateAntimatter(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === EMPTY || nid === ANTIMATTER.id) continue;
-    if (getMaterial(nid).isWall) continue;
+    // The indestructible Wall and explosion-proof Diamond survive annihilation.
+    const nm = getMaterial(nid);
+    if (nm.isWall || nm.explosionProof) continue;
     // Mutual annihilation: the matter is destroyed, this cell flashes to Fire.
     sim.set(nx, ny, EMPTY);
     sim.set(x, y, FIRE.id);

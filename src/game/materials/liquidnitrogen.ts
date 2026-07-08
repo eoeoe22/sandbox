@@ -4,7 +4,6 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { CO2 } from './co2';
 import { FIRE } from './fire';
 import { BLUE_FLAME } from './blueflame';
 
@@ -14,8 +13,8 @@ import { BLUE_FLAME } from './blueflame';
 // It's a *cold sink* the way Lava/Fire are heat sources: its cold conducts into
 // neighbors and, via the ordinary heat system, freezes Water into Snow and Ice
 // and flash-cools whatever it touches. Reaching anything hot, it also instantly
-// snuffs open flame — the fire's heat flash-boils the LN₂ into a puff of cold
-// CO₂ fog. Warmed past its boiling point it likewise boils off into CO₂.
+// snuffs open flame — the fire's heat flash-boils the LN₂ away. Warmed past its
+// boiling point it likewise boils off, evaporating into thin air.
 //
 // Lighter than water (density 2.5), so it floats on top of a pool it's busy
 // freezing from above.
@@ -23,9 +22,8 @@ const LN2_BOIL_TEMP = -100;
 
 function updateLiquidNitrogen(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= LN2_BOIL_TEMP) {
-    // Warmed enough to boil off. In-place `set` keeps the (still cold)
-    // temperature, so the fresh CO₂ starts out as a chilly fog.
-    sim.set(x, y, CO2.id);
+    // Warmed enough to boil off — evaporates away into the air.
+    sim.set(x, y, EMPTY);
     return;
   }
 
@@ -35,9 +33,9 @@ function updateLiquidNitrogen(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === FIRE.id || nid === BLUE_FLAME.id) {
-      // Snuff the flame and flash-boil this cell into cold fog absorbing its heat.
+      // Snuff the flame and flash-boil this cell away absorbing its heat.
       sim.set(nx, ny, EMPTY);
-      sim.set(x, y, CO2.id);
+      sim.set(x, y, EMPTY);
       return;
     }
   }

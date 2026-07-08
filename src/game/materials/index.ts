@@ -38,7 +38,6 @@ import { MOLTEN_GLASS } from './moltenglass';
 import { GLASS } from './glass';
 import { LIQUID_NITROGEN } from './liquidnitrogen';
 import { DRY_ICE } from './dryice';
-import { CO2 } from './co2';
 import { OXYGEN } from './oxygen';
 import { HYDROGEN } from './hydrogen';
 import { SPARK } from './spark';
@@ -59,6 +58,8 @@ import { TNT } from './tnt';
 import { FUSE } from './fuse';
 import { THERMITE } from './thermite';
 import { ASH } from './ash';
+import { MOLTEN_SALT } from './moltensalt';
+import { DIAMOND } from './diamond';
 
 export {
   EMPTY_MAT,
@@ -96,7 +97,6 @@ export {
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
-  CO2,
   OXYGEN,
   HYDROGEN,
   SPARK,
@@ -117,6 +117,8 @@ export {
   FUSE,
   THERMITE,
   ASH,
+  MOLTEN_SALT,
+  DIAMOND,
 };
 
 /** Palette order (also drives the toolbar). Two materials are deliberately
@@ -162,7 +164,6 @@ export const MATERIALS = [
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
-  CO2,
   OXYGEN,
   HYDROGEN,
   BATTERY,
@@ -181,5 +182,7 @@ export const MATERIALS = [
   TNT,
   FUSE,
   THERMITE,
+  MOLTEN_SALT,
+  DIAMOND,
   ASH,
 ];

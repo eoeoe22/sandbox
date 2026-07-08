@@ -9,6 +9,8 @@ import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
+import { OXYGEN } from './oxygen';
+import { STEAM } from './steam';
 import { BLAST, seedBlast } from './blast';
 
 // Hydrogen — the lightest, most violently explosive gas. It behaves like Methane
@@ -23,7 +25,7 @@ import { BLAST, seedBlast } from './blast';
 // Gunpowder/Methane: a `flammable` tag would let Fire's ignite pass quietly turn
 // it to plain Fire before its own turn, defeating the detonation depending on
 // scan order. It also self-ignites once heated past its autoignition point.
-const BLAST_RADIUS = 5;
+const BLAST_RADIUS = 8;
 const AUTOIGNITE_TEMP = 200;
 
 function updateHydrogen(x: number, y: number, sim: SimContext): void {
@@ -49,6 +51,16 @@ function updateHydrogen(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
+    // 2H₂ + O₂ → water: any oxygen mixed in burns with the hydrogen into hot
+    // water vapor (Steam), which condenses into Water (see steam.ts). So a
+    // detonating H₂+O₂ mix leaves a steam cloud that rains down as water on top
+    // of the blast. (Oxygen not consumed here flashes to Steam on its own turn
+    // via the blast — see oxygen.ts — so the reaction fills the whole cloud.)
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (sim.inBounds(nx, ny) && sim.get(nx, ny) === OXYGEN.id) sim.spawn(nx, ny, STEAM.id);
+    }
     sim.spawn(x, y, BLAST.id);
     sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
     return;

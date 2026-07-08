@@ -23,7 +23,7 @@ import { BLAST, seedBlast } from './blast';
 // runs, defeating the explosion depending on scan order. It also self-ignites
 // once heated past an autoignition point, so the heat brush or a nearby
 // Blue Flame's radiant heat can touch it off without direct flame contact.
-const BLAST_RADIUS = 4;
+const BLAST_RADIUS = 7;
 const AUTOIGNITE_TEMP = 300;
 
 function updateMethane(x: number, y: number, sim: SimContext): void {

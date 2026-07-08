@@ -14,13 +14,14 @@
 | Stone | 정적 장벽. 1100°↑ → Lava 로 용융. |
 | Glass | 투명. 내산성. 1250°↑ → Molten Glass 로 재용융. |
 | Concrete | Cement + 물이 굳은 결과물. 강하지만 폭발·산에 취약. |
+| Diamond | 최고 열전도. **모든 폭발·고온·저온·산에 면역**(불멸). 방폭·전열 구조물. |
 
 ## 🏖️ 가루 (Powder)
 
 | 물질 | 거동 / 상호작용 |
 |---|---|
 | Sand | 낙하·퇴적. 1250°↑ → Molten Glass. |
-| Salt | 물에 용해 → Saltwater. |
+| Salt | 물에 용해 → Saltwater. 초고온(800°↑) → 용융염(Molten Salt). |
 | Dirt | 물 흡수 → Mud. Moss 가 덮는 지반. |
 | Cement | 물 접촉 → Concrete 로 경화(물 소모). |
 | Rust | Iron 이 산화한 부스러기. 산에 잘 녹음. |
@@ -45,8 +46,7 @@
 | Steam | 상승 후 응결 → Water. |
 | Smoke | 상승 후 확률 소멸. |
 | Acid Vapor | 상승하며 부식, 응결 → Acid. |
-| Oxygen | 불 접촉 시 자신도 불로 확 번짐(가속제). |
-| CO₂ | **무거워서 가라앉음**. 낮은 곳에 고여 불을 질식시킴. Dry Ice/LN₂ 에서 발생. |
+| Oxygen | 불 접촉 시 자신도 불로 확 번짐(가속제). 수소와 함께 연소하면 수증기(→물) 생성. |
 
 ## 🔥 불·열 (Fire / Heat)
 
@@ -57,17 +57,18 @@
 | Lava | 용융 암석. 식으면 Stone. |
 | Molten Metal | Iron 이 녹은 것. 식으면 Iron. 최고 밀도(8) 액체. |
 | Molten Glass | Sand 가 녹은 것. 식으면 Glass. |
+| Molten Salt | Salt 가 녹은 것(800°↑). 식으면 Salt. |
 | Coal / Wood / Sawdust / Crude Oil / Gasoline | 연료(느림→빠름 순: Coal < Wood < Sawdust < Oil < Gasoline). |
 
 ## 💥 폭발 (Explosive)
 
 | 물질 | 거동 / 상호작용 |
 |---|---|
-| Gunpowder | 가루 폭약. 물에 젖으면 불발. 연쇄 기폭. |
-| Nitro | 액체 폭약. 대반경, 물 무관. |
-| Methane | 공기-연료 폭발 기체. |
-| Hydrogen | 가장 가볍고 격렬. 저온 점화·대반경. Oxygen 과 만나면 대폭발. |
-| TNT | 고체 대형 폭약(반경 8). 스파크/불/열로 기폭. |
+| Gunpowder | 가루 폭약(반경 8). 물에 젖으면 불발. 연쇄 기폭. |
+| Nitro | 액체 폭약(반경 12). 물 무관. |
+| Methane | 공기-연료 폭발 기체(반경 7). |
+| Hydrogen | 가장 가볍고 격렬(반경 8). 저온 점화. Oxygen 과 만나면 대폭발 + 물(수증기) 생성. |
+| TNT | 고체 대형 폭약(반경 14). 스파크/불/열로 기폭. |
 | Fuse | 가장 느린 도화선. 불을 천천히 폭약까지 운반. |
 | Thermite | 점화 시 초고온으로 지형을 뚫으며 녹임 → Molten Metal 잔류. |
 | Blast | 폭발 충격파(직접 배치 가능). |
@@ -78,8 +79,8 @@
 |---|---|
 | Ice | 고체 얼음. 녹으면 Water. |
 | Snow | 가벼운 가루 눈. |
-| Liquid N₂ | -196°. 냉각원. 물을 얼리고 불을 끔. 데워지면 CO₂. |
-| Dry Ice | -78°. 승화 → CO₂. |
+| Liquid N₂ | -196°. 냉각원. 물을 얼리고 불을 끔. 데워지면 증발(공기). |
+| Dry Ice | -78° 고체. 서서히 승화해 사라짐(따뜻할수록 빠르게). |
 
 ## ⚡ 전기 (Electric)
 
@@ -109,11 +110,12 @@
 ## 대표 상호작용 사슬
 
 - **금속 주조:** Iron → (열) → Molten Metal → (냉각) → Iron. Water 부으면 Steam 으로 냉각.
-- **유리 공예:** Sand → (열) → Molten Glass → (냉각) → Glass.
+- **유리·소금 용융:** Sand → Molten Glass → Glass, Salt → Molten Salt → Salt (같은 상전이 패턴).
 - **전기 기폭:** Battery → Iron/Mercury 배선 → Spark → 아크 불꽃 → Gunpowder/TNT 기폭.
 - **도화선 폭파:** Fire → Fuse(지연) → TNT 연쇄.
-- **소방:** Dry Ice/LN₂ → CO₂ 가 낮은 곳에 고여 불을 질식.
-- **절단:** Thermite 점화 → 돌·철·유리를 뚫으며 녹여 Molten Metal 잔류.
-- **폭연:** Spark → Hydrogen/Oxygen 혼합 기체 → 대폭발.
+- **냉각:** Dry Ice(서서히 승화) / LN₂(-196°) 가 물을 얼리고 불을 끔.
+- **절단:** Thermite 점화 → 돌·철·유리를 뚫으며 녹여 Molten Metal 잔류(붙어도 계속 낙하).
+- **폭연·제조수:** Spark/불 → Hydrogen+Oxygen 혼합 → 대폭발 + 수증기(→물) 생성.
+- **불멸 구조:** Diamond 는 모든 폭발·고온·저온·산에 면역이면서 열은 전도.
 - **생태계:** Water + Dirt → Mud, Seed → Vine, Moss 가 습한 표면을 덮음, Virus 가 유기물을 감염.
 - **소스/싱크:** Clone(무한 생성) ↔ Void(무한 삭제) 컨베이어.

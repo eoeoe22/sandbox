@@ -18,7 +18,7 @@ import { BLAST, seedBlast } from './blast';
 // or from enough radiant heat, and — being `explosive` — the Blast wave passes
 // around neighboring charges so a stack chain-detonates instead of the first
 // blast erasing the rest.
-const BLAST_RADIUS = 8;
+const BLAST_RADIUS = 14;
 const AUTOIGNITE_TEMP = 240;
 
 function updateTNT(x: number, y: number, sim: SimContext): void {

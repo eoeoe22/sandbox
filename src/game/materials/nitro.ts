@@ -16,7 +16,7 @@ import { BLAST, seedBlast } from './blast';
 // not `flammable`-tagged) but a larger blast radius and no wet/misfire
 // exception — nitroglycerin isn't deactivated by water. Detonation seeds a
 // Blast core (see blast.ts): a destructive shockwave, not a fireball.
-const BLAST_RADIUS = 8;
+const BLAST_RADIUS = 12;
 
 function updateNitro(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {

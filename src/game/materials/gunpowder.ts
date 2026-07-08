@@ -20,7 +20,7 @@ import { BLAST, seedBlast } from './blast';
 // also adjacent. Detonation seeds a Blast core (see blast.ts) whose life = the
 // blast radius: a shockwave that spreads outward destroying particles, rather
 // than the old "fill a disc with Fire" that behaved like plain fuel.
-const BLAST_RADIUS = 5;
+const BLAST_RADIUS = 8;
 
 function updateGunpowder(x: number, y: number, sim: SimContext): void {
   let wet = false;

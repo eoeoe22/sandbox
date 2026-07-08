@@ -82,40 +82,45 @@ function burnInPlace(x: number, y: number, sim: SimContext, timer: number): void
     return;
   }
   sim.setAux(x, y, timer - 1);
+  // Keep settling while it burns: an ignited grain still falls/piles like the
+  // powder it is, so a lit clump doesn't freeze in mid-air (which read as a
+  // glitch). Where it rests on terrain it melts and then sinks into the puddle,
+  // drilling downward. The swap carries its hot temp and burn timer along.
+  updatePowder(x, y, sim);
 }
 
 function updateThermite(x: number, y: number, sim: SimContext): void {
-  const timer = sim.getAux(x, y);
-  if (timer > 0) {
-    burnInPlace(x, y, sim, timer);
-    return;
-  }
+  let timer = sim.getAux(x, y);
 
-  let ignite = sim.getTemp(x, y) >= AUTOIGNITE_TEMP;
-  if (!ignite) {
-    for (const [dx, dy] of DIR8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!sim.inBounds(nx, ny)) continue;
-      const nid = sim.get(nx, ny);
-      // A neighboring flame/blast, or an already-burning Thermite cell (pinned
-      // hot), lights this grain — the latter is what chains the reaction fast
-      // through a pile even where no Fire licks between two touching grains.
-      if (isIgniter(nid) || (nid === THERMITE.id && sim.getTemp(nx, ny) >= AUTOIGNITE_TEMP)) {
-        ignite = true;
-        break;
+  if (timer === 0) {
+    // Not burning yet — check for ignition.
+    let ignite = sim.getTemp(x, y) >= AUTOIGNITE_TEMP;
+    if (!ignite) {
+      for (const [dx, dy] of DIR8) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!sim.inBounds(nx, ny)) continue;
+        const nid = sim.get(nx, ny);
+        // A neighboring flame/blast, or an already-burning Thermite cell (pinned
+        // hot), lights this grain — the latter is what chains the reaction fast
+        // through a pile even where no Fire licks between two touching grains.
+        if (isIgniter(nid) || (nid === THERMITE.id && sim.getTemp(nx, ny) >= AUTOIGNITE_TEMP)) {
+          ignite = true;
+          break;
+        }
       }
+    }
+    if (ignite) {
+      timer = BURN_TICKS;
+      sim.setAux(x, y, timer);
+      sim.setTemp(x, y, BURN_TEMP);
     }
   }
 
-  if (ignite) {
-    // Arm the burn timer and pin hot; it burns in place from next tick.
-    sim.setAux(x, y, BURN_TICKS);
-    sim.setTemp(x, y, BURN_TEMP);
-    return;
-  }
-
-  updatePowder(x, y, sim);
+  // Burning (including the tick it just caught) → burn and keep settling;
+  // otherwise it's an inert powder that just falls.
+  if (timer > 0) burnInPlace(x, y, sim, timer);
+  else updatePowder(x, y, sim);
 }
 
 export const THERMITE = register({
