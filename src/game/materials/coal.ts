@@ -10,7 +10,7 @@ import { tryBurn, type Combustible } from './combustion';
 // Crude Oil): a low ignite chance makes a heap smoulder for a long time instead
 // of flashing over, and a high autoignition point resists catching from stray
 // heat. Just burns; never detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 420 };
+const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 580 };
 
 function updateCoal(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
@@ -21,7 +21,7 @@ export const COAL = register({
   id: 25,
   name: 'Coal',
   phase: Phase.Powder,
-  color: rgb(40, 38, 42),
+  color: rgb(26, 24, 30),
   density: 5,
   thermal: { conductivity: 0.2 },
   update: updateCoal,

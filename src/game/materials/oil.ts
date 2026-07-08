@@ -11,7 +11,7 @@ import { tryBurn, type Combustible } from './combustion';
 // it smoulder rather than flash, and a high autoignition point means it needs
 // real sustained heat to catch on its own. Just burns; never detonates. See
 // combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 400 };
+const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 560 };
 
 function updateOil(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;

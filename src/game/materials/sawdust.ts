@@ -11,7 +11,7 @@ import { tryBurn, type Combustible } from './combustion';
 // than the solid timber they were milled from: a high ignite chance and a
 // modest autoignition point. Just burns; never detonates. See combustion.ts for
 // the shared model.
-const SPEC: Combustible = { burnChance: 0.28, autoIgniteTemp: 320 };
+const SPEC: Combustible = { burnChance: 0.28, autoIgniteTemp: 450 };
 
 function updateSawdust(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
@@ -22,7 +22,7 @@ export const SAWDUST = register({
   id: 27,
   name: 'Sawdust',
   phase: Phase.Powder,
-  color: rgb(196, 160, 105),
+  color: rgb(184, 146, 92),
   density: 2,
   thermal: { conductivity: 0.2 },
   update: updateSawdust,

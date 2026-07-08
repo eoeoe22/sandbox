@@ -11,7 +11,7 @@ import { tryBurn, type Combustible } from './combustion';
 // ignite chance makes a pool flash over almost at once, and a low autoignition
 // point makes it the readiest to catch from stray heat. Just burns — it never
 // detonates (that's Methane/Nitro). See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.55, autoIgniteTemp: 280 };
+const SPEC: Combustible = { burnChance: 0.55, autoIgniteTemp: 400 };
 
 function updateGasoline(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
