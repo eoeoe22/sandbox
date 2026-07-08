@@ -19,12 +19,13 @@ import { LAVA } from './lava';
 // has a per-tick chance to turn molten and flow away as Lava — something plain
 // Fire (which leaves Stone untouched) never does.
 //
-// Two knobs make the rock-melting reliable despite the flame rising away: it's
-// placed extremely hot (above Stone's own melt point, so it also melts rock by
-// conduction, not just by the direct roll), and it burns out noticeably slower
-// than Fire so a painted blob lingers long enough to eat into a wall. Igniting
-// flammables produces ordinary Fire, not more Blue Flame, so it stays a
-// deliberately-applied cutting torch rather than an unstoppable world-melter.
+// Two knobs keep the rock-melting workable despite the flame rising away and
+// its now-short life: it's placed extremely hot (above Stone's own melt point,
+// so it melts rock mostly by conduction, not just the direct roll), and it
+// burns out a bit slower than Fire so a painted blob still gets a couple of
+// melt rolls before it clears. Igniting flammables produces ordinary Fire, not
+// more Blue Flame, so it stays a deliberately-applied cutting torch rather than
+// an unstoppable world-melter.
 const MELT_CHANCE = 0.1; // per-tick chance to melt one adjacent Stone → Lava
 const IGNITE_CHANCE = 0.08; // per-tick chance to set a flammable neighbor alight
 const BURNOUT_CHANCE = 0.05; // ~20-tick life vs Fire's ~10 — burns out quickly but

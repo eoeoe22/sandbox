@@ -20,7 +20,7 @@ const IGNITE_CHANCE = 0.04; // ~50% ignited after ~17 ticks (~0.3s@60Hz) — a
 // visible crawl, not an instant flash. A value like 0.35 ignites within 1-2
 // ticks (~30ms), which reads as instantaneous and defeats a watchable spread.
 const BURNOUT_CHANCE = 0.1; // flames snuff quickly (was 0.02) — ~10-tick life
-// (~0.3s@30Hz) so a fire front flares and vanishes almost as fast as it appears.
+// (~0.17s@60Hz) so a fire front flares and vanishes almost as fast as it appears.
 const SMOKE_CHANCE = 0.3; // …and only some burnouts leave Smoke; the rest clear
 // straight to Empty, so a fire gives off noticeably less smoke than it used to.
 
