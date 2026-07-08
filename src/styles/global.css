@@ -19,19 +19,17 @@ body {
 /* Full-viewport simulation canvas. touch-action:none stops the page from
    scrolling/zooming while painting on touch devices.
 
-   Sized in dynamic viewport units (dvw/dvh) so the canvas tracks the *currently
-   visible* viewport. On mobile/tablet (Android Chrome, iOS Safari) the browser's
-   address/tool bar makes 100vh resolve to the larger, bar-hidden viewport, so a
-   100vh canvas spills below the visible area — pushing the bottom-right resize
-   handle off-screen. The static vw/vh line stays first as a fallback for
-   browsers without dvw/dvh support. */
+   Kept in static vw/vh (not dvw/dvh) on purpose: the canvas size is read back in
+   JS (canvas.clientWidth/Height) and drives the sandbox grid resolution, so if
+   its height tracked the mobile address bar every show/hide would fire a
+   `window.resize` and rebuild the grid mid-paint. body{overflow:hidden} +
+   touch-action:none already suppress the scroll gestures that toggle the bar, so
+   the canvas stays a stable full-bleed background. */
 #game {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  width: 100dvw;
-  height: 100dvh;
   display: block;
   background: #101014;
   touch-action: none;
