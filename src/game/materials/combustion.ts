@@ -120,10 +120,14 @@ function burnInPlace(x: number, y: number, sim: SimContext, spec: Combustible): 
       if (sim.chance(WREATH_CHANCE)) sim.spawn(nx, ny, FIRE.id);
     } else if (getMaterial(nid).combustible && sim.getTemp(nx, ny) < BURN_TEMP) {
       // Light the neighbor: pin it to BURN_TEMP so its own turn sees it as
-      // burning. Gated by burnChance, so any same-tick, same-scan-direction
-      // chaining is a short probabilistic walk (mean length burnChance/(1-
-      // burnChance) ≪ 1 cell), not the deterministic one-frame runaway a raw
-      // material `set` on an unscanned cell would cause.
+      // burning. Gated by burnChance per neighbor, so a just-lit unscanned
+      // neighbor can chain-light within the same tick — but each burning cell
+      // reaches only its ~4 not-yet-scanned neighbors, so the same-tick
+      // branching factor is ~4·burnChance (≈0.48 at the fastest fuel, Gasoline
+      // 0.12): subcritical, a bounded flicker of well under one extra cell per
+      // cell, not the deterministic one-frame runaway a raw material `set` on
+      // an unscanned cell would cause. The ~2× margin to criticality is why a
+      // burnChance above ~0.25 would need rethinking this.
       if (sim.chance(spec.burnChance)) sim.setTemp(nx, ny, BURN_TEMP);
     }
   }
