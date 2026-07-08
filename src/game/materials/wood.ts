@@ -24,6 +24,7 @@ export const WOOD = register({
   phase: Phase.Solid,
   color: rgb(140, 96, 56),
   density: 1000,
+  combustible: true,
   thermal: { conductivity: 0.2 },
   update: updateWood,
 });
