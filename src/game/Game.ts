@@ -3,6 +3,7 @@ import { Simulation } from './engine/Simulation';
 import { CanvasRenderer } from './render/CanvasRenderer';
 import { PointerPainter } from './input/PointerPainter';
 import { SandboxResizer } from './input/SandboxResizer';
+import { SandboxMover } from './input/SandboxMover';
 import { SandboxLayout } from './layout';
 import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS } from './config';
 import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
@@ -59,10 +60,12 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
   const resizer = new SandboxResizer(canvas);
+  const mover = new SandboxMover(canvas);
 
-  // Reflect the layout onto the handle and HUD (cheap; runs after any change).
+  // Reflect the layout onto the handles and HUD (cheap; runs after any change).
   const syncLayoutOutputs = (): void => {
     resizer.setRect(layout.cssRect());
+    mover.setRect(layout.cssRect());
     painter.refreshCursor();
     $aspectMode.set(layout.mode);
     $gridDims.set({ w: layout.gw, h: layout.gh });
@@ -112,6 +115,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
   resizer.onReset = (): void => {
     layout.reset();
     applyLayout();
+  };
+
+  // Drag the corner handle to move the sandbox within the viewport. Position
+  // only changes, not the grid, so this can apply straight from the pointer
+  // event instead of going through the frame-coalesced resize path.
+  mover.onMove = (dx, dy): void => {
+    layout.moveBy(dx, dy);
+    syncLayoutOutputs();
   };
 
   // Sandbox edge behavior (wall vs. void). subscribe fires immediately, so this

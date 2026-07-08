@@ -3,10 +3,11 @@ import { createFloatingOverlay } from './floatingOverlay';
 
 /**
  * A draggable handle at the sandbox's top-right corner that resizes the play
- * area. Resizing is symmetric about the viewport center, so the sandbox stays
- * centered as it grows or shrinks and the drag reads as "set the size and
- * aspect ratio of the space." Double-clicking the handle resets to the device
- * default.
+ * area. Resizing is symmetric about the sandbox's own current center (which
+ * may itself be off-center in the viewport — see SandboxMover), so the
+ * sandbox's position is preserved as it grows or shrinks and the drag reads
+ * as "set the size and aspect ratio of the space." Double-clicking the handle
+ * resets to the device default (centered, filling the viewport).
  *
  * All geometry is measured against the canvas (its bounding rect and client
  * size) — the exact frame the SandboxLayout centers the sandbox in — so the
@@ -17,6 +18,10 @@ import { createFloatingOverlay } from './floatingOverlay';
 export class SandboxResizer {
   private el: HTMLDivElement;
   private dragging = false;
+  /** Last rect passed to setRect, used to anchor the resize center on the
+   *  sandbox's own center rather than the canvas's — see center(). Falls back
+   *  to the canvas center before the first sync. */
+  private rect: ViewRect | null = null;
 
   /** Called when a drag begins, before the first size — snapshot point. */
   onResizeStart: () => void = () => {};
@@ -45,17 +50,30 @@ export class SandboxResizer {
     });
   }
 
-  /** The viewport center, in the same client coords pointer events report. */
+  /**
+   * The sandbox rect's own center, in the same client coords pointer events
+   * report — *not* the canvas/viewport center. The sandbox can now be dragged
+   * off-center (see SandboxMover), so resizing must stay symmetric about
+   * wherever the sandbox actually is, or the first pixel of a resize drag
+   * would jump the rect to re-center it on the viewport.
+   */
   private center(): { cx: number; cy: number } {
     const r = this.canvas.getBoundingClientRect();
+    if (!this.rect) {
+      return {
+        cx: r.left + this.canvas.clientWidth / 2,
+        cy: r.top + this.canvas.clientHeight / 2,
+      };
+    }
     return {
-      cx: r.left + this.canvas.clientWidth / 2,
-      cy: r.top + this.canvas.clientHeight / 2,
+      cx: r.left + this.rect.x + this.rect.width / 2,
+      cy: r.top + this.rect.y + this.rect.height / 2,
     };
   }
 
   /** Position the handle at the sandbox rect's top-right corner (CSS px). */
   setRect(rect: ViewRect): void {
+    this.rect = rect;
     const r = this.canvas.getBoundingClientRect();
     const cornerX = r.left + rect.x + rect.width;
     const cornerY = r.top + rect.y;
@@ -84,7 +102,7 @@ export class SandboxResizer {
   private onMove = (e: PointerEvent): void => {
     if (!this.dragging) return;
     e.preventDefault();
-    // Symmetric about the viewport center: half-extent = pointer − center.
+    // Symmetric about the sandbox's own center: half-extent = pointer − center.
     const { cx, cy } = this.center();
     this.onResize(2 * Math.abs(e.clientX - cx), 2 * Math.abs(e.clientY - cy));
   };

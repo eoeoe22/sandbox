@@ -53,6 +53,11 @@ function deriveGrid(cssW: number, cssH: number): GridDims {
  * - `custom` mode: the user dragged the resize handle to a specific size; it is
  *   clamped to the viewport on resize but otherwise left alone.
  *
+ * Independent of size, the sandbox can also be dragged around within the
+ * viewport (see moveBy/offsetX/offsetY) — the offset is clamped so the
+ * sandbox always stays fully on-screen, and resets whenever the layout resets
+ * to the device default.
+ *
  * Both the renderer (to place and outline the grid) and the pointer painter (to
  * hit-test taps) read the rect from here, so they can never disagree.
  */
@@ -75,6 +80,14 @@ export class SandboxLayout {
   /** Effective CSS px per cell (see deriveGrid). */
   cell = CELL_PX;
 
+  /**
+   * User-dragged offset from the centered position, in CSS px. Lets the
+   * sandbox be moved around within the viewport (not just resized) while
+   * always staying fully on-screen — see clampOffset.
+   */
+  private offsetX = 0;
+  private offsetY = 0;
+
   /** Update the viewport size (CSS px); recomputes the grid. */
   setViewport(w: number, h: number): void {
     this.viewW = w;
@@ -85,6 +98,13 @@ export class SandboxLayout {
     }
     // Custom intent is left untouched; recompute clamps it to the new viewport.
     this.recompute();
+  }
+
+  /** Move the sandbox by (dx, dy) CSS px, clamped so it stays fully on-screen. */
+  moveBy(dx: number, dy: number): void {
+    this.offsetX += dx;
+    this.offsetY += dy;
+    this.clampOffset();
   }
 
   /** Set an explicit sandbox size from the resize handle (switches to custom). */
@@ -104,11 +124,13 @@ export class SandboxLayout {
     return { mode: this.mode, w: this.wantW, h: this.wantH };
   }
 
-  /** Snap back to filling the viewport. */
+  /** Snap back to filling the viewport, centered. */
   reset(): void {
     this.mode = 'device';
     this.wantW = this.viewW;
     this.wantH = this.viewH;
+    this.offsetX = 0;
+    this.offsetY = 0;
     this.recompute();
   }
 
@@ -120,6 +142,17 @@ export class SandboxLayout {
     this.gw = gw;
     this.gh = gh;
     this.cell = cell;
+    this.clampOffset();
+  }
+
+  /** Keep the offset within the room left by the viewport around the centered
+   *  rect, so a drag (or a shrinking viewport/window resize) can never push
+   *  the sandbox partly off-screen. */
+  private clampOffset(): void {
+    const maxX = Math.max(0, (this.viewW - this.rectW()) / 2);
+    const maxY = Math.max(0, (this.viewH - this.rectH()) / 2);
+    this.offsetX = clamp(this.offsetX, -maxX, maxX);
+    this.offsetY = clamp(this.offsetY, -maxY, maxY);
   }
 
   /** Rendered sandbox size in CSS px (grid snapped to whole cells). */
@@ -130,9 +163,11 @@ export class SandboxLayout {
     return this.gh * this.cell;
   }
 
-  /** Sandbox rectangle in CSS px, centered in the viewport. */
+  /** Sandbox rectangle in CSS px: centered in the viewport, then shifted by
+   *  the user-dragged offset (see moveBy). */
   cssRect(): ViewRect {
-    return centeredRect(this.viewW, this.viewH, this.rectW(), this.rectH());
+    const r = centeredRect(this.viewW, this.viewH, this.rectW(), this.rectH());
+    return { ...r, x: r.x + this.offsetX, y: r.y + this.offsetY };
   }
 
   /** Sandbox rectangle in device px, given the CSS→device scale. */

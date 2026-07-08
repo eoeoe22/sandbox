@@ -178,8 +178,9 @@ export function initSettingsPersistence(): void {
 // The grid is stored as run-length-encoded binary, base64'd into a JSON
 // envelope. RLE keeps the common case (large uniform regions of Empty/settled
 // material at ambient temperature) tiny, and the worst case (pure noise at the
-// 130k-cell budget: 2 B/cell for ids + 4 B/cell for temps, ~1.1 MB of base64)
-// still fits comfortably inside every browser's localStorage quota.
+// 292.5k-cell budget: 2 B/cell for ids + 4 B/cell for temps, ~2.3 MB of base64)
+// still fits inside every browser's localStorage quota (typically 5-10 MB),
+// with writeString degrading gracefully on QuotaExceededError regardless.
 
 /** Temperatures are quantized to 0.1° steps in an int16 (range ±3276.7 — the
  *  brush clamps at [-50, 2000], so gameplay values fit with headroom). Blast's
