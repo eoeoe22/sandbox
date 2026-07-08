@@ -237,7 +237,13 @@
     left: 12px;
     z-index: 10;
     width: 180px;
+    /* Cap the panel to the *visible* viewport minus its 12px top/bottom margins.
+       Dynamic viewport units (dvh) exclude the mobile browser's address/tool bar,
+       so on Android/iOS the panel no longer runs taller than the screen and spills
+       its bottom off-screen; its contents scroll within this height instead. The
+       vh line is the fallback for browsers without dvh support. */
     max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
     padding: 12px;
     display: flex;
     flex-direction: column;
