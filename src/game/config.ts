@@ -29,8 +29,21 @@ export const MIN_GRID_SIDE = 16;
 export const GRID_W = 240;
 export const GRID_H = 135;
 
-/** Fixed simulation update rate (Hz). Rendering runs at display refresh rate. */
+/** Fixed simulation update rate (Hz). Rendering runs at display refresh rate.
+ *  This is "full speed" — the ×2 option; the default runs at half this (see
+ *  SIM_SPEEDS / SIM_SPEED_DEFAULT below and the step interval in Game.ts). */
 export const TICK_HZ = 60;
+
+/**
+ * User-selectable simulation-speed multipliers, in the order the toolbar shows
+ * them. The base rate TICK_HZ is treated as *full* speed (×2); the default (×1)
+ * deliberately runs the whole simulation at half that, giving a calmer pace with
+ * ×2 available to restore the original speed. The effective step interval is
+ * `2000 / (TICK_HZ * mult)` ms, so ×1 → TICK_HZ/2 Hz and ×2 → TICK_HZ Hz.
+ */
+export const SIM_SPEEDS = [1, 2] as const;
+export type SimSpeed = (typeof SIM_SPEEDS)[number];
+export const SIM_SPEED_DEFAULT: SimSpeed = 1;
 
 /**
  * Heat conduction (direct conduction only — no convection or radiation).

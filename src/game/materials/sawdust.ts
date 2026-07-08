@@ -8,10 +8,11 @@ import { tryBurn, type Combustible } from './combustion';
 // Powder fuel: falls and piles, but light (density < water) so a scatter of it
 // floats on water rather than sinking. The *second-fastest* fuel — behind
 // Gasoline, ahead of Wood — because loose, airy shavings catch far more readily
-// than the solid timber they were milled from: a high ignite chance and a
-// modest autoignition point. Just burns; never detonates. See combustion.ts for
+// than the solid timber they were milled from: a higher ignite chance than the
+// solids and a modest autoignition point, though it still burns as a creeping
+// front rather than a flash. Just burns; never detonates. See combustion.ts for
 // the shared model.
-const SPEC: Combustible = { burnChance: 0.28, autoIgniteTemp: 450 };
+const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 450 };
 
 function updateSawdust(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;

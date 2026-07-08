@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     $running as running,
+    $simSpeed as simSpeed,
     $brushSize as brushSize,
     $brushShape as brushShape,
     $brushMode as brushMode,
@@ -59,6 +60,28 @@
       </button>
       <button onclick={requestStep} disabled={$running}>⏭ 스텝</button>
       <button onclick={requestClear}>🗑 지우기</button>
+    </div>
+
+    <div class="brush">
+      <span>속도: {$simSpeed === 2 ? '×2 (원래 속도)' : '×1 (기본)'}</span>
+      <div class="row shape speed" role="group" aria-label="시뮬레이션 속도">
+        <button
+          class:active={$simSpeed === 1}
+          onclick={() => simSpeed.set(1)}
+          aria-pressed={$simSpeed === 1}
+          title="기본 속도 (원래 속도의 절반)"
+        >
+          ×1
+        </button>
+        <button
+          class:active={$simSpeed === 2}
+          onclick={() => simSpeed.set(2)}
+          aria-pressed={$simSpeed === 2}
+          title="2배 속도 (원래 속도)"
+        >
+          ×2
+        </button>
+      </div>
     </div>
 
     <label class="brush">

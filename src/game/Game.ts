@@ -16,6 +16,7 @@ import {
   $stepSignal,
   $resetAspectSignal,
   $borderMode,
+  $simSpeed,
 } from '../state/store';
 import './materials'; // register all materials (side effect)
 
@@ -139,7 +140,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
     if (document.visibilityState === 'hidden') saveNow();
   });
 
-  const stepMs = 1000 / TICK_HZ;
+  // Fixed simulation step interval, driven by the UI speed multiplier. TICK_HZ
+  // is full speed (×2); the default (×1) runs at half that, so the interval is
+  // 2000/(TICK_HZ*mult) ms. subscribe fires immediately, seeding stepMs with the
+  // restored/default speed, and updates it live when the user toggles ×1/×2.
+  let stepMs = 2000 / (TICK_HZ * $simSpeed.get());
+  $simSpeed.subscribe((mult) => {
+    stepMs = 2000 / (TICK_HZ * mult);
+  });
   let last = performance.now();
   let acc = 0;
   let frames = 0;

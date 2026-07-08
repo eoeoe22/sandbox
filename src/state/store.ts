@@ -1,6 +1,7 @@
 import { atom } from 'nanostores';
 import { SAND } from '../game/materials';
-import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX } from '../game/config';
+import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX, SIM_SPEED_DEFAULT } from '../game/config';
+import type { SimSpeed } from '../game/config';
 import type { AspectMode } from '../game/layout';
 import type { BorderMode } from '../game/engine/types';
 
@@ -50,6 +51,14 @@ export const $overwriteLevel = atom<number>(OVERWRITE_LEVEL_MAX);
 
 /** Whether the simulation is advancing. */
 export const $running = atom<boolean>(true);
+
+/**
+ * Simulation speed multiplier. `1` (the default) runs at half the base tick rate
+ * for a calmer pace; `2` restores the original full speed. The engine (Game.ts)
+ * turns this into the fixed step interval; rendering is unaffected. See
+ * `SIM_SPEEDS` in config.ts.
+ */
+export const $simSpeed = atom<SimSpeed>(SIM_SPEED_DEFAULT);
 
 /** Smoothed frames-per-second (for the HUD). */
 export const $fps = atom<number>(0);
