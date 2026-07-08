@@ -27,7 +27,8 @@ import { LAVA } from './lava';
 // deliberately-applied cutting torch rather than an unstoppable world-melter.
 const MELT_CHANCE = 0.1; // per-tick chance to melt one adjacent Stone → Lava
 const IGNITE_CHANCE = 0.08; // per-tick chance to set a flammable neighbor alight
-const BURNOUT_CHANCE = 0.01; // ~100-tick life vs Fire's ~50 — time to melt rock
+const BURNOUT_CHANCE = 0.05; // ~20-tick life vs Fire's ~10 — burns out quickly but
+// still lingers a touch longer than Fire (and stays extremely hot) to melt rock
 const SMOKE_CHANCE = 0.25; // …and only some burnouts leave Smoke behind
 
 function updateBlueFlame(x: number, y: number, sim: SimContext): void {
