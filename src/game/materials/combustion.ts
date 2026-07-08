@@ -9,11 +9,16 @@ import { BLUE_FLAME } from './blueflame';
 // detonates: it just catches fire and is consumed, turning into ordinary Fire
 // that then burns out on its own. The one thing that differs between fuels is
 // *how fast* they burn, captured by `burnChance` — the per-tick probability
-// that a fuel cell touching a flame turns to Fire. A high chance flashes a
-// whole pool over in a moment (gasoline); a low one creeps as a slow smoulder
-// (coal/crude oil). Each fuel also self-ignites once its own temperature passes
-// an autoignition point, so the heat brush or radiant heat from something very
-// hot (Lava, Blue Flame) can set it off with no flame cell touching it.
+// that a fuel cell touching a flame turns to Fire. Every fuel is tuned to burn
+// *slowly*, eating in from the surface a cell at a time rather than flashing the
+// whole body over at once; `burnChance` only sets the relative pace — a bit
+// quicker for the loose/volatile fuels (gasoline, sawdust), a long slow smoulder
+// for the dense ones (coal, crude oil). Because only cells actually touching a
+// flame roll to catch, the burn stays a creeping surface front: the interior
+// stays cool (insulated by its own still-unlit neighbors) until the front
+// reaches it. Each fuel also self-ignites once its own temperature passes an
+// autoignition point, so the heat brush or radiant heat from something very hot
+// (Lava, Blue Flame) can set it off with no flame cell touching it.
 //
 // Fuels deliberately are NOT tagged `flammable`: that tag hands ignition to
 // Fire's single global-rate ignite pass (see fire.ts), which would erase the

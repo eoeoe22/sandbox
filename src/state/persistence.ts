@@ -7,6 +7,7 @@ import {
   $overwriteLevel,
   $running,
   $borderMode,
+  $simSpeed,
   type BrushShape,
   type BrushMode,
   type Tool,
@@ -18,7 +19,9 @@ import {
   BRUSH_MAX,
   OVERWRITE_LEVEL_MIN,
   OVERWRITE_LEVEL_MAX,
+  SIM_SPEEDS,
 } from '../game/config';
+import type { SimSpeed } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
 import type { SandboxLayout, AspectMode } from '../game/layout';
@@ -64,6 +67,7 @@ const BRUSH_SHAPES: readonly BrushShape[] = ['circle', 'square'];
 const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
 const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
+const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 
 /** Round + clamp a persisted number, falling back when it isn't a finite number. */
 function clampInt(v: unknown, lo: number, hi: number, fallback: number): number {
@@ -96,6 +100,7 @@ function hydrateSettings(): void {
     clampInt(s.overwriteLevel, OVERWRITE_LEVEL_MIN, OVERWRITE_LEVEL_MAX, $overwriteLevel.get()),
   );
   $borderMode.set(oneOf(s.borderMode, BORDER_MODES, $borderMode.get()));
+  $simSpeed.set(oneOf(s.simSpeed, SIM_SPEED_VALUES, $simSpeed.get()));
   if (typeof s.running === 'boolean') $running.set(s.running);
 }
 
@@ -110,6 +115,7 @@ function saveSettings(): void {
       tool: $tool.get(),
       overwriteLevel: $overwriteLevel.get(),
       borderMode: $borderMode.get(),
+      simSpeed: $simSpeed.get(),
       running: $running.get(),
     }),
   );
@@ -156,6 +162,7 @@ export function initSettingsPersistence(): void {
   $tool.listen(schedule);
   $overwriteLevel.listen(schedule);
   $borderMode.listen(schedule);
+  $simSpeed.listen(schedule);
   $running.listen(schedule);
 
   window.addEventListener('pagehide', flush);
