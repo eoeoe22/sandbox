@@ -64,7 +64,7 @@ body {
   border-color: rgba(198, 128, 255, 0.95);
 }
 
-/* Draggable handle at the sandbox's bottom-right corner (see SandboxResizer).
+/* Draggable handle at the sandbox's top-right corner (see SandboxResizer).
    Positioned in CSS px by the engine; centered on the corner via the offset. */
 .sandbox-handle {
   position: fixed;
@@ -82,7 +82,7 @@ body {
   color: #6ea8fe;
   font-size: 12px;
   line-height: 1;
-  cursor: nwse-resize;
+  cursor: nesw-resize;
   touch-action: none;
   user-select: none;
 }
