@@ -37,6 +37,22 @@ export interface Material {
   color: number;
   /** Relative density — heavier materials sink through lighter fluids. */
   density: number;
+  /**
+   * Palette grouping. The toolbar builds one tab per distinct category in a
+   * fixed thematic order (see MaterialPalette). Omit to fall back to a label
+   * derived from `phase` — so an untagged material still lands in a sensible
+   * default group and the "add material = one file" rule holds. Purely a UI
+   * hint; the simulation never reads it.
+   */
+  category?: string;
+  /**
+   * Carries an electric charge: a Spark propagates from cell to cell only
+   * through `conductive` materials (Metal, Mercury), the same tag-based,
+   * scan-order-independent approach `flammable`/`combustible` use. A conductor
+   * also uses its per-cell `aux` byte as a post-spark refractory countdown so a
+   * pulse travels one way down a wire instead of bouncing back (see spark.ts).
+   */
+  conductive?: boolean;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
   flammable?: boolean;
   /**
@@ -51,6 +67,16 @@ export interface Material {
   acidResistant?: boolean;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
+  /**
+   * Survives every explosive force: a Blast shard, flying Ember, and Antimatter
+   * annihilation all pass *around* it instead of destroying it (see
+   * blast.ts/ember.ts/antimatter.ts), exactly like the Wall. Unlike `isWall`
+   * though, it isn't the container boundary — it's an ordinary placeable solid
+   * (Diamond) that just happens to be blast-proof. Combined with never declaring
+   * a temperature reaction, it makes a material effectively indestructible by
+   * heat/cold/explosion while still conducting heat.
+   */
+  explosionProof?: boolean;
   /**
    * Marks a material that detonates rather than merely burning. A Blast wave
    * passes *around* these (it doesn't vaporize them) so they get a turn to

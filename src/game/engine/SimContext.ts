@@ -53,7 +53,23 @@ export class SimContext {
     // later swap). In-place transforms to a *non-empty* material deliberately
     // keep the cell's temperature — that's what lets a just-frozen Stone crust
     // stay cool and a just-boiled Steam cell stay hot.
-    if (id === EMPTY) this.grid.setTemp(x, y, AMBIENT_TEMP);
+    if (id === EMPTY) {
+      this.grid.setTemp(x, y, AMBIENT_TEMP);
+      // Aux is private per-material state (see Grid.aux); clearing it on erase
+      // stops one material's leftover state (a Clone's adopted id, a
+      // conductor's refractory) from being read by whatever is placed here next.
+      this.grid.setAux(x, y, 0);
+    }
+  }
+
+  /** Current auxiliary state byte at a cell (see Grid.aux). Interpreted only by
+   *  the material that occupies the cell; 0 means "no state". */
+  getAux(x: number, y: number): number {
+    return this.grid.getAux(x, y);
+  }
+
+  setAux(x: number, y: number, v: number): void {
+    this.grid.setAux(x, y, v);
   }
 
   /** Current temperature at a cell. Material `update` rules read this to drive
@@ -80,6 +96,10 @@ export class SimContext {
     // own initial temperature (hot for Fire/Steam, ambient for the rest) —
     // mirroring how the brush places fresh material.
     this.grid.setTemp(x, y, getMaterial(id).thermal?.init ?? AMBIENT_TEMP);
+    // Fresh material carries no leftover per-cell state. Callers that need a
+    // specific initial state (Spark's conductor id, Battery's cadence) call
+    // setAux right after this returns.
+    this.grid.setAux(x, y, 0);
     this.grid.moved[this.grid.idx(x, y)] = 1;
   }
 
@@ -114,6 +134,12 @@ export class SimContext {
     const ta = g.temp[a];
     g.temp[a] = g.temp[b];
     g.temp[b] = ta;
+    // Per-cell aux state travels with the material it belongs to, just like
+    // temperature — so a moving conductor keeps its refractory countdown and a
+    // sliding Clone keeps its adopted id.
+    const xa = g.aux[a];
+    g.aux[a] = g.aux[b];
+    g.aux[b] = xa;
     g.moved[a] = 1;
     g.moved[b] = 1;
   }

@@ -170,10 +170,13 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
       return;
     }
     const m = getMaterial(nid);
-    // Wall is indestructible, explosives must survive to chain-detonate on
-    // their own turn (Blast's pass-over rule), and gases (fire, smoke, the
-    // blast wave itself) aren't terrain to smash — those just end the flight.
-    if (m.isWall || m.explosive || m.phase === Phase.Gas) shatter(sim, x, y, cx, cy);
+    // Wall and explosion-proof solids (Diamond) are indestructible, explosives
+    // must survive to chain-detonate on their own turn (Blast's pass-over rule),
+    // and gases (fire, smoke, the blast wave itself) aren't terrain to smash —
+    // those just end the flight.
+    if (m.isWall || m.explosionProof || m.explosive || m.phase === Phase.Gas) {
+      shatter(sim, x, y, cx, cy);
+    }
     else smash(sim, x, y, nx, ny); // sand, stone, plants, … — punch out the struck cell
     return;
   }
@@ -192,6 +195,7 @@ export const EMBER = register({
   phase: Phase.Gas,
   color: rgb(255, 200, 90),
   density: 1,
+  category: '불·열',
   // conductivity 0 is load-bearing, exactly as in Blast: the heat pass leaves
   // `temp` alone so it can hold the packed life+velocity state. init 0
   // decodes to life 0 → an ember placed without launchEmber dies quietly on

@@ -30,8 +30,23 @@ export class Grid {
   temp: Float32Array;
   tempScratch: Float32Array;
 
-  // Still reserved for future per-cell fields (life countdown, velocity, ...).
-  // life: Uint8Array;
+  /**
+   * Per-cell auxiliary state byte, interpreted privately by whichever material
+   * occupies the cell (0 means "no state" / freshly placed). This is the
+   * reserved `life`/state slot the comment here used to promise, generalized:
+   * a conductor uses it as a spark-refractory countdown, a Battery as a pulse
+   * cadence, Clone as the adopted material id, Thermite as a burn timer, and so
+   * on. It travels with the cell on a swap and is cleared when the cell is
+   * emptied — the same lifecycle as `temp`. Runtime-only: not persisted (like
+   * `moved`), so all uses must be transient state that can safely reset to 0 on
+   * reload. Materials that instead need real-valued state keep using `temp`
+   * with `conductivity: 0` (Blast/Ember); `aux` is the cheap integer companion.
+   */
+  aux: Uint8Array;
+
+  // Still reserved for a future per-cell velocity field (see ember.ts, which
+  // currently packs velocity into `temp`).
+  // vel: Int8Array;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -41,6 +56,7 @@ export class Grid {
     this.moved = new Uint8Array(this.size);
     this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
     this.tempScratch = new Float32Array(this.size);
+    this.aux = new Uint8Array(this.size);
   }
 
   idx(x: number, y: number): number {
@@ -67,9 +83,18 @@ export class Grid {
     this.temp[y * this.width + x] = t;
   }
 
+  getAux(x: number, y: number): number {
+    return this.aux[y * this.width + x];
+  }
+
+  setAux(x: number, y: number, v: number): void {
+    this.aux[y * this.width + x] = v;
+  }
+
   clear(): void {
     this.cells.fill(EMPTY);
     this.temp.fill(AMBIENT_TEMP);
+    this.aux.fill(0);
   }
 
   /**
@@ -78,7 +103,7 @@ export class Grid {
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
-    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp);
+    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux);
   }
 
   /**
@@ -99,12 +124,18 @@ export class Grid {
     srcW: number,
     srcH: number,
     srcTemp?: Float32Array,
+    srcAux?: Uint8Array,
   ): void {
     const next = new Uint8Array(width * height);
     // Temperature must follow the cells it belongs to — otherwise preserved
     // material would snap back to ambient on a resize (e.g. molten lava would
     // read as cold and instantly solidify). New area starts at ambient.
     const nextTemp = new Float32Array(width * height).fill(AMBIENT_TEMP);
+    // Aux (per-cell material state) travels with its cells the same way. When no
+    // source aux is supplied (a fresh world load, or a drag whose snapshot
+    // predates aux) it starts zeroed — safe because every aux use is transient
+    // state that self-heals (a Clone re-adopts, a conductor's refractory clears).
+    const nextAux = new Uint8Array(width * height);
     const copyW = Math.min(width, srcW);
     const copyRows = Math.min(height, srcH);
     for (let r = 0; r < copyRows; r++) {
@@ -113,6 +144,7 @@ export class Grid {
       const src = srcY * srcW;
       next.set(srcCells.subarray(src, src + copyW), newY * width);
       if (srcTemp) nextTemp.set(srcTemp.subarray(src, src + copyW), newY * width);
+      if (srcAux) nextAux.set(srcAux.subarray(src, src + copyW), newY * width);
     }
 
     this.width = width;
@@ -122,5 +154,6 @@ export class Grid {
     this.moved = new Uint8Array(this.size);
     this.temp = nextTemp;
     this.tempScratch = new Float32Array(this.size);
+    this.aux = nextAux;
   }
 }

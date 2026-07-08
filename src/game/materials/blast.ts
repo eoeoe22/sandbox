@@ -117,9 +117,10 @@ function canEnter(sim: SimContext, nx: number, ny: number): boolean {
     if (isActiveCrater(sim.getTemp(nx, ny), sim.tick)) return false;
   } else {
     const m = getMaterial(nid);
-    // Only the indestructible boundary Wall blocks a shard outright. Every
-    // other solid — Stone included — gets destroyed like anything else.
-    if (m.isWall) return false;
+    // The indestructible boundary Wall and explosion-proof solids (Diamond)
+    // block a shard outright. Every other solid — Stone included — gets
+    // destroyed like anything else.
+    if (m.isWall || m.explosionProof) return false;
     // Explosives are passed over so they can chain-detonate on their own turn.
     if (m.explosive) return false;
   }
@@ -158,7 +159,7 @@ function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: nu
 // — a dense pile still looks like a proper crater (many overlapping
 // epicenters fill each other's gaps), but an isolated trigger needs its own
 // small solid core to read as a punchy blast rather than a firework.
-const EPICENTER_PUNCH = 2;
+const EPICENTER_PUNCH = 3;
 
 /** The epicenter's initial hit in one direction: instantly destroys the
  *  first `EPICENTER_PUNCH` cells outward (stopping early if blocked), then
@@ -254,10 +255,11 @@ export const BLAST = register({
   phase: Phase.Gas,
   color: rgb(255, 245, 210),
   density: 1,
+  category: '폭발',
   // The radius when a Blast is placed directly by the brush, seeded as an
   // epicenter just like Gunpowder/Nitro (see seedBlast above). conductivity 0
   // is load-bearing: it makes the heat pass treat `temp` as inert per-cell
   // state (the shard's remaining life + direction) instead of real heat.
-  thermal: { init: seedBlast(5), conductivity: 0 },
+  thermal: { init: seedBlast(7), conductivity: 0 },
   update: updateBlast,
 });

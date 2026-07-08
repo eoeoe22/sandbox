@@ -25,6 +25,7 @@ export const OIL = register({
   color: rgb(48, 40, 34),
   density: 2.6,
   combustible: true,
+  category: '불·열',
   thermal: { conductivity: 0.2 },
   update: updateOil,
 });

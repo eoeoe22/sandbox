@@ -64,6 +64,7 @@ export const LAVA = register({
   phase: Phase.Liquid,
   color: rgb(220, 70, 20),
   density: 4.5,
+  category: '불·열',
   thermal: { init: LAVA_TEMP, conductivity: 0.6 },
   // Molten lava glows bright orange (base color); as conduction cools it toward
   // the freeze point it darkens to a dull ember, so the crust and the cooling

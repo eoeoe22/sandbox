@@ -23,7 +23,7 @@ import { BLAST, seedBlast } from './blast';
 // runs, defeating the explosion depending on scan order. It also self-ignites
 // once heated past an autoignition point, so the heat brush or a nearby
 // Blue Flame's radiant heat can touch it off without direct flame contact.
-const BLAST_RADIUS = 4;
+const BLAST_RADIUS = 7;
 const AUTOIGNITE_TEMP = 300;
 
 function updateMethane(x: number, y: number, sim: SimContext): void {
@@ -56,6 +56,7 @@ export const METHANE = register({
   color: rgb(224, 224, 168),
   density: 1,
   explosive: true,
+  category: '폭발',
   // A gas: conducts poorly, so autoignition by conduction takes real sustained
   // heat rather than a single brief brush of it.
   thermal: { conductivity: 0.07 },
