@@ -7,27 +7,29 @@
  * resolution is derived from the sandbox rectangle divided by this value, so a
  * larger sandbox holds proportionally more cells (see layout.ts).
  *
- * 4px keeps grains crisp and fine — a fit-to-device sandbox is roughly
- * 480×270 on 1080p, ~97×195 on a 390×780 phone. Smaller = finer/more space.
+ * 2.667px (4px / 1.5) keeps grains crisp and fine, at 1.5× the resolution of
+ * the original 4px cell — a fit-to-device sandbox is roughly 720×405 on
+ * 1080p, ~146×293 on a 390×780 phone. Smaller = finer/more space.
  */
-export const CELL_PX = 4;
+export const CELL_PX = 4 / 1.5;
 
 /**
  * Upper bound on total cells. The simulation runs on the main thread at
  * TICK_HZ, so an unbounded 4K sandbox would blow the frame budget. When the
  * derived grid would exceed this, the effective cell size is scaled up
  * uniformly (coarser cells, same aspect) to stay under budget. Sized so a
- * full 1080p viewport (~130k cells) renders at the true cell size uncapped;
- * only larger screens (QHD/4K fullscreen) get coarsened to protect the tick.
+ * full 1080p viewport (~292k cells at the 1.5×-resolution cell size) renders
+ * at the true cell size uncapped; only larger screens (QHD/4K fullscreen) get
+ * coarsened to protect the tick.
  */
-export const MAX_CELLS = 130_000;
+export const MAX_CELLS = 292_500;
 
 /** Smallest grid dimension, so a tiny drag still leaves a usable sandbox. */
 export const MIN_GRID_SIDE = 16;
 
 /** Reference grid the app opens with before the viewport is measured (~16:9). */
-export const GRID_W = 240;
-export const GRID_H = 135;
+export const GRID_W = 360;
+export const GRID_H = 203;
 
 /** Fixed simulation update rate (Hz). Rendering runs at display refresh rate.
  *  This is "full speed" — the ×2 option; the default runs at half this (see

@@ -92,6 +92,34 @@ body {
   background: rgba(35, 43, 58, 0.9);
 }
 
+/* Draggable handle at the sandbox's top-left corner (see SandboxMover), for
+   moving the sandbox within the viewport without changing its size. */
+.sandbox-move-handle {
+  position: fixed;
+  z-index: 8;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(110, 168, 254, 0.7);
+  border-radius: 6px;
+  background: rgba(20, 20, 26, 0.82);
+  backdrop-filter: blur(6px);
+  color: #6ea8fe;
+  font-size: 12px;
+  line-height: 1;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+.sandbox-move-handle:hover,
+.sandbox-move-handle.dragging {
+  border-color: #6ea8fe;
+  background: rgba(35, 43, 58, 0.9);
+}
+
 .notfound {
   display: flex;
   flex-direction: column;
