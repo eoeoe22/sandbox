@@ -39,6 +39,14 @@ export interface Material {
   density: number;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
   flammable?: boolean;
+  /**
+   * Marks a fuel that burns via the shared surface-front model (see
+   * combustion.ts): Crude Oil, Gasoline, Coal, Wood, Sawdust. A cell already
+   * burning uses this tag to tell which of its neighbors are fuel it can light,
+   * so the burn creeps from cell to cell through the whole body. Distinct from
+   * `flammable`, which hands ignition to Fire's own global-rate pass instead.
+   */
+  combustible?: boolean;
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */

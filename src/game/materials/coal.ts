@@ -27,6 +27,7 @@ export const COAL = register({
   // Density is inert for a Solid (solids never move or get displaced); kept for
   // completeness alongside the other materials.
   density: 5,
+  combustible: true,
   thermal: { conductivity: 0.2 },
   update: updateCoal,
 });

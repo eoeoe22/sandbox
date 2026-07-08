@@ -25,6 +25,7 @@ export const SAWDUST = register({
   phase: Phase.Powder,
   color: rgb(184, 146, 92),
   density: 2,
+  combustible: true,
   thermal: { conductivity: 0.2 },
   update: updateSawdust,
 });

@@ -24,6 +24,7 @@ export const OIL = register({
   phase: Phase.Liquid,
   color: rgb(48, 40, 34),
   density: 2.6,
+  combustible: true,
   thermal: { conductivity: 0.2 },
   update: updateOil,
 });
