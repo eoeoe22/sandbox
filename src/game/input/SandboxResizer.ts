@@ -2,7 +2,7 @@ import type { ViewRect } from '../render/viewport';
 import { createFloatingOverlay } from './floatingOverlay';
 
 /**
- * A draggable handle at the sandbox's bottom-right corner that resizes the play
+ * A draggable handle at the sandbox's top-right corner that resizes the play
  * area. Resizing is symmetric about the viewport center, so the sandbox stays
  * centered as it grows or shrinks and the drag reads as "set the size and
  * aspect ratio of the space." Double-clicking the handle resets to the device
@@ -32,7 +32,8 @@ export class SandboxResizer {
     el.setAttribute('role', 'slider');
     el.setAttribute('aria-label', '샌드박스 크기 조절');
     el.title = '드래그: 크기·화면비 조절 · 더블클릭: 기기에 맞춤';
-    el.innerHTML = '<i class="bi bi-arrows-angle-expand"></i>';
+    el.innerHTML =
+      '<i class="bi bi-arrows-angle-expand" style="transform: rotate(90deg)"></i>';
     this.el = el;
 
     el.addEventListener('pointerdown', this.onDown);
@@ -53,15 +54,15 @@ export class SandboxResizer {
     };
   }
 
-  /** Position the handle at the sandbox rect's bottom-right corner (CSS px). */
+  /** Position the handle at the sandbox rect's top-right corner (CSS px). */
   setRect(rect: ViewRect): void {
     const r = this.canvas.getBoundingClientRect();
     const cornerX = r.left + rect.x + rect.width;
-    const cornerY = r.top + rect.y + rect.height;
+    const cornerY = r.top + rect.y;
     // Keep the handle fully on-screen even when the sandbox fills the viewport.
     const half = this.el.offsetWidth / 2 || 11;
     const x = Math.min(cornerX, r.left + this.canvas.clientWidth - half);
-    const y = Math.min(cornerY, r.top + this.canvas.clientHeight - half);
+    const y = Math.max(cornerY, r.top + half);
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y}px`;
   }
