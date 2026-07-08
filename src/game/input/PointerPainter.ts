@@ -178,6 +178,12 @@ export class PointerPainter {
         if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
         this.grid.set(x, y, id);
         this.grid.setTemp(x, y, initTemp);
+        // Freshly placed (or erased) material carries no prior per-cell state, so
+        // clear aux — otherwise a stale byte left by whatever occupied this cell
+        // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
+        // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
+        // only other create/clear paths; the raw grid.set here bypasses them.
+        this.grid.setAux(x, y, 0);
       }
     }
   }
