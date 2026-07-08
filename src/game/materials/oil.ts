@@ -6,12 +6,12 @@ import type { SimContext } from '../engine/SimContext';
 import { tryBurn, type Combustible } from './combustion';
 
 // Liquid fuel: flows/pools like water but lighter (density < 3), so it floats on
-// water — while heavier than Gasoline, so gasoline in turn floats on it. One of
-// the two *slowest*-burning fuels (paired with Coal): a low ignite chance makes
-// it smoulder, creeping across the surface of a pool rather than flashing over,
-// and a high autoignition point means it needs real sustained heat to catch on
-// its own. Just burns; never detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 560 };
+// water — while heavier than Gasoline, so gasoline in turn floats on it. The
+// *second-fastest*-burning fuel, behind only Gasoline: crude oil vaporizes and
+// catches readily, so it's tuned closer to its refined cousin than to the
+// solid fuels (Coal, Wood) it used to smoulder alongside. Just burns; never
+// detonates. See combustion.ts for the shared model.
+const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 430 };
 
 function updateOil(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
