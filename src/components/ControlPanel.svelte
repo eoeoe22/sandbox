@@ -12,6 +12,7 @@
     $aspectMode as aspectMode,
     $gridDims as gridDims,
     $borderMode as borderMode,
+    $bottomInset as bottomInset,
     requestClear,
     requestStep,
     requestResetAspect,
@@ -22,11 +23,32 @@
     OVERWRITE_LEVELS,
     OVERWRITE_LEVEL_MIN,
     OVERWRITE_LEVEL_MAX,
+    MOBILE_BAR_HEIGHT,
+    MOBILE_LAYOUT_QUERY,
   } from '../game/config';
   import MaterialPalette from './MaterialPalette.svelte';
 
   // Collapsed state is local UI — the engine doesn't care about it.
   let collapsed = $state(false);
+
+  // Publish how much room (if any) the bottom toolbar takes up, so the engine
+  // can keep the default sandbox from running underneath it. Only the mobile
+  // toolbar layout reserves space — the sidebar is a small floating overlay,
+  // same as before this panel grew a second layout.
+  $effect(() => {
+    if (collapsed) {
+      bottomInset.set(0);
+      return;
+    }
+    const mq = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const update = () => bottomInset.set(mq.matches ? MOBILE_BAR_HEIGHT : 0);
+    update();
+    mq.addEventListener('change', update);
+    return () => {
+      mq.removeEventListener('change', update);
+      bottomInset.set(0);
+    };
+  });
 </script>
 
 {#if collapsed}
@@ -40,7 +62,7 @@
     <i class="bi bi-layout-sidebar-inset"></i>
   </button>
 {:else}
-  <aside class="panel">
+  <aside class="panel" style={`--bar-h: ${MOBILE_BAR_HEIGHT}px`}>
     <div class="head">
       <h1>Particle Sandbox</h1>
       <button
@@ -438,8 +460,14 @@
       right: 0;
       bottom: 0;
       width: auto;
-      max-height: 32vh;
-      max-height: 32dvh;
+      /* Fixed (not viewport-relative) so every row has a known, unwrapped
+         single-line height to lay out against — see the .brush > span rule
+         below, which caps the tallest content (a label above a slider) to
+         fit it. Kept in sync with Game.ts via the MOBILE_BAR_HEIGHT constant
+         (passed in as the --bar-h custom property) so the default sandbox
+         size can reserve exactly this much room instead of running under it. */
+      height: var(--bar-h);
+      max-height: none;
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: center;
@@ -481,6 +509,14 @@
     }
     .brush {
       width: 150px;
+    }
+    /* Never let a long label wrap to a second line — that would grow this
+       item taller than its siblings and, at a fixed bar height, clip or
+       crowd whatever sits next to it. */
+    .brush > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .hint {
       display: none;

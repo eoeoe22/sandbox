@@ -18,6 +18,7 @@ import {
   $resetAspectSignal,
   $borderMode,
   $simSpeed,
+  $bottomInset,
 } from '../state/store';
 import './materials'; // register all materials (side effect)
 
@@ -85,17 +86,27 @@ export function startGame(canvas: HTMLCanvasElement): void {
   let pendingSize: { w: number; h: number } | null = null;
   let dragSnapshot: { cells: Uint8Array; temp: Float32Array; w: number; h: number } | null = null;
 
+  // Room reserved at the bottom of the viewport for the control panel's
+  // mobile toolbar (0 in the sidebar layout) — see $bottomInset. The canvas
+  // itself still covers the full screen; only the 'device'-mode sandbox rect
+  // shrinks, so it never runs underneath the toolbar.
+  let bottomInset = 0;
+
   const resize = (): void => {
     const dpr = window.devicePixelRatio || 1;
     renderer.resize(
       Math.max(1, Math.floor(canvas.clientWidth * dpr)),
       Math.max(1, Math.floor(canvas.clientHeight * dpr)),
     );
-    layout.setViewport(canvas.clientWidth, canvas.clientHeight);
+    layout.setViewport(canvas.clientWidth, Math.max(1, canvas.clientHeight - bottomInset));
     applyLayout();
   };
   resize();
   window.addEventListener('resize', resize);
+  $bottomInset.subscribe((inset) => {
+    bottomInset = inset;
+    resize();
+  });
 
   // Drag the corner handle to resize the sandbox; double-click / button resets.
   resizer.onResizeStart = (): void => {

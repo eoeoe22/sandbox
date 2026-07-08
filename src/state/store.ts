@@ -85,6 +85,14 @@ export const $borderMode = atom<BorderMode>('wall');
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
+/**
+ * CSS px reserved at the bottom of the viewport by the control panel's mobile
+ * bottom toolbar (0 in the sidebar layout, or while the panel is collapsed).
+ * ControlPanel publishes this so the engine's default ('device') sandbox size
+ * can leave room for the toolbar instead of running underneath it.
+ */
+export const $bottomInset = atom<number>(0);
+
 // One-shot command signals: bump the counter to request the action. The engine
 // listens for changes.
 export const $clearSignal = atom<number>(0);

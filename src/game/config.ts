@@ -122,3 +122,13 @@ export const OVERWRITE_LEVELS = [
 ] as const;
 export const OVERWRITE_LEVEL_MIN = 0;
 export const OVERWRITE_LEVEL_MAX = OVERWRITE_LEVELS.length - 1;
+
+/**
+ * Height (CSS px) of the control panel's mobile bottom toolbar, and the media
+ * query that switches it from the sidebar into that toolbar (see
+ * ControlPanel's narrow-screen layout). Shared with Game.ts so the default
+ * ('device') sandbox size can reserve this much room at the bottom instead of
+ * running underneath the bar.
+ */
+export const MOBILE_BAR_HEIGHT = 88;
+export const MOBILE_LAYOUT_QUERY = '(max-aspect-ratio: 1/1)';
