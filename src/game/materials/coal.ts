@@ -6,11 +6,11 @@ import { tryBurn, type Combustible } from './combustion';
 
 // Solid fuel: a static, rigid lump of coal (like Wall/Stone/Wood it just sits —
 // Solid has no phase-default movement, so a heap holds its shape and burns down
-// in place instead of tumbling and piling like a powder). One of the two
-// *slowest*-burning fuels (paired with Crude Oil): a low ignite chance makes a
-// lump smoulder for a long time, creeping in from the surface a cell at a time
-// rather than flashing over, and a high autoignition point resists catching from
-// stray heat. Just burns; never detonates. See combustion.ts for the shared model.
+// in place instead of tumbling and piling like a powder). The *slowest*-burning
+// fuel: a low ignite chance makes a lump smoulder for a long time, creeping in
+// from the surface a cell at a time rather than flashing over, and a high
+// autoignition point resists catching from stray heat. Just burns; never
+// detonates. See combustion.ts for the shared model.
 const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580 };
 
 function updateCoal(x: number, y: number, sim: SimContext): void {
