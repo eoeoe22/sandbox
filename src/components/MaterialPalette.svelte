@@ -12,17 +12,17 @@
   // to the tab derived from its phase (so untagged materials still land
   // somewhere sensible and the "add a material = one file" rule is preserved).
   const CATEGORY_META: { key: string; icon: string }[] = [
-    { key: '지우개', icon: '🧹' },
-    { key: '고체', icon: '🪨' },
-    { key: '가루', icon: '🏖️' },
-    { key: '액체', icon: '💧' },
-    { key: '기체', icon: '💨' },
-    { key: '불·열', icon: '🔥' },
-    { key: '폭발', icon: '💥' },
-    { key: '냉각', icon: '❄️' },
-    { key: '전기', icon: '⚡' },
-    { key: '생명', icon: '🌱' },
-    { key: '특수', icon: '✨' },
+    { key: '지우개', icon: 'bi-eraser-fill' },
+    { key: '고체', icon: 'bi-gem' },
+    { key: '가루', icon: 'bi-hourglass-split' },
+    { key: '액체', icon: 'bi-droplet-fill' },
+    { key: '기체', icon: 'bi-wind' },
+    { key: '불·열', icon: 'bi-fire' },
+    { key: '폭발', icon: 'bi-explosion' },
+    { key: '냉각', icon: 'bi-snow2' },
+    { key: '전기', icon: 'bi-lightning-charge-fill' },
+    { key: '생명', icon: 'bi-flower1' },
+    { key: '특수', icon: 'bi-stars' },
   ];
 
   const PHASE_FALLBACK: Record<Phase, string> = {
@@ -35,7 +35,7 @@
 
   const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
   const iconFor = (key: string): string =>
-    CATEGORY_META.find((c) => c.key === key)?.icon ?? '•';
+    CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-question-circle';
 
   // Bucket every palette material by resolved category, then order the tabs:
   // the known categories (in CATEGORY_META order) that actually have members,
@@ -131,18 +131,29 @@
   // primary use case — the sidebar alone can eat most of the width, so if
   // the flyout wouldn't fit to the right without also being clamped back
   // over the button (making it un-clickable), drop it below the button
-  // instead. Falls back to unclamped, right-of-button placement before the
-  // flyout has been measured once (`flyoutEl` still null).
+  // instead. On the bottom-toolbar layout (narrow/portrait screens) the
+  // button itself sits near the bottom edge, so if there's no room to the
+  // right *or* below, open upward instead. Falls back to unclamped,
+  // right-of-button placement before the flyout has been measured once
+  // (`flyoutEl` still null).
   function computePosition(anchor: DOMRect): { top: number; left: number } {
     if (!flyoutEl) return { top: anchor.top, left: anchor.right + GAP };
     const fw = flyoutEl.offsetWidth;
     const fh = flyoutEl.offsetHeight;
-    let left = anchor.right + GAP;
-    let top = anchor.top;
-    if (left + fw > window.innerWidth - EDGE_MARGIN) {
+
+    let left: number;
+    let top: number;
+    if (anchor.right + GAP + fw <= window.innerWidth - EDGE_MARGIN) {
+      left = anchor.right + GAP;
+      top = anchor.top;
+    } else if (anchor.bottom + GAP + fh <= window.innerHeight - EDGE_MARGIN) {
       left = anchor.left;
       top = anchor.bottom + GAP;
+    } else {
+      left = anchor.left;
+      top = anchor.top - GAP - fh;
     }
+
     left = Math.min(Math.max(EDGE_MARGIN, left), Math.max(EDGE_MARGIN, window.innerWidth - EDGE_MARGIN - fw));
     top = Math.min(Math.max(EDGE_MARGIN, top), Math.max(EDGE_MARGIN, window.innerHeight - EDGE_MARGIN - fh));
     return { top, left };
@@ -244,7 +255,7 @@
         aria-controls={`cat-flyout-${cat.index}`}
         title={cat.label}
       >
-        <span class="icon">{cat.icon}</span>
+        <span class="icon"><i class="bi {cat.icon}"></i></span>
         {cat.label}
         <span class="count">{cat.materials.length}</span>
       </button>
@@ -378,5 +389,22 @@
     white-space: nowrap;
     font-size: 10px;
     text-align: center;
+  }
+
+  /* Mirrors ControlPanel's bottom-toolbar breakpoint: lay the category
+     buttons out in a horizontally-scrolling row instead of a vertical list,
+     since the palette is just one item among many in that scrolling bar. */
+  @media (max-aspect-ratio: 1/1) {
+    .palette {
+      flex-direction: row;
+      flex-wrap: nowrap;
+    }
+    .category {
+      flex: none;
+    }
+    .category > button {
+      width: auto;
+      white-space: nowrap;
+    }
   }
 </style>

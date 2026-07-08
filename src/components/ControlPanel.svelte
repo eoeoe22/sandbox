@@ -56,10 +56,15 @@
 
     <div class="row">
       <button onclick={() => running.set(!$running)}>
-        {$running ? '⏸ 일시정지' : '▶ 재생'}
+        <i class="bi {$running ? 'bi-pause-fill' : 'bi-play-fill'}"></i>
+        {$running ? '일시정지' : '재생'}
       </button>
-      <button onclick={requestStep} disabled={$running}>⏭ 스텝</button>
-      <button onclick={requestClear}>🗑 지우기</button>
+      <button onclick={requestStep} disabled={$running}>
+        <i class="bi bi-skip-forward-fill"></i> 스텝
+      </button>
+      <button onclick={requestClear}>
+        <i class="bi bi-trash3-fill"></i> 지우기
+      </button>
     </div>
 
     <div class="brush">
@@ -102,7 +107,7 @@
         aria-pressed={$brushShape === 'circle'}
         title="원형 브러시"
       >
-        ● 원형
+        <i class="bi bi-circle-fill"></i> 원형
       </button>
       <button
         class:active={$brushShape === 'square'}
@@ -110,7 +115,7 @@
         aria-pressed={$brushShape === 'square'}
         title="사각형 브러시"
       >
-        ■ 사각형
+        <i class="bi bi-square-fill"></i> 사각형
       </button>
     </div>
 
@@ -121,7 +126,7 @@
         aria-pressed={$brushMode === 'full'}
         title="브러시 영역을 빈틈없이 채웁니다"
       >
-        ▣ Full
+        <i class="bi bi-grid-3x3-gap-fill"></i> Full
       </button>
       <button
         class:active={$brushMode === 'particle'}
@@ -129,7 +134,7 @@
         aria-pressed={$brushMode === 'particle'}
         title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
       >
-        ▦ Particle
+        <i class="bi bi-grid-3x3-gap"></i> Particle
       </button>
     </div>
 
@@ -140,7 +145,7 @@
         aria-pressed={$tool === 'material'}
         title="선택한 재료를 그립니다"
       >
-        🖌 재료
+        <i class="bi bi-brush"></i> 재료
       </button>
       <button
         class:active={$tool === 'heat'}
@@ -148,7 +153,7 @@
         aria-pressed={$tool === 'heat'}
         title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
       >
-        🔥 가열
+        <i class="bi bi-fire"></i> 가열
       </button>
       <button
         class:active={$tool === 'cool'}
@@ -156,7 +161,7 @@
         aria-pressed={$tool === 'cool'}
         title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
       >
-        ❄️ 냉각
+        <i class="bi bi-snow2"></i> 냉각
       </button>
       <button
         class:active={$tool === 'mix'}
@@ -164,7 +169,7 @@
         aria-pressed={$tool === 'mix'}
         title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
       >
-        🌀 섞기
+        <i class="bi bi-shuffle"></i> 섞기
       </button>
     </div>
 
@@ -194,7 +199,7 @@
         aria-pressed={$borderMode === 'wall'}
         title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
       >
-        🧱 벽
+        <i class="bi bi-bricks"></i> 벽
       </button>
       <button
         class:active={$borderMode === 'void'}
@@ -202,7 +207,7 @@
         aria-pressed={$borderMode === 'void'}
         title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
       >
-        🕳 공허
+        <i class="bi bi-circle"></i> 공허
       </button>
     </div>
 
@@ -420,5 +425,65 @@
     color: #6a6a78;
     font-size: 11px;
     line-height: 1.4;
+  }
+
+  /* Narrow/portrait screens (phones held upright, most tablets in portrait):
+     the sidebar becomes a bottom toolbar that scrolls horizontally instead of
+     vertically, so every control stays reachable without a tall column
+     competing with the sandbox for screen space. */
+  @media (max-aspect-ratio: 1/1) {
+    .panel {
+      top: auto;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      max-height: 32vh;
+      max-height: 32dvh;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      align-items: center;
+      border-radius: 10px 10px 0 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+    }
+    .panel::-webkit-scrollbar {
+      width: auto;
+      height: 8px;
+    }
+    .head {
+      top: auto;
+      left: -12px;
+      margin: -12px 0 -12px -12px;
+      padding: 12px 10px;
+      flex: none;
+      align-self: stretch;
+    }
+    .head h1 {
+      display: none;
+    }
+    .row,
+    .brush,
+    .aspect,
+    .fps {
+      flex: none;
+    }
+    .row {
+      flex-wrap: nowrap;
+    }
+    .row.tools,
+    .row.border {
+      padding-top: 0;
+      border-top: none;
+      padding-left: 8px;
+      border-left: 1px solid #2a2a33;
+    }
+    .brush {
+      width: 150px;
+    }
+    .hint {
+      display: none;
+    }
   }
 </style>
