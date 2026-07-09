@@ -86,6 +86,15 @@ export interface Material {
    */
   explosive?: boolean;
   /**
+   * Blast radius (in cells) this explosive detonates with. Read by `detonate`
+   * (blast.ts) when the shockwave front sweeps over *another* explosive and sets
+   * it off within the same tick — its own radius refreshes the front so a
+   * connected mass goes off all at once. Each explosive also passes this same
+   * value to `detonate` when it's triggered directly. Only meaningful alongside
+   * `explosive`.
+   */
+  blastRadius?: number;
+  /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
    * material load order. Temperature-driven *reactions* (Lava freezing to

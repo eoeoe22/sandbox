@@ -7,7 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { BLAST, seedBlast } from './blast';
+import { BLAST, detonate } from './blast';
 
 // Gas: rises/diffuses like the default gas behavior, but it's a *fuel-air
 // explosive*. Rather than merely burning, a methane cell detonates — it seeds a
@@ -42,8 +42,7 @@ function updateMethane(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    sim.spawn(x, y, BLAST.id);
-    sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
+    detonate(sim, x, y, BLAST_RADIUS);
     return;
   }
   updateGas(x, y, sim);
@@ -56,6 +55,7 @@ export const METHANE = register({
   color: rgb(224, 224, 168),
   density: 1,
   explosive: true,
+  blastRadius: BLAST_RADIUS,
   category: '폭발',
   // A gas: conducts poorly, so autoignition by conduction takes real sustained
   // heat rather than a single brief brush of it.

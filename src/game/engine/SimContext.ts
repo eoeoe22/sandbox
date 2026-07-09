@@ -20,10 +20,10 @@ export class SimContext {
   borderMode: BorderMode = 'wall';
 
   /**
-   * Current simulation tick, refreshed once per step by `Simulation`. Lets a
-   * per-cell marker self-expire by comparing against a tick it stamped
-   * earlier (see Blast's crater marker) without needing a dedicated per-cell
-   * field of its own.
+   * Current simulation tick, refreshed once per step by `Simulation`. Available
+   * to material rules that want time-based per-cell logic (e.g. a marker that
+   * self-expires by comparing against a tick it stamped earlier) without needing
+   * a dedicated per-cell field of their own.
    */
   tick = 0;
 
@@ -37,6 +37,16 @@ export class SimContext {
   saltDebt = 0;
 
   constructor(private grid: Grid) {}
+
+  /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a
+   *  disc) can index cells by a flat `y * width + x` key without reaching past
+   *  this seam into the Grid directly. */
+  get width(): number {
+    return this.grid.width;
+  }
+  get height(): number {
+    return this.grid.height;
+  }
 
   inBounds(x: number, y: number): boolean {
     return this.grid.inBounds(x, y);

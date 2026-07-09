@@ -8,7 +8,7 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 
 // Ember — the glowing ejecta a detonation hurls outward. Where Blast is the
-// *shockwave* (bounded to the blast radius, one cell per tick), an Ember is
+// *shockwave* (an instant filled disc bounded to the blast radius), an Ember is
 // ballistic debris: launched from the crater rim at several cells per tick,
 // it flies in a nearly straight, slightly drooping line far beyond the
 // destruction radius. On impact it *smashes* the first destructible cell it
@@ -32,10 +32,10 @@ const V_SPAN = V_MAX_Q * 2 + 1; // encodable velocity values per axis
 const GRAVITY_Q = 1;
 
 // Launch tuning (see launchEmber): base speed 2.25–3.5 cells/tick along the
-// spent shard's outward direction, scattered by a small per-axis jitter and a
-// slight upward kick, for 12–21 ticks of flight (~0.2–0.35 s at 60 Hz). Fast
-// enough to clearly outrun the one-cell-per-tick shockwave, short enough that
-// the whole burst resolves in under half a second.
+// rim's outward direction, scattered by a small per-axis jitter and a slight
+// upward kick, for 12–21 ticks of flight (~0.2–0.35 s at 60 Hz). Fast enough to
+// carry debris well past the crater the instant blast just carved, short enough
+// that the whole burst resolves in under half a second.
 const LAUNCH_SPEED_MIN_Q = 9;
 const LAUNCH_SPEED_VAR_Q = 6;
 const LAUNCH_JITTER_Q = 2;
@@ -48,8 +48,7 @@ const BURNOUT_SMOKE_CHANCE = 0.25; // …while burning out midair leaves a puff.
 
 // `life` and the two velocity axes share the cell's temp as one packed float.
 // Max encodable value ≈ 22·33² ≈ 24k, far inside Float32's 2^24 exact-integer
-// range, and always ≥ 0 so it can never be mistaken for Blast's negative
-// crater marker.
+// range.
 function encodeEmber(life: number, vxQ: number, vyQ: number): number {
   return (life * V_SPAN + (vxQ + V_MAX_Q)) * V_SPAN + (vyQ + V_MAX_Q);
 }
@@ -156,10 +155,7 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
     }
     const nid = sim.get(nx, ny);
     if (nid === EMPTY) {
-      // Note: entering a crater-marked Empty cell (see blast.ts) overwrites
-      // the marker with this ember's state. Accepted: rim embers fly *away*
-      // from the crater, and even if one crosses it, the worst case is a
-      // wobbling shard re-entering that single cell — still life-bounded.
+      // Open air (including the fresh crater the blast just cleared): keep flying.
       cx = nx;
       cy = ny;
       continue;

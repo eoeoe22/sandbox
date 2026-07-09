@@ -11,7 +11,7 @@ import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
 import { OXYGEN } from './oxygen';
 import { STEAM } from './steam';
-import { BLAST, seedBlast } from './blast';
+import { BLAST, detonate } from './blast';
 
 // Hydrogen — the lightest, most violently explosive gas. It behaves like Methane
 // (a fuel-air explosive: a cloud that fills a volume and, when any corner is
@@ -25,7 +25,7 @@ import { BLAST, seedBlast } from './blast';
 // Gunpowder/Methane: a `flammable` tag would let Fire's ignite pass quietly turn
 // it to plain Fire before its own turn, defeating the detonation depending on
 // scan order. It also self-ignites once heated past its autoignition point.
-const BLAST_RADIUS = 8;
+const BLAST_RADIUS = 9;
 const AUTOIGNITE_TEMP = 200;
 
 function updateHydrogen(x: number, y: number, sim: SimContext): void {
@@ -61,8 +61,7 @@ function updateHydrogen(x: number, y: number, sim: SimContext): void {
       const ny = y + dy;
       if (sim.inBounds(nx, ny) && sim.get(nx, ny) === OXYGEN.id) sim.spawn(nx, ny, STEAM.id);
     }
-    sim.spawn(x, y, BLAST.id);
-    sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
+    detonate(sim, x, y, BLAST_RADIUS);
     return;
   }
   updateGas(x, y, sim);
@@ -75,6 +74,7 @@ export const HYDROGEN = register({
   color: rgb(214, 228, 238),
   density: 1,
   explosive: true,
+  blastRadius: BLAST_RADIUS,
   category: '폭발',
   // Very low conductivity, but a low autoignition point, so even a little
   // sustained heat sets it off.
