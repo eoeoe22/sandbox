@@ -3,109 +3,86 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn, flameAdjacent, type Combustible } from './combustion';
 import { PETROLEUM_GAS } from './petroleumgas';
 import { PETROLEUM_VAPOR } from './petroleumvapor';
 import { ASPHALT } from './asphalt';
 
 // Liquid fuel: flows/pools like water but lighter (density < 3), so it floats on
-// water — while heavier than Gasoline, so gasoline in turn floats on it. The
-// *second-fastest*-burning fuel, behind only Gasoline: crude oil vaporizes and
-// catches readily, so it's tuned closer to its refined cousin than to the
-// solid fuels (Coal, Wood) it used to smoulder alongside. Just burns; never
-// detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 430 };
+// water — while heavier than Gasoline, so gasoline in turn floats on it. Just
+// burns; never detonates. See combustion.ts for the shared model.
+//
+// Ignition is deliberately by *flame contact only*: `autoIgniteTemp` is pinned
+// up at the burning band (780, just under combustion's BURN_TEMP 800) so a cell
+// only ever reads as "burning" once an adjacent flame has actually lit it —
+// merely getting hot never sets crude alight. That's what lets a sealed still
+// (crude in a Stone/Iron vessel heated from outside) be driven right through the
+// distillation range by conduction without catching fire: dump Fire *on* the
+// crude and it burns; heat it *through a wall* and it distils.
+const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 780 };
 
 // --- Fractional distillation --------------------------------------------------
 // Gently heated (not set alight), crude oil boils apart into its cuts the way a
-// refinery's fractionating column does — lightest first, in temperature order.
-// Each oil cell tracks how far it has distilled in its own `aux` byte (the
-// stage, 0..3), and every time its temperature crosses that stage's boiling
-// point it vents the next cut as a rising gas/vapour and advances a stage:
+// refinery's fractionating column does. Each cell, once past its boiling point,
+// has a per-tick chance to flash the cut matching its *current* temperature into
+// a rising gas/vapour (which then condenses higher up — see petroleumvapor.ts);
+// the hotter it is, the heavier the cut it gives off. Anything driven past the
+// cracking point is left behind as the heavy tar residue, Asphalt. Because a
+// cell boils *in place* into a gas that bubbles up through the liquid above it,
+// buried crude distils just as well as the surface — no open vent needed — and a
+// vessel heated from the bottom sets up a temperature gradient that fractionates
+// by height on its own: heavy cuts and residue low and hot, light cuts and gas
+// high and cool.
 //
-//   stage 0  ≥150°  → Petroleum Gas (the light gas product, never condenses)
-//   stage 1  ≥200°  → petroleum vapour tagged Gasoline  → condenses to Gasoline
-//   stage 2  ≥260°  → petroleum vapour tagged Kerosene  → condenses to Kerosene
-//   stage 3  ≥320°  → petroleum vapour tagged Diesel, and the spent cell itself
-//                     collapses into Asphalt (the heavy tar residue)
-//
-// All four bands sit below the autoignition point (430), with headroom, so a
-// cell distils cleanly rather than catching fire — PROVIDED the heat is
-// indirect. `tryBurn` ignites oil the instant a flame (Fire/Lava) is adjacent,
-// regardless of temperature, and the cuts it gives off are themselves flammable,
-// so an open flame sets the whole still alight. Distillation is therefore driven
-// by *indirect* heat: the heat brush (+), or a Fire/Lava source behind an
-// Iron/Wall barrier so the oil's neighbours are hot metal, not flame. "Dump fire
-// on crude → it burns; gently heat it in a closed still → it distils."
-const STAGE_TEMP = [150, 200, 260, 320];
+// The bands all sit *below* the cracking/residue point (380), which itself sits
+// far below the ignition band, so a conduction-heated still always distils to
+// inert Asphalt before it could ever get hot enough to read as burning.
+const BOIL_MIN = 150; // below this it's just liquid
+const RESIDUE_TEMP = 380; // at/above this the spent crude cracks to Asphalt
+const BURNING_TEMP = 600; // at/above this the cell is on fire (pinned ~800), not distilling
+const BOIL_CHANCE = 0.08; // per-tick chance a cell in a boiling band flashes off its cut
+
 // Vapour aux tags read back by petroleumvapor.ts to pick the condensate.
 const VAPOR_GASOLINE = 1;
 const VAPOR_KEROSENE = 2;
 const VAPOR_DIESEL = 3;
-// Vent search order: straight up first, then the upper diagonals, then sideways
-// — a boiling cut escapes upward, and only nudges sideways if capped directly
-// above. Buried cells (no empty neighbour here) simply wait until the surface
-// above them has boiled off, so distillation eats the pool from the top down.
-const VENT_DIRS = [
-  [0, -1],
-  [-1, -1],
-  [1, -1],
-  [-1, 0],
-  [1, 0],
-];
 
-function findEmptyVent(x: number, y: number, sim: SimContext): [number, number] | null {
-  for (const [dx, dy] of VENT_DIRS) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) return [nx, ny];
+/** Boil this cell off into the gas/vapour matching its temperature, lightest cut
+ *  at the low end up to diesel just under the cracking point. In-place `set`
+ *  keeps the (hot) temperature, so the fresh vapour rises hot and condenses on
+ *  its own as it cools higher up. */
+function boilOff(x: number, y: number, sim: SimContext, t: number): void {
+  if (t < 205) {
+    sim.set(x, y, PETROLEUM_GAS.id); // lightest — the gas product, never condenses
+    return;
   }
-  return null;
-}
-
-/**
- * Advance this oil cell one distillation stage if it's hot enough and has an
- * empty cell to vent into. Returns true if it vented (so the caller stops for
- * the tick), false if it couldn't (too cool, or hemmed in) and should carry on
- * with normal burning/flow.
- */
-function distillStep(x: number, y: number, sim: SimContext, t: number): boolean {
-  const stage = sim.getAux(x, y);
-  if (t < STAGE_TEMP[stage]) return false;
-  const vent = findEmptyVent(x, y, sim);
-  if (!vent) return false;
-  const [nx, ny] = vent;
-  if (stage === 0) {
-    sim.spawn(nx, ny, PETROLEUM_GAS.id);
-    sim.setAux(x, y, 1);
-  } else if (stage === 1) {
-    sim.spawn(nx, ny, PETROLEUM_VAPOR.id);
-    sim.setAux(nx, ny, VAPOR_GASOLINE);
-    sim.setAux(x, y, 2);
-  } else if (stage === 2) {
-    sim.spawn(nx, ny, PETROLEUM_VAPOR.id);
-    sim.setAux(nx, ny, VAPOR_KEROSENE);
-    sim.setAux(x, y, 3);
-  } else {
-    // Final cut: vent the diesel vapour and collapse the spent cell into tar.
-    // In-place `set` keeps the (hot) temperature; Asphalt is a dense liquid so
-    // it sinks and never seals the pool (see asphalt.ts).
-    sim.spawn(nx, ny, PETROLEUM_VAPOR.id);
-    sim.setAux(nx, ny, VAPOR_DIESEL);
-    sim.set(x, y, ASPHALT.id);
-  }
-  return true;
+  sim.set(x, y, PETROLEUM_VAPOR.id);
+  if (t < 258) sim.setAux(x, y, VAPOR_GASOLINE);
+  else if (t < 315) sim.setAux(x, y, VAPOR_KEROSENE);
+  else sim.setAux(x, y, VAPOR_DIESEL);
 }
 
 function updateOil(x: number, y: number, sim: SimContext): void {
-  const t = sim.getTemp(x, y);
-  // Gentle-heat band only: distil while below autoignition and not already
-  // ablaze (a burning cell is pinned to ~800 by combustion, so `t < 430` is
-  // false and it burns instead of distilling — preserving "oil on fire burns").
-  if (t >= STAGE_TEMP[0] && t < SPEC.autoIgniteTemp) {
-    if (distillStep(x, y, sim, t)) return;
-  }
+  // Flame contact (or an already-burning cell) burns — handled first so a lit
+  // slick is consumed exactly as before, never distilling.
   if (tryBurn(x, y, sim, SPEC)) return;
+  const t = sim.getTemp(x, y);
+  // Direct flame contact wins over distillation: an adjacent flame is left to
+  // ignite the crude (burn), so crude only distils under *indirect* heat.
+  if (t < BURNING_TEMP && !flameAdjacent(x, y, sim)) {
+    // Not on fire and no flame touching it: distil by whatever heat has reached
+    // it (a heat brush, or conduction through a hot vessel wall).
+    if (t >= RESIDUE_TEMP) {
+      // Cracked: collapse into tar. Asphalt is a dense liquid so it sinks and
+      // never seals the pool (see asphalt.ts).
+      sim.set(x, y, ASPHALT.id);
+      return;
+    }
+    if (t >= BOIL_MIN && sim.chance(BOIL_CHANCE)) {
+      boilOff(x, y, sim, t);
+      return;
+    }
+  }
   updateLiquid(x, y, sim);
 }
 

@@ -2,22 +2,22 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 
-// The residue left behind once all the volatile cuts have boiled out of a crude
-// oil cell (see oil.ts's distillation) — the black tar at the bottom of the
-// still. Deliberately a *liquid*, not a solid: a solid crust forming at the
-// pool surface would cap the crude beneath it and choke off the vapor vents, so
-// distillation would stall after only the top layer converted. As a very dense
-// liquid (heavier than everything, even water) it instead sinks straight to the
-// bottom, letting fresh crude flow up to the surface to keep distilling — so the
-// still grows a thick tar layer underneath while the light fractions vent off
-// the top, exactly like a real fractionating column. Thick and non-flammable;
-// inherits the default (slow-settling) liquid movement.
+// The residue left behind once crude oil has been cracked past its boiling range
+// (see oil.ts's distillation) — the black tar at the bottom of the still. A
+// static Solid: it forms where the hottest crude cracks (against a heated floor)
+// and stays put as a growing crust. Because distillation here works by crude
+// boiling *in place* into vapour that bubbles up through the liquid above (no
+// open vent needed), a solid crust at the bottom doesn't choke it off — heat
+// still conducts up through the tar to distil the crude resting on top, which in
+// turn cracks and thickens the crust upward until the whole charge is spent.
+// Conducts and burns like the other heavy residues would: left inert here (not
+// flammable) so a finished still just holds its tar.
 export const ASPHALT = register({
   id: 62,
   name: 'Asphalt',
-  phase: Phase.Liquid,
+  phase: Phase.Solid,
   color: rgb(26, 22, 24),
-  density: 5,
+  density: 1000,
   category: '석유',
   thermal: { conductivity: 0.2 },
 });
