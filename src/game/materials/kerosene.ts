@@ -11,9 +11,11 @@ import { refluxBoil, REFLUX_KEROSENE } from './petroleumdistill';
 // heavier than Gasoline (2.2), so once condensed it settles into its own layer
 // — floating on the crude, under the gasoline. Burns like the other liquid
 // fuels via the shared surface-front model, a touch slower than Gasoline. See
-// combustion.ts. Re-boils (refluxes) at its own mid boiling point and ignites by
-// flame contact only, like the other cuts (see petroleumdistill.ts / oil.ts).
-const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 780 };
+// combustion.ts. Stays properly flammable (a flame touching it ignites it), and
+// re-boils (refluxes) at its own mid boiling point — its boil point (260) plus
+// the reflux superheat cap (60) sits below autoignition, so a flameless still
+// refluxes it away rather than igniting it (see petroleumdistill.ts / oil.ts).
+const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 420 };
 const BOIL_TEMP = 260;
 
 function updateKerosene(x: number, y: number, sim: SimContext): void {

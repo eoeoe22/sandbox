@@ -15,9 +15,12 @@ import { refluxBoil, REFLUX_GASOLINE } from './petroleumdistill';
 //
 // The lightest distillation cut, so it also *re-boils* the readiest: heated past
 // its low boiling point it flashes back to vapour and refluxes upward (see
-// petroleumdistill.ts). Ignition is by flame contact only (`autoIgniteTemp`
-// pinned high) so radiant heat in a still refluxes it rather than lighting it.
-const SPEC: Combustible = { burnChance: 0.12, autoIgniteTemp: 780 };
+// petroleumdistill.ts). It stays properly flammable — a flame touching it
+// ignites it fast (the flame's heat drives it to autoignition, and reflux is
+// skipped while a flame is adjacent). Its boiling point (200) plus the reflux
+// superheat cap (60) stays below this autoignition, so in a *flameless* still
+// it boils/refluxes away before it could ever get hot enough to self-ignite.
+const SPEC: Combustible = { burnChance: 0.12, autoIgniteTemp: 400 };
 const BOIL_TEMP = 200;
 
 function updateGasoline(x: number, y: number, sim: SimContext): void {

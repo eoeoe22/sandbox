@@ -12,14 +12,15 @@ import { ASPHALT } from './asphalt';
 // water — while heavier than Gasoline, so gasoline in turn floats on it. Just
 // burns; never detonates. See combustion.ts for the shared model.
 //
-// Ignition is deliberately by *flame contact only*: `autoIgniteTemp` is pinned
-// up at the burning band (780, just under combustion's BURN_TEMP 800) so a cell
-// only ever reads as "burning" once an adjacent flame has actually lit it —
-// merely getting hot never sets crude alight. That's what lets a sealed still
-// (crude in a Stone/Iron vessel heated from outside) be driven right through the
-// distillation range by conduction without catching fire: dump Fire *on* the
-// crude and it burns; heat it *through a wall* and it distils.
-const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 780 };
+// Ignition is by *flame contact*: a flame touching the crude skips distillation
+// (see flameAdjacent below) and the flame's heat drives it to autoignition, so
+// dumped Fire lights it readily. But it never self-ignites from *indirect* heat,
+// because it cracks to inert Asphalt at RESIDUE_TEMP (380) — below this
+// autoignition point — before conduction could ever get it that hot. That's what
+// lets a sealed still (crude in a Stone/Iron vessel heated from outside) be
+// driven through the distillation range by conduction without catching fire:
+// dump Fire *on* the crude and it burns; heat it *through a wall* and it distils.
+const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 420 };
 
 // --- Fractional distillation --------------------------------------------------
 // Gently heated (not set alight), crude oil boils apart into its cuts the way a
