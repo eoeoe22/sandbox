@@ -89,8 +89,20 @@ export interface Combustible {
   autoIgniteTemp: number;
 }
 
-function isFlame(id: number): boolean {
+export function isFlame(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id;
+}
+
+/** True if any 8-neighbour is an open flame (Fire/Lava/Blue Flame). Petroleum
+ *  materials use this to let *direct flame contact* win over distillation — touch
+ *  fire and the fuel burns; heat it through a wall and it distils. */
+export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && isFlame(sim.get(nx, ny))) return true;
+  }
+  return false;
 }
 
 /**
