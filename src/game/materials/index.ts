@@ -26,6 +26,11 @@ import { ICE } from './ice';
 import { SNOW } from './snow';
 import { OIL } from './oil';
 import { GASOLINE } from './gasoline';
+import { PETROLEUM_GAS } from './petroleumgas';
+import { PETROLEUM_VAPOR } from './petroleumvapor';
+import { KEROSENE } from './kerosene';
+import { DIESEL } from './diesel';
+import { ASPHALT } from './asphalt';
 import { COAL } from './coal';
 import { WOOD } from './wood';
 import { SAWDUST } from './sawdust';
@@ -82,6 +87,11 @@ export {
   SNOW,
   OIL,
   GASOLINE,
+  PETROLEUM_GAS,
+  PETROLEUM_VAPOR,
+  KEROSENE,
+  DIESEL,
+  ASPHALT,
   COAL,
   WOOD,
   SAWDUST,
@@ -146,6 +156,11 @@ export const MATERIALS = [
   SNOW,
   OIL,
   GASOLINE,
+  PETROLEUM_GAS,
+  PETROLEUM_VAPOR,
+  KEROSENE,
+  DIESEL,
+  ASPHALT,
   COAL,
   WOOD,
   SAWDUST,

@@ -26,7 +26,7 @@ export const GASOLINE = register({
   color: rgb(214, 190, 96),
   density: 2.2,
   combustible: true,
-  category: '불·열',
+  category: '석유',
   thermal: { conductivity: 0.2 },
   update: updateGasoline,
 });
