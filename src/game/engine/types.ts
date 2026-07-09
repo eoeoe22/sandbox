@@ -79,23 +79,33 @@ export interface Material {
    */
   explosionProof?: boolean;
   /**
-   * Marks a material that detonates rather than merely burning. When a Blast
-   * front sweeps over one of these it detonates it *in the same pass*, its own
-   * `blastRadius` refreshing the front (see blast.ts), so a connected mass of
-   * Gunpowder/Nitro goes off all at once instead of being flattened by the first
-   * blast to reach it. Separate charges just out of range are set off a tick
-   * later by the flash/fire the blast leaves touching them (gunpowder.ts/nitro.ts).
+   * Marks a material that detonates rather than merely burning. When one is
+   * triggered, `detonate` (blast.ts) surveys the whole *connected mass* of
+   * explosive cells and sets it off as a single crater whose reach scales with
+   * the mass's total yield — so a chamber packed solid goes off far bigger than
+   * one merely lined. Separate charges just out of range are set off a tick later
+   * by the flash/fire the blast leaves touching them (gunpowder.ts/nitro.ts).
    */
   explosive?: boolean;
   /**
-   * Blast radius (in cells) this explosive detonates with. Read by `detonate`
-   * (blast.ts) when the shockwave front sweeps over *another* explosive and sets
-   * it off within the same tick — its own radius refreshes the front so a
-   * connected mass goes off all at once. Each explosive also passes this same
-   * value to `detonate` when it's triggered directly. Only meaningful alongside
-   * `explosive`.
+   * Blast reach (in cells) a *lone* charge of this material detonates with, and —
+   * unless `blastYield` overrides it — the yield each cell contributes to a
+   * connected mass's total (see `surveyMass`/`computeReach` in blast.ts). A single
+   * charge reaches exactly this radius; stacking more explosive sums their yields
+   * into a larger reach. Only meaningful alongside `explosive`.
    */
   blastRadius?: number;
+  /**
+   * How much this explosive contributes to the total yield of a connected mass
+   * (see `surveyMass`/`computeReach` in blast.ts). A detonation sums this over
+   * the whole connected mass and turns it into the blast's reach, so more packed
+   * explosive means a bigger crater. Defaults to `blastRadius` when omitted — so
+   * no material need set it, and a lone charge still reaches its own radius. Set
+   * it only to decouple "how far a single charge reaches" from "how much a cell
+   * adds to a big pile" (e.g. a small-but-potent charge). Only meaningful
+   * alongside `explosive`.
+   */
+  blastYield?: number;
   /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the

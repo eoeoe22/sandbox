@@ -1,27 +1,36 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
+import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { launchEmber } from './ember';
 
-// ── Explosions: an instant shockwave, not a crawling scan ───────────────────
+// ── Explosions: an instant shockwave that scales with the charge ────────────
 //
-// A detonation resolves in a SINGLE tick. The moment an explosive is triggered
-// it calls `detonate`, which floods a *filled* disc outward from the epicenter
-// — destroying every particle it reaches (sand, salt, stone, water, …) up to
-// the blast radius — and drops a bright, short-lived shockwave flash over the
-// whole crater. The flash fades from white-hot to orange over a few ticks and
-// collapses into scattered Fire, while glowing Embers are hurled out past the
-// rim (see ember.ts). Nothing crawls one-cell-per-tick anymore: the destruction
-// is immediate and fills the disc, so a charge sitting on a pile of salt (or
-// any non-flammable powder) actually blows the pile apart instead of carving a
-// few thin channels through it, and solids in range are levelled too.
+// A detonation resolves in a SINGLE tick, in two phases (see `detonate`):
 //
-// The Blast material now serves purely as that flash: a freshly *painted* Blast
-// cell (or one reloaded from a save) detonates on its first turn; every cell the
-// flood clears becomes a Blast flash cell that just fades and dies. The two are
-// told apart by the cell's `temp` slot (Blast conducts nothing, so the heat pass
+//   1. SURVEY — from the triggered cell, flood the *connected mass* of explosive
+//      cells (8-connected) and sum their total yield Y. This is what makes the
+//      blast scale with how much you packed: a chamber filled solid with charges
+//      has a far larger Y than the same chamber merely lined, so it reaches much
+//      farther. (Yield per cell = the material's `blastYield`, defaulting to its
+//      `blastRadius`.)
+//   2. DILATE — turn Y into a reach R (see `computeReach`) and flood a *filled*
+//      region outward from EVERY surveyed cell at once, destroying everything it
+//      reaches (sand, salt, stone, water, the charges themselves, …). The crater
+//      is the whole mass grown by R, so more explosive means both a bigger mass
+//      *and* a bigger R — the destruction grows with the amount, not just the
+//      surface. A bright, short-lived shockwave flash is dropped over the crater
+//      and glowing Embers are hurled out past the rim (see ember.ts).
+//
+// A lone charge (Y == its own yield) reaches exactly its `blastRadius`, so single
+// charges feel unchanged; only stacking more explosive makes the blast grow.
+//
+// The Blast material serves purely as that flash: a freshly *painted* Blast cell
+// (or one reloaded from a save) detonates on its first turn; every cell the flood
+// clears becomes a Blast flash cell that just fades and dies. The two are told
+// apart by the cell's `temp` slot (Blast conducts nothing, so the heat pass
 // leaves it alone as opaque per-cell state): a flash stores its remaining life
 // there (1..SHELL_MAX, doubling as the glow brightness), while anything above
 // SHELL_MAX is the "detonate me" seed marker. Storing it in `temp` (which
@@ -29,12 +38,11 @@ import { launchEmber } from './ember';
 // reloads as a flash and quietly dies, instead of re-detonating on load.
 //
 // Walls and blast-proof solids (Diamond) stop the flood — they neither break nor
-// let it pass, so they cast a shadow and can shelter what's behind them. Other
-// explosives caught inside the front are detonated as part of the SAME pass
-// (their own radius refreshes the budget), so a connected mass of Gunpowder /
-// Nitro goes off all at once instead of sweeping across cell by cell. Separate
-// charges nearby are set off a tick later by the flash / fire the blast leaves
-// touching them — the same id-based trigger every explosive already watches for.
+// let it pass, so they cast a shadow and can shelter what's behind them. A whole
+// connected mass of Gunpowder / Nitro / TNT goes off as one crater (the survey
+// gathers it all before the dilation levels it). Separate charges nearby are set
+// off a tick later by the flash / fire the blast leaves touching them — the same
+// id-based trigger every explosive already watches for.
 
 /** Blast radius (cells) used when a Blast cell is painted directly by the brush.
  *  Explosives pass their own `blastRadius` to `detonate` instead. */
@@ -68,9 +76,9 @@ const SHELL_FIRE_CHANCE = 0.28;
 const RIM_EMBER_CHANCE = 0.55;
 
 // Chamfer-metric step costs so the flooded region reads as a round disc instead
-// of a square: a diagonal step costs ~√2 orthogonal steps. The budget starts at
-// the blast radius and drains as the front travels; a cell is reached (and
-// destroyed) while the budget hasn't gone negative.
+// of a square: a diagonal step costs ~√2 orthogonal steps. Each source starts at
+// the computed reach R and the budget drains as the front travels; a cell is
+// reached (and destroyed) while the budget hasn't gone negative.
 const ORTH_COST = 1;
 const DIAG_COST = 1.4142;
 const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
@@ -84,21 +92,45 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
   [1, 1, DIAG_COST],
 ];
 
+// Reach law: R = maxYield + REACH_GAIN·√(Y − maxYield), clamped to R_MAX, where
+// Y is the connected mass's total yield and maxYield its strongest single cell.
+// A lone charge (Y == maxYield) reaches exactly its own yield, so single charges
+// are unchanged; extra connected yield adds reach *sublinearly*, so a filled
+// chamber's larger Y pushes its crater past a thin lining's without a modest
+// stack filling the screen. Both are playtest knobs: raise REACH_GAIN for a
+// bigger fill-vs-line gap, lower R_MAX to cap how far a big pile can ever reach.
+// Tuned down from 0.35 / 128 — packed masses were reaching most of the screen.
+const REACH_GAIN = 0.14;
+const R_MAX = 64;
+
+// Cap on how many connected explosive cells one survey (phase 1) sums before it
+// gives up and detonates with the partial yield gathered so far — a graceful
+// bound on a pathologically huge mass, never a hang. MAX_SURVEY_CELLS_PER_TICK
+// is the same idea shared across *all* surveys in a tick: without it, a mass
+// bigger than the destruction budget would be re-surveyed in full by every
+// same-tick re-trigger (the survivors the flood couldn't reach this tick), which
+// is O(mass²) work — so the per-tick survey scan is capped just like destruction.
+const MAX_SURVEY_CELLS = 60_000;
+const MAX_SURVEY_CELLS_PER_TICK = 80_000;
+
 // Hard cap on cells destroyed by a single detonate() call, and by all detonate
 // calls within one tick combined, so even a screen-filling mass of explosives
-// can't blow the frame budget in a single frame. Both are far above any normal
-// blast (a radius-16 disc is only ~800 cells, a 120² block ~14k); when a giant
-// connected mass exceeds them the flood simply stops for the tick, and the
-// explosives left at the ragged frontier detonate over the next few ticks via
-// the flash now touching them — a graceful spread, never a hang.
-const MAX_DETONATE_CELLS = 20_000;
-const MAX_DETONATE_CELLS_PER_TICK = 24_000;
+// can't blow the frame budget in a single frame. Sized well above any normal
+// deliberate blast (a radius-16 disc is ~800 cells; even a filled 60×40 chamber
+// craters only ~10-15k at the current reach); when a giant connected mass
+// exceeds them the flood simply stops for the tick,
+// and the explosives left at the ragged frontier detonate over the next few
+// ticks via the flash now touching them — a graceful spread, never a hang.
+const MAX_DETONATE_CELLS = 60_000;
+const MAX_DETONATE_CELLS_PER_TICK = 80_000;
 
-// Per-tick destruction budget shared across every detonate() call, so a whole
-// field of charges going off on the same tick still can't exceed one big
-// blast's worth of work. Reset lazily whenever the tick advances.
+// Per-tick destruction and survey budgets shared across every detonate() call,
+// so a whole field of charges going off on the same tick still can't exceed one
+// big blast's worth of work — for either the phase-1 mass scan or the phase-2
+// destruction. Both reset lazily whenever the tick advances.
 let budgetTick = -1;
 let budgetLeft = 0;
+let surveyLeft = 0;
 
 // Reused visited buffer for the flood, keyed by flat cell index. A monotonic
 // `stampId` marks cells touched by the current detonation, so we never allocate
@@ -146,31 +178,137 @@ function placeShell(sim: SimContext, x: number, y: number): void {
   sim.setTemp(x, y, life); // ≤ SHELL_MAX ⇒ a flash, never mistaken for a seed
 }
 
+/** Yield one explosive cell contributes to its connected mass's total. Defaults
+ *  to `blastRadius` when a material doesn't set an explicit `blastYield`, so a
+ *  lone charge still reaches its familiar radius. 0 for anything not explosive. */
+function cellYield(id: number): number {
+  if (id === EMPTY) return 0;
+  const m = getMaterial(id);
+  return m.blastYield ?? m.blastRadius ?? 0;
+}
+
 /**
- * Detonate at (cx,cy) with the given blast radius — immediately and in full.
- * Floods a filled disc outward, destroying everything destructible it reaches,
- * chain-detonating other explosives inside the front (their own radius refreshes
- * the budget), and dropping the shockwave flash plus a spray of rim embers. Runs
- * entirely within the calling tick — the whole point is that there's no crawl.
+ * Phase 1 — survey the 8-connected mass of `explosive` cells reachable from
+ * (cx,cy), collecting every source cell into srcX/srcY and returning the total
+ * yield Y plus the strongest single cell's yield (maxYield). Visited cells are
+ * marked with `id_s` on the shared stamp buffer. If (cx,cy) itself isn't an
+ * explosive (a brush-painted Blast seed, say), the mass is just that one cell
+ * with yield = seedYield — so a painted Blast still detonates at a fixed size.
  */
-export function detonate(sim: SimContext, cx: number, cy: number, radius: number): void {
+function surveyMass(
+  sim: SimContext,
+  cx: number,
+  cy: number,
+  seedYield: number,
+  stamp: Int32Array,
+  id_s: number,
+  srcX: number[],
+  srcY: number[],
+): { Y: number; maxYield: number } {
   const w = sim.width;
   const h = sim.height;
-  const stamp = nextStamp(sim);
-  const id0 = stampId;
+  const originId = sim.get(cx, cy);
+  const originMat = originId === EMPTY ? null : getMaterial(originId);
+  if (!originMat?.explosive) {
+    // Non-explosive origin (brush Blast seed): a single fixed-yield source. An
+    // explosive origin always surveys its mass below even if its own yield is 0,
+    // so it can still aggregate stronger connected neighbors.
+    srcX.push(cx);
+    srcY.push(cy);
+    return { Y: seedYield, maxYield: seedYield };
+  }
 
-  // Refresh the shared per-tick destruction budget when the tick advances.
+  let Y = 0;
+  let maxYield = 0;
+  stamp[cy * w + cx] = id_s;
+  const qx: number[] = [cx];
+  const qy: number[] = [cy];
+  let head = 0;
+  while (head < qx.length && srcX.length < MAX_SURVEY_CELLS) {
+    const x = qx[head];
+    const y = qy[head];
+    head++;
+    const y0 = cellYield(sim.get(x, y));
+    Y += y0;
+    if (y0 > maxYield) maxYield = y0;
+    srcX.push(x);
+    srcY.push(y);
+    // Once the shared per-tick survey budget is spent, keep counting cells
+    // already queued but stop expanding into new ones, so a mass far larger than
+    // a tick's destruction budget isn't re-scanned in full by every same-tick
+    // re-trigger. The origin is always processed (queued before this check), so a
+    // directly triggered charge still makes progress; the rest of the mass is
+    // surveyed and detonated over the next ticks as the budget refreshes.
+    if (surveyLeft <= 0) continue;
+    surveyLeft--;
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+      const nidx = ny * w + nx;
+      if (stamp[nidx] === id_s) continue;
+      const nid = sim.get(nx, ny);
+      if (nid === EMPTY || !getMaterial(nid).explosive) continue;
+      stamp[nidx] = id_s;
+      qx.push(nx);
+      qy.push(ny);
+    }
+  }
+  return { Y, maxYield };
+}
+
+/** Turn a connected mass's total yield into a blast reach (cells). A lone charge
+ *  (Y == maxYield) reaches exactly its own yield; extra connected yield adds
+ *  reach sublinearly (√) so packing more explosive grows the crater without a
+ *  modest stack instantly filling the screen. Clamped to [1, R_MAX]. */
+function computeReach(Y: number, maxYield: number): number {
+  const r = maxYield + REACH_GAIN * Math.sqrt(Math.max(0, Y - maxYield));
+  return r < 1 ? 1 : r > R_MAX ? R_MAX : r;
+}
+
+/**
+ * Detonate the connected explosive mass at (cx,cy) — immediately and in full.
+ * Phase 1 surveys the connected mass for its total yield; phase 2 turns that into
+ * a reach R and floods a filled region outward from *every* surveyed cell at once
+ * (so the crater is the whole mass grown by R), destroying everything destructible
+ * it reaches and dropping the shockwave flash plus a spray of rim embers. Runs
+ * entirely within the calling tick — the whole point is that there's no crawl.
+ *
+ * `seedYield` is only consulted when (cx,cy) isn't itself an explosive — the
+ * brush-painted Blast path passes its own radius so a hand-placed blast keeps a
+ * fixed size; an explosive origin ignores it and uses the surveyed yield instead.
+ */
+export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0): void {
+  const w = sim.width;
+  const h = sim.height;
+
+  // Refresh the shared per-tick destruction and survey budgets when the tick
+  // advances, so a whole field of charges detonating on one tick can't exceed a
+  // bounded amount of scanning or destruction work.
   if (sim.tick !== budgetTick) {
     budgetTick = sim.tick;
     budgetLeft = MAX_DETONATE_CELLS_PER_TICK;
+    surveyLeft = MAX_SURVEY_CELLS_PER_TICK;
   }
 
-  // FIFO frontier as parallel arrays (cheaper than a queue of objects). Each
-  // entry is a cell plus the budget still available for it to push outward.
-  const qx: number[] = [cx];
-  const qy: number[] = [cy];
-  const qb: number[] = [radius];
-  stamp[cy * w + cx] = id0;
+  // ── Phase 1: survey the connected explosive mass for its total yield ──
+  const stamp = nextStamp(sim);
+  const id_s = stampId;
+  const srcX: number[] = [];
+  const srcY: number[] = [];
+  const { Y, maxYield } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
+  const R = computeReach(Y, maxYield);
+
+  // ── Phase 2: dilate the whole mass outward by R, destroying what it reaches ──
+  // A fresh stamp id on the same buffer marks the dilation's visited set; it never
+  // equals id_s, so survey-stamped cells are re-marked cleanly as the flood
+  // re-crosses them. Every source seeds the FIFO frontier at the full budget R.
+  nextStamp(sim);
+  const id_d = stampId;
+  const qx = srcX.slice();
+  const qy = srcY.slice();
+  const qb: number[] = new Array(srcX.length).fill(R);
+  for (let i = 0; i < srcX.length; i++) stamp[srcY[i] * w + srcX[i]] = id_d;
   // Rim cells (the outer edge, one outward direction each) that spray embers
   // once the flood settles — collected rather than launched inline so spawning
   // them can't disturb the cell reads the flood depends on.
@@ -181,8 +319,8 @@ export function detonate(sim: SimContext, cx: number, cy: number, radius: number
 
   let head = 0;
   let destroyed = 0;
-  // The origin always detonates (so a triggered charge always makes progress);
-  // every cell after it is gated by both the per-call cap and the shared
+  // The mass always detonates (so a triggered charge always makes progress);
+  // every cell after the first is gated by both the per-call cap and the shared
   // per-tick budget.
   while (
     head < qx.length &&
@@ -191,18 +329,8 @@ export function detonate(sim: SimContext, cx: number, cy: number, radius: number
   ) {
     const x = qx[head];
     const y = qy[head];
-    const b = qb[head];
+    const outB = qb[head];
     head++;
-
-    // Read the cell before overwriting it: an explosive caught in the front
-    // detonates as part of this same pass, its own radius refreshing the budget
-    // so a connected charge goes off all at once rather than one cell per tick.
-    const id = sim.get(x, y);
-    let outB = b;
-    if (id !== EMPTY) {
-      const m = getMaterial(id);
-      if (m.explosive && m.blastRadius) outB = Math.max(b, m.blastRadius);
-    }
 
     placeShell(sim, x, y);
     destroyed++;
@@ -217,11 +345,12 @@ export function detonate(sim: SimContext, cx: number, cy: number, radius: number
       // A container edge contains the blast (like a Wall) — no leak, no ember.
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nidx = ny * w + nx;
-      if (stamp[nidx] === id0) continue;
+      if (stamp[nidx] === id_d) continue;
       if (outB - cost < 0) {
         // The front ran out of push in this direction: this cell is the outer
-        // rim here, so it can fling an ember outward. Record the first such
-        // direction (roughly radial) and move on.
+        // rim here, so it can fling an ember outward along the local outward
+        // normal (the direction whose budget ran out). Record the first such
+        // direction and move on.
         if (!isRim) {
           isRim = true;
           rimDx = dx;
@@ -232,23 +361,19 @@ export function detonate(sim: SimContext, cx: number, cy: number, radius: number
       // Wall / Diamond stops the front and shadows what's beyond — no ember
       // either (an explosion behind a wall shouldn't spit sparks through it).
       if (isBlocker(sim.get(nx, ny))) continue;
-      stamp[nidx] = id0;
+      stamp[nidx] = id_d;
       qx.push(nx);
       qy.push(ny);
       qb.push(outB - cost);
     }
     if (isRim) {
+      // With many sources there's no single epicenter to fling from, so the
+      // rim uses the local outward normal captured above — the spray still fans
+      // out from the true crater edge in all directions.
       rimX.push(x);
       rimY.push(y);
-      // Fling the ember straight out from the epicenter (radial), so the spray
-      // reads as a round burst rather than skewing toward one axis. Fall back to
-      // the local outward neighbor only for a cell sitting exactly on the
-      // epicenter — which a rim cell never is, but keep it total.
-      const rdx = x < cx ? -1 : x > cx ? 1 : 0;
-      const rdy = y < cy ? -1 : y > cy ? 1 : 0;
-      const radial = rdx !== 0 || rdy !== 0;
-      rimDX.push(radial ? rdx : rimDx);
-      rimDY.push(radial ? rdy : rimDy);
+      rimDX.push(rimDx);
+      rimDY.push(rimDy);
     }
   }
 

@@ -13,9 +13,9 @@ import { BLAST, detonate } from './blast';
 // explosive*. Rather than merely burning, a methane cell detonates into the same
 // instant filled-disc shockwave Gunpowder/Nitro produce (see blast.ts). Because
 // a cloud spreads to fill a volume and every cell is explosive, igniting one
-// corner sets off the whole pocket at once: the blast front sweeps *through* the
-// connected methane and detonates it in the same pass (each cell's own radius
-// refreshing the front), so the pocket goes up in one flash.
+// corner sets off the whole pocket at once: detonate surveys the connected
+// methane as one mass and levels it in a single flash, and a denser pocket
+// (more cells, more total yield) blows a bigger crater than a thin wisp.
 //
 // Trigger detection is by id (Fire/Lava/Blue Flame/Blast), NOT the generic
 // `flammable` tag — same reasoning as Gunpowder: a flammable tag would let
@@ -42,7 +42,7 @@ function updateMethane(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    detonate(sim, x, y, BLAST_RADIUS);
+    detonate(sim, x, y);
     return;
   }
   updateGas(x, y, sim);

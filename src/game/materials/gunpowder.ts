@@ -35,7 +35,7 @@ function updateGunpowder(x: number, y: number, sim: SimContext): void {
   }
 
   if (!wet && trigger) {
-    detonate(sim, x, y, BLAST_RADIUS);
+    detonate(sim, x, y);
     return;
   }
   updatePowder(x, y, sim);
