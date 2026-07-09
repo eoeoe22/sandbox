@@ -103,10 +103,15 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
 const REACH_GAIN = 0.35;
 const R_MAX = 128;
 
-// Cap on how many connected explosive cells the survey (phase 1) sums before it
+// Cap on how many connected explosive cells one survey (phase 1) sums before it
 // gives up and detonates with the partial yield gathered so far — a graceful
-// bound on a pathologically huge mass, never a hang.
+// bound on a pathologically huge mass, never a hang. MAX_SURVEY_CELLS_PER_TICK
+// is the same idea shared across *all* surveys in a tick: without it, a mass
+// bigger than the destruction budget would be re-surveyed in full by every
+// same-tick re-trigger (the survivors the flood couldn't reach this tick), which
+// is O(mass²) work — so the per-tick survey scan is capped just like destruction.
 const MAX_SURVEY_CELLS = 60_000;
+const MAX_SURVEY_CELLS_PER_TICK = 80_000;
 
 // Hard cap on cells destroyed by a single detonate() call, and by all detonate
 // calls within one tick combined, so even a screen-filling mass of explosives
@@ -118,11 +123,13 @@ const MAX_SURVEY_CELLS = 60_000;
 const MAX_DETONATE_CELLS = 60_000;
 const MAX_DETONATE_CELLS_PER_TICK = 80_000;
 
-// Per-tick destruction budget shared across every detonate() call, so a whole
-// field of charges going off on the same tick still can't exceed one big
-// blast's worth of work. Reset lazily whenever the tick advances.
+// Per-tick destruction and survey budgets shared across every detonate() call,
+// so a whole field of charges going off on the same tick still can't exceed one
+// big blast's worth of work — for either the phase-1 mass scan or the phase-2
+// destruction. Both reset lazily whenever the tick advances.
 let budgetTick = -1;
 let budgetLeft = 0;
+let surveyLeft = 0;
 
 // Reused visited buffer for the flood, keyed by flat cell index. A monotonic
 // `stampId` marks cells touched by the current detonation, so we never allocate
@@ -200,8 +207,11 @@ function surveyMass(
   const w = sim.width;
   const h = sim.height;
   const originId = sim.get(cx, cy);
-  if (cellYield(originId) === 0 || !getMaterial(originId).explosive) {
-    // Non-explosive origin (brush Blast seed): a single fixed-yield source.
+  const originMat = originId === EMPTY ? null : getMaterial(originId);
+  if (!originMat?.explosive) {
+    // Non-explosive origin (brush Blast seed): a single fixed-yield source. An
+    // explosive origin always surveys its mass below even if its own yield is 0,
+    // so it can still aggregate stronger connected neighbors.
     srcX.push(cx);
     srcY.push(cy);
     return { Y: seedYield, maxYield: seedYield };
@@ -222,6 +232,14 @@ function surveyMass(
     if (y0 > maxYield) maxYield = y0;
     srcX.push(x);
     srcY.push(y);
+    // Once the shared per-tick survey budget is spent, keep counting cells
+    // already queued but stop expanding into new ones, so a mass far larger than
+    // a tick's destruction budget isn't re-scanned in full by every same-tick
+    // re-trigger. The origin is always processed (queued before this check), so a
+    // directly triggered charge still makes progress; the rest of the mass is
+    // surveyed and detonated over the next ticks as the budget refreshes.
+    if (surveyLeft <= 0) continue;
+    surveyLeft--;
     for (const [dx, dy] of DIR8) {
       const nx = x + dx;
       const ny = y + dy;
@@ -263,10 +281,13 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const w = sim.width;
   const h = sim.height;
 
-  // Refresh the shared per-tick destruction budget when the tick advances.
+  // Refresh the shared per-tick destruction and survey budgets when the tick
+  // advances, so a whole field of charges detonating on one tick can't exceed a
+  // bounded amount of scanning or destruction work.
   if (sim.tick !== budgetTick) {
     budgetTick = sim.tick;
     budgetLeft = MAX_DETONATE_CELLS_PER_TICK;
+    surveyLeft = MAX_SURVEY_CELLS_PER_TICK;
   }
 
   // ── Phase 1: survey the connected explosive mass for its total yield ──
