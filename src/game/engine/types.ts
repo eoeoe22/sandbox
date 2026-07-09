@@ -78,11 +78,12 @@ export interface Material {
    */
   explosionProof?: boolean;
   /**
-   * Marks a material that detonates rather than merely burning. A Blast wave
-   * passes *around* these (it doesn't vaporize them) so they get a turn to
-   * detect the adjacent Blast/Fire and trigger their own explosion — that's what
-   * makes a line of Gunpowder chain-detonate instead of being silently erased by
-   * the first blast to reach it (see blast.ts and gunpowder.ts/nitro.ts).
+   * Marks a material that detonates rather than merely burning. When a Blast
+   * front sweeps over one of these it detonates it *in the same pass*, its own
+   * `blastRadius` refreshing the front (see blast.ts), so a connected mass of
+   * Gunpowder/Nitro goes off all at once instead of being flattened by the first
+   * blast to reach it. Separate charges just out of range are set off a tick
+   * later by the flash/fire the blast leaves touching them (gunpowder.ts/nitro.ts).
    */
   explosive?: boolean;
   /**

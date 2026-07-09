@@ -74,13 +74,12 @@ function cellsThisTick(sim: SimContext, vQ: number): number {
 
 /**
  * Turn the cell at (x,y) into a freshly launched ember flying outward along
- * (dirX,dirY) (a unit 8-direction step, e.g. a Blast shard's travel
- * direction). Speed, per-axis jitter, upward bias and flight time are all
- * randomized so a ring of rim shards fans out as an irregular all-directions
- * spray instead of eight tidy rays. Written via spawn() so callers may also
- * target a neighboring empty cell (the twin spray in blast.ts), not just
- * transform their own — the moved mark keeps such a neighbor from being
- * reprocessed within the same tick.
+ * (dirX,dirY) (a unit 8-direction step — the radial outward direction of a
+ * blast's rim cell). Speed, per-axis jitter, upward bias and flight time are all
+ * randomized so the ring of rim cells fans out as an irregular all-directions
+ * spray instead of tidy rays. Written via spawn() so it can transform any cell,
+ * with the moved mark keeping that cell from being reprocessed within the same
+ * tick.
  */
 export function launchEmber(sim: SimContext, x: number, y: number, dirX: number, dirY: number): void {
   let speedQ = LAUNCH_SPEED_MIN_Q + sim.randInt(LAUNCH_SPEED_VAR_Q);
@@ -167,9 +166,9 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
     }
     const m = getMaterial(nid);
     // Wall and explosion-proof solids (Diamond) are indestructible, explosives
-    // must survive to chain-detonate on their own turn (Blast's pass-over rule),
-    // and gases (fire, smoke, the blast wave itself) aren't terrain to smash —
-    // those just end the flight.
+    // are left intact so a stray ember can chain-detonate them via the fire it
+    // drops rather than silently erasing them, and gases (fire, smoke, the blast
+    // flash itself) aren't terrain to smash — those just end the flight.
     if (m.isWall || m.explosionProof || m.explosive || m.phase === Phase.Gas) {
       shatter(sim, x, y, cx, cy);
     }

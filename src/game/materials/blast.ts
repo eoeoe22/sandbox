@@ -240,8 +240,15 @@ export function detonate(sim: SimContext, cx: number, cy: number, radius: number
     if (isRim) {
       rimX.push(x);
       rimY.push(y);
-      rimDX.push(rimDx);
-      rimDY.push(rimDy);
+      // Fling the ember straight out from the epicenter (radial), so the spray
+      // reads as a round burst rather than skewing toward one axis. Fall back to
+      // the local outward neighbor only for a cell sitting exactly on the
+      // epicenter — which a rim cell never is, but keep it total.
+      const rdx = x < cx ? -1 : x > cx ? 1 : 0;
+      const rdy = y < cy ? -1 : y > cy ? 1 : 0;
+      const radial = rdx !== 0 || rdy !== 0;
+      rimDX.push(radial ? rdx : rimDx);
+      rimDY.push(radial ? rdy : rimDy);
     }
   }
 

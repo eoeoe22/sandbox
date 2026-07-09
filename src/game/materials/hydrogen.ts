@@ -9,17 +9,20 @@ import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
-import { OXYGEN } from './oxygen';
-import { STEAM } from './steam';
 import { BLAST, detonate } from './blast';
 
 // Hydrogen — the lightest, most violently explosive gas. It behaves like Methane
 // (a fuel-air explosive: a cloud that fills a volume and, when any corner is
-// touched off, chain-detonates cell by cell as the Blast wave passes around the
-// remaining explosive cells), but it catches far more easily — a low
-// autoignition point and a bigger blast radius. Fill a chamber with it and it
-// pools against the ceiling; a lone spark's flame, or the flash-front from an
-// Oxygen pocket, sets the whole thing off at once.
+// touched off, detonates all at once as the blast front sweeps through the
+// connected cloud), but it catches far more easily — a low autoignition point
+// and a bigger blast radius. Fill a chamber with it and it pools against the
+// ceiling; a lone spark's flame, or the flash-front from an Oxygen pocket, sets
+// the whole thing off at once.
+//
+// If Oxygen is mixed in, the two burn into *water* (2H₂+O₂→H₂O): the blast levels
+// the mixed cloud, and at its edges the surviving Oxygen meeting the blast front
+// flashes to Steam — which condenses into Water (see oxygen.ts / steam.ts). So an
+// ignited H₂/O₂ mix leaves a steam halo that rains down around the crater.
 //
 // Trigger detection is by id, not the `flammable` tag — the same reasoning as
 // Gunpowder/Methane: a `flammable` tag would let Fire's ignite pass quietly turn
@@ -51,16 +54,10 @@ function updateHydrogen(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    // 2H₂ + O₂ → water: any oxygen mixed in burns with the hydrogen into hot
-    // water vapor (Steam), which condenses into Water (see steam.ts). So a
-    // detonating H₂+O₂ mix leaves a steam cloud that rains down as water on top
-    // of the blast. (Oxygen not consumed here flashes to Steam on its own turn
-    // via the blast — see oxygen.ts — so the reaction fills the whole cloud.)
-    for (const [dx, dy] of DIR8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (sim.inBounds(nx, ny) && sim.get(nx, ny) === OXYGEN.id) sim.spawn(nx, ny, STEAM.id);
-    }
+    // Detonate the whole connected cloud in one pass. Any mixed-in Oxygen inside
+    // the disc is levelled with it; the H₂+O₂→water reaction shows up at the
+    // blast's edge, where surviving Oxygen meeting the blast front flashes to
+    // Steam (see oxygen.ts) and rains back down as Water.
     detonate(sim, x, y, BLAST_RADIUS);
     return;
   }
