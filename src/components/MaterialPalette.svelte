@@ -7,22 +7,23 @@
   import { Phase, type Material } from '../game/engine/types';
   import { toCss } from '../game/render/color';
 
-  // Thematic palette tabs, in display order, each with an icon. A material shows
-  // up under its declared `category`; a material that declares none falls back
-  // to the tab derived from its phase (so untagged materials still land
-  // somewhere sensible and the "add a material = one file" rule is preserved).
+  // Thematic palette tabs, in display order, each with a Bootstrap Icon class. A
+  // material shows up under its declared `category`; a material that declares
+  // none falls back to the tab derived from its phase (so untagged materials
+  // still land somewhere sensible and the "add a material = one file" rule is
+  // preserved).
   const CATEGORY_META: { key: string; icon: string }[] = [
-    { key: '지우개', icon: '🧹' },
-    { key: '고체', icon: '🪨' },
-    { key: '가루', icon: '🏖️' },
-    { key: '액체', icon: '💧' },
-    { key: '기체', icon: '💨' },
-    { key: '불·열', icon: '🔥' },
-    { key: '폭발', icon: '💥' },
-    { key: '냉각', icon: '❄️' },
-    { key: '전기', icon: '⚡' },
-    { key: '생명', icon: '🌱' },
-    { key: '특수', icon: '✨' },
+    { key: '지우개', icon: 'bi-eraser-fill' },
+    { key: '고체', icon: 'bi-box-fill' },
+    { key: '가루', icon: 'bi-hourglass-split' },
+    { key: '액체', icon: 'bi-droplet-fill' },
+    { key: '기체', icon: 'bi-cloud-fill' },
+    { key: '불·열', icon: 'bi-fire' },
+    { key: '폭발', icon: 'bi-asterisk' },
+    { key: '냉각', icon: 'bi-snow' },
+    { key: '전기', icon: 'bi-lightning-charge-fill' },
+    { key: '생명', icon: 'bi-flower1' },
+    { key: '특수', icon: 'bi-stars' },
   ];
 
   const PHASE_FALLBACK: Record<Phase, string> = {
@@ -35,7 +36,7 @@
 
   const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
   const iconFor = (key: string): string =>
-    CATEGORY_META.find((c) => c.key === key)?.icon ?? '•';
+    CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-tag-fill';
 
   // Bucket every palette material by resolved category, then order the tabs:
   // the known categories (in CATEGORY_META order) that actually have members,
@@ -126,22 +127,27 @@
   const EDGE_MARGIN = 8;
   const GAP = 8;
 
-  // Prefers opening to the right of the button (the common case, plenty of
-  // room in the canvas area). On narrow/touch viewports — `pinned` mode's
-  // primary use case — the sidebar alone can eat most of the width, so if
-  // the flyout wouldn't fit to the right without also being clamped back
-  // over the button (making it un-clickable), drop it below the button
-  // instead. Falls back to unclamped, right-of-button placement before the
-  // flyout has been measured once (`flyoutEl` still null).
+  // Prefers opening to the right of the button — the desktop case, where the
+  // sidebar sits at the left and there's plenty of canvas to the right. When the
+  // flyout won't fit to the right (the mobile bottom bar, where categories run
+  // along the bottom), it opens vertically instead: above the button if there's
+  // room (the usual case for a bottom-docked bar), otherwise below. Falls back
+  // to unclamped, right-of-button placement before the flyout has been measured
+  // once (`flyoutEl` still null).
   function computePosition(anchor: DOMRect): { top: number; left: number } {
     if (!flyoutEl) return { top: anchor.top, left: anchor.right + GAP };
     const fw = flyoutEl.offsetWidth;
     const fh = flyoutEl.offsetHeight;
-    let left = anchor.right + GAP;
-    let top = anchor.top;
-    if (left + fw > window.innerWidth - EDGE_MARGIN) {
+    let left: number;
+    let top: number;
+    if (anchor.right + GAP + fw <= window.innerWidth - EDGE_MARGIN) {
+      left = anchor.right + GAP;
+      top = anchor.top;
+    } else {
       left = anchor.left;
-      top = anchor.bottom + GAP;
+      // Prefer above; drop below only when there isn't room above the button.
+      top =
+        anchor.top - GAP - fh >= EDGE_MARGIN ? anchor.top - GAP - fh : anchor.bottom + GAP;
     }
     left = Math.min(Math.max(EDGE_MARGIN, left), Math.max(EDGE_MARGIN, window.innerWidth - EDGE_MARGIN - fw));
     top = Math.min(Math.max(EDGE_MARGIN, top), Math.max(EDGE_MARGIN, window.innerHeight - EDGE_MARGIN - fh));
@@ -244,8 +250,8 @@
         aria-controls={`cat-flyout-${cat.index}`}
         title={cat.label}
       >
-        <span class="icon">{cat.icon}</span>
-        {cat.label}
+        <i class={`bi ${cat.icon} icon`} aria-hidden="true"></i>
+        <span class="cat-label">{cat.label}</span>
         <span class="count">{cat.materials.length}</span>
       </button>
     </div>
@@ -317,6 +323,14 @@
   }
   .icon {
     flex: none;
+    font-size: 15px;
+    line-height: 1;
+    color: #b9c2d0;
+  }
+  .cat-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .count {
     margin-left: auto;
@@ -378,5 +392,36 @@
     white-space: nowrap;
     font-size: 10px;
     text-align: center;
+  }
+
+  /* Mobile: the palette is row 2 of the bottom bar — a single horizontal strip
+     of icon-only category buttons that scrolls sideways. Labels and counts are
+     dropped so each category is a compact tap target; the flyout still shows the
+     material names. */
+  @media (max-width: 768px) {
+    .palette {
+      flex-direction: row;
+      gap: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+    .palette::-webkit-scrollbar {
+      display: none;
+    }
+    .category {
+      flex: none;
+    }
+    .category > button {
+      width: auto;
+      padding: 8px 11px;
+    }
+    .icon {
+      font-size: 18px;
+    }
+    .cat-label,
+    .category > button .count {
+      display: none;
+    }
   }
 </style>

@@ -2,7 +2,6 @@ import { atom } from 'nanostores';
 import { SAND } from '../game/materials';
 import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX, SIM_SPEED_DEFAULT } from '../game/config';
 import type { SimSpeed } from '../game/config';
-import type { AspectMode } from '../game/layout';
 import type { BorderMode } from '../game/engine/types';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
@@ -71,9 +70,6 @@ export const $fps = atom<number>(0);
  */
 export const $fpsPeak = atom<number>(0);
 
-/** How the sandbox size is chosen ('device' = fills viewport, 'custom' = dragged). */
-export const $aspectMode = atom<AspectMode>('device');
-
 /**
  * Sandbox edge behavior: 'wall' (solid indestructible container, the default and
  * original behavior) or 'void' (open edges — particles that reach an edge fall
@@ -89,14 +85,9 @@ export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H }
 // listens for changes.
 export const $clearSignal = atom<number>(0);
 export const $stepSignal = atom<number>(0);
-export const $resetAspectSignal = atom<number>(0);
 
 /** Clear the whole grid. */
 export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1);
 
 /** Advance the simulation by exactly one tick (used while paused). */
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
-
-/** Reset the sandbox to fill the device viewport (default aspect). */
-export const requestResetAspect = (): void =>
-  $resetAspectSignal.set($resetAspectSignal.get() + 1);

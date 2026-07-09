@@ -24,11 +24,10 @@ import {
 import type { SimSpeed } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
-import type { SandboxLayout, AspectMode } from '../game/layout';
 
 // localStorage persistence for the whole session: every control-panel setting
-// and the world itself (cells + temperatures + sandbox size), so a reload
-// resumes exactly where the user left off.
+// and the world itself (cells + temperatures), so a reload resumes exactly
+// where the user left off.
 //
 // Everything here is best-effort: storage can be missing (SSR), disabled
 // (privacy modes), or full (quota) — all of those degrade to "runs like
@@ -292,29 +291,21 @@ function decodeTempRle(bytes: Uint8Array, size: number): Float32Array {
   return out;
 }
 
-interface PersistedAspect {
-  mode: AspectMode;
-  /** The layout's size *intent* in CSS px (see SandboxLayout.wantW/H). */
-  w: number;
-  h: number;
-}
-
 export interface PersistedWorld {
   w: number;
   h: number;
   cells: Uint8Array;
   temp: Float32Array;
-  aspect: PersistedAspect | null;
 }
 
 let lastWorldJson: string | null = null;
 
 /**
- * Snapshot the grid (+ the sandbox-size intent) into localStorage. Cheap enough
- * to call on an interval: one pass over the two arrays, and the write is
- * skipped entirely when nothing changed since the last save.
+ * Snapshot the grid into localStorage. Cheap enough to call on an interval: one
+ * pass over the two arrays, and the write is skipped entirely when nothing
+ * changed since the last save.
  */
-export function saveWorld(grid: Grid, layout: SandboxLayout): void {
+export function saveWorld(grid: Grid): void {
   if (!storageAvailable()) return;
   const json = JSON.stringify({
     v: 1,
@@ -322,26 +313,18 @@ export function saveWorld(grid: Grid, layout: SandboxLayout): void {
     h: grid.height,
     cells: bytesToBase64(encodeCellsRle(grid.cells)),
     temp: bytesToBase64(encodeTempRle(quantizeTemps(grid.cells, grid.temp))),
-    aspect: layout.sizeIntent(),
   });
   if (json === lastWorldJson) return;
   if (writeString(WORLD_KEY, json)) lastWorldJson = json;
-}
-
-function parseAspect(v: unknown): PersistedAspect | null {
-  if (!v || typeof v !== 'object') return null;
-  const a = v as Record<string, unknown>;
-  if (a.mode !== 'device' && a.mode !== 'custom') return null;
-  if (typeof a.w !== 'number' || !Number.isFinite(a.w) || a.w <= 0) return null;
-  if (typeof a.h !== 'number' || !Number.isFinite(a.h) || a.h <= 0) return null;
-  return { mode: a.mode, w: a.w, h: a.h };
 }
 
 /**
  * Load the saved world, or null when there is none (or it fails validation).
  * Restored cells are sanitized: ids no longer in the material registry become
  * Empty, and Empty cells sit at ambient temperature — so a stale or corrupt
- * save can't feed the simulation values it was never written to handle.
+ * save can't feed the simulation values it was never written to handle. A world
+ * saved at a different grid size is remapped onto the current sandbox by the
+ * caller (Grid.resizeFrom).
  */
 export function loadWorld(): PersistedWorld | null {
   if (!storageAvailable()) return null;
@@ -368,5 +351,5 @@ export function loadWorld(): PersistedWorld | null {
     if (cells[i] === EMPTY) temp[i] = AMBIENT_TEMP;
   }
 
-  return { w, h, cells, temp, aspect: parseAspect(j.aspect) };
+  return { w, h, cells, temp };
 }

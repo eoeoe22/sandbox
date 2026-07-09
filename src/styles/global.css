@@ -1,5 +1,13 @@
 :root {
   color-scheme: dark;
+
+  /* Space reserved for the control bar, shared by the canvas (which carves it
+     out) and the ControlPanel component (which fills it), so the sandbox and
+     the UI can never overlap. Desktop docks a fixed-width sidebar on the left;
+     mobile docks a two-row bar along the bottom (its height includes the iOS
+     home-indicator safe area so the bar clears it). */
+  --sidebar-w: 216px;
+  --bottombar-h: calc(104px + env(safe-area-inset-bottom, 0px));
 }
 
 * {
@@ -16,19 +24,23 @@ body {
   overflow: hidden;
 }
 
-/* Full-viewport simulation canvas. touch-action:none stops the page from
-   scrolling/zooming while painting on touch devices.
+/* Simulation canvas. It fills the play area *beside* the control bar — the
+   sidebar's width on desktop (see the media query below for the mobile bar) —
+   so the sandbox grid, derived from the canvas size, never sits under the UI.
+   touch-action:none stops the page from scrolling/zooming while painting on
+   touch devices.
 
    Kept in static vw/vh (not dvw/dvh) on purpose: the canvas size is read back in
    JS (canvas.clientWidth/Height) and drives the sandbox grid resolution, so if
    its height tracked the mobile address bar every show/hide would fire a
    `window.resize` and rebuild the grid mid-paint. body{overflow:hidden} +
    touch-action:none already suppress the scroll gestures that toggle the bar, so
-   the canvas stays a stable full-bleed background. */
+   the canvas stays a stable background. */
 #game {
   position: fixed;
-  inset: 0;
-  width: 100vw;
+  top: 0;
+  left: var(--sidebar-w);
+  width: calc(100vw - var(--sidebar-w));
   height: 100vh;
   display: block;
   background: #101014;
@@ -39,6 +51,16 @@ body {
      'none' once the overlay is actually visible, so there's never a gap with
      no cursor shown at all. */
   cursor: crosshair;
+}
+
+/* Mobile: the control bar moves to the bottom, so the canvas gives up height at
+   the bottom instead of width on the left. */
+@media (max-width: 768px) {
+  #game {
+    left: 0;
+    width: 100vw;
+    height: calc(100vh - var(--bottombar-h));
+  }
 }
 
 /* Brush-size cursor outline (see PointerPainter). Follows the pointer while it
@@ -62,62 +84,6 @@ body {
 }
 .brush-cursor[data-tool='mix'] {
   border-color: rgba(198, 128, 255, 0.95);
-}
-
-/* Draggable handle at the sandbox's top-right corner (see SandboxResizer).
-   Positioned in CSS px by the engine; centered on the corner via the offset. */
-.sandbox-handle {
-  position: fixed;
-  z-index: 8;
-  width: 22px;
-  height: 22px;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(110, 168, 254, 0.7);
-  border-radius: 6px;
-  background: rgba(20, 20, 26, 0.82);
-  backdrop-filter: blur(6px);
-  color: #6ea8fe;
-  font-size: 12px;
-  line-height: 1;
-  cursor: nesw-resize;
-  touch-action: none;
-  user-select: none;
-}
-.sandbox-handle:hover,
-.sandbox-handle.dragging {
-  border-color: #6ea8fe;
-  background: rgba(35, 43, 58, 0.9);
-}
-
-/* Draggable handle at the sandbox's top-left corner (see SandboxMover), for
-   moving the sandbox within the viewport without changing its size. */
-.sandbox-move-handle {
-  position: fixed;
-  z-index: 8;
-  width: 22px;
-  height: 22px;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(110, 168, 254, 0.7);
-  border-radius: 6px;
-  background: rgba(20, 20, 26, 0.82);
-  backdrop-filter: blur(6px);
-  color: #6ea8fe;
-  font-size: 12px;
-  line-height: 1;
-  cursor: move;
-  touch-action: none;
-  user-select: none;
-}
-.sandbox-move-handle:hover,
-.sandbox-move-handle.dragging {
-  border-color: #6ea8fe;
-  background: rgba(35, 43, 58, 0.9);
 }
 
 .notfound {

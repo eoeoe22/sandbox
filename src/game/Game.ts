@@ -2,8 +2,6 @@ import { Grid } from './engine/Grid';
 import { Simulation } from './engine/Simulation';
 import { CanvasRenderer } from './render/CanvasRenderer';
 import { PointerPainter } from './input/PointerPainter';
-import { SandboxResizer } from './input/SandboxResizer';
-import { SandboxMover } from './input/SandboxMover';
 import { SandboxLayout } from './layout';
 import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS } from './config';
 import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
@@ -11,11 +9,9 @@ import {
   $running,
   $fps,
   $fpsPeak,
-  $aspectMode,
   $gridDims,
   $clearSignal,
   $stepSignal,
-  $resetAspectSignal,
   $borderMode,
   $simSpeed,
 } from '../state/store';
@@ -28,8 +24,10 @@ import './materials'; // register all materials (side effect)
  * painting stays responsive even while paused.
  *
  * The sandbox has a dynamic aspect ratio: a shared SandboxLayout derives the
- * grid resolution from the viewport (or a user-dragged size) at a fixed cell
- * size, and the grid is resized in place when that changes.
+ * grid resolution from the canvas at a fixed cell size, and the grid is resized
+ * in place when that changes (window resize, or a responsive layout switch that
+ * changes the canvas size). The canvas is sized by CSS to the play area left
+ * beside the control bar, so the sandbox never overlaps the UI.
  *
  * Future performance seam: the Grid + Simulation are self-contained and could be
  * moved into a Web Worker (transfer the ArrayBuffer) or a WASM core without
@@ -43,14 +41,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const layout = new SandboxLayout();
   layout.setViewport(canvas.clientWidth, canvas.clientHeight);
 
-  // Restore the previous session's world. A saved custom sandbox size is
-  // applied before the grid is built; the saved cells are then copied in with
-  // the same bottom-left-anchored rule a live resize uses, so a saved world
-  // also survives being reopened on a different screen size.
+  // Restore the previous session's world. The saved cells are copied into the
+  // current sandbox (whatever size this device's canvas derives) with the same
+  // bottom-left-anchored rule a live resize uses, so a saved world survives
+  // being reopened on a different screen size.
   const savedWorld = loadWorld();
-  if (savedWorld?.aspect?.mode === 'custom') {
-    layout.setSize(savedWorld.aspect.w, savedWorld.aspect.h);
-  }
 
   const grid = new Grid(layout.gw, layout.gh);
   if (savedWorld) {
@@ -59,31 +54,19 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
-  const resizer = new SandboxResizer(canvas);
-  const mover = new SandboxMover(canvas);
 
-  // Reflect the layout onto the handles and HUD (cheap; runs after any change).
+  // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
+  // change).
   const syncLayoutOutputs = (): void => {
-    resizer.setRect(layout.cssRect());
-    mover.setRect(layout.cssRect());
     painter.refreshCursor();
-    $aspectMode.set(layout.mode);
     $gridDims.set({ w: layout.gw, h: layout.gh });
   };
-  // Resize the grid from its own contents, then sync (window resize / reset).
+  // Resize the grid from its own contents, then sync (window resize / layout
+  // switch between the desktop sidebar and mobile bottom bar).
   const applyLayout = (): void => {
     grid.resize(layout.gw, layout.gh);
     syncLayoutOutputs();
   };
-
-  // Drag state. A drag emits a size per pointermove (which can outpace the frame
-  // rate), so the requested size is coalesced and applied once per frame — one
-  // grid rebuild per frame instead of per event. The grid is rebuilt from a
-  // snapshot taken at drag start, so the resize is non-destructive within the
-  // gesture: overshooting inward and back out restores content instead of
-  // cropping it away.
-  let pendingSize: { w: number; h: number } | null = null;
-  let dragSnapshot: { cells: Uint8Array; temp: Float32Array; w: number; h: number } | null = null;
 
   const resize = (): void => {
     const dpr = window.devicePixelRatio || 1;
@@ -97,34 +80,6 @@ export function startGame(canvas: HTMLCanvasElement): void {
   resize();
   window.addEventListener('resize', resize);
 
-  // Drag the corner handle to resize the sandbox; double-click / button resets.
-  resizer.onResizeStart = (): void => {
-    dragSnapshot = {
-      cells: grid.cells.slice(),
-      temp: grid.temp.slice(),
-      w: grid.width,
-      h: grid.height,
-    };
-  };
-  resizer.onResize = (w, h): void => {
-    pendingSize = { w, h }; // applied in the frame loop (coalesced)
-  };
-  resizer.onResizeEnd = (): void => {
-    dragSnapshot = null;
-  };
-  resizer.onReset = (): void => {
-    layout.reset();
-    applyLayout();
-  };
-
-  // Drag the corner handle to move the sandbox within the viewport. Position
-  // only changes, not the grid, so this can apply straight from the pointer
-  // event instead of going through the frame-coalesced resize path.
-  mover.onMove = (dx, dy): void => {
-    layout.moveBy(dx, dy);
-    syncLayoutOutputs();
-  };
-
   // Sandbox edge behavior (wall vs. void). subscribe fires immediately, so this
   // also seeds the engine and renderer with the current mode on startup.
   $borderMode.subscribe((mode) => {
@@ -137,15 +92,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
   $stepSignal.listen(() => {
     if (!$running.get()) sim.step();
   });
-  $resetAspectSignal.listen(() => {
-    layout.reset();
-    applyLayout();
-  });
 
   // Auto-save the world: on a fixed interval from the frame loop (below), and
   // immediately when the tab is hidden or closed so the last few seconds of
   // painting aren't lost. saveWorld itself skips the write when nothing changed.
-  const saveNow = (): void => saveWorld(grid, layout);
+  const saveNow = (): void => saveWorld(grid);
   window.addEventListener('pagehide', saveNow);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
@@ -172,26 +123,6 @@ export function startGame(canvas: HTMLCanvasElement): void {
   let lastAutosave = last;
 
   const frame = (now: number): void => {
-    // Apply a coalesced drag resize (at most once per frame). Rebuild from the
-    // drag-start snapshot so the gesture is non-destructive.
-    if (pendingSize) {
-      layout.setSize(pendingSize.w, pendingSize.h);
-      pendingSize = null;
-      if (dragSnapshot) {
-        grid.resizeFrom(
-          layout.gw,
-          layout.gh,
-          dragSnapshot.cells,
-          dragSnapshot.w,
-          dragSnapshot.h,
-          dragSnapshot.temp,
-        );
-      } else {
-        grid.resize(layout.gw, layout.gh);
-      }
-      syncLayoutOutputs();
-    }
-
     acc += now - last;
     last = now;
 

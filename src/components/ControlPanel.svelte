@@ -9,12 +9,10 @@
     $tool as tool,
     $fps as fps,
     $fpsPeak as fpsPeak,
-    $aspectMode as aspectMode,
     $gridDims as gridDims,
     $borderMode as borderMode,
     requestClear,
     requestStep,
-    requestResetAspect,
   } from '../state/store';
   import {
     BRUSH_MIN,
@@ -25,47 +23,125 @@
   } from '../game/config';
   import MaterialPalette from './MaterialPalette.svelte';
 
-  // Collapsed state is local UI — the engine doesn't care about it.
-  let collapsed = $state(false);
+  // Mobile-only: the secondary settings (speed, brush size/shape/mode, overwrite,
+  // edge mode, HUD) collapse behind a toggle so the bottom bar stays two rows.
+  // On desktop the sheet is always shown inline in the sidebar and this is unused.
+  let sheetOpen = $state(false);
 </script>
 
-{#if collapsed}
-  <button
-    class="toggle floating"
-    onclick={() => (collapsed = false)}
-    aria-label="설정 펼치기"
-    aria-expanded="false"
-    title="설정 펼치기"
-  >
-    <i class="bi bi-layout-sidebar-inset"></i>
-  </button>
-{:else}
-  <aside class="panel">
-    <div class="head">
-      <h1>Particle Sandbox</h1>
-      <button
-        class="toggle"
-        onclick={() => (collapsed = true)}
-        aria-label="설정 접기"
-        aria-expanded="true"
-        title="설정 접기"
-      >
-        <i class="bi bi-layout-sidebar-inset"></i>
-      </button>
-    </div>
+<aside class="panel">
+  <div class="head">
+    <i class="bi bi-boxes" aria-hidden="true"></i>
+    <h1>Particle Sandbox</h1>
+  </div>
 
-    <div class="row">
-      <button onclick={() => running.set(!$running)}>
-        {$running ? '⏸ 일시정지' : '▶ 재생'}
-      </button>
-      <button onclick={requestStep} disabled={$running}>⏭ 스텝</button>
-      <button onclick={requestClear}>🗑 지우기</button>
-    </div>
-
-    <div class="brush">
-      <span>속도: {$simSpeed === 2 ? '×2 (원래 속도)' : '×1 (기본)'}</span>
-      <div class="row shape speed" role="group" aria-label="시뮬레이션 속도">
+  <!-- Primary controls (bottom-bar row 1 on mobile) + material palette (row 2). -->
+  <div class="bar">
+    <div class="bar-row primary">
+      <div class="group" role="group" aria-label="재생 제어">
         <button
+          class="ctl"
+          onclick={() => running.set(!$running)}
+          aria-label={$running ? '일시정지' : '재생'}
+          title={$running ? '일시정지' : '재생'}
+        >
+          <i class={`bi ${$running ? 'bi-pause-fill' : 'bi-play-fill'}`} aria-hidden="true"></i>
+          <span class="label">{$running ? '일시정지' : '재생'}</span>
+        </button>
+        <button
+          class="ctl"
+          onclick={requestStep}
+          disabled={$running}
+          aria-label="한 스텝 진행"
+          title="한 스텝 진행 (일시정지 중)"
+        >
+          <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
+          <span class="label">스텝</span>
+        </button>
+        <button class="ctl" onclick={requestClear} aria-label="지우기" title="전체 지우기">
+          <i class="bi bi-trash3" aria-hidden="true"></i>
+          <span class="label">지우기</span>
+        </button>
+      </div>
+
+      <div class="group" role="group" aria-label="브러시 도구">
+        <button
+          class="ctl"
+          class:active={$tool === 'material'}
+          onclick={() => tool.set('material')}
+          aria-pressed={$tool === 'material'}
+          aria-label="재료"
+          title="선택한 재료를 그립니다"
+        >
+          <i class="bi bi-brush" aria-hidden="true"></i>
+          <span class="label">재료</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'heat'}
+          onclick={() => tool.set('heat')}
+          aria-pressed={$tool === 'heat'}
+          aria-label="가열"
+          title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
+        >
+          <i class="bi bi-fire" aria-hidden="true"></i>
+          <span class="label">가열</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'cool'}
+          onclick={() => tool.set('cool')}
+          aria-pressed={$tool === 'cool'}
+          aria-label="냉각"
+          title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
+        >
+          <i class="bi bi-snow" aria-hidden="true"></i>
+          <span class="label">냉각</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'mix'}
+          onclick={() => tool.set('mix')}
+          aria-pressed={$tool === 'mix'}
+          aria-label="섞기"
+          title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
+        >
+          <i class="bi bi-tornado" aria-hidden="true"></i>
+          <span class="label">섞기</span>
+        </button>
+      </div>
+
+      <!-- Mobile only: reveal the settings sheet. -->
+      <button
+        class="ctl sheet-toggle"
+        onclick={() => (sheetOpen = !sheetOpen)}
+        aria-label="설정"
+        aria-expanded={sheetOpen}
+        title="설정"
+      >
+        <i class="bi bi-sliders2" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <div class="bar-row palette-row">
+      <MaterialPalette />
+    </div>
+  </div>
+
+  <!-- Secondary settings. Desktop: inline in the sidebar. Mobile: pop-up sheet. -->
+  <div class="sheet" class:open={sheetOpen}>
+    <div class="sheet-head">
+      <span>설정</span>
+      <button class="icon-btn" onclick={() => (sheetOpen = false)} aria-label="설정 닫기" title="닫기">
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <div class="field">
+      <span class="field-label">속도: {$simSpeed === 2 ? '×2 (원래 속도)' : '×1 (기본)'}</span>
+      <div class="seg" role="group" aria-label="시뮬레이션 속도">
+        <button
+          class="ctl"
           class:active={$simSpeed === 1}
           onclick={() => simSpeed.set(1)}
           aria-pressed={$simSpeed === 1}
@@ -74,6 +150,7 @@
           ×1
         </button>
         <button
+          class="ctl"
           class:active={$simSpeed === 2}
           onclick={() => simSpeed.set(2)}
           aria-pressed={$simSpeed === 2}
@@ -84,8 +161,10 @@
       </div>
     </div>
 
-    <label class="brush">
-      <span>브러시 크기: {$brushSize} (휠로 조절)</span>
+    <label class="field">
+      <span class="field-label">
+        브러시 크기: {$brushSize}<span class="wheel-hint"> (휠로 조절)</span>
+      </span>
       <input
         type="range"
         min={BRUSH_MIN}
@@ -95,81 +174,60 @@
       />
     </label>
 
-    <div class="row shape" role="group" aria-label="브러시 모양">
-      <button
-        class:active={$brushShape === 'circle'}
-        onclick={() => brushShape.set('circle')}
-        aria-pressed={$brushShape === 'circle'}
-        title="원형 브러시"
-      >
-        ● 원형
-      </button>
-      <button
-        class:active={$brushShape === 'square'}
-        onclick={() => brushShape.set('square')}
-        aria-pressed={$brushShape === 'square'}
-        title="사각형 브러시"
-      >
-        ■ 사각형
-      </button>
+    <div class="field">
+      <span class="field-label">브러시 모양</span>
+      <div class="seg" role="group" aria-label="브러시 모양">
+        <button
+          class="ctl"
+          class:active={$brushShape === 'circle'}
+          onclick={() => brushShape.set('circle')}
+          aria-pressed={$brushShape === 'circle'}
+          title="원형 브러시"
+        >
+          <i class="bi bi-circle-fill" aria-hidden="true"></i>
+          <span class="label">원형</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$brushShape === 'square'}
+          onclick={() => brushShape.set('square')}
+          aria-pressed={$brushShape === 'square'}
+          title="사각형 브러시"
+        >
+          <i class="bi bi-square-fill" aria-hidden="true"></i>
+          <span class="label">사각형</span>
+        </button>
+      </div>
     </div>
 
-    <div class="row shape" role="group" aria-label="브러시 채우기 방식">
-      <button
-        class:active={$brushMode === 'full'}
-        onclick={() => brushMode.set('full')}
-        aria-pressed={$brushMode === 'full'}
-        title="브러시 영역을 빈틈없이 채웁니다"
-      >
-        ▣ Full
-      </button>
-      <button
-        class:active={$brushMode === 'particle'}
-        onclick={() => brushMode.set('particle')}
-        aria-pressed={$brushMode === 'particle'}
-        title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
-      >
-        ▦ Particle
-      </button>
+    <div class="field">
+      <span class="field-label">채우기</span>
+      <div class="seg" role="group" aria-label="브러시 채우기 방식">
+        <button
+          class="ctl"
+          class:active={$brushMode === 'full'}
+          onclick={() => brushMode.set('full')}
+          aria-pressed={$brushMode === 'full'}
+          title="브러시 영역을 빈틈없이 채웁니다"
+        >
+          <i class="bi bi-grid-fill" aria-hidden="true"></i>
+          <span class="label">Full</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$brushMode === 'particle'}
+          onclick={() => brushMode.set('particle')}
+          aria-pressed={$brushMode === 'particle'}
+          title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
+        >
+          <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
+          <span class="label">Particle</span>
+        </button>
+      </div>
     </div>
 
-    <div class="row shape tools" role="group" aria-label="특수 브러시">
-      <button
-        class:active={$tool === 'material'}
-        onclick={() => tool.set('material')}
-        aria-pressed={$tool === 'material'}
-        title="선택한 재료를 그립니다"
-      >
-        🖌 재료
-      </button>
-      <button
-        class:active={$tool === 'heat'}
-        onclick={() => tool.set('heat')}
-        aria-pressed={$tool === 'heat'}
-        title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
-      >
-        🔥 가열
-      </button>
-      <button
-        class:active={$tool === 'cool'}
-        onclick={() => tool.set('cool')}
-        aria-pressed={$tool === 'cool'}
-        title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
-      >
-        ❄️ 냉각
-      </button>
-      <button
-        class:active={$tool === 'mix'}
-        onclick={() => tool.set('mix')}
-        aria-pressed={$tool === 'mix'}
-        title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
-      >
-        🌀 섞기
-      </button>
-    </div>
-
-    <label class="brush">
-      <span>덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
+    <label class="field">
+      <span class="field-label">덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
       <input
         type="range"
         min={OVERWRITE_LEVEL_MIN}
@@ -185,73 +243,68 @@
       </div>
     </label>
 
-    <MaterialPalette />
-
-    <div class="row shape border" role="group" aria-label="테두리 모드">
-      <button
-        class:active={$borderMode === 'wall'}
-        onclick={() => borderMode.set('wall')}
-        aria-pressed={$borderMode === 'wall'}
-        title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
-      >
-        🧱 벽
-      </button>
-      <button
-        class:active={$borderMode === 'void'}
-        onclick={() => borderMode.set('void')}
-        aria-pressed={$borderMode === 'void'}
-        title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
-      >
-        🕳 공허
-      </button>
+    <div class="field">
+      <span class="field-label">테두리</span>
+      <div class="seg" role="group" aria-label="테두리 모드">
+        <button
+          class="ctl"
+          class:active={$borderMode === 'wall'}
+          onclick={() => borderMode.set('wall')}
+          aria-pressed={$borderMode === 'wall'}
+          title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
+        >
+          <i class="bi bi-bricks" aria-hidden="true"></i>
+          <span class="label">벽</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$borderMode === 'void'}
+          onclick={() => borderMode.set('void')}
+          aria-pressed={$borderMode === 'void'}
+          title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
+        >
+          <i class="bi bi-dash-square-dotted" aria-hidden="true"></i>
+          <span class="label">공허</span>
+        </button>
+      </div>
     </div>
 
-    <div class="aspect">
+    <div class="hud">
       <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
-      <button
-        class="reset"
-        onclick={requestResetAspect}
-        disabled={$aspectMode === 'device'}
-        title="샌드박스를 기기 화면비에 맞춤"
+      <span
+        class="fps"
+        title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
       >
-        기기에 맞춤
-      </button>
+        {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
+      </span>
     </div>
 
-    <div
-      class="fps"
-      title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
-    >
-      {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
-    </div>
     <p class="hint">
-      캔버스를 드래그해 물질을 그리세요. 우상단 핸들을 드래그하면 샌드박스 크기·화면비를 조절할 수 있어요.
+      캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭으로 지우거나 팔레트의 지우개를 쓰세요.
     </p>
-  </aside>
-{/if}
+  </div>
+</aside>
 
 <style>
+  /* --------------------------------------------------------------------- */
+  /* Desktop (default): the panel is a fixed sidebar docked to the left, the
+     full height of the viewport. Its width matches the --sidebar-w the canvas
+     carves out, so the sandbox never sits underneath it.                   */
+  /* --------------------------------------------------------------------- */
   .panel {
     position: fixed;
-    top: 12px;
-    left: 12px;
+    top: 0;
+    left: 0;
     z-index: 10;
-    width: 180px;
-    /* Cap the panel to the *visible* viewport minus its 12px top/bottom margins.
-       Dynamic viewport units (dvh) exclude the mobile browser's address/tool bar,
-       so on Android/iOS the panel no longer runs taller than the screen and spills
-       its bottom off-screen; its contents scroll within this height instead. The
-       vh line is the fallback for browsers without dvh support. */
-    max-height: calc(100vh - 24px);
-    max-height: calc(100dvh - 24px);
+    width: var(--sidebar-w);
+    height: 100vh;
     padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    background: rgba(20, 20, 26, 0.82);
-    backdrop-filter: blur(6px);
-    border: 1px solid #2a2a33;
-    border-radius: 10px;
+    gap: 12px;
+    background: rgba(20, 20, 26, 0.92);
+    backdrop-filter: blur(8px);
+    border-right: 1px solid #2a2a33;
     color: #e8e8ee;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
@@ -274,17 +327,16 @@
   .panel::-webkit-scrollbar-thumb:hover {
     background: #4a4a58;
   }
+
   .head {
-    position: sticky;
-    top: -12px;
-    margin: -12px -12px 0;
-    padding: 12px 12px 8px;
-    background: rgba(20, 20, 26, 0.92);
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
-    z-index: 1;
+    color: #e8e8ee;
+  }
+  .head i {
+    font-size: 18px;
+    color: #6ea8fe;
   }
   h1 {
     margin: 0;
@@ -292,46 +344,33 @@
     font-weight: 600;
     letter-spacing: 0.02em;
   }
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
-    color: #e8e8ee;
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
+
+  .bar,
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
-  .toggle:hover {
-    border-color: #3a3a46;
+  .bar-row.primary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  /* Collapsed: the toggle floats alone in the corner where the panel was. */
-  .toggle.floating {
-    position: fixed;
-    top: 12px;
-    left: 12px;
-    z-index: 10;
-    width: 38px;
-    height: 38px;
-    font-size: 18px;
-    background: rgba(20, 20, 26, 0.82);
-    backdrop-filter: blur(6px);
-    border-radius: 10px;
-    user-select: none;
-  }
-  .row {
+  .group {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
   }
-  .row button {
+  .group .ctl {
     flex: 1 1 auto;
+  }
+
+  /* Shared button. */
+  .ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     padding: 6px 8px;
     border: 1px solid #2a2a33;
     border-radius: 6px;
@@ -341,35 +380,43 @@
     font: inherit;
     white-space: nowrap;
   }
-  .row button:hover {
+  .ctl i {
+    font-size: 15px;
+    line-height: 1;
+  }
+  .ctl:hover {
     border-color: #3a3a46;
   }
-  .row button:disabled {
+  .ctl:disabled {
     opacity: 0.45;
     cursor: default;
   }
-  .row.shape button.active {
+  .ctl.active {
     border-color: #6ea8fe;
     background: #23324a;
   }
-  /* Set the special-brush row a touch apart from the painting controls above. */
-  .row.tools {
-    padding-top: 8px;
-    border-top: 1px solid #2a2a33;
+
+  /* Two-option segmented control (speed, shape, mode, border). */
+  .seg {
+    display: flex;
+    gap: 6px;
   }
-  /* Separate the sandbox-edge toggle from the palette above it. */
-  .row.border {
-    padding-top: 8px;
-    border-top: 1px solid #2a2a33;
+  .seg .ctl {
+    flex: 1 1 0;
   }
-  .brush {
+
+  .field {
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
-  .brush input {
+  .field-label {
+    color: #cfcfd8;
+  }
+  .field input[type='range'] {
     width: 100%;
   }
+
   .overwrite-steps {
     display: flex;
     gap: 3px;
@@ -383,36 +430,16 @@
   .overwrite-steps .step.filled {
     background: #6ea8fe;
   }
-  .aspect {
+
+  .hud {
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     justify-content: space-between;
-    gap: 8px;
-  }
-  .dims {
+    gap: 4px 10px;
     font-variant-numeric: tabular-nums;
     color: #8a8a99;
-  }
-  .reset {
-    padding: 4px 8px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
-    color: #e8e8ee;
-    cursor: pointer;
-    font: inherit;
-    white-space: nowrap;
-  }
-  .reset:hover {
-    border-color: #3a3a46;
-  }
-  .reset:disabled {
-    opacity: 0.45;
-    cursor: default;
   }
   .fps {
-    font-variant-numeric: tabular-nums;
-    color: #8a8a99;
     cursor: help;
   }
   .hint {
@@ -420,5 +447,133 @@
     color: #6a6a78;
     font-size: 11px;
     line-height: 1.4;
+  }
+
+  /* The settings sheet header + close button are mobile-only affordances. */
+  .sheet-head,
+  .sheet-toggle {
+    display: none;
+  }
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #1b1b22;
+    color: #e8e8ee;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  .icon-btn:hover {
+    border-color: #3a3a46;
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* Mobile: the panel becomes a two-row bar docked along the bottom. Row 1 is
+     the primary controls, row 2 the material palette; both scroll sideways if
+     they overflow. The secondary settings live in a sheet that pops up above
+     the bar when toggled.                                                  */
+  /* --------------------------------------------------------------------- */
+  @media (max-width: 768px) {
+    .panel {
+      top: auto;
+      bottom: 0;
+      left: 0;
+      width: 100vw;
+      height: var(--bottombar-h);
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+      gap: 6px;
+      border-right: none;
+      border-top: 1px solid #2a2a33;
+      overflow: visible;
+    }
+
+    .head {
+      display: none;
+    }
+
+    .bar {
+      flex: 1;
+      min-width: 0;
+      gap: 6px;
+    }
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+    .bar-row::-webkit-scrollbar {
+      display: none;
+    }
+    .bar-row.primary {
+      flex-direction: row;
+    }
+    .group {
+      flex: none;
+      flex-wrap: nowrap;
+    }
+    .group .ctl {
+      flex: none;
+    }
+    /* Icon-only buttons in the bar: hide the text labels, square them up. */
+    .bar .label {
+      display: none;
+    }
+    .bar .ctl {
+      padding: 8px 10px;
+    }
+    .bar .ctl i {
+      font-size: 17px;
+    }
+
+    .sheet-toggle {
+      display: inline-flex;
+      flex: none;
+      margin-left: auto;
+    }
+
+    /* Sheet becomes a pop-up anchored to the top edge of the bar. It's
+       position:absolute (not fixed) so the panel's backdrop-filter containing
+       block keeps it pinned to the bar rather than the viewport. */
+    .sheet {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: calc(100% + 8px);
+      max-height: 60vh;
+      padding: 12px;
+      background: rgba(20, 20, 26, 0.97);
+      backdrop-filter: blur(8px);
+      border: 1px solid #2a2a33;
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      display: none;
+    }
+    .sheet.open {
+      display: flex;
+    }
+    .sheet-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+    }
+    /* On the roomy sheet, restore icon+label buttons for clarity. */
+    .sheet .label {
+      display: inline;
+    }
+    .wheel-hint {
+      display: none;
+    }
   }
 </style>
