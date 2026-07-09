@@ -16,12 +16,9 @@ const { title = 'Particle Sandbox' } = Astro.props;
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-      integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
-      crossorigin="anonymous"
-    />
+    <!-- Only the Bootstrap Icons webfont is used (bi-* glyphs in the control
+         panel). The full Bootstrap CSS isn't loaded — the app uses no Bootstrap
+         component classes and global.css owns the reset/base styles. -->
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
       rel="stylesheet"
