@@ -5,261 +5,296 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { launchEmber } from './ember';
 
-// The explosion *shockwave* — what makes a detonation different from just
-// lighting fuel on fire. Unlike Fire (a gas that only drifts upward and ignites
-// flammables), a Blast is a burst of individually-traveling shard particles
-// that fan out from the ignition point and DESTROY the particles they pass
-// through (sand, water, plants, …), not just ignite them — carving a crater.
+// ── Explosions: an instant shockwave, not a crawling scan ───────────────────
 //
-// Directions in angular order (45° apart), so index±1 (mod 8) is always a
-// geometric neighbor — that's what makes the wobble below meaningful (a real
-// small left/right deflection, not a jump to an unrelated direction).
-const ANGLE_DIRS: ReadonlyArray<readonly [number, number]> = [
-  [0, -1], // 0 N
-  [1, -1], // 1 NE
-  [1, 0], // 2 E
-  [1, 1], // 3 SE
-  [0, 1], // 4 S
-  [-1, 1], // 5 SW
-  [-1, 0], // 6 W
-  [-1, -1], // 7 NW
+// A detonation resolves in a SINGLE tick. The moment an explosive is triggered
+// it calls `detonate`, which floods a *filled* disc outward from the epicenter
+// — destroying every particle it reaches (sand, salt, stone, water, …) up to
+// the blast radius — and drops a bright, short-lived shockwave flash over the
+// whole crater. The flash fades from white-hot to orange over a few ticks and
+// collapses into scattered Fire, while glowing Embers are hurled out past the
+// rim (see ember.ts). Nothing crawls one-cell-per-tick anymore: the destruction
+// is immediate and fills the disc, so a charge sitting on a pile of salt (or
+// any non-flammable powder) actually blows the pile apart instead of carving a
+// few thin channels through it, and solids in range are levelled too.
+//
+// The Blast material now serves purely as that flash: a freshly *painted* Blast
+// cell (or one reloaded from a save) detonates on its first turn; every cell the
+// flood clears becomes a Blast flash cell that just fades and dies. The two are
+// told apart by the cell's `temp` slot (Blast conducts nothing, so the heat pass
+// leaves it alone as opaque per-cell state): a flash stores its remaining life
+// there (1..SHELL_MAX, doubling as the glow brightness), while anything above
+// SHELL_MAX is the "detonate me" seed marker. Storing it in `temp` (which
+// persists) rather than `aux` (which doesn't) means a flash saved mid-explosion
+// reloads as a flash and quietly dies, instead of re-detonating on load.
+//
+// Walls and blast-proof solids (Diamond) stop the flood — they neither break nor
+// let it pass, so they cast a shadow and can shelter what's behind them. Other
+// explosives caught inside the front are detonated as part of the SAME pass
+// (their own radius refreshes the budget), so a connected mass of Gunpowder /
+// Nitro goes off all at once instead of sweeping across cell by cell. Separate
+// charges nearby are set off a tick later by the flash / fire the blast leaves
+// touching them — the same id-based trigger every explosive already watches for.
+
+/** Blast radius (cells) used when a Blast cell is painted directly by the brush.
+ *  Explosives pass their own `blastRadius` to `detonate` instead. */
+const BRUSH_RADIUS = 8;
+
+// The shockwave flash lives briefly, then collapses. Each cleared cell gets a
+// randomized life in [SHELL_LIFE_MIN, SHELL_LIFE_MIN + SHELL_LIFE_VAR) so the
+// disc dissolves organically over a handful of frames rather than blinking off
+// all at once. Life is stored in `temp` and also drives the glow ramp below —
+// high life renders white-hot, low life orange.
+const SHELL_LIFE_MIN = 3;
+const SHELL_LIFE_VAR = 4; // flash lives 3..6 ticks
+/** Glow's hot end / the ceiling on a flash life. Any `temp` above this is not a
+ *  flash but the seed marker that tells a painted Blast to detonate. */
+const SHELL_MAX = SHELL_LIFE_MIN + SHELL_LIFE_VAR; // 7
+/** `temp` of a Blast cell that still needs to detonate. Comfortably above every
+ *  possible flash life so the two states can never be confused, and above the
+ *  glow range so a seed renders at full brightness for the one tick it exists. */
+const SEED_TEMP = 100;
+
+// A spent flash cell leaves scattered Fire this often (dusting the fresh crater
+// with flame that can ignite what's left); otherwise it clears straight to
+// Empty, so the net result is a bare crater lightly seasoned with fire.
+const SHELL_FIRE_CHANCE = 0.28;
+
+// Rim debris: the outermost flash cells hurl glowing Embers outward — fast
+// ballistic sparks that fly well past the crater, pockmark whatever they hit,
+// and set off distant explosives via the fire they leave (see ember.ts). Only
+// the rim sparks, and never through a Wall, so a blast sealed in a chamber stays
+// contained.
+const RIM_EMBER_CHANCE = 0.55;
+
+// Chamfer-metric step costs so the flooded region reads as a round disc instead
+// of a square: a diagonal step costs ~√2 orthogonal steps. The budget starts at
+// the blast radius and drains as the front travels; a cell is reached (and
+// destroyed) while the budget hasn't gone negative.
+const ORTH_COST = 1;
+const DIAG_COST = 1.4142;
+const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
+  [0, -1, ORTH_COST],
+  [0, 1, ORTH_COST],
+  [-1, 0, ORTH_COST],
+  [1, 0, ORTH_COST],
+  [-1, -1, DIAG_COST],
+  [1, -1, DIAG_COST],
+  [-1, 1, DIAG_COST],
+  [1, 1, DIAG_COST],
 ];
 
-/** Sentinel `dir` meaning "just ignited, hasn't picked a travel direction
- *  yet" — the one tick where a fresh Blast cell fans out to all 8 directions
- *  at once (the initial punch), each becoming an independently-traveling
- *  shard for the rest of its life. */
-const EPICENTER = 8;
+// Hard cap on cells destroyed by a single detonate() call, and by all detonate
+// calls within one tick combined, so even a screen-filling mass of explosives
+// can't blow the frame budget in a single frame. Both are far above any normal
+// blast (a radius-16 disc is only ~800 cells, a 120² block ~14k); when a giant
+// connected mass exceeds them the flood simply stops for the tick, and the
+// explosives left at the ragged frontier detonate over the next few ticks via
+// the flash now touching them — a graceful spread, never a hang.
+const MAX_DETONATE_CELLS = 20_000;
+const MAX_DETONATE_CELLS_PER_TICK = 24_000;
 
-// A shard's remaining travel distance and its direction share one float (see
-// blast.ts's thermal.conductivity: 0 — the heat-diffusion pass never touches
-// this cell, so it's free to reuse `temp` as opaque per-cell state instead of
-// real heat). `life` strictly decreases by one every successful step and a
-// shard always spends itself after exactly one tick's turn (see the
-// unconditional collapse at the end of updateBlast), so — no matter how much
-// it wobbles or bounces off obstacles — every shard is guaranteed to stop
-// within `life` ticks of being spawned. That bound is what prevents runaway
-// spread; nothing here can loop indefinitely.
-function encodeBlast(life: number, dir: number): number {
-  return life * 9 + dir;
-}
-function decodeBlast(temp: number): { life: number; dir: number } {
-  return { life: Math.floor(temp / 9), dir: temp % 9 };
-}
-/** Exported so Gunpowder/Nitro (and Blast's own placement radius) seed a
- *  fresh detonation the same way: an omnidirectional epicenter, not a
- *  pre-aimed shard. */
-export function seedBlast(life: number): number {
-  return encodeBlast(life, EPICENTER);
-}
+// Per-tick destruction budget shared across every detonate() call, so a whole
+// field of charges going off on the same tick still can't exceed one big
+// blast's worth of work. Reset lazily whenever the tick advances.
+let budgetTick = -1;
+let budgetLeft = 0;
 
-const BLAST_FIRE_CHANCE = 0.35; // a spent shard leaves a scattered flame…
-// …otherwise it clears to Empty, so the net result is a crater dusted with fire.
+// Reused visited buffer for the flood, keyed by flat cell index. A monotonic
+// `stampId` marks cells touched by the current detonation, so we never allocate
+// a Set per blast nor clear the buffer between blasts — a cell counts as visited
+// only while its stamp equals the current id. Re-sized to match the grid.
+let stampBuf: Int32Array | null = null;
+let stampW = 0;
+let stampH = 0;
+let stampId = 0;
 
-// A shard that spends its *full* travel distance dies at the crater rim — the
-// natural launch point for glowing ejecta (see ember.ts): fast ballistic
-// sparks that carry the shard's outward direction far beyond the destruction
-// radius, so a detonation visibly throws debris in every direction instead of
-// just carving a hole and stopping. Shards that die early (blocked by a Wall
-// or an unbroken obstacle face) don't spark — an explosion in a sealed cavity
-// stays contained, which is also why this can't leak embers through walls.
-// Each launch may also fire a *twin* from the adjacent cell at ±45°, roughly
-// doubling the debris density into an irregular cone per rim shard.
-const RIM_EMBER_CHANCE = 0.9;
-const TWIN_EMBER_CHANCE = 0.5;
-
-// How often a traveling shard deflects to an adjacent (45°) direction instead
-// of continuing straight — mirrors the rising-gas wobble in engine/behaviors.ts
-// (GAS_WOBBLE_CHANCE) so a shard's path reads the same "not a rigid line"
-// way a flame or wisp of smoke does, just radiating outward instead of up.
-const WOBBLE_CHANCE = 0.4;
-
-// Marker stamped on a cell the wave has already cleared to Empty, so a
-// *later* shard doesn't re-"discover" it and re-spawn Blast there — without
-// this, a shard whose wobble sends it back over already-cleared ground would
-// re-ignite it and get an extra, unearned lease on life. The marker is
-// *time-bounded*, not permanent: it encodes the tick it was stamped
-// (`CRATER_MARK_BASE - tick`) and expires after `CRATER_PROTECT_TICKS`. A
-// flat permanent sentinel would work for a single blast but then never
-// un-block that air again — re-detonating explosives inside an old crater
-// (completely normal sandbox play) would find its own surroundings
-// permanently "already cratered" and refuse to spread into them. Any value at
-// or below `CRATER_MARK_BASE` is unambiguously a marker, never a legitimate
-// temperature (materials stay within roughly [HEAT_BRUSH_MIN, LAVA_TEMP] =
-// [-50, 1500]) — Empty cells are otherwise always exactly AMBIENT_TEMP (20),
-// since the heat/cool brush explicitly skips Empty (see
-// brushTools.heatCells) and no other code path leaves Empty at a non-ambient
-// temperature. Painting new material over a marked cell always calls
-// `setTemp` itself (see PointerPainter.paint), so reuse clears it instantly
-// regardless of expiry.
-const CRATER_MARK_BASE = -100_000;
-// Comfortably longer than a single blast's full resolution (radius-bounded,
-// well under a second even for Nitro's largest radius) but short enough that
-// the same spot isn't artificially blast-resistant for long.
-const CRATER_PROTECT_TICKS = 120;
-
-/** True if `temp` is a still-active crater marker as of `tick` (see above). */
-function isActiveCrater(temp: number, tick: number): boolean {
-  if (temp > CRATER_MARK_BASE) return false; // not a marker — ordinary air
-  const markedTick = CRATER_MARK_BASE - temp;
-  return tick - markedTick < CRATER_PROTECT_TICKS;
-}
-
-/** Whether a shard can enter (nx,ny) — blocked by the indestructible Wall, an
- *  Explosive waiting for its own turn, a cell already mid-blast/freshly
- *  embered, or ground this same wave already cratered. Everything else
- *  (Stone included) is fair game to destroy. */
-function canEnter(sim: SimContext, nx: number, ny: number): boolean {
-  if (!sim.inBounds(nx, ny)) return false; // edge (or void border): nothing to hit
-  const nid = sim.get(nx, ny);
-  if (nid === BLAST.id || nid === FIRE.id) return false;
-  if (nid === EMPTY) {
-    if (isActiveCrater(sim.getTemp(nx, ny), sim.tick)) return false;
-  } else {
-    const m = getMaterial(nid);
-    // The indestructible boundary Wall and explosion-proof solids (Diamond)
-    // block a shard outright. Every other solid — Stone included — gets
-    // destroyed like anything else.
-    if (m.isWall || m.explosionProof) return false;
-    // Explosives are passed over so they can chain-detonate on their own turn.
-    if (m.explosive) return false;
+/** Fetch the visited buffer (reallocating on a grid resize) and advance to a
+ *  fresh stamp id for this detonation. */
+function nextStamp(sim: SimContext): Int32Array {
+  if (!stampBuf || stampW !== sim.width || stampH !== sim.height) {
+    stampW = sim.width;
+    stampH = sim.height;
+    stampBuf = new Int32Array(stampW * stampH); // all zero; ids start at 1
+    stampId = 0;
   }
-  return true;
-}
-
-/** Instantly destroy (x,y) the same way a spent shard does: an ember, or an
- *  Empty cell stamped with the crater marker. Shared by the shard's normal
- *  end-of-turn collapse and the epicenter's immediate punch below. */
-function collapse(sim: SimContext, x: number, y: number): void {
-  if (sim.chance(BLAST_FIRE_CHANCE)) {
-    sim.spawn(x, y, FIRE.id);
-  } else {
-    sim.set(x, y, EMPTY);
-    sim.setTemp(x, y, CRATER_MARK_BASE - sim.tick);
+  stampId++;
+  if (stampId >= 0x7fffffff) {
+    // Astronomically unlikely, but keep ids from overflowing Int32: wipe once
+    // and restart, so no stale stamp is ever mistaken for the current one.
+    stampBuf.fill(0);
+    stampId = 1;
   }
+  return stampBuf;
 }
 
-/** Try to advance a shard one cell in `dir` with `life` steps left. Destroys
- *  whatever's there and spawns the shard's continuation. Returns whether it
- *  moved. */
-function tryAdvance(sim: SimContext, x: number, y: number, dir: number, life: number): boolean {
-  const [dx, dy] = ANGLE_DIRS[dir];
-  const nx = x + dx;
-  const ny = y + dy;
-  if (!canEnter(sim, nx, ny)) return false;
-  sim.spawn(nx, ny, BLAST.id);
-  sim.setTemp(nx, ny, encodeBlast(life, dir));
-  return true;
+/** True if the cell blocks the shockwave outright — it survives intact and casts
+ *  a shadow. Only the indestructible boundary Wall and blast-proof solids
+ *  (Diamond); everything else is fair game to destroy. */
+function isBlocker(id: number): boolean {
+  if (id === EMPTY) return false;
+  const m = getMaterial(id);
+  return m.isWall === true || m.explosionProof === true;
 }
 
-// How many cells deep the epicenter instantly punches through, in every
-// direction, before handing off to a normal one-cell-per-tick traveling
-// shard. Without this, a *lone* trigger (a single Gunpowder/Nitro cell, or a
-// small painted Blast) reads as a sparse asterisk of thin rays from tick one
-// — a dense pile still looks like a proper crater (many overlapping
-// epicenters fill each other's gaps), but an isolated trigger needs its own
-// small solid core to read as a punchy blast rather than a firework.
-const EPICENTER_PUNCH = 3;
+/** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell
+ *  whose life (in `temp`) both times its fade and drives its glow. spawn() marks
+ *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. */
+function placeShell(sim: SimContext, x: number, y: number): void {
+  const life = SHELL_LIFE_MIN + sim.randInt(SHELL_LIFE_VAR);
+  sim.spawn(x, y, BLAST.id);
+  sim.setTemp(x, y, life); // ≤ SHELL_MAX ⇒ a flash, never mistaken for a seed
+}
 
-/** The epicenter's initial hit in one direction: instantly destroys the
- *  first `EPICENTER_PUNCH` cells outward (stopping early if blocked), then
- *  the last one reached becomes a normal traveling shard that continues
- *  under its own turn from here on — same bounded-life guarantee as any
- *  other shard, just with a head start. Returns where that shard landed (and
- *  its remaining life), or `null` if the very first step was blocked. */
-function punchAndLaunch(
-  sim: SimContext,
-  x: number,
-  y: number,
-  dir: number,
-  life: number,
-): { x: number; y: number; life: number } | null {
-  const [dx, dy] = ANGLE_DIRS[dir];
-  let cx = x;
-  let cy = y;
-  let remaining = life;
-  for (let step = 0; step < EPICENTER_PUNCH; step++) {
-    const nx = cx + dx;
-    const ny = cy + dy;
-    if (!canEnter(sim, nx, ny)) return step === 0 ? null : { x: cx, y: cy, life: remaining };
-    // A tiny radius (< EPICENTER_PUNCH) shouldn't over-reach: the last cell
-    // still in budget becomes the live shard, and the punch stops there
-    // rather than continuing with a meaningless negative `remaining`.
-    const isLast = step === EPICENTER_PUNCH - 1 || remaining <= 0;
-    sim.spawn(nx, ny, BLAST.id);
-    if (isLast) {
-      const finalLife = Math.max(remaining, 0);
-      sim.setTemp(nx, ny, encodeBlast(finalLife, dir));
-      return { x: nx, y: ny, life: finalLife };
+/**
+ * Detonate at (cx,cy) with the given blast radius — immediately and in full.
+ * Floods a filled disc outward, destroying everything destructible it reaches,
+ * chain-detonating other explosives inside the front (their own radius refreshes
+ * the budget), and dropping the shockwave flash plus a spray of rim embers. Runs
+ * entirely within the calling tick — the whole point is that there's no crawl.
+ */
+export function detonate(sim: SimContext, cx: number, cy: number, radius: number): void {
+  const w = sim.width;
+  const h = sim.height;
+  const stamp = nextStamp(sim);
+  const id0 = stampId;
+
+  // Refresh the shared per-tick destruction budget when the tick advances.
+  if (sim.tick !== budgetTick) {
+    budgetTick = sim.tick;
+    budgetLeft = MAX_DETONATE_CELLS_PER_TICK;
+  }
+
+  // FIFO frontier as parallel arrays (cheaper than a queue of objects). Each
+  // entry is a cell plus the budget still available for it to push outward.
+  const qx: number[] = [cx];
+  const qy: number[] = [cy];
+  const qb: number[] = [radius];
+  stamp[cy * w + cx] = id0;
+  // Rim cells (the outer edge, one outward direction each) that spray embers
+  // once the flood settles — collected rather than launched inline so spawning
+  // them can't disturb the cell reads the flood depends on.
+  const rimX: number[] = [];
+  const rimY: number[] = [];
+  const rimDX: number[] = [];
+  const rimDY: number[] = [];
+
+  let head = 0;
+  let destroyed = 0;
+  // The origin always detonates (so a triggered charge always makes progress);
+  // every cell after it is gated by both the per-call cap and the shared
+  // per-tick budget.
+  while (
+    head < qx.length &&
+    destroyed < MAX_DETONATE_CELLS &&
+    (destroyed === 0 || budgetLeft > 0)
+  ) {
+    const x = qx[head];
+    const y = qy[head];
+    const b = qb[head];
+    head++;
+
+    // Read the cell before overwriting it: an explosive caught in the front
+    // detonates as part of this same pass, its own radius refreshing the budget
+    // so a connected charge goes off all at once rather than one cell per tick.
+    const id = sim.get(x, y);
+    let outB = b;
+    if (id !== EMPTY) {
+      const m = getMaterial(id);
+      if (m.explosive && m.blastRadius) outB = Math.max(b, m.blastRadius);
     }
-    collapse(sim, nx, ny);
-    cx = nx;
-    cy = ny;
-    remaining--;
-  }
-  // Unreachable (the loop always returns on its last iteration, since
-  // `step === EPICENTER_PUNCH - 1` forces `isLast`), but keeps the function
-  // total for TypeScript.
-  return { x: cx, y: cy, life: Math.max(remaining, 0) };
-}
 
-function updateBlast(x: number, y: number, sim: SimContext): void {
-  const { life, dir } = decodeBlast(sim.getTemp(x, y));
-  if (life >= 1) {
-    if (dir === EPICENTER) {
-      // The initial punch: fan out to all 8 directions at once, each
-      // becoming its own independently-traveling shard. Each punch tip also
-      // spawns two side shards at ±45° right there — a wider initial cone
-      // per direction (up to 24 shards total from one detonation) so the
-      // blast reads as forceful ("화력") instead of 8 thin, sparse lines,
-      // while every shard still obeys the same bounded-life rule below.
-      for (let d = 0; d < 8; d++) {
-        const tip = punchAndLaunch(sim, x, y, d, life - 1);
-        if (tip && tip.life >= 1) {
-          tryAdvance(sim, tip.x, tip.y, (d + 7) % 8, tip.life - 1);
-          tryAdvance(sim, tip.x, tip.y, (d + 1) % 8, tip.life - 1);
+    placeShell(sim, x, y);
+    destroyed++;
+    budgetLeft--;
+
+    let isRim = false;
+    let rimDx = 0;
+    let rimDy = 0;
+    for (const [dx, dy, cost] of NEIGHBORS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      // A container edge contains the blast (like a Wall) — no leak, no ember.
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+      const nidx = ny * w + nx;
+      if (stamp[nidx] === id0) continue;
+      if (outB - cost < 0) {
+        // The front ran out of push in this direction: this cell is the outer
+        // rim here, so it can fling an ember outward. Record the first such
+        // direction (roughly radial) and move on.
+        if (!isRim) {
+          isRim = true;
+          rimDx = dx;
+          rimDy = dy;
         }
+        continue;
       }
-    } else {
-      const wobbled = sim.chance(WOBBLE_CHANCE) ? (dir + (sim.chance(0.5) ? 1 : 7)) % 8 : dir;
-      tryAdvance(sim, x, y, wobbled, life - 1);
+      // Wall / Diamond stops the front and shadows what's beyond — no ember
+      // either (an explosion behind a wall shouldn't spit sparks through it).
+      if (isBlocker(sim.get(nx, ny))) continue;
+      stamp[nidx] = id0;
+      qx.push(nx);
+      qy.push(ny);
+      qb.push(outB - cost);
     }
-  } else if (dir !== EPICENTER && sim.chance(RIM_EMBER_CHANCE)) {
-    // Fully-traveled shard at the crater rim: instead of collapsing, hurl an
-    // ember onward along the shard's outward direction. The ember replaces
-    // this cell outright (no crater mark here — it's flying away, and the
-    // cell it vacates next tick resets to plain air).
-    const [dx, dy] = ANGLE_DIRS[dir];
-    launchEmber(sim, x, y, dx, dy);
-    if (sim.chance(TWIN_EMBER_CHANCE)) {
-      // Twin spray: a second ember departs from the neighboring cell at ±45°,
-      // flying along that rotated direction — a cone, not a doubled-up ray.
-      // Only into open air (never overwrite material), and spawn-marked via
-      // launchEmber so the neighbor can't be reprocessed this tick.
-      const tdir = (dir + (sim.chance(0.5) ? 1 : 7)) % 8;
-      const [tdx, tdy] = ANGLE_DIRS[tdir];
-      const tx = x + tdx;
-      const ty = y + tdy;
-      if (sim.inBounds(tx, ty) && sim.isEmpty(tx, ty)) launchEmber(sim, tx, ty, tdx, tdy);
+    if (isRim) {
+      rimX.push(x);
+      rimY.push(y);
+      // Fling the ember straight out from the epicenter (radial), so the spray
+      // reads as a round burst rather than skewing toward one axis. Fall back to
+      // the local outward neighbor only for a cell sitting exactly on the
+      // epicenter — which a rim cell never is, but keep it total.
+      const rdx = x < cx ? -1 : x > cx ? 1 : 0;
+      const rdy = y < cy ? -1 : y > cy ? 1 : 0;
+      const radial = rdx !== 0 || rdy !== 0;
+      rimDX.push(radial ? rdx : rimDx);
+      rimDY.push(radial ? rdy : rimDy);
     }
+  }
+
+  for (let i = 0; i < rimX.length; i++) {
+    if (sim.chance(RIM_EMBER_CHANCE)) launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+  }
+}
+
+/** One tick of a Blast cell: either it's a seed that detonates now, or a flash
+ *  cell fading toward the bare crater. */
+function updateBlast(x: number, y: number, sim: SimContext): void {
+  const t = sim.getTemp(x, y);
+  if (t > SHELL_MAX) {
+    // A freshly painted Blast (or a seed reloaded from a save): go off, using
+    // the brush radius. detonate() overwrites this very cell with a flash.
+    detonate(sim, x, y, BRUSH_RADIUS);
     return;
   }
-  // Spent: collapse into a flame, or clear out and mark the crater so later
-  // shards don't bounce back into it.
-  collapse(sim, x, y);
+  // A shockwave flash cell: dim one step (life + brightness share this slot);
+  // when spent, collapse into a lick of Fire or clear to the bare crater.
+  const life = Math.round(t);
+  if (life <= 1) {
+    if (sim.chance(SHELL_FIRE_CHANCE)) sim.spawn(x, y, FIRE.id);
+    else sim.set(x, y, EMPTY);
+    return;
+  }
+  sim.setTemp(x, y, life - 1);
+  // No movement: the flash marks where the shockwave passed and fades in place,
+  // rather than drifting upward like ordinary gas would.
 }
 
 export const BLAST = register({
   id: 17,
   name: 'Blast',
   phase: Phase.Gas,
-  color: rgb(255, 245, 210),
+  // Base (hot) color of the flash; the glow ramp fades it toward the cool orange
+  // below as each flash cell's life counts down.
+  color: rgb(255, 246, 224),
   density: 1,
   category: '폭발',
-  // The radius when a Blast is placed directly by the brush, seeded as an
-  // epicenter just like Gunpowder/Nitro (see seedBlast above). conductivity 0
-  // is load-bearing: it makes the heat pass treat `temp` as inert per-cell
-  // state (the shard's remaining life + direction) instead of real heat.
-  thermal: { init: seedBlast(7), conductivity: 0 },
+  // conductivity 0 is load-bearing: it makes the heat pass treat `temp` as inert
+  // per-cell state (the flash's life / the seed marker) instead of real heat.
+  // init = SEED_TEMP so a brush-placed cell reads as a seed and detonates.
+  thermal: { init: SEED_TEMP, conductivity: 0 },
+  // Fade the flash white-hot → orange as its life (stored in temp) drops from
+  // SHELL_MAX to 1, so the shockwave visibly cools as it dies.
+  glow: { min: 1, max: SHELL_MAX, cool: rgb(255, 120, 24) },
   update: updateBlast,
 });

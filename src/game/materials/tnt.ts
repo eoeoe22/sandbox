@@ -8,17 +8,17 @@ import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
-import { BLAST, seedBlast } from './blast';
+import { BLAST, detonate } from './blast';
 
 // TNT — a packed charge: a static solid block (it holds its shape until it goes
 // off, unlike loose Gunpowder that piles) that detonates into a *large* Blast.
 // It's the demolition tool — stack blocks to blow craters, or wire one to a
 // Battery through a fuse or metal for a remote detonator. It goes off from an
 // adjacent flame or blast, from an electric arc (a Spark drops Fire beside it),
-// or from enough radiant heat, and — being `explosive` — the Blast wave passes
-// around neighboring charges so a stack chain-detonates instead of the first
-// blast erasing the rest.
-const BLAST_RADIUS = 14;
+// or from enough radiant heat, and — being `explosive` — the shockwave front
+// sweeps *through* neighboring charges and sets them off within the same tick,
+// so a stack of blocks detonates as one big crater rather than erasing itself.
+const BLAST_RADIUS = 16;
 const AUTOIGNITE_TEMP = 240;
 
 function updateTNT(x: number, y: number, sim: SimContext): void {
@@ -44,8 +44,7 @@ function updateTNT(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    sim.spawn(x, y, BLAST.id);
-    sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
+    detonate(sim, x, y, BLAST_RADIUS);
   }
   // Otherwise it just sits there — a Solid has no phase-default movement.
 }
@@ -57,6 +56,7 @@ export const TNT = register({
   color: rgb(196, 58, 48),
   density: 1000,
   explosive: true,
+  blastRadius: BLAST_RADIUS,
   category: '폭발',
   thermal: { conductivity: 0.3 },
   update: updateTNT,

@@ -7,15 +7,15 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { BLAST, seedBlast } from './blast';
+import { BLAST, detonate } from './blast';
 
 // Gas: rises/diffuses like the default gas behavior, but it's a *fuel-air
-// explosive*. Rather than merely burning, a methane cell detonates — it seeds a
-// Blast core (see blast.ts), the same destructive shockwave Gunpowder/Nitro
-// produce. Because a cloud spreads to fill a volume and every cell detonates,
-// igniting one corner sets off the whole pocket in a chain: the Blast wave
-// passes *around* explosive cells (it never vaporizes them), so each remaining
-// methane cell gets its own turn to detect the adjacent Blast and go off too.
+// explosive*. Rather than merely burning, a methane cell detonates into the same
+// instant filled-disc shockwave Gunpowder/Nitro produce (see blast.ts). Because
+// a cloud spreads to fill a volume and every cell is explosive, igniting one
+// corner sets off the whole pocket at once: the blast front sweeps *through* the
+// connected methane and detonates it in the same pass (each cell's own radius
+// refreshing the front), so the pocket goes up in one flash.
 //
 // Trigger detection is by id (Fire/Lava/Blue Flame/Blast), NOT the generic
 // `flammable` tag — same reasoning as Gunpowder: a flammable tag would let
@@ -42,8 +42,7 @@ function updateMethane(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    sim.spawn(x, y, BLAST.id);
-    sim.setTemp(x, y, seedBlast(BLAST_RADIUS));
+    detonate(sim, x, y, BLAST_RADIUS);
     return;
   }
   updateGas(x, y, sim);
@@ -56,6 +55,7 @@ export const METHANE = register({
   color: rgb(224, 224, 168),
   density: 1,
   explosive: true,
+  blastRadius: BLAST_RADIUS,
   category: '폭발',
   // A gas: conducts poorly, so autoignition by conduction takes real sustained
   // heat rather than a single brief brush of it.

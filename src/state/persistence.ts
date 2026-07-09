@@ -184,8 +184,11 @@ export function initSettingsPersistence(): void {
 
 /** Temperatures are quantized to 0.1° steps in an int16 (range ±3276.7 — the
  *  brush clamps at [-50, 2000], so gameplay values fit with headroom). Blast's
- *  encoded life/direction values are small integers, so they survive the
- *  round-trip exactly. */
+ *  reuse of `temp` (flash life 1..6, or the seed marker 100) is a small integer,
+ *  so it survives the round-trip exactly. (Ember packs a larger value into `temp`
+ *  that exceeds the int16 range and does *not* round-trip, but embers are
+ *  ephemeral debris — a mid-flight save that reloads with a garbled spark or two
+ *  is harmless.) */
 const TEMP_SCALE = 10;
 
 /** Sanity cap on `w*h` from a saved envelope, so corrupt data can't make us
@@ -237,10 +240,10 @@ function decodeCellsRle(bytes: Uint8Array, size: number): Uint8Array {
 
 /**
  * Quantize temperatures for storage. Empty cells are always stored at ambient:
- * their temperature is physically inert (Empty has zero conductivity), and this
- * scrubs Blast's crater markers — those encode the tick they were stamped
- * (see blast.ts), which would read as "freshly cratered" for a long time
- * against the fresh session's restarted tick counter.
+ * their temperature is physically inert (Empty has zero conductivity), so there's
+ * no reason to spend RLE runs on whatever stale value an emptied cell happened to
+ * hold — normalizing them keeps large cleared regions compressing to almost
+ * nothing.
  */
 function quantizeTemps(cells: Uint8Array, temp: Float32Array): Int16Array {
   const q = new Int16Array(temp.length);
