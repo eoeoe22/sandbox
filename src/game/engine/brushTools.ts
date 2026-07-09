@@ -40,7 +40,7 @@ export function heatCells(
 /**
  * Shuffle the non-solid cells among `cells` in place — a Fisher–Yates
  * permutation over their (id, temperature) pairs, so each particle carries its
- * own heat as it moves. Solid cells (Phase.Solid: Wall/Stone/Vine) are excluded
+ * own heat as it moves. Solid cells (Phase.Solid: Wall/Stone/Glass) are excluded
  * and stay put, acting as fixed boundaries the mix stirs around; empty cells do
  * take part, so stirring a powder into a liquid genuinely disperses it before
  * the physics step re-sorts everything by density on release.

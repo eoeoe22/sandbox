@@ -11,9 +11,9 @@ import { DIRT } from './dirt';
 import { WOOD } from './wood';
 import { CONCRETE } from './concrete';
 
-// Moss — a creeping green growth that overtakes damp surfaces. Like Vine it's a
-// static solid with a custom growth rule, but instead of climbing it spreads
-// *across* neighboring surfaces: as long as moisture (Water, Saltwater, or Mud)
+// Moss — a creeping green growth that overtakes damp surfaces. It's a static
+// solid with a custom growth rule that spreads *across* neighboring surfaces
+// rather than piling: as long as moisture (Water, Saltwater, or Mud)
 // is somewhere in its 8-neighborhood, it slowly converts an adjacent Stone,
 // Dirt, Wood, or Concrete cell into more Moss. The surface stays solid — it's
 // just greened over — but it also becomes flammable, so a mossy wall that dries
@@ -45,7 +45,7 @@ function updateMoss(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     if (isColonizable(sim.get(nx, ny)) && sim.chance(SPREAD_CHANCE)) {
       // spawn marks the new cell moved, so it can't be re-processed this tick —
-      // capping growth to one cell per tick (the same guard Vine relies on).
+      // capping growth to one cell per tick.
       sim.spawn(nx, ny, MOSS.id);
       return;
     }

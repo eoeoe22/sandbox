@@ -16,18 +16,19 @@ import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
 
 // Thermite — a powder that, once lit, burns hotter than anything else in the
-// game and *melts its way through terrain*, leaving a puddle of Molten Metal
-// where it was (the real reaction reduces iron oxide to molten iron). It's the
+// game and *melts its way through terrain*, then burns itself out completely,
+// leaving nothing behind (the grain is consumed by its own reaction). It's the
 // game's cutting torch: drop it on a Stone wall or an Iron plate and it eats a
-// hole clean through, turning what it touches molten.
+// hole clean through, turning what it touches molten, and vanishes when spent.
 //
 // It uses its per-cell `aux` byte as a burn countdown — the first material here
 // to need a real timed state, which is exactly what `aux` was added for. While
 // aux > 0 the cell is burning: it pins itself to a blistering BURN_TEMP (so its
 // conducted heat alone melts neighbors), turns adjacent Stone→Lava,
 // Sand/Glass→Molten Glass and Iron→Molten Metal, wreathes itself in Fire, and
-// counts down; when the timer runs out the cell collapses into the Molten Metal
-// it "smelted". Unlit, it's just a dense powder that falls and piles.
+// counts down; when the timer runs out the grain is spent and simply vanishes,
+// leaving only the hole it cut. Unlit, it's just a dense powder that falls and
+// piles.
 //
 // It lights the way the explosives detect their triggers — by scanning for
 // flame/blast ids, not via the `flammable` tag — plus an autoignition point so
@@ -75,10 +76,10 @@ function burnInPlace(x: number, y: number, sim: SimContext, timer: number): void
   }
 
   if (timer <= 1) {
-    // Spent: collapse into the Molten Metal it smelted (keeps the hot temp via
-    // in-place set, so it reads as molten and flows before cooling to Iron).
-    sim.setAux(x, y, 0);
-    sim.set(x, y, MOLTEN_METAL.id);
+    // Spent: the grain is fully consumed and leaves nothing behind. set(EMPTY)
+    // also scrubs the cell's burn timer (aux) and its pinned heat back to
+    // ambient, so no stale state or leftover warmth lingers where it burned.
+    sim.set(x, y, EMPTY);
     return;
   }
   sim.setAux(x, y, timer - 1);

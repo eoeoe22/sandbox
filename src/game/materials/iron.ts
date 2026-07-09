@@ -1,12 +1,8 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
-import { RUST } from './rust';
-import { WATER } from './water';
-import { SALTWATER } from './saltwater';
 
 // Solid metal — the workhorse of two subsystems at once:
 //
@@ -21,13 +17,8 @@ import { SALTWATER } from './saltwater';
 //    again — that one-way "recently energized" memory is what makes a pulse run
 //    down a wire instead of sloshing back and forth (see spark.ts's comment).
 //
-// Left wet it slowly oxidizes to crumbly Rust — very slowly in fresh Water,
-// several times faster in salt water (the classic accelerant). Acid, meanwhile,
-// dissolves Iron outright via Acid's own corrosion pass (Iron isn't tagged
-// acidResistant), so the metal is vulnerable from three different angles.
-const RUST_CHANCE_WATER = 0.0009;
-const RUST_CHANCE_SALT = 0.005;
-
+// Acid dissolves Iron outright via Acid's own corrosion pass (Iron isn't tagged
+// acidResistant), so a wet-but-safe metal is still vulnerable to acid.
 function updateIron(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again.
   const refractory = sim.getAux(x, y);
@@ -37,25 +28,6 @@ function updateIron(x: number, y: number, sim: SimContext): void {
     // In-place `set` keeps the (now high) temperature, so the fresh Molten Metal
     // reads as molten instead of instantly re-freezing next tick.
     sim.set(x, y, MOLTEN_METAL.id);
-    return;
-  }
-
-  for (const [dx, dy] of DIR4) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (nid === WATER.id) {
-      if (sim.chance(RUST_CHANCE_WATER)) {
-        sim.set(x, y, RUST.id);
-        return;
-      }
-    } else if (nid === SALTWATER.id) {
-      if (sim.chance(RUST_CHANCE_SALT)) {
-        sim.set(x, y, RUST.id);
-        return;
-      }
-    }
   }
 }
 
