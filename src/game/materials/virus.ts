@@ -14,8 +14,8 @@ import { MUD } from './mud';
 // Virus — a plague that converts what it touches into more of itself, then
 // spreads from there. It infects soft, "organic" matter — anything flammable or
 // combustible (plants, wood, the fuels…) plus water and loose earth — one cell
-// per tick via `spawn` (so, like Vine, it can't fill a region in a single
-// frame). It leaves the hard world alone: Stone, metals, Glass, Concrete, Wall,
+// per tick via `spawn` (which marks the new cell moved, so it can't fill a
+// region in a single frame). It leaves the hard world alone: Stone, metals, Glass, Concrete, Wall,
 // the gases, and the explosives are all immune, so a virus outbreak is contained
 // by a stone or glass wall.
 //

@@ -12,8 +12,8 @@ import { CONCRETE } from './concrete';
 // water and it *sets*: the grain hardens into solid Concrete and consumes the
 // water that set it. That makes it the game's construction tool — pour dry
 // cement into a mold or a gap, splash water on it, and it freezes into a rigid
-// structure you can build with. (Like Salt/Seed consuming their triggering
-// water, this keeps one puddle from setting an unlimited amount at once.)
+// structure you can build with. (Like Salt consuming the water it dissolves
+// into, this keeps one puddle from setting an unlimited amount at once.)
 const SET_CHANCE = 0.09;
 
 function updateCement(x: number, y: number, sim: SimContext): void {
