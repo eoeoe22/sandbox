@@ -96,12 +96,12 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
 // Y is the connected mass's total yield and maxYield its strongest single cell.
 // A lone charge (Y == maxYield) reaches exactly its own yield, so single charges
 // are unchanged; extra connected yield adds reach *sublinearly*, so a filled
-// chamber's much larger Y pushes its crater far past a thin lining's without a
-// modest stack instantly filling the screen. All three are playtest knobs: raise
-// REACH_GAIN for a bigger fill-vs-line gap, lower R_MAX if big fills feel too
-// screen-filling.
-const REACH_GAIN = 0.35;
-const R_MAX = 128;
+// chamber's larger Y pushes its crater past a thin lining's without a modest
+// stack filling the screen. Both are playtest knobs: raise REACH_GAIN for a
+// bigger fill-vs-line gap, lower R_MAX to cap how far a big pile can ever reach.
+// Tuned down from 0.35 / 128 — packed masses were reaching most of the screen.
+const REACH_GAIN = 0.14;
+const R_MAX = 64;
 
 // Cap on how many connected explosive cells one survey (phase 1) sums before it
 // gives up and detonates with the partial yield gathered so far — a graceful
@@ -115,9 +115,10 @@ const MAX_SURVEY_CELLS_PER_TICK = 80_000;
 
 // Hard cap on cells destroyed by a single detonate() call, and by all detonate
 // calls within one tick combined, so even a screen-filling mass of explosives
-// can't blow the frame budget in a single frame. Sized above a large deliberate
-// blast (a radius-16 disc is ~800 cells, a filled 60×40 chamber's crater ~48k);
-// when a giant connected mass exceeds them the flood simply stops for the tick,
+// can't blow the frame budget in a single frame. Sized well above any normal
+// deliberate blast (a radius-16 disc is ~800 cells; even a filled 60×40 chamber
+// craters only ~10-15k at the current reach); when a giant connected mass
+// exceeds them the flood simply stops for the tick,
 // and the explosives left at the ragged frontier detonate over the next few
 // ticks via the flash now touching them — a graceful spread, never a hang.
 const MAX_DETONATE_CELLS = 60_000;
