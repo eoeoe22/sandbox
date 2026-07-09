@@ -26,7 +26,7 @@ function updateNitro(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === FIRE.id || nid === LAVA.id || nid === BLAST.id) {
-      detonate(sim, x, y, BLAST_RADIUS);
+      detonate(sim, x, y);
       return;
     }
   }

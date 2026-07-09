@@ -58,7 +58,7 @@ function updateHydrogen(x: number, y: number, sim: SimContext): void {
     // the disc is levelled with it; the H₂+O₂→water reaction shows up at the
     // blast's edge, where surviving Oxygen meeting the blast front flashes to
     // Steam (see oxygen.ts) and rains back down as Water.
-    detonate(sim, x, y, BLAST_RADIUS);
+    detonate(sim, x, y);
     return;
   }
   updateGas(x, y, sim);

@@ -44,7 +44,7 @@ function updateTNT(x: number, y: number, sim: SimContext): void {
   }
 
   if (trigger) {
-    detonate(sim, x, y, BLAST_RADIUS);
+    detonate(sim, x, y);
   }
   // Otherwise it just sits there — a Solid has no phase-default movement.
 }
