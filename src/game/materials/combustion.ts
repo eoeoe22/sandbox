@@ -10,10 +10,10 @@ import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { AMBIENT_TEMP } from '../config';
 
-// Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Coal,
-// Wood, Sawdust. Unlike the explosives (Methane/Gunpowder/Nitro), a fuel never
-// detonates: it catches fire and is consumed over time, giving off ordinary
-// Fire that then burns out on its own.
+// Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Alcohol,
+// Honey, Coal, Wood, Sawdust, Fuse. Unlike the explosives (Methane/Gunpowder/
+// Nitro), a fuel never detonates: it catches fire and is consumed over time,
+// giving off ordinary Fire that then burns out on its own.
 //
 // The point of this model is a *self-sustaining surface front*: a stray spark
 // touching one cell must creep through the whole body and consume almost all of
@@ -138,11 +138,11 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
       // burning. Gated by burnChance per neighbor, so a just-lit unscanned
       // neighbor can chain-light within the same tick — but each burning cell
       // reaches only its ~4 not-yet-scanned neighbors, so the same-tick
-      // branching factor is ~4·burnChance (≈0.48 at the fastest fuel, Gasoline
-      // 0.12): subcritical, a bounded flicker of well under one extra cell per
+      // branching factor is ~4·burnChance (≈0.6 at the fastest fuel, Alcohol
+      // 0.15): subcritical, a bounded flicker of well under one extra cell per
       // cell, not the deterministic one-frame runaway a raw material `set` on
-      // an unscanned cell would cause. The ~2× margin to criticality is why a
-      // burnChance above ~0.25 would need rethinking this.
+      // an unscanned cell would cause. Criticality is 4·burnChance = 1 at
+      // burnChance 0.25, so a fuel much above that would need rethinking this.
       if (sim.chance(spec.burnChance)) sim.setTemp(nx, ny, BURN_TEMP);
     }
   }
