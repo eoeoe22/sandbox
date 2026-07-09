@@ -10,10 +10,10 @@ import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { AMBIENT_TEMP } from '../config';
 
-// Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Coal,
-// Wood, Sawdust. Unlike the explosives (Methane/Gunpowder/Nitro), a fuel never
-// detonates: it catches fire and is consumed over time, giving off ordinary
-// Fire that then burns out on its own.
+// Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Alcohol,
+// Honey, Coal, Wood, Sawdust, Fuse. Unlike the explosives (Methane/Gunpowder/
+// Nitro), a fuel never detonates: it catches fire and is consumed over time,
+// giving off ordinary Fire that then burns out on its own.
 //
 // The point of this model is a *self-sustaining surface front*: a stray spark
 // touching one cell must creep through the whole body and consume almost all of
@@ -24,15 +24,26 @@ import { AMBIENT_TEMP } from '../config';
 // catch chance could roll. With no flame anchored to the fuel, the burn
 // fizzled after the first cell or two.
 //
-// So a lit fuel now *burns in place*. When a cell catches it doesn't vanish: it
-// stays fuel but marked burning (its temperature pinned to BURN_TEMP), and each
-// tick it (1) wreaths itself in a lick of Fire in the open air around it — the
-// visible flame, and the handle Water uses to put it out — and (2) rolls to
-// light each of its still-unlit fuel neighbors, handing the front one cell
-// further. Only after a while (a memoryless per-tick chance) is the cell itself
-// spent, collapsing into rising Fire. Because the burning cell sits still as a
-// persistent ignition source for many ticks, even a small per-tick spread
-// chance reliably carries the front to every neighbor — slow, but near-total.
+// So a lit fuel now *stays fuel while it burns* instead of flashing to gas. When
+// a cell catches it doesn't vanish: it stays fuel but marked burning (its
+// temperature pinned to BURN_TEMP), and each tick it (1) wreaths itself in a
+// lick of Fire in the open air around it — the visible flame, and the handle
+// Water uses to put it out — and (2) rolls to light each of its still-unlit fuel
+// neighbors, handing the front one cell further. Only after a while (a
+// memoryless per-tick chance) is the cell itself spent, collapsing into rising
+// Fire. Because the burning cell persists as an ignition source for many ticks,
+// even a small per-tick spread chance reliably carries the front to every
+// neighbor — slow, but near-total.
+//
+// Crucially the burning cell keeps *moving*: after its burn step it still falls
+// and flows exactly like its unlit self (the caller runs the normal
+// powder/liquid movement), so a lit stream of Sawdust tumbles on down and a
+// burning slick of Oil/Gasoline/Alcohol drops at the same speed as the cold
+// liquid around it, instead of freezing the instant it catches. Its material id
+// and pinned heat ride along on every swap, so a coherent body — a falling
+// column, a settling pile, a spreading pool — carries the front with it and
+// keeps lighting the neighbors it moves alongside. Only a cell already consumed
+// into Fire this tick stops, because it is no longer fuel to move.
 //
 // `burnChance` still sets each fuel's pace, now doing double duty: the per-tick
 // chance to catch from an adjacent flame *and* the per-tick chance a burning
@@ -83,12 +94,15 @@ function isFlame(id: number): boolean {
 }
 
 /**
- * Advance one tick for a cell that is already burning (temperature pinned at
+ * Run the burn step for a cell that is already burning (temperature pinned at
  * BURN_TEMP): put it out if Water reached it, otherwise re-pin its heat so it
  * stays a burning source, fringe it with flame, spread to fuel neighbors, and
- * roll to be consumed.
+ * roll to be consumed. Returns true only if the cell was consumed into Fire this
+ * tick (so the caller must not then move it as fuel); false if it is still
+ * unconsumed fuel — burning or freshly smothered — that the caller carries on
+ * falling/flowing.
  */
-function burnInPlace(x: number, y: number, sim: SimContext, spec: Combustible): void {
+function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -99,10 +113,11 @@ function burnInPlace(x: number, y: number, sim: SimContext, spec: Combustible): 
     // "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule.
     if (nid === WATER.id || nid === SALTWATER.id) {
       // Cell stays fuel (its id is untouched); just cool it back out of the
-      // burning band and flash the water it touched to Steam.
+      // burning band and flash the water it touched to Steam. Not consumed, so
+      // the caller still lets the now-unlit fuel fall/flow.
       sim.setTemp(x, y, AMBIENT_TEMP);
       sim.spawn(nx, ny, STEAM.id);
-      return;
+      return false;
     }
   }
 
@@ -123,35 +138,40 @@ function burnInPlace(x: number, y: number, sim: SimContext, spec: Combustible): 
       // burning. Gated by burnChance per neighbor, so a just-lit unscanned
       // neighbor can chain-light within the same tick — but each burning cell
       // reaches only its ~4 not-yet-scanned neighbors, so the same-tick
-      // branching factor is ~4·burnChance (≈0.48 at the fastest fuel, Gasoline
-      // 0.12): subcritical, a bounded flicker of well under one extra cell per
+      // branching factor is ~4·burnChance (≈0.6 at the fastest fuel, Alcohol
+      // 0.15): subcritical, a bounded flicker of well under one extra cell per
       // cell, not the deterministic one-frame runaway a raw material `set` on
-      // an unscanned cell would cause. The ~2× margin to criticality is why a
-      // burnChance above ~0.25 would need rethinking this.
+      // an unscanned cell would cause. Criticality is 4·burnChance = 1 at
+      // burnChance 0.25, so a fuel much above that would need rethinking this.
       if (sim.chance(spec.burnChance)) sim.setTemp(nx, ny, BURN_TEMP);
     }
   }
 
   // Spent: collapse into rising Fire, which flickers up and burns out on its
-  // own (see fire.ts) — carrying the flame off the consumed surface.
+  // own (see fire.ts) — carrying the flame off the consumed surface. Signal the
+  // caller to stop: this cell is Fire now, not fuel to fall/flow.
   if (sim.chance(spec.burnChance * CONSUME_RATIO)) {
     sim.set(x, y, FIRE.id);
     sim.setTemp(x, y, BURN_TEMP);
+    return true;
   }
+  // Still burning fuel: the caller runs its normal fall/flow so it keeps moving.
+  return false;
 }
 
 /**
- * Run one tick of combustion for a fuel cell. Returns true if the cell is
- * burning (already alight, just caught, or self-ignited), in which case the
- * caller must stop — a burning cell stays put as a flame front instead of
- * falling/flowing for the tick.
+ * Run one tick of combustion for a fuel cell. Returns true only if the cell was
+ * *consumed* into Fire this tick — in which case the caller must stop, since the
+ * cell is Fire now and must not be moved as a powder/liquid. In every other case
+ * (still-burning fuel, freshly caught, smothered by water, or not burning at
+ * all) it returns false and the caller runs its normal fall/flow: a burning fuel
+ * keeps moving exactly like its unlit self.
  */
 export function tryBurn(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
   // Already burning (pinned hot), or hot enough to self-ignite from radiant
-  // heat: burn in place.
+  // heat: run its burn step, which reports whether it was consumed.
   if (sim.getTemp(x, y) >= spec.autoIgniteTemp) {
-    burnInPlace(x, y, sim, spec);
-    return true;
+    return burnStep(x, y, sim, spec);
   }
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -160,11 +180,12 @@ export function tryBurn(x: number, y: number, sim: SimContext, spec: Combustible
     if (isFlame(sim.get(nx, ny))) {
       // A flame is adjacent — roll once for the whole cell this tick (catch
       // speed lives entirely in this probability, independent of how many flame
-      // neighbors there are). On a catch, pin the cell hot so its next turn
-      // burns in place; on a miss it keeps falling/flowing as usual.
+      // neighbors there are). On a catch, pin the cell hot so its next turn sees
+      // it as burning; on a miss it stays cold fuel. Either way it is still fuel,
+      // so it keeps falling/flowing this tick — return false and let the caller
+      // move it (its pinned heat rides along on the swap).
       if (sim.chance(spec.burnChance)) {
         sim.setTemp(x, y, BURN_TEMP);
-        return true;
       }
       return false;
     }
