@@ -20,8 +20,6 @@ import { GUNPOWDER } from './gunpowder';
 import { NITRO } from './nitro';
 import { BLAST } from './blast';
 import { EMBER } from './ember';
-import { SEED } from './seed';
-import { VINE } from './vine';
 import { BLUE_FLAME } from './blueflame';
 import { METHANE } from './methane';
 import { ICE } from './ice';
@@ -33,7 +31,6 @@ import { WOOD } from './wood';
 import { SAWDUST } from './sawdust';
 import { IRON } from './iron';
 import { MOLTEN_METAL } from './moltenmetal';
-import { RUST } from './rust';
 import { MOLTEN_GLASS } from './moltenglass';
 import { GLASS } from './glass';
 import { LIQUID_NITROGEN } from './liquidnitrogen';
@@ -79,8 +76,6 @@ export {
   NITRO,
   BLAST,
   EMBER,
-  SEED,
-  VINE,
   BLUE_FLAME,
   METHANE,
   ICE,
@@ -92,7 +87,6 @@ export {
   SAWDUST,
   IRON,
   MOLTEN_METAL,
-  RUST,
   MOLTEN_GLASS,
   GLASS,
   LIQUID_NITROGEN,
@@ -146,8 +140,6 @@ export const MATERIALS = [
   GUNPOWDER,
   NITRO,
   BLAST,
-  SEED,
-  VINE,
   BLUE_FLAME,
   METHANE,
   ICE,
@@ -159,7 +151,6 @@ export const MATERIALS = [
   SAWDUST,
   IRON,
   MOLTEN_METAL,
-  RUST,
   MOLTEN_GLASS,
   GLASS,
   LIQUID_NITROGEN,

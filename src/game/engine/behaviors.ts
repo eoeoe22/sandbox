@@ -39,6 +39,28 @@ export function updatePowder(x: number, y: number, sim: SimContext): void {
   sim.moveDiagonalDown(x, y);
 }
 
+// A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways
+// instead of climbing a rigid column. A light, fluffy powder — Snow, Ash —
+// *falls* the same imperfect way. These knobs are the falling mirror of the gas
+// wobble, giving flakes a slow, scattering flutter instead of a sand-like drop.
+const DRIFT_STALL_CHANCE = 0.4; // skip the tick → hangs in the air, flutters down
+const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before dropping
+
+/** Floaty powder (Snow, Ash): drifts down like a gas drifts up — a chance to
+ *  stall mid-air (slow flutter) and, while there's still open air below, a
+ *  chance to wander a step sideways before continuing to fall, so flakes
+ *  scatter and wander down instead of dropping in a dead-straight column. The
+ *  sideways drift is gated on "air below" so only airborne flakes wander; once
+ *  one has a surface under it, it settles and piles like an ordinary powder
+ *  (no endless sideways creep along the ground). */
+export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
+  if (sim.chance(DRIFT_STALL_CHANCE)) return;
+  const airBelow = sim.inBounds(x, y + 1) && sim.isEmpty(x, y + 1);
+  if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
+  if (sim.moveDown(x, y)) return;
+  sim.moveDiagonalDown(x, y);
+}
+
 /** Liquid: fall, else flow diagonally down, else spread sideways to level out. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.moveDown(x, y)) return;
