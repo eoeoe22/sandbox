@@ -184,7 +184,7 @@ export function initSettingsPersistence(): void {
 
 /** Temperatures are quantized to 0.1° steps in an int16 (range ±3276.7 — the
  *  brush clamps at [-50, 2000], so gameplay values fit with headroom). Blast's
- *  reuse of `temp` (flash life 1..7, or the seed marker 100) is a small integer,
+ *  reuse of `temp` (flash life 1..6, or the seed marker 100) is a small integer,
  *  so it survives the round-trip exactly. (Ember packs a larger value into `temp`
  *  that exceeds the int16 range and does *not* round-trip, but embers are
  *  ephemeral debris — a mid-flight save that reloads with a garbled spark or two

@@ -4,8 +4,9 @@ import { rgb } from '../render/color';
 
 // Diamond — effectively indestructible. It conducts heat superbly (the best
 // thermal conductor in the game), yet nothing destroys it: it's
-// `explosionProof` (Blast waves, flying Embers, and Antimatter all pass around
-// it, like the Wall does), it's `acidResistant`, and it declares no temperature
+// `explosionProof` (it stops a Blast front and shadows what's behind it, shatters
+// flying Embers on contact, and shrugs off Antimatter — like the Wall does), it's
+// `acidResistant`, and it declares no temperature
 // reaction, so no amount of heat or cold melts, freezes, or sublimates it. (We
 // deliberately drop the real-world detail that diamond burns/sublimates at
 // extreme temperatures — here it's simply the one placeable solid immune to

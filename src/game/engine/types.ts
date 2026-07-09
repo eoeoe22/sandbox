@@ -68,8 +68,9 @@ export interface Material {
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
   /**
-   * Survives every explosive force: a Blast shard, flying Ember, and Antimatter
-   * annihilation all pass *around* it instead of destroying it (see
+   * Survives every explosive force: a Blast front is stopped by it (casting a
+   * shadow over what's behind), a flying Ember shatters on contact instead of
+   * smashing it, and Antimatter annihilation skips over it (see
    * blast.ts/ember.ts/antimatter.ts), exactly like the Wall. Unlike `isWall`
    * though, it isn't the container boundary — it's an ordinary placeable solid
    * (Diamond) that just happens to be blast-proof. Combined with never declaring

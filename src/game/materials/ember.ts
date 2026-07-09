@@ -15,9 +15,9 @@ import { SALTWATER } from './saltwater';
 // hits (one cell per ember — pockmarks, not a second crater) and may leave a
 // lick of flame — which is also what lets a blast set off distant flammables
 // and chain-detonate far-away explosives. The indestructible Wall and
-// explosives themselves are never smashed (the latter so they chain-detonate
-// via fire instead of being silently erased, mirroring Blast's pass-over
-// rule).
+// explosives themselves are never smashed — an ember that reaches an explosive
+// shatters and drops fire beside it, so it chain-detonates the charge instead of
+// silently erasing it.
 //
 // Velocity is stored in fixed-point quarter-cells per tick, packed together
 // with the remaining flight time into the cell's `temp` (conductivity 0 makes
