@@ -88,6 +88,28 @@ export class SandboxLayout {
   private offsetX = 0;
   private offsetY = 0;
 
+  /**
+   * CSS px reserved at the bottom of the viewport for a docked control bar
+   * (narrow/mobile layout). The sandbox is sized and centered within the space
+   * *above* this inset, so the bar acts as a solid screen edge the sandbox
+   * never overlaps. Zero on the wide layout, where the panel floats over the
+   * canvas instead.
+   */
+  private insetBottom = 0;
+
+  /** Effective viewport height available to the sandbox (minus the bottom bar). */
+  private availH(): number {
+    return Math.max(MIN_GRID_SIDE, this.viewH - this.insetBottom);
+  }
+
+  /** Reserve `bottom` CSS px at the foot of the viewport; recomputes the grid. */
+  setInsets(bottom: number): void {
+    const next = Math.max(0, bottom);
+    if (next === this.insetBottom) return;
+    this.insetBottom = next;
+    this.recompute();
+  }
+
   /** Update the viewport size (CSS px); recomputes the grid. */
   setViewport(w: number, h: number): void {
     this.viewW = w;
@@ -135,9 +157,10 @@ export class SandboxLayout {
   }
 
   private recompute(): void {
-    // Effective size never exceeds the viewport, but the intent (wantW/H) does.
+    // Effective size never exceeds the *available* viewport (height minus the
+    // reserved bottom bar), but the intent (wantW/H) does.
     const effW = clamp(this.wantW, MIN_GRID_SIDE, this.viewW);
-    const effH = clamp(this.wantH, MIN_GRID_SIDE, this.viewH);
+    const effH = clamp(this.wantH, MIN_GRID_SIDE, this.availH());
     const { gw, gh, cell } = deriveGrid(effW, effH);
     this.gw = gw;
     this.gh = gh;
@@ -150,7 +173,7 @@ export class SandboxLayout {
    *  the sandbox partly off-screen. */
   private clampOffset(): void {
     const maxX = Math.max(0, (this.viewW - this.rectW()) / 2);
-    const maxY = Math.max(0, (this.viewH - this.rectH()) / 2);
+    const maxY = Math.max(0, (this.availH() - this.rectH()) / 2);
     this.offsetX = clamp(this.offsetX, -maxX, maxX);
     this.offsetY = clamp(this.offsetY, -maxY, maxY);
   }
@@ -166,7 +189,9 @@ export class SandboxLayout {
   /** Sandbox rectangle in CSS px: centered in the viewport, then shifted by
    *  the user-dragged offset (see moveBy). */
   cssRect(): ViewRect {
-    const r = centeredRect(this.viewW, this.viewH, this.rectW(), this.rectH());
+    // Centre within the space above the bottom inset, so the sandbox sits fully
+    // clear of a docked control bar (y stays in [0, availH]).
+    const r = centeredRect(this.viewW, this.availH(), this.rectW(), this.rectH());
     return { ...r, x: r.x + this.offsetX, y: r.y + this.offsetY };
   }
 

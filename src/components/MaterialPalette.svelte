@@ -11,18 +11,19 @@
   // up under its declared `category`; a material that declares none falls back
   // to the tab derived from its phase (so untagged materials still land
   // somewhere sensible and the "add a material = one file" rule is preserved).
+  // Icons are Bootstrap Icons class names (rendered as <i class="bi ...">).
   const CATEGORY_META: { key: string; icon: string }[] = [
-    { key: '지우개', icon: '🧹' },
-    { key: '고체', icon: '🪨' },
-    { key: '가루', icon: '🏖️' },
-    { key: '액체', icon: '💧' },
-    { key: '기체', icon: '💨' },
-    { key: '불·열', icon: '🔥' },
-    { key: '폭발', icon: '💥' },
-    { key: '냉각', icon: '❄️' },
-    { key: '전기', icon: '⚡' },
-    { key: '생명', icon: '🌱' },
-    { key: '특수', icon: '✨' },
+    { key: '지우개', icon: 'bi-eraser-fill' },
+    { key: '고체', icon: 'bi-box-fill' },
+    { key: '가루', icon: 'bi-hourglass-split' },
+    { key: '액체', icon: 'bi-droplet-fill' },
+    { key: '기체', icon: 'bi-wind' },
+    { key: '불·열', icon: 'bi-fire' },
+    { key: '폭발', icon: 'bi-asterisk' },
+    { key: '냉각', icon: 'bi-snow' },
+    { key: '전기', icon: 'bi-lightning-charge-fill' },
+    { key: '생명', icon: 'bi-flower1' },
+    { key: '특수', icon: 'bi-stars' },
   ];
 
   const PHASE_FALLBACK: Record<Phase, string> = {
@@ -35,7 +36,7 @@
 
   const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
   const iconFor = (key: string): string =>
-    CATEGORY_META.find((c) => c.key === key)?.icon ?? '•';
+    CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-record-fill';
 
   // Bucket every palette material by resolved category, then order the tabs:
   // the known categories (in CATEGORY_META order) that actually have members,
@@ -133,15 +134,35 @@
   // over the button (making it un-clickable), drop it below the button
   // instead. Falls back to unclamped, right-of-button placement before the
   // flyout has been measured once (`flyoutEl` still null).
+  // True when the panel is the bottom-docked bar (see the CSS breakpoint): the
+  // category buttons sit at the screen's foot, so the flyout should rise *above*
+  // them, over the canvas, rather than to the side where the sidebar opens it.
+  const isBottomBar = (): boolean =>
+    typeof window !== 'undefined' &&
+    window.matchMedia('(max-aspect-ratio: 1/1)').matches;
+
   function computePosition(anchor: DOMRect): { top: number; left: number } {
-    if (!flyoutEl) return { top: anchor.top, left: anchor.right + GAP };
+    if (!flyoutEl) {
+      return isBottomBar()
+        ? { top: anchor.top, left: anchor.left }
+        : { top: anchor.top, left: anchor.right + GAP };
+    }
     const fw = flyoutEl.offsetWidth;
     const fh = flyoutEl.offsetHeight;
-    let left = anchor.right + GAP;
-    let top = anchor.top;
-    if (left + fw > window.innerWidth - EDGE_MARGIN) {
+    let left: number;
+    let top: number;
+    if (isBottomBar()) {
+      // Open above the button, left-aligned to it.
       left = anchor.left;
-      top = anchor.bottom + GAP;
+      top = anchor.top - GAP - fh;
+    } else {
+      // Sidebar: prefer to the right, drop below if it would overflow.
+      left = anchor.right + GAP;
+      top = anchor.top;
+      if (left + fw > window.innerWidth - EDGE_MARGIN) {
+        left = anchor.left;
+        top = anchor.bottom + GAP;
+      }
     }
     left = Math.min(Math.max(EDGE_MARGIN, left), Math.max(EDGE_MARGIN, window.innerWidth - EDGE_MARGIN - fw));
     top = Math.min(Math.max(EDGE_MARGIN, top), Math.max(EDGE_MARGIN, window.innerHeight - EDGE_MARGIN - fh));
@@ -244,7 +265,7 @@
         aria-controls={`cat-flyout-${cat.index}`}
         title={cat.label}
       >
-        <span class="icon">{cat.icon}</span>
+        <span class="icon"><i class={`bi ${cat.icon}`}></i></span>
         {cat.label}
         <span class="count">{cat.materials.length}</span>
       </button>
@@ -378,5 +399,21 @@
     white-space: nowrap;
     font-size: 10px;
     text-align: center;
+  }
+
+  /* In the narrow (mobile) layout the whole control panel is a horizontal bar,
+     so the category buttons run in a row alongside it rather than stacking. The
+     flyout stays JS-positioned (it already clamps itself on-screen), so only the
+     trigger buttons need re-flowing here. */
+  @media (max-aspect-ratio: 1/1) {
+    .palette {
+      flex-direction: row;
+      align-self: center;
+      gap: 6px;
+    }
+    .category > button {
+      width: auto;
+      white-space: nowrap;
+    }
   }
 </style>

@@ -18,6 +18,7 @@ import {
   $resetAspectSignal,
   $borderMode,
   $simSpeed,
+  $bottomInset,
 } from '../state/store';
 import './materials'; // register all materials (side effect)
 
@@ -96,6 +97,15 @@ export function startGame(canvas: HTMLCanvasElement): void {
   };
   resize();
   window.addEventListener('resize', resize);
+
+  // On the narrow (mobile) layout the control panel docks to the bottom and
+  // publishes its height here; reserve that space so the sandbox sits fully
+  // above the bar. subscribe fires immediately, seeding the current inset (0 on
+  // the wide layout).
+  $bottomInset.subscribe((inset) => {
+    layout.setInsets(inset);
+    applyLayout();
+  });
 
   // Drag the corner handle to resize the sandbox; double-click / button resets.
   resizer.onResizeStart = (): void => {

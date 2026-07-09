@@ -85,6 +85,16 @@ export const $borderMode = atom<BorderMode>('wall');
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
+/**
+ * Bottom inset in CSS px that the sandbox must leave clear. On narrow (mobile)
+ * layouts the control panel becomes a bar pinned to the bottom of the screen;
+ * the panel measures its own height and publishes it here so the engine can
+ * shrink the sandbox to sit fully above the bar (treating the bar as a hard
+ * screen edge) instead of letting particles hide underneath it. Zero in the
+ * wide/sidebar layout, where the panel floats over the canvas as before.
+ */
+export const $bottomInset = atom<number>(0);
+
 // One-shot command signals: bump the counter to request the action. The engine
 // listens for changes.
 export const $clearSignal = atom<number>(0);

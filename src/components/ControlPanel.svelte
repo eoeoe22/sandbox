@@ -12,6 +12,7 @@
     $aspectMode as aspectMode,
     $gridDims as gridDims,
     $borderMode as borderMode,
+    $bottomInset as bottomInset,
     requestClear,
     requestStep,
     requestResetAspect,
@@ -27,6 +28,34 @@
 
   // Collapsed state is local UI — the engine doesn't care about it.
   let collapsed = $state(false);
+
+  // The narrow layout docks this panel to the bottom of the screen as a
+  // horizontally-scrolling bar. That bar overlaps the canvas, so we measure its
+  // height and hand it to the engine (via $bottomInset) to reserve, keeping the
+  // sandbox fully above the bar — the bar acts as a solid bottom edge. On the
+  // wide (sidebar) layout, or while collapsed, no space is reserved.
+  let panelEl = $state<HTMLElement | null>(null);
+
+  $effect(() => {
+    const el = panelEl; // null while collapsed (aside unmounted) → reserve nothing
+    if (!el) {
+      bottomInset.set(0);
+      return;
+    }
+    // Matches the CSS breakpoint below: bar layout only on narrow (portrait-ish)
+    // aspect ratios; the wide layout keeps the floating sidebar.
+    const mq = window.matchMedia('(max-aspect-ratio: 1/1)');
+    const publish = () => bottomInset.set(mq.matches ? el.offsetHeight : 0);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    mq.addEventListener('change', publish);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener('change', publish);
+      bottomInset.set(0);
+    };
+  });
 </script>
 
 {#if collapsed}
@@ -40,7 +69,7 @@
     <i class="bi bi-layout-sidebar-inset"></i>
   </button>
 {:else}
-  <aside class="panel">
+  <aside class="panel" bind:this={panelEl}>
     <div class="head">
       <h1>Particle Sandbox</h1>
       <button
@@ -56,10 +85,16 @@
 
     <div class="row">
       <button onclick={() => running.set(!$running)}>
-        {$running ? '⏸ 일시정지' : '▶ 재생'}
+        {#if $running}
+          <i class="bi bi-pause-fill"></i> 일시정지
+        {:else}
+          <i class="bi bi-play-fill"></i> 재생
+        {/if}
       </button>
-      <button onclick={requestStep} disabled={$running}>⏭ 스텝</button>
-      <button onclick={requestClear}>🗑 지우기</button>
+      <button onclick={requestStep} disabled={$running}>
+        <i class="bi bi-skip-end-fill"></i> 스텝
+      </button>
+      <button onclick={requestClear}><i class="bi bi-trash"></i> 지우기</button>
     </div>
 
     <div class="brush">
@@ -102,7 +137,7 @@
         aria-pressed={$brushShape === 'circle'}
         title="원형 브러시"
       >
-        ● 원형
+        <i class="bi bi-circle-fill"></i> 원형
       </button>
       <button
         class:active={$brushShape === 'square'}
@@ -110,7 +145,7 @@
         aria-pressed={$brushShape === 'square'}
         title="사각형 브러시"
       >
-        ■ 사각형
+        <i class="bi bi-square-fill"></i> 사각형
       </button>
     </div>
 
@@ -121,7 +156,7 @@
         aria-pressed={$brushMode === 'full'}
         title="브러시 영역을 빈틈없이 채웁니다"
       >
-        ▣ Full
+        <i class="bi bi-grid-fill"></i> Full
       </button>
       <button
         class:active={$brushMode === 'particle'}
@@ -129,7 +164,7 @@
         aria-pressed={$brushMode === 'particle'}
         title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
       >
-        ▦ Particle
+        <i class="bi bi-grid-3x3-gap"></i> Particle
       </button>
     </div>
 
@@ -140,7 +175,7 @@
         aria-pressed={$tool === 'material'}
         title="선택한 재료를 그립니다"
       >
-        🖌 재료
+        <i class="bi bi-brush"></i> 재료
       </button>
       <button
         class:active={$tool === 'heat'}
@@ -148,7 +183,7 @@
         aria-pressed={$tool === 'heat'}
         title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
       >
-        🔥 가열
+        <i class="bi bi-fire"></i> 가열
       </button>
       <button
         class:active={$tool === 'cool'}
@@ -156,7 +191,7 @@
         aria-pressed={$tool === 'cool'}
         title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
       >
-        ❄️ 냉각
+        <i class="bi bi-snow"></i> 냉각
       </button>
       <button
         class:active={$tool === 'mix'}
@@ -164,7 +199,7 @@
         aria-pressed={$tool === 'mix'}
         title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
       >
-        🌀 섞기
+        <i class="bi bi-shuffle"></i> 섞기
       </button>
     </div>
 
@@ -194,7 +229,7 @@
         aria-pressed={$borderMode === 'wall'}
         title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
       >
-        🧱 벽
+        <i class="bi bi-bricks"></i> 벽
       </button>
       <button
         class:active={$borderMode === 'void'}
@@ -202,7 +237,7 @@
         aria-pressed={$borderMode === 'void'}
         title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
       >
-        🕳 공허
+        <i class="bi bi-circle"></i> 공허
       </button>
     </div>
 
@@ -420,5 +455,90 @@
     color: #6a6a78;
     font-size: 11px;
     line-height: 1.4;
+  }
+
+  /* Narrow / portrait-ish (mobile) layout: the sidebar becomes a bar docked to
+     the bottom of the screen, laying its controls out in a single row that
+     scrolls horizontally. The engine reserves the bar's height (see the
+     $bottomInset effect above) so the sandbox never slips underneath it. */
+  @media (max-aspect-ratio: 1/1) {
+    .panel {
+      top: auto;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      max-height: none;
+      flex-direction: row;
+      align-items: stretch;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 0;
+      border-left: 0;
+      border-right: 0;
+      border-bottom: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior: contain;
+    }
+    /* Keep the collapse button pinned to the left edge while the rest scrolls. */
+    .head {
+      position: sticky;
+      left: 0;
+      top: auto;
+      z-index: 2;
+      margin: 0;
+      padding: 0 6px 0 0;
+      background: linear-gradient(
+        to right,
+        rgba(20, 20, 26, 0.95) 62%,
+        rgba(20, 20, 26, 0)
+      );
+      align-self: center;
+      flex: none;
+    }
+    /* The title would only eat horizontal room in a one-row bar. */
+    h1 {
+      display: none;
+    }
+    /* Each control group is a fixed-size segment in the scrolling row. */
+    .row,
+    .brush,
+    .aspect {
+      flex: none;
+      align-self: center;
+    }
+    .row {
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+    .row button {
+      flex: none;
+    }
+    .brush {
+      min-width: 148px;
+      justify-content: center;
+    }
+    /* The vertical separators (top borders) don't read in a horizontal bar. */
+    .row.tools,
+    .row.border {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .fps {
+      flex: none;
+      align-self: center;
+      white-space: nowrap;
+    }
+    /* The long usage hint has no room in the bar. */
+    .hint {
+      display: none;
+    }
+    /* Restore button sits by the bar it hid, not the far corner. */
+    .toggle.floating {
+      top: auto;
+      bottom: 12px;
+      left: 12px;
+    }
   }
 </style>
