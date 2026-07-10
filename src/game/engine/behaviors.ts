@@ -21,6 +21,10 @@ export function diffuseWith(
   otherId: number,
   chance: number,
 ): boolean {
+  // A liquid chilled below its freezing point acts solid, so it doesn't
+  // interdiffuse either — otherwise a frost-rendered "frozen" cell would still
+  // visibly wander into adjacent liquid (see Material.freeze / SimContext.isFrozen).
+  if (sim.isFrozen(x, y)) return false;
   if (!sim.chance(chance)) return false;
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
