@@ -76,7 +76,7 @@ export interface Material {
    * (Diamond) that just happens to be blast-proof. Combined with never declaring
    * a temperature reaction, it makes a material effectively indestructible by
    * heat/cold/explosion while still conducting heat. The single exception: a
-   * critical uranium's Neutron ray (neutron.ts) smashes through it — only
+   * critical uranium's Heat Ray (heatray.ts) smashes through it — only
    * `isWall` stops that.
    */
   explosionProof?: boolean;

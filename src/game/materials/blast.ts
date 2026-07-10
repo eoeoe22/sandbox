@@ -163,7 +163,7 @@ function nextStamp(sim: SimContext): Int32Array {
 /** True if the cell blocks the shockwave outright — it survives intact and
  *  casts a shadow: the indestructible boundary Wall and blast-proof solids
  *  (Diamond). (The one force that gets past Diamond is a critical uranium's
- *  Neutron ray — see neutron.ts — which isn't a blast at all.) */
+ *  Heat Ray — see heatray.ts — which isn't a blast at all.) */
 function isBlocker(id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);

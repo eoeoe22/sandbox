@@ -64,7 +64,7 @@ import { MOLTEN_SALT } from './moltensalt';
 import { DIAMOND } from './diamond';
 import { URANIUM } from './uranium';
 import { MOLTEN_URANIUM } from './moltenuranium';
-import { NEUTRON } from './neutron';
+import { HEAT_RAY } from './heatray';
 import { LPG } from './lpg';
 
 export {
@@ -129,7 +129,7 @@ export {
   DIAMOND,
   URANIUM,
   MOLTEN_URANIUM,
-  NEUTRON,
+  HEAT_RAY,
   LPG,
 };
 
@@ -141,8 +141,8 @@ export {
  *   • SPARK — the one-tick electric pulse that only exists while a conductor is
  *     energized (see spark.ts); it's produced by a Battery or handed on from a
  *     neighboring spark, and painted onto bare ground it would simply fizzle.
- *   • NEUTRON — the radiation ray a critical uranium mass emits with a real
- *     flight direction (see neutron.ts); hand-placed it would die on its first
+ *   • HEAT_RAY — the searing beam a critical uranium mass emits with a real
+ *     flight direction (see heatray.ts); hand-placed it would die on its first
  *     turn just like an unlaunched ember. */
 export const MATERIALS = [
   EMPTY_MAT,

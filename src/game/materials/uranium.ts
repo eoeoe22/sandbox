@@ -20,13 +20,13 @@ import { MOLTEN_URANIUM } from './moltenuranium';
 // free-flowing, densest-of-all liquid that keeps the chain reaction going. No
 // instant detonation happens here anymore — catastrophe now unfolds in stages:
 // melt → the pool keeps self-heating → criticality → a slow, screen-sweeping
-// Neutron burn (see moltenuranium.ts / neutron.ts). Cool the melt back below
+// Heat Ray burn (see moltenuranium.ts / heatray.ts). Cool the melt back below
 // its freeze point and it sets into solid Uranium again, so the whole
 // meltdown is reversible right up until the fuel actually burns.
 //
 // The "critical mass" is emergent: it falls out of the geometry (surface-area-
 // to-volume) and the thermal conduction system. A thin line or a few scattered
-// grains never build enough heat; a thick block does. Stray Neutron rays also
+// grains never build enough heat; a thick block does. Stray Heat Rays also
 // dump heat into any uranium they strike, so a burning deposit elsewhere can
 // push this one over the edge — chain reactions jump between piles.
 //

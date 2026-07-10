@@ -10,7 +10,7 @@ import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { SMOKE } from './smoke';
 import { FIRE } from './fire';
-import { emitNeutron, NEUTRON } from './neutron';
+import { emitHeatRay, HEAT_RAY } from './heatray';
 
 // Molten Uranium — a solid uranium mass past its melting point (see
 // uranium.ts). Unlike Lava or Molten Metal it is deliberately *not* viscous:
@@ -28,7 +28,7 @@ import { emitNeutron, NEUTRON } from './neutron';
 //  • Let it keep heating and at CRITICAL_TEMP the mass goes prompt-critical.
 //
 // Criticality is NOT the old instant detonation. The pool *burns*: each
-// critical cell keeps flash-emitting Neutron rays (see neutron.ts) from any
+// critical cell keeps flash-emitting Heat Rays (see heatray.ts) from any
 // face not blocked by more fuel — a surface burn, eating inward layer by
 // layer, that punches straight through rubble burying the pool — and after
 // BURN_EMISSIONS emissions the spent cell burns away to a wisp of smoke. The
@@ -42,8 +42,8 @@ const HEAT_PER_NEIGHBOR = 3; // molten chain reaction runs hotter than solid's 1
 const COOL_CHANCE = 0.12;
 const COOL_AMOUNT = 25;
 const IGNITE_CHANCE = 0.12;
-const EMIT_CHANCE = 0.3; // per-tick chance a critical cell tries to emit
-const BURN_EMISSIONS = 6; // rays each cell fires before it's spent fuel
+const EMIT_CHANCE = 0.35; // per-tick chance a critical cell tries to emit
+const BURN_EMISSIONS = 10; // rays each cell fires before it's spent fuel
 const SPENT_SMOKE_CHANCE = 0.5;
 // Painted molten uranium starts above the freeze point with headroom below
 // critical, so a fresh pool is stable until its own chain reaction (or the
@@ -84,7 +84,7 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
   sim.setTemp(x, y, temp);
 
   if (temp >= CRITICAL_TEMP && sim.chance(EMIT_CHANCE)) {
-    // Prompt-critical: fire a Neutron ray out of one randomly chosen face.
+    // Prompt-critical: fire a Heat Ray out of one randomly chosen face.
     // Only faces blocked by more fuel (or the indestructible Wall, or a ray
     // already in flight) can't emit — so the burn eats the pool from its
     // surface inward, but a pool buried under rubble or its own melted-rock
@@ -101,10 +101,10 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
       const blocked =
         nid === URANIUM.id ||
         nid === MOLTEN_URANIUM.id ||
-        nid === NEUTRON.id ||
+        nid === HEAT_RAY.id ||
         getMaterial(nid).isWall === true;
       if (!blocked) {
-        emitNeutron(sim, nx, ny, dx, dy);
+        emitHeatRay(sim, nx, ny, dx, dy);
         const burned = sim.getAux(x, y) + 1;
         if (burned >= BURN_EMISSIONS) {
           if (sim.chance(SPENT_SMOKE_CHANCE)) sim.spawn(x, y, SMOKE.id);
