@@ -122,3 +122,25 @@ export const OVERWRITE_LEVELS = [
 ] as const;
 export const OVERWRITE_LEVEL_MIN = 0;
 export const OVERWRITE_LEVEL_MAX = OVERWRITE_LEVELS.length - 1;
+
+/**
+ * Density-sorted displacement tunables (SimContext.tryMove).
+ *
+ * When a denser cell sinks through a lighter fluid (or a bubble rises through
+ * a denser one), the move first passes a drag gate with probability
+ * `min(1, BASE + |density gap| * SCALE)` — a wider gap displaces more readily,
+ * a narrow one resists, so sinking through a fluid is visibly slower than free
+ * fall. Set DISPLACE_DRAG_BASE to 1 to disable drag entirely (always passes,
+ * no RNG cost). Feel at the defaults: Sand(5)→Water(3) sinks at p=0.5/tick;
+ * a gas bubble(1) rises through Water(3) at p=0.5 (on top of the gas stall).
+ */
+export const DISPLACE_DRAG_BASE = 0.3;
+export const DISPLACE_DRAG_SCALE = 0.1;
+
+/**
+ * Master switch for the push-aside step: before a displacement swap, the
+ * displaced fluid tries to flow into an empty cell beside itself or beside the
+ * intruder, so it wells up *around* a sinking particle instead of teleporting
+ * to the far side of it. false = legacy instant position swap.
+ */
+export const DISPLACE_SIDE_PUSH = true;
