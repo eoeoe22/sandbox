@@ -73,7 +73,7 @@ const DIR_RING: ReadonlyArray<readonly [number, number]> = [
 
 function ringIndexOf(vx: number, vy: number): number {
   for (let i = 0; i < 8; i++) if (DIR_RING[i][0] === vx && DIR_RING[i][1] === vy) return i;
-  return 0; // unreachable: bounce always passes a unit 8-direction
+  return 0; // unreachable: every scatter() caller passes a unit 8-direction
 }
 
 function encodeRay(life: number, vx: number, vy: number): number {
