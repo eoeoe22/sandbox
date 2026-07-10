@@ -221,15 +221,27 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       wy = ny;
       continue;
     }
-    if (nid === URANIUM.id || nid === MOLTEN_URANIUM.id) {
-      // Fuel is never destroyed — it's *fed*: the ray dumps a huge slug of
-      // heat (driving that deposit toward meltdown/criticality within a few
-      // hits) and glances off. A strike on *molten* uranium also triggers that
-      // cell's decay (see triggerMeltdownDecay), so a swarm of rays burns a
-      // critical pool away instead of only heating it — a big meltdown clears
-      // faster the more its own rays criss-cross it.
+    if (nid === URANIUM.id) {
+      // Solid uranium struck by a ray flashes *straight to meltdown*: the cell
+      // turns to Molten Uranium (hot, at its own init temperature) on the spot,
+      // rather than needing a hit or two of conducted heat to reach the melt
+      // point. spawn() marks it moved so it isn't reprocessed this tick; the ray
+      // glances off. So a stray beam liquefies any uranium deposit it grazes,
+      // which then self-heats toward its own criticality — chain reactions jump
+      // between piles fast.
+      sim.spawn(nx, ny, MOLTEN_URANIUM.id);
+      [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
+      continue;
+    }
+    if (nid === MOLTEN_URANIUM.id) {
+      // Molten uranium is *fed*: the ray dumps a huge slug of heat (driving the
+      // pool toward criticality) and triggers that cell's decay (see
+      // triggerMeltdownDecay), so a swarm of rays burns a critical pool away
+      // instead of only heating it — a big meltdown clears faster the more its
+      // own rays criss-cross it. The ray glances off.
       sim.setTemp(nx, ny, sim.getTemp(nx, ny) + URANIUM_HEAT);
-      if (nid === MOLTEN_URANIUM.id) triggerMeltdownDecay(sim, nx, ny);
+      triggerMeltdownDecay(sim, nx, ny);
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
       lifeCost += BOUNCE_LIFE_COST;
       continue;

@@ -26,6 +26,9 @@ export const MERCURY = register({
   density: 9,
   conductive: true,
   category: '액체',
+  // A smooth mirror-like metal, so it renders as a flat single colour rather than
+  // sampling the shimmering background tint field the other liquids use.
+  colorVary: 0,
   thermal: { conductivity: 0.7 },
   // Freezes solid deep below zero (real mercury sets at ~-39°): a chilled puddle
   // hardens in place (still conducts electricity — solid metal) until it warms.
