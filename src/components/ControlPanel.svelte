@@ -476,12 +476,22 @@
   /* Mobile: the panel becomes a two-row bar docked along the bottom. Row 1 is
      the primary controls, row 2 the material palette; both scroll sideways if
      they overflow. The secondary settings live in a sheet that pops up above
-     the bar when toggled.                                                  */
+     the bar when toggled.
+
+     Anchored with `top` (not `bottom:0`) so it lands at the toolbar/canvas
+     boundary measured from the dynamic viewport. `bottom:0` on a fixed element
+     is relative to the *layout* viewport (100vh — the large height with the
+     address bar collapsed), which hides the bar behind the address bar on
+     mobile. `top: calc(100dvh - h)` is measured from the top using dvh (the
+     *visible* viewport), so it always sits just under the canvas regardless of
+     address-bar state.                                       */
   /* --------------------------------------------------------------------- */
   @media (max-width: 768px) {
     .panel {
-      top: auto;
-      bottom: 0;
+      /* vh fallback for browsers without dvh support. */
+      top: calc(100vh - var(--bottombar-h));
+      top: calc(100dvh - var(--bottombar-h));
+      bottom: auto;
       left: 0;
       width: 100vw;
       height: var(--bottombar-h);
