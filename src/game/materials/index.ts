@@ -62,6 +62,10 @@ import { THERMITE } from './thermite';
 import { ASH } from './ash';
 import { MOLTEN_SALT } from './moltensalt';
 import { DIAMOND } from './diamond';
+import { URANIUM } from './uranium';
+import { MOLTEN_URANIUM } from './moltenuranium';
+import { HEAT_RAY } from './heatray';
+import { LPG } from './lpg';
 
 export {
   EMPTY_MAT,
@@ -123,16 +127,23 @@ export {
   ASH,
   MOLTEN_SALT,
   DIAMOND,
+  URANIUM,
+  MOLTEN_URANIUM,
+  HEAT_RAY,
+  LPG,
 };
 
-/** Palette order (also drives the toolbar). Two materials are deliberately
- *  absent — both are transient effect particles that only make sense when the
+/** Palette order (also drives the toolbar). Three materials are deliberately
+ *  absent — all transient effect particles that only make sense when the
  *  simulation spawns them, never when painted by hand:
  *   • EMBER — blast ejecta an explosion launches with a real velocity (see
  *     ember.ts); painted by brush it would just die on its first turn.
  *   • SPARK — the one-tick electric pulse that only exists while a conductor is
  *     energized (see spark.ts); it's produced by a Battery or handed on from a
- *     neighboring spark, and painted onto bare ground it would simply fizzle. */
+ *     neighboring spark, and painted onto bare ground it would simply fizzle.
+ *   • HEAT_RAY — the searing beam a critical uranium mass emits with a real
+ *     flight direction (see heatray.ts); hand-placed it would die on its first
+ *     turn just like an unlaunched ember. */
 export const MATERIALS = [
   EMPTY_MAT,
   WALL,
@@ -185,10 +196,13 @@ export const MATERIALS = [
   CLONE,
   VOID,
   ANTIMATTER,
+  URANIUM,
+  MOLTEN_URANIUM,
   TNT,
   FUSE,
   THERMITE,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
+  LPG,
 ];

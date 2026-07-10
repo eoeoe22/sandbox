@@ -160,9 +160,10 @@ function nextStamp(sim: SimContext): Int32Array {
   return stampBuf;
 }
 
-/** True if the cell blocks the shockwave outright — it survives intact and casts
- *  a shadow. Only the indestructible boundary Wall and blast-proof solids
- *  (Diamond); everything else is fair game to destroy. */
+/** True if the cell blocks the shockwave outright — it survives intact and
+ *  casts a shadow: the indestructible boundary Wall and blast-proof solids
+ *  (Diamond). (The one force that gets past Diamond is a critical uranium's
+ *  Heat Ray — see heatray.ts — which isn't a blast at all.) */
 function isBlocker(id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
@@ -358,8 +359,8 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
         }
         continue;
       }
-      // Wall / Diamond stops the front and shadows what's beyond — no ember
-      // either (an explosion behind a wall shouldn't spit sparks through it).
+      // Wall and Diamond stop the front and shadow what's beyond — no ember
+      // either.
       if (isBlocker(sim.get(nx, ny))) continue;
       stamp[nidx] = id_d;
       qx.push(nx);
