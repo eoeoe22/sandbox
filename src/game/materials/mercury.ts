@@ -27,5 +27,8 @@ export const MERCURY = register({
   conductive: true,
   category: '액체',
   thermal: { conductivity: 0.7 },
+  // Freezes solid deep below zero (real mercury sets at ~-39°): a chilled puddle
+  // hardens in place (still conducts electricity — solid metal) until it warms.
+  freeze: { temp: -38 },
   update: updateMercury,
 });

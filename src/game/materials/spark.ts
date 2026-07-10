@@ -4,6 +4,12 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
+import { IRON } from './iron';
+import { MERCURY } from './mercury';
+import { WATER } from './water';
+import { SALTWATER } from './saltwater';
+import { HYDROGEN } from './hydrogen';
+import { OXYGEN } from './oxygen';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -11,37 +17,83 @@ import { FIRE } from './fire';
 // conductor is momentarily energized, spawned by a Battery or handed on from an
 // adjacent Spark. A pulse therefore reads as a bright dot racing along a wire.
 //
-// State it needs, and where it lives:
-//   • Which conductor to turn back into — stored in this cell's `aux` byte (the
-//     conductor's material id). A spark spawned onto Iron reverts to Iron, onto
-//     Mercury reverts to Mercury. `aux == 0` means "no conductor underneath"
-//     (e.g. a stray painted spark) → it fizzles to Empty.
-//   • The conductor's heat — kept in `temp` and carried through untouched, so
-//     energizing a hot wire doesn't cool it.
+// Conductors and strength: current flows only through `conductive` materials
+// (Iron, Mercury, and — now — Water and Saltwater); everything else is an
+// insulator that blocks it outright. A pulse carries a *strength* that decays as
+// it travels, so it fades out in a resistive medium instead of running forever:
+//   • Iron / Mercury (metal) — no loss, the pulse keeps full strength end to end.
+//   • Saltwater — a weak electrolyte, bleeds strength slowly (carries a good way).
+//   • Water — bleeds strength fast (dies after just a few cells).
 //
-// Each turn a spark: (1) energizes every `conductive` neighbor that isn't in its
-// post-spark refractory period (aux == 0) — handing the pulse onward; (2) if a
-// fuel/explosive is adjacent, drops a lick of Fire into open air beside it so
-// the ordinary Fire rules ignite or detonate it (an electric arc lighting the
-// gas); then (3) reverts to its conductor and stamps that cell with a refractory
-// countdown. That countdown, ticked down by the conductor itself (see
-// iron.ts/mercury.ts), is what stops the pulse washing back the way it came:
-// the cells just behind the front are briefly un-energizable, so the wave only
-// moves forward. Without it a single spark would fill and oscillate across the
-// whole conductor forever.
+// State packed into the spark cell's single `aux` byte:
+//   • the conductor CLASS (low 3 bits) — which conductor to revert back into
+//     (Iron→Iron, Water→Water, …); class 0 = "no conductor" → the spark fizzles.
+//   • the remaining STRENGTH (high 5 bits, 0..31).
+// A compact class (a 1-based index into CONDUCTOR_IDS) rather than the raw id
+// leaves room for the strength in the same byte, and — as before — the
+// conductor's heat rides untouched in `temp`, so energizing a hot wire doesn't
+// cool it.
+//
+// Each turn a spark: (1) hands the pulse to every ready `conductive` neighbor,
+// subtracting that medium's strength loss (a pulse too weak to survive the next
+// cell simply stops); (2) if an *explosive* is adjacent, drops a lick of Fire
+// into open air beside it so the ordinary rules set the charge off (an electric
+// detonator) — it no longer ignites ordinary fuels or flammable gas; then (3)
+// reverts to its conductor and stamps a refractory countdown so the wave only
+// moves forward. Sparks travelling through Water/Saltwater also, at a low rate,
+// electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂).
 const REFRACTORY_TICKS = 3;
 
+// --- Electricity strength -----------------------------------------------------
+const CLASS_BITS = 3;
+const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b111 — low bits hold the conductor class
+const MAX_STRENGTH = 0xff >> CLASS_BITS; // 31 — high 5 bits hold strength
+/** Strength a fresh pulse starts at (what a Battery injects). */
+export const FULL_STRENGTH = 30;
+
+// Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
+// appending a new conductor keeps existing packed values valid. Every material
+// tagged `conductive` must appear here so a spark on it knows what to revert to.
+const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id];
+// Strength lost entering a cell of each class: metal keeps it (0), brine bleeds
+// slowly (2 → ~15 cells), fresh water bleeds fast (8 → ~4 cells).
+const CONDUCTOR_LOSS = [0, 0, 8, 2];
+
+// Electrolysis: a spark passing through Water/Saltwater occasionally splits it
+// into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
+// it's a slow trickle of gas, not a fizzing torrent.
+const ELECTROLYSIS_CHANCE = 0.02;
+const ELECTROLYSIS_OXYGEN_CHANCE = 0.5;
+
+/** Conductor material id → 1-based class, or 0 if it can't carry a spark. */
+export function conductorClass(id: number): number {
+  const i = CONDUCTOR_IDS.indexOf(id);
+  return i < 0 ? 0 : i + 1;
+}
+function classToId(cls: number): number {
+  return CONDUCTOR_IDS[cls - 1];
+}
+function classLoss(cls: number): number {
+  return CONDUCTOR_LOSS[cls - 1];
+}
+/** Pack a spark's (strength, conductor class) into its aux byte. */
+export function packSpark(strength: number, cls: number): number {
+  const s = strength < 0 ? 0 : strength > MAX_STRENGTH ? MAX_STRENGTH : strength;
+  return (s << CLASS_BITS) | (cls & CLASS_MASK);
+}
+
 /** Energize one conductor cell: replace it with a Spark that remembers the
- *  conductor (in aux) and preserves the conductor's heat (in temp). */
-function energize(sim: SimContext, nx: number, ny: number, conductorId: number): void {
+ *  conductor (class) and its remaining strength in aux, and preserves the
+ *  conductor's heat in temp. */
+function energize(sim: SimContext, nx: number, ny: number, cls: number, strength: number): void {
   const heat = sim.getTemp(nx, ny);
   sim.spawn(nx, ny, SPARK.id); // marks moved (won't be re-processed this tick)
   sim.setTemp(nx, ny, heat); // carry the wire's heat through the spark
-  sim.setAux(nx, ny, conductorId); // remember what to turn back into
+  sim.setAux(nx, ny, packSpark(strength, cls)); // remember conductor + strength
 }
 
 /** Seat a lick of Fire in an open cell touching (nx,ny), so Fire's own rules
- *  catch the fuel / trigger the explosive there. Returns whether one was placed. */
+ *  set off the explosive there. Returns whether one was placed. */
 function arcFireBeside(sim: SimContext, nx: number, ny: number): boolean {
   for (const [ex, ey] of DIR8) {
     const ax = nx + ex;
@@ -54,8 +106,28 @@ function arcFireBeside(sim: SimContext, nx: number, ny: number): boolean {
   return false;
 }
 
+/** Electrolyse an energized Water/Saltwater cell into gas: the cell becomes
+ *  Hydrogen, and about half the time a free open neighbor gets an Oxygen bubble
+ *  (2H₂O → 2H₂ + O₂). */
+function electrolyse(sim: SimContext, x: number, y: number): void {
+  sim.set(x, y, HYDROGEN.id);
+  sim.setAux(x, y, 0); // shed the packed spark state; Hydrogen keeps none
+  if (sim.chance(ELECTROLYSIS_OXYGEN_CHANCE)) {
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
+        sim.spawn(nx, ny, OXYGEN.id);
+        break;
+      }
+    }
+  }
+}
+
 function updateSpark(x: number, y: number, sim: SimContext): void {
-  const conductorId = sim.getAux(x, y);
+  const aux = sim.getAux(x, y);
+  const myClass = aux & CLASS_MASK;
+  const strength = aux >> CLASS_BITS;
 
   let arced = false;
   for (const [dx, dy] of DIR8) {
@@ -66,21 +138,40 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     if (nid === EMPTY) continue;
     const m = getMaterial(nid);
     if (m.conductive && sim.getAux(nx, ny) === 0) {
-      energize(sim, nx, ny, nid);
-    } else if (!arced && (m.flammable || m.combustible || m.explosive)) {
-      // One arc per tick is plenty to light a fuel pocket or set off a charge.
+      // Hand the pulse on, losing strength for the medium it's entering. If the
+      // pulse would arrive dead (or the conductor isn't one we can revert to),
+      // it simply stops here — that decay is what makes current fade out in
+      // water while running full-length through metal.
+      const cls = conductorClass(nid);
+      if (cls !== 0) {
+        const next = strength - classLoss(cls);
+        if (next > 0) energize(sim, nx, ny, cls, next);
+      }
+    } else if (!arced && m.explosive) {
+      // Electricity sets off explosives (electric detonator) but no longer
+      // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
       arced = arcFireBeside(sim, nx, ny);
     }
   }
 
-  // Collapse back to the conductor (or fizzle if there was none), leaving a
-  // brief refractory mark so the pulse can't immediately double back.
-  if (conductorId === EMPTY) {
+  // Collapse back to the conductor (or fizzle if there was none). A spark that
+  // was travelling through water/brine may instead electrolyse that cell into
+  // gas; otherwise it reverts and leaves a brief refractory mark so the pulse
+  // can't immediately double back.
+  if (myClass === 0) {
     sim.set(x, y, EMPTY);
-  } else {
-    sim.set(x, y, conductorId);
-    sim.setAux(x, y, REFRACTORY_TICKS);
+    return;
   }
+  const conductorId = classToId(myClass);
+  if (
+    (conductorId === WATER.id || conductorId === SALTWATER.id) &&
+    sim.chance(ELECTROLYSIS_CHANCE)
+  ) {
+    electrolyse(sim, x, y);
+    return;
+  }
+  sim.set(x, y, conductorId);
+  sim.setAux(x, y, REFRACTORY_TICKS);
 }
 
 export const SPARK = register({

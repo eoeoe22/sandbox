@@ -7,6 +7,7 @@
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
     $tool as tool,
+    $selectedMaterial as selectedMaterial,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $gridDims as gridDims,
@@ -22,7 +23,12 @@
     OVERWRITE_LEVEL_MIN,
     OVERWRITE_LEVEL_MAX,
   } from '../game/config';
+  import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
+
+  // Name of the currently selected paint material, shown on the 재료 (draw) brush
+  // button so the active material is always visible without opening the palette.
+  const selectedName = $derived(getMaterial($selectedMaterial)?.name ?? '재료');
 
   // Mobile-only: the secondary settings (speed, brush size/shape/mode, overwrite,
   // edge mode, HUD) collapse behind a toggle so the bottom bar stays two rows.
@@ -67,15 +73,15 @@
 
       <div class="group" role="group" aria-label="브러시 도구">
         <button
-          class="ctl"
+          class="ctl material-btn"
           class:active={$tool === 'material'}
           onclick={() => tool.set('material')}
           aria-pressed={$tool === 'material'}
-          aria-label="재료"
-          title="선택한 재료를 그립니다"
+          aria-label={`재료: ${selectedName}`}
+          title={`선택한 재료를 그립니다: ${selectedName}`}
         >
           <i class="bi bi-brush" aria-hidden="true"></i>
-          <span class="label">재료</span>
+          <span class="label material-name">{selectedName}</span>
         </button>
         <button
           class="ctl"
@@ -423,6 +429,15 @@
     background: #23324a;
   }
 
+  /* The 재료 brush button shows the selected material's name in full — never
+     truncated with an ellipsis. The button sizes to fit the name (the control
+     group wraps around it on desktop; the bar scrolls sideways on mobile). */
+  .material-name {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
   /* Two-option segmented control (speed, shape, mode, border). */
   .seg {
     display: flex;
@@ -563,6 +578,11 @@
     /* Icon-only buttons in the bar: hide the text labels, square them up. */
     .bar .label {
       display: none;
+    }
+    /* …except the 재료 button, which keeps showing the selected material name
+       (the bar scrolls sideways, so a wider button is fine). */
+    .bar .material-btn .material-name {
+      display: inline;
     }
     .bar .ctl {
       padding: 8px 10px;

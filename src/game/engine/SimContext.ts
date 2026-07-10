@@ -151,6 +151,19 @@ export class SimContext {
     return this.grid.get(x, y) === EMPTY;
   }
 
+  /**
+   * True if the liquid at (x,y) is at or below its freezing point (see
+   * Material.freeze). A frozen liquid acts solid: its own update stops flowing
+   * it, and tryMove refuses to let a denser cell displace it — so a chilled
+   * puddle hardens into a block that other material sits on rather than sinks
+   * through, until it warms back above the freeze point. Materials without a
+   * `freeze` spec (Water, the molten liquids, every non-liquid) are never frozen.
+   */
+  isFrozen(x: number, y: number): boolean {
+    const f = getMaterial(this.grid.get(x, y)).freeze;
+    return f !== undefined && this.grid.getTemp(x, y) <= f.temp;
+  }
+
   /** True with probability `p` (0-1). Routes material randomness through the
    * same seam as movement, so a future deterministic/worker RNG swap only
    * touches this file. */
@@ -261,7 +274,7 @@ export class SimContext {
       this.swap(x, y, tx, ty);
       return true;
     }
-    if (this.isDisplaceable(targetId)) {
+    if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
       const src = getMaterial(this.get(x, y));
       const tgt = getMaterial(targetId);
       const displaces = ty < y ? src.density < tgt.density : src.density > tgt.density;

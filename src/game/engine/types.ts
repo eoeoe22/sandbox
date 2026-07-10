@@ -65,6 +65,36 @@ export interface Material {
   combustible?: boolean;
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
+  /**
+   * Part of the crude-oil / petroleum family (Crude Oil, Gasoline, Kerosene,
+   * Diesel). Two purely-data uses: the renderer draws these liquids as a flat
+   * single colour instead of sampling the shimmering background tint field (so
+   * a slick reads as one solid body — see game/tint.ts), and Water uses it to
+   * spot a *burning* petroleum layer floating on it and refuse to boil beneath
+   * it — an oil fire on water doesn't flash the water below to Steam (see
+   * water.ts / combustion.ts).
+   */
+  petroleum?: boolean;
+  /**
+   * Truly indestructible — nothing in the world can remove it: a Blast front is
+   * blocked by it, a flying Ember shatters on it, Antimatter skips it, a Void
+   * can't swallow it, and even a critical uranium's Heat Ray bounces off it
+   * (the one thing that pierces blast-proof Diamond). Unlike `isWall` it isn't
+   * the container boundary, so it stays an ordinary placeable solid the brush
+   * treats normally — it just can't be destroyed by any in-world force (Clone).
+   * The only ways to clear it are the eraser brush and a full clear.
+   */
+  indestructible?: boolean;
+  /**
+   * Cold-side phase change for an ordinary (non-molten) liquid: below `temp`
+   * the liquid "freezes in place" — it stops flowing and acts solid (denser
+   * material can no longer sink through it) and the renderer frosts its colour,
+   * without swapping to a separate material. Warmed back above `temp` it flows
+   * again. Read by SimContext.isFrozen (movement/displacement) and the renderer
+   * (frost tint). Water keeps its own richer Snow/Ice freeze instead; the molten
+   * liquids have their own high-temperature set points, so neither declares this.
+   */
+  freeze?: { temp: number };
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
   /**

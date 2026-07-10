@@ -49,10 +49,49 @@ const IGNITE_CHANCE = 0.12;
 const EMIT_CHANCE = 0.7;
 const BURN_EMISSIONS = 10; // rays each cell fires before it's spent fuel
 const SPENT_SMOKE_CHANCE = 0.5;
+// A critical cell buried in fuel can't vent a ray out of any face, so on its own
+// it would never burn out — a big packed mass smoulders far too long. A cell
+// with at least this many uranium neighbours (mostly surrounded) instead decays
+// *internally*, so a dense clump burns from the inside as well as the surface.
+const CLUMP_THRESHOLD = 6;
+const CLUMP_DECAY_CHANCE = 0.4;
+// A Heat Ray striking molten uranium advances that cell's burn by this much, so
+// a beam sweeping a critical pool actively eats it away (see triggerMeltdownDecay).
+const RAY_DECAY_AMOUNT = 2;
 // Painted molten uranium starts above the freeze point with headroom below
 // critical, so a fresh pool is stable until its own chain reaction (or the
 // heat brush) pushes it over the edge.
 const MOLTEN_URANIUM_TEMP = 1600;
+
+/**
+ * Advance a molten-uranium cell's meltdown burn progress (in `aux`) by `amount`.
+ * When it reaches the burn quota the cell is spent — a wisp of Smoke, else it
+ * clears to Empty. Returns true iff the cell was consumed this call, so the
+ * caller stops touching it. Shared by the surface ray-emission burn, the clumped
+ * interior decay, and Heat-Ray-triggered decay.
+ */
+function spendMeltdown(x: number, y: number, sim: SimContext, amount: number): boolean {
+  const burned = sim.getAux(x, y) + amount;
+  if (burned >= BURN_EMISSIONS) {
+    if (sim.chance(SPENT_SMOKE_CHANCE)) sim.spawn(x, y, SMOKE.id);
+    else sim.set(x, y, EMPTY);
+    return true;
+  }
+  sim.setAux(x, y, burned);
+  return false;
+}
+
+/**
+ * A Heat Ray striking Molten Uranium doesn't just feed it heat — it *triggers
+ * its decay*: the beam advances that cell's burn progress, so a swarm of rays
+ * sweeping a critical pool actively burns it away instead of only heating it.
+ * This is what keeps a big meltdown from dragging on: rays ricocheting through
+ * the pool eat it from within. Called from heatray.ts on impact; spends the cell
+ * if the quota is reached.
+ */
+export function triggerMeltdownDecay(sim: SimContext, x: number, y: number): void {
+  spendMeltdown(x, y, sim, RAY_DECAY_AMOUNT);
+}
 
 function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
   let temp = sim.getTemp(x, y);
@@ -87,35 +126,41 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
   temp += neighbors * HEAT_PER_NEIGHBOR;
   sim.setTemp(x, y, temp);
 
-  if (temp >= CRITICAL_TEMP && sim.chance(EMIT_CHANCE)) {
-    // Prompt-critical: fire a Heat Ray out of one randomly chosen face.
-    // Only faces blocked by more fuel (or the indestructible Wall, or a ray
-    // already in flight) can't emit — so the burn eats the pool from its
-    // surface inward, but a pool buried under rubble or its own melted-rock
-    // lava still blasts rays straight through whatever entombs it (the
-    // emission itself vaporizes the covering cell). Without that, a critical
-    // pool would smother itself: its heat melts surrounding stone into lava
-    // that seals every face, and the burn would silently stall. Each emission
-    // spends fuel until the cell burns away entirely.
-    const [dx, dy] = DIR8[sim.randInt(8)];
-    const nx = x + dx;
-    const ny = y + dy;
-    if (sim.inBounds(nx, ny)) {
-      const nid = sim.get(nx, ny);
-      const blocked =
-        nid === URANIUM.id ||
-        nid === MOLTEN_URANIUM.id ||
-        nid === HEAT_RAY.id ||
-        getMaterial(nid).isWall === true;
-      if (!blocked) {
-        emitHeatRay(sim, nx, ny, dx, dy);
-        const burned = sim.getAux(x, y) + 1;
-        if (burned >= BURN_EMISSIONS) {
-          if (sim.chance(SPENT_SMOKE_CHANCE)) sim.spawn(x, y, SMOKE.id);
-          else sim.set(x, y, EMPTY);
-          return;
+  if (temp >= CRITICAL_TEMP) {
+    // Clumped interior cells (mostly buried in fuel) can't vent a ray out of any
+    // open face, so without this a big packed mass would only burn from its
+    // surface inward and take far too long. A heavily-surrounded critical cell
+    // instead decays internally, and the more buried it is the faster it goes
+    // (amount scales with the neighbour count past the threshold) — so a dense
+    // core burns out quickly rather than dragging the meltdown on.
+    if (neighbors >= CLUMP_THRESHOLD && sim.chance(CLUMP_DECAY_CHANCE)) {
+      if (spendMeltdown(x, y, sim, neighbors - (CLUMP_THRESHOLD - 1))) return;
+    }
+
+    if (sim.chance(EMIT_CHANCE)) {
+      // Prompt-critical: fire a Heat Ray out of one randomly chosen face.
+      // Only faces blocked by more fuel (or the indestructible Wall, or a ray
+      // already in flight) can't emit — so the burn eats the pool from its
+      // surface inward, but a pool buried under rubble or its own melted-rock
+      // lava still blasts rays straight through whatever entombs it (the
+      // emission itself vaporizes the covering cell). Without that, a critical
+      // pool would smother itself: its heat melts surrounding stone into lava
+      // that seals every face, and the burn would silently stall. Each emission
+      // spends fuel until the cell burns away entirely.
+      const [dx, dy] = DIR8[sim.randInt(8)];
+      const nx = x + dx;
+      const ny = y + dy;
+      if (sim.inBounds(nx, ny)) {
+        const nid = sim.get(nx, ny);
+        const blocked =
+          nid === URANIUM.id ||
+          nid === MOLTEN_URANIUM.id ||
+          nid === HEAT_RAY.id ||
+          getMaterial(nid).isWall === true;
+        if (!blocked) {
+          emitHeatRay(sim, nx, ny, dx, dy);
+          if (spendMeltdown(x, y, sim, 1)) return;
         }
-        sim.setAux(x, y, burned);
       }
     }
   }

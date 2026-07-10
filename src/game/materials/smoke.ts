@@ -5,10 +5,10 @@ import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 
 // Gas: rises/diffuses like the default gas behavior, then probabilistically
-// dissipates to nothing so it doesn't accumulate forever. ~0.9%/tick gives a
-// ~1.8s average lifetime at the sim's 60Hz tick rate — a touch shorter than
-// before so smoke clears out faster and lingers less.
-const DECAY_CHANCE = 0.009;
+// dissipates to nothing so it doesn't accumulate forever. ~2.7%/tick gives a
+// ~0.6s average lifetime at the sim's 60Hz tick rate — a third of the previous
+// ~1.8s, so smoke clears out fast and lingers only briefly.
+const DECAY_CHANCE = 0.027;
 
 function updateSmoke(x: number, y: number, sim: SimContext): void {
   if (sim.chance(DECAY_CHANCE)) {

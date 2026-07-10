@@ -69,5 +69,7 @@ export const ACID = register({
   color: rgb(150, 225, 70),
   density: 3,
   thermal: { conductivity: 0.5 },
+  // Chilled well below zero it freezes in place (frosted, immobile) until it thaws.
+  freeze: { temp: -20 },
   update: updateAcid,
 });

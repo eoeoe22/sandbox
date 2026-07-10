@@ -61,8 +61,11 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
   sim.moveDiagonalDown(x, y);
 }
 
-/** Liquid: fall, else flow diagonally down, else spread sideways to level out. */
+/** Liquid: fall, else flow diagonally down, else spread sideways to level out.
+ *  A liquid chilled to/below its freezing point (see Material.freeze) is
+ *  frozen solid — it stays put until it warms up. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
+  if (sim.isFrozen(x, y)) return;
   if (sim.moveDown(x, y)) return;
   if (sim.moveDiagonalDown(x, y)) return;
   sim.moveSideways(x, y);

@@ -26,5 +26,8 @@ export const ALCOHOL = register({
   combustible: true,
   category: '액체',
   thermal: { conductivity: 0.2 },
+  // Freezes only at a brutal chill (real ethanol sets near -114°); needs a strong
+  // cold sink like Liquid N₂ to harden it in place.
+  freeze: { temp: -80 },
   update: updateAlcohol,
 });

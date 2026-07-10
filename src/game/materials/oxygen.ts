@@ -21,9 +21,9 @@ import { STEAM } from './steam';
 //
 // But if Hydrogen is mixed in, the two burn together into *water* instead: the
 // flashing oxygen cell becomes Steam (hot water vapor, 2H₂+O₂→2H₂O), which then
-// condenses into Water (see steam.ts). So igniting an H₂/O₂ mixture doesn't just
-// flare — it detonates (via the hydrogen) and leaves a steam cloud that rains
-// down as water.
+// condenses into Water (see steam.ts). Hydrogen is now a flammable gas rather
+// than an explosive (see hydrogen.ts), so igniting an H₂/O₂ mix doesn't blast —
+// it burns and leaves a steam cloud that rains back down as water.
 const FLASH_CHANCE = 0.6;
 // The flashed-over cell becomes genuinely hot Fire (spawn/set alone would leave
 // it at ambient), so it radiates heat and drives the front onward.
