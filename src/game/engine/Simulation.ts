@@ -36,6 +36,12 @@ export class Simulation {
     this.ctx.borderMode = mode;
   }
 
+  /** Toggle whether reactions emit Smoke. When off, combustion/explosion rules
+   *  that would spawn Smoke produce nothing instead (see SimContext.smokeEnabled). */
+  setSmokeEnabled(on: boolean): void {
+    this.ctx.smokeEnabled = on;
+  }
+
   step(): void {
     const g = this.grid;
     g.moved.fill(0);

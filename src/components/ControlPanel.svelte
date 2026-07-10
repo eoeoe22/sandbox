@@ -11,6 +11,7 @@
     $fpsPeak as fpsPeak,
     $gridDims as gridDims,
     $borderMode as borderMode,
+    $smokeEnabled as smokeEnabled,
     requestClear,
     requestStep,
   } from '../state/store';
@@ -265,6 +266,32 @@
         >
           <i class="bi bi-dash-square-dotted" aria-hidden="true"></i>
           <span class="label">공허</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">연기</span>
+      <div class="seg" role="group" aria-label="연기 활성화">
+        <button
+          class="ctl"
+          class:active={$smokeEnabled}
+          onclick={() => smokeEnabled.set(true)}
+          aria-pressed={$smokeEnabled}
+          title="연소·폭발 반응이 연기를 냅니다"
+        >
+          <i class="bi bi-cloud-fog2" aria-hidden="true"></i>
+          <span class="label">켬</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={!$smokeEnabled}
+          onclick={() => smokeEnabled.set(false)}
+          aria-pressed={!$smokeEnabled}
+          title="모든 연소·폭발 반응에서 연기를 생성하지 않습니다"
+        >
+          <i class="bi bi-cloud-slash" aria-hidden="true"></i>
+          <span class="label">끔</span>
         </button>
       </div>
     </div>
