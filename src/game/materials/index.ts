@@ -62,6 +62,8 @@ import { THERMITE } from './thermite';
 import { ASH } from './ash';
 import { MOLTEN_SALT } from './moltensalt';
 import { DIAMOND } from './diamond';
+import { URANIUM } from './uranium';
+import { LPG } from './lpg';
 
 export {
   EMPTY_MAT,
@@ -123,6 +125,8 @@ export {
   ASH,
   MOLTEN_SALT,
   DIAMOND,
+  URANIUM,
+  LPG,
 };
 
 /** Palette order (also drives the toolbar). Two materials are deliberately
@@ -185,10 +189,12 @@ export const MATERIALS = [
   CLONE,
   VOID,
   ANTIMATTER,
+  URANIUM,
   TNT,
   FUSE,
   THERMITE,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
+  LPG,
 ];
