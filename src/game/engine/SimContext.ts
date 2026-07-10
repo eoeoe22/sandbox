@@ -84,6 +84,12 @@ export class SimContext {
       // stops one material's leftover state (a Clone's adopted id, a
       // conductor's refractory) from being read by whatever is placed here next.
       this.grid.setAux(x, y, 0);
+    } else {
+      // A non-empty write is a fresh material at this cell, so reseed a random
+      // per-particle tint — otherwise an in-place transform into a powder (Water
+      // → Snow, Saltwater → Salt) would inherit a stale/zero tint and render as
+      // a flat block, since powder tint is fixed at creation (see game/tint.ts).
+      this.grid.tint[this.grid.idx(x, y)] = (Math.random() * 256) | 0;
     }
   }
 
@@ -130,6 +136,9 @@ export class SimContext {
     // specific initial state (Spark's conductor id, Battery's cadence) call
     // setAux right after this returns.
     this.grid.setAux(x, y, 0);
+    // Seed a random tint so spawned powder/liquid is grainy immediately rather
+    // than sharing one uniform shade until it moves (see game/tint.ts).
+    this.grid.tint[this.grid.idx(x, y)] = (Math.random() * 256) | 0;
     this.grid.moved[this.grid.idx(x, y)] = 1;
   }
 
@@ -170,6 +179,11 @@ export class SimContext {
     const xa = g.aux[a];
     g.aux[a] = g.aux[b];
     g.aux[b] = xa;
+    // Cosmetic tint travels with its cell too, so a moving particle carries its
+    // own shade (see Grid.tint / game/tint.ts).
+    const na = g.tint[a];
+    g.tint[a] = g.tint[b];
+    g.tint[b] = na;
     g.moved[a] = 1;
     g.moved[b] = 1;
   }

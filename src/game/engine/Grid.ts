@@ -1,6 +1,14 @@
 import { EMPTY } from './types';
 import { AMBIENT_TEMP } from '../config';
 
+/** A Uint8Array of `n` random bytes — used to seed the positional background
+ *  tint field with an initial texture (see Grid.bgTint). */
+function randomBytes(n: number): Uint8Array {
+  const a = new Uint8Array(n);
+  for (let i = 0; i < n; i++) a[i] = (Math.random() * 256) | 0;
+  return a;
+}
+
 /**
  * The simulation grid. State is held in flat TypedArrays indexed by
  * `y * width + x` — cache-friendly and cheap to iterate, and ready to be moved
@@ -44,6 +52,28 @@ export class Grid {
    */
   aux: Uint8Array;
 
+  /**
+   * Per-particle color-variation byte (used by powders): each grain's individual
+   * tint, seeded once when the grain is created and then fixed. Travels with the
+   * cell on a swap, just like `temp`/`aux`, so a grain keeps its shade as it
+   * moves, but it is never re-rolled. The renderer maps it to a small brightness
+   * offset from the material's base color (see game/tint.ts). Runtime-only
+   * cosmetic state: not persisted (a reload reseeds it via randomizeTints).
+   */
+  tint: Uint8Array;
+
+  /**
+   * Positional background tint field (used by liquids): one byte per grid cell,
+   * tied to the *location* rather than the particle that occupies it. A liquid
+   * cell is rendered with the background tint at its position, so as liquid flows
+   * across space it picks up the shade of wherever it is. The field itself drifts
+   * slowly over time (see Simulation.driftBackground), giving pools a living
+   * shimmer with a texture bound to space, not to individual particles. Unlike
+   * `tint` it does NOT travel on a swap. Runtime-only cosmetic state; seeded with
+   * random values so there's an initial texture.
+   */
+  bgTint: Uint8Array;
+
   // Still reserved for a future per-cell velocity field (see ember.ts, which
   // currently packs velocity into `temp`).
   // vel: Int8Array;
@@ -57,6 +87,8 @@ export class Grid {
     this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
     this.tempScratch = new Float32Array(this.size);
     this.aux = new Uint8Array(this.size);
+    this.tint = new Uint8Array(this.size); // 0 = neutral until seeded on placement
+    this.bgTint = randomBytes(this.size); // positional background texture
   }
 
   idx(x: number, y: number): number {
@@ -91,10 +123,33 @@ export class Grid {
     this.aux[y * this.width + x] = v;
   }
 
+  getTint(x: number, y: number): number {
+    return this.tint[y * this.width + x];
+  }
+
+  setTint(x: number, y: number, v: number): void {
+    this.tint[y * this.width + x] = v;
+  }
+
+  /**
+   * Reseed every non-empty cell with a fresh per-particle tint. Used after
+   * loading a saved world (tint isn't persisted) so a restored powder pile is
+   * already grainy instead of a flat block. The positional background field is
+   * seeded separately (constructor / resizeFrom), so it isn't touched here.
+   */
+  randomizeTints(): void {
+    const cells = this.cells;
+    const tint = this.tint;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] !== EMPTY) tint[i] = (Math.random() * 256) | 0;
+    }
+  }
+
   clear(): void {
     this.cells.fill(EMPTY);
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
+    this.tint.fill(0);
   }
 
   /**
@@ -103,7 +158,7 @@ export class Grid {
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
-    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux);
+    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux, this.tint, this.bgTint);
   }
 
   /**
@@ -125,6 +180,8 @@ export class Grid {
     srcH: number,
     srcTemp?: Float32Array,
     srcAux?: Uint8Array,
+    srcTint?: Uint8Array,
+    srcBgTint?: Uint8Array,
   ): void {
     const next = new Uint8Array(width * height);
     // Temperature must follow the cells it belongs to — otherwise preserved
@@ -136,6 +193,15 @@ export class Grid {
     // predates aux) it starts zeroed — safe because every aux use is transient
     // state that self-heals (a Clone re-adopts, a conductor's refractory clears).
     const nextAux = new Uint8Array(width * height);
+    // Cosmetic per-particle tint travels with its cells the same way. When no
+    // source tint is supplied it starts zeroed (neutral); callers seed it
+    // afterward (Grid.randomizeTints) so a fresh load isn't a flat block.
+    const nextTint = new Uint8Array(width * height);
+    // The positional background field is location-bound, not content-bound. Seed
+    // the whole thing with a fresh random texture, then (if a source is supplied)
+    // copy the overlapping region so an in-session resize/drag doesn't reshuffle
+    // the existing texture — only newly exposed area gets the fresh randomness.
+    const nextBgTint = randomBytes(width * height);
     const copyW = Math.min(width, srcW);
     const copyRows = Math.min(height, srcH);
     for (let r = 0; r < copyRows; r++) {
@@ -145,6 +211,8 @@ export class Grid {
       next.set(srcCells.subarray(src, src + copyW), newY * width);
       if (srcTemp) nextTemp.set(srcTemp.subarray(src, src + copyW), newY * width);
       if (srcAux) nextAux.set(srcAux.subarray(src, src + copyW), newY * width);
+      if (srcTint) nextTint.set(srcTint.subarray(src, src + copyW), newY * width);
+      if (srcBgTint) nextBgTint.set(srcBgTint.subarray(src, src + copyW), newY * width);
     }
 
     this.width = width;
@@ -155,5 +223,7 @@ export class Grid {
     this.temp = nextTemp;
     this.tempScratch = new Float32Array(this.size);
     this.aux = nextAux;
+    this.tint = nextTint;
+    this.bgTint = nextBgTint;
   }
 }
