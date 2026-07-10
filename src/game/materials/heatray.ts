@@ -50,31 +50,76 @@ const LIFE_VAR = 80; // 120..199 ticks — several screen-crossings' worth
 const PIERCE_CHANCE = 0.75; // destroy → fly straight on through; else reflect
 const IMPACT_FIRE_CHANCE = 0.5; // a smashed (non-pierced) cell ends up aflame…
 const DECAY_SMOKE_CHANCE = 0.2; // …while a ray that expires leaves a wisp.
-const URANIUM_HEAT = 500; // heat dumped into struck uranium — a few hits melt a cold block
-const SCORCH_HEAT = 150; // heat splashed into each non-empty neighbor of an impact
+const URANIUM_HEAT = 800; // heat dumped into struck uranium — a hit or two melts a cold block
+const SCORCH_HEAT = 400; // heat splashed into each non-empty neighbor of an impact
+// How far (in 45° compass steps) a reflection may randomly deviate from the
+// clean mirror angle. 2 → the ray can scatter anywhere across the ±90° arc
+// facing away from the surface, so a burst never settles into tidy repeating
+// billiard paths — it sprays chaotically like real debris.
+const REFLECT_SPREAD = 2;
+
+// The 8 compass directions in clockwise ring order, so a reflection can be
+// rotated by a whole number of 45° steps to randomize its angle.
+const DIR_RING: ReadonlyArray<readonly [number, number]> = [
+  [0, -1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+];
+
+function ringIndexOf(vx: number, vy: number): number {
+  for (let i = 0; i < 8; i++) if (DIR_RING[i][0] === vx && DIR_RING[i][1] === vy) return i;
+  return 0; // unreachable: bounce always passes a unit 8-direction
+}
 
 function encodeRay(life: number, vx: number, vy: number): number {
   return life * 16 + (vx + 1) * 3 + (vy + 1);
 }
 
-/** True if the ray could fly into (x,y) — used only to pick which axis a
- *  bounce should flip, mirroring off whichever side is actually solid. */
+/** True if the ray could fly into (x,y) — used to pick which axis a bounce
+ *  flips and to bias a randomized reflection toward open space. */
 function isOpen(sim: SimContext, x: number, y: number): boolean {
   return sim.inBounds(x, y) && sim.isEmpty(x, y);
 }
 
-/** Mirror-reflect a ray that just collided while at (cx,cy) heading (vx,vy).
- *  Diagonal flights flip only the blocked axis (glancing bounce) when exactly
- *  one of the two orthogonal neighbors is solid; head-on and corner hits
- *  reverse outright. */
+/** Randomize a reflection angle: rotate the clean mirror direction (bvx,bvy)
+ *  by a random ±REFLECT_SPREAD·45°. A rotated candidate is taken only when it
+ *  points at open space from (cx,cy), so the ray actually leaves the surface;
+ *  otherwise it falls back to the clean mirror, which keeps the ray sane even
+ *  when it's boxed into a tight pocket. Shared by both material bounces and
+ *  grid-boundary bounces so every reflection scatters. */
+function scatter(sim: SimContext, cx: number, cy: number, bvx: number, bvy: number): [number, number] {
+  const off = sim.randInt(REFLECT_SPREAD * 2 + 1) - REFLECT_SPREAD;
+  if (off !== 0) {
+    const [rx, ry] = DIR_RING[(ringIndexOf(bvx, bvy) + off + 8) % 8];
+    if (isOpen(sim, cx + rx, cy + ry)) return [rx, ry];
+  }
+  return [bvx, bvy];
+}
+
+/** Reflect a ray that just collided with a material while at (cx,cy) heading
+ *  (vx,vy). The clean mirror direction is computed first — a glancing diagonal
+ *  flips only the blocked axis, a head-on/corner hit reverses — then scatter()
+ *  randomizes the outgoing angle around it. */
 function bounce(sim: SimContext, cx: number, cy: number, vx: number, vy: number): [number, number] {
+  let bvx = -vx;
+  let bvy = -vy;
   if (vx !== 0 && vy !== 0) {
     const hOpen = isOpen(sim, cx + vx, cy);
     const vOpen = isOpen(sim, cx, cy + vy);
-    if (hOpen && !vOpen) return [vx, -vy];
-    if (!hOpen && vOpen) return [-vx, vy];
+    if (hOpen && !vOpen) {
+      bvx = vx;
+      bvy = -vy;
+    } else if (!hOpen && vOpen) {
+      bvx = -vx;
+      bvy = vy;
+    }
   }
-  return [-vx, -vy];
+  return scatter(sim, cx, cy, bvx, bvy);
 }
 
 /** The beam's ultra-high temperature, delivered at the impact point: splash
@@ -131,9 +176,14 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     const ny = wy + vy;
     if (!sim.inBounds(nx, ny)) {
       // The grid boundary reflects in *both* border modes — the ray bounces
-      // where ordinary particles would fall out, so the sweep never leaks away.
-      if (nx < 0 || nx >= sim.width) vx = -vx;
-      if (ny < 0 || ny >= sim.height) vy = -vy;
+      // where ordinary particles would fall out, so the sweep never leaks
+      // away. Flip the axis(es) that ran off the edge for the clean mirror,
+      // then scatter() randomizes the outgoing angle just like a wall hit.
+      let bvx = vx;
+      let bvy = vy;
+      if (nx < 0 || nx >= sim.width) bvx = -vx;
+      if (ny < 0 || ny >= sim.height) bvy = -vy;
+      [vx, vy] = scatter(sim, wx, wy, bvx, bvy);
       continue;
     }
     const nid = sim.get(nx, ny);

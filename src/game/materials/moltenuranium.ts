@@ -42,7 +42,11 @@ const HEAT_PER_NEIGHBOR = 3; // molten chain reaction runs hotter than solid's 1
 const COOL_CHANCE = 0.12;
 const COOL_AMOUNT = 25;
 const IGNITE_CHANCE = 0.12;
-const EMIT_CHANCE = 0.35; // per-tick chance a critical cell tries to emit
+// Per-tick chance a critical cell tries to emit. Doubled from 0.35 so a cell
+// reaches its BURN_EMISSIONS quota — and burns away — in roughly half the
+// ticks: the same total ray output delivered in a shorter, fiercer burst, so
+// a meltdown wipes the screen and then clears out about twice as fast.
+const EMIT_CHANCE = 0.7;
 const BURN_EMISSIONS = 10; // rays each cell fires before it's spent fuel
 const SPENT_SMOKE_CHANCE = 0.5;
 // Painted molten uranium starts above the freeze point with headroom below
