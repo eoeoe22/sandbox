@@ -300,6 +300,9 @@ export interface PersistedWorld {
   h: number;
   cells: Uint8Array;
   temp: Float32Array;
+  /** Per-cell material state byte (Grid.aux), when the save carried it. Older
+   *  saves predate it and leave this undefined (aux then reloads as zero). */
+  aux?: Uint8Array;
 }
 
 let lastWorldJson: string | null = null;
@@ -317,6 +320,14 @@ export function saveWorld(grid: Grid): void {
     h: grid.height,
     cells: bytesToBase64(encodeCellsRle(grid.cells)),
     temp: bytesToBase64(encodeTempRle(quantizeTemps(grid.cells, grid.temp))),
+    // Per-cell material state (Grid.aux) — an ordinary u8 field, RLE'd like
+    // cells. Persisting it is what lets electrical state survive a reload: a
+    // Spark cell has *replaced* a wire cell and stores which conductor to turn
+    // back into in its aux, so without this an in-flight spark reloads with
+    // aux 0 and fizzles to Empty, leaving a hole in the circuit. It also
+    // restores a Clone's adopted id, a Petroleum Vapor's condensate code, etc.
+    // Mostly zero, so it compresses to almost nothing.
+    aux: bytesToBase64(encodeCellsRle(grid.aux)),
   });
   if (json === lastWorldJson) return;
   if (writeString(WORLD_KEY, json)) lastWorldJson = json;
@@ -350,10 +361,24 @@ export function loadWorld(): PersistedWorld | null {
     return null; // invalid base64
   }
 
-  for (let i = 0; i < cells.length; i++) {
-    if (!getMaterial(cells[i])) cells[i] = EMPTY;
-    if (cells[i] === EMPTY) temp[i] = AMBIENT_TEMP;
+  // Aux is optional (older saves lack it); a decode failure just drops it,
+  // degrading to the pre-aux behavior rather than losing the whole world.
+  let aux: Uint8Array | undefined;
+  if (typeof j.aux === 'string') {
+    try {
+      aux = decodeCellsRle(base64ToBytes(j.aux), w * h);
+    } catch {
+      aux = undefined;
+    }
   }
 
-  return { w, h, cells, temp };
+  for (let i = 0; i < cells.length; i++) {
+    if (!getMaterial(cells[i])) cells[i] = EMPTY;
+    if (cells[i] === EMPTY) {
+      temp[i] = AMBIENT_TEMP;
+      if (aux) aux[i] = 0; // an empty cell must carry no leftover state
+    }
+  }
+
+  return { w, h, cells, temp, aux };
 }
