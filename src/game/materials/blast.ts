@@ -161,12 +161,15 @@ function nextStamp(sim: SimContext): Int32Array {
 }
 
 /** True if the cell blocks the shockwave outright — it survives intact and casts
- *  a shadow. Only the indestructible boundary Wall and blast-proof solids
- *  (Diamond); everything else is fair game to destroy. */
-function isBlocker(id: number): boolean {
+ *  a shadow. The indestructible boundary Wall always blocks; blast-proof solids
+ *  (Diamond) also block unless `ignoreProof` is set, in which case only the Wall
+ *  survives (used by a uranium meltdown — nothing but the container edge with-
+ *  stands a nuclear blast). */
+function isBlocker(id: number, ignoreProof = false): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
-  return m.isWall === true || m.explosionProof === true;
+  if (m.isWall === true) return true;
+  return !ignoreProof && m.explosionProof === true;
 }
 
 /** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell
@@ -277,8 +280,10 @@ function computeReach(Y: number, maxYield: number): number {
  * `seedYield` is only consulted when (cx,cy) isn't itself an explosive — the
  * brush-painted Blast path passes its own radius so a hand-placed blast keeps a
  * fixed size; an explosive origin ignores it and uses the surveyed yield instead.
+ * `ignoreExplosionProof` lets the flood destroy blast-proof solids (Diamond),
+ * reserving survival for only the boundary Wall — used by the uranium meltdown.
  */
-export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0): void {
+export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0, ignoreExplosionProof = false): void {
   const w = sim.width;
   const h = sim.height;
 
@@ -358,9 +363,9 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
         }
         continue;
       }
-      // Wall / Diamond stops the front and shadows what's beyond — no ember
-      // either (an explosion behind a wall shouldn't spit sparks through it).
-      if (isBlocker(sim.get(nx, ny))) continue;
+      // Wall (and Diamond, unless the caller overrides) stops the front and
+      // shadows what's beyond — no ember either.
+      if (isBlocker(sim.get(nx, ny), ignoreExplosionProof)) continue;
       stamp[nidx] = id_d;
       qx.push(nx);
       qy.push(ny);
