@@ -30,12 +30,19 @@ body {
    touch-action:none stops the page from scrolling/zooming while painting on
    touch devices.
 
-   Kept in static vw/vh (not dvw/dvh) on purpose: the canvas size is read back in
-   JS (canvas.clientWidth/Height) and drives the sandbox grid resolution, so if
-   its height tracked the mobile address bar every show/hide would fire a
-   `window.resize` and rebuild the grid mid-paint. body{overflow:hidden} +
-   touch-action:none already suppress the scroll gestures that toggle the bar, so
-   the canvas stays a stable background. */
+   Desktop uses static vh — no address bar, so it equals the visible height and
+   the canvas size read back in JS (canvas.clientWidth/Height, which drives the
+   grid resolution) stays perfectly stable.
+
+   Mobile uses dvh (dynamic viewport height) instead of vh: vh is the *large*
+   layout viewport (height with the address bar collapsed), so calc(100vh -
+   bottombar) still spills behind the visible area and the sandbox overlaps the
+   toolbar. dvh tracks the *visible* viewport, so the canvas ends exactly at the
+   toolbar's top edge. body{overflow:hidden} + touch-action:none suppress the
+   scroll gestures that toggle the address bar, so dvh is effectively stable in
+   practice — the resize/grid-rebuild that dvh could theoretically trigger on
+   address-bar show/hide simply doesn't occur because the page can't scroll. A vh
+   fallback covers browsers that predate dvh support. */
 #game {
   position: fixed;
   top: 0;
@@ -54,12 +61,16 @@ body {
 }
 
 /* Mobile: the control bar moves to the bottom, so the canvas gives up height at
-   the bottom instead of width on the left. */
+   the bottom instead of width on the left. dvh (not vh) so the canvas respects
+   the *visible* viewport — vh is the large layout viewport whose bottom sits
+   behind the address bar, which would make the sandbox overlap the toolbar. */
 @media (max-width: 768px) {
   #game {
     left: 0;
     width: 100vw;
+    /* vh fallback for browsers without dvh support. */
     height: calc(100vh - var(--bottombar-h));
+    height: calc(100dvh - var(--bottombar-h));
   }
 }
 
