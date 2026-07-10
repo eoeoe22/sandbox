@@ -57,6 +57,15 @@ const SCORCH_HEAT = 400; // heat splashed into each non-empty neighbor of an imp
 // facing away from the surface, so a burst never settles into tidy repeating
 // billiard paths — it sprays chaotically like real debris.
 const REFLECT_SPREAD = 2;
+// Extra life a ray burns each time it reflects (on top of the −1 every ray
+// pays per tick). A beam flying free through terrain — piercing, the main
+// destructive act — pays nothing extra and crosses the whole screen; a beam
+// trapped ricocheting in a corner or off the still-unburnt uranium body bounces
+// every tick, so this drains it in a couple dozen ticks instead of ~200. That
+// dissolves the two places rays visibly clump (screen corners and the emission
+// source) without weakening the open-field sweep. Tuned so a handful of
+// legitimate wall bounces over a long flight is still cheap.
+const BOUNCE_LIFE_COST = 10;
 
 // The 8 compass directions in clockwise ring order, so a reflection can be
 // rotated by a whole number of 45° steps to randomize its angle.
@@ -95,8 +104,15 @@ function isOpen(sim: SimContext, x: number, y: number): boolean {
 function scatter(sim: SimContext, cx: number, cy: number, bvx: number, bvy: number): [number, number] {
   const off = sim.randInt(REFLECT_SPREAD * 2 + 1) - REFLECT_SPREAD;
   if (off !== 0) {
-    const [rx, ry] = DIR_RING[(ringIndexOf(bvx, bvy) + off + 8) % 8];
+    const base = ringIndexOf(bvx, bvy);
+    const [rx, ry] = DIR_RING[(base + off + 8) % 8];
     if (isOpen(sim, cx + rx, cy + ry)) return [rx, ry];
+    // Primary rotation is blocked (common in a corner, where it points off the
+    // grid). Try the mirror rotation before giving up, so a cornered ray still
+    // scatters sideways instead of always reversing straight back — reversal
+    // retracing is what makes rays pile up in corners.
+    const [sx, sy] = DIR_RING[(base - off + 8) % 8];
+    if (isOpen(sim, cx + sx, cy + sy)) return [sx, sy];
   }
   return [bvx, bvy];
 }
@@ -171,6 +187,9 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   let wy = y;
   let cx = x;
   let cy = y;
+  // Life spent this tick: 1 baseline, plus BOUNCE_LIFE_COST for every reflection
+  // so trapped, endlessly-ricocheting rays expire fast (see the constant).
+  let lifeCost = 1;
   for (let s = 0; s < steps; s++) {
     const nx = wx + vx;
     const ny = wy + vy;
@@ -184,6 +203,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       if (nx < 0 || nx >= sim.width) bvx = -vx;
       if (ny < 0 || ny >= sim.height) bvy = -vy;
       [vx, vy] = scatter(sim, wx, wy, bvx, bvy);
+      lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
     const nid = sim.get(nx, ny);
@@ -207,11 +227,13 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       // hits) and glances off.
       sim.setTemp(nx, ny, sim.getTemp(nx, ny) + URANIUM_HEAT);
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
     const m = getMaterial(nid);
     if (m.isWall) {
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
     // Everything else — including blast-proof Diamond and water — is
@@ -230,6 +252,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       else if (sim.chance(IMPACT_FIRE_CHANCE)) sim.spawn(nx, ny, FIRE.id);
       else sim.set(nx, ny, EMPTY);
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
     }
   }
 
@@ -237,7 +260,9 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, EMPTY);
     sim.spawn(cx, cy, HEAT_RAY.id);
   }
-  sim.setTemp(cx, cy, encodeRay(life - 1, vx, vy));
+  // A ray whose life is spent (baseline + bounce penalties) is written with a
+  // non-positive life, so it dies on its next turn like any expired ray.
+  sim.setTemp(cx, cy, encodeRay(Math.max(0, life - lifeCost), vx, vy));
 }
 
 export const HEAT_RAY = register({
