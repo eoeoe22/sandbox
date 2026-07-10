@@ -8,6 +8,7 @@ import {
   $running,
   $borderMode,
   $simSpeed,
+  $smokeEnabled,
   type BrushShape,
   type BrushMode,
   type Tool,
@@ -101,6 +102,7 @@ function hydrateSettings(): void {
   $borderMode.set(oneOf(s.borderMode, BORDER_MODES, $borderMode.get()));
   $simSpeed.set(oneOf(s.simSpeed, SIM_SPEED_VALUES, $simSpeed.get()));
   if (typeof s.running === 'boolean') $running.set(s.running);
+  if (typeof s.smokeEnabled === 'boolean') $smokeEnabled.set(s.smokeEnabled);
 }
 
 function saveSettings(): void {
@@ -116,6 +118,7 @@ function saveSettings(): void {
       borderMode: $borderMode.get(),
       simSpeed: $simSpeed.get(),
       running: $running.get(),
+      smokeEnabled: $smokeEnabled.get(),
     }),
   );
 }
@@ -163,6 +166,7 @@ export function initSettingsPersistence(): void {
   $borderMode.listen(schedule);
   $simSpeed.listen(schedule);
   $running.listen(schedule);
+  $smokeEnabled.listen(schedule);
 
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {

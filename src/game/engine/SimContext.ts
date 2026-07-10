@@ -1,6 +1,7 @@
 import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
 import { getMaterial } from '../materials/registry';
+import { SMOKE } from '../materials/smoke';
 import { AMBIENT_TEMP } from '../config';
 
 /**
@@ -18,6 +19,18 @@ export class SimContext {
    * it — neighbor reactions still treat out-of-bounds as simply "nothing there".
    */
   borderMode: BorderMode = 'wall';
+
+  /**
+   * When false, any Smoke written through this context (set/spawn) is suppressed
+   * to Empty instead — so every combustion/explosion reaction that would emit a
+   * wisp of Smoke produces nothing. This is the single seam all reactions funnel
+   * through, so one check here covers Fire, Blue Flame, Ember, Molten Uranium,
+   * Heat Ray, etc. without threading a flag into each material rule. Manual brush
+   * placement paints straight to the Grid (bypassing this context), so it stays
+   * unaffected — the toggle governs reactions, not the Smoke material itself.
+   * Set from the UI via Simulation.setSmokeEnabled.
+   */
+  smokeEnabled = true;
 
   /**
    * Current simulation tick, refreshed once per step by `Simulation`. Available
@@ -57,6 +70,8 @@ export class SimContext {
   }
 
   set(x: number, y: number, id: number): void {
+    // Smoke suppressed → drop it to Empty (see smokeEnabled).
+    if (id === SMOKE.id && !this.smokeEnabled) id = EMPTY;
     this.grid.set(x, y, id);
     // Erasing/emptying a cell resets it to ambient so no stale heat lingers in
     // air (which conducts nothing and would otherwise be carried around by a
@@ -101,6 +116,11 @@ export class SimContext {
    * future caller isn't guaranteed to have checked first. */
   spawn(x: number, y: number, id: number): void {
     if (!this.inBounds(x, y)) return;
+    // Smoke suppressed → nothing is spawned (see smokeEnabled).
+    if (id === SMOKE.id && !this.smokeEnabled) {
+      this.set(x, y, EMPTY);
+      return;
+    }
     this.grid.set(x, y, id);
     // A spawned cell is newly created material, so it starts at that material's
     // own initial temperature (hot for Fire/Steam, ambient for the rest) —

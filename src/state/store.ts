@@ -78,6 +78,15 @@ export const $fpsPeak = atom<number>(0);
  */
 export const $borderMode = atom<BorderMode>('wall');
 
+/**
+ * Whether reactions emit Smoke. `true` (the default) keeps the original
+ * behavior; `false` suppresses the Smoke that every combustion/explosion
+ * reaction would otherwise produce (Fire, Blue Flame, Ember, Molten Uranium,
+ * Heat Ray, …). The engine reads this via Simulation.setSmokeEnabled. Manual
+ * Smoke painting bypasses the engine seam, so it still works when this is off.
+ */
+export const $smokeEnabled = atom<boolean>(true);
+
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 

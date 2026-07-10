@@ -14,6 +14,7 @@ import {
   $stepSignal,
   $borderMode,
   $simSpeed,
+  $smokeEnabled,
 } from '../state/store';
 import './materials'; // register all materials (side effect)
 
@@ -86,6 +87,10 @@ export function startGame(canvas: HTMLCanvasElement): void {
     sim.setBorderMode(mode);
     renderer.setBorderMode(mode);
   });
+
+  // Whether reactions give off Smoke. subscribe fires immediately, seeding the
+  // engine with the restored/default value on startup.
+  $smokeEnabled.subscribe((on) => sim.setSmokeEnabled(on));
 
   // UI command signals.
   $clearSignal.listen(() => grid.clear());
