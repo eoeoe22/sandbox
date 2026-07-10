@@ -10,7 +10,7 @@ import { STEAM } from './steam';
 import { MOLTEN_URANIUM } from './moltenuranium';
 
 // Uranium — a radioactive solid whose heat output scales with how many fellow
-// uranium cells surround it, modelling a neutron-moderated chain reaction. A
+// uranium cells surround it, modelling a self-sustaining chain reaction. A
 // lone grain is inert (no neighbors → no heat), but pile enough together and
 // the interior cells each see up to eight neighbors and pump out heat far
 // faster than conduction can bleed it through the surface. The mass warms
