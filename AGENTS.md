@@ -5,9 +5,10 @@
 
 # 워크플로우
 
-1. 작업 수행
-2. 1차 Push
+1. 새 브랜치에서 작업 수행
+2. 작업 후 1차 Push 및 gh CLI로 Pull Request 생성
 3. 서브에이전트 호출을 통해 코드리뷰
 4. 리뷰가 no issues로 통과 시 call_user 도구 사용 / 리뷰에서 지적사항이 있다면 조치후 리뷰 재시도 (no issues 확정 까지 반복)
 5. Cloudwiki에서 "Web sandbox 프로젝트" 문서 업데이트. 해당 문서는 즉시 반영으로 편집을 권장함.
+6. main branch에 merge
 
