@@ -51,6 +51,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const grid = new Grid(layout.gw, layout.gh);
   if (savedWorld) {
     grid.resizeFrom(layout.gw, layout.gh, savedWorld.cells, savedWorld.w, savedWorld.h, savedWorld.temp);
+    // Tint isn't persisted; reseed it so a restored world is grainy from the
+    // first frame rather than a flat block until its particles move.
+    grid.randomizeTints();
   }
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);

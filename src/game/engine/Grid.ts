@@ -44,6 +44,16 @@ export class Grid {
    */
   aux: Uint8Array;
 
+  /**
+   * Per-cell color-variation byte: each particle's individual tint, mapped by
+   * the renderer to a small brightness offset from its material's base color so
+   * a body of powder/liquid reads as grainy/shimmering rather than a flat slab
+   * (see game/tint.ts). Travels with the cell on a swap, just like `temp`/`aux`,
+   * so a particle keeps its shade as it moves. Runtime-only cosmetic state: not
+   * persisted (a reload reseeds it), so nothing reads it for simulation logic.
+   */
+  tint: Uint8Array;
+
   // Still reserved for a future per-cell velocity field (see ember.ts, which
   // currently packs velocity into `temp`).
   // vel: Int8Array;
@@ -57,6 +67,7 @@ export class Grid {
     this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
     this.tempScratch = new Float32Array(this.size);
     this.aux = new Uint8Array(this.size);
+    this.tint = new Uint8Array(this.size); // 0 = neutral until seeded on placement
   }
 
   idx(x: number, y: number): number {
@@ -91,10 +102,32 @@ export class Grid {
     this.aux[y * this.width + x] = v;
   }
 
+  getTint(x: number, y: number): number {
+    return this.tint[y * this.width + x];
+  }
+
+  setTint(x: number, y: number, v: number): void {
+    this.tint[y * this.width + x] = v;
+  }
+
+  /**
+   * Reseed every non-empty cell with a fresh random tint. Used after loading a
+   * saved world (tint isn't persisted) so a restored powder pile is already
+   * grainy instead of a flat block until its grains happen to move.
+   */
+  randomizeTints(): void {
+    const cells = this.cells;
+    const tint = this.tint;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] !== EMPTY) tint[i] = (Math.random() * 256) | 0;
+    }
+  }
+
   clear(): void {
     this.cells.fill(EMPTY);
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
+    this.tint.fill(0);
   }
 
   /**
@@ -103,7 +136,7 @@ export class Grid {
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
-    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux);
+    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux, this.tint);
   }
 
   /**
@@ -125,6 +158,7 @@ export class Grid {
     srcH: number,
     srcTemp?: Float32Array,
     srcAux?: Uint8Array,
+    srcTint?: Uint8Array,
   ): void {
     const next = new Uint8Array(width * height);
     // Temperature must follow the cells it belongs to — otherwise preserved
@@ -136,6 +170,10 @@ export class Grid {
     // predates aux) it starts zeroed — safe because every aux use is transient
     // state that self-heals (a Clone re-adopts, a conductor's refractory clears).
     const nextAux = new Uint8Array(width * height);
+    // Cosmetic per-cell tint travels with its cells the same way. When no source
+    // tint is supplied it starts zeroed (neutral); callers seed it afterward
+    // (Grid.randomizeTints) so a fresh load isn't a flat block.
+    const nextTint = new Uint8Array(width * height);
     const copyW = Math.min(width, srcW);
     const copyRows = Math.min(height, srcH);
     for (let r = 0; r < copyRows; r++) {
@@ -145,6 +183,7 @@ export class Grid {
       next.set(srcCells.subarray(src, src + copyW), newY * width);
       if (srcTemp) nextTemp.set(srcTemp.subarray(src, src + copyW), newY * width);
       if (srcAux) nextAux.set(srcAux.subarray(src, src + copyW), newY * width);
+      if (srcTint) nextTint.set(srcTint.subarray(src, src + copyW), newY * width);
     }
 
     this.width = width;
@@ -155,5 +194,6 @@ export class Grid {
     this.temp = nextTemp;
     this.tempScratch = new Float32Array(this.size);
     this.aux = nextAux;
+    this.tint = nextTint;
   }
 }

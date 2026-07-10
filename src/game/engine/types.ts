@@ -130,6 +130,17 @@ export interface Material {
    * as it cools toward setting — making the conduction gradient legible.
    */
   glow?: { min: number; max: number; cool: number };
+  /**
+   * Per-particle color variation: how far (in 0..255 channel units) each
+   * individual cell's brightness is nudged from the base `color`, so a body of
+   * this material reads as a grainy/shimmering mass of slightly different shades
+   * instead of a flat slab. Omit to inherit a sensible default by phase (powders
+   * and liquids vary, everything else stays flat); set `0` to force a material
+   * flat. Powders re-roll their tint only while moving; liquids drift it slowly
+   * even at rest. Ignored for `glow` materials (they're shaded by temperature
+   * instead). See game/tint.ts and the renderer/Simulation.
+   */
+  colorVary?: number;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }

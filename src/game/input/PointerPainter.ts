@@ -184,6 +184,9 @@ export class PointerPainter {
         // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
         // only other create/clear paths; the raw grid.set here bypasses them.
         this.grid.setAux(x, y, 0);
+        // Seed a random per-particle tint so a freshly painted powder/liquid is
+        // grainy from the first frame instead of a flat block (see game/tint.ts).
+        this.grid.setTint(x, y, (Math.random() * 256) | 0);
       }
     }
   }
