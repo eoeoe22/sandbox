@@ -2,19 +2,23 @@ import { Phase, type Material } from './engine/types';
 
 /**
  * Per-particle color variation — the shared rules that the renderer (which shows
- * the variation) and the Simulation (which updates it over time) both read, so
- * the two never disagree about which materials vary or by how much.
+ * the variation) and the Simulation (which drifts the background field) both
+ * read, so the two never disagree about which materials vary or by how much.
  *
- * Each cell carries a `tint` byte (see Grid.tint). The renderer maps it to a
- * signed brightness offset in `[-amp, +amp]` around the material's base color,
- * so a mass of sand or water is a field of slightly different shades instead of
- * one flat block. How the tint changes over time depends on the phase:
- *   - Powder: re-rolled only on the ticks a grain actually moves, so a settled
- *     pile is a stable grain and a falling stream shimmers.
- *   - Liquid: drifts slowly every tick (even at rest), so a still pool has a
- *     gentle, living shimmer.
+ * Two different textures, picked by phase:
+ *   - Powder (VARY_PARTICLE): each grain carries its own `tint` byte (Grid.tint),
+ *     seeded once when the grain is created and then fixed — it travels with the
+ *     grain as it moves but never re-rolls, so a pile is a stable field of grains.
+ *   - Liquid (VARY_BACKGROUND): the grain has no tint of its own; instead the
+ *     renderer samples a positional background field (Grid.bgTint) at the cell's
+ *     location. As liquid flows across space it picks up whatever shade the
+ *     background holds there, and the background itself drifts slowly over time —
+ *     so a pool shimmers with a texture tied to space, not to the particles.
  * Glow materials (Lava, molten metals) opt out — they're already shaded by
  * temperature, so a tint on top would fight the heat ramp.
+ *
+ * The tint byte maps to a signed per-channel brightness offset in `[-amp, +amp]`
+ * around the material's base color (see the renderer).
  */
 
 /** Default brightness spread for powders that don't set their own `colorVary`. */
@@ -23,23 +27,27 @@ export const POWDER_VARY = 18;
 export const LIQUID_VARY = 22;
 
 /**
- * Liquid tint drift, an Ornstein–Uhlenbeck-style step applied per liquid cell
- * each tick: the centered tint decays toward neutral (128) and then takes a
- * small random kick. The pull-to-center keeps the shimmer from wandering off to
- * a permanent extreme, so a still pool keeps breathing gently around its base
- * color instead of freezing into one fixed speckle pattern.
+ * Background-field drift, an Ornstein–Uhlenbeck-style step applied to the
+ * positional `bgTint` field: the centered value decays toward neutral (128) then
+ * takes a small random kick. The pull-to-center keeps the shimmer from wandering
+ * off to a permanent extreme. Only a fraction of the field is nudged each tick
+ * (see BG_DRIFT_STRIDE) so the whole thing breathes slowly and cheaply.
  */
-export const LIQUID_DRIFT_DECAY = 0.88;
-export const LIQUID_DRIFT_KICK = 30;
+export const BG_DRIFT_DECAY = 0.88;
+export const BG_DRIFT_KICK = 30;
+/** Each tick only 1/STRIDE of the background field is nudged, cycling through
+ *  the full field every STRIDE ticks — keeps the drift slow and the per-tick
+ *  cost a fraction of the grid. */
+export const BG_DRIFT_STRIDE = 8;
 
-/** Neutral tint (no brightness offset). Freshly placed cells are seeded around
- *  the full range, but this is the value that maps to "base color, unchanged". */
+/** Neutral tint (no brightness offset). Seeds span the full range, but this is
+ *  the value that maps to "base color, unchanged". */
 export const TINT_NEUTRAL = 128;
 
-/** Temporal update mode for a material's per-particle tint (see Simulation). */
+/** Which tint field a material samples (see above). */
 export const VARY_NONE = 0;
-export const VARY_ON_MOVE = 1; // powder: re-roll on move
-export const VARY_DRIFT = 2; // liquid: drift slowly over time
+export const VARY_PARTICLE = 1; // powder: fixed per-particle tint (Grid.tint)
+export const VARY_BACKGROUND = 2; // liquid: positional background field (Grid.bgTint)
 
 /**
  * Brightness spread for a material in 0..255 channel units, or 0 for a flat
@@ -55,10 +63,11 @@ export function varyAmplitude(m: Material): number {
   return 0;
 }
 
-/** How this material's tint is updated over time (only powders/liquids do). */
+/** Which tint field this material samples: per-particle (powder), positional
+ *  background (liquid), or none. */
 export function varyMode(m: Material): number {
   if (varyAmplitude(m) <= 0) return VARY_NONE;
-  if (m.phase === Phase.Powder) return VARY_ON_MOVE;
-  if (m.phase === Phase.Liquid) return VARY_DRIFT;
+  if (m.phase === Phase.Powder) return VARY_PARTICLE;
+  if (m.phase === Phase.Liquid) return VARY_BACKGROUND;
   return VARY_NONE;
 }

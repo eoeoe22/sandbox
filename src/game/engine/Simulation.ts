@@ -3,14 +3,7 @@ import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
 import { EMPTY, type BorderMode } from './types';
 import { HEAT_DIFFUSION_RATE, DEFAULT_CONDUCTIVITY } from '../config';
-import {
-  varyMode,
-  VARY_ON_MOVE,
-  VARY_DRIFT,
-  LIQUID_DRIFT_DECAY,
-  LIQUID_DRIFT_KICK,
-  TINT_NEUTRAL,
-} from '../tint';
+import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -28,17 +21,16 @@ export class Simulation {
   private tick = 0;
   /** Conductivity per material id (0..1), flattened for the diffusion hot loop. */
   private cond: Float32Array;
-  /** Per-material-id tint update mode (VARY_*), flattened for the tint pass. */
-  private vary: Uint8Array;
+  /** Rolling cursor into the background tint field, so each tick drifts a
+   *  different 1/STRIDE slice of it (see driftBackground). */
+  private bgCursor = 0;
 
   constructor(grid: Grid) {
     this.grid = grid;
     this.ctx = new SimContext(grid);
     this.cond = new Float32Array(256).fill(DEFAULT_CONDUCTIVITY);
-    this.vary = new Uint8Array(256);
     for (const m of allMaterials()) {
       this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
-      this.vary[m.id] = varyMode(m);
     }
   }
 
@@ -69,38 +61,31 @@ export class Simulation {
       }
     }
 
-    this.varyTints();
+    this.driftBackground();
   }
 
   /**
-   * Advance each particle's cosmetic tint (see game/tint.ts). Runs after the
-   * material scan, while the `moved` flags still mark what shifted this tick:
-   *   - Powder grains re-roll their tint only on the ticks they actually moved,
-   *     so a settled pile holds a stable grain while a falling stream shimmers.
-   *   - Liquid cells drift their tint every tick (even at rest) with a gentle
-   *     pull back toward neutral, giving a still pool a living shimmer instead
-   *     of a frozen speckle pattern.
-   * Purely visual: nothing in the simulation reads `tint`.
+   * Slowly drift the positional background tint field (Grid.bgTint) that liquids
+   * are rendered through (see game/tint.ts). Powder grains have a fixed
+   * per-particle tint set at creation, so nothing updates them here — this pass
+   * touches only the location-bound background, independent of what occupies each
+   * cell. Each tick nudges a rolling 1/STRIDE slice of the field with a centered
+   * Ornstein–Uhlenbeck step (decay toward neutral + a random kick), so the whole
+   * field breathes gently and cheaply. Purely visual: the simulation never reads
+   * bgTint.
    */
-  private varyTints(): void {
-    const g = this.grid;
-    const cells = g.cells;
-    const tint = g.tint;
-    const moved = g.moved;
-    const vary = this.vary;
-    for (let i = 0; i < cells.length; i++) {
-      const mode = vary[cells[i]];
-      if (mode === VARY_ON_MOVE) {
-        if (moved[i]) tint[i] = (Math.random() * 256) | 0;
-      } else if (mode === VARY_DRIFT) {
-        // Centered Ornstein–Uhlenbeck step: decay toward neutral + random kick.
-        const c = (tint[i] - TINT_NEUTRAL) * LIQUID_DRIFT_DECAY + (Math.random() * 2 - 1) * LIQUID_DRIFT_KICK;
-        let v = (c + TINT_NEUTRAL + 0.5) | 0;
-        if (v < 0) v = 0;
-        else if (v > 255) v = 255;
-        tint[i] = v;
-      }
+  private driftBackground(): void {
+    const bg = this.grid.bgTint;
+    const size = bg.length;
+    const stride = BG_DRIFT_STRIDE;
+    for (let i = this.bgCursor; i < size; i += stride) {
+      const c = (bg[i] - TINT_NEUTRAL) * BG_DRIFT_DECAY + (Math.random() * 2 - 1) * BG_DRIFT_KICK;
+      let v = (c + TINT_NEUTRAL + 0.5) | 0;
+      if (v < 0) v = 0;
+      else if (v > 255) v = 255;
+      bg[i] = v;
     }
+    this.bgCursor = (this.bgCursor + 1) % stride;
   }
 
   /**

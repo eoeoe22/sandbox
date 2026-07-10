@@ -3,7 +3,7 @@ import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import type { BorderMode } from '../engine/types';
-import { varyAmplitude, TINT_NEUTRAL } from '../tint';
+import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -38,8 +38,10 @@ export class CanvasRenderer implements Renderer {
   private palette: Uint32Array;
   /** id → temperature ramp, or null for materials drawn with a flat color. */
   private glow: (GlowRamp | null)[];
-  /** id → per-particle brightness spread (0 = flat, no tint). See game/tint.ts. */
+  /** id → brightness spread (0 = flat, no tint). See game/tint.ts. */
   private vary: Uint8Array;
+  /** id → which tint field to sample (VARY_PARTICLE = per-grain, else background). */
+  private varyMode: Uint8Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
 
@@ -63,11 +65,15 @@ export class CanvasRenderer implements Renderer {
     this.palette = new Uint32Array(256);
     this.glow = new Array(256).fill(null);
     this.vary = new Uint8Array(256);
+    this.varyMode = new Uint8Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
       if (m?.glow) this.glow[i] = CanvasRenderer.buildGlow(m.glow, m.color);
-      if (m) this.vary[i] = varyAmplitude(m);
+      if (m) {
+        this.vary[i] = varyAmplitude(m);
+        this.varyMode[i] = varyMode(m);
+      }
     }
   }
 
@@ -131,10 +137,12 @@ export class CanvasRenderer implements Renderer {
     const cells = grid.cells;
     const temp = grid.temp;
     const tintArr = grid.tint;
+    const bgArr = grid.bgTint;
     const buf = this.buf32;
     const pal = this.palette;
     const glow = this.glow;
     const vary = this.vary;
+    const mode = this.varyMode;
     for (let i = 0; i < cells.length; i++) {
       const id = cells[i];
       const g = glow[id];
@@ -147,9 +155,12 @@ export class CanvasRenderer implements Renderer {
         buf[i] = pal[id];
         continue;
       }
-      // Map the cell's tint byte to a signed brightness offset in [-amp, +amp]:
+      // Powders read their own fixed per-grain tint; liquids sample the
+      // positional background field at this cell (see game/tint.ts).
+      const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+      // Map the tint byte to a signed brightness offset in [-amp, +amp]:
       // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
-      const d = ((tintArr[i] - TINT_NEUTRAL) * amp) >> 7;
+      const d = ((src - TINT_NEUTRAL) * amp) >> 7;
       buf[i] = CanvasRenderer.tinted(pal[id], d);
     }
     this.offCtx.putImageData(this.image, 0, 0);
