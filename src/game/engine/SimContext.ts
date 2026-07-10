@@ -2,7 +2,12 @@ import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
 import { getMaterial } from '../materials/registry';
 import { SMOKE } from '../materials/smoke';
-import { AMBIENT_TEMP } from '../config';
+import {
+  AMBIENT_TEMP,
+  DISPLACE_DRAG_BASE,
+  DISPLACE_DRAG_SCALE,
+  DISPLACE_SIDE_PUSH,
+} from '../config';
 
 /**
  * The narrow surface that material `update` functions operate through. It hides
@@ -195,6 +200,44 @@ export class SimContext {
     return p === Phase.Liquid || p === Phase.Gas;
   }
 
+  /** True if (px,py) is an in-bounds EMPTY cell a displaced fluid can be shoved
+   *  into. Deliberately EMPTY-only: pushing into another fluid would need a
+   *  recursive displacement and can cascade across the grid. */
+  private canPushTo(px: number, py: number): boolean {
+    return this.inBounds(px, py) && this.get(px, py) === EMPTY;
+  }
+
+  /**
+   * Try to shove the fluid at (tx,ty) sideways so the mover at (x,y) can take
+   * its place without the fluid teleporting past it. Tries the fluid's own
+   * flanks first (flows away within its layer), then the mover's flanks (wells
+   * up beside a particle sinking at the surface — the key visual), with
+   * randomized left/right priority. Uses swap() so temp/aux/tint travel with
+   * the fluid and both cells are marked moved. Returns true if (tx,ty) was
+   * vacated; false when boxed in (deep inside a fluid body), in which case the
+   * caller falls back to the legacy position swap.
+   */
+  private pushAside(x: number, y: number, tx: number, ty: number): boolean {
+    const dir = this.chance(0.5) ? 1 : -1;
+    if (this.canPushTo(tx + dir, ty)) {
+      this.swap(tx, ty, tx + dir, ty);
+      return true;
+    }
+    if (this.canPushTo(tx - dir, ty)) {
+      this.swap(tx, ty, tx - dir, ty);
+      return true;
+    }
+    if (this.canPushTo(x + dir, y)) {
+      this.swap(tx, ty, x + dir, y);
+      return true;
+    }
+    if (this.canPushTo(x - dir, y)) {
+      this.swap(tx, ty, x - dir, y);
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Try to move the cell at (x,y) into (tx,ty). Moves into empty space, or
    * displaces a fluid/gas cell when doing so sorts the pair by density: a
@@ -223,6 +266,21 @@ export class SimContext {
       const tgt = getMaterial(targetId);
       const displaces = ty < y ? src.density < tgt.density : src.density > tgt.density;
       if (displaces) {
+        // Drag gate: a small density gap resists displacement, so sinking
+        // through a fluid is slower than free fall. Failing the gate returns
+        // true — the move is CONSUMED and the particle visibly stalls against
+        // the fluid this tick; returning false would let the caller's fallback
+        // fire (e.g. updatePowder skating off diagonally along the surface).
+        const gap = Math.abs(src.density - tgt.density);
+        const p = DISPLACE_DRAG_BASE + gap * DISPLACE_DRAG_SCALE;
+        if (p < 1 && !this.chance(p)) return true;
+        // Push the displaced fluid into empty space around the intruder before
+        // swapping, so it flows aside instead of teleporting to the far side.
+        // Vertical/diagonal moves only — a sideways displacement has no
+        // sensible shove direction. When pushAside vacates the target this
+        // swap moves into empty space; when boxed in (deep fluid) it degrades
+        // to the legacy position trade, invisible inside a homogeneous body.
+        if (DISPLACE_SIDE_PUSH && ty !== y) this.pushAside(x, y, tx, ty);
         this.swap(x, y, tx, ty);
         return true;
       }
