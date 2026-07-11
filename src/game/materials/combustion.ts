@@ -115,6 +115,12 @@ export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
  * falling/flowing.
  */
 function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
+  // Petroleum fuels (Crude Oil, Gasoline, …) float on water and keep burning as
+  // a surface fire: water below them neither douses the flame nor flashes to
+  // Steam, so a lit slick on a pool reproduces an oil fire instead of snuffing
+  // itself out on the water it's floating on (see Material.petroleum / water.ts).
+  const isPetroleum = getMaterial(sim.get(x, y)).petroleum === true;
+  let onWater = false;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -124,6 +130,10 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     // and the water it touched flashes to Steam — mirroring Fire's own
     // "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule.
     if (nid === WATER.id || nid === SALTWATER.id) {
+      if (isPetroleum) {
+        onWater = true; // oil fire on water: not doused, water not steamed
+        continue;
+      }
       // Cell stays fuel (its id is untouched); just cool it back out of the
       // burning band and flash the water it touched to Steam. Not consumed, so
       // the caller still lets the now-unlit fuel fall/flow.
@@ -161,8 +171,11 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
 
   // Spent: collapse into rising Fire, which flickers up and burns out on its
   // own (see fire.ts) — carrying the flame off the consumed surface. Signal the
-  // caller to stop: this cell is Fire now, not fuel to fall/flow.
-  if (sim.chance(spec.burnChance * CONSUME_RATIO)) {
+  // caller to stop: this cell is Fire now, not fuel to fall/flow. A burning
+  // petroleum cell resting *on water* is the exception: it never collapses to
+  // Fire (which would then steam the water it's floating on), so the oil-water
+  // interface stays oil and keeps shielding the water — a persistent oil fire.
+  if (!(isPetroleum && onWater) && sim.chance(spec.burnChance * CONSUME_RATIO)) {
     sim.set(x, y, FIRE.id);
     sim.setTemp(x, y, BURN_TEMP);
     return true;

@@ -58,6 +58,10 @@ export const VARY_BACKGROUND = 2; // liquid: positional background field (Grid.b
 export function varyAmplitude(m: Material): number {
   if (m.glow) return 0;
   if (m.colorVary !== undefined) return m.colorVary;
+  // Petroleum liquids (Crude Oil, Gasoline, Kerosene, Diesel) render as a flat
+  // single colour instead of shimmering through the background tint field, so a
+  // slick reads as one solid, uniform body of fuel (see Material.petroleum).
+  if (m.petroleum) return 0;
   if (m.phase === Phase.Powder) return POWDER_VARY;
   if (m.phase === Phase.Liquid) return LIQUID_VARY;
   return 0;

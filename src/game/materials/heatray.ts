@@ -9,7 +9,7 @@ import { STEAM } from './steam';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { URANIUM } from './uranium';
-import { MOLTEN_URANIUM } from './moltenuranium';
+import { MOLTEN_URANIUM, triggerMeltdownDecay } from './moltenuranium';
 
 // Heat Ray — the searing beam a critical uranium mass emits (see
 // moltenuranium.ts). Where an Ember is ballistic debris (drooping arc, short
@@ -221,17 +221,36 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       wy = ny;
       continue;
     }
-    if (nid === URANIUM.id || nid === MOLTEN_URANIUM.id) {
-      // Fuel is never destroyed — it's *fed*: the ray dumps a huge slug of
-      // heat (driving that deposit toward meltdown/criticality within a few
-      // hits) and glances off.
+    if (nid === URANIUM.id) {
+      // Solid uranium struck by a ray flashes *straight to meltdown*: the cell
+      // turns to Molten Uranium (hot, at its own init temperature) on the spot,
+      // rather than needing a hit or two of conducted heat to reach the melt
+      // point. spawn() marks it moved so it isn't reprocessed this tick; the ray
+      // glances off. So a stray beam liquefies any uranium deposit it grazes,
+      // which then self-heats toward its own criticality — chain reactions jump
+      // between piles fast.
+      sim.spawn(nx, ny, MOLTEN_URANIUM.id);
+      [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
+      continue;
+    }
+    if (nid === MOLTEN_URANIUM.id) {
+      // Molten uranium is *fed*: the ray dumps a huge slug of heat (driving the
+      // pool toward criticality) and triggers that cell's decay (see
+      // triggerMeltdownDecay), so a swarm of rays burns a critical pool away
+      // instead of only heating it — a big meltdown clears faster the more its
+      // own rays criss-cross it. The ray glances off.
       sim.setTemp(nx, ny, sim.getTemp(nx, ny) + URANIUM_HEAT);
+      triggerMeltdownDecay(sim, nx, ny);
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
     const m = getMaterial(nid);
-    if (m.isWall) {
+    if (m.isWall || m.indestructible) {
+      // Wall stops the beam, and so does a truly indestructible solid (Clone) —
+      // the one thing besides Wall that a Heat Ray can't punch through (it even
+      // pierces blast-proof Diamond, but not these).
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
       lifeCost += BOUNCE_LIFE_COST;
       continue;

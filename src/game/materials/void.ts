@@ -17,7 +17,8 @@ function updateVoid(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === EMPTY || nid === VOID.id) continue;
-    if (getMaterial(nid).isWall) continue; // can't swallow the container
+    const nm = getMaterial(nid);
+    if (nm.isWall || nm.indestructible) continue; // can't swallow the container or an indestructible solid (Clone)
     sim.set(nx, ny, EMPTY);
   }
 }

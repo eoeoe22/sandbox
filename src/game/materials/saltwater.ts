@@ -26,6 +26,11 @@ import { WATER_BOIL_TEMP } from './water';
 // if every neighbor is occupied there's nowhere for the steam to go, so the
 // cell stays Saltwater and retries next tick instead of evaporating anyway.
 function updateSaltwater(x: number, y: number, sim: SimContext): void {
+  // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
+  // so this cell can carry current again (mirrors Iron/Mercury — see spark.ts).
+  const refractory = sim.getAux(x, y);
+  if (refractory > 0) sim.setAux(x, y, refractory - 1);
+
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
     for (const [dx, dy] of DIR4) {
       const nx = x + dx;
@@ -54,6 +59,12 @@ export const SALTWATER = register({
   phase: Phase.Liquid,
   color: rgb(84, 140, 175),
   density: 4,
+  // A weak electrolyte: a Spark travels through it but loses strength slowly, so
+  // a pulse carries a fair distance through brine before fading (see spark.ts).
+  conductive: true,
   thermal: { conductivity: 0.55 },
+  // Freezing-point depression: brine sets a good deal colder than fresh water.
+  // Freezes in place (frosted) rather than crystallizing to a separate solid.
+  freeze: { temp: -18 },
   update: updateSaltwater,
 });

@@ -16,6 +16,11 @@ import { VOID } from './void';
 // Fire and it's an eternal flame. It's the classic sandbox toy, and the flip
 // side of Void.
 //
+// Clone is `indestructible`: no in-world force can remove it — blasts are blocked
+// by it, embers shatter on it, antimatter and Void skip it, and even a critical
+// uranium's Heat Ray bounces off it. So a Clone source keeps running no matter
+// what you throw at it; only the eraser brush (or a full clear) takes it out.
+//
 // The adopted id lives in `aux` (0 = "hasn't latched yet"). It won't latch onto
 // things that aren't meaningful to duplicate: Empty, the Wall, another Clone, a
 // Void, or the transient effect particles (Blast/Ember/Spark).
@@ -60,6 +65,7 @@ export const CLONE = register({
   color: rgb(228, 110, 200),
   density: 1000,
   acidResistant: true,
+  indestructible: true,
   category: '특수',
   thermal: { conductivity: 0.2 },
   update: updateClone,

@@ -36,7 +36,9 @@ export const GASOLINE = register({
   color: rgb(214, 190, 96),
   density: 2.2,
   combustible: true,
+  petroleum: true, // flat single-colour render; burns on water without steaming it
   category: '석유',
   thermal: { conductivity: 0.2 },
+  freeze: { temp: -40 },
   update: updateGasoline,
 });

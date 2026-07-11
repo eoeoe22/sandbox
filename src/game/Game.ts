@@ -50,7 +50,15 @@ export function startGame(canvas: HTMLCanvasElement): void {
 
   const grid = new Grid(layout.gw, layout.gh);
   if (savedWorld) {
-    grid.resizeFrom(layout.gw, layout.gh, savedWorld.cells, savedWorld.w, savedWorld.h, savedWorld.temp);
+    grid.resizeFrom(
+      layout.gw,
+      layout.gh,
+      savedWorld.cells,
+      savedWorld.w,
+      savedWorld.h,
+      savedWorld.temp,
+      savedWorld.aux, // restore per-cell state (electricity/Clone/…) — see persistence.ts
+    );
     // Tint isn't persisted; reseed it so a restored world is grainy from the
     // first frame rather than a flat block until its particles move.
     grid.randomizeTints();

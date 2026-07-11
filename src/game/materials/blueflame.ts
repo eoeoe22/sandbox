@@ -8,7 +8,6 @@ import { AMBIENT_TEMP } from '../config';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
-import { SMOKE } from './smoke';
 import { FIRE } from './fire';
 import { STONE } from './stone';
 import { LAVA } from './lava';
@@ -29,8 +28,8 @@ import { LAVA } from './lava';
 const MELT_CHANCE = 0.1; // per-tick chance to melt one adjacent Stone → Lava
 const IGNITE_CHANCE = 0.08; // per-tick chance to set a flammable neighbor alight
 const BURNOUT_CHANCE = 0.05; // ~20-tick life vs Fire's ~10 — burns out quickly but
-// still lingers a touch longer than Fire (and stays extremely hot) to melt rock
-const SMOKE_CHANCE = 0.25; // …and only some burnouts leave Smoke behind
+// still lingers a touch longer than Fire (and stays extremely hot) to melt rock.
+// Blue Flame is a clean cutting torch: it never leaves Smoke behind (unlike Fire).
 
 function updateBlueFlame(x: number, y: number, sim: SimContext): void {
   // Water/Saltwater neighbor snuffs it instantly (self → Empty, that cell →
@@ -68,8 +67,9 @@ function updateBlueFlame(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.chance(BURNOUT_CHANCE)) {
+    // Burns out clean — always to Empty, never Smoke.
     sim.setTemp(x, y, AMBIENT_TEMP);
-    sim.set(x, y, sim.chance(SMOKE_CHANCE) ? SMOKE.id : EMPTY);
+    sim.set(x, y, EMPTY);
     return;
   }
   updateGas(x, y, sim);

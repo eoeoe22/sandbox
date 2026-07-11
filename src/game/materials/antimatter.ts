@@ -25,9 +25,10 @@ function updateAntimatter(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === EMPTY || nid === ANTIMATTER.id) continue;
-    // The indestructible Wall and explosion-proof Diamond survive annihilation.
+    // The indestructible Wall, explosion-proof Diamond, and truly indestructible
+    // solids (Clone) survive annihilation.
     const nm = getMaterial(nid);
-    if (nm.isWall || nm.explosionProof) continue;
+    if (nm.isWall || nm.explosionProof || nm.indestructible) continue;
     // Only condensed matter annihilates; gases are passed through. This is what
     // keeps the trade one-for-one: the reaction's own byproduct is Fire (a gas),
     // and if antimatter could annihilate Fire, a body of it would cannibalize

@@ -46,5 +46,7 @@ export const MUD = register({
   density: 5.5,
   category: '액체',
   thermal: { conductivity: 0.35 },
+  // Freezes into hard, immobile frozen ground just below zero.
+  freeze: { temp: -3 },
   update: updateMud,
 });

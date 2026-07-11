@@ -42,6 +42,12 @@ export class CanvasRenderer implements Renderer {
   private vary: Uint8Array;
   /** id → which tint field to sample (VARY_PARTICLE = per-grain, else background). */
   private varyMode: Uint8Array;
+  /** id → freezing point; a cell of a `freeze` material at/below this temperature
+   *  is drawn frosted (see Material.freeze). -Infinity for materials that never
+   *  freeze, so the per-cell `temp <= freezeTemp` test never matches them. */
+  private freezeTemp: Float32Array;
+  /** id → precomputed frosted colour used when a freeze material is frozen. */
+  private frost: Uint32Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
 
@@ -66,6 +72,8 @@ export class CanvasRenderer implements Renderer {
     this.glow = new Array(256).fill(null);
     this.vary = new Uint8Array(256);
     this.varyMode = new Uint8Array(256);
+    this.freezeTemp = new Float32Array(256).fill(-Infinity);
+    this.frost = new Uint32Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -73,8 +81,27 @@ export class CanvasRenderer implements Renderer {
       if (m) {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
+        if (m.freeze) {
+          this.freezeTemp[i] = m.freeze.temp;
+          this.frost[i] = CanvasRenderer.frosted(m.color);
+        }
       }
     }
+  }
+
+  /** Blend a packed colour toward an icy white-blue, for rendering a frozen
+   *  liquid (see Material.freeze) as a frosted block distinct from its liquid
+   *  self. Keeps a little of the base hue so frozen oil still reads dark-frosty
+   *  and frozen mercury pale-frosty. */
+  private static frosted(base: number): number {
+    const fr = 210;
+    const fg = 232;
+    const fb = 248;
+    const mix = (c: number, f: number): number => ((c * 45 + f * 55) / 100) | 0;
+    const r = mix(base & 0xff, fr);
+    const g = mix((base >> 8) & 0xff, fg);
+    const b = mix((base >> 16) & 0xff, fb);
+    return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
   /** Shift a packed 0xAABBGGRR color's brightness by `d` (per channel, clamped),
@@ -143,11 +170,19 @@ export class CanvasRenderer implements Renderer {
     const glow = this.glow;
     const vary = this.vary;
     const mode = this.varyMode;
+    const freezeTemp = this.freezeTemp;
+    const frost = this.frost;
     for (let i = 0; i < cells.length; i++) {
       const id = cells[i];
       const g = glow[id];
       if (g) {
         buf[i] = CanvasRenderer.shade(g, temp[i]);
+        continue;
+      }
+      // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
+      // -Infinity for non-freeze materials, so this never fires for them.
+      if (temp[i] <= freezeTemp[id]) {
+        buf[i] = frost[id];
         continue;
       }
       const amp = vary[id];

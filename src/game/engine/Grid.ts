@@ -45,10 +45,12 @@ export class Grid {
    * a conductor uses it as a spark-refractory countdown, a Battery as a pulse
    * cadence, Clone as the adopted material id, Thermite as a burn timer, and so
    * on. It travels with the cell on a swap and is cleared when the cell is
-   * emptied — the same lifecycle as `temp`. Runtime-only: not persisted (like
-   * `moved`), so all uses must be transient state that can safely reset to 0 on
-   * reload. Materials that instead need real-valued state keep using `temp`
-   * with `conductivity: 0` (Blast/Ember); `aux` is the cheap integer companion.
+   * emptied — the same lifecycle as `temp`. Persisted with the world (see
+   * persistence.ts), so electrical state (a Spark's conductor, a Clone's adopted
+   * id, …) survives a reload; older saves that predate aux-persistence reload it
+   * as 0, so every use must still tolerate a 0 default. Materials that instead
+   * need real-valued state keep using `temp` with `conductivity: 0`
+   * (Blast/Ember); `aux` is the cheap integer companion.
    */
   aux: Uint8Array;
 

@@ -94,7 +94,9 @@ export const OIL = register({
   color: rgb(48, 40, 34),
   density: 2.6,
   combustible: true,
+  petroleum: true, // flat single-colour render; burns on water without steaming it
   category: '석유',
   thermal: { conductivity: 0.2 },
+  freeze: { temp: -8 },
   update: updateOil,
 });

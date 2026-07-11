@@ -167,7 +167,7 @@ function nextStamp(sim: SimContext): Int32Array {
 function isBlocker(id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
-  return m.isWall === true || m.explosionProof === true;
+  return m.isWall === true || m.explosionProof === true || m.indestructible === true;
 }
 
 /** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell

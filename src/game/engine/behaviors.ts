@@ -21,6 +21,10 @@ export function diffuseWith(
   otherId: number,
   chance: number,
 ): boolean {
+  // A liquid chilled below its freezing point acts solid, so it doesn't
+  // interdiffuse either — otherwise a frost-rendered "frozen" cell would still
+  // visibly wander into adjacent liquid (see Material.freeze / SimContext.isFrozen).
+  if (sim.isFrozen(x, y)) return false;
   if (!sim.chance(chance)) return false;
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
@@ -61,8 +65,11 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
   sim.moveDiagonalDown(x, y);
 }
 
-/** Liquid: fall, else flow diagonally down, else spread sideways to level out. */
+/** Liquid: fall, else flow diagonally down, else spread sideways to level out.
+ *  A liquid chilled to/below its freezing point (see Material.freeze) is
+ *  frozen solid — it stays put until it warms up. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
+  if (sim.isFrozen(x, y)) return;
   if (sim.moveDown(x, y)) return;
   if (sim.moveDiagonalDown(x, y)) return;
   sim.moveSideways(x, y);

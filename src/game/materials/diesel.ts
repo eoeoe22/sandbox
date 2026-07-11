@@ -31,7 +31,9 @@ export const DIESEL = register({
   color: rgb(150, 120, 70),
   density: 2.45,
   combustible: true,
+  petroleum: true, // flat single-colour render; burns on water without steaming it
   category: '석유',
   thermal: { conductivity: 0.2 },
+  freeze: { temp: -8 },
   update: updateDiesel,
 });

@@ -165,11 +165,12 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
       return;
     }
     const m = getMaterial(nid);
-    // Wall and explosion-proof solids (Diamond) are indestructible, explosives
-    // are left intact so a stray ember can chain-detonate them via the fire it
-    // drops rather than silently erasing them, and gases (fire, smoke, the blast
-    // flash itself) aren't terrain to smash — those just end the flight.
-    if (m.isWall || m.explosionProof || m.explosive || m.phase === Phase.Gas) {
+    // Wall, explosion-proof solids (Diamond) and truly indestructible ones
+    // (Clone) can't be smashed, explosives are left intact so a stray ember can
+    // chain-detonate them via the fire it drops rather than silently erasing
+    // them, and gases (fire, smoke, the blast flash itself) aren't terrain to
+    // smash — those just end the flight.
+    if (m.isWall || m.explosionProof || m.indestructible || m.explosive || m.phase === Phase.Gas) {
       shatter(sim, x, y, cx, cy);
     }
     else smash(sim, x, y, nx, ny); // sand, stone, plants, … — punch out the struck cell
