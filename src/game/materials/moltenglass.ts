@@ -12,7 +12,13 @@ import { FIRE } from './fire';
 // mold and then freezes into clear solid Glass as it cools, the same
 // melt→flow→set cycle as Lava→Stone and Molten Metal→Iron. It's still fiercely
 // hot, so it ignites flammable neighbors while molten.
+// Raw silica sand has to fully fuse before it flows, so it needs the highest
+// heat. Already-fused Glass just has to soften back up, so it re-melts at a
+// lower temperature (GLASS_MELT_TEMP) — the same reason a glass pane slumps in
+// a kiln well before loose sand would. Both stay comfortably above the molten
+// freeze point so the melt→set cycle keeps its hysteresis (no boundary flicker).
 export const SAND_MELT_TEMP = 1250;
+export const GLASS_MELT_TEMP = 1150;
 const MOLTEN_GLASS_TEMP = 1400;
 const MOLTEN_GLASS_FREEZE_TEMP = 1050;
 const IGNITE_CHANCE = 0.1;
