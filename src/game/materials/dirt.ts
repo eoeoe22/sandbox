@@ -10,8 +10,8 @@ import { MUD } from './mud';
 // Dirt — plain earth: a powder that falls and piles like sand but never melts.
 // Wet it and it turns to Mud (soaking up the water cell that touched it); the
 // Mud later dries back to Dirt when the water is gone, so a rained-on dirt pile
-// slumps into mud and firms up again as it drains. It's the terrain Moss likes
-// to creep over (see moss.ts), making it the ground layer of a little ecosystem.
+// slumps into mud and firms up again as it drains, making it the ground layer
+// of a little ecosystem.
 const SOAK_CHANCE = 0.06;
 
 function updateDirt(x: number, y: number, sim: SimContext): void {

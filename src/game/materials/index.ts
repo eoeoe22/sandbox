@@ -51,7 +51,7 @@ import { DIRT } from './dirt';
 import { MUD } from './mud';
 import { CEMENT } from './cement';
 import { CONCRETE } from './concrete';
-import { MOSS } from './moss';
+import { PLANT } from './plant';
 import { VIRUS } from './virus';
 import { CLONE } from './clone';
 import { VOID } from './void';
@@ -116,7 +116,7 @@ export {
   MUD,
   CEMENT,
   CONCRETE,
-  MOSS,
+  PLANT,
   VIRUS,
   CLONE,
   VOID,
@@ -191,7 +191,7 @@ export const MATERIALS = [
   MUD,
   CEMENT,
   CONCRETE,
-  MOSS,
+  PLANT,
   VIRUS,
   CLONE,
   VOID,
