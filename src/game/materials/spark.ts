@@ -163,6 +163,13 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     }
   }
 
+  // If this spark just detonated an adjacent electric charge (electricDetonate
+  // above), that blast may have flashed this very cell to BLAST — in which case
+  // it was craterized and must NOT be revived. Bail out and leave the flash,
+  // exactly as tnt/gunpowder return straight after they detonate. When the cell
+  // wasn't reached it's still a Spark and collapses normally below.
+  if (sim.get(x, y) !== SPARK.id) return;
+
   // Collapse back to the conductor (or fizzle if there was none). A spark that
   // was travelling through water/brine may instead electrolyse that cell into
   // gas; otherwise it reverts and leaves a brief refractory mark so the pulse
