@@ -44,6 +44,16 @@ const GRAVITY_Q = 2;
 // sum) matters: a fresh side-launched fragment has |vx|≈2 with vy≈0, and must NOT
 // be caught here on its first tick, or it would deposit without ever flying.
 const STILL_Q = 1;
+// A shoved *liquid* transmits the impulse up its column instantly (liquids are
+// incompressible): a freshly launched submerged fragment swaps straight up
+// through the liquid above it within the launch tick, surfacing at once — so an
+// underwater concussion erupts a water column on the very next frame, instead of
+// each fragment crawling upward at flight speed (invisible inside like-colored
+// water, and usually expiring before it ever reached air). The climb is capped
+// in cells per unit of remaining shove budget, so only the blast's core punches
+// to the surface and a charge set too deep merely churns the depths. Swapping
+// conserves mass: the column above slides down one cell into the fragment's wake.
+const JET_CELLS_PER_OUT = 4;
 
 /**
  * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
@@ -78,6 +88,22 @@ export function launchDebris(
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
   sim.setAux(x, y, origId); // the material to rain back down (material ids fit a byte)
+
+  // Incompressible jet: surface a submerged liquid fragment now (see
+  // JET_CELLS_PER_OUT). Swaps carry the packed flight state and aux along, and
+  // stop at anything non-liquid — air (surfaced), a stacked sibling fragment
+  // (the forming column), a solid lid, or a frozen (hardened) liquid.
+  if (getMaterial(origId).phase === Phase.Liquid) {
+    let climb = Math.round(outB) * JET_CELLS_PER_OUT;
+    let jy = y;
+    while (climb-- > 0 && jy > 0) {
+      const aid = sim.get(x, jy - 1);
+      if (aid === EMPTY || getMaterial(aid).phase !== Phase.Liquid) break;
+      if (sim.isFrozen(x, jy - 1)) break;
+      sim.swap(x, jy, x, jy - 1);
+      jy--;
+    }
+  }
 }
 
 /** A cell the flying fragment moves *through*, trading places with it: open air,

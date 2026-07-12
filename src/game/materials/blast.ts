@@ -8,7 +8,7 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { launchEmber } from './ember';
-import { launchDebris } from './debris';
+import { launchDebris, DEBRIS } from './debris';
 
 // ── Explosions: an instant shockwave that scales with the charge ────────────
 //
@@ -302,6 +302,12 @@ function defaultCell(
     flashCell(sim, x, y);
     return;
   }
+  // A Debris fragment already in flight is likewise not matter to resolve — a
+  // submerged liquid fragment jets up into cells this same flood hasn't
+  // processed yet (see debris.ts), and re-shoving it would launch a fragment
+  // whose "carried material" is Debris itself, while flashing it would delete
+  // the mass it carries. Leave it flying.
+  if (prevId === DEBRIS.id) return;
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume, everything
     // else takes the ordinary crater flash.
