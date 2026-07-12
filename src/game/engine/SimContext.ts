@@ -82,6 +82,21 @@ export class SimContext {
    */
   saltDebt = 0;
 
+  /**
+   * Per-tick memo for the Turbine's body-flood (materials/turbine.ts). When
+   * steam is passing through a solid turbine block, its generated pulse walks
+   * the whole connected turbine body to reach conductors on the outer faces;
+   * without this memo every steam-carrying cell of the block would re-flood the
+   * entire body (O(N²) on a steam-soaked block — its primary use case).
+   * `turbineFlooded` holds the cell indices already covered by a flood this
+   * tick, so each connected body floods at most once per tick (O(N)); it is
+   * cleared whenever `turbineFloodTick` falls behind the current `tick`, so it
+   * self-resets without a per-step allocation. Sim-local (each Simulation has
+   * its own context), so parallel worlds/tests can't cross-contaminate.
+   */
+  turbineFloodTick = -1;
+  turbineFlooded: Set<number> = new Set();
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a

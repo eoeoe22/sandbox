@@ -25,9 +25,11 @@ import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 // turbine from acting as a free wire that back-feeds a circuit, while still
 // solving "steam in the center can't reach the terminal on the edge".
 
-/** Backstop on how far one pulse walks the connected turbine body in a single
- *  tick — a giant turbine can't make the relay unbounded. Turbines are small in
- *  practice; anything past this many connected cells is left for another tick. */
+/** Backstop on how far one flood walks the connected turbine body in a single
+ *  pass — a giant turbine can't make one relay unbounded. Turbines are small in
+ *  practice; a body larger than this is covered across several floods in a tick
+ *  (each capped), which stays bounded because cells energized this tick are
+ *  memoized in SimContext.turbineFlooded and never re-walked. */
 const MAX_BODY = 256;
 
 /** Inject a full-strength Spark into every ready conductive neighbor of (x,y) —
@@ -59,20 +61,22 @@ function energizeNeighbors(x: number, y: number, sim: SimContext): void {
 function energizeBody(sx: number, sy: number, sim: SimContext): void {
   const bodyId = sim.get(sx, sy); // TURBINE.id (this cell is a turbine)
   const w = sim.width;
-  const seen = new Set<number>([sy * w + sx]);
+  const flooded = sim.turbineFlooded; // cells energized this tick (per-tick memo)
+  const seen = new Set<number>([sy * w + sx]); // local BFS frontier guard
   const stack: number[] = [sx, sy];
   let count = 0;
   while (stack.length > 0 && count < MAX_BODY) {
     const y = stack.pop()!;
     const x = stack.pop()!;
     count++;
+    flooded.add(y * w + x); // this body cell has now generated this tick
     energizeNeighbors(x, y, sim);
     for (const [dx, dy] of DIR4) {
       const nx = x + dx;
       const ny = y + dy;
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== bodyId) continue;
       const k = ny * w + nx;
-      if (seen.has(k)) continue;
+      if (seen.has(k) || flooded.has(k)) continue; // skip already-walked/energized
       seen.add(k);
       stack.push(nx, ny);
     }
@@ -84,7 +88,17 @@ function updateTurbine(x: number, y: number, sim: SimContext): void {
   // inside, the whole connected turbine body delivers power to every conductor
   // on its outer faces; each conductor's post-spark refractory keeps the
   // repeated pulses from stacking into a runaway.
-  if (sim.getOverlay(x, y) === STEAM.id) energizeBody(x, y, sim);
+  if (sim.getOverlay(x, y) !== STEAM.id) return;
+  // Flood each connected body at most once per tick: refresh the per-tick memo
+  // when the tick advances, then skip if this cell was already covered by a
+  // flood this tick (a steam-soaked block would otherwise re-flood itself once
+  // per cell — O(N²)). See SimContext.turbineFlooded.
+  if (sim.tick !== sim.turbineFloodTick) {
+    sim.turbineFloodTick = sim.tick;
+    sim.turbineFlooded.clear();
+  }
+  if (sim.turbineFlooded.has(y * sim.width + x)) return;
+  energizeBody(x, y, sim);
 }
 
 export const TURBINE = register({
