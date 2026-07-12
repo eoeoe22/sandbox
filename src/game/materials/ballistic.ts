@@ -19,11 +19,19 @@ import type { SimContext } from '../engine/SimContext';
 
 /** Fixed-point scale: 4 quarter-cells = 1 cell. */
 export const Q = 4;
-/** |velocity| clamp per axis: 6 cells/tick. Sized for the fastest launch in the
- *  game (a debris fountain's boosted vertical at the epicenter — see debris.ts);
- *  every other particle's launch spec tops out well below it, so for them this
- *  is just headroom, not a behavior change. */
+/** |velocity| clamp per axis: 6 cells/tick. This is the *encoding* ceiling,
+ *  sized for the fastest motion in the game (a debris fountain's boosted
+ *  vertical — see debris.ts). It is NOT the ceiling legacy particles saturate
+ *  at: Ember/Bomblet/Gel were tuned when the clamp was 4 cells/tick, and their
+ *  extreme launch rolls (and gravity build-up on a long fall) used to flatten
+ *  against it — so they keep clamping to LEGACY_V_MAX_Q below and are
+ *  bit-for-bit unchanged by this headroom. */
 export const V_MAX_Q = 24;
+/** The old per-axis ceiling (4 cells/tick) every pre-existing ballistic
+ *  particle was tuned against. Ember/Bomblet/Gel launches and their in-flight
+ *  gravity clamps still saturate here; only Debris' boosted vertical column
+ *  (debris.ts) uses the full V_MAX_Q. */
+export const LEGACY_V_MAX_Q = 16;
 /** Encodable velocity values per axis (−V_MAX_Q … +V_MAX_Q). */
 const V_SPAN = V_MAX_Q * 2 + 1;
 /** One quarter-cell of downward pull — the base gravity step. Ember applies it
@@ -45,6 +53,13 @@ export function decodeFlight(temp: number): { life: number; vxQ: number; vyQ: nu
 
 export function clampV(v: number): number {
   return v < -V_MAX_Q ? -V_MAX_Q : v > V_MAX_Q ? V_MAX_Q : v;
+}
+
+/** Clamp a velocity component to an explicit per-axis ceiling (≤ V_MAX_Q so the
+ *  result always encodes) — the legacy particles' LEGACY_V_MAX_Q saturation and
+ *  the debris skirt's cap both go through here. */
+export function clampTo(v: number, maxQ: number): number {
+  return v < -maxQ ? -maxQ : v > maxQ ? maxQ : v;
 }
 
 /** Whole cells to travel this tick along one axis: the integer part of the
@@ -91,8 +106,15 @@ export function launchBallistic(
   // spray reads as a circle, not a square with fast corners.
   if (dirX !== 0 && dirY !== 0) speedQ = (speedQ * 3) >> 2;
   const jitterSpan = spec.jitterQ * 2 + 1;
-  const vxQ = clampV(dirX * speedQ + sim.randInt(jitterSpan) - spec.jitterQ);
-  const vyQ = clampV(dirY * speedQ + sim.randInt(jitterSpan) - spec.jitterQ - spec.upBiasQ);
+  // Saturate at the legacy ceiling, not V_MAX_Q: every launchBallistic user
+  // (Ember, Bomblet, Gel) was tuned against the old 4 cells/tick clamp, and
+  // their extreme rolls must keep flattening there — the wider encoding
+  // headroom exists only for Debris' boosted column (its own launcher).
+  const vxQ = clampTo(dirX * speedQ + sim.randInt(jitterSpan) - spec.jitterQ, LEGACY_V_MAX_Q);
+  const vyQ = clampTo(
+    dirY * speedQ + sim.randInt(jitterSpan) - spec.jitterQ - spec.upBiasQ,
+    LEGACY_V_MAX_Q,
+  );
   sim.spawn(x, y, id);
   sim.setTemp(x, y, encodeFlight(spec.lifeMin + sim.randInt(spec.lifeVar), vxQ, vyQ));
 }
