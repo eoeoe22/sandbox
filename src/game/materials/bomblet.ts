@@ -4,7 +4,8 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import {
   GRAVITY_Q,
-  clampV,
+  clampTo,
+  LEGACY_V_MAX_Q,
   cellsThisTick,
   decodeFlight,
   encodeFlight,
@@ -56,7 +57,9 @@ function updateBomblet(x: number, y: number, sim: SimContext): void {
     return;
   }
   const vxQ = st.vxQ;
-  const vyQ = clampV(st.vyQ + GRAVITY_Q); // heavy lob: gravity every tick
+  // Heavy lob: gravity every tick, terminal fall pinned at the legacy ceiling
+  // this particle was tuned for (the wider shared clamp is Debris-only).
+  const vyQ = clampTo(st.vyQ + GRAVITY_Q, LEGACY_V_MAX_Q);
 
   // The shared straight-line walk handles the flight; on any impact (terrain,
   // an explosive, or the wall edge) the bomblet goes off its little crater.

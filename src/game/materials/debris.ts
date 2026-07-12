@@ -2,7 +2,7 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
+import { clampTo, clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
 
 // Debris — the grain a weak blast flings instead of erasing. It carries the
 // original powder/liquid/gas id in `aux` and, when its flight expires, deposits
@@ -41,11 +41,11 @@ const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray founta
 // plume flanked by a thinner fan instead of a uniform half-dome.
 const VERTICAL_CHANCE = 0.7; // 70% up, 30% side diagonals
 // The vertical column gets an extra kick (×1.5 of the shock speed) so it towers
-// well above the diagonal skirt; the skirt keeps the pre-boost ceiling below so
-// raising the shared velocity clamp only made the column taller, not the sides
-// wider.
+// well above the diagonal skirt; the skirt's final per-axis velocity saturates
+// at the pre-boost ceiling (the old shared clamp), so raising V_MAX_Q only made
+// the column taller — the sides fly exactly as before.
 const VERTICAL_BOOST_NUM = 3; // ×3/2
-const DIAG_MAX_AXIS_Q = 16; // the skirt's per-axis speed ceiling (the old clamp)
+const DIAG_MAX_AXIS_Q = 16; // the skirt's final per-axis ceiling (the old clamp)
 // Debris falls harder than a light Ember (which drifts on alternate ticks): a
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
@@ -90,26 +90,30 @@ export function launchDebris(
   const speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
   const jitterSpan = JITTER_Q * 2 + 1;
   let vxQ: number;
-  let upSpeedQ: number;
+  let vyQ: number;
   if (sim.chance(VERTICAL_CHANCE)) {
     // Straight up, boosted ×1.5: the column is the show, so it rides the full
     // velocity clamp near the epicenter. Jitter only sideways (it keeps a
     // column from stacking into a single line of cells).
     vxQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
-    upSpeedQ = ((speedQ * VERTICAL_BOOST_NUM) >> 1) + UP_BIAS_Q;
+    const upSpeedQ = ((speedQ * VERTICAL_BOOST_NUM) >> 1) + UP_BIAS_Q;
+    vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
   } else {
     // ~45° diagonal: the speed split across both axes (×3/4 ≈ 1/√2 per axis so
-    // the diagonal covers the same ground), capped at the pre-boost ceiling so
-    // the skirt stays a modest fan under the taller column. Side follows the
-    // shock's outward normal when it has one; a fragment shoved purely
-    // vertically picks a side at random so a centered burst still fans both
-    // ways.
+    // the diagonal covers the same ground). Side follows the shock's outward
+    // normal when it has one; a fragment shoved purely vertically picks a side
+    // at random so a centered burst still fans both ways. Both FINAL components
+    // (bias and jitter included) saturate at the pre-boost ceiling — exactly
+    // where the old shared clamp flattened them — so the skirt stays the modest
+    // 45° fan it always was and only the column got taller.
     const side = entryDx !== 0 ? entryDx : sim.chance(0.5) ? 1 : -1;
-    const axisQ = Math.min((speedQ * 3) >> 2, DIAG_MAX_AXIS_Q);
-    vxQ = clampV(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q);
-    upSpeedQ = axisQ + UP_BIAS_Q;
+    const axisQ = (speedQ * 3) >> 2;
+    vxQ = clampTo(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q, DIAG_MAX_AXIS_Q);
+    vyQ = clampTo(
+      -(axisQ + UP_BIAS_Q) + sim.randInt(jitterSpan) - JITTER_Q,
+      DIAG_MAX_AXIS_Q,
+    );
   }
-  const vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
   sim.setAux(x, y, origId); // the material to rain back down (material ids fit a byte)
