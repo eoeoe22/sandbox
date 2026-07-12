@@ -2,7 +2,7 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { GRAVITY_Q, clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
+import { clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
 
 // Debris — the grain a weak blast flings instead of erasing. It carries the
 // original powder/liquid/gas id in `aux` and, when its flight expires, deposits
@@ -28,12 +28,19 @@ import { GRAVITY_Q, clampV, cellsThisTick, decodeFlight, encodeFlight } from './
 // Launch tuning. Speed rises with the blast's remaining budget, so the push is
 // fiercest right at the epicenter and gentle at the rim (a real pressure
 // gradient); the per-axis clamp in ballistic.ts caps it at 4 cells/tick anyway.
-const LIFE_MIN = 14;
-const LIFE_VAR = 12; // 14..25 ticks of flight — long enough to arc and fall back
+const LIFE_MIN = 7;
+const LIFE_VAR = 8; // 7..14 ticks — a quick, snappy arc, not a floaty hang
 const BASE_SPEED_Q = 5; // baseline outward speed (quarter-cells/tick)
 const GAIN_Q = 2; // + this per unit of remaining outward budget
 const JITTER_Q = 3; // per-axis scatter so a flung pile fans out
 const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray fountains up
+// Debris falls harder than a light Ember (which drifts on alternate ticks): a
+// brisk parabola that peaks fast and comes back down quickly, so a burst resolves
+// in well under a second instead of hanging in the air.
+const GRAVITY_Q = 2;
+// Below this total speed a fragment has essentially stopped, so it settles now
+// rather than hovering out the rest of its life — keeps the burst snappy.
+const SETTLE_SPEED_Q = 2;
 
 /**
  * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
@@ -103,7 +110,13 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
     return;
   }
   let vxQ = st.vxQ;
-  let vyQ = clampV(st.vyQ + GRAVITY_Q); // full gravity every tick → a falling arc
+  let vyQ = clampV(st.vyQ + GRAVITY_Q); // brisk gravity every tick → a quick arc
+  if (Math.abs(vxQ) + Math.abs(vyQ) <= SETTLE_SPEED_Q) {
+    // Momentum spent (apex of a slow lob, or after a few bounces) → settle now
+    // instead of hovering, so the burst doesn't linger.
+    sim.spawn(x, y, origId);
+    return;
+  }
 
   // Walk the straight-line path one cell at a time, swapping through everything
   // passable (air, siblings, loose matter) so a packed cloud can expand; bounce
