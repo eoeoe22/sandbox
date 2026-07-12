@@ -205,13 +205,14 @@ export interface Material {
    */
   colorVary?: number;
   /**
-   * A porous solid: fluids seep *through* it while it stays put (Mesh, Turbine).
-   * It's an ordinary blocking Solid to the engine (powders pile on it, a fluid's
-   * own movement can't enter it), but its `update` calls the shared sieve
-   * (materials/sieve.ts), which tunnels an adjacent liquid/gas through the whole
-   * contiguous run of `porous` cells to the first empty cell beyond — so a wall
-   * of any thickness drains instead of acting solid. Read only by the sieve to
-   * know which cells a pass may tunnel across; the rest of the engine ignores it.
+   * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine). To
+   * powders and solids it's an ordinary blocking Solid — piles rest on it — but
+   * a fluid moving into it slips into the cell's 겹침 (overlap) slot
+   * (Grid.overlay) and keeps travelling through under its own gravity/buoyancy,
+   * one fluid per cell, surfacing in the first empty cell it reaches — so water
+   * pours through a mesh floor of any thickness and seeps through a mesh wall
+   * until the levels equalize. Read by SimContext (tryMove entry,
+   * canHostOverlap); the rest of the engine ignores it.
    */
   porous?: boolean;
   /**

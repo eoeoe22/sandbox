@@ -1,21 +1,17 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import type { SimContext } from '../engine/SimContext';
-import { sift } from './sieve';
 
 // Mesh (체) — a static grey screen with a woven lattice look (the renderer draws
-// it as a two-tone checkerboard, see `lattice`). It's a solid, so powders pile on
-// it and other solids rest against it, but liquids and gases seep straight
-// *through* it vertically (see sieve.ts): pour water onto a mesh floor and it
-// drips down through to the space below (through a floor of any thickness), and
-// steam trapped underneath bubbles up past it. Handy as a filter or separator —
-// hold back sand while the water drains out the bottom, or vent gas up out of a
-// powder bed.
-function updateMesh(x: number, y: number, sim: SimContext): void {
-  sift(x, y, sim);
-}
-
+// it as a two-tone checkerboard, see `lattice`). To powders and solids it's an
+// ordinary solid — sand piles on it, things rest against it — but to liquids and
+// gases it isn't there at all: a fluid moving into a mesh cell slips into its
+// 겹침 (overlap) slot and keeps flowing through the screen under its own
+// gravity/buoyancy (see Grid.overlay / SimContext). Pour water onto a mesh floor
+// of any thickness and it drips out the underside; hold water against a mesh
+// wall and it seeps across until the levels equalize; steam trapped underneath
+// bubbles up past it. Handy as a filter — the sand stays, the water drains.
+// Pure data: the overlap system reads `porous`; the mesh itself has no update.
 export const MESH = register({
   id: 83,
   name: 'Mesh',
@@ -26,9 +22,7 @@ export const MESH = register({
   lattice: rgb(92, 96, 102),
   density: 1000,
   category: '고체',
-  // Fluids seep through it (any wall thickness) — the sieve tunnels them across
-  // the contiguous porous run; powders/solids still rest against it.
+  // Fluids pass through it via the 겹침 overlap layer — see Material.porous.
   porous: true,
   thermal: { conductivity: 0.4 },
-  update: updateMesh,
 });

@@ -7,10 +7,28 @@ import {
   DISPLACE_DRAG_BASE,
   DISPLACE_DRAG_SCALE,
   DISPLACE_SIDE_PUSH,
+  OVERLAP_ABSORB_CHANCE,
+  OVERLAP_SOAK_CHANCE,
   type SmokeLevel,
   SMOKE_LEVEL_DEFAULT,
   SMOKE_MEDIUM_KEEP,
 } from '../config';
+
+/**
+ * 겹침 (overlap) hosting rule: which fluids may share a cell with which primary
+ * occupants (see Grid.overlay). A porous solid (Mesh, Turbine) hosts any liquid
+ * or gas — fluids move through it as if it weren't there. A powder hosts a
+ * liquid (water soaking into a sand bed). Everything else hosts nothing. One
+ * overlap slot per cell. Exported standalone (not a method) so grid tools that
+ * write cells directly (brushTools' mix) can apply the same rule.
+ */
+export function canHostOverlap(hostId: number, fluidId: number): boolean {
+  if (hostId === EMPTY || fluidId === EMPTY) return false;
+  const host = getMaterial(hostId);
+  const fluidPhase = getMaterial(fluidId).phase;
+  if (host.porous) return fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas;
+  return host.phase === Phase.Powder && fluidPhase === Phase.Liquid;
+}
 
 /**
  * The narrow surface that material `update` functions operate through. It hides
@@ -94,6 +112,27 @@ export class SimContext {
   set(x: number, y: number, id: number): void {
     // Smoke thinned/suppressed per the current smoke level (see applySmokeLevel).
     id = this.applySmokeLevel(id);
+    // 겹침 lifecycle: a write that replaces the host of an overlapped fluid has
+    // to settle what happens to that fluid.
+    const gi = this.grid.idx(x, y);
+    const ov = this.grid.overlay[gi];
+    if (ov !== 0 && !canHostOverlap(id, ov)) {
+      this.grid.overlay[gi] = 0;
+      if (id === EMPTY) {
+        // Removing the host releases its absorbed fluid: the fluid takes over
+        // the vacated cell instead of vanishing with the host — dissolve or
+        // blast away wet sand and the water it held spills back out. It shared
+        // the host's temperature, so the cell's temp is already its own. Marked
+        // moved so it isn't double-processed within this tick.
+        this.grid.set(x, y, ov);
+        this.grid.setAux(x, y, 0);
+        this.grid.tint[gi] = (Math.random() * 256) | 0;
+        this.grid.moved[gi] = 1;
+        return;
+      }
+      // Transformed into a non-host (sand melting to Molten Glass): the pore
+      // space is gone, and the absorbed fluid is destroyed along with it.
+    }
     this.grid.set(x, y, id);
     // Erasing/emptying a cell resets it to ambient so no stale heat lingers in
     // air (which conducts nothing and would otherwise be carried around by a
@@ -125,6 +164,14 @@ export class SimContext {
     this.grid.setAux(x, y, v);
   }
 
+  /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or
+   *  EMPTY when nothing is overlapped (see Grid.overlay). A material rule can
+   *  read this to react to a fluid passing through it — the Turbine makes power
+   *  while Steam is in its slot. */
+  getOverlay(x: number, y: number): number {
+    return this.grid.getOverlay(x, y);
+  }
+
   /** Current temperature at a cell. Material `update` rules read this to drive
    *  temperature-based phase changes (Lava→Stone freeze, Water→Steam boil). */
   getTemp(x: number, y: number): number {
@@ -152,6 +199,13 @@ export class SimContext {
         return;
       }
     }
+    // 겹침: spawned material that can't host the fluid overlapped here destroys
+    // it along with whatever held it (matches the set() transform rule); a host
+    // (Debris flinging a wet grain) keeps carrying it.
+    const gi = this.grid.idx(x, y);
+    if (this.grid.overlay[gi] !== 0 && !canHostOverlap(id, this.grid.overlay[gi])) {
+      this.grid.overlay[gi] = 0;
+    }
     this.grid.set(x, y, id);
     // A spawned cell is newly created material, so it starts at that material's
     // own initial temperature (hot for Fire/Steam, ambient for the rest) —
@@ -169,17 +223,6 @@ export class SimContext {
 
   isEmpty(x: number, y: number): boolean {
     return this.grid.get(x, y) === EMPTY;
-  }
-
-  /** True if the cell at (x,y) already moved or was written this tick (Grid.moved
-   *  — the same flag swap()/spawn() set and Simulation's scan uses to skip a
-   *  cell). A porous solid (the sieve) reads this to avoid *relaying* one fluid
-   *  parcel through several spaced mesh cells in a single tick: a parcel just
-   *  placed by one mesh is `moved`, so the next mesh leaves it alone until the
-   *  following tick. Bounds-checked; out-of-bounds reads as "not moved". */
-  hasMoved(x: number, y: number): boolean {
-    if (!this.inBounds(x, y)) return false;
-    return this.grid.moved[this.grid.idx(x, y)] === 1;
   }
 
   /**
@@ -233,6 +276,19 @@ export class SimContext {
     const na = g.tint[a];
     g.tint[a] = g.tint[b];
     g.tint[b] = na;
+    // The 겹침 overlap fluid travels with its host (wet sand carries its water as
+    // it falls), keeping the (host, overlay) tuple consistent — an overlay can
+    // never be stranded on a cell that can't host it by a swap. Both overlay
+    // slots are marked moved so a fluid carried by its host doesn't also
+    // percolate on its own in the same tick.
+    const oa = g.overlay[a];
+    const ob = g.overlay[b];
+    if (oa !== 0 || ob !== 0) {
+      g.overlay[a] = ob;
+      g.overlay[b] = oa;
+      g.overlayMoved[a] = 1;
+      g.overlayMoved[b] = 1;
+    }
     g.moved[a] = 1;
     g.moved[b] = 1;
   }
@@ -295,6 +351,9 @@ export class SimContext {
       // the source cell and count it as a move so the material "flows out". In
       // wall mode the edge is solid, so the move is simply blocked.
       if (this.borderMode === 'void') {
+        // A 겹침 fluid absorbed in the falling cell falls out of the world with
+        // its host (cleared first so set() doesn't release it at the edge).
+        this.grid.setOverlay(x, y, 0);
         this.set(x, y, EMPTY);
         return true;
       }
@@ -305,8 +364,25 @@ export class SimContext {
       this.swap(x, y, tx, ty);
       return true;
     }
+    const srcId = this.get(x, y);
+    const src = getMaterial(srcId);
+    // 겹침 entry: to a moving liquid or gas, a porous solid (Mesh, Turbine) with
+    // a free overlap slot is as good as empty — the fluid slips into the slot
+    // and keeps travelling through the screen under its own rules (see
+    // updateOverlay). One fluid per cell: a saturated screen blocks like any
+    // solid until its fluid moves on. Powders are NOT entered here — soaking
+    // into a bed is a deliberate last resort (soakDown), not a movement path,
+    // or water would dive into sand instead of pooling on it.
+    if (
+      (src.phase === Phase.Liquid || src.phase === Phase.Gas) &&
+      getMaterial(targetId).porous === true &&
+      this.grid.getOverlay(tx, ty) === EMPTY &&
+      !this.isFrozen(x, y)
+    ) {
+      this.enterOverlay(x, y, tx, ty, srcId);
+      return true;
+    }
     if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
-      const src = getMaterial(this.get(x, y));
       const tgt = getMaterial(targetId);
       const displaces = ty < y ? src.density < tgt.density : src.density > tgt.density;
       if (displaces) {
@@ -318,6 +394,29 @@ export class SimContext {
         const gap = Math.abs(src.density - tgt.density);
         const p = DISPLACE_DRAG_BASE + gap * DISPLACE_DRAG_SCALE;
         if (p < 1 && !this.chance(p)) return true;
+        // 겹침 absorb: a dry fluid-hosting powder sinking into a liquid can
+        // swallow the liquid it displaces instead of shoving it aside — the
+        // grain takes the liquid's cell, the liquid rides along in the grain's
+        // overlap slot, and the vacated source cell closes up empty (two cells
+        // become one). Chance-gated so only SOME grains absorb: sand poured
+        // into water raises the level by the grains that didn't, not by the
+        // sand's full volume. The absorbed water percolates on down through
+        // the bed afterwards (updateOverlay).
+        if (
+          ty > y &&
+          canHostOverlap(srcId, targetId) &&
+          this.grid.getOverlay(x, y) === EMPTY &&
+          this.chance(OVERLAP_ABSORB_CHANCE)
+        ) {
+          this.swap(x, y, tx, ty); // the grain (with its temp/aux/tint) takes the liquid's cell
+          const t = this.grid.idx(tx, ty);
+          this.grid.overlay[t] = targetId;
+          this.grid.overlayMoved[t] = 1;
+          // They now share one temperature; meet in the middle.
+          this.grid.temp[t] = (this.grid.temp[t] + this.grid.getTemp(x, y)) / 2;
+          this.set(x, y, EMPTY); // the swallowed liquid's old spot closes up
+          return true;
+        }
         // Push the displaced fluid into empty space around the intruder before
         // swapping, so it flows aside instead of teleporting to the far side.
         // Vertical/diagonal moves only — a sideways displacement has no
@@ -353,5 +452,110 @@ export class SimContext {
   moveSideways(x: number, y: number): boolean {
     const dir = Math.random() < 0.5 ? -1 : 1;
     return this.tryMove(x, y, x + dir, y) || this.tryMove(x, y, x - dir, y);
+  }
+
+  /** Move the fluid at (x,y) into the free 겹침 slot of the host at (tx,ty).
+   *  The two now share one cell — and one temperature, met in the middle (a
+   *  fluid carries heat in/out of the screen or bed it passes through). The
+   *  fluid's aux/tint are shed: an overlapped fluid is pure id+position. */
+  private enterOverlay(x: number, y: number, tx: number, ty: number, fluidId: number): void {
+    const g = this.grid;
+    const t = g.idx(tx, ty);
+    g.overlay[t] = fluidId;
+    g.overlayMoved[t] = 1;
+    g.temp[t] = (g.temp[t] + g.getTemp(x, y)) / 2;
+    this.set(x, y, EMPTY);
+  }
+
+  /**
+   * 겹침 soak: last-resort move for a liquid with nowhere left to flow — seep
+   * down into a fluid-hosting powder bed below (straight down, then the two
+   * diagonals). Chance-gated (OVERLAP_SOAK_CHANCE) so a standing pool sinks
+   * into sand gradually. Once inside, the liquid keeps percolating down through
+   * the bed via the overlap layer (updateOverlay) — which is what lets water
+   * reach a Mesh floor buried under sand and still drain out (모래가 체와 물
+   * 사이를 가로막아도 물이 샌다). Returns true if the liquid soaked in.
+   */
+  soakDown(x: number, y: number): boolean {
+    if (!this.chance(OVERLAP_SOAK_CHANCE)) return false;
+    const dir = this.chance(0.5) ? 1 : -1;
+    return (
+      this.soakInto(x, y, x, y + 1) ||
+      this.soakInto(x, y, x + dir, y + 1) ||
+      this.soakInto(x, y, x - dir, y + 1)
+    );
+  }
+
+  private soakInto(x: number, y: number, tx: number, ty: number): boolean {
+    if (!this.inBounds(tx, ty)) return false;
+    const targetId = this.get(tx, ty);
+    // Powder beds only: porous solids are already entered at full priority by
+    // ordinary movement (tryMove), so they never need the soak fallback.
+    if (getMaterial(targetId).phase !== Phase.Powder) return false;
+    const srcId = this.get(x, y);
+    if (!canHostOverlap(targetId, srcId)) return false;
+    if (this.grid.getOverlay(tx, ty) !== EMPTY) return false;
+    this.enterOverlay(x, y, tx, ty, srcId);
+    return true;
+  }
+
+  /**
+   * Per-tick movement for the 겹침 (overlap) fluid at a host cell: a liquid
+   * seeps downward (down, then diagonally down, then sideways along the bed), a
+   * gas bubbles upward (mirrored). Each step either transfers into the next
+   * host's free overlap slot — percolating through a sand bed, crossing a mesh
+   * wall of any thickness — or exits into an EMPTY cell, where the fluid
+   * surfaces as an ordinary particle again. Exits are EMPTY-only, so a fluid
+   * never pops out into another fluid's cell (and can't ping-pong back and
+   * forth across a wall — re-entering its own pool is impossible). Overlapped
+   * fluids get no material update: no boiling, freezing, or reactions while
+   * inside a host. Called by Simulation's scan, guarded by Grid.overlayMoved.
+   */
+  updateOverlay(x: number, y: number): void {
+    const fluidId = this.grid.getOverlay(x, y);
+    // Liquids sink, gases rise; everything tries its vertical first.
+    const dy = getMaterial(fluidId).phase === Phase.Gas ? -1 : 1;
+    const dir = this.chance(0.5) ? 1 : -1;
+    if (this.tryOverlayMove(x, y, x, y + dy)) return;
+    if (this.tryOverlayMove(x, y, x + dir, y + dy)) return;
+    if (this.tryOverlayMove(x, y, x - dir, y + dy)) return;
+    if (this.tryOverlayMove(x, y, x + dir, y)) return;
+    this.tryOverlayMove(x, y, x - dir, y);
+  }
+
+  private tryOverlayMove(x: number, y: number, tx: number, ty: number): boolean {
+    const g = this.grid;
+    const i = g.idx(x, y);
+    const fluidId = g.overlay[i];
+    if (!this.inBounds(tx, ty)) {
+      // Mirrors tryMove's border rule: open void edges drop the fluid out of
+      // the world; wall edges block it.
+      if (this.borderMode === 'void') {
+        g.overlay[i] = 0;
+        return true;
+      }
+      return false;
+    }
+    const targetId = this.get(tx, ty);
+    if (targetId === EMPTY) {
+      // Exit: the fluid becomes an ordinary particle again, at the temperature
+      // it shared with its host, with a fresh tint (it carried none inside).
+      const t = g.idx(tx, ty);
+      g.cells[t] = fluidId;
+      g.temp[t] = g.temp[i];
+      g.aux[t] = 0;
+      g.tint[t] = (Math.random() * 256) | 0;
+      g.moved[t] = 1;
+      g.overlay[i] = 0;
+      return true;
+    }
+    if (canHostOverlap(targetId, fluidId) && g.overlay[g.idx(tx, ty)] === 0) {
+      const t = g.idx(tx, ty);
+      g.overlay[t] = fluidId;
+      g.overlayMoved[t] = 1;
+      g.overlay[i] = 0;
+      return true;
+    }
+    return false;
   }
 }

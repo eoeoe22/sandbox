@@ -119,6 +119,17 @@ export class CanvasRenderer implements Renderer {
     return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
+  /** Blend a cell's rendered color toward its 겹침 overlap fluid's base color
+   *  (5/8 host, 3/8 fluid), so wet sand and a screen with water or steam passing
+   *  through read as such at a glance while the host's own look (lattice weave,
+   *  grain) still shows through. */
+  private static wetted(host: number, fluid: number): number {
+    const r = (((host & 0xff) * 5 + (fluid & 0xff) * 3) >> 3) & 0xff;
+    const g = ((((host >> 8) & 0xff) * 5 + ((fluid >> 8) & 0xff) * 3) >> 3) & 0xff;
+    const b = ((((host >> 16) & 0xff) * 5 + ((fluid >> 16) & 0xff) * 3) >> 3) & 0xff;
+    return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+  }
+
   /** Shift a packed 0xAABBGGRR color's brightness by `d` (per channel, clamped),
    *  preserving alpha. Used to render each particle's individual tint. */
   private static tinted(base: number, d: number): number {
@@ -191,6 +202,7 @@ export class CanvasRenderer implements Renderer {
     const frost = this.frost;
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
+    const ovArr = grid.overlay;
     const w = grid.width;
     for (let i = 0; i < cells.length; i++) {
       let id = cells[i];
@@ -200,38 +212,39 @@ export class CanvasRenderer implements Renderer {
         const carried = auxArr[i];
         if (carried !== 0) id = carried;
       }
+      let c: number;
       // A lattice material (Mesh) is a two-tone positional checkerboard, so a
       // screen reads as a woven grid rather than a flat slab. Computed from the
       // cell's x/y so the weave is tied to space, not to the particle.
       if (hasLat[id]) {
         const x = i % w;
         const y = (i / w) | 0;
-        buf[i] = (x ^ y) & 1 ? latCol[id] : pal[id];
-        continue;
+        c = (x ^ y) & 1 ? latCol[id] : pal[id];
+      } else if (glow[id]) {
+        c = CanvasRenderer.shade(glow[id]!, temp[i]);
+      } else if (temp[i] <= freezeTemp[id]) {
+        // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
+        // -Infinity for non-freeze materials, so this never fires for them.
+        c = frost[id];
+      } else {
+        const amp = vary[id];
+        if (amp === 0) {
+          c = pal[id];
+        } else {
+          // Powders read their own fixed per-grain tint; liquids sample the
+          // positional background field at this cell (see game/tint.ts).
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          // Map the tint byte to a signed brightness offset in [-amp, +amp]:
+          // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
+          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
+          c = CanvasRenderer.tinted(pal[id], d);
+        }
       }
-      const g = glow[id];
-      if (g) {
-        buf[i] = CanvasRenderer.shade(g, temp[i]);
-        continue;
-      }
-      // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
-      // -Infinity for non-freeze materials, so this never fires for them.
-      if (temp[i] <= freezeTemp[id]) {
-        buf[i] = frost[id];
-        continue;
-      }
-      const amp = vary[id];
-      if (amp === 0) {
-        buf[i] = pal[id];
-        continue;
-      }
-      // Powders read their own fixed per-grain tint; liquids sample the
-      // positional background field at this cell (see game/tint.ts).
-      const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-      // Map the tint byte to a signed brightness offset in [-amp, +amp]:
-      // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
-      const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-      buf[i] = CanvasRenderer.tinted(pal[id], d);
+      // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or
+      // steam mid-passage through a Mesh/Turbine — is tinted toward the fluid's
+      // color, so a soaked bed reads visibly wetter than a dry one.
+      const ov = ovArr[i];
+      buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
     this.offCtx.putImageData(this.image, 0, 0);
 

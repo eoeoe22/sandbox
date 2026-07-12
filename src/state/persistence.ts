@@ -355,6 +355,9 @@ export interface PersistedWorld {
   /** Per-cell material state byte (Grid.aux), when the save carried it. Older
    *  saves predate it and leave this undefined (aux then reloads as zero). */
   aux?: Uint8Array;
+  /** Per-cell 겹침 overlap fluid id (Grid.overlay), when the save carried it.
+   *  Older saves predate it and reload dry (all zero). */
+  overlay?: Uint8Array;
 }
 
 let lastWorldJson: string | null = null;
@@ -380,6 +383,10 @@ export function saveWorld(grid: Grid): void {
     // restores a Clone's adopted id, a Petroleum Vapor's condensate code, etc.
     // Mostly zero, so it compresses to almost nothing.
     aux: bytesToBase64(encodeCellsRle(grid.aux)),
+    // 겹침 overlap fluid ids (Grid.overlay) — an ordinary u8 field, RLE'd like
+    // cells, so a soaked sand bed or a screen mid-flow survives a reload
+    // instead of drying out. Mostly zero, so it compresses to almost nothing.
+    ov: bytesToBase64(encodeCellsRle(grid.overlay)),
   });
   if (json === lastWorldJson) return;
   if (writeString(WORLD_KEY, json)) lastWorldJson = json;
@@ -424,13 +431,28 @@ export function loadWorld(): PersistedWorld | null {
     }
   }
 
+  // The 겹침 overlap layer is optional the same way (a dropped decode reloads
+  // the world dry rather than losing it).
+  let overlay: Uint8Array | undefined;
+  if (typeof j.ov === 'string') {
+    try {
+      overlay = decodeCellsRle(base64ToBytes(j.ov), w * h);
+    } catch {
+      overlay = undefined;
+    }
+  }
+
   for (let i = 0; i < cells.length; i++) {
     if (!getMaterial(cells[i])) cells[i] = EMPTY;
     if (cells[i] === EMPTY) {
       temp[i] = AMBIENT_TEMP;
       if (aux) aux[i] = 0; // an empty cell must carry no leftover state
+      if (overlay) overlay[i] = 0; // nothing to overlap with
     }
+    // An overlap id no longer in the registry reloads as "dry" — same rule as
+    // an unknown primary id becoming Empty.
+    if (overlay && overlay[i] !== 0 && !getMaterial(overlay[i])) overlay[i] = 0;
   }
 
-  return { w, h, cells, temp, aux };
+  return { w, h, cells, temp, aux, overlay };
 }

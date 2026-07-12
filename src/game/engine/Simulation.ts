@@ -49,6 +49,7 @@ export class Simulation {
   step(): void {
     const g = this.grid;
     g.moved.fill(0);
+    g.overlayMoved.fill(0);
     this.diffuseHeat();
     this.ctx.tick = this.tick;
     const leftToRight = (this.tick++ & 1) === 0;
@@ -147,9 +148,14 @@ export class Simulation {
   private updateCell(x: number, y: number): void {
     const g = this.grid;
     const i = g.idx(x, y);
-    if (g.moved[i]) return;
-    const id = g.cells[i];
-    if (id === EMPTY) return;
-    getMaterial(id).update?.(x, y, this.ctx);
+    if (!g.moved[i]) {
+      const id = g.cells[i];
+      if (id !== EMPTY) getMaterial(id).update?.(x, y, this.ctx);
+    }
+    // The 겹침 overlap fluid sharing this cell moves on its own schedule, under
+    // its own moved guard (the primary having moved — or not — says nothing
+    // about its passenger). Re-read after the primary update: it may have
+    // carried the overlay away, or newly absorbed one.
+    if (g.overlay[i] !== 0 && !g.overlayMoved[i]) this.ctx.updateOverlay(x, y);
   }
 }
