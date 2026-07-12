@@ -73,10 +73,10 @@ export const ACID = register({
   phase: Phase.Liquid,
   color: rgb(150, 225, 70),
   density: 3,
-  // A strong electrolyte: a Spark travels through it and barely loses strength,
-  // so a pulse carries a long way through an acid puddle — the best-conducting
-  // liquid of the three (Water bleeds fast, brine slowly, acid barely at all;
-  // see spark.ts).
+  // An electrolyte: a Spark travels through it, losing strength slowly — it
+  // conducts on a par with brine (better than fresh water). Like Water/Saltwater
+  // a passing pulse can also electrolyse the cell into Hydrogen + Oxygen, leaving
+  // no residue (see spark.ts).
   conductive: true,
   thermal: { conductivity: 0.5 },
   // Chilled well below zero it freezes in place (frosted, immobile) until it thaws.
