@@ -15,19 +15,18 @@ import { SMOKE } from './smoke';
 // the heart of the reworked smelting flow: heat *melts* the ore (a plain Fire is
 // enough), then you dust carbon onto the melt to pull iron out of it.
 //
-//  • Carbon against the melt reduces it: a per-tick chance advances an `aux`
-//    progress counter (0..4), spending ~1 carbon cell per ore cell (released as a
-//    puff of Smoke = CO₂). Coal packed against the pool doesn't burn — it's a
-//    reductant, shielded from combustion (see coalpowder.ts) — so it's spent by
-//    reduction instead of flashing off. When the counter fills, the cell becomes
-//    *hot* Molten Metal (or Slag on a yield miss). Reduction is treated as
-//    exothermic: the fresh iron is forced molten (≥ REDUCE_HEAT) so it SINKS out
-//    of the pool and collects in the hearth instead of freezing into a solid
-//    crust on the surface right where the carbon sits — a crust would seal the
-//    melt off and stall reduction (the original bug). The released heat also
-//    keeps the surrounding pool molten, so once reduction starts it sustains
-//    itself and the pool convects: reduced iron sinks, fresh ore rises to the
-//    carbon. A Limestone neighbour acts as flux, raising the iron yield.
+//  • Carbon against the melt reduces it fast and 1:1: a per-tick chance
+//    (REDUCE_CHANCE, ~4 ticks) spends one adjacent carbon grain to convert this
+//    cell, venting a puff of Smoke (CO₂). Coal packed against the pool doesn't
+//    burn — it's a reductant, shielded from combustion (see coalpowder.ts) — so
+//    it's spent by reduction instead of flashing off, and coal dusted on the pool
+//    sinks in to disperse (also coalpowder.ts) so the whole depth reduces rather
+//    than only the surface. The cell becomes *hot* Molten Metal (or Slag on a
+//    yield miss): reduction is treated as exothermic, forcing the fresh iron
+//    molten (≥ REDUCE_HEAT) so it SINKS out and collects in the hearth instead of
+//    freezing into a solid crust on the surface right where the carbon sits — a
+//    crust would seal the melt off and stall reduction (the original bug). A
+//    Limestone neighbour acts as flux, raising the iron yield.
 //  • Left to cool below SOLIDIFY_TEMP *without* being reduced, the pool sets into
 //    useless Slag — so "heat alone makes slag, heat + carbon makes iron" survives
 //    the rework, just melt-first now.
