@@ -7,6 +7,7 @@ import {
   $brushMode,
   $overwriteLevel,
   $tool,
+  $blendBrush,
 } from '../../state/store';
 import {
   BRUSH_MIN,
@@ -50,6 +51,12 @@ function canOverwrite(existingId: number, level: number): boolean {
  * selected material, brush size, and brush shape from the shared store,
  * interpolates a line between move events (so fast drags don't leave gaps),
  * and stamps a circular or square brush at each point.
+ *
+ * Beyond painting the selected material, the active `$tool` selects alternate
+ * brushes: `erase` clears cells (the same path as a right-button drag), `blend`
+ * stamps a per-cell stochastic mix of `$blendBrush`'s materials, and the
+ * heat/cool/mix special brushes act on the cells already under the footprint
+ * rather than placing new material.
  *
  * Also owns two pieces of pointer-adjacent UX: a brush-size cursor outline
  * that follows the pointer, and mouse-wheel resizing of the brush.
@@ -121,6 +128,10 @@ export class PointerPainter {
         return heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
       case 'mix':
         return mixCells(this.grid, this.brushCells(cx, cy));
+      case 'erase':
+        return this.paint(cx, cy, true);
+      case 'blend':
+        return this.paintBlend(cx, cy);
     }
     this.paint(cx, cy);
   }
@@ -186,6 +197,45 @@ export class PointerPainter {
         this.grid.setAux(x, y, 0);
         // Seed a random per-particle tint so a freshly painted powder/liquid is
         // grainy from the first frame instead of a flat block (see game/tint.ts).
+        this.grid.setTint(x, y, (Math.random() * 256) | 0);
+      }
+    }
+  }
+
+  /** Paint a stochastic blend (the 혼합 tool): each cell in the footprint is
+   *  independently assigned one of $blendBrush's materials, weighted by ratio.
+   *  Otherwise behaves like paint(): honors the overwrite gate, particle-mode
+   *  gaps (non-solids only), per-material init temperature, aux clear and tint. */
+  private paintBlend(cx: number, cy: number): void {
+    const comps = $blendBrush.get();
+    let total = 0;
+    for (const c of comps) total += c.ratio;
+    if (total <= 0) return;
+    const rad = $brushSize.get();
+    const shape = $brushShape.get();
+    const level = $overwriteLevel.get();
+    const particleMode = $brushMode.get() === 'particle';
+    const r2 = rad * rad;
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!this.grid.inBounds(x, y)) continue;
+        // Weighted pick for THIS cell.
+        let r = Math.random() * total;
+        let id = comps[comps.length - 1].id;
+        for (const c of comps) {
+          r -= c.ratio;
+          if (r < 0) { id = c.id; break; }
+        }
+        const mat = getMaterial(id);
+        // Particle mode leaves random gaps for non-solids (matches paint()).
+        if (particleMode && mat.phase !== Phase.Solid && Math.random() > PARTICLE_FILL_RATE) continue;
+        if (!canOverwrite(this.grid.get(x, y), level)) continue;
+        this.grid.set(x, y, id);
+        this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
+        this.grid.setAux(x, y, 0);
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
       }
     }

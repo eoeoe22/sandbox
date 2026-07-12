@@ -96,6 +96,13 @@ body {
 .brush-cursor[data-tool='mix'] {
   border-color: rgba(198, 128, 255, 0.95);
 }
+.brush-cursor[data-tool='erase'] {
+  border-color: rgba(232, 232, 238, 0.95);
+  border-style: dashed;
+}
+.brush-cursor[data-tool='blend'] {
+  border-color: rgba(120, 220, 160, 0.95);
+}
 
 .notfound {
   display: flex;

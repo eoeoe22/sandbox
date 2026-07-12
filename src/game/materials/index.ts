@@ -143,9 +143,12 @@ export {
   MOLTEN_IRON_ORE,
 };
 
-/** Palette order (also drives the toolbar). Three materials are deliberately
- *  absent — all transient effect particles that only make sense when the
- *  simulation spawns them, never when painted by hand:
+/** Palette order (also drives the toolbar). Several materials are deliberately
+ *  absent:
+ *   • EMPTY_MAT (the eraser) — erasing is now a dedicated brush tool in the
+ *     control panel (alongside heat/cool/mix), not a palette material, so it no
+ *     longer needs a "지우개" tab of its own. It stays registered (id 0 is the
+ *     background/erase material) and simply isn't listed here.
  *   • EMBER — blast ejecta an explosion launches with a real velocity (see
  *     ember.ts); painted by brush it would just die on its first turn.
  *   • SPARK — the one-tick electric pulse that only exists while a conductor is
@@ -155,7 +158,6 @@ export {
  *     flight direction (see heatray.ts); hand-placed it would die on its first
  *     turn just like an unlaunched ember. */
 export const MATERIALS = [
-  EMPTY_MAT,
   WALL,
   SAND,
   WATER,

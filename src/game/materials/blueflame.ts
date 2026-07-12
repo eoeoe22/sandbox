@@ -4,10 +4,11 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { AMBIENT_TEMP } from '../config';
+import { AMBIENT_TEMP, SMOKE_MEDIUM_KEEP, FIRE_SMOKE_CHANCE } from '../config';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
+import { SMOKE } from './smoke';
 import { FIRE } from './fire';
 import { STONE } from './stone';
 import { LAVA } from './lava';
@@ -29,7 +30,11 @@ const MELT_CHANCE = 0.1; // per-tick chance to melt one adjacent Stone → Lava
 const IGNITE_CHANCE = 0.08; // per-tick chance to set a flammable neighbor alight
 const BURNOUT_CHANCE = 0.05; // ~20-tick life vs Fire's ~10 — burns out quickly but
 // still lingers a touch longer than Fire (and stays extremely hot) to melt rock.
-// Blue Flame is a clean cutting torch: it never leaves Smoke behind (unlike Fire).
+// At the 'high' smoke level only, Blue Flame leaves a faint wisp of Smoke on
+// burnout — otherwise (medium/off) it stays the clean cutting torch it always was.
+const HIGH_SMOKE_CHANCE = FIRE_SMOKE_CHANCE * SMOKE_MEDIUM_KEEP; // = Fire's
+// medium-level net smoke rate. At 'high' the SimContext seam does NOT thin Smoke,
+// so writing at this chance yields exactly that rate on screen.
 
 function updateBlueFlame(x: number, y: number, sim: SimContext): void {
   // Water/Saltwater neighbor snuffs it instantly (self → Empty, that cell →
@@ -67,9 +72,16 @@ function updateBlueFlame(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.chance(BURNOUT_CHANCE)) {
-    // Burns out clean — always to Empty, never Smoke.
+    // Burns out to ambient. At the 'high' smoke level only it leaves a faint
+    // wisp of Smoke (at Fire's medium net rate); at 'medium'/'off' it stays a
+    // clean torch and clears straight to Empty. At 'high' the SimContext seam
+    // does NOT thin Smoke, so this write lands at exactly HIGH_SMOKE_CHANCE.
     sim.setTemp(x, y, AMBIENT_TEMP);
-    sim.set(x, y, EMPTY);
+    if (sim.smokeLevel === 'high' && sim.chance(HIGH_SMOKE_CHANCE)) {
+      sim.set(x, y, SMOKE.id);
+    } else {
+      sim.set(x, y, EMPTY);
+    }
     return;
   }
   updateGas(x, y, sim);

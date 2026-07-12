@@ -13,7 +13,6 @@
   // still land somewhere sensible and the "add a material = one file" rule is
   // preserved).
   const CATEGORY_META: { key: string; icon: string }[] = [
-    { key: '지우개', icon: 'bi-eraser-fill' },
     { key: '고체', icon: 'bi-box-fill' },
     { key: '가루', icon: 'bi-hourglass-split' },
     { key: '액체', icon: 'bi-droplet-fill' },

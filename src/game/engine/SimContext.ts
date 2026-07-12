@@ -7,6 +7,9 @@ import {
   DISPLACE_DRAG_BASE,
   DISPLACE_DRAG_SCALE,
   DISPLACE_SIDE_PUSH,
+  type SmokeLevel,
+  SMOKE_LEVEL_DEFAULT,
+  SMOKE_MEDIUM_KEEP,
 } from '../config';
 
 /**
@@ -26,16 +29,20 @@ export class SimContext {
   borderMode: BorderMode = 'wall';
 
   /**
-   * When false, any Smoke written through this context (set/spawn) is suppressed
-   * to Empty instead — so every combustion/explosion reaction that would emit a
-   * wisp of Smoke produces nothing. This is the single seam all reactions funnel
-   * through, so one check here covers Fire, Blue Flame, Ember, Molten Uranium,
-   * Heat Ray, etc. without threading a flag into each material rule. Manual brush
-   * placement paints straight to the Grid (bypassing this context), so it stays
-   * unaffected — the toggle governs reactions, not the Smoke material itself.
-   * Set from the UI via Simulation.setSmokeEnabled.
+   * How much Smoke reactions give off, a 3-level control (see config SmokeLevel):
+   * `high` lets every Smoke write through unchanged (the original "smoke on"
+   * amount), `off` suppresses reaction Smoke entirely to Empty (the original
+   * "smoke off"), and `medium` keeps only SMOKE_MEDIUM_KEEP of it, dropping the
+   * rest to Empty. The thinning happens at the single seam below (applySmokeLevel,
+   * funnelled through set/spawn), so this one field covers Fire, Blue Flame,
+   * Ember, Molten Uranium, Heat Ray, etc. without threading a level into each
+   * material rule. Kept public so a material can read the level directly (Blue
+   * Flame leaves a wisp only at `high`). Manual brush placement paints straight to
+   * the Grid (bypassing this context), so it stays unaffected — the level governs
+   * reactions, not the Smoke material itself. Set from the UI via
+   * Simulation.setSmokeLevel.
    */
-  smokeEnabled = true;
+  smokeLevel: SmokeLevel = SMOKE_LEVEL_DEFAULT;
 
   /**
    * Current simulation tick, refreshed once per step by `Simulation`. Available
@@ -74,9 +81,19 @@ export class SimContext {
     return this.grid.get(x, y);
   }
 
+  /** Resolve a Smoke write against the current smoke level: 'high' keeps it,
+   *  'off' drops it to Empty, 'medium' keeps it with probability
+   *  SMOKE_MEDIUM_KEEP. Non-Smoke ids pass through untouched. */
+  private applySmokeLevel(id: number): number {
+    if (id !== SMOKE.id) return id;
+    if (this.smokeLevel === 'high') return id;
+    if (this.smokeLevel === 'off') return EMPTY;
+    return Math.random() < SMOKE_MEDIUM_KEEP ? id : EMPTY;
+  }
+
   set(x: number, y: number, id: number): void {
-    // Smoke suppressed → drop it to Empty (see smokeEnabled).
-    if (id === SMOKE.id && !this.smokeEnabled) id = EMPTY;
+    // Smoke thinned/suppressed per the current smoke level (see applySmokeLevel).
+    id = this.applySmokeLevel(id);
     this.grid.set(x, y, id);
     // Erasing/emptying a cell resets it to ambient so no stale heat lingers in
     // air (which conducts nothing and would otherwise be carried around by a
@@ -127,10 +144,13 @@ export class SimContext {
    * future caller isn't guaranteed to have checked first. */
   spawn(x: number, y: number, id: number): void {
     if (!this.inBounds(x, y)) return;
-    // Smoke suppressed → nothing is spawned (see smokeEnabled).
-    if (id === SMOKE.id && !this.smokeEnabled) {
-      this.set(x, y, EMPTY);
-      return;
+    // Smoke thinned/suppressed per the current smoke level (see applySmokeLevel).
+    if (id === SMOKE.id) {
+      id = this.applySmokeLevel(id);
+      if (id === EMPTY) {
+        this.set(x, y, EMPTY);
+        return;
+      }
     }
     this.grid.set(x, y, id);
     // A spawned cell is newly created material, so it starts at that material's

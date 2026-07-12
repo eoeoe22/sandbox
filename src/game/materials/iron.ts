@@ -38,7 +38,7 @@ export const IRON = register({
   color: rgb(135, 140, 150),
   density: 1000,
   conductive: true,
-  category: '전기',
+  category: '고체',
   // The best heat conductor in the game: an Iron bar shuttles heat end-to-end,
   // so it both melts readily against a hot source and makes a fine cold bridge.
   thermal: { conductivity: 0.85 },

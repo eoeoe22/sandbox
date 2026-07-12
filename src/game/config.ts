@@ -144,3 +144,36 @@ export const DISPLACE_DRAG_SCALE = 0.1;
  * to the far side of it. false = legacy instant position swap.
  */
 export const DISPLACE_SIDE_PUSH = true;
+
+/**
+ * Smoke output level for reactions (combustion/explosion/etc.), a three-step
+ * control replacing the old on/off toggle. `high` is the original "smoke on"
+ * level (reactions emit exactly as much Smoke as they always did); `off`
+ * suppresses reaction Smoke entirely; `medium` (the default) keeps only a
+ * `SMOKE_MEDIUM_KEEP` fraction of it, so the world stays legible without being
+ * choked with haze. The seam that thins Smoke lives in SimContext (set/spawn),
+ * so this one knob governs every Smoke-emitting reaction at once. Manual Smoke
+ * painting bypasses that seam, so it's unaffected.
+ */
+export type SmokeLevel = 'high' | 'medium' | 'off';
+/** Selectable smoke levels, in the order the toolbar shows them. */
+export const SMOKE_LEVELS: readonly SmokeLevel[] = ['high', 'medium', 'off'];
+export const SMOKE_LEVEL_DEFAULT: SmokeLevel = 'medium';
+/** Fraction of reaction Smoke retained at the `medium` level (high = 1, off = 0). */
+export const SMOKE_MEDIUM_KEEP = 0.35;
+/**
+ * Per-burnout chance ordinary Fire leaves a wisp of Smoke (before the smoke-level
+ * seam thins it). Shared with Blue Flame: at the `high` smoke level Blue Flame —
+ * normally a clean torch — leaves Smoke at Fire's `medium`-level net rate
+ * (FIRE_SMOKE_CHANCE × SMOKE_MEDIUM_KEEP), and none at `medium`/`off`.
+ */
+export const FIRE_SMOKE_CHANCE = 0.3;
+
+/**
+ * Blend brush (혼합) — paints a stochastic mixture of up to `BLEND_MAX_SLOTS`
+ * materials, each weighted by a ratio the user sets. Ratios are whole multiples
+ * of `BLEND_RATIO_STEP` percent and sum to 100 (see the store's `$blendBrush`
+ * and PointerPainter.paintBlend). The editor snaps every drag to this step.
+ */
+export const BLEND_MAX_SLOTS = 3;
+export const BLEND_RATIO_STEP = 5;
