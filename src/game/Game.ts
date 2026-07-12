@@ -59,6 +59,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
       savedWorld.temp,
       savedWorld.aux, // restore per-cell state (electricity/Clone/…) — see persistence.ts
       savedWorld.overlay, // restore 겹침 overlap fluids (soaked beds stay wet)
+      savedWorld.overlayAux, // …and their parked aux (tagged fluids keep identity)
     );
     // Tint isn't persisted; reseed it so a restored world is grainy from the
     // first frame rather than a flat block until its particles move.

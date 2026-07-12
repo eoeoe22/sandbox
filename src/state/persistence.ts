@@ -358,6 +358,9 @@ export interface PersistedWorld {
   /** Per-cell 겹침 overlap fluid id (Grid.overlay), when the save carried it.
    *  Older saves predate it and reload dry (all zero). */
   overlay?: Uint8Array;
+  /** The overlap fluid's parked aux state (Grid.overlayAux), paired with
+   *  `overlay`. Undefined on saves that predate it (reloads as zero). */
+  overlayAux?: Uint8Array;
 }
 
 let lastWorldJson: string | null = null;
@@ -387,6 +390,10 @@ export function saveWorld(grid: Grid): void {
     // cells, so a soaked sand bed or a screen mid-flow survives a reload
     // instead of drying out. Mostly zero, so it compresses to almost nothing.
     ov: bytesToBase64(encodeCellsRle(grid.overlay)),
+    // The overlap fluid's parked aux state (Grid.overlayAux), paired with `ov`
+    // so a tagged fluid mid-passage (a petroleum vapor cut, …) keeps its
+    // identity across a reload. Also mostly zero.
+    ova: bytesToBase64(encodeCellsRle(grid.overlayAux)),
   });
   if (json === lastWorldJson) return;
   if (writeString(WORLD_KEY, json)) lastWorldJson = json;
@@ -432,13 +439,21 @@ export function loadWorld(): PersistedWorld | null {
   }
 
   // The 겹침 overlap layer is optional the same way (a dropped decode reloads
-  // the world dry rather than losing it).
+  // the world dry rather than losing it). overlayAux is paired with it.
   let overlay: Uint8Array | undefined;
+  let overlayAux: Uint8Array | undefined;
   if (typeof j.ov === 'string') {
     try {
       overlay = decodeCellsRle(base64ToBytes(j.ov), w * h);
     } catch {
       overlay = undefined;
+    }
+  }
+  if (overlay && typeof j.ova === 'string') {
+    try {
+      overlayAux = decodeCellsRle(base64ToBytes(j.ova), w * h);
+    } catch {
+      overlayAux = undefined;
     }
   }
 
@@ -452,7 +467,11 @@ export function loadWorld(): PersistedWorld | null {
     // An overlap id no longer in the registry reloads as "dry" — same rule as
     // an unknown primary id becoming Empty.
     if (overlay && overlay[i] !== 0 && !getMaterial(overlay[i])) overlay[i] = 0;
+    // overlayAux is meaningless without an overlay fluid to own it; normalize
+    // it to 0 wherever the slot is dry so a stale byte can't leak into a later
+    // overlapped fluid.
+    if (overlayAux && (!overlay || overlay[i] === 0)) overlayAux[i] = 0;
   }
 
-  return { w, h, cells, temp, aux, overlay };
+  return { w, h, cells, temp, aux, overlay, overlayAux };
 }

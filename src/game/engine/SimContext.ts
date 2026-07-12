@@ -19,10 +19,13 @@ import {
  * occupants (see Grid.overlay). A porous solid (Mesh, Turbine) hosts any liquid
  * or gas — fluids move through it as if it weren't there. A powder hosts a
  * liquid (water soaking into a sand bed). Everything else hosts nothing. One
- * overlap slot per cell. Exported standalone (not a method) so grid tools that
- * write cells directly (brushTools' mix) can apply the same rule.
+ * overlap slot per cell. Module-private: the only enforcer of the (host,
+ * overlay) invariant is this seam — grid tools that relocate cells (brushTools'
+ * mix) instead swap the whole (id, …, overlay, overlayAux) tuple together, so
+ * an overlay is never stranded on a cell that can't host it and they need no
+ * hosting check of their own.
  */
-export function canHostOverlap(hostId: number, fluidId: number): boolean {
+function canHostOverlap(hostId: number, fluidId: number): boolean {
   if (hostId === EMPTY || fluidId === EMPTY) return false;
   const host = getMaterial(hostId);
   const fluidPhase = getMaterial(fluidId).phase;
@@ -117,15 +120,18 @@ export class SimContext {
     const gi = this.grid.idx(x, y);
     const ov = this.grid.overlay[gi];
     if (ov !== 0 && !canHostOverlap(id, ov)) {
+      const ovAux = this.grid.overlayAux[gi];
       this.grid.overlay[gi] = 0;
+      this.grid.overlayAux[gi] = 0;
       if (id === EMPTY) {
         // Removing the host releases its absorbed fluid: the fluid takes over
         // the vacated cell instead of vanishing with the host — dissolve or
         // blast away wet sand and the water it held spills back out. It shared
-        // the host's temperature, so the cell's temp is already its own. Marked
-        // moved so it isn't double-processed within this tick.
+        // the host's temperature, so the cell's temp is already its own, and it
+        // reclaims its parked aux state (overlayAux). Marked moved so it isn't
+        // double-processed within this tick.
         this.grid.set(x, y, ov);
-        this.grid.setAux(x, y, 0);
+        this.grid.setAux(x, y, ovAux);
         this.grid.tint[gi] = (Math.random() * 256) | 0;
         this.grid.moved[gi] = 1;
         return;
@@ -205,6 +211,7 @@ export class SimContext {
     const gi = this.grid.idx(x, y);
     if (this.grid.overlay[gi] !== 0 && !canHostOverlap(id, this.grid.overlay[gi])) {
       this.grid.overlay[gi] = 0;
+      this.grid.overlayAux[gi] = 0;
     }
     this.grid.set(x, y, id);
     // A spawned cell is newly created material, so it starts at that material's
@@ -286,6 +293,9 @@ export class SimContext {
     if (oa !== 0 || ob !== 0) {
       g.overlay[a] = ob;
       g.overlay[b] = oa;
+      const oxa = g.overlayAux[a];
+      g.overlayAux[a] = g.overlayAux[b];
+      g.overlayAux[b] = oxa;
       g.overlayMoved[a] = 1;
       g.overlayMoved[b] = 1;
     }
@@ -411,6 +421,10 @@ export class SimContext {
           this.swap(x, y, tx, ty); // the grain (with its temp/aux/tint) takes the liquid's cell
           const t = this.grid.idx(tx, ty);
           this.grid.overlay[t] = targetId;
+          // Park the swallowed liquid's own aux (now sitting at the source cell
+          // after the swap) so it survives the passage — a tagged fluid keeps
+          // its identity. Read before the set() below clears the source.
+          this.grid.overlayAux[t] = this.grid.getAux(x, y);
           this.grid.overlayMoved[t] = 1;
           // They now share one temperature; meet in the middle.
           this.grid.temp[t] = (this.grid.temp[t] + this.grid.getTemp(x, y)) / 2;
@@ -457,11 +471,13 @@ export class SimContext {
   /** Move the fluid at (x,y) into the free 겹침 slot of the host at (tx,ty).
    *  The two now share one cell — and one temperature, met in the middle (a
    *  fluid carries heat in/out of the screen or bed it passes through). The
-   *  fluid's aux/tint are shed: an overlapped fluid is pure id+position. */
+   *  fluid's aux rides along in the overlay's parked slot (overlayAux) so a
+   *  tagged fluid keeps its identity; its tint is shed (reseeded on exit). */
   private enterOverlay(x: number, y: number, tx: number, ty: number, fluidId: number): void {
     const g = this.grid;
     const t = g.idx(tx, ty);
     g.overlay[t] = fluidId;
+    g.overlayAux[t] = g.getAux(x, y);
     g.overlayMoved[t] = 1;
     g.temp[t] = (g.temp[t] + g.getTemp(x, y)) / 2;
     this.set(x, y, EMPTY);
@@ -532,6 +548,7 @@ export class SimContext {
       // the world; wall edges block it.
       if (this.borderMode === 'void') {
         g.overlay[i] = 0;
+        g.overlayAux[i] = 0;
         return true;
       }
       return false;
@@ -539,21 +556,25 @@ export class SimContext {
     const targetId = this.get(tx, ty);
     if (targetId === EMPTY) {
       // Exit: the fluid becomes an ordinary particle again, at the temperature
-      // it shared with its host, with a fresh tint (it carried none inside).
+      // it shared with its host, reclaiming its parked aux (so a tagged fluid
+      // re-condenses to the right cut), with a fresh tint (it carried none).
       const t = g.idx(tx, ty);
       g.cells[t] = fluidId;
       g.temp[t] = g.temp[i];
-      g.aux[t] = 0;
+      g.aux[t] = g.overlayAux[i];
       g.tint[t] = (Math.random() * 256) | 0;
       g.moved[t] = 1;
       g.overlay[i] = 0;
+      g.overlayAux[i] = 0;
       return true;
     }
     if (canHostOverlap(targetId, fluidId) && g.overlay[g.idx(tx, ty)] === 0) {
       const t = g.idx(tx, ty);
       g.overlay[t] = fluidId;
+      g.overlayAux[t] = g.overlayAux[i]; // the parked aux rides along, host to host
       g.overlayMoved[t] = 1;
       g.overlay[i] = 0;
+      g.overlayAux[i] = 0;
       return true;
     }
     return false;
