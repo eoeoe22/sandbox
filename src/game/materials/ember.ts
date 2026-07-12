@@ -2,6 +2,15 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
+import {
+  GRAVITY_Q,
+  clampV,
+  cellsThisTick,
+  decodeFlight,
+  encodeFlight,
+  launchBallistic,
+  type LaunchSpec,
+} from './ballistic';
 import { FIRE } from './fire';
 import { SMOKE } from './smoke';
 import { WATER } from './water';
@@ -19,78 +28,35 @@ import { SALTWATER } from './saltwater';
 // shatters and drops fire beside it, so it chain-detonates the charge instead of
 // silently erasing it.
 //
-// Velocity is stored in fixed-point quarter-cells per tick, packed together
-// with the remaining flight time into the cell's `temp` (conductivity 0 makes
-// the heat pass treat it as inert per-cell state — the same trick Blast uses).
-const Q = 4; // fixed-point scale: 4 quarter-cells = 1 cell
-const V_MAX_Q = 16; // |velocity| clamp per axis: 4 cells/tick
-const V_SPAN = V_MAX_Q * 2 + 1; // encodable velocity values per axis
-// Downward pull, applied only on every *other* tick of an ember's life (see
-// updateEmber) for an effective 0.125 cell/tick² — enough droop that debris
-// still reads as thrown rather than beamed, while keeping the flight path
-// predominantly straight along its launch direction.
-const GRAVITY_Q = 1;
+// The fixed-point flight bookkeeping (velocity + life packed into `temp`, the
+// conductivity-0 trick, the launch jitter) lives in ballistic.ts, shared with
+// its heavier cousins Debris/Bomblet/Napalm Gel; here Ember supplies only its
+// own launch tuning and its smash-on-impact behavior.
 
-// Launch tuning (see launchEmber): base speed 2.25–3.5 cells/tick along the
+// Launch tuning (see launchBallistic): base speed 2.25–3.5 cells/tick along the
 // rim's outward direction, scattered by a small per-axis jitter and a slight
 // upward kick, for 12–21 ticks of flight (~0.2–0.35 s at 60 Hz). Fast enough to
 // carry debris well past the crater the instant blast just carved, short enough
 // that the whole burst resolves in under half a second.
-const LAUNCH_SPEED_MIN_Q = 9;
-const LAUNCH_SPEED_VAR_Q = 6;
-const LAUNCH_JITTER_Q = 2;
-const LAUNCH_UP_BIAS_Q = 1;
-const LIFE_MIN = 12;
-const LIFE_VAR = 10;
+const EMBER_LAUNCH: LaunchSpec = {
+  speedMinQ: 9,
+  speedVarQ: 6,
+  jitterQ: 2,
+  upBiasQ: 1,
+  lifeMin: 12,
+  lifeVar: 10,
+};
 
 const IMPACT_FIRE_CHANCE = 0.5; // a smashed/struck cell ends up as flame…
 const BURNOUT_SMOKE_CHANCE = 0.25; // …while burning out midair leaves a puff.
 
-// `life` and the two velocity axes share the cell's temp as one packed float.
-// Max encodable value ≈ 22·33² ≈ 24k, far inside Float32's 2^24 exact-integer
-// range.
-function encodeEmber(life: number, vxQ: number, vyQ: number): number {
-  return (life * V_SPAN + (vxQ + V_MAX_Q)) * V_SPAN + (vyQ + V_MAX_Q);
-}
-function decodeEmber(temp: number): { life: number; vxQ: number; vyQ: number } {
-  const vyQ = (temp % V_SPAN) - V_MAX_Q;
-  const rest = Math.floor(temp / V_SPAN);
-  return { life: Math.floor(rest / V_SPAN), vxQ: (rest % V_SPAN) - V_MAX_Q, vyQ };
-}
-
-function clampV(v: number): number {
-  return v < -V_MAX_Q ? -V_MAX_Q : v > V_MAX_Q ? V_MAX_Q : v;
-}
-
-/** Whole cells to travel this tick along one axis: the integer part of the
- *  quarter-cell velocity, plus one extra cell with probability equal to the
- *  fractional remainder — sub-cell speeds without a sub-cell position field. */
-function cellsThisTick(sim: SimContext, vQ: number): number {
-  const mag = Math.abs(vQ);
-  let cells = (mag / Q) | 0;
-  if (sim.chance((mag % Q) / Q)) cells++;
-  return vQ < 0 ? -cells : cells;
-}
-
 /**
  * Turn the cell at (x,y) into a freshly launched ember flying outward along
  * (dirX,dirY) (a unit 8-direction step — the radial outward direction of a
- * blast's rim cell). Speed, per-axis jitter, upward bias and flight time are all
- * randomized so the ring of rim cells fans out as an irregular all-directions
- * spray instead of tidy rays. Written via spawn() so it can transform any cell,
- * with the moved mark keeping that cell from being reprocessed within the same
- * tick.
+ * blast's rim cell).
  */
 export function launchEmber(sim: SimContext, x: number, y: number, dirX: number, dirY: number): void {
-  let speedQ = LAUNCH_SPEED_MIN_Q + sim.randInt(LAUNCH_SPEED_VAR_Q);
-  // Diagonal launches cover √2 more ground per step; scale by ~1/√2 so the
-  // spray reads as a circle, not a square with fast corners.
-  if (dirX !== 0 && dirY !== 0) speedQ = (speedQ * 3) >> 2;
-  const jitterSpan = LAUNCH_JITTER_Q * 2 + 1;
-  const vxQ = clampV(dirX * speedQ + sim.randInt(jitterSpan) - LAUNCH_JITTER_Q);
-  const vyQ = clampV(dirY * speedQ + sim.randInt(jitterSpan) - LAUNCH_JITTER_Q - LAUNCH_UP_BIAS_Q);
-  sim.spawn(x, y, EMBER.id);
-  sim.setTemp(x, y, encodeEmber(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
+  launchBallistic(sim, x, y, dirX, dirY, EMBER.id, EMBER_LAUNCH);
 }
 
 /** Flight ended against something it can't smash (Wall, an explosive, the
@@ -119,7 +85,7 @@ function smash(sim: SimContext, x: number, y: number, nx: number, ny: number): v
 }
 
 function updateEmber(x: number, y: number, sim: SimContext): void {
-  const st = decodeEmber(sim.getTemp(x, y));
+  const st = decodeFlight(sim.getTemp(x, y));
   if (st.life < 1) {
     // Burnt out midair. This is also the graceful death for an ember spawned
     // without an explicit launch (thermal.init 0 decodes to life 0).
@@ -182,7 +148,7 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, EMPTY);
     sim.spawn(cx, cy, EMBER.id);
   }
-  sim.setTemp(cx, cy, encodeEmber(st.life - 1, vxQ, vyQ));
+  sim.setTemp(cx, cy, encodeFlight(st.life - 1, vxQ, vyQ));
 }
 
 export const EMBER = register({

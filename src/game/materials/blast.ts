@@ -172,8 +172,10 @@ function isBlocker(id: number): boolean {
 
 /** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell
  *  whose life (in `temp`) both times its fade and drives its glow. spawn() marks
- *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. */
-function placeShell(sim: SimContext, x: number, y: number): void {
+ *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. Exported
+ *  so a custom `onCell` handler (see DetonateOptions) can drop the same flash in
+ *  the cells it chooses not to transform (e.g. a concussion's empty air). */
+export function flashCell(sim: SimContext, x: number, y: number): void {
   const life = SHELL_LIFE_MIN + sim.randInt(SHELL_LIFE_VAR);
   sim.spawn(x, y, BLAST.id);
   sim.setTemp(x, y, life); // ≤ SHELL_MAX ⇒ a flash, never mistaken for a seed
@@ -268,6 +270,55 @@ function computeReach(Y: number, maxYield: number): number {
 }
 
 /**
+ * Options that reshape a detonation *without* touching this file — the seam that
+ * turns "every explosive is the same round crater" into a family of distinct
+ * blasts (concussion, cluster, napalm, depth charge, …). Every field is
+ * optional and defaults to the classic behavior, so the base explosives pass
+ * nothing and are bit-for-bit unchanged. See the field docs; the design lives in
+ * the wiki ("폭발 다변화 구상").
+ */
+export interface DetonateOptions {
+  /** Fixed blast reach (cells), overriding the surveyed √-law reach. Lets a
+   *  self-contained small blast (napalm R6, a depth charge) ignore how much
+   *  connected explosive happened to be packed. */
+  reach?: number;
+  /** Extra cap on cells this single call processes, on top of the shared
+   *  per-call / per-tick caps — bounds a small self-flood so, e.g., napalm can't
+   *  run a screen-wide fire even if wired to a huge mass. */
+  maxCells?: number;
+  /** Per-direction propagation-cost multipliers, indexed like NEIGHBORS (0..7).
+   *  >1 shortens the reach that way, <1 lengthens it — a directional/shaped
+   *  blast. Omit for the default round disc. */
+  costMul?: readonly number[];
+  /**
+   * Handler run for every cell the front reaches, *replacing* the default
+   * shockwave-flash placement. Receives the cell's previous id, the inward blast
+   * direction (entryDx,entryDy — the step from the cell the front arrived from;
+   * 0,0 at a source cell) and the remaining outward budget `outB` (high near the
+   * epicenter, 0 at the rim — a free strength gradient). Return `true` to signal
+   * the cell was fully handled (no default flash is placed); return
+   * `false`/nothing to fall back to the default flash for this cell. Lets a blast
+   * transform / scatter / ignite instead of merely destroying.
+   */
+  onCell?: (
+    sim: SimContext,
+    x: number,
+    y: number,
+    prevId: number,
+    entryDx: number,
+    entryDy: number,
+    outB: number,
+  ) => boolean | void;
+  /** Replace the rim ejecta launched at the crater edge with something else
+   *  (bomblets, gel, …). Receives the local outward normal. When omitted the
+   *  default hurls Embers at `rimEmberChance`. */
+  rimHandler?: (sim: SimContext, x: number, y: number, dirX: number, dirY: number) => void;
+  /** Probability the *default* rim handler launches an ember per rim cell
+   *  (default RIM_EMBER_CHANCE). Ignored when `rimHandler` is set. */
+  rimEmberChance?: number;
+}
+
+/**
  * Detonate the connected explosive mass at (cx,cy) — immediately and in full.
  * Phase 1 surveys the connected mass for its total yield; phase 2 turns that into
  * a reach R and floods a filled region outward from *every* surveyed cell at once
@@ -278,8 +329,17 @@ function computeReach(Y: number, maxYield: number): number {
  * `seedYield` is only consulted when (cx,cy) isn't itself an explosive — the
  * brush-painted Blast path passes its own radius so a hand-placed blast keeps a
  * fixed size; an explosive origin ignores it and uses the surveyed yield instead.
+ *
+ * `opts` (see DetonateOptions) reshapes the blast — the whole variety of exotic
+ * explosives rides on this one seam; omitting it reproduces the classic crater.
  */
-export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0): void {
+export function detonate(
+  sim: SimContext,
+  cx: number,
+  cy: number,
+  seedYield = 0,
+  opts: DetonateOptions = {},
+): void {
   const w = sim.width;
   const h = sim.height;
 
@@ -298,7 +358,7 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const srcX: number[] = [];
   const srcY: number[] = [];
   const { Y, maxYield } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
-  const R = computeReach(Y, maxYield);
+  const R = opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield);
 
   // ── Phase 2: dilate the whole mass outward by R, destroying what it reaches ──
   // A fresh stamp id on the same buffer marks the dilation's visited set; it never
@@ -309,8 +369,13 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const qx = srcX.slice();
   const qy = srcY.slice();
   const qb: number[] = new Array(srcX.length).fill(R);
+  // Inward blast direction each queued cell was reached from (0,0 for a source),
+  // handed to `onCell` so a handler can fling material along the shock (see
+  // Concussion). Parallel to qx/qy/qb.
+  const qdx: number[] = new Array(srcX.length).fill(0);
+  const qdy: number[] = new Array(srcX.length).fill(0);
   for (let i = 0; i < srcX.length; i++) stamp[srcY[i] * w + srcX[i]] = id_d;
-  // Rim cells (the outer edge, one outward direction each) that spray embers
+  // Rim cells (the outer edge, one outward direction each) that spray ejecta
   // once the flood settles — collected rather than launched inline so spawning
   // them can't disturb the cell reads the flood depends on.
   const rimX: number[] = [];
@@ -318,38 +383,54 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const rimDX: number[] = [];
   const rimDY: number[] = [];
 
+  const onCell = opts.onCell;
+  const costMul = opts.costMul;
+  const callCap =
+    opts.maxCells !== undefined && opts.maxCells < MAX_DETONATE_CELLS
+      ? opts.maxCells
+      : MAX_DETONATE_CELLS;
+
   let head = 0;
   let destroyed = 0;
   // The mass always detonates (so a triggered charge always makes progress);
   // every cell after the first is gated by both the per-call cap and the shared
   // per-tick budget.
-  while (
-    head < qx.length &&
-    destroyed < MAX_DETONATE_CELLS &&
-    (destroyed === 0 || budgetLeft > 0)
-  ) {
+  while (head < qx.length && destroyed < callCap && (destroyed === 0 || budgetLeft > 0)) {
     const x = qx[head];
     const y = qy[head];
     const outB = qb[head];
+    const edx = qdx[head];
+    const edy = qdy[head];
     head++;
 
-    placeShell(sim, x, y);
+    // Resolve this cell: a custom handler may transform it (returning true to
+    // claim it), otherwise the default shockwave flash is dropped in its place.
+    // prevId is read only on the handler path, so the base explosives (no
+    // onCell) pay nothing extra.
+    let handled = false;
+    if (onCell) handled = onCell(sim, x, y, sim.get(x, y), edx, edy, outB) === true;
+    if (!handled) flashCell(sim, x, y);
     destroyed++;
     budgetLeft--;
 
     let isRim = false;
     let rimDx = 0;
     let rimDy = 0;
-    for (const [dx, dy, cost] of NEIGHBORS) {
+    for (let i = 0; i < NEIGHBORS.length; i++) {
+      const dx = NEIGHBORS[i][0];
+      const dy = NEIGHBORS[i][1];
+      // `?? 1` guards a short/sparse costMul: a missing entry means "no scaling"
+      // rather than a NaN cost, which would corrupt the budget arithmetic.
+      const cost = costMul ? NEIGHBORS[i][2] * (costMul[i] ?? 1) : NEIGHBORS[i][2];
       const nx = x + dx;
       const ny = y + dy;
-      // A container edge contains the blast (like a Wall) — no leak, no ember.
+      // A container edge contains the blast (like a Wall) — no leak, no ejecta.
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_d) continue;
       if (outB - cost < 0) {
         // The front ran out of push in this direction: this cell is the outer
-        // rim here, so it can fling an ember outward along the local outward
+        // rim here, so it can fling ejecta outward along the local outward
         // normal (the direction whose budget ran out). Record the first such
         // direction and move on.
         if (!isRim) {
@@ -359,13 +440,15 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
         }
         continue;
       }
-      // Wall and Diamond stop the front and shadow what's beyond — no ember
+      // Wall and Diamond stop the front and shadow what's beyond — no ejecta
       // either.
       if (isBlocker(sim.get(nx, ny))) continue;
       stamp[nidx] = id_d;
       qx.push(nx);
       qy.push(ny);
       qb.push(outB - cost);
+      qdx.push(dx);
+      qdy.push(dy);
     }
     if (isRim) {
       // With many sources there's no single epicenter to fling from, so the
@@ -378,8 +461,11 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
     }
   }
 
+  const rimHandler = opts.rimHandler;
+  const rimEmberChance = opts.rimEmberChance !== undefined ? opts.rimEmberChance : RIM_EMBER_CHANCE;
   for (let i = 0; i < rimX.length; i++) {
-    if (sim.chance(RIM_EMBER_CHANCE)) launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+    if (rimHandler) rimHandler(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+    else if (sim.chance(rimEmberChance)) launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
   }
 }
 
