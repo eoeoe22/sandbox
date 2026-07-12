@@ -33,14 +33,17 @@ const LIFE_VAR = 12; // 14..25 ticks of flight — long enough to arc and fall b
 const BASE_SPEED_Q = 5; // baseline outward speed (quarter-cells/tick)
 const GAIN_Q = 2; // + this per unit of remaining outward budget
 const JITTER_Q = 3; // per-axis scatter so a flung pile fans out
-const UP_BIAS_Q = 2; // slight loft, so grains rise before they fall
+const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray fountains up
 
 /**
- * Fling the cell at (x,y) — currently holding material `origId` — outward as a
- * Debris fragment along the shock's outward normal (entryDx,entryDy). At the
- * very epicenter (0,0) there's no outward direction, so it lofts up-and-out in a
- * random horizontal. Called from `detonate`'s default cell handler (blast.ts) for
- * each loose powder/liquid/gas cell a blast is too weak to destroy.
+ * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
+ * fragment. The horizontal launch follows the shock's outward normal (entryDx),
+ * so a pile fans out left/right; the *vertical* launch is always UP, because the
+ * solid ground reflects a downward push — so instead of driving half the ejecta
+ * into the floor (a symmetric X-spray), the burst fountains up and out, like a
+ * real splash. `outB` (remaining outward budget) sets the speed, fiercest at the
+ * epicenter. Called from `detonate`'s default cell handler (blast.ts) for each
+ * loose powder/liquid/gas cell a blast is too weak to destroy.
  */
 export function launchDebris(
   sim: SimContext,
@@ -51,18 +54,17 @@ export function launchDebris(
   entryDy: number,
   outB: number,
 ): void {
-  let dirX = entryDx;
-  let dirY = entryDy;
-  if (dirX === 0 && dirY === 0) {
-    dirX = sim.chance(0.5) ? 1 : -1;
-    dirY = -1;
-  }
+  const dirX = entryDx; // horizontal spreads along the shock's outward normal
   let speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
   // Diagonal launches cover √2 more ground; scale down so the spray reads round.
-  if (dirX !== 0 && dirY !== 0) speedQ = (speedQ * 3) >> 2;
+  if (dirX !== 0 && entryDy !== 0) speedQ = (speedQ * 3) >> 2;
   const jitterSpan = JITTER_Q * 2 + 1;
   const vxQ = clampV(dirX * speedQ + sim.randInt(jitterSpan) - JITTER_Q);
-  const vyQ = clampV(dirY * speedQ + sim.randInt(jitterSpan) - JITTER_Q - UP_BIAS_Q);
+  // Always upward: the vertical push magnitude, reflected up, plus a loft bias —
+  // a fragment shoved straight down (below the charge) erupts up too. The jitter
+  // keeps a straight-up column from stacking in one line.
+  const upSpeedQ = Math.abs(entryDy) * speedQ + UP_BIAS_Q;
+  const vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
   sim.setAux(x, y, origId); // the material to rain back down (material ids fit a byte)
@@ -143,9 +145,12 @@ export const DEBRIS = register({
   id: 73,
   name: 'Debris',
   phase: Phase.Gas,
-  color: rgb(150, 130, 110), // dull thrown-earth tone
+  color: rgb(150, 130, 110), // fallback tone (drawn only if aux carries no material)
   density: 1,
   category: '폭발',
+  // A fragment draws as the material it's carrying (its origin id, in aux) —
+  // shoved water flies blue, sand flies tan — not as a uniform grey grain.
+  renderAsAux: true,
   // conductivity 0 keeps the heat pass off `temp`, which holds the packed
   // life+velocity; init 0 → life 0 so a hand-placed fragment dies immediately.
   thermal: { init: 0, conductivity: 0 },

@@ -204,6 +204,14 @@ export interface Material {
    * instead). See game/tint.ts and the renderer/Simulation.
    */
   colorVary?: number;
+  /**
+   * Render this cell using the *carried* material named by its `aux` byte, not
+   * this material's own `color`. Debris sets it: a flying fragment carries its
+   * origin material's id in `aux`, so shoved water draws blue and shoved sand
+   * draws tan instead of everything reading as one dull Debris grey. Purely a
+   * rendering hint — the simulation still treats the cell as this material.
+   */
+  renderAsAux?: boolean;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }
