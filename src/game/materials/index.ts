@@ -75,7 +75,6 @@ import { CONCUSSION } from './concussion';
 import { DEBRIS } from './debris';
 import { CLUSTER } from './cluster';
 import { BOMBLET } from './bomblet';
-import { DEPTH_CHARGE } from './depthcharge';
 import { NAPALM } from './napalm';
 import { NAPALM_GEL } from './napalmgel';
 import { C4 } from './c4';
@@ -153,7 +152,6 @@ export {
   DEBRIS,
   CLUSTER,
   BOMBLET,
-  DEPTH_CHARGE,
   NAPALM,
   NAPALM_GEL,
   C4,
@@ -235,7 +233,6 @@ export const MATERIALS = [
   THERMITE,
   CONCUSSION,
   CLUSTER,
-  DEPTH_CHARGE,
   NAPALM,
   C4,
   MOLTEN_SALT,

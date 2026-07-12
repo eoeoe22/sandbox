@@ -4,6 +4,9 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
+import { WATER } from './water';
+import { SALTWATER } from './saltwater';
+import { STEAM } from './steam';
 import { launchEmber } from './ember';
 
 // ── Explosions: an instant shockwave that scales with the charge ────────────
@@ -18,11 +21,15 @@ import { launchEmber } from './ember';
 //      `blastRadius`.)
 //   2. DILATE — turn Y into a reach R (see `computeReach`) and flood a *filled*
 //      region outward from EVERY surveyed cell at once, destroying everything it
-//      reaches (sand, salt, stone, water, the charges themselves, …). The crater
-//      is the whole mass grown by R, so more explosive means both a bigger mass
-//      *and* a bigger R — the destruction grows with the amount, not just the
-//      surface. A bright, short-lived shockwave flash is dropped over the crater
-//      and glowing Embers are hurled out past the rim (see ember.ts).
+//      reaches (sand, salt, stone, the charges themselves, …). The crater is the
+//      whole mass grown by R, so more explosive means both a bigger mass *and* a
+//      bigger R — the destruction grows with the amount, not just the surface. A
+//      bright, short-lived shockwave flash is dropped over the crater and glowing
+//      Embers are hurled out past the rim (see ember.ts). Water it reaches is the
+//      exception: instead of being erased it flash-boils to a hot Steam plume
+//      (see `defaultCell`), so any explosive set off underwater erupts a column
+//      of steam that then rains back — the "depth charge" effect, built in for
+//      every charge rather than bolted onto one special material.
 //
 // A lone charge (Y == its own yield) reaches exactly its `blastRadius`, so single
 // charges feel unchanged; only stacking more explosive makes the blast grow.
@@ -181,6 +188,33 @@ export function flashCell(sim: SimContext, x: number, y: number): void {
   sim.setTemp(x, y, life); // ≤ SHELL_MAX ⇒ a flash, never mistaken for a seed
 }
 
+// ── Underwater detonation: a mechanism, not a material ──────────────────────
+// Any explosive whose blast reaches Water/Saltwater flash-boils it into a hot
+// Steam bubble instead of erasing it. The expanding steam punches a plume up
+// through the surface, then cools and condenses back to Water and rains down —
+// so a blast set off underwater reads utterly differently from a dry one, for
+// *every* explosive at once, with no per-material opt-in (there is no "depth
+// charge" item — deep water is what makes the difference). A material that wants
+// its own water handling (Concussion shoves it aside as Debris) overrides this
+// through onCell; everything on the default path gets the plume for free.
+const UNDERWATER_STEAM_TEMP = 240;
+
+function isWater(id: number): boolean {
+  return id === WATER.id || id === SALTWATER.id;
+}
+
+/** Default fate of a cell the front reaches when no `onCell` claims it: water
+ *  flash-boils to a hot Steam bubble (the underwater-blast plume); everything
+ *  else takes the ordinary shockwave flash. */
+function defaultCell(sim: SimContext, x: number, y: number, prevId: number): void {
+  if (isWater(prevId)) {
+    sim.spawn(x, y, STEAM.id); // marks moved; won't be re-processed this tick
+    sim.setTemp(x, y, UNDERWATER_STEAM_TEMP); // a hot, buoyant bubble that rises
+    return;
+  }
+  flashCell(sim, x, y);
+}
+
 /** Yield one explosive cell contributes to its connected mass's total. Defaults
  *  to `blastRadius` when a material doesn't set an explicit `blastYield`, so a
  *  lone charge still reaches its familiar radius. 0 for anything not explosive. */
@@ -272,15 +306,16 @@ function computeReach(Y: number, maxYield: number): number {
 /**
  * Options that reshape a detonation *without* touching this file — the seam that
  * turns "every explosive is the same round crater" into a family of distinct
- * blasts (concussion, cluster, napalm, depth charge, …). Every field is
- * optional and defaults to the classic behavior, so the base explosives pass
- * nothing and are bit-for-bit unchanged. See the field docs; the design lives in
- * the wiki ("폭발 다변화 구상").
+ * blasts (concussion, cluster, napalm, …). Every field is optional and defaults
+ * to the classic behavior, so the base explosives pass nothing and are
+ * bit-for-bit unchanged. (Underwater behavior is *not* an option here — it's the
+ * built-in default, see defaultCell above: any blast that reaches water steams
+ * it.) See the field docs; the design lives in the wiki ("폭발 다변화 구상").
  */
 export interface DetonateOptions {
   /** Fixed blast reach (cells), overriding the surveyed √-law reach. Lets a
-   *  self-contained small blast (napalm R6, a depth charge) ignore how much
-   *  connected explosive happened to be packed. */
+   *  self-contained small blast (napalm's fixed R6) ignore how much connected
+   *  explosive happened to be packed. */
   reach?: number;
   /** Extra cap on cells this single call processes, on top of the shared
    *  per-call / per-tick caps — bounds a small self-flood so, e.g., napalm can't
@@ -404,12 +439,13 @@ export function detonate(
     head++;
 
     // Resolve this cell: a custom handler may transform it (returning true to
-    // claim it), otherwise the default shockwave flash is dropped in its place.
-    // prevId is read only on the handler path, so the base explosives (no
-    // onCell) pay nothing extra.
+    // claim it), otherwise the default fate applies (water → steam plume,
+    // everything else → the shockwave flash). prevId drives both the handler and
+    // the water check, so it's read once here.
+    const prevId = sim.get(x, y);
     let handled = false;
-    if (onCell) handled = onCell(sim, x, y, sim.get(x, y), edx, edy, outB) === true;
-    if (!handled) flashCell(sim, x, y);
+    if (onCell) handled = onCell(sim, x, y, prevId, edx, edy, outB) === true;
+    if (!handled) defaultCell(sim, x, y, prevId);
     destroyed++;
     budgetLeft--;
 
