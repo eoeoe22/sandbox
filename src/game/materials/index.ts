@@ -66,6 +66,10 @@ import { URANIUM } from './uranium';
 import { MOLTEN_URANIUM } from './moltenuranium';
 import { HEAT_RAY } from './heatray';
 import { LPG } from './lpg';
+import { COAL_POWDER } from './coalpowder';
+import { SLAG } from './slag';
+import { LIMESTONE } from './limestone';
+import { IRON_ORE } from './ironore';
 
 export {
   EMPTY_MAT,
@@ -131,6 +135,10 @@ export {
   MOLTEN_URANIUM,
   HEAT_RAY,
   LPG,
+  COAL_POWDER,
+  SLAG,
+  LIMESTONE,
+  IRON_ORE,
 };
 
 /** Palette order (also drives the toolbar). Three materials are deliberately
@@ -205,4 +213,8 @@ export const MATERIALS = [
   DIAMOND,
   ASH,
   LPG,
+  IRON_ORE,
+  COAL_POWDER,
+  LIMESTONE,
+  SLAG,
 ];

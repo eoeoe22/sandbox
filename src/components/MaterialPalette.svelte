@@ -19,6 +19,7 @@
     { key: '액체', icon: 'bi-droplet-fill' },
     { key: '기체', icon: 'bi-cloud-fill' },
     { key: '불·열', icon: 'bi-fire' },
+    { key: '제련', icon: 'bi-hammer' },
     { key: '석유', icon: 'bi-fuel-pump-fill' },
     { key: '폭발', icon: 'bi-asterisk' },
     { key: '냉각', icon: 'bi-snow' },
