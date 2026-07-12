@@ -27,9 +27,10 @@ import { clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
 
 // Launch tuning. Speed rises with the blast's remaining budget, so the push is
 // fiercest right at the epicenter and gentle at the rim (a real pressure
-// gradient); the per-axis clamp in ballistic.ts caps it at 4 cells/tick anyway.
-const LIFE_MIN = 7;
-const LIFE_VAR = 8; // 7..14 ticks — a quick, snappy arc, not a floaty hang
+// gradient); the per-axis clamp in ballistic.ts caps it at 6 cells/tick anyway.
+const LIFE_MIN = 9;
+const LIFE_VAR = 8; // 9..16 ticks — long enough to ride the boosted vertical to
+// its apex (~12 ticks at the clamp) while still a snappy arc, not a floaty hang
 const BASE_SPEED_Q = 5; // baseline outward speed (quarter-cells/tick)
 const GAIN_Q = 2; // + this per unit of remaining outward budget
 const JITTER_Q = 3; // per-axis scatter so a flung pile fans out
@@ -39,6 +40,12 @@ const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray founta
 // Rolled per fragment at launch, so a burst reads as one dominant vertical
 // plume flanked by a thinner fan instead of a uniform half-dome.
 const VERTICAL_CHANCE = 0.7; // 70% up, 30% side diagonals
+// The vertical column gets an extra kick (×1.5 of the shock speed) so it towers
+// well above the diagonal skirt; the skirt keeps the pre-boost ceiling below so
+// raising the shared velocity clamp only made the column taller, not the sides
+// wider.
+const VERTICAL_BOOST_NUM = 3; // ×3/2
+const DIAG_MAX_AXIS_Q = 16; // the skirt's per-axis speed ceiling (the old clamp)
 // Debris falls harder than a light Ember (which drifts on alternate ticks): a
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
@@ -85,17 +92,20 @@ export function launchDebris(
   let vxQ: number;
   let upSpeedQ: number;
   if (sim.chance(VERTICAL_CHANCE)) {
-    // Straight up: full speed vertical, jitter only sideways (the jitter keeps a
+    // Straight up, boosted ×1.5: the column is the show, so it rides the full
+    // velocity clamp near the epicenter. Jitter only sideways (it keeps a
     // column from stacking into a single line of cells).
     vxQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
-    upSpeedQ = speedQ + UP_BIAS_Q;
+    upSpeedQ = ((speedQ * VERTICAL_BOOST_NUM) >> 1) + UP_BIAS_Q;
   } else {
     // ~45° diagonal: the speed split across both axes (×3/4 ≈ 1/√2 per axis so
-    // the diagonal covers the same ground). Side follows the shock's outward
-    // normal when it has one; a fragment shoved purely vertically picks a side
-    // at random so a centered burst still fans both ways.
+    // the diagonal covers the same ground), capped at the pre-boost ceiling so
+    // the skirt stays a modest fan under the taller column. Side follows the
+    // shock's outward normal when it has one; a fragment shoved purely
+    // vertically picks a side at random so a centered burst still fans both
+    // ways.
     const side = entryDx !== 0 ? entryDx : sim.chance(0.5) ? 1 : -1;
-    const axisQ = (speedQ * 3) >> 2;
+    const axisQ = Math.min((speedQ * 3) >> 2, DIAG_MAX_AXIS_Q);
     vxQ = clampV(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q);
     upSpeedQ = axisQ + UP_BIAS_Q;
   }
