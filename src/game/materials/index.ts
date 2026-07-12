@@ -70,6 +70,7 @@ import { COAL_POWDER } from './coalpowder';
 import { SLAG } from './slag';
 import { LIMESTONE } from './limestone';
 import { IRON_ORE } from './ironore';
+import { MOLTEN_IRON_ORE } from './moltenironore';
 
 export {
   EMPTY_MAT,
@@ -139,6 +140,7 @@ export {
   SLAG,
   LIMESTONE,
   IRON_ORE,
+  MOLTEN_IRON_ORE,
 };
 
 /** Palette order (also drives the toolbar). Three materials are deliberately
@@ -214,6 +216,7 @@ export const MATERIALS = [
   ASH,
   LPG,
   IRON_ORE,
+  MOLTEN_IRON_ORE,
   COAL_POWDER,
   LIMESTONE,
   SLAG,
