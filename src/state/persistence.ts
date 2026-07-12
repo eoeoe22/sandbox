@@ -15,7 +15,7 @@ import {
   type Tool,
   type BlendComponent,
 } from './store';
-import { getMaterial } from '../game/materials';
+import { getMaterial, MATERIALS } from '../game/materials';
 import {
   AMBIENT_TEMP,
   BRUSH_MIN,
@@ -74,22 +74,27 @@ const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'ble
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 
+/** Palette-material ids the blend editor can actually offer, so a restored blend
+ *  can't reference a material with no matching <option> (it validates to exactly
+ *  what the editor produces). */
+const PALETTE_IDS = new Set(MATERIALS.map((m) => m.id));
+
 /**
- * Validate a persisted blend-brush config. Accepts it only if it's a 1..MAX
- * list of {id, ratio} where every id is a real (non-eraser) material, every
- * ratio is a positive multiple of the step, and the ratios sum to 100 — the
- * exact invariant the editor maintains. Anything else (corrupt or hand-edited)
- * returns null so the default blend is kept.
+ * Validate a persisted blend-brush config. Accepts it only if it's a 2..MAX list
+ * of {id, ratio} matching the exact invariant the editor maintains: every id is a
+ * palette material, every ratio is a positive multiple of the step, and the ratios
+ * sum to 100. Anything else (corrupt or hand-edited) returns null so the default
+ * blend is kept.
  */
 function parseBlend(v: unknown): BlendComponent[] | null {
-  if (!Array.isArray(v) || v.length < 1 || v.length > BLEND_MAX_SLOTS) return null;
+  if (!Array.isArray(v) || v.length < 2 || v.length > BLEND_MAX_SLOTS) return null;
   const out: BlendComponent[] = [];
   let sum = 0;
   for (const item of v) {
     if (!item || typeof item !== 'object') return null;
     const id = (item as { id?: unknown }).id;
     const ratio = (item as { ratio?: unknown }).ratio;
-    if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0 || !getMaterial(id)) return null;
+    if (typeof id !== 'number' || !PALETTE_IDS.has(id)) return null;
     if (
       typeof ratio !== 'number' ||
       !Number.isFinite(ratio) ||
