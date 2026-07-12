@@ -68,7 +68,15 @@ export const FIRE = register({
   color: rgb(255, 120, 40),
   density: 1,
   category: '불·열',
-  // Burns hot, so it heats what it touches; conducts poorly like other gases.
-  thermal: { init: 1000, conductivity: 0.1 },
+  // Burns hot, so it heats what it touches. Heat exchange across any interface is
+  // gated by min(두 전도도), so Fire's own conductivity is the ceiling on how fast
+  // it warms *anything* — at the old 0.1 it was the shared bottleneck that made
+  // heating a solid container (Iron/Diamond/Stone, all far more conductive) crawl
+  // no matter which solid you picked, since min(0.1, 0.85) = 0.1 clamps it. Set to
+  // the material default (0.3) so a flame actually drives heat into what it licks
+  // (e.g. melting an ore charge through a crucible wall in a sane time). This only
+  // speeds the *rate*; Fire still can't push anything past its own ~1000°, so it
+  // still won't melt Stone (1100°) — that stays Blue Flame/Lava's job.
+  thermal: { init: 1000, conductivity: 0.3 },
   update: updateFire,
 });

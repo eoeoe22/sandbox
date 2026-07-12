@@ -8,6 +8,7 @@ import { BLUE_FLAME } from './blueflame';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
+import { OXYGEN } from './oxygen';
 import { AMBIENT_TEMP } from '../config';
 
 // Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Alcohol,
@@ -81,6 +82,21 @@ const CONSUME_RATIO = 0.3;
 // it (which would also choke the sim with Fire/Smoke).
 const WREATH_CHANCE = 0.25;
 
+// Oxygen forced draught. A burning fuel cell normally pins at BURN_TEMP (800°);
+// Oxygen (id 36) blown against it makes the fire run hotter — each adjacent
+// Oxygen cell adds OXY_BOOST to the pinned temperature up to OXY_MAX_PIN, and
+// the drawn-in oxygen is consumed with probability OXY_CONSUME per tick. The
+// pin steps are chosen around the world's melt points: 0 oxygen = 800°
+// (unchanged bare burn — reduces iron ore but can't melt iron, and stays under
+// Stone's 1100° so furnace walls are safe), 1 = 1050° (a safe low blast, still
+// below stone), 2 = 1300°, 3+ = 1550° (past Iron's 1400° melt — a blast furnace
+// that runs molten iron, but now hot enough to start melting stone walls, which
+// is what forces water-jacket cooling). Being common to every fuel, Oxygen +
+// any fuel also becomes a hotter cutting torch as a free side effect.
+const OXY_BOOST = 250;
+const OXY_MAX_PIN = 1550;
+const OXY_CONSUME = 0.5;
+
 export interface Combustible {
   /** Per-tick chance to catch from an adjacent flame, and — once burning — to
    *  light each adjacent fuel cell. Also sets the fuel's relative burn speed. */
@@ -144,8 +160,22 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
   }
 
   // Re-pin heat so diffusion into cooler neighbors can't drop this cell below
-  // its autoignition and quietly extinguish the front.
-  sim.setTemp(x, y, BURN_TEMP);
+  // its autoignition and quietly extinguish the front. Oxygen blown against the
+  // fuel drives the pin higher (forced draught) — the only way to reach the
+  // temperatures that melt iron with a mere coal fire. Consumed oxygen is
+  // written to EMPTY, which is always a safe neighbor write (no same-tick
+  // reprocessing); the self setTemp is unchanged bookkeeping.
+  let pin = BURN_TEMP;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (sim.get(nx, ny) === OXYGEN.id) {
+      pin = Math.min(pin + OXY_BOOST, OXY_MAX_PIN);
+      if (sim.chance(OXY_CONSUME)) sim.set(nx, ny, EMPTY);
+    }
+  }
+  sim.setTemp(x, y, pin);
 
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
