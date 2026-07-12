@@ -29,6 +29,35 @@ export class Grid {
   moved: Uint8Array;
 
   /**
+   * 겹침 (overlap) layer: a second material id per cell, holding at most ONE
+   * fluid particle that shares the cell with its primary occupant — water
+   * soaked into a sand grain, or a liquid/gas mid-passage through a porous
+   * screen (Mesh/Turbine). 0 = nothing overlapped. Which primaries may host
+   * which fluids is decided by `canHostOverlap` (SimContext); the fluid's
+   * per-tick movement lives in SimContext.updateOverlay. An overlapped fluid is
+   * pure id+position — it shares the host cell's temperature and carries no
+   * aux/tint of its own. Travels with its host on a swap (the tuple stays
+   * consistent), is persisted like `aux`, and renders as a color blend so wet
+   * cells read as wet (see CanvasRenderer).
+   */
+  overlay: Uint8Array;
+  /**
+   * The overlap fluid's own `aux` state byte — its private per-material state
+   * (Grid.aux) parked here while it rides in a host's overlap slot, since the
+   * host is using the real `aux` for its own state. This is what carries a
+   * Petroleum Vapor's condensate cut, a Molten Uranium's burn counter, etc.
+   * intact across a passage through a Mesh/Turbine or a soak through sand,
+   * instead of resetting to 0. 0 when no fluid is overlapped. Travels with the
+   * overlay on every move and is persisted alongside it. Only read while
+   * `overlay` is non-zero, so a stale value under a dry cell is inert.
+   */
+  overlayAux: Uint8Array;
+  /** Per-tick "overlay already moved" guard — the overlap layer's own `moved`,
+   *  independent of the primary's, since the two particles in a cell move on
+   *  separate schedules within one step. */
+  overlayMoved: Uint8Array;
+
+  /**
    * Per-cell temperature for the heat-conduction system (see config.ts). Floats
    * because the diffusion pass exchanges fractional amounts of heat each tick.
    * Starts uniformly at `AMBIENT_TEMP`. `tempScratch` is the double-buffer the
@@ -86,6 +115,9 @@ export class Grid {
     this.size = width * height;
     this.cells = new Uint8Array(this.size); // initialized to EMPTY (0)
     this.moved = new Uint8Array(this.size);
+    this.overlay = new Uint8Array(this.size); // 겹침: no fluid overlapped
+    this.overlayAux = new Uint8Array(this.size);
+    this.overlayMoved = new Uint8Array(this.size);
     this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
     this.tempScratch = new Float32Array(this.size);
     this.aux = new Uint8Array(this.size);
@@ -125,6 +157,15 @@ export class Grid {
     this.aux[y * this.width + x] = v;
   }
 
+  getOverlay(x: number, y: number): number {
+    return this.overlay[y * this.width + x];
+  }
+
+  setOverlay(x: number, y: number, id: number): void {
+    this.overlay[y * this.width + x] = id;
+    if (id === 0) this.overlayAux[y * this.width + x] = 0; // dry cell carries no state
+  }
+
   getTint(x: number, y: number): number {
     return this.tint[y * this.width + x];
   }
@@ -149,6 +190,8 @@ export class Grid {
 
   clear(): void {
     this.cells.fill(EMPTY);
+    this.overlay.fill(0);
+    this.overlayAux.fill(0);
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
     this.tint.fill(0);
@@ -160,7 +203,7 @@ export class Grid {
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
-    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux, this.tint, this.bgTint);
+    this.resizeFrom(width, height, this.cells, this.width, this.height, this.temp, this.aux, this.overlay, this.overlayAux, this.tint, this.bgTint);
   }
 
   /**
@@ -182,6 +225,8 @@ export class Grid {
     srcH: number,
     srcTemp?: Float32Array,
     srcAux?: Uint8Array,
+    srcOverlay?: Uint8Array,
+    srcOverlayAux?: Uint8Array,
     srcTint?: Uint8Array,
     srcBgTint?: Uint8Array,
   ): void {
@@ -195,6 +240,11 @@ export class Grid {
     // predates aux) it starts zeroed — safe because every aux use is transient
     // state that self-heals (a Clone re-adopts, a conductor's refractory clears).
     const nextAux = new Uint8Array(width * height);
+    // The 겹침 overlap layer (fluid id + its parked aux) travels with its host
+    // cells the same way (a soaked bed stays soaked across a resize). Missing
+    // source (older save) → all dry.
+    const nextOverlay = new Uint8Array(width * height);
+    const nextOverlayAux = new Uint8Array(width * height);
     // Cosmetic per-particle tint travels with its cells the same way. When no
     // source tint is supplied it starts zeroed (neutral); callers seed it
     // afterward (Grid.randomizeTints) so a fresh load isn't a flat block.
@@ -213,6 +263,8 @@ export class Grid {
       next.set(srcCells.subarray(src, src + copyW), newY * width);
       if (srcTemp) nextTemp.set(srcTemp.subarray(src, src + copyW), newY * width);
       if (srcAux) nextAux.set(srcAux.subarray(src, src + copyW), newY * width);
+      if (srcOverlay) nextOverlay.set(srcOverlay.subarray(src, src + copyW), newY * width);
+      if (srcOverlayAux) nextOverlayAux.set(srcOverlayAux.subarray(src, src + copyW), newY * width);
       if (srcTint) nextTint.set(srcTint.subarray(src, src + copyW), newY * width);
       if (srcBgTint) nextBgTint.set(srcBgTint.subarray(src, src + copyW), newY * width);
     }
@@ -222,6 +274,9 @@ export class Grid {
     this.size = width * height;
     this.cells = next;
     this.moved = new Uint8Array(this.size);
+    this.overlay = nextOverlay;
+    this.overlayAux = nextOverlayAux;
+    this.overlayMoved = new Uint8Array(this.size);
     this.temp = nextTemp;
     this.tempScratch = new Float32Array(this.size);
     this.aux = nextAux;

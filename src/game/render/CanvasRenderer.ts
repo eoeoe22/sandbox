@@ -51,6 +51,10 @@ export class CanvasRenderer implements Renderer {
   private freezeTemp: Float32Array;
   /** id → precomputed frosted colour used when a freeze material is frozen. */
   private frost: Uint32Array;
+  /** id → 1 if the material draws a positional lattice checkerboard (Mesh). */
+  private hasLattice: Uint8Array;
+  /** id → the packed lattice colour woven through the base (valid where hasLattice). */
+  private lattice: Uint32Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
 
@@ -78,6 +82,8 @@ export class CanvasRenderer implements Renderer {
     this.renderAsAux = new Uint8Array(256);
     this.freezeTemp = new Float32Array(256).fill(-Infinity);
     this.frost = new Uint32Array(256);
+    this.hasLattice = new Uint8Array(256);
+    this.lattice = new Uint32Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -86,6 +92,10 @@ export class CanvasRenderer implements Renderer {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
+        if (m.lattice !== undefined) {
+          this.hasLattice[i] = 1;
+          this.lattice[i] = m.lattice;
+        }
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -107,6 +117,17 @@ export class CanvasRenderer implements Renderer {
     const g = mix((base >> 8) & 0xff, fg);
     const b = mix((base >> 16) & 0xff, fb);
     return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+  }
+
+  /** Blend a cell's rendered color toward its 겹침 overlap fluid's base color
+   *  (5/8 host, 3/8 fluid), so wet sand and a screen with water or steam passing
+   *  through read as such at a glance while the host's own look (lattice weave,
+   *  grain) still shows through. */
+  private static wetted(host: number, fluid: number): number {
+    const r = (((host & 0xff) * 5 + (fluid & 0xff) * 3) >> 3) & 0xff;
+    const g = ((((host >> 8) & 0xff) * 5 + ((fluid >> 8) & 0xff) * 3) >> 3) & 0xff;
+    const b = ((((host >> 16) & 0xff) * 5 + ((fluid >> 16) & 0xff) * 3) >> 3) & 0xff;
+    return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
   /** Shift a packed 0xAABBGGRR color's brightness by `d` (per channel, clamped),
@@ -179,6 +200,10 @@ export class CanvasRenderer implements Renderer {
     const asAux = this.renderAsAux;
     const freezeTemp = this.freezeTemp;
     const frost = this.frost;
+    const hasLat = this.hasLattice;
+    const latCol = this.lattice;
+    const ovArr = grid.overlay;
+    const w = grid.width;
     for (let i = 0; i < cells.length; i++) {
       let id = cells[i];
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
@@ -187,29 +212,39 @@ export class CanvasRenderer implements Renderer {
         const carried = auxArr[i];
         if (carried !== 0) id = carried;
       }
-      const g = glow[id];
-      if (g) {
-        buf[i] = CanvasRenderer.shade(g, temp[i]);
-        continue;
+      let c: number;
+      // A lattice material (Mesh) is a two-tone positional checkerboard, so a
+      // screen reads as a woven grid rather than a flat slab. Computed from the
+      // cell's x/y so the weave is tied to space, not to the particle.
+      if (hasLat[id]) {
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = (x ^ y) & 1 ? latCol[id] : pal[id];
+      } else if (glow[id]) {
+        c = CanvasRenderer.shade(glow[id]!, temp[i]);
+      } else if (temp[i] <= freezeTemp[id]) {
+        // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
+        // -Infinity for non-freeze materials, so this never fires for them.
+        c = frost[id];
+      } else {
+        const amp = vary[id];
+        if (amp === 0) {
+          c = pal[id];
+        } else {
+          // Powders read their own fixed per-grain tint; liquids sample the
+          // positional background field at this cell (see game/tint.ts).
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          // Map the tint byte to a signed brightness offset in [-amp, +amp]:
+          // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
+          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
+          c = CanvasRenderer.tinted(pal[id], d);
+        }
       }
-      // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
-      // -Infinity for non-freeze materials, so this never fires for them.
-      if (temp[i] <= freezeTemp[id]) {
-        buf[i] = frost[id];
-        continue;
-      }
-      const amp = vary[id];
-      if (amp === 0) {
-        buf[i] = pal[id];
-        continue;
-      }
-      // Powders read their own fixed per-grain tint; liquids sample the
-      // positional background field at this cell (see game/tint.ts).
-      const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-      // Map the tint byte to a signed brightness offset in [-amp, +amp]:
-      // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
-      const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-      buf[i] = CanvasRenderer.tinted(pal[id], d);
+      // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or
+      // steam mid-passage through a Mesh/Turbine — is tinted toward the fluid's
+      // color, so a soaked bed reads visibly wetter than a dry one.
+      const ov = ovArr[i];
+      buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
     this.offCtx.putImageData(this.image, 0, 0);
 

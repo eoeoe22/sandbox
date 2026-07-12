@@ -65,13 +65,18 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
   sim.moveDiagonalDown(x, y);
 }
 
-/** Liquid: fall, else flow diagonally down, else spread sideways to level out.
- *  A liquid chilled to/below its freezing point (see Material.freeze) is
+/** Liquid: fall, else flow diagonally down, else seep into a powder bed below
+ *  as a 겹침 overlap fluid (SimContext.soakDown — chance-gated, so a pool sinks
+ *  into sand gradually), else spread sideways to level out. The soak comes
+ *  before the sideways step on purpose: after it, a droplet skating along a dry
+ *  bed with open air on both sides would keep sliding forever and never soak
+ *  in. A liquid chilled to/below its freezing point (see Material.freeze) is
  *  frozen solid — it stays put until it warms up. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.isFrozen(x, y)) return;
   if (sim.moveDown(x, y)) return;
   if (sim.moveDiagonalDown(x, y)) return;
+  if (sim.soakDown(x, y)) return;
   sim.moveSideways(x, y);
 }
 

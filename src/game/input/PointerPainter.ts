@@ -198,6 +198,10 @@ export class PointerPainter {
         // Seed a random per-particle tint so a freshly painted powder/liquid is
         // grainy from the first frame instead of a flat block (see game/tint.ts).
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
+        // Painting (or erasing) replaces the whole cell, 겹침 overlap fluid
+        // included — the eraser really empties a wet cell, and fresh material
+        // starts dry.
+        this.grid.setOverlay(x, y, 0);
       }
     }
   }
@@ -237,6 +241,7 @@ export class PointerPainter {
         this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
         this.grid.setAux(x, y, 0);
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
+        this.grid.setOverlay(x, y, 0); // freshly painted material starts dry
       }
     }
   }

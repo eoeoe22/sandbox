@@ -41,7 +41,10 @@ export function heatCells(
 }
 
 /** Fisher–Yates shuffle of one set of flat cell indices in place, carrying each
- *  particle's (id, temperature, aux, tint) as it moves. */
+ *  particle's (id, temperature, aux, tint, 겹침 overlay + its parked overlayAux)
+ *  as it moves — the whole tuple travels together, so a wet grain stays wet, a
+ *  tagged overlay fluid keeps its state, and an overlay is never stranded on a
+ *  cell that can't host it. */
 function shuffleIndices(grid: Grid, idxs: number[], rand: () => number): void {
   for (let i = idxs.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -59,6 +62,12 @@ function shuffleIndices(grid: Grid, idxs: number[], rand: () => number): void {
     const n = grid.tint[a];
     grid.tint[a] = grid.tint[b];
     grid.tint[b] = n;
+    const o = grid.overlay[a];
+    grid.overlay[a] = grid.overlay[b];
+    grid.overlay[b] = o;
+    const oa = grid.overlayAux[a];
+    grid.overlayAux[a] = grid.overlayAux[b];
+    grid.overlayAux[b] = oa;
   }
 }
 

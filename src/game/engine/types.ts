@@ -205,6 +205,26 @@ export interface Material {
    */
   colorVary?: number;
   /**
+   * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine). To
+   * powders and solids it's an ordinary blocking Solid — piles rest on it — but
+   * a fluid moving into it slips into the cell's 겹침 (overlap) slot
+   * (Grid.overlay) and keeps travelling through under its own gravity/buoyancy,
+   * one fluid per cell, surfacing in the first empty cell it reaches — so water
+   * pours through a mesh floor of any thickness and seeps through a mesh wall
+   * until the levels equalize. Read by SimContext (tryMove entry,
+   * canHostOverlap); the rest of the engine ignores it.
+   */
+  porous?: boolean;
+  /**
+   * A second packed color woven through the base `color` as a positional
+   * checkerboard, so the material reads as a grid/lattice screen rather than a
+   * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw
+   * the base — a cheap, position-tied two-tone weave the renderer applies before
+   * any tint/glow. Purely a rendering hint; the simulation never reads it. Omit
+   * for an ordinary flat material.
+   */
+  lattice?: number;
+  /**
    * Render this cell using the *carried* material named by its `aux` byte, not
    * this material's own `color`. Debris sets it: a flying fragment carries its
    * origin material's id in `aux`, so shoved water draws blue and shoved sand

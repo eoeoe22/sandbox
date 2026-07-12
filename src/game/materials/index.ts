@@ -80,6 +80,9 @@ import { C4 } from './c4';
 import { SODA } from './soda';
 import { NICHROME } from './nichrome';
 import { LFP_BATTERY } from './lfpbattery';
+import { HEATPIPE } from './heatpipe';
+import { TURBINE } from './turbine';
+import { MESH } from './mesh';
 
 export {
   EMPTY_MAT,
@@ -159,6 +162,9 @@ export {
   SODA,
   NICHROME,
   LFP_BATTERY,
+  HEATPIPE,
+  TURBINE,
+  MESH,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -251,4 +257,7 @@ export const MATERIALS = [
   COAL_POWDER,
   LIMESTONE,
   SLAG,
+  HEATPIPE,
+  TURBINE,
+  MESH,
 ];

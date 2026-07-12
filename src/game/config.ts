@@ -146,6 +146,19 @@ export const DISPLACE_DRAG_SCALE = 0.1;
 export const DISPLACE_SIDE_PUSH = true;
 
 /**
+ * 겹침 (overlap) tunables — the second per-cell fluid slot (see Grid.overlay /
+ * SimContext). ABSORB: chance that a dry powder grain sinking into a liquid
+ * swallows the liquid into its overlap slot instead of shoving it aside — the
+ * "some overlap, some don't" split that keeps sand poured into water from
+ * raising the level by the sand's full volume. SOAK: per-tick chance that a
+ * liquid with nowhere left to flow seeps into the powder bed below it, so a
+ * standing pool sinks into sand gradually rather than getting sucked in
+ * instantly. 0 disables either mechanism.
+ */
+export const OVERLAP_ABSORB_CHANCE = 0.5;
+export const OVERLAP_SOAK_CHANCE = 0.35;
+
+/**
  * Smoke output level for reactions (combustion/explosion/etc.), a three-step
  * control replacing the old on/off toggle. `high` is the original "smoke on"
  * level (reactions emit exactly as much Smoke as they always did); `off`
