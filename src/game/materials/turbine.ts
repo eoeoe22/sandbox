@@ -47,6 +47,8 @@ export const TURBINE = register({
   color: rgb(150, 160, 172),
   density: 1000,
   category: '전기',
+  // Porous like the Mesh — fluids (and its steam) seep through any thickness.
+  porous: true,
   thermal: { conductivity: 0.5 },
   update: updateTurbine,
 });

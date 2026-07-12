@@ -205,6 +205,16 @@ export interface Material {
    */
   colorVary?: number;
   /**
+   * A porous solid: fluids seep *through* it while it stays put (Mesh, Turbine).
+   * It's an ordinary blocking Solid to the engine (powders pile on it, a fluid's
+   * own movement can't enter it), but its `update` calls the shared sieve
+   * (materials/sieve.ts), which tunnels an adjacent liquid/gas through the whole
+   * contiguous run of `porous` cells to the first empty cell beyond — so a wall
+   * of any thickness drains instead of acting solid. Read only by the sieve to
+   * know which cells a pass may tunnel across; the rest of the engine ignores it.
+   */
+  porous?: boolean;
+  /**
    * A second packed color woven through the base `color` as a positional
    * checkerboard, so the material reads as a grid/lattice screen rather than a
    * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw

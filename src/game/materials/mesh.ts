@@ -26,6 +26,9 @@ export const MESH = register({
   lattice: rgb(92, 96, 102),
   density: 1000,
   category: '고체',
+  // Fluids seep through it (any wall thickness) — the sieve tunnels them across
+  // the contiguous porous run; powders/solids still rest against it.
+  porous: true,
   thermal: { conductivity: 0.4 },
   update: updateMesh,
 });
