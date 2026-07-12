@@ -9,6 +9,7 @@
   import { MATERIALS } from '../game/materials';
   import { toCss } from '../game/render/color';
   import { BLEND_MAX_SLOTS, BLEND_RATIO_STEP } from '../game/config';
+  import MaterialPicker from './MaterialPicker.svelte';
 
   // Real materials only — the blend paints matter, never the eraser (id 0),
   // which isn't in MATERIALS anyway; the guard keeps this robust if that changes.
@@ -140,16 +141,12 @@
   <div class="slots">
     {#each comps as c, i (i)}
       <div class="slot">
-        <span class="swatch" style={`background:${colorOf(c.id)}`}></span>
-        <select
+        <MaterialPicker
           value={c.id}
-          onchange={(e) => setId(i, +e.currentTarget.value)}
-          aria-label={`${i + 1}번 물질`}
-        >
-          {#each OPTIONS as m (m.id)}
-            <option value={m.id}>{m.name}</option>
-          {/each}
-        </select>
+          options={OPTIONS}
+          onpick={(id) => setId(i, id)}
+          ariaLabel={`${i + 1}번 물질`}
+        />
         <span class="slot-pct">{c.ratio}%</span>
         <button
           class="mini"
@@ -244,24 +241,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .swatch {
-    flex: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-  }
-  .slot select {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 4px 6px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
-    color: #e8e8ee;
-    font: inherit;
-    font-size: 12px;
   }
   .slot-pct {
     flex: none;

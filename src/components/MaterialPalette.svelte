@@ -4,63 +4,13 @@
   import { onDestroy } from 'svelte';
   import { $selectedMaterial as selected, $tool as tool } from '../state/store';
   import { MATERIALS } from '../game/materials';
-  import { Phase, type Material } from '../game/engine/types';
+  import { buildCategories } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
 
-  // Thematic palette tabs, in display order, each with a Bootstrap Icon class. A
-  // material shows up under its declared `category`; a material that declares
-  // none falls back to the tab derived from its phase (so untagged materials
-  // still land somewhere sensible and the "add a material = one file" rule is
-  // preserved).
-  const CATEGORY_META: { key: string; icon: string }[] = [
-    { key: '고체', icon: 'bi-box-fill' },
-    { key: '가루', icon: 'bi-hourglass-split' },
-    { key: '액체', icon: 'bi-droplet-fill' },
-    { key: '기체', icon: 'bi-cloud-fill' },
-    { key: '불·열', icon: 'bi-fire' },
-    { key: '제련', icon: 'bi-hammer' },
-    { key: '석유', icon: 'bi-fuel-pump-fill' },
-    { key: '폭발', icon: 'bi-asterisk' },
-    { key: '냉각', icon: 'bi-snow' },
-    { key: '전기', icon: 'bi-lightning-charge-fill' },
-    { key: '생명', icon: 'bi-flower1' },
-    { key: '특수', icon: 'bi-stars' },
-  ];
-
-  const PHASE_FALLBACK: Record<Phase, string> = {
-    [Phase.Empty]: '지우개',
-    [Phase.Solid]: '고체',
-    [Phase.Powder]: '가루',
-    [Phase.Liquid]: '액체',
-    [Phase.Gas]: '기체',
-  };
-
-  const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
-  const iconFor = (key: string): string =>
-    CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-tag-fill';
-
-  // Bucket every palette material by resolved category, then order the tabs:
-  // the known categories (in CATEGORY_META order) that actually have members,
-  // followed by any not-yet-known category present (future materials can
-  // introduce a new tab just by naming it — nothing here needs editing).
-  const grouped = new Map<string, Material[]>();
-  for (const m of MATERIALS) {
-    const key = categoryOf(m);
-    const bucket = grouped.get(key);
-    if (bucket) bucket.push(m);
-    else grouped.set(key, [m]);
-  }
-  const orderedKeys = [
-    ...CATEGORY_META.map((c) => c.key).filter((k) => grouped.has(k)),
-    ...[...grouped.keys()].filter((k) => !CATEGORY_META.some((c) => c.key === k)),
-  ];
-  const categories = orderedKeys.map((key, index) => ({
-    key,
-    index,
-    label: key,
-    icon: iconFor(key),
-    materials: grouped.get(key)!,
-  }));
+  // Category grouping (declared `category`, or a phase fallback) lives in the
+  // shared `categories` module so the blend brush's picker groups materials
+  // identically. This is the ordered list of category tabs with their members.
+  const categories = buildCategories(MATERIALS);
 
   // Which category's flyout is showing. `hovered` follows the pointer (mouse);
   // `pinned` is a click-to-lock override so touch devices (no hover) can open
