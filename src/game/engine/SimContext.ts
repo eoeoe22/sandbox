@@ -171,6 +171,17 @@ export class SimContext {
     return this.grid.get(x, y) === EMPTY;
   }
 
+  /** True if the cell at (x,y) already moved or was written this tick (Grid.moved
+   *  — the same flag swap()/spawn() set and Simulation's scan uses to skip a
+   *  cell). A porous solid (the sieve) reads this to avoid *relaying* one fluid
+   *  parcel through several spaced mesh cells in a single tick: a parcel just
+   *  placed by one mesh is `moved`, so the next mesh leaves it alone until the
+   *  following tick. Bounds-checked; out-of-bounds reads as "not moved". */
+  hasMoved(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    return this.grid.moved[this.grid.idx(x, y)] === 1;
+  }
+
   /**
    * True if the liquid at (x,y) is at or below its freezing point (see
    * Material.freeze). A frozen liquid acts solid: its own update stops flowing

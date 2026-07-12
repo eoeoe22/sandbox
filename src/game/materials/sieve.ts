@@ -18,12 +18,17 @@ import { getMaterial } from './registry';
 // Powders and solids are always blocked (they rest against it like any solid),
 // and a liquid chilled below its freezing point acts solid too
 // (SimContext.isFrozen), so it no longer seeps through — matching how
-// tryMove/pushAside treat a frozen puddle everywhere else. Returns the id of
-// whatever passed this tick (so a Turbine can tell a puff of Steam went through
-// and make power), or EMPTY when nothing moved.
+// tryMove/pushAside treat a frozen puddle everywhere else. A source parcel that
+// already moved this tick is skipped (SimContext.hasMoved), so one drop can't be
+// relayed through several spaced mesh cells in a single tick — it advances one
+// screen per tick like everything else. Returns the id of whatever passed this
+// tick (so a Turbine can tell a puff of Steam went through and make power), or
+// EMPTY when nothing moved.
 
-/** True if the fluid at (x,y) may seep through — a liquid (not frozen) or a gas. */
+/** True if the fluid at (x,y) may seep through this tick — a liquid (not frozen)
+ *  or a gas, and not one already relocated this tick (see hasMoved above). */
 function seeps(x: number, y: number, sim: SimContext): boolean {
+  if (sim.hasMoved(x, y)) return false;
   const p = getMaterial(sim.get(x, y)).phase;
   if (p === Phase.Gas) return true;
   return p === Phase.Liquid && !sim.isFrozen(x, y);
@@ -37,7 +42,8 @@ export function sift(x: number, y: number, sim: SimContext): number {
     sim.get(x, y + 1) === EMPTY &&
     sim.get(x, y - 1) !== EMPTY &&
     getMaterial(sim.get(x, y - 1)).phase === Phase.Liquid &&
-    !sim.isFrozen(x, y - 1)
+    !sim.isFrozen(x, y - 1) &&
+    !sim.hasMoved(x, y - 1)
   ) {
     const passed = sim.get(x, y - 1);
     sim.swap(x, y - 1, x, y + 1);
@@ -49,7 +55,8 @@ export function sift(x: number, y: number, sim: SimContext): number {
     sim.inBounds(x, y + 1) &&
     sim.get(x, y - 1) === EMPTY &&
     sim.get(x, y + 1) !== EMPTY &&
-    getMaterial(sim.get(x, y + 1)).phase === Phase.Gas
+    getMaterial(sim.get(x, y + 1)).phase === Phase.Gas &&
+    !sim.hasMoved(x, y + 1)
   ) {
     const passed = sim.get(x, y + 1);
     sim.swap(x, y + 1, x, y - 1);
