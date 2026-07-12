@@ -38,9 +38,12 @@ const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray founta
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
 const GRAVITY_Q = 2;
-// Below this total speed a fragment has essentially stopped, so it settles now
-// rather than hovering out the rest of its life — keeps the burst snappy.
-const SETTLE_SPEED_Q = 2;
+// A fragment whose speed has dropped to essentially zero on BOTH axes (apex of a
+// slow lob, or spent after a few bounces) settles now rather than hovering out
+// the rest of its life — keeps the burst snappy. Testing both axes (not their
+// sum) matters: a fresh side-launched fragment has |vx|≈2 with vy≈0, and must NOT
+// be caught here on its first tick, or it would deposit without ever flying.
+const STILL_Q = 1;
 
 /**
  * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
@@ -111,9 +114,10 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
   }
   let vxQ = st.vxQ;
   let vyQ = clampV(st.vyQ + GRAVITY_Q); // brisk gravity every tick → a quick arc
-  if (Math.abs(vxQ) + Math.abs(vyQ) <= SETTLE_SPEED_Q) {
-    // Momentum spent (apex of a slow lob, or after a few bounces) → settle now
-    // instead of hovering, so the burst doesn't linger.
+  if (Math.abs(vxQ) <= STILL_Q && Math.abs(vyQ) <= STILL_Q) {
+    // Momentum spent on both axes → settle now instead of hovering, so the burst
+    // doesn't linger. (A freshly launched fragment always has speed on at least
+    // one axis, so it never lands here before flying — see STILL_Q.)
     sim.spawn(x, y, origId);
     return;
   }
