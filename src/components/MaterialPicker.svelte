@@ -44,13 +44,21 @@
     activeKey === null ? null : categories.find((c) => c.key === activeKey) ?? null,
   );
 
+  // Where to move focus after the flyout (re)renders: 'selected' focuses the
+  // item matching the current value (or the first) on open; 'first' focuses the
+  // first item after a level switch. Consumed once by the focus effect below.
+  let pendingFocus = $state<'selected' | 'first' | null>(null);
+
   function openPopover(): void {
     open = true;
     activeKey = null;
+    pendingFocus = 'selected';
   }
-  function close(): void {
+  function close(restoreFocus = false): void {
     open = false;
     activeKey = null;
+    pendingFocus = null;
+    if (restoreFocus) triggerEl?.focus();
   }
   function toggle(): void {
     if (open) close();
@@ -59,13 +67,60 @@
 
   function chooseCategory(key: string): void {
     activeKey = key;
+    pendingFocus = 'first';
   }
   function back(): void {
     activeKey = null;
+    pendingFocus = 'first';
   }
   function pick(id: number): void {
     onpick(id);
-    close();
+    close(true);
+  }
+
+  // --- Keyboard focus (restores the native <select>'s keyboard operability) ---
+  // The flyout is portaled to the end of <body>, so it's out of the page's
+  // logical tab order; moving focus into it on open — and back to the trigger on
+  // close — is what makes it keyboard-reachable. Items are plain buttons (natively
+  // Enter/Space-activatable and tabbable); arrow keys add roving focus on top.
+  function focusables(): HTMLElement[] {
+    return flyoutEl ? Array.from(flyoutEl.querySelectorAll<HTMLElement>('[data-item]')) : [];
+  }
+  function focusAt(i: number): void {
+    const list = focusables();
+    if (list.length) list[((i % list.length) + list.length) % list.length].focus();
+  }
+  function focusFlyout(mode: 'selected' | 'first'): void {
+    const list = focusables();
+    if (!list.length) return;
+    const sel = mode === 'selected' ? list.findIndex((el) => el.dataset.selected === 'true') : -1;
+    (sel >= 0 ? list[sel] : list[0]).focus();
+  }
+
+  function onFlyoutKeydown(e: KeyboardEvent): void {
+    const list = focusables();
+    if (!list.length) return;
+    const cur = list.indexOf(document.activeElement as HTMLElement);
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        e.preventDefault();
+        focusAt(cur + 1);
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        e.preventDefault();
+        focusAt(cur - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        focusAt(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        focusAt(list.length - 1);
+        break;
+    }
   }
 
   // Move the flyout node to <body> so it's fixed to the real viewport (see the
@@ -141,6 +196,18 @@
     };
   });
 
+  // Once the flyout for the current level exists, consume any pending focus
+  // request so keyboard users land on a real control. Reading `activeKey` reruns
+  // this on the level switch (categories ⇄ materials).
+  $effect(() => {
+    void activeKey;
+    if (open && flyoutEl && pendingFocus) {
+      const mode = pendingFocus;
+      pendingFocus = null;
+      focusFlyout(mode);
+    }
+  });
+
   onDestroy(() => close());
 
   // The flyout is portaled out of `root`, so clicks inside it must also count as
@@ -160,9 +227,11 @@
   function handleWindowKeydown(e: KeyboardEvent): void {
     if (!open) return;
     if (e.key === 'Escape') {
-      // Escape backs out one level (materials → categories), then closes.
-      if (activeKey !== null) activeKey = null;
-      else close();
+      e.preventDefault();
+      // Escape backs out one level (materials → categories), then closes,
+      // returning focus to the trigger on the final close.
+      if (activeKey !== null) back();
+      else close(true);
     }
   }
 </script>
@@ -185,20 +254,29 @@
   </button>
 
   {#if open && flyoutPos}
+    <!-- Plain focusable buttons in a labeled group (not role=menu): buttons are
+         natively announced and Enter/Space-activatable, and arrow-key roving
+         (onFlyoutKeydown) is layered on without the menu role's implied
+         semantics we don't fully own. -->
     <div
       class="flyout"
       use:portal
       bind:this={flyoutEl}
-      role="menu"
-      aria-label="물질 선택"
+      role="group"
+      aria-label={activeCat ? `${activeCat.label} 물질` : '물질 카테고리'}
+      onkeydown={onFlyoutKeydown}
+      data-picker-portal
       style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
     >
       {#if activeCat === null}
         <div class="cats">
           {#each categories as cat (cat.key)}
+            {@const isSel = cat.materials.some((m) => m.id === value)}
             <button
               class="cat"
-              class:selected={cat.materials.some((m) => m.id === value)}
+              class:selected={isSel}
+              data-item
+              data-selected={isSel}
               onclick={() => chooseCategory(cat.key)}
               title={cat.label}
             >
@@ -220,8 +298,10 @@
           {#each activeCat.materials as m (m.id)}
             <button
               class="chip"
-              role="menuitem"
+              data-item
+              data-selected={m.id === value}
               class:active={m.id === value}
+              aria-pressed={m.id === value}
               onclick={() => pick(m.id)}
               title={m.name}
             >

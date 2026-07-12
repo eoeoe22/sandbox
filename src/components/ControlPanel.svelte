@@ -62,18 +62,26 @@
   // to window, so `toggleEl` guards against it reopening/closing twice. On desktop
   // the sheet is always shown inline (its `.open` class is ignored), so closing
   // `sheetOpen` here has no visible effect.
-  function handleWindowClick(e: MouseEvent): void {
+  // Detect the dismissing tap on pointerdown, not click: the blend brush's
+  // material picker portals its popover out to <body>, and picking a material (or
+  // drilling into a category) detaches the tapped node from that popover before a
+  // bubbling `click` would run — so a click-time `closest` couldn't tell the tap
+  // came from the picker and would wrongly dismiss the sheet, forcing the user to
+  // reopen it for the next adjustment. At pointerdown the DOM is still intact.
+  function handleWindowPointerDown(e: PointerEvent): void {
     if (!sheetOpen) return;
     const t = e.target as Node;
     if (sheetEl?.contains(t)) return;
     if (toggleEl?.contains(t)) return;
+    // A tap inside the picker's portaled popover logically belongs to the sheet.
+    if (t instanceof Element && t.closest('[data-picker-portal]')) return;
     sheetOpen = false;
   }
 
   onDestroy(() => clearTimeout(clearTimer));
 </script>
 
-<svelte:window onclick={handleWindowClick} />
+<svelte:window onpointerdown={handleWindowPointerDown} />
 
 <aside class="panel">
   <div class="head">
