@@ -11,6 +11,7 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
+import { NICHROME, nichromeJouleHeat } from './nichrome';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -19,10 +20,12 @@ import { OXYGEN } from './oxygen';
 // adjacent Spark. A pulse therefore reads as a bright dot racing along a wire.
 //
 // Conductors and strength: current flows only through `conductive` materials
-// (Iron, Mercury, and — now — Water and Saltwater); everything else is an
-// insulator that blocks it outright. A pulse carries a *strength* that decays as
-// it travels, so it fades out in a resistive medium instead of running forever:
+// (Iron, Mercury, Nichrome, Water, Saltwater); everything else is an insulator
+// that blocks it outright. A pulse carries a *strength* that decays as it
+// travels, so it fades out in a resistive medium instead of running forever:
 //   • Iron / Mercury (metal) — no loss, the pulse keeps full strength end to end.
+//   • Nichrome — a deliberate resistor, bleeds slightly (a long run's worth) and
+//     heats up as pulses pass (Joule heating — see nichrome.ts).
 //   • Saltwater — a weak electrolyte, bleeds strength slowly (carries a good way).
 //   • Water — bleeds strength fast (dies after just a few cells).
 //
@@ -55,10 +58,13 @@ export const FULL_STRENGTH = 30;
 // Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
 // appending a new conductor keeps existing packed values valid. Every material
 // tagged `conductive` must appear here so a spark on it knows what to revert to.
-const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id];
+const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id];
 // Strength lost entering a cell of each class: metal keeps it (0), brine bleeds
-// slowly (2 → ~15 cells), fresh water bleeds fast (8 → ~4 cells).
-const CONDUCTOR_LOSS = [0, 0, 8, 2];
+// slowly (2 → ~15 cells), fresh water bleeds fast (8 → ~4 cells), nichrome is a
+// deliberate resistor (1 → ~30 cells). Nichrome's resistance also shows up as
+// heat: each passing pulse deposits a fixed dose of Joule heat into the wire on
+// revert (see nichromeJouleHeat), separate from this per-cell strength loss.
+const CONDUCTOR_LOSS = [0, 0, 8, 2, 1];
 
 // Electrolysis: a spark passing through Water/Saltwater occasionally splits it
 // into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
@@ -188,6 +194,12 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   }
   sim.set(x, y, conductorId);
   sim.setAux(x, y, REFRACTORY_TICKS);
+  if (conductorId === NICHROME.id) {
+    // Resistive (Joule) heating: every pulse that passes deposits heat into
+    // the element (capped, cold-ended — see nichromeJouleHeat), so a powered
+    // coil climbs to a glow while its terminals and leads stay cool.
+    nichromeJouleHeat(x, y, sim, SPARK.id);
+  }
 }
 
 export const SPARK = register({
