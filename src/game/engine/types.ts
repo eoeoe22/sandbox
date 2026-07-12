@@ -120,6 +120,17 @@ export interface Material {
    */
   explosive?: boolean;
   /**
+   * This explosive is set off *directly* by an electric arc: when a Spark reaches
+   * a `conductive` neighbor of it, the spark detonates it on the spot (see
+   * spark.ts) instead of the usual trick of dropping a lick of Fire beside it for
+   * the charge's own flame-trigger to catch. That fire hand-off is scan-order
+   * dependent and needs an open cell next to the charge — so it fails silently for
+   * a charge (C4) that only detonates on a shock/spark and is packed flush against
+   * a wall. Marking it here makes the electric detonator deterministic and
+   * position-independent. Only meaningful alongside `explosive`.
+   */
+  electricDetonate?: boolean;
+  /**
    * Blast reach (in cells) a *lone* charge of this material detonates with, and —
    * unless `blastYield` overrides it — the yield each cell contributes to a
    * connected mass's total (see `surveyMass`/`computeReach` in blast.ts). A single

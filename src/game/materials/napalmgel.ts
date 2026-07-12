@@ -11,6 +11,8 @@ import {
   decodeFlight,
   encodeFlight,
   launchBallistic,
+  walkFlight,
+  advanceFlight,
   type LaunchSpec,
 } from './ballistic';
 import { FIRE } from './fire';
@@ -90,45 +92,26 @@ function updateFlying(x: number, y: number, sim: SimContext): void {
   }
   const vxQ = st.vxQ;
   const vyQ = clampV(st.vyQ + GRAVITY_Q); // heavy, gravity every tick
-  const dx = cellsThisTick(sim, vxQ);
-  const dy = cellsThisTick(sim, vyQ);
 
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  let cx = x;
-  let cy = y;
-  for (let s = 1; s <= steps; s++) {
-    const nx = x + Math.round((dx * s) / steps);
-    const ny = y + Math.round((dy * s) / steps);
-    if (nx === cx && ny === cy) continue;
-    if (!sim.inBounds(nx, ny)) {
-      if (sim.borderMode === 'void') sim.set(x, y, EMPTY);
-      else land(sim, x, y, cx, cy);
-      return;
-    }
-    const nid = sim.get(nx, ny);
-    if (nid === EMPTY) {
-      cx = nx;
-      cy = ny;
-      continue;
-    }
-    if (nid === NAPALM_GEL.id) break; // sibling blob: stop short, land/fly next tick
-    if (isWater(nid)) {
-      // Water is a poor extinguisher: mostly it sticks and burns on the surface.
-      if (sim.chance(GEL_WATER_PERSIST)) land(sim, x, y, cx, cy);
-      else sim.set(x, y, EMPTY);
-      return;
-    }
-    // Hit terrain → splatter and stick.
-    land(sim, x, y, cx, cy);
-    return;
-  }
-
-  if (cx !== x || cy !== y) {
-    sim.set(x, y, EMPTY);
-    sim.spawn(cx, cy, NAPALM_GEL.id);
-  }
-  sim.setTemp(cx, cy, encodeFlight(st.life - 1, vxQ, vyQ));
-  // aux stays 0 (still flying) — spawn already zeroed it on the move.
+  // The shared straight-line walk handles the flight; the blob sticks where it
+  // lands — and, unusually, mostly *sticks and burns on water's surface* rather
+  // than being washed out (water is a poor extinguisher for napalm).
+  walkFlight(sim, x, y, cellsThisTick(sim, vxQ), cellsThisTick(sim, vyQ), {
+    siblingId: NAPALM_GEL.id,
+    onImpact(sim, x, y, cx, cy, nx, _ny, nid) {
+      // nx >= 0 is a real cell hit; nx < 0 is the wall edge (just stick there).
+      if (nx >= 0 && isWater(nid)) {
+        if (sim.chance(GEL_WATER_PERSIST)) land(sim, x, y, cx, cy);
+        else sim.set(x, y, EMPTY);
+        return;
+      }
+      land(sim, x, y, cx, cy);
+    },
+    onArrive(sim, x, y, cx, cy) {
+      // aux stays 0 (still flying) — advanceFlight's spawn already zeroed it.
+      advanceFlight(sim, x, y, cx, cy, NAPALM_GEL.id, encodeFlight(st.life - 1, vxQ, vyQ));
+    },
+  });
 }
 
 /** One tick of a landed, burning (aux > 0) gel blob. */

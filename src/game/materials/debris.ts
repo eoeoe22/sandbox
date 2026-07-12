@@ -8,6 +8,8 @@ import {
   cellsThisTick,
   decodeFlight,
   encodeFlight,
+  walkFlight,
+  advanceFlight,
 } from './ballistic';
 
 // Debris — the grain a Concussion blast flings instead of erasing. Ballistic
@@ -96,45 +98,19 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
   }
   const vxQ = st.vxQ;
   const vyQ = clampV(st.vyQ + GRAVITY_Q); // full gravity every tick → a falling arc
-  const dx = cellsThisTick(sim, vxQ);
-  const dy = cellsThisTick(sim, vyQ);
 
-  // Walk the line one cell at a time so the fragment lands on the first thing
-  // in its path, not just the endpoint.
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  let cx = x;
-  let cy = y;
-  for (let s = 1; s <= steps; s++) {
-    const nx = x + Math.round((dx * s) / steps);
-    const ny = y + Math.round((dy * s) / steps);
-    if (nx === cx && ny === cy) continue;
-    if (!sim.inBounds(nx, ny)) {
-      // Void edge: the fragment falls out of the world. Wall edge: it settles
-      // against the boundary, re-depositing its grain at the last open cell.
-      if (sim.borderMode === 'void') sim.set(x, y, EMPTY);
-      else settle(sim, x, y, cx, cy, origId);
-      return;
-    }
-    const nid = sim.get(nx, ny);
-    if (nid === EMPTY) {
-      cx = nx;
-      cy = ny;
-      continue;
-    }
-    if (nid === DEBRIS.id) break; // sibling fragment: stop short this tick, fly on next
-    // Hit terrain/liquid/solid — the carried grain rains back onto it.
-    settle(sim, x, y, cx, cy, origId);
-    return;
-  }
-
-  // Clear flight (or stopped short at a sibling): advance to the final open cell
-  // and spend one tick of life, carrying the material id along on the move.
-  if (cx !== x || cy !== y) {
-    sim.set(x, y, EMPTY);
-    sim.spawn(cx, cy, DEBRIS.id);
-  }
-  sim.setTemp(cx, cy, encodeFlight(st.life - 1, vxQ, vyQ));
-  sim.setAux(cx, cy, origId);
+  // The shared straight-line walk handles the flight; the fragment re-deposits
+  // its carried grain wherever it lands (void edge just drops it out of world).
+  walkFlight(sim, x, y, cellsThisTick(sim, vxQ), cellsThisTick(sim, vyQ), {
+    siblingId: DEBRIS.id,
+    onImpact(sim, x, y, cx, cy) {
+      settle(sim, x, y, cx, cy, origId);
+    },
+    onArrive(sim, x, y, cx, cy) {
+      advanceFlight(sim, x, y, cx, cy, DEBRIS.id, encodeFlight(st.life - 1, vxQ, vyQ));
+      sim.setAux(cx, cy, origId); // carry the material id along on the move
+    },
+  });
 }
 
 export const DEBRIS = register({

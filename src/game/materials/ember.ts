@@ -9,6 +9,8 @@ import {
   decodeFlight,
   encodeFlight,
   launchBallistic,
+  walkFlight,
+  advanceFlight,
   type LaunchSpec,
 } from './ballistic';
 import { FIRE } from './fire';
@@ -98,57 +100,37 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
   // parity alternates) — half-rate droop that keeps the flight mostly
   // straight without a fractional-velocity field.
   const vyQ = (st.life & 1) === 0 ? clampV(st.vyQ + GRAVITY_Q) : st.vyQ;
-  const dx = cellsThisTick(sim, vxQ);
-  const dy = cellsThisTick(sim, vyQ);
 
-  // Walk the straight line to the target cell one step at a time so the
-  // ember collides with the first thing on its path, not just the endpoint.
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  let cx = x;
-  let cy = y;
-  for (let s = 1; s <= steps; s++) {
-    const nx = x + Math.round((dx * s) / steps);
-    const ny = y + Math.round((dy * s) / steps);
-    if (nx === cx && ny === cy) continue;
-    if (!sim.inBounds(nx, ny)) {
-      // Open (void) edges: the spark simply leaves the world, like any
-      // particle that moves out of bounds. A solid container edge is an
-      // obstacle like any other.
-      if (sim.borderMode === 'void') sim.set(x, y, EMPTY);
-      else shatter(sim, x, y, cx, cy);
-      return;
-    }
-    const nid = sim.get(nx, ny);
-    if (nid === EMPTY) {
-      // Open air (including the fresh crater the blast just cleared): keep flying.
-      cx = nx;
-      cy = ny;
-      continue;
-    }
-    if (nid === EMBER.id) break; // crossed a sibling spark: stop short this tick, fly on next
-    if (nid === WATER.id || nid === SALTWATER.id) {
-      sim.set(x, y, EMPTY); // quenched — no flame, no steam, just gone
-      return;
-    }
-    const m = getMaterial(nid);
-    // Wall, explosion-proof solids (Diamond) and truly indestructible ones
-    // (Clone) can't be smashed, explosives are left intact so a stray ember can
-    // chain-detonate them via the fire it drops rather than silently erasing
-    // them, and gases (fire, smoke, the blast flash itself) aren't terrain to
-    // smash — those just end the flight.
-    if (m.isWall || m.explosionProof || m.indestructible || m.explosive || m.phase === Phase.Gas) {
-      shatter(sim, x, y, cx, cy);
-    }
-    else smash(sim, x, y, nx, ny); // sand, stone, plants, … — punch out the struck cell
-    return;
-  }
-
-  // Clear flight: settle at the final cell with one tick of life spent.
-  if (cx !== x || cy !== y) {
-    sim.set(x, y, EMPTY);
-    sim.spawn(cx, cy, EMBER.id);
-  }
-  sim.setTemp(cx, cy, encodeFlight(st.life - 1, vxQ, vyQ));
+  // The shared straight-line walk handles the flight; the ember supplies only
+  // what happens where it lands (smash/shatter/quench) and how it settles.
+  walkFlight(sim, x, y, cellsThisTick(sim, vxQ), cellsThisTick(sim, vyQ), {
+    siblingId: EMBER.id,
+    onImpact(sim, x, y, cx, cy, nx, ny, nid) {
+      // A solid container edge (nx < 0) ends the flight like any obstacle.
+      if (nx < 0) {
+        shatter(sim, x, y, cx, cy);
+        return;
+      }
+      if (nid === WATER.id || nid === SALTWATER.id) {
+        sim.set(x, y, EMPTY); // quenched — no flame, no steam, just gone
+        return;
+      }
+      const m = getMaterial(nid);
+      // Wall, explosion-proof solids (Diamond) and truly indestructible ones
+      // (Clone) can't be smashed, explosives are left intact so a stray ember
+      // can chain-detonate them via the fire it drops rather than silently
+      // erasing them, and gases (fire, smoke, the blast flash itself) aren't
+      // terrain to smash — those just end the flight.
+      if (m.isWall || m.explosionProof || m.indestructible || m.explosive || m.phase === Phase.Gas) {
+        shatter(sim, x, y, cx, cy);
+      } else {
+        smash(sim, x, y, nx, ny); // sand, stone, plants, … — punch out the struck cell
+      }
+    },
+    onArrive(sim, x, y, cx, cy) {
+      advanceFlight(sim, x, y, cx, cy, EMBER.id, encodeFlight(st.life - 1, vxQ, vyQ));
+    },
+  });
 }
 
 export const EMBER = register({

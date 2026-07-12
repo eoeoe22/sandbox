@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
+import { detonate } from './blast';
 import { IRON } from './iron';
 import { MERCURY } from './mercury';
 import { WATER } from './water';
@@ -150,7 +151,15 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
-      arced = arcFireBeside(sim, nx, ny);
+      if (m.electricDetonate) {
+        // A charge that only answers to a shock/arc (C4): detonate it directly,
+        // so the trigger is deterministic and works even when the charge is
+        // packed flush against a wall with no open cell for a fire hand-off.
+        detonate(sim, nx, ny);
+        arced = true;
+      } else {
+        arced = arcFireBeside(sim, nx, ny);
+      }
     }
   }
 

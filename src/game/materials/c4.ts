@@ -15,6 +15,13 @@ import { BLAST, detonate } from './blast';
 // TNT, and the spark sets off the whole connected charge (surveyMass gathers the
 // lot). The reliable, plannable detonator that fire-triggered explosives, which
 // go off the instant any flame drifts near, never were.
+//
+// The electric trigger is deterministic: `electricDetonate` makes the arriving
+// Spark detonate the charge *directly* (see spark.ts), rather than dropping a
+// lick of Fire beside it and hoping the charge's own flame-check catches it —
+// that hand-off is scan-order dependent and needs an open cell next to the
+// charge, so it would fizzle exactly when the C4 is packed flush against the TNT
+// it's meant to set off. Fire and lava still only make it deflagrate.
 const BLAST_RADIUS = 14;
 // Deflagration when lit by fire/lava: slow and cool, it just burns away rather
 // than exploding. A high autoignition means only genuine heat cooks it off, and
@@ -49,6 +56,7 @@ export const C4 = register({
   density: 1000,
   explosive: true,
   combustible: true,
+  electricDetonate: true, // a Spark detonates it directly (see spark.ts) — no fire hand-off
   blastRadius: BLAST_RADIUS,
   category: '폭발',
   thermal: { conductivity: 0.3 },

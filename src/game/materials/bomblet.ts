@@ -9,6 +9,8 @@ import {
   decodeFlight,
   encodeFlight,
   launchBallistic,
+  walkFlight,
+  advanceFlight,
   type LaunchSpec,
 } from './ballistic';
 import { detonate } from './blast';
@@ -55,40 +57,18 @@ function updateBomblet(x: number, y: number, sim: SimContext): void {
   }
   const vxQ = st.vxQ;
   const vyQ = clampV(st.vyQ + GRAVITY_Q); // heavy lob: gravity every tick
-  const dx = cellsThisTick(sim, vxQ);
-  const dy = cellsThisTick(sim, vyQ);
 
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  let cx = x;
-  let cy = y;
-  for (let s = 1; s <= steps; s++) {
-    const nx = x + Math.round((dx * s) / steps);
-    const ny = y + Math.round((dy * s) / steps);
-    if (nx === cx && ny === cy) continue;
-    if (!sim.inBounds(nx, ny)) {
-      // Void edge: just leaves the world. Wall edge: goes off against it.
-      if (sim.borderMode === 'void') sim.set(x, y, EMPTY);
-      else blow(sim, x, y, cx, cy);
-      return;
-    }
-    const nid = sim.get(nx, ny);
-    if (nid === EMPTY) {
-      cx = nx;
-      cy = ny;
-      continue;
-    }
-    if (nid === BOMBLET.id) break; // sibling: stop short this tick, fly on next
-    // Hit terrain/liquid/an explosive → detonate its little crater right here.
-    blow(sim, x, y, cx, cy);
-    return;
-  }
-
-  // Clear flight (or stopped short at a sibling): advance and spend a tick.
-  if (cx !== x || cy !== y) {
-    sim.set(x, y, EMPTY);
-    sim.spawn(cx, cy, BOMBLET.id);
-  }
-  sim.setTemp(cx, cy, encodeFlight(st.life - 1, vxQ, vyQ));
+  // The shared straight-line walk handles the flight; on any impact (terrain,
+  // an explosive, or the wall edge) the bomblet goes off its little crater.
+  walkFlight(sim, x, y, cellsThisTick(sim, vxQ), cellsThisTick(sim, vyQ), {
+    siblingId: BOMBLET.id,
+    onImpact(sim, x, y, cx, cy) {
+      blow(sim, x, y, cx, cy);
+    },
+    onArrive(sim, x, y, cx, cy) {
+      advanceFlight(sim, x, y, cx, cy, BOMBLET.id, encodeFlight(st.life - 1, vxQ, vyQ));
+    },
+  });
 }
 
 export const BOMBLET = register({

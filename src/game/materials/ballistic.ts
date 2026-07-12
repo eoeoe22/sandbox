@@ -1,3 +1,4 @@
+import { EMPTY } from '../engine/types';
 import type { SimContext } from '../engine/SimContext';
 
 // Shared ballistic-particle primitives — the reusable core of Ember and its
@@ -91,4 +92,101 @@ export function launchBallistic(
   const vyQ = clampV(dirY * speedQ + sim.randInt(jitterSpan) - spec.jitterQ - spec.upBiasQ);
   sim.spawn(x, y, id);
   sim.setTemp(x, y, encodeFlight(spec.lifeMin + sim.randInt(spec.lifeVar), vxQ, vyQ));
+}
+
+/** Callbacks a ballistic particle supplies to `walkFlight` — everything about
+ *  the flight *except* the straight-line walk itself, which is identical for
+ *  every particle (see walkFlight). */
+export interface FlightHandlers {
+  /** This particle's own id: a sibling on the path is passed through this tick
+   *  (stop short, fly on next) rather than treated as an obstacle. */
+  siblingId: number;
+  /**
+   * The flight ended: either the path ran off a solid (wall) edge, or it reached
+   * the first non-empty, non-sibling cell. `cx,cy` is the last open cell on the
+   * path (adjacent to whatever stopped it — the natural place to land/deposit).
+   * For a real cell hit, `nx,ny,nid` describe it; for a wall edge, `nx` is `-1`
+   * (and `nid` is EMPTY). The handler must resolve the particle's own cell.
+   */
+  onImpact(
+    sim: SimContext,
+    x: number,
+    y: number,
+    cx: number,
+    cy: number,
+    nx: number,
+    ny: number,
+    nid: number,
+  ): void;
+  /** Clear flight (or a sibling stop-short): finalize the move to the last open
+   *  cell `cx,cy` — typically via `advanceFlight` plus any per-cell state. */
+  onArrive(sim: SimContext, x: number, y: number, cx: number, cy: number): void;
+  /** The path ran off a *void* edge (open border): by default the particle just
+   *  leaves the world (its cell cleared). Override only for unusual cases. */
+  onVoidEdge?(sim: SimContext, x: number, y: number): void;
+}
+
+/**
+ * Walk a ballistic particle at (x,y) along its per-tick displacement (dx,dy),
+ * one cell at a time, so it collides with the first thing on its path rather
+ * than teleporting to the endpoint. This is the shared skeleton every ballistic
+ * particle uses (Ember, Debris, Bomblet, Napalm Gel); each supplies only what to
+ * do on impact / on arrival via `h`. Open air is flown through; a sibling of the
+ * same material stops the particle short for this tick (it flies on next); a void
+ * edge, a wall edge, or any other cell ends the flight through `onImpact`.
+ */
+export function walkFlight(
+  sim: SimContext,
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  h: FlightHandlers,
+): void {
+  const steps = Math.max(Math.abs(dx), Math.abs(dy));
+  let cx = x;
+  let cy = y;
+  for (let s = 1; s <= steps; s++) {
+    const nx = x + Math.round((dx * s) / steps);
+    const ny = y + Math.round((dy * s) / steps);
+    if (nx === cx && ny === cy) continue;
+    if (!sim.inBounds(nx, ny)) {
+      if (sim.borderMode === 'void') {
+        if (h.onVoidEdge) h.onVoidEdge(sim, x, y);
+        else sim.set(x, y, EMPTY);
+      } else {
+        h.onImpact(sim, x, y, cx, cy, -1, -1, EMPTY); // solid container edge
+      }
+      return;
+    }
+    const nid = sim.get(nx, ny);
+    if (nid === EMPTY) {
+      cx = nx;
+      cy = ny;
+      continue;
+    }
+    if (nid === h.siblingId) break; // sibling: stop short this tick, fly on next
+    h.onImpact(sim, x, y, cx, cy, nx, ny, nid);
+    return;
+  }
+  h.onArrive(sim, x, y, cx, cy);
+}
+
+/** Finalize a clear-flight step: move the particle from (x,y) to the last open
+ *  cell (cx,cy) if it travelled, and stamp its new packed flight state. Callers
+ *  that carry extra per-cell state (Debris' material id) set it right after. */
+export function advanceFlight(
+  sim: SimContext,
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  id: number,
+  newTemp: number,
+): void {
+  if (cx !== x || cy !== y) {
+    sim.set(x, y, EMPTY);
+    sim.spawn(cx, cy, id);
+  }
+  sim.setTemp(cx, cy, newTemp);
 }
