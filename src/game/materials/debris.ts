@@ -34,6 +34,11 @@ const BASE_SPEED_Q = 5; // baseline outward speed (quarter-cells/tick)
 const GAIN_Q = 2; // + this per unit of remaining outward budget
 const JITTER_Q = 3; // per-axis scatter so a flung pile fans out
 const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray fountains up
+// Spray composition: most fragments erupt STRAIGHT UP (the tall central column),
+// the rest fly out on ~45° diagonals to the sides (the skirt of the splash).
+// Rolled per fragment at launch, so a burst reads as one dominant vertical
+// plume flanked by a thinner fan instead of a uniform half-dome.
+const VERTICAL_CHANCE = 0.7; // 70% up, 30% side diagonals
 // Debris falls harder than a light Ember (which drifts on alternate ticks): a
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
@@ -57,13 +62,14 @@ const JET_CELLS_PER_OUT = 4;
 
 /**
  * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
- * fragment. The horizontal launch follows the shock's outward normal (entryDx),
- * so a pile fans out left/right; the *vertical* launch is always UP, because the
- * solid ground reflects a downward push — so instead of driving half the ejecta
- * into the floor (a symmetric X-spray), the burst fountains up and out, like a
- * real splash. `outB` (remaining outward budget) sets the speed, fiercest at the
- * epicenter. Called from `detonate`'s default cell handler (blast.ts) for each
- * loose powder/liquid/gas cell a blast is too weak to destroy.
+ * fragment. Every launch is UPWARD (the solid ground reflects a downward push,
+ * so nothing is driven into the floor): VERTICAL_CHANCE of fragments take the
+ * full speed straight up (the central column) and the rest fly a ~45° diagonal,
+ * siding with the shock's outward normal (entryDx) so the left flank of a blast
+ * sprays left — together a tall plume with a thinner skirt, like a real splash.
+ * `outB` (remaining outward budget) sets the speed, fiercest at the epicenter.
+ * Called from `detonate`'s default cell handler (blast.ts) for each loose
+ * powder/liquid/gas cell a blast is too weak to destroy.
  */
 export function launchDebris(
   sim: SimContext,
@@ -71,19 +77,28 @@ export function launchDebris(
   y: number,
   origId: number,
   entryDx: number,
-  entryDy: number,
+  _entryDy: number, // kept for call-site symmetry; every launch is upward now
   outB: number,
 ): void {
-  const dirX = entryDx; // horizontal spreads along the shock's outward normal
-  let speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
-  // Diagonal launches cover √2 more ground; scale down so the spray reads round.
-  if (dirX !== 0 && entryDy !== 0) speedQ = (speedQ * 3) >> 2;
+  const speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
   const jitterSpan = JITTER_Q * 2 + 1;
-  const vxQ = clampV(dirX * speedQ + sim.randInt(jitterSpan) - JITTER_Q);
-  // Always upward: the vertical push magnitude, reflected up, plus a loft bias —
-  // a fragment shoved straight down (below the charge) erupts up too. The jitter
-  // keeps a straight-up column from stacking in one line.
-  const upSpeedQ = Math.abs(entryDy) * speedQ + UP_BIAS_Q;
+  let vxQ: number;
+  let upSpeedQ: number;
+  if (sim.chance(VERTICAL_CHANCE)) {
+    // Straight up: full speed vertical, jitter only sideways (the jitter keeps a
+    // column from stacking into a single line of cells).
+    vxQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
+    upSpeedQ = speedQ + UP_BIAS_Q;
+  } else {
+    // ~45° diagonal: the speed split across both axes (×3/4 ≈ 1/√2 per axis so
+    // the diagonal covers the same ground). Side follows the shock's outward
+    // normal when it has one; a fragment shoved purely vertically picks a side
+    // at random so a centered burst still fans both ways.
+    const side = entryDx !== 0 ? entryDx : sim.chance(0.5) ? 1 : -1;
+    const axisQ = (speedQ * 3) >> 2;
+    vxQ = clampV(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q);
+    upSpeedQ = axisQ + UP_BIAS_Q;
+  }
   const vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
