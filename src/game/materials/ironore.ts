@@ -39,6 +39,8 @@ export const IRON_ORE = register({
   // its own melt (7) so charged ore rides on top of a molten hearth.
   density: 7,
   category: '제련',
-  thermal: { conductivity: 0.4 },
+  // High conductivity so heat drives deep into a pile quickly and it melts
+  // briskly rather than crawling in from the surface.
+  thermal: { conductivity: 0.85 },
   update: updateIronOre,
 });

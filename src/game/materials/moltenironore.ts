@@ -109,13 +109,13 @@ export const MOLTEN_IRON_ORE = register({
   id: 71,
   name: 'Molten Iron Ore',
   phase: Phase.Liquid,
-  // Base colour is the hot end of the glow ramp (molten red-orange, redder than
-  // Slag since it's iron-rich ore); darkens toward `cool` as it sets.
-  color: rgb(225, 95, 45),
+  // Base colour is the hot end of the glow ramp (bright molten orange); darkens
+  // toward `cool` as it sets.
+  color: rgb(255, 140, 60),
   density: 7,
   category: '제련',
   // Placed hot; conducts a little worse than stone.
   thermal: { init: 1000, conductivity: 0.35 },
-  glow: { min: SOLIDIFY_TEMP, max: 1150, cool: rgb(70, 34, 28) },
+  glow: { min: SOLIDIFY_TEMP, max: 1150, cool: rgb(62, 56, 66) },
   update: updateMoltenIronOre,
 });

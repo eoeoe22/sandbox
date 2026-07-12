@@ -34,14 +34,14 @@ export const SLAG = register({
   phase: Phase.Liquid,
   // Base colour is the fully-molten shade — a glow material darkens from `color`
   // (at `max`) down to `cool` (at `min`), so this is the hot end of the ramp.
-  color: rgb(255, 140, 60),
+  color: rgb(225, 95, 45),
   density: 6,
   category: '제련',
   // Cold crust below the softening point: stops flowing and acts solid.
   freeze: { temp: SLAG_SOFTEN_TEMP },
   // Placed hot (fresh from a melt); conducts a little worse than stone.
   thermal: { init: 1450, conductivity: 0.3 },
-  // Glows orange when molten, cooling to a dull grey-blue crust as it sets.
-  glow: { min: 600, max: 1450, cool: rgb(62, 56, 66) },
+  // Glows when molten, cooling to a dark crust as it sets.
+  glow: { min: 600, max: 1450, cool: rgb(70, 34, 28) },
   update: updateSlag,
 });
