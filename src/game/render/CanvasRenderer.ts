@@ -51,6 +51,10 @@ export class CanvasRenderer implements Renderer {
   private freezeTemp: Float32Array;
   /** id → precomputed frosted colour used when a freeze material is frozen. */
   private frost: Uint32Array;
+  /** id → 1 if the material draws a positional lattice checkerboard (Mesh). */
+  private hasLattice: Uint8Array;
+  /** id → the packed lattice colour woven through the base (valid where hasLattice). */
+  private lattice: Uint32Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
 
@@ -78,6 +82,8 @@ export class CanvasRenderer implements Renderer {
     this.renderAsAux = new Uint8Array(256);
     this.freezeTemp = new Float32Array(256).fill(-Infinity);
     this.frost = new Uint32Array(256);
+    this.hasLattice = new Uint8Array(256);
+    this.lattice = new Uint32Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -86,6 +92,10 @@ export class CanvasRenderer implements Renderer {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
+        if (m.lattice !== undefined) {
+          this.hasLattice[i] = 1;
+          this.lattice[i] = m.lattice;
+        }
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -179,6 +189,9 @@ export class CanvasRenderer implements Renderer {
     const asAux = this.renderAsAux;
     const freezeTemp = this.freezeTemp;
     const frost = this.frost;
+    const hasLat = this.hasLattice;
+    const latCol = this.lattice;
+    const w = grid.width;
     for (let i = 0; i < cells.length; i++) {
       let id = cells[i];
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
@@ -186,6 +199,15 @@ export class CanvasRenderer implements Renderer {
       if (asAux[id]) {
         const carried = auxArr[i];
         if (carried !== 0) id = carried;
+      }
+      // A lattice material (Mesh) is a two-tone positional checkerboard, so a
+      // screen reads as a woven grid rather than a flat slab. Computed from the
+      // cell's x/y so the weave is tied to space, not to the particle.
+      if (hasLat[id]) {
+        const x = i % w;
+        const y = (i / w) | 0;
+        buf[i] = (x ^ y) & 1 ? latCol[id] : pal[id];
+        continue;
       }
       const g = glow[id];
       if (g) {
