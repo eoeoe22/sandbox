@@ -70,8 +70,8 @@ const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id,
 // (see nichromeJouleHeat), separate from this per-cell strength loss.
 const CONDUCTOR_LOSS = [0, 0, 8, 2, 1, 2];
 
-// Electrolysis: a spark passing through Water/Saltwater occasionally splits it
-// into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
+// Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
+// it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
 // it's a slow trickle of gas, not a fizzing torrent.
 const ELECTROLYSIS_CHANCE = 0.02;
 const ELECTROLYSIS_OXYGEN_CHANCE = 0.5;
