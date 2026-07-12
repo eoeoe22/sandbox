@@ -8,16 +8,24 @@ import { getMaterial } from './registry';
 // rule pushAside uses, so it never cascades across the grid): a Liquid resting
 // directly on top falls through to the empty cell below, and a Gas pooled
 // directly underneath rises through to the empty cell above. Powders and solids
-// are blocked — they just rest against it like any other solid. Returns the id
-// of whatever passed this tick (so a Turbine can tell a puff of Steam went
-// through and make power), or EMPTY when nothing moved.
+// are blocked — they just rest against it like any other solid, and a liquid
+// chilled below its freezing point acts solid too (SimContext.isFrozen), so it
+// no longer drips through — matching how tryMove/pushAside treat a frozen puddle
+// everywhere else. Returns the id of whatever passed this tick (so a Turbine can
+// tell a puff of Steam went through and make power), or EMPTY when nothing moved.
 export function siftVertical(x: number, y: number, sim: SimContext): number {
   if (!sim.inBounds(x, y - 1) || !sim.inBounds(x, y + 1)) return EMPTY;
   const aboveId = sim.get(x, y - 1);
   const belowId = sim.get(x, y + 1);
 
-  // Liquid resting on top seeps down into the empty cell below.
-  if (belowId === EMPTY && aboveId !== EMPTY && getMaterial(aboveId).phase === Phase.Liquid) {
+  // Liquid resting on top seeps down into the empty cell below — unless it's
+  // frozen solid, in which case it stays put like any other solid does.
+  if (
+    belowId === EMPTY &&
+    aboveId !== EMPTY &&
+    getMaterial(aboveId).phase === Phase.Liquid &&
+    !sim.isFrozen(x, y - 1)
+  ) {
     sim.swap(x, y - 1, x, y + 1);
     return aboveId;
   }
