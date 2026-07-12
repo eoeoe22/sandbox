@@ -15,15 +15,19 @@ import { SMOKE } from './smoke';
 // the heart of the reworked smelting flow: heat *melts* the ore (a plain Fire is
 // enough), then you dust carbon onto the melt to pull iron out of it.
 //
-//  • Carbon on the melt reduces it: a per-tick chance advances an `aux` progress
-//    counter (0..4), spending ~1 carbon cell per ore cell (released as a puff of
-//    Smoke = CO₂). When it fills, the cell becomes Molten Metal (or Slag on a
-//    miss). A Limestone neighbour acts as flux, raising the iron yield and being
-//    consumed. Because the fresh Molten Metal keeps the pool's temperature, a
-//    merely-melted pool (~850°, below Molten Metal's 1350° freeze) sets into a
-//    solid Iron bloom at once, while a super-hot pool (blue flame / lava, >1350°)
-//    stays flowing molten iron you can pour and cast — the tiers fall out of the
-//    temperature for free.
+//  • Carbon against the melt reduces it: a per-tick chance advances an `aux`
+//    progress counter (0..4), spending ~1 carbon cell per ore cell (released as a
+//    puff of Smoke = CO₂). Coal packed against the pool doesn't burn — it's a
+//    reductant, shielded from combustion (see coalpowder.ts) — so it's spent by
+//    reduction instead of flashing off. When the counter fills, the cell becomes
+//    *hot* Molten Metal (or Slag on a yield miss). Reduction is treated as
+//    exothermic: the fresh iron is forced molten (≥ REDUCE_HEAT) so it SINKS out
+//    of the pool and collects in the hearth instead of freezing into a solid
+//    crust on the surface right where the carbon sits — a crust would seal the
+//    melt off and stall reduction (the original bug). The released heat also
+//    keeps the surrounding pool molten, so once reduction starts it sustains
+//    itself and the pool convects: reduced iron sinks, fresh ore rises to the
+//    carbon. A Limestone neighbour acts as flux, raising the iron yield.
 //  • Left to cool below SOLIDIFY_TEMP *without* being reduced, the pool sets into
 //    useless Slag — so "heat alone makes slag, heat + carbon makes iron" survives
 //    the rework, just melt-first now.
@@ -32,13 +36,15 @@ import { SMOKE } from './smoke';
 // surface, the reduced Molten Metal (8) sinks out below it, and Slag (6) rides
 // between — the furnace's vertical layers emerge on their own.
 const SOLIDIFY_TEMP = 750; // cools below this without reduction → Slag
-const PROGRESS_CHANCE = 0.05; // per-tick reduction step while carbon is adjacent
-const REDUCE_STAGES = 4; // aux progress needed to fully reduce a cell
-const CARBON_COST = 0.25; // ≈1 carbon cell consumed per ore cell over the stages
-const IRON_YIELD = 0.7; // chance a finished reduction yields iron (else slag)
+const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (fast,
+// 1:1 — one carbon grain spent per ore cell, ~4 ticks: contact keeps up so a
+// dusted pool sweeps top-down and a mixed charge reacts everywhere at once).
+const IRON_YIELD = 0.7; // chance a reduction yields iron (else slag)
 const FLUX_YIELD = 0.95; // …raised when a Limestone flux grain is adjacent
 const FLUX_CONSUME = 0.5; // chance that flux grain is spent
 const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Metal)
+const REDUCE_HEAT = 1450; // exothermic: fresh iron is forced this hot so it stays
+// molten (above Molten Metal's 1350° freeze) and sinks out instead of crusting.
 
 function isCarbon(id: number): boolean {
   return id === COAL.id || id === COAL_POWDER.id;
@@ -73,27 +79,27 @@ function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  if (cx >= 0 && sim.chance(PROGRESS_CHANCE)) {
-    // Each step may burn a carbon grain (≈1 per ore over the 4 stages), venting a
-    // puff of Smoke. Writing EMPTY then spawning Smoke is safe against same-tick
-    // reprocessing.
-    if (sim.chance(CARBON_COST)) {
-      sim.set(cx, cy, EMPTY);
-      sim.spawn(cx, cy, SMOKE.id);
+  if (cx >= 0 && sim.chance(REDUCE_CHANCE)) {
+    // Spend one carbon grain to reduce this cell (1:1), venting a puff of Smoke
+    // (CO₂). Writing EMPTY then spawning Smoke is safe against same-tick
+    // reprocessing; the conversion below is an in-place self write.
+    sim.set(cx, cy, EMPTY);
+    sim.spawn(cx, cy, SMOKE.id);
+    sim.setAux(x, y, 0); // clear before handing the cell to Molten Metal
+    const yield_ = fx >= 0 ? FLUX_YIELD : IRON_YIELD;
+    if (sim.chance(yield_)) {
+      // Success → hot Molten Metal that sinks out (see REDUCE_HEAT). In-place set
+      // keeps temp, so force it molten if the pool was only just melted.
+      sim.set(x, y, MOLTEN_METAL.id);
+      if (sim.getTemp(x, y) < REDUCE_HEAT) sim.setTemp(x, y, REDUCE_HEAT);
+    } else {
+      sim.set(x, y, SLAG.id); // yield miss → waste slag (in-place keeps temp)
     }
-    const aux = sim.getAux(x, y) + 1;
-    if (aux >= REDUCE_STAGES) {
-      sim.setAux(x, y, 0); // clear before handing the cell to Molten Metal
-      const yield_ = fx >= 0 ? FLUX_YIELD : IRON_YIELD;
-      // Success → Molten Metal (cools to Iron); miss → Slag. In-place keeps temp.
-      sim.set(x, y, sim.chance(yield_) ? MOLTEN_METAL.id : SLAG.id);
-      if (fx >= 0 && sim.chance(FLUX_CONSUME)) {
-        sim.set(fx, fy, EMPTY);
-        sim.spawn(fx, fy, SMOKE.id); // calcining puff
-      }
-      return;
+    if (fx >= 0 && sim.chance(FLUX_CONSUME)) {
+      sim.set(fx, fy, EMPTY);
+      sim.spawn(fx, fy, SMOKE.id); // calcining puff
     }
-    sim.setAux(x, y, aux);
+    return;
   }
 
   // Still a molten pool: flow viscously (thicker than water, like Molten Metal).
