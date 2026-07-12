@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
-import { siftVertical } from './sieve';
+import { sift } from './sieve';
 import { STEAM } from './steam';
 import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 
@@ -37,7 +37,7 @@ function energize(x: number, y: number, sim: SimContext): void {
 
 function updateTurbine(x: number, y: number, sim: SimContext): void {
   // Let a fluid seep through; if the puff that passed was Steam, make power.
-  if (siftVertical(x, y, sim) === STEAM.id) energize(x, y, sim);
+  if (sift(x, y, sim) === STEAM.id) energize(x, y, sim);
 }
 
 export const TURBINE = register({

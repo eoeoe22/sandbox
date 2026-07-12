@@ -2,17 +2,18 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { siftVertical } from './sieve';
+import { sift } from './sieve';
 
 // Mesh (체) — a static grey screen with a woven lattice look (the renderer draws
 // it as a two-tone checkerboard, see `lattice`). It's a solid, so powders pile on
 // it and other solids rest against it, but liquids and gases seep straight
-// *through* it (see sieve.ts): pour water onto a mesh floor and it drips through
-// to the space below, and steam trapped underneath bubbles up past it. Handy as a
-// filter or separator — hold back sand while letting the water drain out from
-// under it, or vent gas up out of a powder bed.
+// *through* it in any orientation (see sieve.ts): pour water onto a mesh floor and
+// it drips through to the space below, trap steam under it and it bubbles up past
+// it, and a vertical mesh wall drains a tank sideways instead of holding it back.
+// Handy as a filter or separator — hold back sand while letting the water drain
+// through, or vent gas out of a powder bed.
 function updateMesh(x: number, y: number, sim: SimContext): void {
-  siftVertical(x, y, sim);
+  sift(x, y, sim);
 }
 
 export const MESH = register({
