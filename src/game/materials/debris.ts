@@ -41,11 +41,15 @@ const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray founta
 // plume flanked by a thinner fan instead of a uniform half-dome.
 const VERTICAL_CHANCE = 0.7; // 70% up, 30% side diagonals
 // The vertical column gets an extra kick (×1.5 of the shock speed) so it towers
-// well above the diagonal skirt; the skirt's final per-axis velocity saturates
-// at the pre-boost ceiling (the old shared clamp), so raising V_MAX_Q only made
-// the column taller — the sides fly exactly as before.
+// well above the diagonal skirt; the skirt's final per-axis LAUNCH velocity
+// saturates at the pre-boost ceiling (the old shared clamp), so raising V_MAX_Q
+// only made the column launch taller — the sides launch exactly as before.
+// In-flight gravity is a different story, deliberately: every fragment's FALL
+// may now build to the full V_MAX_Q (6 cells/tick, was 4), because a column
+// hurled up at 6 cells/tick that drifted back down at 4 would look floaty —
+// the descent mirrors the ascent.
 const VERTICAL_BOOST_NUM = 3; // ×3/2
-const DIAG_MAX_AXIS_Q = 16; // the skirt's final per-axis ceiling (the old clamp)
+const DIAG_MAX_AXIS_Q = 16; // the skirt's per-axis launch ceiling (the old clamp)
 // Debris falls harder than a light Ember (which drifts on alternate ticks): a
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
