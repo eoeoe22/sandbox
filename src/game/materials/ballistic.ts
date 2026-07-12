@@ -19,8 +19,11 @@ import type { SimContext } from '../engine/SimContext';
 
 /** Fixed-point scale: 4 quarter-cells = 1 cell. */
 export const Q = 4;
-/** |velocity| clamp per axis: 4 cells/tick. */
-export const V_MAX_Q = 16;
+/** |velocity| clamp per axis: 6 cells/tick. Sized for the fastest launch in the
+ *  game (a debris fountain's boosted vertical at the epicenter — see debris.ts);
+ *  every other particle's launch spec tops out well below it, so for them this
+ *  is just headroom, not a behavior change. */
+export const V_MAX_Q = 24;
 /** Encodable velocity values per axis (−V_MAX_Q … +V_MAX_Q). */
 const V_SPAN = V_MAX_Q * 2 + 1;
 /** One quarter-cell of downward pull — the base gravity step. Ember applies it
@@ -29,7 +32,7 @@ const V_SPAN = V_MAX_Q * 2 + 1;
 export const GRAVITY_Q = 1;
 
 /** Pack (life, vxQ, vyQ) into one float small enough to stay inside Float32's
- *  exact-integer range (max ≈ 30·33² ≈ 33k ≪ 2^24). */
+ *  exact-integer range (max ≈ 30·49² ≈ 72k ≪ 2^24). */
 export function encodeFlight(life: number, vxQ: number, vyQ: number): number {
   return (life * V_SPAN + (vxQ + V_MAX_Q)) * V_SPAN + (vyQ + V_MAX_Q);
 }

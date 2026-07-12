@@ -27,13 +27,25 @@ import { clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
 
 // Launch tuning. Speed rises with the blast's remaining budget, so the push is
 // fiercest right at the epicenter and gentle at the rim (a real pressure
-// gradient); the per-axis clamp in ballistic.ts caps it at 4 cells/tick anyway.
-const LIFE_MIN = 7;
-const LIFE_VAR = 8; // 7..14 ticks — a quick, snappy arc, not a floaty hang
+// gradient); the per-axis clamp in ballistic.ts caps it at 6 cells/tick anyway.
+const LIFE_MIN = 9;
+const LIFE_VAR = 8; // 9..16 ticks — long enough to ride the boosted vertical to
+// its apex (~12 ticks at the clamp) while still a snappy arc, not a floaty hang
 const BASE_SPEED_Q = 5; // baseline outward speed (quarter-cells/tick)
 const GAIN_Q = 2; // + this per unit of remaining outward budget
 const JITTER_Q = 3; // per-axis scatter so a flung pile fans out
 const UP_BIAS_Q = 5; // upward loft added to every fragment, so the spray fountains up
+// Spray composition: most fragments erupt STRAIGHT UP (the tall central column),
+// the rest fly out on ~45° diagonals to the sides (the skirt of the splash).
+// Rolled per fragment at launch, so a burst reads as one dominant vertical
+// plume flanked by a thinner fan instead of a uniform half-dome.
+const VERTICAL_CHANCE = 0.7; // 70% up, 30% side diagonals
+// The vertical column gets an extra kick (×1.5 of the shock speed) so it towers
+// well above the diagonal skirt; the skirt keeps the pre-boost ceiling below so
+// raising the shared velocity clamp only made the column taller, not the sides
+// wider.
+const VERTICAL_BOOST_NUM = 3; // ×3/2
+const DIAG_MAX_AXIS_Q = 16; // the skirt's per-axis speed ceiling (the old clamp)
 // Debris falls harder than a light Ember (which drifts on alternate ticks): a
 // brisk parabola that peaks fast and comes back down quickly, so a burst resolves
 // in well under a second instead of hanging in the air.
@@ -44,16 +56,27 @@ const GRAVITY_Q = 2;
 // sum) matters: a fresh side-launched fragment has |vx|≈2 with vy≈0, and must NOT
 // be caught here on its first tick, or it would deposit without ever flying.
 const STILL_Q = 1;
+// A shoved *liquid* transmits the impulse up its column instantly (liquids are
+// incompressible): a freshly launched submerged fragment swaps straight up
+// through the liquid above it within the launch tick, surfacing at once — so an
+// underwater concussion erupts a water column on the very next frame, instead of
+// each fragment crawling upward at flight speed (invisible inside like-colored
+// water, and usually expiring before it ever reached air). The climb is capped
+// in cells per unit of remaining shove budget, so only the blast's core punches
+// to the surface and a charge set too deep merely churns the depths. Swapping
+// conserves mass: the column above slides down one cell into the fragment's wake.
+const JET_CELLS_PER_OUT = 4;
 
 /**
  * Fling the cell at (x,y) — currently holding material `origId` — as a Debris
- * fragment. The horizontal launch follows the shock's outward normal (entryDx),
- * so a pile fans out left/right; the *vertical* launch is always UP, because the
- * solid ground reflects a downward push — so instead of driving half the ejecta
- * into the floor (a symmetric X-spray), the burst fountains up and out, like a
- * real splash. `outB` (remaining outward budget) sets the speed, fiercest at the
- * epicenter. Called from `detonate`'s default cell handler (blast.ts) for each
- * loose powder/liquid/gas cell a blast is too weak to destroy.
+ * fragment. Every launch is UPWARD (the solid ground reflects a downward push,
+ * so nothing is driven into the floor): VERTICAL_CHANCE of fragments take the
+ * full speed straight up (the central column) and the rest fly a ~45° diagonal,
+ * siding with the shock's outward normal (entryDx) so the left flank of a blast
+ * sprays left — together a tall plume with a thinner skirt, like a real splash.
+ * `outB` (remaining outward budget) sets the speed, fiercest at the epicenter.
+ * Called from `detonate`'s default cell handler (blast.ts) for each loose
+ * powder/liquid/gas cell a blast is too weak to destroy.
  */
 export function launchDebris(
   sim: SimContext,
@@ -61,23 +84,51 @@ export function launchDebris(
   y: number,
   origId: number,
   entryDx: number,
-  entryDy: number,
+  _entryDy: number, // kept for call-site symmetry; every launch is upward now
   outB: number,
 ): void {
-  const dirX = entryDx; // horizontal spreads along the shock's outward normal
-  let speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
-  // Diagonal launches cover √2 more ground; scale down so the spray reads round.
-  if (dirX !== 0 && entryDy !== 0) speedQ = (speedQ * 3) >> 2;
+  const speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
   const jitterSpan = JITTER_Q * 2 + 1;
-  const vxQ = clampV(dirX * speedQ + sim.randInt(jitterSpan) - JITTER_Q);
-  // Always upward: the vertical push magnitude, reflected up, plus a loft bias —
-  // a fragment shoved straight down (below the charge) erupts up too. The jitter
-  // keeps a straight-up column from stacking in one line.
-  const upSpeedQ = Math.abs(entryDy) * speedQ + UP_BIAS_Q;
+  let vxQ: number;
+  let upSpeedQ: number;
+  if (sim.chance(VERTICAL_CHANCE)) {
+    // Straight up, boosted ×1.5: the column is the show, so it rides the full
+    // velocity clamp near the epicenter. Jitter only sideways (it keeps a
+    // column from stacking into a single line of cells).
+    vxQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
+    upSpeedQ = ((speedQ * VERTICAL_BOOST_NUM) >> 1) + UP_BIAS_Q;
+  } else {
+    // ~45° diagonal: the speed split across both axes (×3/4 ≈ 1/√2 per axis so
+    // the diagonal covers the same ground), capped at the pre-boost ceiling so
+    // the skirt stays a modest fan under the taller column. Side follows the
+    // shock's outward normal when it has one; a fragment shoved purely
+    // vertically picks a side at random so a centered burst still fans both
+    // ways.
+    const side = entryDx !== 0 ? entryDx : sim.chance(0.5) ? 1 : -1;
+    const axisQ = Math.min((speedQ * 3) >> 2, DIAG_MAX_AXIS_Q);
+    vxQ = clampV(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q);
+    upSpeedQ = axisQ + UP_BIAS_Q;
+  }
   const vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
   sim.setAux(x, y, origId); // the material to rain back down (material ids fit a byte)
+
+  // Incompressible jet: surface a submerged liquid fragment now (see
+  // JET_CELLS_PER_OUT). Swaps carry the packed flight state and aux along, and
+  // stop at anything non-liquid — air (surfaced), a stacked sibling fragment
+  // (the forming column), a solid lid, or a frozen (hardened) liquid.
+  if (getMaterial(origId).phase === Phase.Liquid) {
+    let climb = Math.round(outB) * JET_CELLS_PER_OUT;
+    let jy = y;
+    while (climb-- > 0 && jy > 0) {
+      const aid = sim.get(x, jy - 1);
+      if (aid === EMPTY || getMaterial(aid).phase !== Phase.Liquid) break;
+      if (sim.isFrozen(x, jy - 1)) break;
+      sim.swap(x, jy, x, jy - 1);
+      jy--;
+    }
+  }
 }
 
 /** A cell the flying fragment moves *through*, trading places with it: open air,
