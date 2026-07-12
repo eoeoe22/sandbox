@@ -12,7 +12,7 @@ import {
   advanceFlight,
 } from './ballistic';
 
-// Debris — the grain a Concussion blast flings instead of erasing. Ballistic
+// Debris — the grain a weak blast flings instead of erasing. Ballistic
 // like an Ember, but where an ember *smashes* on impact, a debris fragment
 // *restores* the material it carries: the original powder/liquid id rides in the
 // cell's `aux`, and when the fragment lands (or its flight expires) it deposits
@@ -41,8 +41,8 @@ const UP_BIAS_Q = 2; // slight loft, so grains rise before they fall
  * Fling the cell at (x,y) — currently holding material `origId` — outward as a
  * Debris fragment along the shock's outward normal (entryDx,entryDy). At the
  * very epicenter (0,0) there's no outward direction, so it lofts up-and-out in a
- * random horizontal. Called from the Concussion `onCell` handler for each powder
- * or liquid cell the front reaches.
+ * random horizontal. Called from `detonate`'s default cell handler (blast.ts) for
+ * each loose powder/liquid/gas cell a blast is too weak to destroy.
  */
 export function launchDebris(
   sim: SimContext,

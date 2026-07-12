@@ -150,6 +150,28 @@ export interface Material {
    */
   blastYield?: number;
   /**
+   * Destructive power (파괴력) — *whether* this blast can break a material, a
+   * scalar independent of reach and heat. Compared against each reached
+   * material's `durability` (see blast.ts): power ≥ durability destroys the cell
+   * (the ordinary crater); power < durability can't break it, so a weak blast
+   * instead *shoves* loose powder/liquid/gas aside (as Debris) and is shadowed by
+   * a solid it can't crack. Omitted ⇒ effectively unlimited, so ordinary
+   * explosives level everything as before; a low value makes a "concussion"-style
+   * charge (Gunpowder). For a connected mass the strongest cell's power wins. Only
+   * meaningful alongside `explosive`.
+   */
+  destructivePower?: number;
+  /**
+   * Durability (내구력) — how hard this material is to *destroy* by a blast,
+   * compared against the blast's `destructivePower` (see blast.ts). A blast whose
+   * power falls below this can't break the material: loose matter is flung aside
+   * instead, a solid survives and shadows the blast behind it. Omitted ⇒ a
+   * phase default (gas < liquid < powder ≪ solid), so only a deliberately weak
+   * charge is ever stopped; set it to make a specific material unusually tough or
+   * fragile.
+   */
+  durability?: number;
+  /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
    * material load order. Temperature-driven *reactions* (Lava freezing to
