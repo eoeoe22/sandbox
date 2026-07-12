@@ -9,6 +9,7 @@ import { IRON } from './iron';
 import { MERCURY } from './mercury';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
+import { ACID } from './acid';
 import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
@@ -20,13 +21,14 @@ import { NICHROME, nichromeJouleHeat } from './nichrome';
 // adjacent Spark. A pulse therefore reads as a bright dot racing along a wire.
 //
 // Conductors and strength: current flows only through `conductive` materials
-// (Iron, Mercury, Nichrome, Water, Saltwater); everything else is an insulator
-// that blocks it outright. A pulse carries a *strength* that decays as it
-// travels, so it fades out in a resistive medium instead of running forever:
+// (Iron, Mercury, Nichrome, Water, Saltwater, Acid); everything else is an
+// insulator that blocks it outright. A pulse carries a *strength* that decays as
+// it travels, so it fades out in a resistive medium instead of running forever:
 //   • Iron / Mercury (metal) — no loss, the pulse keeps full strength end to end.
 //   • Nichrome — a deliberate resistor, bleeds slightly (a long run's worth) and
 //     heats up as pulses pass (Joule heating — see nichrome.ts).
-//   • Saltwater — a weak electrolyte, bleeds strength slowly (carries a good way).
+//   • Saltwater / Acid — electrolytes, bleed strength slowly (carry a good way);
+//     both conduct at the same rate.
 //   • Water — bleeds strength fast (dies after just a few cells).
 //
 // State packed into the spark cell's single `aux` byte:
@@ -44,8 +46,9 @@ import { NICHROME, nichromeJouleHeat } from './nichrome';
 // into open air beside it so the ordinary rules set the charge off (an electric
 // detonator) — it no longer ignites ordinary fuels or flammable gas; then (3)
 // reverts to its conductor and stamps a refractory countdown so the wave only
-// moves forward. Sparks travelling through Water/Saltwater also, at a low rate,
-// electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂).
+// moves forward. Sparks travelling through Water/Saltwater/Acid also, at a low
+// rate, electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂), leaving
+// no residue behind.
 const REFRACTORY_TICKS = 3;
 
 // --- Electricity strength -----------------------------------------------------
@@ -58,16 +61,17 @@ export const FULL_STRENGTH = 30;
 // Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
 // appending a new conductor keeps existing packed values valid. Every material
 // tagged `conductive` must appear here so a spark on it knows what to revert to.
-const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id];
+const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id, ACID.id];
 // Strength lost entering a cell of each class: metal keeps it (0), brine bleeds
 // slowly (2 → ~15 cells), fresh water bleeds fast (8 → ~4 cells), nichrome is a
-// deliberate resistor (1 → ~30 cells). Nichrome's resistance also shows up as
-// heat: each passing pulse deposits a fixed dose of Joule heat into the wire on
-// revert (see nichromeJouleHeat), separate from this per-cell strength loss.
-const CONDUCTOR_LOSS = [0, 0, 8, 2, 1];
+// deliberate resistor (1 → ~30 cells), acid is an electrolyte that conducts on a
+// par with brine (2 → ~15 cells). Nichrome's resistance also shows up as heat:
+// each passing pulse deposits a fixed dose of Joule heat into the wire on revert
+// (see nichromeJouleHeat), separate from this per-cell strength loss.
+const CONDUCTOR_LOSS = [0, 0, 8, 2, 1, 2];
 
-// Electrolysis: a spark passing through Water/Saltwater occasionally splits it
-// into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
+// Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
+// it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
 // it's a slow trickle of gas, not a fizzing torrent.
 const ELECTROLYSIS_CHANCE = 0.02;
 const ELECTROLYSIS_OXYGEN_CHANCE = 0.5;
@@ -113,7 +117,7 @@ function arcFireBeside(sim: SimContext, nx: number, ny: number): boolean {
   return false;
 }
 
-/** Electrolyse an energized Water/Saltwater cell into gas: the cell becomes
+/** Electrolyse an energized Water/Saltwater/Acid cell into gas: the cell becomes
  *  Hydrogen, and about half the time a free open neighbor gets an Oxygen bubble
  *  (2H₂O → 2H₂ + O₂). */
 function electrolyse(sim: SimContext, x: number, y: number): void {
@@ -186,7 +190,9 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   }
   const conductorId = classToId(myClass);
   if (
-    (conductorId === WATER.id || conductorId === SALTWATER.id) &&
+    (conductorId === WATER.id ||
+      conductorId === SALTWATER.id ||
+      conductorId === ACID.id) &&
     sim.chance(ELECTROLYSIS_CHANCE)
   ) {
     electrolyse(sim, x, y);

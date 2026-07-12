@@ -36,6 +36,11 @@ function isCorrodible(id: number): boolean {
 }
 
 function updateAcid(x: number, y: number, sim: SimContext): void {
+  // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
+  // so this cell can carry current again (mirrors Water/Saltwater — see spark.ts).
+  const refractory = sim.getAux(x, y);
+  if (refractory > 0) sim.setAux(x, y, refractory - 1);
+
   if (sim.getTemp(x, y) >= ACID_BOIL_TEMP) {
     // Boil in place: the resulting Vapor keeps the (hot) temperature, then
     // rises and corrodes/condenses on its own (see acidvapor.ts).
@@ -68,6 +73,11 @@ export const ACID = register({
   phase: Phase.Liquid,
   color: rgb(150, 225, 70),
   density: 3,
+  // An electrolyte: a Spark travels through it, losing strength slowly — it
+  // conducts on a par with brine (better than fresh water). Like Water/Saltwater
+  // a passing pulse can also electrolyse the cell into Hydrogen + Oxygen, leaving
+  // no residue (see spark.ts).
+  conductive: true,
   thermal: { conductivity: 0.5 },
   // Chilled well below zero it freezes in place (frosted, immobile) until it thaws.
   freeze: { temp: -20 },
