@@ -120,6 +120,17 @@ export interface Material {
    */
   explosive?: boolean;
   /**
+   * This explosive is set off *directly* by an electric arc: when a Spark reaches
+   * a `conductive` neighbor of it, the spark detonates it on the spot (see
+   * spark.ts) instead of the usual trick of dropping a lick of Fire beside it for
+   * the charge's own flame-trigger to catch. That fire hand-off is scan-order
+   * dependent and needs an open cell next to the charge — so it fails silently for
+   * a charge (C4) that only detonates on a shock/spark and is packed flush against
+   * a wall. Marking it here makes the electric detonator deterministic and
+   * position-independent. Only meaningful alongside `explosive`.
+   */
+  electricDetonate?: boolean;
+  /**
    * Blast reach (in cells) a *lone* charge of this material detonates with, and —
    * unless `blastYield` overrides it — the yield each cell contributes to a
    * connected mass's total (see `surveyMass`/`computeReach` in blast.ts). A single
@@ -138,6 +149,28 @@ export interface Material {
    * alongside `explosive`.
    */
   blastYield?: number;
+  /**
+   * Destructive power (파괴력) — *whether* this blast can break a material, a
+   * scalar independent of reach and heat. Compared against each reached
+   * material's `durability` (see blast.ts): power ≥ durability destroys the cell
+   * (the ordinary crater); power < durability can't break it, so a weak blast
+   * instead *shoves* loose powder/liquid/gas aside (as Debris) and is shadowed by
+   * a solid it can't crack. Omitted ⇒ effectively unlimited, so ordinary
+   * explosives level everything as before; a low value makes a "concussion"-style
+   * charge (Gunpowder). For a connected mass the strongest cell's power wins. Only
+   * meaningful alongside `explosive`.
+   */
+  destructivePower?: number;
+  /**
+   * Durability (내구력) — how hard this material is to *destroy* by a blast,
+   * compared against the blast's `destructivePower` (see blast.ts). A blast whose
+   * power falls below this can't break the material: loose matter is flung aside
+   * instead, a solid survives and shadows the blast behind it. Omitted ⇒ a
+   * phase default (gas < liquid < powder ≪ solid), so only a deliberately weak
+   * charge is ever stopped; set it to make a specific material unusually tough or
+   * fragile.
+   */
+  durability?: number;
   /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
@@ -171,6 +204,14 @@ export interface Material {
    * instead). See game/tint.ts and the renderer/Simulation.
    */
   colorVary?: number;
+  /**
+   * Render this cell using the *carried* material named by its `aux` byte, not
+   * this material's own `color`. Debris sets it: a flying fragment carries its
+   * origin material's id in `aux`, so shoved water draws blue and shoved sand
+   * draws tan instead of everything reading as one dull Debris grey. Purely a
+   * rendering hint — the simulation still treats the cell as this material.
+   */
+  renderAsAux?: boolean;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }

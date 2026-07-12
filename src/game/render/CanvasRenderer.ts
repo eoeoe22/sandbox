@@ -42,6 +42,9 @@ export class CanvasRenderer implements Renderer {
   private vary: Uint8Array;
   /** id → which tint field to sample (VARY_PARTICLE = per-grain, else background). */
   private varyMode: Uint8Array;
+  /** id → 1 if the cell is drawn as the material named by its `aux` byte instead
+   *  of its own color (Debris renders as the material it carries). */
+  private renderAsAux: Uint8Array;
   /** id → freezing point; a cell of a `freeze` material at/below this temperature
    *  is drawn frosted (see Material.freeze). -Infinity for materials that never
    *  freeze, so the per-cell `temp <= freezeTemp` test never matches them. */
@@ -72,6 +75,7 @@ export class CanvasRenderer implements Renderer {
     this.glow = new Array(256).fill(null);
     this.vary = new Uint8Array(256);
     this.varyMode = new Uint8Array(256);
+    this.renderAsAux = new Uint8Array(256);
     this.freezeTemp = new Float32Array(256).fill(-Infinity);
     this.frost = new Uint32Array(256);
     for (let i = 0; i < 256; i++) {
@@ -81,6 +85,7 @@ export class CanvasRenderer implements Renderer {
       if (m) {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
+        if (m.renderAsAux) this.renderAsAux[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -165,15 +170,23 @@ export class CanvasRenderer implements Renderer {
     const temp = grid.temp;
     const tintArr = grid.tint;
     const bgArr = grid.bgTint;
+    const auxArr = grid.aux;
     const buf = this.buf32;
     const pal = this.palette;
     const glow = this.glow;
     const vary = this.vary;
     const mode = this.varyMode;
+    const asAux = this.renderAsAux;
     const freezeTemp = this.freezeTemp;
     const frost = this.frost;
     for (let i = 0; i < cells.length; i++) {
-      const id = cells[i];
+      let id = cells[i];
+      // A carrier cell (Debris) draws as the material named in its aux byte, so a
+      // flung grain wears its own material's color instead of the carrier's.
+      if (asAux[id]) {
+        const carried = auxArr[i];
+        if (carried !== 0) id = carried;
+      }
       const g = glow[id];
       if (g) {
         buf[i] = CanvasRenderer.shade(g, temp[i]);

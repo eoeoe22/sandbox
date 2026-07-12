@@ -4,7 +4,11 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
+import { WATER } from './water';
+import { SALTWATER } from './saltwater';
+import { STEAM } from './steam';
 import { launchEmber } from './ember';
+import { launchDebris } from './debris';
 
 // ── Explosions: an instant shockwave that scales with the charge ────────────
 //
@@ -17,12 +21,19 @@ import { launchEmber } from './ember';
 //      farther. (Yield per cell = the material's `blastYield`, defaulting to its
 //      `blastRadius`.)
 //   2. DILATE — turn Y into a reach R (see `computeReach`) and flood a *filled*
-//      region outward from EVERY surveyed cell at once, destroying everything it
-//      reaches (sand, salt, stone, water, the charges themselves, …). The crater
-//      is the whole mass grown by R, so more explosive means both a bigger mass
-//      *and* a bigger R — the destruction grows with the amount, not just the
-//      surface. A bright, short-lived shockwave flash is dropped over the crater
-//      and glowing Embers are hurled out past the rim (see ember.ts).
+//      region outward from EVERY surveyed cell at once. The crater is the whole
+//      mass grown by R, so more explosive means both a bigger mass *and* a bigger
+//      R — the destruction grows with the amount, not just the surface. Within
+//      reach, a *second* axis decides each cell's fate: the blast's destructive
+//      power (파괴력) vs. the cell's durability (내구력) — see `defaultCell` /
+//      `blocksBlast`. A strong blast destroys everything (sand, salt, stone, the
+//      charges themselves, …), drops a bright shockwave flash, and hurls Embers
+//      past the rim (see ember.ts); water it reaches flash-boils to a Steam plume
+//      instead of being erased (any charge underwater erupts a steam column). A
+//      *weak* blast (low-power Gunpowder) can't break tough matter: it shoves
+//      loose powder/liquid/gas aside as Debris (mass-conserving) and is shadowed
+//      by solids it can't crack. So "concussion" and "depth charge" are built-in
+//      mechanisms of every detonation, not bolted-on special materials.
 //
 // A lone charge (Y == its own yield) reaches exactly its `blastRadius`, so single
 // charges feel unchanged; only stacking more explosive makes the blast grow.
@@ -160,23 +171,155 @@ function nextStamp(sim: SimContext): Int32Array {
   return stampBuf;
 }
 
-/** True if the cell blocks the shockwave outright — it survives intact and
- *  casts a shadow: the indestructible boundary Wall and blast-proof solids
- *  (Diamond). (The one force that gets past Diamond is a critical uranium's
- *  Heat Ray — see heatray.ts — which isn't a blast at all.) */
-function isBlocker(id: number): boolean {
+// ── Destructive power vs. durability: destroy, shove, or shadow ──────────────
+// A blast carries a *destructive power* (파괴력) — whether it can break a given
+// material — which is separate from its reach (범위) and its heat. Each material
+// has a *durability* (내구력). Comparing the two decides a reached cell's fate, so
+// a detonation is no longer all-or-nothing:
+//   • power ≥ durability → the cell is destroyed (the ordinary crater flash; or,
+//     for water, the steam plume — see defaultCell).
+//   • power < durability → the blast can't break it:
+//       – loose matter (powder/liquid/gas) is FLUNG aside as Debris (debris.ts):
+//         a mass-conserving shove that arcs out and rains back, rearranging the
+//         world rather than emptying it. This is the "concussion" a weak charge
+//         (low-power Gunpowder) delivers — now built into every detonation
+//         instead of living in a separate material.
+//       – a solid it can't crack SURVIVES and shadows the blast behind it (it is
+//         never even entered — see blocksBlast, applied at propagation time).
+// Ordinary explosives omit `destructivePower`, so DEFAULT_DESTRUCTIVE_POWER lets
+// them level everything exactly as before; only a deliberately weak charge ever
+// shows the shove.
+const DEFAULT_DESTRUCTIVE_POWER = 100_000;
+
+// Phase-default durability when a material sets no explicit `durability`: loose
+// matter is easy to shift (a weak blast shoves it), solids are tough (a weak
+// blast can't break them and is shadowed). All sit well under
+// DEFAULT_DESTRUCTIVE_POWER, so an ordinary blast still destroys everything with
+// a finite durability.
+const DURABILITY_GAS = 15;
+const DURABILITY_LIQUID = 25;
+const DURABILITY_POWDER = 35;
+const DURABILITY_SOLID = 200;
+// A blast only sprays smashing rim Embers if it's violent enough to break solid
+// terrain; a weaker concussion (which merely shoves loose matter) throws none, so
+// its shove stays mass-conserving instead of having embers punch out flung grains.
+const EMBER_MIN_POWER = DURABILITY_SOLID;
+
+/** How hard a material is to destroy by a blast — its own `durability`, else a
+ *  phase default. Empty air offers no resistance. */
+function durabilityOf(id: number): number {
+  if (id === EMPTY) return 0;
+  const m = getMaterial(id);
+  if (m.durability !== undefined) return m.durability;
+  switch (m.phase) {
+    case Phase.Gas:
+      return DURABILITY_GAS;
+    case Phase.Liquid:
+      return DURABILITY_LIQUID;
+    case Phase.Powder:
+      return DURABILITY_POWDER;
+    default:
+      return DURABILITY_SOLID;
+  }
+}
+
+/** The destructive power one explosive cell contributes to its mass's blast (the
+ *  strongest cell in a connected mass wins). Unset ⇒ effectively unlimited. */
+function cellPower(id: number): number {
+  if (id === EMPTY) return 0;
+  return getMaterial(id).destructivePower ?? DEFAULT_DESTRUCTIVE_POWER;
+}
+
+/** True if the cell stops the shockwave — it survives intact and casts a shadow.
+ *  Always the indestructible boundary Wall and blast-proof solids (Diamond); and,
+ *  for a blast too weak to break it, any *solid* whose durability exceeds `power`.
+ *  Loose matter never blocks — a weak blast shoves it aside and passes through.
+ *  (The one force that gets past Diamond is a critical uranium's Heat Ray — see
+ *  heatray.ts — which isn't a blast at all.) */
+function blocksBlast(id: number, power: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
-  return m.isWall === true || m.explosionProof === true || m.indestructible === true;
+  if (m.isWall === true || m.explosionProof === true || m.indestructible === true) return true;
+  return m.phase === Phase.Solid && durabilityOf(id) > power;
 }
 
 /** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell
  *  whose life (in `temp`) both times its fade and drives its glow. spawn() marks
- *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. */
-function placeShell(sim: SimContext, x: number, y: number): void {
+ *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. Exported
+ *  so a custom `onCell` handler (see DetonateOptions) can drop the same flash in
+ *  the cells it chooses not to transform (e.g. a concussion's empty air). */
+export function flashCell(sim: SimContext, x: number, y: number): void {
   const life = SHELL_LIFE_MIN + sim.randInt(SHELL_LIFE_VAR);
   sim.spawn(x, y, BLAST.id);
   sim.setTemp(x, y, life); // ≤ SHELL_MAX ⇒ a flash, never mistaken for a seed
+}
+
+// Underwater detonation is likewise a mechanism, not a material: water a blast is
+// strong enough to destroy flash-boils to a hot Steam plume (which rises, cools,
+// condenses and rains back) instead of being erased — so any charge set off
+// underwater erupts a steam column, with no per-material opt-in and no "depth
+// charge" item. A blast too weak to break water (power < its durability) instead
+// shoves it aside like any other liquid, so a firecracker underwater makes waves,
+// not steam.
+const UNDERWATER_STEAM_TEMP = 240;
+
+function isWater(id: number): boolean {
+  return id === WATER.id || id === SALTWATER.id;
+}
+
+/** Default fate of a cell the front reaches when no `onCell` claims it, decided by
+ *  the blast's destructive `power` against the cell's durability (see the block
+ *  comment above blocksBlast). `entryDx/entryDy` is the inward shock direction and
+ *  `outB` the remaining outward budget — handed to Debris so a shoved grain flies
+ *  outward, fiercest near the epicenter. */
+function defaultCell(
+  sim: SimContext,
+  x: number,
+  y: number,
+  prevId: number,
+  power: number,
+  entryDx: number,
+  entryDy: number,
+  outB: number,
+): void {
+  // Empty air and the detonating charge itself always take the shockwave flash:
+  // air so the blast still reads as a filled disc, an explosive so a source cell
+  // is consumed (left intact it would re-detonate every tick forever).
+  if (prevId === EMPTY) {
+    flashCell(sim, x, y);
+    return;
+  }
+  const m = getMaterial(prevId);
+  if (m.explosive) {
+    flashCell(sim, x, y);
+    return;
+  }
+  // The shockwave flash itself isn't matter — a blast passing over an existing
+  // flash just refreshes it (overlapping blasts). Never shove it as Debris: a
+  // fragment carrying BLAST would respawn on landing with BLAST's seed temp and
+  // spuriously re-detonate a full crater.
+  if (prevId === BLAST.id) {
+    flashCell(sim, x, y);
+    return;
+  }
+  if (power >= durabilityOf(prevId)) {
+    // Strong enough to destroy it: water flash-boils to a steam plume, everything
+    // else takes the ordinary crater flash.
+    if (isWater(prevId)) {
+      sim.spawn(x, y, STEAM.id); // marks moved; won't be re-processed this tick
+      sim.setTemp(x, y, UNDERWATER_STEAM_TEMP); // a hot, buoyant bubble that rises
+    } else {
+      flashCell(sim, x, y);
+    }
+    return;
+  }
+  // Too tough to destroy. Loose matter (powder/liquid/gas) is flung aside as
+  // Debris — a mass-conserving shove that carries the material out and rains it
+  // back. A solid it can't crack never reaches here (blocksBlast keeps the front
+  // out of it), so anything still solid is left untouched, defensively.
+  if (m.phase !== Phase.Solid) {
+    launchDebris(sim, x, y, prevId, entryDx, entryDy, outB);
+  }
 }
 
 /** Yield one explosive cell contributes to its connected mass's total. Defaults
@@ -205,22 +348,26 @@ function surveyMass(
   id_s: number,
   srcX: number[],
   srcY: number[],
-): { Y: number; maxYield: number } {
+): { Y: number; maxYield: number; power: number } {
   const w = sim.width;
   const h = sim.height;
   const originId = sim.get(cx, cy);
   const originMat = originId === EMPTY ? null : getMaterial(originId);
   if (!originMat?.explosive) {
-    // Non-explosive origin (brush Blast seed): a single fixed-yield source. An
-    // explosive origin always surveys its mass below even if its own yield is 0,
-    // so it can still aggregate stronger connected neighbors.
+    // Non-explosive origin (brush Blast seed): a single fixed-yield source that
+    // levels everything (default destructive power). An explosive origin always
+    // surveys its mass below even if its own yield is 0, so it can still
+    // aggregate stronger connected neighbors.
     srcX.push(cx);
     srcY.push(cy);
-    return { Y: seedYield, maxYield: seedYield };
+    return { Y: seedYield, maxYield: seedYield, power: DEFAULT_DESTRUCTIVE_POWER };
   }
 
   let Y = 0;
   let maxYield = 0;
+  // The mass's destructive power is its strongest cell's — a single potent charge
+  // wired into a mass of weak ones detonates the whole thing at full brisance.
+  let power = 0;
   stamp[cy * w + cx] = id_s;
   const qx: number[] = [cx];
   const qy: number[] = [cy];
@@ -229,9 +376,12 @@ function surveyMass(
     const x = qx[head];
     const y = qy[head];
     head++;
-    const y0 = cellYield(sim.get(x, y));
+    const cellId = sim.get(x, y);
+    const y0 = cellYield(cellId);
     Y += y0;
     if (y0 > maxYield) maxYield = y0;
+    const p0 = cellPower(cellId);
+    if (p0 > power) power = p0;
     srcX.push(x);
     srcY.push(y);
     // Once the shared per-tick survey budget is spent, keep counting cells
@@ -255,7 +405,7 @@ function surveyMass(
       qy.push(ny);
     }
   }
-  return { Y, maxYield };
+  return { Y, maxYield, power };
 }
 
 /** Turn a connected mass's total yield into a blast reach (cells). A lone charge
@@ -268,18 +418,81 @@ function computeReach(Y: number, maxYield: number): number {
 }
 
 /**
+ * Options that reshape a detonation *without* touching this file — the seam that
+ * turns "every explosive is the same round crater" into a family of distinct
+ * blasts (cluster, napalm, …). Every field is optional and defaults to the
+ * classic behavior, so the base explosives pass nothing and are bit-for-bit
+ * unchanged. (The concussion shove, the underwater steam plume, and the durability
+ * shadow are *not* options here — they're the built-in default, driven by the
+ * blast's destructive power vs. each material's durability; see defaultCell /
+ * blocksBlast above.) See the field docs; the design lives in the wiki
+ * ("폭발 다변화 구상").
+ */
+export interface DetonateOptions {
+  /** Fixed blast reach (cells), overriding the surveyed √-law reach. Lets a
+   *  self-contained small blast (napalm's fixed R6) ignore how much connected
+   *  explosive happened to be packed. */
+  reach?: number;
+  /** Extra cap on cells this single call processes, on top of the shared
+   *  per-call / per-tick caps — bounds a small self-flood so, e.g., napalm can't
+   *  run a screen-wide fire even if wired to a huge mass. */
+  maxCells?: number;
+  /** Per-direction propagation-cost multipliers, indexed like NEIGHBORS (0..7).
+   *  >1 shortens the reach that way, <1 lengthens it — a directional/shaped
+   *  blast. Omit for the default round disc. */
+  costMul?: readonly number[];
+  /**
+   * Handler run for every cell the front reaches, *replacing* the default
+   * shockwave-flash placement. Receives the cell's previous id, the inward blast
+   * direction (entryDx,entryDy — the step from the cell the front arrived from;
+   * 0,0 at a source cell) and the remaining outward budget `outB` (high near the
+   * epicenter, 0 at the rim — a free strength gradient). Return `true` to signal
+   * the cell was fully handled (no default flash is placed); return
+   * `false`/nothing to fall back to the default flash for this cell. Lets a blast
+   * transform / scatter / ignite instead of merely destroying.
+   */
+  onCell?: (
+    sim: SimContext,
+    x: number,
+    y: number,
+    prevId: number,
+    entryDx: number,
+    entryDy: number,
+    outB: number,
+  ) => boolean | void;
+  /** Replace the rim ejecta launched at the crater edge with something else
+   *  (bomblets, gel, …). Receives the local outward normal. When omitted the
+   *  default hurls Embers at `rimEmberChance`. */
+  rimHandler?: (sim: SimContext, x: number, y: number, dirX: number, dirY: number) => void;
+  /** Probability the *default* rim handler launches an ember per rim cell
+   *  (default RIM_EMBER_CHANCE). Ignored when `rimHandler` is set. */
+  rimEmberChance?: number;
+}
+
+/**
  * Detonate the connected explosive mass at (cx,cy) — immediately and in full.
  * Phase 1 surveys the connected mass for its total yield; phase 2 turns that into
  * a reach R and floods a filled region outward from *every* surveyed cell at once
- * (so the crater is the whole mass grown by R), destroying everything destructible
- * it reaches and dropping the shockwave flash plus a spray of rim embers. Runs
- * entirely within the calling tick — the whole point is that there's no crawl.
+ * (so the crater is the whole mass grown by R). Within reach each cell meets the
+ * blast's destructive power against its durability (see defaultCell/blocksBlast):
+ * strong blasts destroy everything and spray rim embers; a weak one instead shoves
+ * loose matter aside and is shadowed by solids it can't break. Runs entirely within
+ * the calling tick — the whole point is that there's no crawl.
  *
  * `seedYield` is only consulted when (cx,cy) isn't itself an explosive — the
  * brush-painted Blast path passes its own radius so a hand-placed blast keeps a
  * fixed size; an explosive origin ignores it and uses the surveyed yield instead.
+ *
+ * `opts` (see DetonateOptions) reshapes the blast — the whole variety of exotic
+ * explosives rides on this one seam; omitting it reproduces the classic crater.
  */
-export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0): void {
+export function detonate(
+  sim: SimContext,
+  cx: number,
+  cy: number,
+  seedYield = 0,
+  opts: DetonateOptions = {},
+): void {
   const w = sim.width;
   const h = sim.height;
 
@@ -297,8 +510,8 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const id_s = stampId;
   const srcX: number[] = [];
   const srcY: number[] = [];
-  const { Y, maxYield } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
-  const R = computeReach(Y, maxYield);
+  const { Y, maxYield, power } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
+  const R = opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield);
 
   // ── Phase 2: dilate the whole mass outward by R, destroying what it reaches ──
   // A fresh stamp id on the same buffer marks the dilation's visited set; it never
@@ -309,8 +522,13 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const qx = srcX.slice();
   const qy = srcY.slice();
   const qb: number[] = new Array(srcX.length).fill(R);
+  // Inward blast direction each queued cell was reached from (0,0 for a source),
+  // handed to `onCell` and to the default shove so flung material flies outward
+  // along the shock (see defaultCell/debris.ts). Parallel to qx/qy/qb.
+  const qdx: number[] = new Array(srcX.length).fill(0);
+  const qdy: number[] = new Array(srcX.length).fill(0);
   for (let i = 0; i < srcX.length; i++) stamp[srcY[i] * w + srcX[i]] = id_d;
-  // Rim cells (the outer edge, one outward direction each) that spray embers
+  // Rim cells (the outer edge, one outward direction each) that spray ejecta
   // once the flood settles — collected rather than launched inline so spawning
   // them can't disturb the cell reads the flood depends on.
   const rimX: number[] = [];
@@ -318,38 +536,55 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
   const rimDX: number[] = [];
   const rimDY: number[] = [];
 
+  const onCell = opts.onCell;
+  const costMul = opts.costMul;
+  const callCap =
+    opts.maxCells !== undefined && opts.maxCells < MAX_DETONATE_CELLS
+      ? opts.maxCells
+      : MAX_DETONATE_CELLS;
+
   let head = 0;
   let destroyed = 0;
   // The mass always detonates (so a triggered charge always makes progress);
   // every cell after the first is gated by both the per-call cap and the shared
   // per-tick budget.
-  while (
-    head < qx.length &&
-    destroyed < MAX_DETONATE_CELLS &&
-    (destroyed === 0 || budgetLeft > 0)
-  ) {
+  while (head < qx.length && destroyed < callCap && (destroyed === 0 || budgetLeft > 0)) {
     const x = qx[head];
     const y = qy[head];
     const outB = qb[head];
+    const edx = qdx[head];
+    const edy = qdy[head];
     head++;
 
-    placeShell(sim, x, y);
+    // Resolve this cell: a custom handler may transform it (returning true to
+    // claim it), otherwise the default fate applies (water → steam plume,
+    // everything else → the shockwave flash). prevId drives both the handler and
+    // the water check, so it's read once here.
+    const prevId = sim.get(x, y);
+    let handled = false;
+    if (onCell) handled = onCell(sim, x, y, prevId, edx, edy, outB) === true;
+    if (!handled) defaultCell(sim, x, y, prevId, power, edx, edy, outB);
     destroyed++;
     budgetLeft--;
 
     let isRim = false;
     let rimDx = 0;
     let rimDy = 0;
-    for (const [dx, dy, cost] of NEIGHBORS) {
+    for (let i = 0; i < NEIGHBORS.length; i++) {
+      const dx = NEIGHBORS[i][0];
+      const dy = NEIGHBORS[i][1];
+      // `?? 1` guards a short/sparse costMul: a missing entry means "no scaling"
+      // rather than a NaN cost, which would corrupt the budget arithmetic.
+      const cost = costMul ? NEIGHBORS[i][2] * (costMul[i] ?? 1) : NEIGHBORS[i][2];
       const nx = x + dx;
       const ny = y + dy;
-      // A container edge contains the blast (like a Wall) — no leak, no ember.
+      // A container edge contains the blast (like a Wall) — no leak, no ejecta.
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_d) continue;
       if (outB - cost < 0) {
         // The front ran out of push in this direction: this cell is the outer
-        // rim here, so it can fling an ember outward along the local outward
+        // rim here, so it can fling ejecta outward along the local outward
         // normal (the direction whose budget ran out). Record the first such
         // direction and move on.
         if (!isRim) {
@@ -359,13 +594,16 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
         }
         continue;
       }
-      // Wall and Diamond stop the front and shadow what's beyond — no ember
-      // either.
-      if (isBlocker(sim.get(nx, ny))) continue;
+      // Wall/Diamond — and any solid this blast is too weak to break — stop the
+      // front and shadow what's beyond, with no ejecta. Loose matter never blocks
+      // (a weak blast shoves it and passes through; see blocksBlast).
+      if (blocksBlast(sim.get(nx, ny), power)) continue;
       stamp[nidx] = id_d;
       qx.push(nx);
       qy.push(ny);
       qb.push(outB - cost);
+      qdx.push(dx);
+      qdy.push(dy);
     }
     if (isRim) {
       // With many sources there's no single epicenter to fling from, so the
@@ -378,8 +616,16 @@ export function detonate(sim: SimContext, cx: number, cy: number, seedYield = 0)
     }
   }
 
+  const rimHandler = opts.rimHandler;
+  const rimEmberChance = opts.rimEmberChance !== undefined ? opts.rimEmberChance : RIM_EMBER_CHANCE;
+  // Smashing rim embers only fly from a blast violent enough to break solid
+  // terrain; a weak concussion (which merely shoves loose matter) throws none, so
+  // its shove stays mass-conserving. A custom rimHandler (cluster/napalm) always runs.
+  const throwsEmbers = power >= EMBER_MIN_POWER;
   for (let i = 0; i < rimX.length; i++) {
-    if (sim.chance(RIM_EMBER_CHANCE)) launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+    if (rimHandler) rimHandler(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+    else if (throwsEmbers && sim.chance(rimEmberChance))
+      launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
   }
 }
 

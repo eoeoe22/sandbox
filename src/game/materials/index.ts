@@ -71,6 +71,12 @@ import { SLAG } from './slag';
 import { LIMESTONE } from './limestone';
 import { IRON_ORE } from './ironore';
 import { MOLTEN_IRON_ORE } from './moltenironore';
+import { DEBRIS } from './debris';
+import { CLUSTER } from './cluster';
+import { BOMBLET } from './bomblet';
+import { NAPALM } from './napalm';
+import { NAPALM_GEL } from './napalmgel';
+import { C4 } from './c4';
 
 export {
   EMPTY_MAT,
@@ -141,6 +147,12 @@ export {
   LIMESTONE,
   IRON_ORE,
   MOLTEN_IRON_ORE,
+  DEBRIS,
+  CLUSTER,
+  BOMBLET,
+  NAPALM,
+  NAPALM_GEL,
+  C4,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -156,7 +168,12 @@ export {
  *     neighboring spark, and painted onto bare ground it would simply fizzle.
  *   • HEAT_RAY — the searing beam a critical uranium mass emits with a real
  *     flight direction (see heatray.ts); hand-placed it would die on its first
- *     turn just like an unlaunched ember. */
+ *     turn just like an unlaunched ember.
+ *   • DEBRIS / BOMBLET / NAPALM_GEL — ballistic ejecta a blast throws with a
+ *     real velocity (see ballistic.ts): the loose grains a weak blast shoves
+ *     aside (the built-in concussion — see blast.ts/debris.ts), a cluster shell's
+ *     submunitions, and a napalm shell's sticky fire-gel. Like Ember they only
+ *     exist mid-flight; painted by hand they'd fall inert at once. */
 export const MATERIALS = [
   WALL,
   SAND,
@@ -213,6 +230,9 @@ export const MATERIALS = [
   TNT,
   FUSE,
   THERMITE,
+  CLUSTER,
+  NAPALM,
+  C4,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
