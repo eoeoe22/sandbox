@@ -172,7 +172,7 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
 
 export const MOLTEN_URANIUM = register({
   id: 65,
-  name: 'Molten Uranium',
+  name: 'Molten U235',
   phase: Phase.Liquid,
   color: rgb(235, 255, 90),
   density: 10, // densest liquid in the game — sinks through even Mercury (9)

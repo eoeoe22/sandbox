@@ -1,7 +1,13 @@
 import { atom } from 'nanostores';
-import { SAND } from '../game/materials';
-import { GRID_W, GRID_H, OVERWRITE_LEVEL_MAX, SIM_SPEED_DEFAULT } from '../game/config';
-import type { SimSpeed } from '../game/config';
+import { SAND, WATER } from '../game/materials';
+import {
+  GRID_W,
+  GRID_H,
+  OVERWRITE_LEVEL_MAX,
+  SIM_SPEED_DEFAULT,
+  SMOKE_LEVEL_DEFAULT,
+} from '../game/config';
+import type { SimSpeed, SmokeLevel } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
@@ -31,14 +37,32 @@ export const $brushMode = atom<BrushMode>('full');
 
 /**
  * Active brush tool. 'material' (the default) paints the selected material —
- * the existing behavior. The others are "special brushes" that act on the
+ * the existing behavior. 'blend' paints a stochastic mixture of the materials
+ * configured in `$blendBrush`. The rest are "special brushes" that act on the
  * cells already under the brush instead of placing material: 'heat'/'cool'
- * nudge each cell's temperature, and 'mix' shuffles the non-solid particles
- * (solids stay put). See PointerPainter and config.ts. Selecting a material in
- * the palette snaps this back to 'material'.
+ * nudge each cell's temperature, 'mix' shuffles the non-solid particles (solids
+ * stay put), and 'erase' clears cells to Empty (the same as a right-button
+ * drag, promoted to its own selectable tool). See PointerPainter and config.ts.
+ * Selecting a material in the palette snaps this back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend';
 export const $tool = atom<Tool>('material');
+
+/**
+ * One component of the blend (혼합) brush: a material id and the percentage
+ * weight it gets when the brush paints. Ratios are whole multiples of
+ * `BLEND_RATIO_STEP` and the components' ratios sum to 100 (see config.ts and
+ * PointerPainter.paintBlend). Up to `BLEND_MAX_SLOTS` components.
+ */
+export interface BlendComponent {
+  id: number;
+  ratio: number;
+}
+/** Materials + ratios the blend brush paints. Defaults to a 50/50 sand·water mix. */
+export const $blendBrush = atom<BlendComponent[]>([
+  { id: SAND.id, ratio: 50 },
+  { id: WATER.id, ratio: 50 },
+]);
 
 /**
  * How aggressively the brush overwrites existing (non-Empty) particles, as a
@@ -79,13 +103,15 @@ export const $fpsPeak = atom<number>(0);
 export const $borderMode = atom<BorderMode>('wall');
 
 /**
- * Whether reactions emit Smoke. `true` (the default) keeps the original
- * behavior; `false` suppresses the Smoke that every combustion/explosion
- * reaction would otherwise produce (Fire, Blue Flame, Ember, Molten Uranium,
- * Heat Ray, …). The engine reads this via Simulation.setSmokeEnabled. Manual
- * Smoke painting bypasses the engine seam, so it still works when this is off.
+ * How much Smoke reactions emit: 'high' (the original "smoke on" level),
+ * 'medium' (the default — a thinned-out amount), or 'off' (no reaction Smoke at
+ * all). This replaces the old on/off toggle. Governs every combustion/explosion
+ * reaction (Fire, Blue Flame, Ember, Molten Uranium, Heat Ray, …) through one
+ * seam in SimContext; the engine reads it via Simulation.setSmokeLevel. Manual
+ * Smoke painting bypasses that seam, so it still works at any level. See
+ * `SmokeLevel` / `SMOKE_MEDIUM_KEEP` in config.ts.
  */
-export const $smokeEnabled = atom<boolean>(true);
+export const $smokeLevel = atom<SmokeLevel>(SMOKE_LEVEL_DEFAULT);
 
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });

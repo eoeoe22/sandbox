@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { AMBIENT_TEMP } from '../config';
+import { AMBIENT_TEMP, FIRE_SMOKE_CHANCE } from '../config';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
@@ -21,8 +21,6 @@ const IGNITE_CHANCE = 0.04; // ~50% ignited after ~17 ticks (~0.3s@60Hz) — a
 // ticks (~30ms), which reads as instantaneous and defeats a watchable spread.
 const BURNOUT_CHANCE = 0.1; // flames snuff quickly (was 0.02) — ~10-tick life
 // (~0.17s@60Hz) so a fire front flares and vanishes almost as fast as it appears.
-const SMOKE_CHANCE = 0.3; // …and only some burnouts leave Smoke; the rest clear
-// straight to Empty, so a fire gives off noticeably less smoke than it used to.
 
 function updateFire(x: number, y: number, sim: SimContext): void {
   let extinguished = false;
@@ -53,9 +51,11 @@ function updateFire(x: number, y: number, sim: SimContext): void {
 
   if (sim.chance(BURNOUT_CHANCE)) {
     // Burning out means the heat is spent, so drop to ambient (and only
-    // sometimes leave Smoke behind — mirrors Steam condensing).
+    // sometimes leave Smoke behind — mirrors Steam condensing). This is the
+    // 'high' (unthinned) rate; the SimContext smoke-level seam thins it further
+    // at 'medium'/'off', so the net smoke on screen tracks the chosen level.
     sim.setTemp(x, y, AMBIENT_TEMP);
-    sim.set(x, y, sim.chance(SMOKE_CHANCE) ? SMOKE.id : EMPTY);
+    sim.set(x, y, sim.chance(FIRE_SMOKE_CHANCE) ? SMOKE.id : EMPTY);
     return;
   }
   updateGas(x, y, sim);

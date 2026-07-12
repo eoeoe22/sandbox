@@ -8,10 +8,12 @@ import {
   $running,
   $borderMode,
   $simSpeed,
-  $smokeEnabled,
+  $smokeLevel,
+  $blendBrush,
   type BrushShape,
   type BrushMode,
   type Tool,
+  type BlendComponent,
 } from './store';
 import { getMaterial } from '../game/materials';
 import {
@@ -21,8 +23,11 @@ import {
   OVERWRITE_LEVEL_MIN,
   OVERWRITE_LEVEL_MAX,
   SIM_SPEEDS,
+  SMOKE_LEVELS,
+  BLEND_MAX_SLOTS,
+  BLEND_RATIO_STEP,
 } from '../game/config';
-import type { SimSpeed } from '../game/config';
+import type { SimSpeed, SmokeLevel } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
 
@@ -65,9 +70,38 @@ function writeString(key: string, value: string): boolean {
 
 const BRUSH_SHAPES: readonly BrushShape[] = ['circle', 'square'];
 const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
-const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix'];
+const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
+
+/**
+ * Validate a persisted blend-brush config. Accepts it only if it's a 1..MAX
+ * list of {id, ratio} where every id is a real (non-eraser) material, every
+ * ratio is a positive multiple of the step, and the ratios sum to 100 — the
+ * exact invariant the editor maintains. Anything else (corrupt or hand-edited)
+ * returns null so the default blend is kept.
+ */
+function parseBlend(v: unknown): BlendComponent[] | null {
+  if (!Array.isArray(v) || v.length < 1 || v.length > BLEND_MAX_SLOTS) return null;
+  const out: BlendComponent[] = [];
+  let sum = 0;
+  for (const item of v) {
+    if (!item || typeof item !== 'object') return null;
+    const id = (item as { id?: unknown }).id;
+    const ratio = (item as { ratio?: unknown }).ratio;
+    if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0 || !getMaterial(id)) return null;
+    if (
+      typeof ratio !== 'number' ||
+      !Number.isFinite(ratio) ||
+      ratio <= 0 ||
+      ratio % BLEND_RATIO_STEP !== 0
+    )
+      return null;
+    out.push({ id, ratio });
+    sum += ratio;
+  }
+  return sum === 100 ? out : null;
+}
 
 /** Round + clamp a persisted number, falling back when it isn't a finite number. */
 function clampInt(v: unknown, lo: number, hi: number, fallback: number): number {
@@ -102,7 +136,18 @@ function hydrateSettings(): void {
   $borderMode.set(oneOf(s.borderMode, BORDER_MODES, $borderMode.get()));
   $simSpeed.set(oneOf(s.simSpeed, SIM_SPEED_VALUES, $simSpeed.get()));
   if (typeof s.running === 'boolean') $running.set(s.running);
-  if (typeof s.smokeEnabled === 'boolean') $smokeEnabled.set(s.smokeEnabled);
+
+  // Smoke level: prefer the current 3-level field, but migrate a pre-3-level
+  // saved boolean (smokeEnabled) so returning users keep their choice —
+  // on → 'high' (the old "smoke on" amount), off → 'off'.
+  if (SMOKE_LEVELS.includes(s.smokeLevel as SmokeLevel)) {
+    $smokeLevel.set(s.smokeLevel as SmokeLevel);
+  } else if (typeof s.smokeEnabled === 'boolean') {
+    $smokeLevel.set(s.smokeEnabled ? 'high' : 'off');
+  }
+
+  const blend = parseBlend(s.blendBrush);
+  if (blend) $blendBrush.set(blend);
 }
 
 function saveSettings(): void {
@@ -118,7 +163,8 @@ function saveSettings(): void {
       borderMode: $borderMode.get(),
       simSpeed: $simSpeed.get(),
       running: $running.get(),
-      smokeEnabled: $smokeEnabled.get(),
+      smokeLevel: $smokeLevel.get(),
+      blendBrush: $blendBrush.get(),
     }),
   );
 }
@@ -166,7 +212,8 @@ export function initSettingsPersistence(): void {
   $borderMode.listen(schedule);
   $simSpeed.listen(schedule);
   $running.listen(schedule);
-  $smokeEnabled.listen(schedule);
+  $smokeLevel.listen(schedule);
+  $blendBrush.listen(schedule);
 
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {

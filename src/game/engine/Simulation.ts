@@ -2,7 +2,7 @@ import type { Grid } from './Grid';
 import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
 import { EMPTY, type BorderMode } from './types';
-import { HEAT_DIFFUSION_RATE, DEFAULT_CONDUCTIVITY } from '../config';
+import { HEAT_DIFFUSION_RATE, DEFAULT_CONDUCTIVITY, type SmokeLevel } from '../config';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 
 /**
@@ -40,10 +40,10 @@ export class Simulation {
     this.ctx.borderMode = mode;
   }
 
-  /** Toggle whether reactions emit Smoke. When off, combustion/explosion rules
-   *  that would spawn Smoke produce nothing instead (see SimContext.smokeEnabled). */
-  setSmokeEnabled(on: boolean): void {
-    this.ctx.smokeEnabled = on;
+  /** Set how much Smoke reactions emit (high/medium/off). Forwarded to the
+   *  SimContext seam that thins reaction Smoke (see SimContext.smokeLevel). */
+  setSmokeLevel(level: SmokeLevel): void {
+    this.ctx.smokeLevel = level;
   }
 
   step(): void {

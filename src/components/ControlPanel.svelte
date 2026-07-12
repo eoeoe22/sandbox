@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import {
     $running as running,
     $simSpeed as simSpeed,
@@ -12,7 +13,7 @@
     $fpsPeak as fpsPeak,
     $gridDims as gridDims,
     $borderMode as borderMode,
-    $smokeEnabled as smokeEnabled,
+    $smokeLevel as smokeLevel,
     requestClear,
     requestStep,
   } from '../state/store';
@@ -25,6 +26,7 @@
   } from '../game/config';
   import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
+  import BlendBrush from './BlendBrush.svelte';
 
   // Name of the currently selected paint material, shown on the 재료 (draw) brush
   // button so the active material is always visible without opening the palette.
@@ -34,7 +36,44 @@
   // edge mode, HUD) collapse behind a toggle so the bottom bar stays two rows.
   // On desktop the sheet is always shown inline in the sidebar and this is unused.
   let sheetOpen = $state(false);
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let toggleEl = $state<HTMLButtonElement | null>(null);
+
+  // 전체 지우기 is destructive, so it's a two-step confirm: the first click arms
+  // the button (its label switches to a confirm prompt for 2s); a second click
+  // within that window clears the world, otherwise it quietly disarms.
+  let clearArmed = $state(false);
+  let clearTimer: ReturnType<typeof setTimeout> | undefined;
+  function handleClear(): void {
+    if (clearArmed) {
+      clearTimeout(clearTimer);
+      clearArmed = false;
+      requestClear();
+      return;
+    }
+    clearArmed = true;
+    clearTimer = setTimeout(() => {
+      clearArmed = false;
+    }, 2000);
+  }
+
+  // Mobile settings sheet has no X button — tapping the toggle again or anywhere
+  // outside the sheet closes it. The toggle's own click runs before this bubbles
+  // to window, so `toggleEl` guards against it reopening/closing twice. On desktop
+  // the sheet is always shown inline (its `.open` class is ignored), so closing
+  // `sheetOpen` here has no visible effect.
+  function handleWindowClick(e: MouseEvent): void {
+    if (!sheetOpen) return;
+    const t = e.target as Node;
+    if (sheetEl?.contains(t)) return;
+    if (toggleEl?.contains(t)) return;
+    sheetOpen = false;
+  }
+
+  onDestroy(() => clearTimeout(clearTimer));
 </script>
+
+<svelte:window onclick={handleWindowClick} />
 
 <aside class="panel">
   <div class="head">
@@ -65,9 +104,15 @@
           <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
           <span class="label">스텝</span>
         </button>
-        <button class="ctl" onclick={requestClear} aria-label="지우기" title="전체 지우기">
+        <button
+          class="ctl clear-btn"
+          class:armed={clearArmed}
+          onclick={handleClear}
+          aria-label={clearArmed ? '전체 지우기 확인' : '전체 지우기'}
+          title="전체 지우기"
+        >
           <i class="bi bi-trash3" aria-hidden="true"></i>
-          <span class="label">지우기</span>
+          <span class="label">{clearArmed ? '계속하시겠습니까?' : '지우기'}</span>
         </button>
       </div>
 
@@ -116,11 +161,34 @@
           <i class="bi bi-tornado" aria-hidden="true"></i>
           <span class="label">섞기</span>
         </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'blend'}
+          onclick={() => tool.set('blend')}
+          aria-pressed={$tool === 'blend'}
+          aria-label="혼합 브러시"
+          title="여러 물질을 비율대로 섞어 그립니다 (설정에서 비율 조절)"
+        >
+          <i class="bi bi-palette-fill" aria-hidden="true"></i>
+          <span class="label">혼합</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'erase'}
+          onclick={() => tool.set('erase')}
+          aria-pressed={$tool === 'erase'}
+          aria-label="지우개"
+          title="브러시 영역을 지웁니다 (빈칸으로)"
+        >
+          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
+          <span class="label">지우개</span>
+        </button>
       </div>
 
       <!-- Mobile only: reveal the settings sheet. -->
       <button
         class="ctl sheet-toggle"
+        bind:this={toggleEl}
         onclick={() => (sheetOpen = !sheetOpen)}
         aria-label="설정"
         aria-expanded={sheetOpen}
@@ -135,13 +203,11 @@
     </div>
   </div>
 
-  <!-- Secondary settings. Desktop: inline in the sidebar. Mobile: pop-up sheet. -->
-  <div class="sheet" class:open={sheetOpen}>
+  <!-- Secondary settings. Desktop: inline in the sidebar. Mobile: pop-up sheet
+       (no X button — tap outside or the toggle to close; see handleWindowClick). -->
+  <div class="sheet" class:open={sheetOpen} bind:this={sheetEl}>
     <div class="sheet-head">
       <span>설정</span>
-      <button class="icon-btn" onclick={() => (sheetOpen = false)} aria-label="설정 닫기" title="닫기">
-        <i class="bi bi-x-lg" aria-hidden="true"></i>
-      </button>
     </div>
 
     <div class="field">
@@ -278,28 +344,43 @@
 
     <div class="field">
       <span class="field-label">연기</span>
-      <div class="seg" role="group" aria-label="연기 활성화">
+      <div class="seg" role="group" aria-label="연기 세기">
         <button
           class="ctl"
-          class:active={$smokeEnabled}
-          onclick={() => smokeEnabled.set(true)}
-          aria-pressed={$smokeEnabled}
-          title="연소·폭발 반응이 연기를 냅니다"
+          class:active={$smokeLevel === 'high'}
+          onclick={() => smokeLevel.set('high')}
+          aria-pressed={$smokeLevel === 'high'}
+          title="연소·폭발 반응이 연기를 많이 냅니다"
         >
           <i class="bi bi-cloud-fog2" aria-hidden="true"></i>
-          <span class="label">켬</span>
+          <span class="label">상</span>
         </button>
         <button
           class="ctl"
-          class:active={!$smokeEnabled}
-          onclick={() => smokeEnabled.set(false)}
-          aria-pressed={!$smokeEnabled}
-          title="모든 연소·폭발 반응에서 연기를 생성하지 않습니다"
+          class:active={$smokeLevel === 'medium'}
+          onclick={() => smokeLevel.set('medium')}
+          aria-pressed={$smokeLevel === 'medium'}
+          title="연기를 적당히 냅니다 (기본값)"
+        >
+          <i class="bi bi-cloud" aria-hidden="true"></i>
+          <span class="label">중</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$smokeLevel === 'off'}
+          onclick={() => smokeLevel.set('off')}
+          aria-pressed={$smokeLevel === 'off'}
+          title="반응에서 연기를 내지 않습니다"
         >
           <i class="bi bi-cloud-slash" aria-hidden="true"></i>
           <span class="label">끔</span>
         </button>
       </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">혼합 브러시</span>
+      <BlendBrush />
     </div>
 
     <div class="hud">
@@ -313,7 +394,7 @@
     </div>
 
     <p class="hint">
-      캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭으로 지우거나 팔레트의 지우개를 쓰세요.
+      캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.
     </p>
   </div>
 </aside>
@@ -428,6 +509,15 @@
     border-color: #6ea8fe;
     background: #23324a;
   }
+  /* Armed 전체 지우기 button: an amber "are you sure?" state before it wipes. */
+  .ctl.armed {
+    border-color: #e0a030;
+    background: #4a3a1a;
+    color: #ffd98a;
+  }
+  .ctl.armed:hover {
+    border-color: #f0b040;
+  }
 
   /* The 재료 brush button shows the selected material's name in full — never
      truncated with an ellipsis. The button sizes to fit the name (the control
@@ -491,27 +581,10 @@
     line-height: 1.4;
   }
 
-  /* The settings sheet header + close button are mobile-only affordances. */
+  /* The settings sheet header (label only) + toggle are mobile-only affordances. */
   .sheet-head,
   .sheet-toggle {
     display: none;
-  }
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
-    color: #e8e8ee;
-    cursor: pointer;
-    font-size: 15px;
-  }
-  .icon-btn:hover {
-    border-color: #3a3a46;
   }
 
   /* --------------------------------------------------------------------- */
@@ -582,6 +655,11 @@
     /* …except the 재료 button, which keeps showing the selected material name
        (the bar scrolls sideways, so a wider button is fine). */
     .bar .material-btn .material-name {
+      display: inline;
+    }
+    /* …and the armed 지우기 button, so the "계속하시겠습니까?" confirm prompt is
+       visible on mobile too (the bar scrolls to fit the wider button). */
+    .bar .ctl.armed .label {
       display: inline;
     }
     .bar .ctl {

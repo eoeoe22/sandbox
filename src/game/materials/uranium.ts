@@ -78,7 +78,7 @@ function updateUranium(x: number, y: number, sim: SimContext): void {
 
 export const URANIUM = register({
   id: 63,
-  name: 'Uranium',
+  name: 'U235',
   phase: Phase.Solid,
   color: rgb(210, 225, 70),
   density: 1000,
