@@ -8,7 +8,8 @@ import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
 
-// Battery — the power source that makes the electricity subsystem self-running.
+// Lithium Battery — the power source that makes the electricity subsystem
+// self-running (the volatile chemistry; see lfpbattery.ts for the safe one).
 // A static solid that, on a fixed cadence, injects a fresh Spark into every
 // `conductive` neighbor that's ready for one, so a Battery wired to a loop of
 // Iron drives a pulse down it forever with no further input. Point one at a wire
@@ -18,8 +19,8 @@ import { detonate } from './blast';
 // fades out only through a resistive medium like water.
 //
 // It keeps its pulse cadence in its own `aux` byte — a plain per-tick counter
-// (0..PERIOD-1). Because a conductor is briefly refractory right after a pulse
-// (see spark.ts), PERIOD is set comfortably longer than that refractory window
+// (0..PULSE_PERIOD-1). Because a conductor is briefly refractory right after a pulse
+// (see spark.ts), PULSE_PERIOD is set comfortably longer than that refractory window
 // so each new pulse finds the wire ready.
 //
 // A Battery is volatile when hot: heated to OVERHEAT_TEMP — a temperature an
@@ -28,11 +29,13 @@ import { detonate } from './blast';
 // **detonates**. Once runaway starts it is committed — tracked by `aux` climbing
 // into the BURN_BASE band (so it survives the fire drifting off or the battery
 // briefly cooling), and it always follows through to the blast.
-const PERIOD = 12; // ticks between pulses (~0.2 s at 60 Hz, ~0.4 s at the default ×1 speed)
+/** Ticks between pulses (~0.2 s at 60 Hz, ~0.4 s at the default ×1 speed).
+ *  Shared by both battery chemistries (see lfpbattery.ts). */
+export const PULSE_PERIOD = 12;
 const OVERHEAT_TEMP = 200; // heated to this it ignites — well within a normal flame's reach
 const BLAST_RADIUS = 6;
 // `aux >= BURN_BASE` marks a battery already in runaway; (aux - BURN_BASE) is how
-// many ticks it has been burning. BURN_BASE sits well above the 0..PERIOD-1
+// many ticks it has been burning. BURN_BASE sits well above the 0..PULSE_PERIOD-1
 // cadence range so the two uses of `aux` never collide, and BURN_BASE+BURN_TICKS
 // stays within a Uint8.
 const BURN_BASE = 100;
@@ -77,14 +80,21 @@ function updateBattery(x: number, y: number, sim: SimContext): void {
     sim.setTemp(x, y, temp - (temp - AMBIENT_TEMP) * SELF_COOL_RATE);
   }
 
-  if (aux < PERIOD - 1) {
+  if (aux < PULSE_PERIOD - 1) {
     sim.setAux(x, y, aux + 1);
     return;
   }
   sim.setAux(x, y, 0);
+  injectPulses(x, y, sim);
+}
 
-  // Fire: energize each ready conductor neighbor at full strength, carrying its
-  // heat across and packing the conductor class + strength into the spark's aux.
+/**
+ * Energize each ready conductor neighbor at full strength, carrying its heat
+ * across and packing the conductor class + strength into the spark's aux — one
+ * power-source "beat". Shared by both battery chemistries (Lithium here, LFP in
+ * lfpbattery.ts), which differ only in how they respond to heat.
+ */
+export function injectPulses(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -103,7 +113,7 @@ function updateBattery(x: number, y: number, sim: SimContext): void {
 
 export const BATTERY = register({
   id: 39,
-  name: 'Battery',
+  name: 'Lithium Battery',
   phase: Phase.Solid,
   color: rgb(225, 195, 70),
   density: 1000,

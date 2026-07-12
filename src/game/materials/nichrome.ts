@@ -66,6 +66,9 @@ const RADIATE_RATE = 0.0035;
  * of flush against the lead, where it would pour heat straight down the wire
  * into the Battery (Iron conducts ~6× better than nichrome) and cook it into
  * thermal runaway in seconds. A run must be ≥3 cells to develop a hot middle.
+ * (Counting `sparkId` means a pulse momentarily sitting on an adjacent *metal*
+ * cell can once in a while let a terminal take a single deposit — transient,
+ * capped, and rare thanks to refractory staggering, so it's tolerated.)
  *
  * Heating only ever *raises* temperature toward the self-heating cap — an
  * element already hotter than the cap (externally heated) isn't cooled by
