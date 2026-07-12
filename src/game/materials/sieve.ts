@@ -3,28 +3,31 @@ import { EMPTY, Phase } from '../engine/types';
 import { getMaterial } from './registry';
 
 // Shared "sieve" pass-through used by Mesh (체) and Turbine — a static solid that
-// a fluid seeps *through* while the solid itself never moves. The fluid tunnels
-// through the whole contiguous run of `porous` cells in its travel direction to
-// the first EMPTY cell beyond, so a mesh wall of ANY thickness drains instead of
-// acting solid (a 2-cell-thick wall would otherwise block the fluid, since the
-// cell just past the first mesh cell is more mesh, not empty):
+// a fluid seeps *through* while the solid itself never moves. Passage is purely
+// *vertical*, driven by gravity/buoyancy, and tunnels through the whole
+// contiguous run of `porous` cells to the first EMPTY cell beyond, so a mesh wall
+// of ANY thickness drains instead of acting solid (a 2-cell-thick floor would
+// otherwise block the fluid, since the cell just past the first mesh cell is more
+// mesh, not empty):
 //
 //   • Down (gravity): a Liquid resting on the near face falls through to the
 //     empty cell below the run.
 //   • Up (buoyancy): a Gas pooled under the near face rises through to the empty
 //     cell above the run.
-//   • Sideways (pressure/leveling): a Liquid or Gas pressed against one face
-//     crosses to the empty cell past the far face — this is what lets a vertical
-//     mesh wall drain a tank instead of holding it like a plain wall.
+//
+// There is deliberately NO sideways pass: a horizontal cross-through makes water
+// pressed against a vertical mesh wall slosh back and forth across it every tick
+// (it crosses to the empty side, then crosses back), which reads as jitter. Water
+// in a mesh cup instead drains the natural way — straight down through the floor.
 //
 // Powders and solids are always blocked (they rest against it like any solid),
 // and a liquid chilled below its freezing point acts solid too
 // (SimContext.isFrozen). A source parcel that already moved this tick is skipped
 // (SimContext.hasMoved), so one drop can't be relayed through several separate
-// runs in a single tick — it advances one screen per tick like everything else.
-// Only EMPTY exits receive the fluid (never a push into other fluid), so it
-// never cascades. Returns the id of whatever passed this tick (so a Turbine can
-// tell a puff of Steam went through and make power), or EMPTY when nothing moved.
+// runs in a single tick. Only EMPTY exits receive the fluid (never a push into
+// other fluid), so it never cascades. Returns the id of whatever passed this tick
+// (so a Turbine can tell a puff of Steam went through and make power), or EMPTY
+// when nothing moved.
 
 /** Cap on how thick a porous run a single pass tunnels across in one tick — a
  *  backstop so a giant porous block can't make the walk unbounded. Walls are
@@ -77,19 +80,11 @@ function pass(
 
 const isLiquid = (p: Phase): boolean => p === Phase.Liquid;
 const isGas = (p: Phase): boolean => p === Phase.Gas;
-const isFluid = (p: Phase): boolean => p === Phase.Liquid || p === Phase.Gas;
 
 export function sift(x: number, y: number, sim: SimContext): number {
   // Down: a liquid on the top face falls through to the empty cell below the run.
-  let p = pass(x, y, sim, 0, 1, isLiquid);
-  if (p !== EMPTY) return p;
+  const down = pass(x, y, sim, 0, 1, isLiquid);
+  if (down !== EMPTY) return down;
   // Up: a gas under the bottom face rises through to the empty cell above the run.
-  p = pass(x, y, sim, 0, -1, isGas);
-  if (p !== EMPTY) return p;
-  // Sideways: a fluid crosses to the empty far side. Randomize which side wins
-  // first so a symmetric setup has no left/right bias.
-  const dir = sim.chance(0.5) ? 1 : -1;
-  p = pass(x, y, sim, dir, 0, isFluid);
-  if (p !== EMPTY) return p;
-  return pass(x, y, sim, -dir, 0, isFluid);
+  return pass(x, y, sim, 0, -1, isGas);
 }
