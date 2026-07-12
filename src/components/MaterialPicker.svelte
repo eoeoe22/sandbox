@@ -243,7 +243,7 @@
     class="trigger"
     bind:this={triggerEl}
     onclick={toggle}
-    aria-haspopup="true"
+    aria-haspopup="dialog"
     aria-expanded={open}
     aria-label={ariaLabel ? `${ariaLabel}: ${selectedName}` : selectedName}
     title={selectedName}
