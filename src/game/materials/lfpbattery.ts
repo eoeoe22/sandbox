@@ -12,10 +12,12 @@ import { MOLTEN_METAL } from './moltenmetal';
 // way — a blast that reaches it destroys it like any solid (it is NOT
 // explosion-proof), and only truly extreme heat undoes it: well past an
 // ordinary flame's ~1000° ceiling it finally melts down into Molten Metal
-// (Blue Flame / Lava / Thermite grade, ~1300°). In between, it just keeps
-// ticking — the right power source to bury next to a Nichrome heater or run
-// through a burning building.
-const MELT_TEMP = 1300;
+// (Blue Flame / Lava / Thermite grade — Iron's own 1400°, which also keeps it
+// safely above Molten Metal's 1350° freeze point so the melt actually stays
+// molten instead of instantly setting back to Iron). In between, it just
+// keeps ticking — the right power source to bury next to a Nichrome heater or
+// run through a burning building.
+const MELT_TEMP = 1400;
 
 function updateLfpBattery(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= MELT_TEMP) {
