@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
+import { AMBIENT_TEMP } from '../config';
 import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
@@ -37,6 +38,15 @@ const BLAST_RADIUS = 6;
 const BURN_BASE = 100;
 const BURN_TICKS = 45; // burn ~0.75 s (60 Hz) / ~1.5 s (30 Hz) before it blows
 const BURN_WREATH_CHANCE = 0.35; // per open neighbor per tick — the visible fire
+// Passive self-cooling (heat sink / protection circuit): each tick below the
+// runaway threshold, the battery sheds this fraction of its excess over
+// ambient. Far too weak to matter against direct flame (a fire pours in
+// ~60°/tick vs ~4°/tick shed near the threshold — arson and detonator builds
+// are untouched), but it buys real headroom against *slow conducted creep*,
+// like the Joule heat of a Nichrome element seeping back down its own leads:
+// a battery driving a heater shouldn't cook itself in seconds through its own
+// wiring, though sustained overdrive can still push it over eventually.
+const SELF_COOL_RATE = 0.025;
 
 function updateBattery(x: number, y: number, sim: SimContext): void {
   const aux = sim.getAux(x, y);
@@ -59,6 +69,12 @@ function updateBattery(x: number, y: number, sim: SimContext): void {
     }
     sim.setAux(x, y, BURN_BASE + elapsed + 1);
     return;
+  }
+
+  // Not in runaway: shed a little heat (see SELF_COOL_RATE).
+  const temp = sim.getTemp(x, y);
+  if (temp > AMBIENT_TEMP) {
+    sim.setTemp(x, y, temp - (temp - AMBIENT_TEMP) * SELF_COOL_RATE);
   }
 
   if (aux < PERIOD - 1) {

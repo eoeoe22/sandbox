@@ -77,6 +77,8 @@ import { BOMBLET } from './bomblet';
 import { NAPALM } from './napalm';
 import { NAPALM_GEL } from './napalmgel';
 import { C4 } from './c4';
+import { SODA } from './soda';
+import { NICHROME } from './nichrome';
 
 export {
   EMPTY_MAT,
@@ -153,6 +155,8 @@ export {
   NAPALM,
   NAPALM_GEL,
   C4,
+  SODA,
+  NICHROME,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -182,6 +186,7 @@ export const MATERIALS = [
   SALTWATER,
   SMOKE,
   SALT,
+  SODA,
   STEAM,
   FIRE,
   LAVA,
@@ -213,6 +218,7 @@ export const MATERIALS = [
   OXYGEN,
   HYDROGEN,
   BATTERY,
+  NICHROME,
   MERCURY,
   HONEY,
   ALCOHOL,
