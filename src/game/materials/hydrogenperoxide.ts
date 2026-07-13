@@ -6,7 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { OXYGEN } from './oxygen';
-import { VIRUS, VIRUS_CLEANSING_AUX } from './virus';
+import { VIRUS, CURE_SEED_BUDGET } from './virus';
 
 // Hydrogen Peroxide (과산화수소, H₂O₂) — a clear liquid that looks like water but
 // is always quietly falling apart: 2H₂O₂ → 2H₂O + O₂. Each tick it has a small
@@ -17,16 +17,19 @@ import { VIRUS, VIRUS_CLEANSING_AUX } from './virus';
 // (or a catalyst-hot neighbour) sharply speeds the breakdown, so a splash on
 // something burning gushes oxygen in a runaway.
 //
-// It's also a powerful *area* disinfectant: touching an infection doesn't just
-// clean the cells it reaches — it seeds a self-spreading cure that sweeps the
-// whole connected colony. Each adjacent Virus cell is tagged as a "cure front"
-// (see virus.ts), which then carries the cure inward one ring per tick and dies,
-// so a splash of peroxide on one edge of a plague wipes all of it out — infection
-// running in reverse. (Contrast Alcohol, which disinfects only what it touches.)
+// It's also an *area* disinfectant, but a self-limiting one. Touching an infection
+// seeds a "corrosion front" on one adjacent Virus cell (see virus.ts): that front
+// eats inward as a ragged one-cell-per-tick random walk, up to a small budget, so
+// the plague dissolves from the edge with an organic frayed boundary rather than a
+// clean expanding square. Crucially the peroxide is *consumed* (→Water) each time
+// it seeds a front, so the amount of virus a splash can clear is proportional to
+// how much you pour — a drop clears a small ragged bite, a poured pool eats deep,
+// but nothing lets a trace sterilise an entire colony. (Contrast Alcohol, which
+// disinfects only the single cell it touches.)
 const DECOMPOSE_CHANCE = 0.004; // very slow, steady breakdown at room temperature
 const HOT_DECOMPOSE_CHANCE = 0.067; // heat/catalysis rips it apart faster
 const HOT_THRESHOLD = 50; // warmed past this, decomposition accelerates
-const STERILIZE_CHANCE = 0.4; // per-tick chance to seed the cure wave on a Virus neighbour
+const STERILIZE_CHANCE = 0.4; // per-tick chance to react with a touched Virus (seed + consume)
 
 /** Find an EMPTY neighbour for the liberated O₂, preferring straight up so the
  *  bubble rises off the liquid; returns [-1,-1] if the cell is boxed in. */
@@ -41,22 +44,19 @@ function ventCell(x: number, y: number, sim: SimContext): [number, number] {
 }
 
 function updateHydrogenPeroxide(x: number, y: number, sim: SimContext): void {
-  // Disinfect (area cure): seed the spreading cure wave on any adjacent Virus.
-  // Instead of just deleting the touched cell, tag it as a cure front (virus.ts):
-  // it then propagates the cure through the whole connected colony on its own, one
-  // ring per tick. `spawn` marks the tagged neighbour moved so the wave only
-  // *starts* next tick rather than racing across in a single frame.
+  // Disinfect: react with one adjacent healthy Virus cell — seed a bounded random
+  // corrosion front on it (virus.ts) and be consumed in the reaction (this cell
+  // reverts to Water). Because each seed costs a peroxide cell, the total virus a
+  // splash clears is bounded by how much you pour; a trace can't wipe a colony.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (
-      sim.get(nx, ny) === VIRUS.id &&
-      sim.getAux(nx, ny) !== VIRUS_CLEANSING_AUX &&
-      sim.chance(STERILIZE_CHANCE)
-    ) {
-      sim.spawn(nx, ny, VIRUS.id); // re-stamp the cell so we can flag it moved…
-      sim.setAux(nx, ny, VIRUS_CLEANSING_AUX); // …then mark it a cure front
+    if (sim.get(nx, ny) === VIRUS.id && sim.getAux(nx, ny) === 0 && sim.chance(STERILIZE_CHANCE)) {
+      sim.spawn(nx, ny, VIRUS.id); // re-stamp so we can flag it moved…
+      sim.setAux(nx, ny, CURE_SEED_BUDGET); // …then seed the corrosion budget
+      sim.set(x, y, WATER.id); // peroxide spent oxidising the virus
+      return;
     }
   }
 
