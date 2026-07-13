@@ -101,8 +101,10 @@ export const SUGAR_WATER = register({
   id: 104,
   name: 'Sugar Water',
   phase: Phase.Liquid,
-  // A pale, warm sugary tint — clearly not the blue of Water/Saltwater.
-  color: rgb(208, 198, 150),
+  // Almost exactly Saltwater's blue-grey (84,140,175): both are clear water with a
+  // dissolved solute, so sugar water is meant to read as nearly identical to brine —
+  // only just barely tellable apart side by side (a hair warmer/greener).
+  color: rgb(92, 146, 170),
   // Denser than fresh Water (3) so a sweet layer sinks beneath it, still lighter
   // than a Sugar grain (5) so undissolved sugar sinks through it to the bottom.
   density: 3.6,
