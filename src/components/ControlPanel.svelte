@@ -253,7 +253,7 @@
           onclick={() => tool.set('erase')}
           aria-pressed={$tool === 'erase'}
           aria-label="지우개"
-          title="브러시 영역을 지웁니다 (빈칸으로)"
+          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
         >
           <i class="bi bi-eraser-fill" aria-hidden="true"></i>
           <span class="label">지우개</span>
@@ -264,7 +264,7 @@
           onclick={() => tool.set('view')}
           aria-pressed={$tool === 'view'}
           aria-label="보기"
-          title="보기 모드 — 클릭해도 아무것도 그리지 않습니다 (오른쪽 클릭 지우개는 사용 가능)"
+          title="보기 모드 — 그리지 않습니다. 오브젝트(공·드럼통)를 끌어 옮길 수 있어요 (오른쪽 클릭 지우개는 사용 가능)"
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">보기</span>

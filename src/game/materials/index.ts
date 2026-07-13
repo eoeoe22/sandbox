@@ -67,6 +67,7 @@ import { MOLTEN_URANIUM } from './moltenuranium';
 import { HEAT_RAY } from './heatray';
 import { LPG } from './lpg';
 import { COAL_POWDER } from './coalpowder';
+import { METAL_POWDER } from './metalpowder';
 import { SLAG } from './slag';
 import { LIMESTONE } from './limestone';
 import { IRON_ORE } from './ironore';
@@ -167,6 +168,7 @@ export {
   HEAT_RAY,
   LPG,
   COAL_POWDER,
+  METAL_POWDER,
   SLAG,
   LIMESTONE,
   IRON_ORE,
@@ -297,6 +299,7 @@ export const MATERIALS = [
   IRON_ORE,
   MOLTEN_IRON_ORE,
   COAL_POWDER,
+  METAL_POWDER,
   LIMESTONE,
   SLAG,
   HEATPIPE,
