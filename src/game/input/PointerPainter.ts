@@ -23,6 +23,7 @@ import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
 import { heatCells, mixCells } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
+import { createRubberBall } from '../engine/objects';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -138,8 +139,21 @@ export class PointerPainter {
         return this.paint(cx, cy, true);
       case 'blend':
         return this.paintBlend(cx, cy);
+      case 'object':
+        // Objects are placed once per press in onDown, not stamped continuously
+        // (a held/dragged brush must not spew a stream of balls).
+        return;
     }
     this.paint(cx, cy);
+  }
+
+  /** Spawn a rubber ball centered on the clicked cell. Radius follows the brush
+   *  size (min 2 so it's never a single pixel). The 독립 오브젝트 layer lives
+   *  beside the grid, so this just appends to grid.objects — no cells written. */
+  private spawnObject(cx: number, cy: number): void {
+    if (!this.grid.inBounds(cx, cy)) return;
+    const r = Math.max(2, $brushSize.get());
+    this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
   }
 
   /** The in-bounds cells the brush covers at (cx,cy), packed flat as
@@ -292,6 +306,12 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     this.px = x;
     this.py = y;
+    // Object tool: drop exactly one ball per press (no continuous stroke).
+    if (!this.erasing && $tool.get() === 'object') {
+      this.spawnObject(x, y);
+      this.down = false;
+      return;
+    }
     this.stamp(x, y);
   };
 

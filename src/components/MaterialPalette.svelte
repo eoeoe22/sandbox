@@ -20,6 +20,13 @@
   // identically. This is the ordered list of category tabs with their members.
   const categories = buildCategories(MATERIALS);
 
+  // The 독립 오브젝트 layer isn't made of materials, so it gets its own palette
+  // tab appended after the material categories. Picking an item here switches to
+  // the 'object' tool, and a click on the canvas spawns that object (see
+  // PointerPainter). Only the rubber ball exists this milestone.
+  const OBJECT_KEY = '오브젝트';
+  const OBJECT_ITEMS = [{ key: 'ball', label: '고무공', color: '#d84652' }];
+
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
   // grid, matching the material name or its category (both case-insensitive), in
@@ -199,6 +206,15 @@
     toggleFavorite(id);
   }
 
+  // Picking an object switches to the 'object' placement tool (a canvas click
+  // then spawns it). Mirrors pick() for materials — closes the flyout.
+  function pickObject(): void {
+    clearTimeout(closeTimer);
+    tool.set('object');
+    pinned = null;
+    hovered = null;
+  }
+
   function toggleCategory(key: string): void {
     clearTimeout(closeTimer);
     pinned = pinned === key ? null : key;
@@ -308,10 +324,58 @@
           </button>
         </div>
       {/each}
+      <!-- 독립 오브젝트 tab (not material-backed) — appended after the material
+           categories, same look and flyout mechanics. -->
+      <div
+        class="category"
+        onmouseenter={() => openOnHover(OBJECT_KEY)}
+        onmouseleave={scheduleHoverClose}
+      >
+        <button
+          use:registerButton={OBJECT_KEY}
+          id="cat-btn-object"
+          class:active={open === OBJECT_KEY}
+          class:selected={$tool === 'object'}
+          onclick={() => toggleCategory(OBJECT_KEY)}
+          aria-expanded={open === OBJECT_KEY}
+          aria-haspopup="true"
+          aria-controls="cat-flyout-object"
+          title={OBJECT_KEY}
+        >
+          <i class="bi bi-circle-fill icon" aria-hidden="true"></i>
+          <span class="cat-label">{OBJECT_KEY}</span>
+          <span class="count">{OBJECT_ITEMS.length}</span>
+        </button>
+      </div>
     </div>
   {/if}
 
-  {#if !searching && open !== null && flyoutPos}
+  {#if !searching && open === OBJECT_KEY && flyoutPos}
+    <div
+      class="flyout"
+      use:portal
+      bind:this={flyoutEl}
+      id="cat-flyout-object"
+      role="menu"
+      aria-label={OBJECT_KEY}
+      style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
+      onmouseenter={() => openOnHover(OBJECT_KEY)}
+      onmouseleave={scheduleHoverClose}
+    >
+      {#each OBJECT_ITEMS as it (it.key)}
+        <button
+          class="chip"
+          role="menuitem"
+          class:active={$tool === 'object'}
+          onclick={() => pickObject()}
+          title={it.label}
+        >
+          <span class="swatch ball" style={`background:${it.color}`}></span>
+          <span class="label">{it.label}</span>
+        </button>
+      {/each}
+    </div>
+  {:else if !searching && open !== null && flyoutPos}
     {@const cat = categories.find((c) => c.key === open)}
     {#if cat}
       <div
@@ -584,6 +648,10 @@
     border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     flex: none;
+  }
+  /* An object swatch is a ball, drawn round to read as the object it places. */
+  .chip .swatch.ball {
+    border-radius: 50%;
   }
   .chip .label {
     max-width: 100%;

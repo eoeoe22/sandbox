@@ -54,10 +54,12 @@ export const $brushMode = atom<BrushMode>('full');
  * cells already under the brush instead of placing material: 'heat'/'cool'
  * nudge each cell's temperature, 'mix' shuffles the non-solid particles (solids
  * stay put), and 'erase' clears cells to Empty (the same as a right-button
- * drag, promoted to its own selectable tool). See PointerPainter and config.ts.
- * Selecting a material in the palette snaps this back to 'material'.
+ * drag, promoted to its own selectable tool). 'object' spawns a free rigid
+ * object (the rubber ball) at the click instead of painting cells — the 독립
+ * 오브젝트 layer's placement tool. See PointerPainter and config.ts. Selecting a
+ * material in the palette snaps this back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object';
 export const $tool = atom<Tool>('material');
 
 /**
