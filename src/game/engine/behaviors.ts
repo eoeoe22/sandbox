@@ -90,8 +90,18 @@ const GAS_WOBBLE_CHANCE = 0.4; // try the diagonal step before the straight one
 
 /** Gas: rise, else drift diagonally up, else spread sideways — with a chance
  *  to stall (slower climb) and a chance to wobble diagonally instead of
- *  going straight up (less of a rigid vertical column). */
+ *  going straight up (less of a rigid vertical column).
+ *
+ *  Thermal diffusion is layered on top and scaled by how weak gravity is:
+ *  buoyancy (rising) needs gravity, but the random thermal spreading of a gas
+ *  does not. At full gravity (strength 1) the diffusion chance is 0, so this is
+ *  exactly the old buoyant behavior; as gravity weakens the gas increasingly
+ *  spreads in every direction instead of only rising, and at zero gravity it
+ *  diffuses isotropically rather than freezing in place like a solid. */
 export function updateGas(x: number, y: number, sim: SimContext): void {
+  const diffuse = 1 - sim.gravityStrength;
+  if (diffuse > 0 && sim.chance(diffuse) && sim.moveRandom(x, y)) return;
+
   if (sim.chance(GAS_STALL_CHANCE)) return;
   if (sim.chance(GAS_WOBBLE_CHANCE)) {
     if (sim.moveDiagonalUp(x, y)) return;

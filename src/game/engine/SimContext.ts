@@ -1,6 +1,7 @@
 import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
 import { getMaterial } from '../materials/registry';
+import { DIR8 } from './directions';
 import { SMOKE } from '../materials/smoke';
 import {
   AMBIENT_TEMP,
@@ -569,6 +570,33 @@ export class SimContext {
     const px = this.perpX * s;
     const py = this.perpY * s;
     return this.tryMove(x, y, x + px, y + py) || this.tryMove(x, y, x - px, y - py);
+  }
+
+  /**
+   * Single isotropic step into a random empty neighbor (8-directional). Unlike
+   * the primitives above this is NOT gated by gravity strength — it models
+   * gravity-independent thermal diffusion, so a gas keeps spreading (rather than
+   * freezing in place like a solid) as gravity weakens toward zero. Honors the
+   * void border the same way tryMove does. Empty-target only, so it's pure
+   * spreading through open space, never a density displacement. Returns true if
+   * the cell moved (or drained out a void edge).
+   */
+  moveRandom(x: number, y: number): boolean {
+    const [dx, dy] = DIR8[this.randInt(8)];
+    const tx = x + dx;
+    const ty = y + dy;
+    if (!this.inBounds(tx, ty)) {
+      if (this.borderMode === 'void') {
+        this.set(x, y, EMPTY);
+        return true;
+      }
+      return false;
+    }
+    if (this.get(tx, ty) === EMPTY) {
+      this.swap(x, y, tx, ty);
+      return true;
+    }
+    return false;
   }
 
   /** Move the fluid at (x,y) into the free 겹침 slot of the host at (tx,ty).
