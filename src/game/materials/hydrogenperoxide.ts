@@ -6,7 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { OXYGEN } from './oxygen';
-import { VIRUS } from './virus';
+import { VIRUS, VIRUS_CLEANSING_AUX } from './virus';
 
 // Hydrogen Peroxide (과산화수소, H₂O₂) — a clear liquid that looks like water but
 // is always quietly falling apart: 2H₂O₂ → 2H₂O + O₂. Each tick it has a small
@@ -17,13 +17,16 @@ import { VIRUS } from './virus';
 // (or a catalyst-hot neighbour) sharply speeds the breakdown, so a splash on
 // something burning gushes oxygen in a runaway.
 //
-// It's also a disinfectant: an adjacent Virus cell is oxidised away to nothing —
-// dab peroxide on an infection and it bubbles the plague out, the same way it
-// cleans a wound.
-const DECOMPOSE_CHANCE = 0.012; // slow, steady breakdown at room temperature
-const HOT_DECOMPOSE_CHANCE = 0.2; // heat/catalysis rips it apart far faster
+// It's also a powerful *area* disinfectant: touching an infection doesn't just
+// clean the cells it reaches — it seeds a self-spreading cure that sweeps the
+// whole connected colony. Each adjacent Virus cell is tagged as a "cure front"
+// (see virus.ts), which then carries the cure inward one ring per tick and dies,
+// so a splash of peroxide on one edge of a plague wipes all of it out — infection
+// running in reverse. (Contrast Alcohol, which disinfects only what it touches.)
+const DECOMPOSE_CHANCE = 0.004; // very slow, steady breakdown at room temperature
+const HOT_DECOMPOSE_CHANCE = 0.067; // heat/catalysis rips it apart faster
 const HOT_THRESHOLD = 50; // warmed past this, decomposition accelerates
-const STERILIZE_CHANCE = 0.4; // oxidises adjacent Virus away
+const STERILIZE_CHANCE = 0.4; // per-tick chance to seed the cure wave on a Virus neighbour
 
 /** Find an EMPTY neighbour for the liberated O₂, preferring straight up so the
  *  bubble rises off the liquid; returns [-1,-1] if the cell is boxed in. */
@@ -38,13 +41,22 @@ function ventCell(x: number, y: number, sim: SimContext): [number, number] {
 }
 
 function updateHydrogenPeroxide(x: number, y: number, sim: SimContext): void {
-  // Disinfect: oxidise any adjacent Virus away. EMPTY writes are always safe.
+  // Disinfect (area cure): seed the spreading cure wave on any adjacent Virus.
+  // Instead of just deleting the touched cell, tag it as a cure front (virus.ts):
+  // it then propagates the cure through the whole connected colony on its own, one
+  // ring per tick. `spawn` marks the tagged neighbour moved so the wave only
+  // *starts* next tick rather than racing across in a single frame.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (sim.get(nx, ny) === VIRUS.id && sim.chance(STERILIZE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
+    if (
+      sim.get(nx, ny) === VIRUS.id &&
+      sim.getAux(nx, ny) !== VIRUS_CLEANSING_AUX &&
+      sim.chance(STERILIZE_CHANCE)
+    ) {
+      sim.spawn(nx, ny, VIRUS.id); // re-stamp the cell so we can flag it moved…
+      sim.setAux(nx, ny, VIRUS_CLEANSING_AUX); // …then mark it a cure front
     }
   }
 
