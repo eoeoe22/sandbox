@@ -4,6 +4,12 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import { rgb } from './color';
+
+/** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
+ *  ball is rasterized into the same low-res buffer as the cells, so it reads as
+ *  pixel art in the exact grain size — no vector circle, no anti-aliasing. */
+const BALL_COLOR = rgb(0xd8, 0x46, 0x52); // rubber red
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -326,6 +332,12 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    // Free objects (the 독립 오브젝트 layer) are rasterized straight into the
+    // low-res render buffer, on top of the cell colors, before it's scaled up
+    // with smoothing off — so a ball reads as crisp pixel art in the same grain
+    // size as the cells (no vector circle, no anti-aliasing). The simulation
+    // state (grid.cells) is never touched; this is the render image only.
+    if (!heat && grid.objects.length > 0) this.rasterizeObjects(grid, buf);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -342,6 +354,42 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Rasterize the free rigid objects (see Grid.objects / engine/objects.ts) into
+   * the low-res render buffer `buf`, one grid cell per pixel. A cell is filled
+   * with the ball color when its *center* falls inside the circle (pixel-center
+   * sampling, no anti-aliasing), so the ball snaps to the same pixel grid as the
+   * cells and scales up crisp as pixel art. Writes only the render image — the
+   * simulation's cell buffer is never touched. Milestone renders every object as
+   * a flat rubber ball (the only object type); the shape is a circle, so this is
+   * a plain disc fill — no sprite, no rotation, no gloss.
+   */
+  private rasterizeObjects(grid: Grid, buf: Uint32Array): void {
+    const w = grid.width;
+    const h = grid.height;
+    for (const o of grid.objects) {
+      const r = o.r;
+      const r2 = r * r;
+      // Bounding box in cells, clamped to the grid.
+      let x0 = Math.floor(o.x - r);
+      let x1 = Math.ceil(o.x + r);
+      let y0 = Math.floor(o.y - r);
+      let y1 = Math.ceil(o.y + r);
+      if (x0 < 0) x0 = 0;
+      if (y0 < 0) y0 = 0;
+      if (x1 > w) x1 = w;
+      if (y1 > h) y1 = h;
+      for (let cy = y0; cy < y1; cy++) {
+        const dy = cy + 0.5 - o.y; // pixel-center sample point
+        const row = cy * w;
+        for (let cx = x0; cx < x1; cx++) {
+          const dx = cx + 0.5 - o.x;
+          if (dx * dx + dy * dy <= r2) buf[row + cx] = BALL_COLOR;
+        }
+      }
+    }
   }
 
   /** Draw a faint reference grid every `gridDivision` cells over the sandbox
