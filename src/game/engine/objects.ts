@@ -1148,7 +1148,8 @@ function fillSpillId(fill: DrumFill): number | null {
  * Spill a filled drum's liquid contents across its footprint when it's destroyed
  * — the 기름/산 that pours out (쏟아짐). Floods the cells the drum occupied with
  * its fill liquid, but only over air/loose matter — never over solid terrain (the
- * object layer stays read-only over solids, same guard as the metal byproducts).
+ * object layer stays read-only over solids, same Phase.Solid guard as the
+ * molten-metal puddle; a frozen liquid isn't treated as solid here).
  * The liquid is spawned at ambient temperature, so a spill into a hot zone (an
  * oil drum melted in lava) heats up and ignites/boils on its own the next few
  * ticks rather than vanishing on contact. An empty drum has no fill: no-op.
