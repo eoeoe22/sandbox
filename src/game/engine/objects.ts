@@ -1029,7 +1029,7 @@ function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: 
     o.vx -= o.vx * ROLL_RESISTANCE;
     o.vy -= o.vy * ROLL_RESISTANCE;
   }
-  // Keep the angle wrapped to (−π, π] so it never grows to a precision-losing
+  // Keep the angle wrapped to [−π, π) so it never grows to a precision-losing
   // magnitude, even after a very fast spin (a plain ±2π shift would only fix one
   // wrap; the modulo handles any number of turns in a tick).
   const TWO_PI = 2 * Math.PI;
