@@ -16,6 +16,7 @@ import {
 import { ObjState, type SandboxObject, type SavedObject } from './types';
 import { getObjectDef, type RegisteredObjectDef } from './registry';
 import { coreDistance, coreHalfLen, corePointY, distToCore, forEachCellNear, halfHeight } from './footprint';
+import { updateObjectState } from './events';
 
 /**
  * 독립 오브젝트 레이어: 셀 그리드와 나란히 살면서 매 틱 O(오브젝트 수 × 발자국)
@@ -98,7 +99,8 @@ export class ObjectLayer {
   /**
    * 한 틱 적분. Simulation.step()이 CA 스캔 직후에 부른다. 순서:
    * 경계 링 매질 샘플(부력·저항) → 힘 적용 → 서브스텝 이동+고체 충돌 →
-   * 오브젝트끼리 충돌. 제거를 안전하게 하려고 역순 순회.
+   * 이산 이벤트(노출/상태머신 — events.ts) → 오브젝트끼리 충돌.
+   * 제거(void 낙하·터미널 이벤트)를 안전하게 하려고 역순 순회.
    */
   step(ctx: SimContext): void {
     for (let i = this.list.length - 1; i >= 0; i--) {
@@ -109,13 +111,15 @@ export class ObjectLayer {
         this.list.splice(i, 1);
         continue;
       }
-      if (this.integrate(ctx, o, def)) this.list.splice(i, 1);
+      const impact = this.integrate(ctx, o, def);
+      if (impact < 0 || updateObjectState(ctx, o, def, impact)) this.list.splice(i, 1);
     }
     this.collidePairs();
   }
 
-  /** 오브젝트 하나의 틱. true를 돌려주면 제거 대상 (void 경계로 낙하). */
-  private integrate(ctx: SimContext, o: SandboxObject, def: RegisteredObjectDef): boolean {
+  /** 오브젝트 하나의 틱. 이 틱 고체 충돌의 최대 법선 속도를 돌려주고(충돌
+   *  없음 = 0), void 경계로 떨어져 제거 대상이면 -1. */
+  private integrate(ctx: SimContext, o: SandboxObject, def: RegisteredObjectDef): number {
     // --- 주변 매질 샘플: 경계 링(껍질 바로 밖 1셀)만 읽는다. 발자국 내부가
     // 아니라 링을 읽는 건 의도적 — 제한적 양방향이 발자국의 액체를 밀어내
     // 내부가 비어도, 선체를 '둘러싼' 매질이 부력을 결정하므로 떠 있는 상태가
@@ -169,16 +173,21 @@ export class ObjectLayer {
     const maxV = Math.max(Math.abs(o.vx), Math.abs(o.vy));
     const n = Math.min(OBJECT_SUBSTEP_MAX, Math.max(1, Math.ceil(maxV / OBJECT_SUBSTEP)));
     let collided = false;
+    let impact = 0;
     for (let s = 0; s < n; s++) {
       o.x += o.vx / n;
       o.y += o.vy / n;
       if (ctx.borderMode === 'void') {
         // 열린 경계: 중심이 그리드를 벗어나면 세상 밖으로 떨어진 것.
-        if (o.x < 0 || o.x >= ctx.width || o.y < 0 || o.y >= ctx.height) return true;
-      } else if (this.clampToWalls(ctx, o, def)) {
-        collided = true;
+        if (o.x < 0 || o.x >= ctx.width || o.y < 0 || o.y >= ctx.height) return -1;
+      } else {
+        const wallHit = this.clampToWalls(ctx, o, def);
+        if (wallHit > 0) collided = true;
+        if (wallHit > impact) impact = wallHit;
       }
-      if (this.collideSolids(ctx, o, def) > 0) collided = true;
+      const hit = this.collideSolids(ctx, o, def);
+      if (hit > 0) collided = true;
+      if (hit > impact) impact = hit;
     }
 
     // --- 정지 처리: 고체에 닿은 틱에 이 속도 미만이면 멈춘 것으로 본다 —
@@ -189,34 +198,42 @@ export class ObjectLayer {
       o.vy = 0;
     }
     o.wasInLiquid = liquidFrac > 0.2;
-    return false;
+    return impact;
   }
 
   /** wall 경계: 형태가 그리드 밖으로 나가지 않게 클램프하고 반발 반사.
-   *  닿았으면 true. */
-  private clampToWalls(ctx: SimContext, o: SandboxObject, def: RegisteredObjectDef): boolean {
+   *  닿은 면의 법선 속도(충격 세기)를 돌려준다 (안 닿음 = 0). */
+  private clampToWalls(ctx: SimContext, o: SandboxObject, def: RegisteredObjectDef): number {
     const r = def.shape.r;
     const hh = halfHeight(def.shape);
-    let hit = false;
+    let impact = 0;
     if (o.x < r) {
       o.x = r;
-      if (o.vx < 0) o.vx = -o.vx * def.restitution;
-      hit = true;
+      if (o.vx < 0) {
+        impact = Math.max(impact, -o.vx);
+        o.vx = -o.vx * def.restitution;
+      }
     } else if (o.x > ctx.width - r) {
       o.x = ctx.width - r;
-      if (o.vx > 0) o.vx = -o.vx * def.restitution;
-      hit = true;
+      if (o.vx > 0) {
+        impact = Math.max(impact, o.vx);
+        o.vx = -o.vx * def.restitution;
+      }
     }
     if (o.y < hh) {
       o.y = hh;
-      if (o.vy < 0) o.vy = -o.vy * def.restitution;
-      hit = true;
+      if (o.vy < 0) {
+        impact = Math.max(impact, -o.vy);
+        o.vy = -o.vy * def.restitution;
+      }
     } else if (o.y > ctx.height - hh) {
       o.y = ctx.height - hh;
-      if (o.vy > 0) o.vy = -o.vy * def.restitution;
-      hit = true;
+      if (o.vy > 0) {
+        impact = Math.max(impact, o.vy);
+        o.vy = -o.vy * def.restitution;
+      }
     }
-    return hit;
+    return impact;
   }
 
   /**

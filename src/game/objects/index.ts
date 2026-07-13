@@ -4,9 +4,14 @@ export * from './registry';
 export * from './types';
 
 import { RUBBER_BALL } from './rubberball';
+import { BEACH_BALL } from './beachball';
 import { OIL_DRUM } from './oildrum';
+import { ACID_DRUM } from './aciddrum';
+import { METHANE_TANK } from './methanetank';
+import { DYNAMITE } from './dynamite';
+import { BALLOON } from './balloon';
 
-export { RUBBER_BALL, OIL_DRUM };
+export { RUBBER_BALL, BEACH_BALL, OIL_DRUM, ACID_DRUM, METHANE_TANK, DYNAMITE, BALLOON };
 
 /** 팔레트에 표시되는 오브젝트들, 표시 순서대로. */
-export const OBJECTS = [RUBBER_BALL, OIL_DRUM];
+export const OBJECTS = [RUBBER_BALL, BEACH_BALL, BALLOON, OIL_DRUM, ACID_DRUM, METHANE_TANK, DYNAMITE];
