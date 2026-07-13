@@ -4,7 +4,12 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
-import type { ViewRect } from './viewport';
+import { rgb } from './color';
+
+/** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
+ *  ball is rasterized into the same low-res buffer as the cells, so it reads as
+ *  pixel art in the exact grain size — no vector circle, no anti-aliasing. */
+const BALL_COLOR = rgb(0xd8, 0x46, 0x52); // rubber red
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -327,6 +332,12 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    // Free objects (the 독립 오브젝트 layer) are rasterized straight into the
+    // low-res render buffer, on top of the cell colors, before it's scaled up
+    // with smoothing off — so a ball reads as crisp pixel art in the same grain
+    // size as the cells (no vector circle, no anti-aliasing). The simulation
+    // state (grid.cells) is never touched; this is the render image only.
+    if (!heat && grid.objects.length > 0) this.rasterizeObjects(grid, buf);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -342,50 +353,43 @@ export class CanvasRenderer implements Renderer {
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
-    // Free objects (the 독립 오브젝트 layer) are drawn as a vector overlay on top
-    // of the scaled grid image — an independent pass that never touches the cell
-    // buffer (grid.cells / buf32). Drawn before the boundary so the frame stays
-    // on top.
-    this.drawObjects(grid, rect);
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
   }
 
   /**
-   * Draw the free rigid objects (see Grid.objects / engine/objects.ts) as filled
-   * circles over the sandbox rectangle. Grid coordinates map to device pixels
-   * through the same rect the grid image was drawn into, so an object sits
-   * exactly where its cell-space center says. This milestone renders every
-   * object as a glossy rubber ball (the only object type); the physics shape is
-   * a circle, so a plain `ctx.arc` is the whole of it — no sprite, no rotation.
+   * Rasterize the free rigid objects (see Grid.objects / engine/objects.ts) into
+   * the low-res render buffer `buf`, one grid cell per pixel. A cell is filled
+   * with the ball color when its *center* falls inside the circle (pixel-center
+   * sampling, no anti-aliasing), so the ball snaps to the same pixel grid as the
+   * cells and scales up crisp as pixel art. Writes only the render image — the
+   * simulation's cell buffer is never touched. Milestone renders every object as
+   * a flat rubber ball (the only object type); the shape is a circle, so this is
+   * a plain disc fill — no sprite, no rotation, no gloss.
    */
-  private drawObjects(grid: Grid, rect: ViewRect): void {
-    const objs = grid.objects;
-    if (objs.length === 0) return;
-    // Uniform cell→device scale (rect preserves the grid aspect, so x and y
-    // scales are equal); use it for both the center and the radius.
-    const s = rect.width / grid.width;
-    const ctx = this.ctx;
-    ctx.save();
-    for (const o of objs) {
-      const cx = rect.x + o.x * s;
-      const cy = rect.y + o.y * s;
-      const r = Math.max(1, o.r * s);
-      // Body.
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#d84652'; // rubber red
-      ctx.fill();
-      // Rim, so the ball reads against a same-colored background.
-      ctx.lineWidth = Math.max(1, r * 0.12);
-      ctx.strokeStyle = 'rgba(90, 20, 26, 0.9)';
-      ctx.stroke();
-      // Specular highlight (upper-left) for a glossy look.
-      ctx.beginPath();
-      ctx.arc(cx - r * 0.32, cy - r * 0.32, Math.max(0.5, r * 0.28), 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-      ctx.fill();
+  private rasterizeObjects(grid: Grid, buf: Uint32Array): void {
+    const w = grid.width;
+    const h = grid.height;
+    for (const o of grid.objects) {
+      const r = o.r;
+      const r2 = r * r;
+      // Bounding box in cells, clamped to the grid.
+      let x0 = Math.floor(o.x - r);
+      let x1 = Math.ceil(o.x + r);
+      let y0 = Math.floor(o.y - r);
+      let y1 = Math.ceil(o.y + r);
+      if (x0 < 0) x0 = 0;
+      if (y0 < 0) y0 = 0;
+      if (x1 > w) x1 = w;
+      if (y1 > h) y1 = h;
+      for (let cy = y0; cy < y1; cy++) {
+        const dy = cy + 0.5 - o.y; // pixel-center sample point
+        const row = cy * w;
+        for (let cx = x0; cx < x1; cx++) {
+          const dx = cx + 0.5 - o.x;
+          if (dx * dx + dy * dy <= r2) buf[row + cx] = BALL_COLOR;
+        }
+      }
     }
-    ctx.restore();
   }
 
   /** Draw a faint reference grid every `gridDivision` cells over the sandbox
