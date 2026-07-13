@@ -8,14 +8,15 @@ import { AMBER } from './amber';
 
 // Resin (송진/수지) — sticky pine sap: a thick, slow-oozing amber liquid that
 // floats on water. It's flammable but reluctant and tarry: it doesn't catch as
-// eagerly as the volatile fuels, and once alight it creeps slowly and smoulders
-// for a long time rather than flashing off — a low burn chance stretches both the
-// spread and the burn life (a lit runnel oozes flame along itself for a while).
+// eagerly as the volatile fuels, and once alight it creeps very slowly and
+// smoulders for a long time rather than flashing off — a very low burn chance
+// stretches both the spread and the burn life (a lit runnel oozes flame along
+// itself for ages, the slowest-spreading, longest-smouldering of the fuels).
 // Left to itself it slowly cures: each tick a small chance to harden in place into
 // solid Amber (see amber.ts), so a poured runnel of resin gradually sets into a
 // glassy gold solid — drip it over something and it freezes the moment into amber.
 // Heat it and it burns before it can set; leave it cold and it hardens.
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 400 };
+const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 400 };
 const FLOW_CHANCE = 0.18; // sticky and viscous, like Honey
 const HARDEN_CHANCE = 0.004; // slow cure into Amber
 
