@@ -1042,8 +1042,11 @@ function scanBodyExposure(
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
       footprint++;
-      if (isSolidCell(cx, cy, ctx)) solid++;
+      // Out-of-bounds cells count toward the footprint but NOT as burial: the
+      // container's wall border bounces a body off rather than crushing it, so a
+      // body resting against the world edge must not read as entombed.
       if (!ctx.inBounds(cx, cy)) continue;
+      if (isSolidCell(cx, cy, ctx)) solid++;
       if (ctx.get(cx, cy) === BLAST.id) blast = true;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
@@ -1208,7 +1211,9 @@ const BLAST_KNOCK_SPIN = 0.12;
 
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
- *  ordinary ground contact — a thin slice of the footprint — never triggers it. */
+ *  ordinary ground contact — a thin slice of the footprint — never triggers it.
+ *  Evaluated after the post-collision grid re-resolve (phase B.5) frees any
+ *  transient shove-into-terrain, so only a genuinely stuck body reaches it. */
 const CRUSH_SOLID_FRAC = 0.6;
 
 /** Quick test: does a shockwave flash cell overlap the body's footprint *right
@@ -1414,7 +1419,12 @@ function destroyByproduct(o: SimBody, ctx: SimContext): void {
 function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   const exp = scanBodyExposure(o, ctx);
   // Instant destruction: a blast flash overlapping the footprint (직격), or being
-  // entombed/pinched in solid (끼임). A drum shatters into metal powder.
+  // wedged/entombed in solid it can't escape (끼임). A genuine burial is measured
+  // *after* the post-collision grid re-resolve (phase B.5) has popped out any
+  // transient collision shove into terrain, so only a body with no open face to
+  // exit through — truly stuck — reads as crushed; a momentarily-overlapping one
+  // is freed first. Blast is secondary to the phase-A doomed capture (covers a
+  // body knocked into a lingering flash).
   if (exp.blast || exp.solidFrac >= CRUSH_SOLID_FRAC) {
     destroyByproduct(o, ctx);
     return false; // ball: no byproduct
@@ -1472,6 +1482,15 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   }
   // Phase B — resolve collisions between bodies (fully interactive layer).
   resolveObjectPairs(objects);
+  // Phase B.5 — the inter-object shove can push a light body into terrain; pop it
+  // back out so the crush scan sees genuine entombment only, not a transient
+  // collision overlap (a no-op for any body not penetrating the grid).
+  for (let i = 0; i < objects.length; i++) {
+    const o = objects[i];
+    if (o.held) continue;
+    if (o.kind === 'ball') resolveGridCollision(o, ctx);
+    else resolveCapsuleCollision(o, ctx);
+  }
   // Phase C — terminal triggers, then compact out any body destroyed this tick. A
   // held body is never destroyed (dragging shields it); a directly-hit body spawns
   // its byproduct; everything else is judged by its settled position (heat/crush).
