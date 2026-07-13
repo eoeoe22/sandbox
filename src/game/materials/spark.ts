@@ -13,7 +13,7 @@ import { ACID } from './acid';
 import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
-import { SLIME, SLIME_DISSOLVE_MARK } from './slime';
+import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -51,8 +51,9 @@ import { SLIME, SLIME_DISSOLVE_MARK } from './slime';
 // cell simply stops); (2) if an *explosive* is adjacent, drops a lick of Fire
 // into open air beside it so the ordinary rules set the charge off (an electric
 // detonator) — it no longer ignites ordinary fuels or flammable gas; (2b) if
-// *Slime* is adjacent, seeds an electric-dissolve front on it so the shock unzips
-// the whole blob back to Water (see slime.ts — mirrors how H₂O₂ seeds a Virus);
+// *Slime* is adjacent, seeds ONE electric-dissolve front on it (a bounded, ragged
+// bite back to Water — see slime.ts; one seed per pulse, exactly how one H₂O₂ cell
+// seeds one Virus corrosion front, so a single spark can't dissolve a whole blob);
 // then (3) reverts to its conductor and stamps a refractory countdown so the wave
 // only moves forward. Sparks travelling through Water/Saltwater/Acid also, at a
 // low rate, electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂),
@@ -157,6 +158,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   const strength = aux >> CLASS_BITS;
 
   let arced = false;
+  let seededSlime = false;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -186,13 +188,15 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       } else {
         arced = arcFireBeside(sim, nx, ny);
       }
-    } else if (nid === SLIME.id && sim.getAux(nx, ny) === 0) {
-      // Electric shock reverts Slime to Water: seed a dissolve front on the
-      // touched cell and let it spread the reaction through the blob (slime.ts).
-      // Re-stamp so it's flagged moved (acts next tick), then set the marker —
-      // exactly how H₂O₂ seeds a corrosion front on a Virus cell.
+    } else if (!seededSlime && nid === SLIME.id && sim.getAux(nx, ny) === 0) {
+      // Electric shock reverts Slime to Water: seed a single bounded dissolve front
+      // on the touched cell (slime.ts carries the reach budget through the blob).
+      // Only ONE seed per pulse — exactly how one H₂O₂ cell seeds one Virus front —
+      // so a lone spark takes a small bite, not the whole blob. Re-stamp so it's
+      // flagged moved (acts next tick), then stamp the reach budget.
       sim.spawn(nx, ny, SLIME.id);
-      sim.setAux(nx, ny, SLIME_DISSOLVE_MARK);
+      sim.setAux(nx, ny, SLIME_DISSOLVE_BUDGET);
+      seededSlime = true;
     }
   }
 
