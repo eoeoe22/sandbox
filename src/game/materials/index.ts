@@ -83,6 +83,19 @@ import { LFP_BATTERY } from './lfpbattery';
 import { HEATPIPE } from './heatpipe';
 import { TURBINE } from './turbine';
 import { MESH } from './mesh';
+import { SODIUM } from './sodium';
+import { CO2 } from './co2';
+import { HYDROGEN_PEROXIDE } from './hydrogenperoxide';
+import { YEAST } from './yeast';
+import { SEED } from './seed';
+import { SLIME } from './slime';
+import { RESIN } from './resin';
+import { AMBER } from './amber';
+import { WHITE_PHOSPHORUS } from './whitephosphorus';
+import { SUGAR } from './sugar';
+import { CHLORINE } from './chlorine';
+import { HELIUM } from './helium';
+import { AEROGEL } from './aerogel';
 
 export {
   EMPTY_MAT,
@@ -165,6 +178,19 @@ export {
   HEATPIPE,
   TURBINE,
   MESH,
+  SODIUM,
+  CO2,
+  HYDROGEN_PEROXIDE,
+  YEAST,
+  SEED,
+  SLIME,
+  RESIN,
+  AMBER,
+  WHITE_PHOSPHORUS,
+  SUGAR,
+  CHLORINE,
+  HELIUM,
+  AEROGEL,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -260,4 +286,17 @@ export const MATERIALS = [
   HEATPIPE,
   TURBINE,
   MESH,
+  SODIUM,
+  SUGAR,
+  HYDROGEN_PEROXIDE,
+  RESIN,
+  CO2,
+  CHLORINE,
+  HELIUM,
+  WHITE_PHOSPHORUS,
+  AMBER,
+  AEROGEL,
+  SEED,
+  YEAST,
+  SLIME,
 ];
