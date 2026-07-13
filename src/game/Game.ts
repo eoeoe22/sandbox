@@ -90,11 +90,26 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // spawn tool lands.
   const dbg = window as unknown as {
     __spawnBall?: (gx: number, gy: number, r?: number) => void;
+    __launchBall?: (gx: number, gy: number, r: number, vx: number, vy: number) => void;
     __dropBall?: (fracX?: number, r?: number) => void;
     __objectsPeek?: () => unknown;
+    __gridInfo?: () => { w: number; h: number };
+    __paintCell?: (gx: number, gy: number, id?: number) => void;
+    __setRunning?: (on: boolean) => void;
+    __stepSim?: (n?: number) => void;
+  };
+  dbg.__setRunning = (on): void => $running.set(on);
+  dbg.__stepSim = (n = 1): void => {
+    for (let i = 0; i < n; i++) sim.step();
   };
   dbg.__spawnBall = (gx, gy, r = 4): void => {
     grid.objects.push(createRubberBall(gx, gy, r));
+  };
+  dbg.__launchBall = (gx, gy, r, vx, vy): void => {
+    const b = createRubberBall(gx, gy, r);
+    b.vx = vx;
+    b.vy = vy;
+    grid.objects.push(b);
   };
   dbg.__dropBall = (fracX = 0.5, r = 4): void => {
     grid.objects.push(createRubberBall(layout.gw * fracX, r + 1, r));
@@ -106,6 +121,10 @@ export function startGame(canvas: HTMLCanvasElement): void {
       vy: Math.round(o.vy * 100) / 100,
       r: o.r,
     }));
+  dbg.__gridInfo = (): { w: number; h: number } => ({ w: grid.width, h: grid.height });
+  dbg.__paintCell = (gx, gy, id = 1): void => {
+    if (grid.inBounds(gx | 0, gy | 0)) grid.set(gx | 0, gy | 0, id);
+  };
 
   // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
   // change).
