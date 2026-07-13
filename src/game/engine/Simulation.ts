@@ -1,9 +1,11 @@
 import type { Grid } from './Grid';
 import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
+import { tryReact } from './reactions';
 import { EMPTY, type BorderMode } from './types';
 import {
   HEAT_DIFFUSION_RATE,
+  HEAT_DIFFUSION_SUBSTEPS,
   DEFAULT_CONDUCTIVITY,
   type SmokeLevel,
   type GravityDir,
@@ -26,6 +28,11 @@ export class Simulation {
   private tick = 0;
   /** Conductivity per material id (0..1), flattened for the diffusion hot loop. */
   private cond: Float32Array;
+  /** Per-tick decay probability per material id for the generalized lifetime tag
+   *  (Material.life), flattened for the update hot loop. 0 = no lifetime. */
+  private lifeP: Float32Array;
+  /** What a decaying life-tagged material turns into, per id (default Empty). */
+  private lifeInto: Uint8Array;
   /** Rolling cursor into the background tint field, so each tick drifts a
    *  different 1/STRIDE slice of it (see driftBackground). */
   private bgCursor = 0;
@@ -34,8 +41,16 @@ export class Simulation {
     this.grid = grid;
     this.ctx = new SimContext(grid);
     this.cond = new Float32Array(256).fill(DEFAULT_CONDUCTIVITY);
+    this.lifeP = new Float32Array(256);
+    this.lifeInto = new Uint8Array(256);
     for (const m of allMaterials()) {
       this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
+      if (m.life) {
+        // Memoryless decay: P(decay this tick) = 1/ticks gives a mean lifetime of
+        // `ticks` with natural spread (the model Smoke always used).
+        this.lifeP[m.id] = 1 / Math.max(1, m.life.ticks);
+        this.lifeInto[m.id] = m.life.into ?? EMPTY;
+      }
     }
   }
 
@@ -62,7 +77,9 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
-    this.diffuseHeat();
+    // Run several conduction substeps per tick so heat spreads ~3× faster
+    // globally while each substep stays numerically stable (see config).
+    for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
     this.ctx.tick = this.tick;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;
@@ -186,7 +203,21 @@ export class Simulation {
     const i = g.idx(x, y);
     if (!g.moved[i]) {
       const id = g.cells[i];
-      if (id !== EMPTY) getMaterial(id).update?.(x, y, this.ctx);
+      if (id !== EMPTY) {
+        // Generalized lifetime (Material.life): a memoryless per-tick decay into
+        // its successor material. A cell that decays this tick is done — it skips
+        // both the reaction pass and its own update.
+        const lp = this.lifeP[id];
+        if (lp > 0 && this.ctx.chance(lp)) {
+          const into = this.lifeInto[id];
+          this.ctx.set(x, y, into);
+          if (into !== EMPTY) this.ctx.markMoved(x, y);
+        } else if (!tryReact(x, y, this.ctx)) {
+          // Declarative contact reactions run before the material's own update; a
+          // cell that reacted was transformed + marked moved, so skip its update.
+          getMaterial(id).update?.(x, y, this.ctx);
+        }
+      }
     }
     // The 겹침 overlap fluid sharing this cell moves on its own schedule, under
     // its own moved guard (the primary having moved — or not — says nothing

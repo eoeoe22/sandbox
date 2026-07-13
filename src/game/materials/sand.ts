@@ -26,6 +26,9 @@ export const SAND = register({
   phase: Phase.Powder,
   color: rgb(232, 201, 107),
   density: 5,
+  // A modest angle of repose (마찰): grains grip a little, so a poured heap stands
+  // as a rounded cone instead of instantly flattening.
+  friction: 0.3,
   thermal: { conductivity: 0.35 },
   update: updateSand,
 });

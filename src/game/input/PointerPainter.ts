@@ -22,6 +22,7 @@ import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
 import { heatCells, mixCells } from '../engine/brushTools';
+import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -67,6 +68,11 @@ export class PointerPainter {
    *  erases, regardless of the selected material or active tool. Latched at
    *  pointerdown so it persists through moves and per-frame re-stamps. */
   private erasing = false;
+  /** Horizontal direction of the current brush drag (+1 right / −1 left), so a
+   *  Conveyor is placed running whichever way the stroke moved (좌우 정렬). Kept
+   *  between events; a pure click (no drag) uses the last direction, defaulting
+   *  right. */
+  private beltDirX = 1;
   private px = 0;
   private py = 0;
   private cursorEl: HTMLDivElement;
@@ -178,6 +184,9 @@ export class PointerPainter {
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
+    // A Conveyor records the stroke's direction in its aux so it runs that way
+    // (좌우 정렬); every other material clears aux to 0 like normal.
+    const beltAux = id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
     const r2 = rad * rad;
     for (let dy = -rad; dy <= rad; dy++) {
       for (let dx = -rad; dx <= rad; dx++) {
@@ -193,8 +202,9 @@ export class PointerPainter {
         // clear aux — otherwise a stale byte left by whatever occupied this cell
         // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
         // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
-        // only other create/clear paths; the raw grid.set here bypasses them.
-        this.grid.setAux(x, y, 0);
+        // only other create/clear paths; the raw grid.set here bypasses them. A
+        // Conveyor instead seeds its travel direction here (beltAux).
+        this.grid.setAux(x, y, beltAux);
         // Seed a random per-particle tint so a freshly painted powder/liquid is
         // grainy from the first frame instead of a flat block (see game/tint.ts).
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
@@ -289,6 +299,9 @@ export class PointerPainter {
     this.updateCursor(e.clientX, e.clientY);
     if (!this.down) return;
     const [x, y] = this.toCell(e);
+    // Record the drag's horizontal direction so a Conveyor stamped this stroke
+    // runs the way the brush moved.
+    if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
     this.stroke(this.px, this.py, x, y);
     this.px = x;
     this.py = y;

@@ -123,8 +123,22 @@ export const AMBIENT_TEMP = 20;
  * conductivities (0..1). Kept at 0.2 so that even four maximally-conductive
  * neighbors exchange < 1.0 of the gap per tick, which keeps the explicit
  * finite-difference diffusion numerically stable (no runaway oscillation).
+ * The overall conduction *speed* is tripled not by raising this rate (which
+ * would break that stability bound — four cond-1 neighbors at 0.6 would
+ * overshoot), but by running the whole diffusion pass HEAT_DIFFUSION_SUBSTEPS
+ * times per tick (see below), so each substep stays inside the stable regime.
  */
 export const HEAT_DIFFUSION_RATE = 0.2;
+
+/**
+ * How many conduction substeps run per simulation tick. Heat moves ≈ this many
+ * times faster globally without touching HEAT_DIFFUSION_RATE, so numerical
+ * stability is preserved (each substep is an independent stable diffusion step)
+ * while the world reaches thermal equilibrium far quicker — a cold sink pulls
+ * heat out, and a hot mass spreads it, three times as fast. 1 = the original
+ * single-pass speed.
+ */
+export const HEAT_DIFFUSION_SUBSTEPS = 3;
 
 /** Conductivity (0..1) for a material that doesn't declare `thermal.conductivity`. */
 export const DEFAULT_CONDUCTIVITY = 0.3;

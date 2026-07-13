@@ -96,6 +96,10 @@ export const WATER = register({
   // cold-side change (Snow/Ice) is richer than the generic `freeze`, so it keeps
   // that instead of declaring one.
   conductive: true,
+  // A little surface tension (표면장력): stray droplets round up and thin trickles
+  // bead rather than smearing into a one-cell film, without holding a full pool
+  // back from finding its level (only poorly-connected edge cells cohere).
+  surfaceTension: 0.12,
   thermal: { conductivity: 0.6 },
   update: updateWater,
 });

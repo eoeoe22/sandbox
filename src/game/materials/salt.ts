@@ -89,6 +89,8 @@ export const SALT = register({
   phase: Phase.Powder,
   color: rgb(235, 235, 228),
   density: 5,
+  // Interlocking crystals grip, so a salt pile holds a fairly steep cone (마찰).
+  friction: 0.38,
   thermal: { conductivity: 0.35 },
   update: updateSalt,
 });

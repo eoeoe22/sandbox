@@ -1,11 +1,13 @@
 import { register } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { OXYGEN } from './oxygen';
+import { YEAST } from './yeast';
+import { IRON } from './iron';
 import { VIRUS, CURE_SEED_BUDGET } from './virus';
 
 // Hydrogen Peroxide (과산화수소, H₂O₂) — a clear liquid that looks like water but
@@ -81,6 +83,26 @@ export const HYDROGEN_PEROXIDE = register({
   // A touch denser than Water (3), so a peroxide layer sinks beneath fresh water.
   density: 3.4,
   category: '액체',
+  // Catalytic decomposition, expressed declaratively (see engine/reactions.ts):
+  //  • Yeast (catalase) is the classic "elephant toothpaste" catalyst — it rips
+  //    the peroxide into Water and a frothing gush of Oxygen, exothermically.
+  //  • An Iron/rust surface catalyses it too, but only once slightly warmed
+  //    (tempMin), and a nearby Yeast colony speeds even that further (catalyst).
+  // Both vent Oxygen (byproduct), the game's fire accelerant — decompose peroxide
+  // by a flame and the blaze roars.
+  reactions: [
+    { with: YEAST.id, produce: WATER.id, byproduct: OXYGEN.id, probability: 0.14, heat: 28 },
+    {
+      with: IRON.id,
+      produce: WATER.id,
+      byproduct: OXYGEN.id,
+      probability: 0.05,
+      tempMin: 25,
+      heat: 16,
+      catalyst: YEAST.id,
+      catalystFactor: 3,
+    },
+  ],
   thermal: { conductivity: 0.55 },
   update: updateHydrogenPeroxide,
 });

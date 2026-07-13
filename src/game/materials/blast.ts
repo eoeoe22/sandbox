@@ -9,6 +9,7 @@ import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { launchEmber } from './ember';
 import { launchDebris, DEBRIS } from './debris';
+import { launchBallistic, type LaunchSpec } from './ballistic';
 
 // ── Explosions: an instant shockwave that scales with the charge ────────────
 //
@@ -114,6 +115,13 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
 const REACH_GAIN = 0.14;
 const R_MAX = 64;
 
+// Global blast-range scale: every detonation's crater reach is trimmed to this
+// fraction, so the whole game's explosions are dialed down at a single knob
+// (기획: 폭발 범위 전체 2/3 축소). Applied to both the surveyed √-law reach and any
+// fixed `opts.reach`, so shaped blasts (napalm's fixed fireball) shrink in the
+// same proportion rather than escaping the reduction.
+const BLAST_REACH_SCALE = 2 / 3;
+
 // Cap on how many connected explosive cells one survey (phase 1) sums before it
 // gives up and detonates with the partial yield gathered so far — a graceful
 // bound on a pathologically huge mass, never a hang. MAX_SURVEY_CELLS_PER_TICK
@@ -135,13 +143,51 @@ const MAX_SURVEY_CELLS_PER_TICK = 80_000;
 const MAX_DETONATE_CELLS = 60_000;
 const MAX_DETONATE_CELLS_PER_TICK = 80_000;
 
-// Per-tick destruction and survey budgets shared across every detonate() call,
-// so a whole field of charges going off on the same tick still can't exceed one
-// big blast's worth of work — for either the phase-1 mass scan or the phase-2
-// destruction. Both reset lazily whenever the tick advances.
+// ── Shockwave pressure wave (충격파 압력전파) ────────────────────────────────
+// Beyond the crater it carves, a detonation sends a pressure wave a few cells
+// further that can't *break* anything but SHOVES loose matter (powder/liquid)
+// radially outward as Debris — the concussion you feel past the blast's edge, so
+// an explosion tosses the sand and water around it outward instead of stopping
+// dead at the crater rim. It's a light bolt-on to the existing dilate flood: a
+// second, non-destructive ring seeded from the crater's rim, expanding outward,
+// blocked (shadowed) by solids it can't move but flowing around them through gaps.
+//
+// Its reach is *dynamic*: it scales with the blast's crater reach R, so a strong
+// detonation shoves matter proportionally farther out while a firecracker barely
+// nudges its surroundings (기획: 강한 폭발일수록 넓은 동적 충격파). Clamped at both
+// ends so even a lone pop rings out a little and a giant mass can't shove across
+// the whole screen.
+const PRESSURE_REACH_FACTOR = 0.6; // pressure reach ≈ this × crater reach R
+const PRESSURE_REACH_MIN = 2;
+const PRESSURE_REACH_MAX = 24;
+const PRESSURE_LAUNCH_CHANCE = 0.5; // per loose cell reached, chance it's flung
+
+/** The pressure wave's reach (cells beyond the crater) for a blast of crater
+ *  reach `R` — proportional to R, clamped to [MIN, MAX]. */
+function pressureReachFor(R: number): number {
+  const r = Math.round(R * PRESSURE_REACH_FACTOR);
+  return r < PRESSURE_REACH_MIN ? PRESSURE_REACH_MIN : r > PRESSURE_REACH_MAX ? PRESSURE_REACH_MAX : r;
+}
+// Modest outward launch — a shove, not the fierce fountain the in-crater
+// concussion throws (that scales with the blast budget; this is a fixed nudge).
+const PRESSURE_SHOVE: LaunchSpec = {
+  speedMinQ: 6,
+  speedVarQ: 5,
+  jitterQ: 2,
+  upBiasQ: 2,
+  lifeMin: 8,
+  lifeVar: 6,
+};
+
+// Per-tick destruction, survey, and pressure budgets shared across every
+// detonate() call, so a whole field of charges going off on the same tick still
+// can't exceed one big blast's worth of work — for the phase-1 mass scan, the
+// phase-2 destruction, and the pressure-wave shove alike. All reset lazily
+// whenever the tick advances.
 let budgetTick = -1;
 let budgetLeft = 0;
 let surveyLeft = 0;
+let pressureLeft = 0;
 
 // Reused visited buffer for the flood, keyed by flat cell index. A monotonic
 // `stampId` marks cells touched by the current detonation, so we never allocate
@@ -473,6 +519,11 @@ export interface DetonateOptions {
   /** Probability the *default* rim handler launches an ember per rim cell
    *  (default RIM_EMBER_CHANCE). Ignored when `rimHandler` is set. */
   rimEmberChance?: number;
+  /** Whether the non-destructive pressure wave (충격파 압력전파) rings out past the
+   *  crater to shove loose matter radially outward (see pressureRing). Defaults to
+   *  true, so every blast gets the concussion; set false for a self-contained blast
+   *  that shouldn't disturb its surroundings. */
+  pressure?: boolean;
 }
 
 /**
@@ -509,6 +560,7 @@ export function detonate(
     budgetTick = sim.tick;
     budgetLeft = MAX_DETONATE_CELLS_PER_TICK;
     surveyLeft = MAX_SURVEY_CELLS_PER_TICK;
+    pressureLeft = MAX_DETONATE_CELLS_PER_TICK;
   }
 
   // ── Phase 1: survey the connected explosive mass for its total yield ──
@@ -517,7 +569,9 @@ export function detonate(
   const srcX: number[] = [];
   const srcY: number[] = [];
   const { Y, maxYield, power } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
-  const R = opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield);
+  // Trim every blast's reach to the global scale (2/3), whether it came from the
+  // surveyed √-law or a fixed opts.reach, so the whole game's craters shrink.
+  const R = (opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield)) * BLAST_REACH_SCALE;
 
   // ── Phase 2: dilate the whole mass outward by R, destroying what it reaches ──
   // A fresh stamp id on the same buffer marks the dilation's visited set; it never
@@ -622,6 +676,13 @@ export function detonate(
     }
   }
 
+  // Shockwave pressure wave: rings out past the crater rim to shove loose matter
+  // radially outward (concussion), without breaking anything. On by default, its
+  // reach scaling with this blast's crater reach R (bigger blast → wider shove).
+  if (opts.pressure !== false) {
+    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R));
+  }
+
   const rimHandler = opts.rimHandler;
   const rimEmberChance = opts.rimEmberChance !== undefined ? opts.rimEmberChance : RIM_EMBER_CHANCE;
   // Smashing rim embers only fly from a blast violent enough to break solid
@@ -632,6 +693,104 @@ export function detonate(
     if (rimHandler) rimHandler(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
     else if (throwsEmbers && sim.chance(rimEmberChance))
       launchEmber(sim, rimX[i], rimY[i], rimDX[i], rimDY[i]);
+  }
+}
+
+/**
+ * Non-destructive pressure wave — the "충격파 압력전파" that rings out past the
+ * crater. Seeded from the crater's rim cells (each with the outward normal the
+ * dilation recorded), it floods `reach` cells further (scaled to the blast's
+ * crater reach R by the caller) using the same chamfer metric, and every loose
+ * cell (powder/liquid) it reaches is flung
+ * radially outward as Debris (mass-conserving — it rains back). It never breaks
+ * anything: a solid stops the wave and shadows what's behind it, while it flows
+ * around solids through open gaps. `stamp`/`id_d` are the destruction flood's
+ * visited buffer + id, so the ring never re-enters the crater; it claims its own
+ * fresh stamp id for its visited set. Bounded by the shared per-tick `pressureLeft`
+ * budget so a field of blasts can't blow the frame.
+ */
+function pressureRing(
+  sim: SimContext,
+  seedX: number[],
+  seedY: number[],
+  seedDX: number[],
+  seedDY: number[],
+  stamp: Int32Array,
+  id_d: number,
+  reach: number,
+): void {
+  const w = sim.width;
+  const h = sim.height;
+  nextStamp(sim); // a fresh visited-set id for the pressure flood
+  const id_p = stampId;
+
+  const qx: number[] = [];
+  const qy: number[] = [];
+  const qb: number[] = [];
+  const qdx: number[] = [];
+  const qdy: number[] = [];
+  // Seed from the OUTWARD neighbor of each rim cell (the crater edge itself is
+  // already spent). A rim cell with no outward normal (0,0 — an interior source
+  // that never reached a frontier) contributes nothing.
+  for (let i = 0; i < seedX.length; i++) {
+    const dx = seedDX[i];
+    const dy = seedDY[i];
+    if (dx === 0 && dy === 0) continue;
+    const nx = seedX[i] + dx;
+    const ny = seedY[i] + dy;
+    if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+    const nidx = ny * w + nx;
+    if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
+    const nid = sim.get(nx, ny);
+    if (nid !== EMPTY && getMaterial(nid).phase === Phase.Solid) continue; // shadowed at once
+    stamp[nidx] = id_p;
+    qx.push(nx);
+    qy.push(ny);
+    qb.push(reach);
+    qdx.push(dx);
+    qdy.push(dy);
+  }
+
+  let head = 0;
+  while (head < qx.length && pressureLeft > 0) {
+    const x = qx[head];
+    const y = qy[head];
+    const outB = qb[head];
+    const edx = qdx[head];
+    const edy = qdy[head];
+    head++;
+    pressureLeft--;
+
+    const id = sim.get(x, y);
+    const phase = id === EMPTY ? Phase.Empty : getMaterial(id).phase;
+    // Loose matter is shoved outward along the wave direction; it becomes a Debris
+    // fragment carrying its own id (rains back, so mass is conserved).
+    if ((phase === Phase.Powder || phase === Phase.Liquid) && sim.chance(PRESSURE_LAUNCH_CHANCE)) {
+      launchBallistic(sim, x, y, edx, edy, DEBRIS.id, PRESSURE_SHOVE);
+      sim.setAux(x, y, id);
+    }
+
+    for (let i = 0; i < NEIGHBORS.length; i++) {
+      const dx = NEIGHBORS[i][0];
+      const dy = NEIGHBORS[i][1];
+      const cost = NEIGHBORS[i][2];
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+      if (outB - cost < 0) continue;
+      const nidx = ny * w + nx;
+      if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
+      const nid = sim.get(nx, ny);
+      // A solid stops the wave and shadows what's behind it; loose matter and
+      // empty air let it flow on through.
+      if (nid !== EMPTY && getMaterial(nid).phase === Phase.Solid) continue;
+      stamp[nidx] = id_p;
+      qx.push(nx);
+      qy.push(ny);
+      qb.push(outB - cost);
+      qdx.push(dx);
+      qdy.push(dy);
+    }
   }
 }
 

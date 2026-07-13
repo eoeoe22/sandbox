@@ -72,6 +72,9 @@ export class CanvasRenderer implements Renderer {
   private hasLattice: Uint8Array;
   /** id → the packed lattice colour woven through the base (valid where hasLattice). */
   private lattice: Uint32Array;
+  /** id → 1 if the material draws a directional chevron from its aux byte
+   *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
+  private arrow: Uint8Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
   /** When true, occupied cells are drawn by temperature (thermal camera) instead
@@ -110,6 +113,7 @@ export class CanvasRenderer implements Renderer {
     this.frost = new Uint32Array(256);
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
+    this.arrow = new Uint8Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -122,6 +126,7 @@ export class CanvasRenderer implements Renderer {
           this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
         }
+        if (m.arrow) this.arrow[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -257,6 +262,7 @@ export class CanvasRenderer implements Renderer {
     const frost = this.frost;
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
+    const arrow = this.arrow;
     const ovArr = grid.overlay;
     const w = grid.width;
     const heat = this.heatOverlay;
@@ -276,10 +282,21 @@ export class CanvasRenderer implements Renderer {
         if (carried !== 0) id = carried;
       }
       let c: number;
-      // A lattice material (Mesh) is a two-tone positional checkerboard, so a
-      // screen reads as a woven grid rather than a flat slab. Computed from the
-      // cell's x/y so the weave is tied to space, not to the particle.
-      if (hasLat[id]) {
+      // A directional-arrow material (Conveyor) draws a chevron pointing the way
+      // its aux byte says it runs, so the belt's travel direction is visible. The
+      // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
+      // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
+      if (arrow[id]) {
+        const x = i % w;
+        const y = (i / w) | 0;
+        const fold = y & 2 ? 3 - (y & 3) : y & 3; // y%4 → 0,1,1,0
+        const phase = x & 3; // x % 4
+        const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
+        c = on ? latCol[id] : pal[id];
+      } else if (hasLat[id]) {
+        // A lattice material (Mesh) is a two-tone positional checkerboard, so a
+        // screen reads as a woven grid rather than a flat slab. Computed from the
+        // cell's x/y so the weave is tied to space, not to the particle.
         const x = i % w;
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];

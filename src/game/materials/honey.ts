@@ -17,13 +17,15 @@ import { WATER } from './water';
 // mixed "honey water" instead of sitting in a hard layer — the same gradual
 // boundary swap Acid shares with Water (see diffuseWith / acid.ts).
 const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 360 };
-const FLOW_CHANCE = 0.25;
 const DIFFUSE_CHANCE = 0.03;
 
 function updateHoney(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
   if (diffuseWith(x, y, sim, WATER.id, DIFFUSE_CHANCE)) return;
-  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+  // Thick and slow: its `viscosity` (below) resists leveling so a poured blob
+  // holds a rounded, slumping mound before it oozes flat — it still falls under
+  // gravity, unlike the old "skip the whole update" throttle.
+  updateLiquid(x, y, sim);
 }
 
 export const HONEY = register({
@@ -34,6 +36,8 @@ export const HONEY = register({
   density: 3.5,
   combustible: true,
   category: '액체',
+  // Very viscous — oozes and holds a mound instead of racing flat like water.
+  viscosity: 0.8,
   thermal: { conductivity: 0.25 },
   // Chilled honey crystallizes stiff — freezes in place a touch below room
   // temperature (candied honey) until it warms back up.

@@ -38,6 +38,8 @@ export const CEMENT = register({
   color: rgb(165, 165, 170),
   density: 5,
   category: '가루',
+  // Fine, cohesive dry powder — the steepest-piling of the powders (마찰).
+  friction: 0.52,
   thermal: { conductivity: 0.3 },
   update: updateCement,
 });
