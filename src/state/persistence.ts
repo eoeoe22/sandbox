@@ -140,8 +140,9 @@ function oneOf<T>(v: unknown, allowed: readonly T[], fallback: T): T {
 
 /**
  * Parse a persisted list of material ids (favorites / recents). Keeps only
- * finite integer ids that still exist in the registry, drops duplicates, and
- * caps the length. Anything malformed yields an empty list rather than throwing.
+ * finite integer ids that belong to the curated palette (PALETTE_IDS), drops
+ * duplicates, and caps the length. Anything malformed yields an empty list
+ * rather than throwing.
  */
 function parseIdList(v: unknown, cap: number): number[] {
   if (!Array.isArray(v)) return [];
@@ -204,8 +205,9 @@ function hydrateSettings(): void {
   if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
   $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
 
-  // Favorites/recents are validated against the live registry (ids that no
-  // longer exist are dropped). Favorites can hold at most one of every material.
+  // Favorites/recents are validated against the curated palette (ids not in
+  // PALETTE_IDS — hidden/unknown — are dropped). Favorites can hold at most one
+  // of every palette material.
   $favorites.set(parseIdList(s.favorites, MATERIALS.length));
   $recentMaterials.set(parseIdList(s.recentMaterials, RECENT_MATERIALS_MAX));
 }
