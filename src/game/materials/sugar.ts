@@ -26,9 +26,13 @@ const CARBONIZE_CHANCE = 0.08;
 function updateSugar(x: number, y: number, sim: SimContext): void {
   // Direct flame (or self-ignition past 300°) → burns as a fuel.
   if (tryBurn(x, y, sim, SPEC)) return;
-  // Heated but not yet burning → caramelise/carbonise to Ash. Keeps the cell's
-  // temperature so the fresh char reads as hot.
-  if (sim.getTemp(x, y) >= CARBONIZE_TEMP && sim.chance(CARBONIZE_CHANCE)) {
+  // Heated but not yet burning → caramelise/carbonise to Ash. Gated *below* the
+  // ignition point: an actually-burning grain is pinned at combustion's 800°, so
+  // without this upper bound it would keep short-circuiting to inert Ash instead
+  // of burning as a fuel (Ash isn't combustible, so the flame front would die).
+  // Keeps the cell's temperature so the fresh char reads as hot.
+  const t = sim.getTemp(x, y);
+  if (t >= CARBONIZE_TEMP && t < SPEC.autoIgniteTemp && sim.chance(CARBONIZE_CHANCE)) {
     sim.set(x, y, ASH.id);
     return;
   }

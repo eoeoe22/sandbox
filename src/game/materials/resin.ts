@@ -18,9 +18,11 @@ const HARDEN_CHANCE = 0.004; // slow cure into Amber
 
 function updateResin(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
-  // Cure to Amber. In-place `set` keeps the temperature; the fresh Amber can then
-  // still be burned if a flame reaches it.
-  if (sim.chance(HARDEN_CHANCE)) {
+  // Cure to Amber — but not while it's burning (a lit cell is pinned at 800°,
+  // above the ignition point), so "데우면 굳기 전에 탄다" holds: heat makes it burn,
+  // only cooler resin sets. In-place `set` keeps the temperature; the fresh Amber
+  // can then still be burned if a flame reaches it.
+  if (sim.getTemp(x, y) < SPEC.autoIgniteTemp && sim.chance(HARDEN_CHANCE)) {
     sim.set(x, y, AMBER.id);
     return;
   }
