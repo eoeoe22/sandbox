@@ -6,8 +6,20 @@ import {
   OVERWRITE_LEVEL_MAX,
   SIM_SPEED_DEFAULT,
   SMOKE_LEVEL_DEFAULT,
+  BRUSH_SIZE_DEFAULT,
+  GRAVITY_DIR_DEFAULT,
+  GRAVITY_STRENGTH_DEFAULT,
+  CELL_SCALE_DEFAULT,
+  GRID_DIVISION_DEFAULT,
+  RECENT_MATERIALS_MAX,
 } from '../game/config';
-import type { SimSpeed, SmokeLevel } from '../game/config';
+import type {
+  SimSpeed,
+  SmokeLevel,
+  GravityDir,
+  CellScale,
+  GridDivision,
+} from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
@@ -21,7 +33,7 @@ import type { BorderMode } from '../game/engine/types';
 export const $selectedMaterial = atom<number>(SAND.id);
 
 /** Brush radius in cells. */
-export const $brushSize = atom<number>(3);
+export const $brushSize = atom<number>(BRUSH_SIZE_DEFAULT);
 
 /** Brush stamp shape. */
 export type BrushShape = 'circle' | 'square';
@@ -58,11 +70,14 @@ export interface BlendComponent {
   id: number;
   ratio: number;
 }
-/** Materials + ratios the blend brush paints. Defaults to a 50/50 sand·water mix. */
-export const $blendBrush = atom<BlendComponent[]>([
+/** The out-of-the-box blend: a 50/50 sand·water mix. Kept as a named constant so
+ *  the atom seed and the "restore defaults" action share one source of truth. */
+export const DEFAULT_BLEND: BlendComponent[] = [
   { id: SAND.id, ratio: 50 },
   { id: WATER.id, ratio: 50 },
-]);
+];
+/** Materials + ratios the blend brush paints. Defaults to a 50/50 sand·water mix. */
+export const $blendBrush = atom<BlendComponent[]>(DEFAULT_BLEND.map((c) => ({ ...c })));
 
 /**
  * How aggressively the brush overwrites existing (non-Empty) particles, as a
@@ -113,8 +128,64 @@ export const $borderMode = atom<BorderMode>('wall');
  */
 export const $smokeLevel = atom<SmokeLevel>(SMOKE_LEVEL_DEFAULT);
 
+/**
+ * Gravity direction — which way "down" points for all falling/rising material.
+ * The engine reads it via Simulation.setGravity (Game.ts subscribes); flipping
+ * it re-orients every powder/liquid/gas at once. See config `GravityDir`.
+ */
+export const $gravityDir = atom<GravityDir>(GRAVITY_DIR_DEFAULT);
+
+/**
+ * Gravity strength, 0..1 — how strongly gravity pulls (a per-tick move
+ * probability). `1` is normal, fractional values give a floaty settle, `0` is
+ * weightless. Only bulk motion slows; reactions/heat keep running. See config.
+ */
+export const $gravityStrength = atom<number>(GRAVITY_STRENGTH_DEFAULT);
+
+/**
+ * Cell-size / resolution multiplier (relative to CELL_PX): larger = coarser grid
+ * with bigger cells, smaller = finer. The layout re-derives the grid from this
+ * and the engine resizes in place (Game.ts subscribes). See config `CellScale`.
+ */
+export const $cellScale = atom<CellScale>(CELL_SCALE_DEFAULT);
+
+/**
+ * Temperature heat-map overlay. When on, the renderer recolors every occupied
+ * cell by its temperature (a cold-blue → hot-red ramp) instead of its material
+ * color, turning the sandbox into a live thermal camera. Purely a render mode —
+ * the simulation is untouched. The renderer reads it via setHeatOverlay.
+ */
+export const $heatOverlay = atom<boolean>(false);
+
+/**
+ * Grid-overlay line spacing in cells (0 = off). The renderer draws a faint
+ * reference grid every N cells so structures line up and the cell scale is
+ * legible. Read via CanvasRenderer.setGridDivision. See config `GridDivision`.
+ */
+export const $gridDivision = atom<GridDivision>(GRID_DIVISION_DEFAULT);
+
+/**
+ * Favorited material ids (starred in the palette's quick-access bar). Persisted,
+ * ordered by when they were starred. User data, not a "setting" — untouched by
+ * restore-defaults.
+ */
+export const $favorites = atom<number[]>([]);
+
+/**
+ * Recently-used material ids, most-recent first, capped at RECENT_MATERIALS_MAX.
+ * Updated by `recordMaterialUse` on every material pick. Persisted; user data.
+ */
+export const $recentMaterials = atom<number[]>([]);
+
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
+
+/** Live particle count — occupied (non-Empty) cells, refreshed by the frame loop
+ *  a couple of times a second for the HUD. */
+export const $particleCount = atom<number>(0);
+
+/** Smoothed frame time in milliseconds (the render frame budget), for the HUD. */
+export const $frameMs = atom<number>(0);
 
 // One-shot command signals: bump the counter to request the action. The engine
 // listens for changes.
@@ -126,3 +197,46 @@ export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1)
 
 /** Advance the simulation by exactly one tick (used while paused). */
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
+
+/**
+ * Record that material `id` was just selected, moving it to the front of the
+ * recent-materials list (deduped, capped at RECENT_MATERIALS_MAX). Called from
+ * every palette pick so the quick-access bar tracks what the user actually uses.
+ */
+export const recordMaterialUse = (id: number): void => {
+  const prev = $recentMaterials.get();
+  if (prev[0] === id) return; // already most-recent — no churn
+  const next = [id, ...prev.filter((m) => m !== id)].slice(0, RECENT_MATERIALS_MAX);
+  $recentMaterials.set(next);
+};
+
+/** Toggle a material id in the favorites list (star / unstar). */
+export const toggleFavorite = (id: number): void => {
+  const prev = $favorites.get();
+  $favorites.set(prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]);
+};
+
+/**
+ * Restore every tunable *setting* to its default. Deliberately leaves the world
+ * (grid contents), the selected material, and the user's favorites/recent list
+ * alone — those aren't "settings", and wiping them on a defaults-restore would
+ * be a nasty surprise. Everything a slider/toggle in the settings sheet controls
+ * is reset here; persistence follows automatically via the atom listeners.
+ */
+export const resetSettings = (): void => {
+  $running.set(true);
+  $simSpeed.set(SIM_SPEED_DEFAULT);
+  $brushSize.set(BRUSH_SIZE_DEFAULT);
+  $brushShape.set('circle');
+  $brushMode.set('full');
+  $tool.set('material');
+  $overwriteLevel.set(OVERWRITE_LEVEL_MAX);
+  $borderMode.set('wall');
+  $smokeLevel.set(SMOKE_LEVEL_DEFAULT);
+  $blendBrush.set(DEFAULT_BLEND.map((c) => ({ ...c })));
+  $gravityDir.set(GRAVITY_DIR_DEFAULT);
+  $gravityStrength.set(GRAVITY_STRENGTH_DEFAULT);
+  $cellScale.set(CELL_SCALE_DEFAULT);
+  $heatOverlay.set(false);
+  $gridDivision.set(GRID_DIVISION_DEFAULT);
+};

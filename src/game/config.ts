@@ -38,14 +38,72 @@ export const TICK_HZ = 60;
 
 /**
  * User-selectable simulation-speed multipliers, in the order the toolbar shows
- * them. The base rate TICK_HZ is treated as *full* speed (×2); the default (×1)
- * deliberately runs the whole simulation at half that, giving a calmer pace with
- * ×2 available to restore the original speed. The effective step interval is
- * `2000 / (TICK_HZ * mult)` ms, so ×1 → TICK_HZ/2 Hz and ×2 → TICK_HZ Hz.
+ * them. The base rate TICK_HZ is treated as *full* speed (the ×2 step); the
+ * default (×1) deliberately runs the whole simulation at half that, giving a
+ * calmer pace. The effective step interval is `2000 / (TICK_HZ * mult)` ms, so
+ * ×1 → TICK_HZ/2 Hz and ×2 → TICK_HZ Hz. The range now extends both ways:
+ * ×0.25/×0.5 slow the world down for watching a reaction unfold, and ×4 runs it
+ * at double the original full rate (the loop substeps up to MAX_STEPS_PER_FRAME
+ * to keep up on a 60 Hz display). ×1 stays the calm default it always was.
  */
-export const SIM_SPEEDS = [1, 2] as const;
+export const SIM_SPEEDS = [0.25, 0.5, 1, 2, 4] as const;
 export type SimSpeed = (typeof SIM_SPEEDS)[number];
 export const SIM_SPEED_DEFAULT: SimSpeed = 1;
+
+/**
+ * Gravity direction — which way "down" points for every falling/rising material.
+ * Movement in SimContext is expressed relative to this vector, so flipping it
+ * turns the whole sandbox upside-down (or sideways) without touching a single
+ * material rule. Neighbor *reactions* (fire igniting, acid corroding) stay
+ * screen-relative — only bulk motion follows gravity, which is the fun part.
+ */
+export type GravityDir = 'down' | 'up' | 'left' | 'right';
+export const GRAVITY_DIRS: readonly GravityDir[] = ['down', 'up', 'left', 'right'];
+export const GRAVITY_DIR_DEFAULT: GravityDir = 'down';
+
+/**
+ * Gravity strength, 0..1. It scales how often gravity-driven moves are attempted
+ * each tick (a per-move probability): `1` is normal full gravity, fractional
+ * values give a floaty slow-motion settle (moon gravity), and `0` is weightless
+ * — painted material just hangs in the air. Distinct from sim speed: strength
+ * only slows *motion*, while reactions and heat keep running at full rate, so
+ * "low gravity + normal speed" lets fire race through suspended fuel that never
+ * falls. Snapped to GRAVITY_STRENGTH_STEP by the UI slider.
+ */
+export const GRAVITY_STRENGTH_DEFAULT = 1;
+export const GRAVITY_STRENGTH_MIN = 0;
+export const GRAVITY_STRENGTH_MAX = 1;
+export const GRAVITY_STRENGTH_STEP = 0.1;
+
+/**
+ * Cell-size (resolution) multipliers, relative to the base CELL_PX. A larger
+ * value means bigger cells → a coarser grid with fewer cells (lighter on the
+ * CPU); a smaller value means finer cells → more detail. `1` is the default
+ * fixed cell size. The MAX_CELLS budget still caps the finest settings, so a
+ * huge screen at ×0.5 is coarsened back down rather than melting the tick.
+ * Ordered coarse→fine so a UI slider reads left(low-res)→right(high-res).
+ */
+export const CELL_SCALES = [2, 1.5, 1, 0.75, 0.5] as const;
+export type CellScale = (typeof CELL_SCALES)[number];
+export const CELL_SCALE_DEFAULT: CellScale = 1;
+
+/**
+ * Grid-overlay line spacing, in cells. `0` is off (no lines). A non-zero value
+ * draws a faint reference grid every N cells over the sandbox, so structures can
+ * be lined up and the cell scale is legible. Offered as discrete steps the UI
+ * exposes as a "coarse ↔ fine" selector.
+ */
+export const GRID_DIVISIONS = [0, 8, 16, 32, 64] as const;
+export type GridDivision = (typeof GRID_DIVISIONS)[number];
+export const GRID_DIVISION_DEFAULT: GridDivision = 0;
+
+/** How many recently-used materials the quick-access bar remembers (favorites
+ *  are stored separately and unbounded in practice). */
+export const RECENT_MATERIALS_MAX = 8;
+
+/** Default brush settings, shared by the store's atom seeds and the
+ *  "restore defaults" action so the two can never drift apart. */
+export const BRUSH_SIZE_DEFAULT = 3;
 
 /**
  * Heat conduction (direct conduction only — no convection or radiation).

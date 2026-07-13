@@ -12,7 +12,16 @@ import {
   type SmokeLevel,
   SMOKE_LEVEL_DEFAULT,
   SMOKE_MEDIUM_KEEP,
+  type GravityDir,
 } from '../config';
+
+/** Unit "down" vector for each gravity direction (positive y is screen-down). */
+const GRAVITY_VECTORS: Record<GravityDir, readonly [number, number]> = {
+  down: [0, 1],
+  up: [0, -1],
+  left: [-1, 0],
+  right: [1, 0],
+};
 
 /**
  * 겹침 (overlap) hosting rule: which fluids may share a cell with which primary
@@ -64,6 +73,42 @@ export class SimContext {
    * Simulation.setSmokeLevel.
    */
   smokeLevel: SmokeLevel = SMOKE_LEVEL_DEFAULT;
+
+  /**
+   * Gravity as a unit "down" vector `(gravityX, gravityY)` plus a perpendicular
+   * axis `(perpX, perpY)` for sideways/diagonal motion. Every movement primitive
+   * (moveDown/moveUp/moveSideways/…) is expressed through these, so all bulk
+   * motion follows gravity while material rules stay unaware of its direction.
+   * `gravityStrength` (0..1) gates how often a gravity-driven move is even
+   * attempted: 1 = normal, fractional = a floaty slow settle, 0 = weightless.
+   * Set from the UI via Simulation.setGravity; defaults to plain screen-down.
+   */
+  gravityX = 0;
+  gravityY = 1;
+  private perpX = 1;
+  private perpY = 0;
+  gravityStrength = 1;
+
+  /** Point gravity in `dir` at `strength` (0..1). Recomputes the down + perp
+   *  vectors that every movement primitive reads. */
+  setGravity(dir: GravityDir, strength: number): void {
+    const [gx, gy] = GRAVITY_VECTORS[dir];
+    this.gravityX = gx;
+    this.gravityY = gy;
+    // Perpendicular to gravity (sign is irrelevant — sideways/diagonal try both
+    // ±perp): rotate the down vector 90°.
+    this.perpX = -gy;
+    this.perpY = gx;
+    this.gravityStrength = strength < 0 ? 0 : strength > 1 ? 1 : strength;
+  }
+
+  /** True if a gravity-driven move should be attempted this tick, per the
+   *  current strength: always at 1, never at 0, else with probability =
+   *  strength (giving a floaty, stall-and-drift settle at reduced gravity). */
+  private gravityPass(): boolean {
+    const s = this.gravityStrength;
+    return s >= 1 ? true : s <= 0 ? false : Math.random() < s;
+  }
 
   /**
    * Current simulation tick, refreshed once per step by `Simulation`. Available
@@ -343,21 +388,26 @@ export class SimContext {
    * caller falls back to the legacy position swap.
    */
   private pushAside(x: number, y: number, tx: number, ty: number): boolean {
-    const dir = this.chance(0.5) ? 1 : -1;
-    if (this.canPushTo(tx + dir, ty)) {
-      this.swap(tx, ty, tx + dir, ty);
+    // Shove along the axis perpendicular to gravity (horizontal under normal
+    // down-gravity, vertical under sideways gravity), randomizing which flank
+    // is tried first.
+    const s = this.chance(0.5) ? 1 : -1;
+    const px = this.perpX * s;
+    const py = this.perpY * s;
+    if (this.canPushTo(tx + px, ty + py)) {
+      this.swap(tx, ty, tx + px, ty + py);
       return true;
     }
-    if (this.canPushTo(tx - dir, ty)) {
-      this.swap(tx, ty, tx - dir, ty);
+    if (this.canPushTo(tx - px, ty - py)) {
+      this.swap(tx, ty, tx - px, ty - py);
       return true;
     }
-    if (this.canPushTo(x + dir, y)) {
-      this.swap(tx, ty, x + dir, y);
+    if (this.canPushTo(x + px, y + py)) {
+      this.swap(tx, ty, x + px, y + py);
       return true;
     }
-    if (this.canPushTo(x - dir, y)) {
-      this.swap(tx, ty, x - dir, y);
+    if (this.canPushTo(x - px, y - py)) {
+      this.swap(tx, ty, x - px, y - py);
       return true;
     }
     return false;
@@ -409,7 +459,14 @@ export class SimContext {
     }
     if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
       const tgt = getMaterial(targetId);
-      const displaces = ty < y ? src.density < tgt.density : src.density > tgt.density;
+      // Displacement is sorted along gravity, not the screen: the move's
+      // component along the down vector decides which cell should end up lower.
+      // Moving *against* gravity (along < 0) a lighter cell rises through a
+      // denser one (buoyancy); moving with gravity or sideways (along >= 0) a
+      // denser cell sinks through a lighter one. For default down-gravity this
+      // is exactly the old `ty < y ? … : …` test.
+      const along = (tx - x) * this.gravityX + (ty - y) * this.gravityY;
+      const displaces = along < 0 ? src.density < tgt.density : src.density > tgt.density;
       if (displaces) {
         // Drag gate: a small density gap resists displacement, so sinking
         // through a fluid is slower than free fall. Failing the gate returns
@@ -428,7 +485,7 @@ export class SimContext {
         // sand's full volume. The absorbed water percolates on down through
         // the bed afterwards (updateOverlay).
         if (
-          ty > y &&
+          along > 0 &&
           canHostOverlap(srcId, targetId) &&
           this.grid.getOverlay(x, y) === EMPTY &&
           this.chance(OVERLAP_ABSORB_CHANCE)
@@ -452,7 +509,7 @@ export class SimContext {
         // sensible shove direction. When pushAside vacates the target this
         // swap moves into empty space; when boxed in (deep fluid) it degrades
         // to the legacy position trade, invisible inside a homogeneous body.
-        if (DISPLACE_SIDE_PUSH && ty !== y) this.pushAside(x, y, tx, ty);
+        if (DISPLACE_SIDE_PUSH && along !== 0) this.pushAside(x, y, tx, ty);
         this.swap(x, y, tx, ty);
         return true;
       }
@@ -460,27 +517,58 @@ export class SimContext {
     return false;
   }
 
+  // The five movement primitives are all expressed relative to the gravity
+  // vector (gravityX/Y) and its perpendicular (perpX/Y), and gated by gravity
+  // strength — so a material rule that says "fall down, else tumble diagonally"
+  // works unchanged whichever way gravity points, and slows/stops as strength
+  // drops. A gated-out (stalled) move returns false, so the caller falls through
+  // to its next behavior that tick, exactly as if the cell were blocked.
+
+  /** Move one step along gravity ("down"). */
   moveDown(x: number, y: number): boolean {
-    return this.tryMove(x, y, x, y + 1);
+    if (!this.gravityPass()) return false;
+    return this.tryMove(x, y, x + this.gravityX, y + this.gravityY);
   }
 
+  /** Move one step diagonally along gravity (down + either perpendicular side). */
   moveDiagonalDown(x: number, y: number): boolean {
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    return this.tryMove(x, y, x + dir, y + 1) || this.tryMove(x, y, x - dir, y + 1);
+    if (!this.gravityPass()) return false;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const dgx = this.gravityX;
+    const dgy = this.gravityY;
+    const px = this.perpX * s;
+    const py = this.perpY * s;
+    return (
+      this.tryMove(x, y, x + dgx + px, y + dgy + py) ||
+      this.tryMove(x, y, x + dgx - px, y + dgy - py)
+    );
   }
 
+  /** Move one step against gravity ("up" — buoyant rise). */
   moveUp(x: number, y: number): boolean {
-    return this.tryMove(x, y, x, y - 1);
+    if (!this.gravityPass()) return false;
+    return this.tryMove(x, y, x - this.gravityX, y - this.gravityY);
   }
 
+  /** Move one step diagonally against gravity (up + either perpendicular side). */
   moveDiagonalUp(x: number, y: number): boolean {
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    return this.tryMove(x, y, x + dir, y - 1) || this.tryMove(x, y, x - dir, y - 1);
+    if (!this.gravityPass()) return false;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const px = this.perpX * s;
+    const py = this.perpY * s;
+    return (
+      this.tryMove(x, y, x - this.gravityX + px, y - this.gravityY + py) ||
+      this.tryMove(x, y, x - this.gravityX - px, y - this.gravityY - py)
+    );
   }
 
+  /** Move one step perpendicular to gravity (sideways leveling / spreading). */
   moveSideways(x: number, y: number): boolean {
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    return this.tryMove(x, y, x + dir, y) || this.tryMove(x, y, x - dir, y);
+    if (!this.gravityPass()) return false;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const px = this.perpX * s;
+    const py = this.perpY * s;
+    return this.tryMove(x, y, x + px, y + py) || this.tryMove(x, y, x - px, y - py);
   }
 
   /** Move the fluid at (x,y) into the free 겹침 slot of the host at (tx,ty).
@@ -543,6 +631,11 @@ export class SimContext {
    * inside a host. Called by Simulation's scan, guarded by Grid.overlayMoved.
    */
   updateOverlay(x: number, y: number): void {
+    // Overlap percolation is gravity-driven too, so it stalls/freezes with the
+    // strength gate (weightless mode holds soaked fluids in place). Its
+    // direction stays screen-relative — a niche secondary layer inside porous
+    // hosts, not worth rotating with the bulk motion.
+    if (!this.gravityPass()) return;
     const fluidId = this.grid.getOverlay(x, y);
     // Liquids sink, gases rise; everything tries its vertical first.
     const dy = getMaterial(fluidId).phase === Phase.Gas ? -1 : 1;

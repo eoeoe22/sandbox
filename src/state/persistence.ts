@@ -10,6 +10,13 @@ import {
   $simSpeed,
   $smokeLevel,
   $blendBrush,
+  $gravityDir,
+  $gravityStrength,
+  $cellScale,
+  $heatOverlay,
+  $gridDivision,
+  $favorites,
+  $recentMaterials,
   type BrushShape,
   type BrushMode,
   type Tool,
@@ -26,6 +33,12 @@ import {
   SMOKE_LEVELS,
   BLEND_MAX_SLOTS,
   BLEND_RATIO_STEP,
+  GRAVITY_DIRS,
+  GRAVITY_STRENGTH_MIN,
+  GRAVITY_STRENGTH_MAX,
+  CELL_SCALES,
+  GRID_DIVISIONS,
+  RECENT_MATERIALS_MAX,
 } from '../game/config';
 import type { SimSpeed, SmokeLevel } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
@@ -115,8 +128,33 @@ function clampInt(v: unknown, lo: number, hi: number, fallback: number): number 
   return n < lo ? lo : n > hi ? hi : n;
 }
 
+/** Clamp a persisted float into [lo, hi], falling back when not a finite number. */
+function clampFloat(v: unknown, lo: number, hi: number, fallback: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 function oneOf<T>(v: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(v as T) ? (v as T) : fallback;
+}
+
+/**
+ * Parse a persisted list of material ids (favorites / recents). Keeps only
+ * finite integer ids that still exist in the registry, drops duplicates, and
+ * caps the length. Anything malformed yields an empty list rather than throwing.
+ */
+function parseIdList(v: unknown, cap: number): number[] {
+  if (!Array.isArray(v)) return [];
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const item of v) {
+    if (typeof item !== 'number' || !Number.isInteger(item)) continue;
+    if (seen.has(item) || !getMaterial(item)) continue;
+    seen.add(item);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
 }
 
 /** Apply saved settings to the atoms. Every field is validated independently,
@@ -153,6 +191,19 @@ function hydrateSettings(): void {
 
   const blend = parseBlend(s.blendBrush);
   if (blend) $blendBrush.set(blend);
+
+  $gravityDir.set(oneOf(s.gravityDir, GRAVITY_DIRS, $gravityDir.get()));
+  $gravityStrength.set(
+    clampFloat(s.gravityStrength, GRAVITY_STRENGTH_MIN, GRAVITY_STRENGTH_MAX, $gravityStrength.get()),
+  );
+  $cellScale.set(oneOf(s.cellScale, CELL_SCALES, $cellScale.get()));
+  if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
+  $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
+
+  // Favorites/recents are validated against the live registry (ids that no
+  // longer exist are dropped). Favorites can hold at most one of every material.
+  $favorites.set(parseIdList(s.favorites, MATERIALS.length));
+  $recentMaterials.set(parseIdList(s.recentMaterials, RECENT_MATERIALS_MAX));
 }
 
 function saveSettings(): void {
@@ -170,6 +221,13 @@ function saveSettings(): void {
       running: $running.get(),
       smokeLevel: $smokeLevel.get(),
       blendBrush: $blendBrush.get(),
+      gravityDir: $gravityDir.get(),
+      gravityStrength: $gravityStrength.get(),
+      cellScale: $cellScale.get(),
+      heatOverlay: $heatOverlay.get(),
+      gridDivision: $gridDivision.get(),
+      favorites: $favorites.get(),
+      recentMaterials: $recentMaterials.get(),
     }),
   );
 }
@@ -219,6 +277,13 @@ export function initSettingsPersistence(): void {
   $running.listen(schedule);
   $smokeLevel.listen(schedule);
   $blendBrush.listen(schedule);
+  $gravityDir.listen(schedule);
+  $gravityStrength.listen(schedule);
+  $cellScale.listen(schedule);
+  $heatOverlay.listen(schedule);
+  $gridDivision.listen(schedule);
+  $favorites.listen(schedule);
+  $recentMaterials.listen(schedule);
 
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {

@@ -2,15 +2,50 @@
   // Alias the `$`-prefixed atom to a plain name so Svelte's `$store`
   // auto-subscription (`$selected`) resolves to it correctly.
   import { onDestroy } from 'svelte';
-  import { $selectedMaterial as selected, $tool as tool } from '../state/store';
-  import { MATERIALS } from '../game/materials';
-  import { buildCategories } from '../game/materials/categories';
+  import {
+    $selectedMaterial as selected,
+    $tool as tool,
+    $favorites as favorites,
+    $recentMaterials as recentMaterials,
+    recordMaterialUse,
+    toggleFavorite,
+  } from '../state/store';
+  import { MATERIALS, getMaterial } from '../game/materials';
+  import type { Material } from '../game/engine/types';
+  import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
   // identically. This is the ordered list of category tabs with their members.
   const categories = buildCategories(MATERIALS);
+
+  // --- Search --------------------------------------------------------------
+  // A non-empty query flips the palette from category tabs to a flat filtered
+  // grid, matching the material name or its category (both case-insensitive), in
+  // registry order. The category flyout is suppressed while searching.
+  let query = $state('');
+  const searching = $derived(query.trim().length > 0);
+  const matches = $derived.by<Material[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return MATERIALS.filter(
+      (m) => m.name.toLowerCase().includes(q) || categoryOf(m).toLowerCase().includes(q),
+    );
+  });
+
+  // --- Favorites / recent quick-access ------------------------------------
+  const favSet = $derived(new Set($favorites));
+  const isFav = (id: number): boolean => favSet.has(id);
+  // Favorites first (in the order they were starred), then recently-used
+  // materials not already starred. Ids that no longer resolve are dropped.
+  const quickItems = $derived.by<Material[]>(() => {
+    const resolve = (ids: number[]): Material[] =>
+      ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
+    const favs = resolve($favorites);
+    const recents = resolve($recentMaterials.filter((id) => !favSet.has(id)));
+    return [...favs, ...recents];
+  });
 
   // Which category's flyout is showing. `hovered` follows the pointer (mouse);
   // `pinned` is a click-to-lock override so touch devices (no hover) can open
@@ -135,13 +170,22 @@
   });
 
   // Picking a material is also a request to paint it, so snap out of any
-  // special brush (heat/cool/mix) back to material mode.
+  // special brush (heat/cool/mix) back to material mode, and record it in the
+  // recent-materials list that feeds the quick-access bar.
   function pick(id: number): void {
     clearTimeout(closeTimer);
     selected.set(id);
     tool.set('material');
+    recordMaterialUse(id);
     pinned = null;
     hovered = null;
+  }
+
+  // Star / unstar a material without selecting it (the star sits on top of the
+  // chip, so stop the click from also reaching the chip's pick handler).
+  function toggleFav(e: MouseEvent, id: number): void {
+    e.stopPropagation();
+    toggleFavorite(id);
   }
 
   function toggleCategory(key: string): void {
@@ -182,33 +226,81 @@
 />
 
 <div class="palette" bind:this={root}>
-  {#each categories as cat (cat.key)}
-    <div
-      class="category"
-      onmouseenter={() => openOnHover(cat.key)}
-      onmouseleave={scheduleHoverClose}
-    >
-      <button
-        use:registerButton={cat.key}
-        id={`cat-btn-${cat.index}`}
-        class:active={open === cat.key}
-        class:selected={cat.materials.some(
-          (m) => m.id === $selected && $tool === 'material'
-        )}
-        onclick={() => toggleCategory(cat.key)}
-        aria-expanded={open === cat.key}
-        aria-haspopup="true"
-        aria-controls={`cat-flyout-${cat.index}`}
-        title={cat.label}
-      >
-        <i class={`bi ${cat.icon} icon`} aria-hidden="true"></i>
-        <span class="cat-label">{cat.label}</span>
-        <span class="count">{cat.materials.length}</span>
-      </button>
+  <div class="pal-tools">
+    <div class="search-wrap">
+      <i class="bi bi-search search-icon" aria-hidden="true"></i>
+      <input
+        class="search"
+        type="search"
+        placeholder="물질 검색…"
+        aria-label="물질 검색"
+        bind:value={query}
+        onkeydown={(e) => {
+          if (e.key === 'Escape') query = '';
+        }}
+      />
+      {#if query}
+        <button
+          class="search-clear"
+          onclick={() => (query = '')}
+          aria-label="검색 지우기"
+          title="검색 지우기"
+        >
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+      {/if}
     </div>
-  {/each}
 
-  {#if open !== null && flyoutPos}
+    {#if quickItems.length > 0 && !searching}
+      <div class="quick" role="group" aria-label="즐겨찾기·최근 사용">
+        {#each quickItems as m (m.id)}
+          {@render starChip(m)}
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  {#if searching}
+    <div class="results" role="group" aria-label="검색 결과">
+      {#if matches.length === 0}
+        <span class="no-results">일치하는 물질이 없습니다</span>
+      {:else}
+        {#each matches as m (m.id)}
+          {@render starChip(m)}
+        {/each}
+      {/if}
+    </div>
+  {:else}
+    <div class="cat-list">
+      {#each categories as cat (cat.key)}
+        <div
+          class="category"
+          onmouseenter={() => openOnHover(cat.key)}
+          onmouseleave={scheduleHoverClose}
+        >
+          <button
+            use:registerButton={cat.key}
+            id={`cat-btn-${cat.index}`}
+            class:active={open === cat.key}
+            class:selected={cat.materials.some(
+              (m) => m.id === $selected && $tool === 'material'
+            )}
+            onclick={() => toggleCategory(cat.key)}
+            aria-expanded={open === cat.key}
+            aria-haspopup="true"
+            aria-controls={`cat-flyout-${cat.index}`}
+            title={cat.label}
+          >
+            <i class={`bi ${cat.icon} icon`} aria-hidden="true"></i>
+            <span class="cat-label">{cat.label}</span>
+            <span class="count">{cat.materials.length}</span>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  {#if !searching && open !== null && flyoutPos}
     {@const cat = categories.find((c) => c.key === open)}
     {#if cat}
       <div
@@ -239,12 +331,158 @@
   {/if}
 </div>
 
+<!-- A material chip with a star toggle in its corner, shared by the quick-access
+     bar and the search results. The star is a sibling button (not nested inside
+     the chip button — that would be invalid HTML) positioned over the corner. -->
+{#snippet starChip(m: Material)}
+  <div class="chip-wrap">
+    <button
+      class="chip"
+      class:active={$selected === m.id && $tool === 'material'}
+      onclick={() => pick(m.id)}
+      title={m.name}
+    >
+      <span class="swatch" style={`background:${toCss(m.color)}`}></span>
+      <span class="label">{m.name}</span>
+    </button>
+    <button
+      class="star"
+      class:on={isFav(m.id)}
+      onclick={(e) => toggleFav(e, m.id)}
+      aria-label={isFav(m.id) ? `${m.name} 즐겨찾기 해제` : `${m.name} 즐겨찾기 추가`}
+      aria-pressed={isFav(m.id)}
+      title={isFav(m.id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+    >
+      <i class={`bi ${isFav(m.id) ? 'bi-star-fill' : 'bi-star'}`} aria-hidden="true"></i>
+    </button>
+  </div>
+{/snippet}
+
 <style>
   .palette {
     display: flex;
     flex-direction: column;
+    gap: 6px;
+  }
+
+  /* Search + quick-access tools sit above the category list (desktop) or flow
+     inline at the head of the palette strip (mobile). */
+  .pal-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search-icon {
+    position: absolute;
+    left: 8px;
+    color: #8a8a99;
+    font-size: 12px;
+    pointer-events: none;
+  }
+  .search {
+    width: 100%;
+    padding: 6px 26px;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #14141a;
+    color: #e8e8ee;
+    font: inherit;
+    font-size: 12px;
+  }
+  .search::placeholder {
+    color: #6a6a78;
+  }
+  .search:focus {
+    outline: none;
+    border-color: #6ea8fe;
+  }
+  /* Hide the native search "×" (we render our own clear button). */
+  .search::-webkit-search-cancel-button {
+    display: none;
+  }
+  .search-clear {
+    position: absolute;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #8a8a99;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .search-clear:hover {
+    color: #e8e8ee;
+    background: #2a2a33;
+  }
+  .quick {
+    display: flex;
+    flex-wrap: wrap;
     gap: 4px;
   }
+  .cat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  /* Flat search-result grid: same chips as the category flyout, wrapping within
+     the sidebar (desktop) or scrolling sideways (mobile). */
+  .results {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    max-height: min(46vh, 360px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a46 transparent;
+  }
+  .no-results {
+    color: #8a8a99;
+    font-size: 11px;
+    padding: 4px 2px;
+  }
+
+  /* A chip plus its corner star toggle (quick-access + results). */
+  .chip-wrap {
+    position: relative;
+    flex: none;
+  }
+  .star {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: rgba(20, 20, 26, 0.6);
+    color: #7a7a88;
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+  }
+  .star:hover {
+    color: #ffd98a;
+  }
+  .star.on {
+    color: #ffcf4d;
+  }
+
   .category {
     position: relative;
   }
@@ -346,12 +584,15 @@
   }
 
   /* Mobile: the palette is row 2 of the bottom bar — a single horizontal strip
-     of icon-only category buttons that scrolls sideways. Labels and counts are
-     dropped so each category is a compact tap target; the flyout still shows the
-     material names. */
+     that scrolls sideways: the search box, then the favorite/recent quick chips,
+     then the icon-only category buttons (or search results). The section
+     wrappers collapse to `display: contents` so all their children flow inline
+     into that one scrolling row instead of stacking. Category labels/counts are
+     dropped so each is a compact tap target; the flyout still shows names. */
   @media (max-width: 768px) {
     .palette {
       flex-direction: row;
+      align-items: center;
       gap: 6px;
       overflow-x: auto;
       overflow-y: hidden;
@@ -359,6 +600,16 @@
     }
     .palette::-webkit-scrollbar {
       display: none;
+    }
+    .pal-tools,
+    .quick,
+    .cat-list,
+    .results {
+      display: contents;
+    }
+    .search-wrap {
+      flex: 0 0 auto;
+      width: 128px;
     }
     .category {
       flex: none;
