@@ -73,6 +73,15 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
 const MAX_SUBSTEP = 0.5;
 
 /**
+ * Per-tick velocity damping applied to a fully-submerged object (scaled down by
+ * how much of its footprint is actually in fluid). Bleeds off the bobbing an
+ * undamped buoyancy spring would sustain forever, and slows sideways drift
+ * through liquid, so a floating ball settles at the waterline instead of
+ * oscillating. Purely a feel knob.
+ */
+const OBJECT_FLUID_DRAG = 0.12;
+
+/**
  * Below this outward normal speed (cells/tick) a bounce is treated as a rest:
  * the normal velocity is zeroed instead of bouncing. Without it, gravity would
  * re-inject a hair of downward speed every tick and a "resting" ball would
@@ -240,6 +249,47 @@ function resolveGridCollision(o: SimObject, ctx: SimContext): void {
 }
 
 /**
+ * Sample the fluid the circle's footprint sits in, for buoyancy. Walk the cells
+ * whose center is inside the circle (the same footprint the renderer fills) and,
+ * for each that holds a (non-frozen) liquid, add its density and count it as
+ * submerged. Returns the density sum (the Archimedes term — displaced fluid per
+ * unit cell), the submerged cell count, and the total footprint cell count (for
+ * the drag fraction). Read-only: buoyancy never disturbs the fluid cells.
+ */
+function fluidSample(o: SimObject, ctx: SimContext): {
+  densitySum: number;
+  submerged: number;
+  footprint: number;
+} {
+  const r = o.r;
+  const r2 = r * r;
+  const x0 = Math.floor(o.x - r);
+  const x1 = Math.ceil(o.x + r);
+  const y0 = Math.floor(o.y - r);
+  const y1 = Math.ceil(o.y + r);
+  let densitySum = 0;
+  let submerged = 0;
+  let footprint = 0;
+  for (let cy = y0; cy < y1; cy++) {
+    const dy = cy + 0.5 - o.y;
+    for (let cx = x0; cx < x1; cx++) {
+      const dx = cx + 0.5 - o.x;
+      if (dx * dx + dy * dy > r2) continue;
+      footprint++;
+      if (!ctx.inBounds(cx, cy)) continue;
+      const id = ctx.get(cx, cy);
+      if (id === EMPTY) continue;
+      const m = getMaterial(id);
+      if (m.phase === Phase.Liquid && !ctx.isFrozen(cx, cy)) {
+        densitySum += m.density;
+        submerged++;
+      }
+    }
+  }
+  return { densitySum, submerged, footprint };
+}
+
+/**
  * Advance every free object one tick: apply gravity, then integrate position in
  * collision-safe substeps, resolving against the solid grid after each. Run as
  * its own pass at the end of Simulation.step(), fully separate from the CA cell
@@ -260,6 +310,21 @@ export function stepObjects(objects: SimObject[], ctx: SimContext): void {
     // objects in the air just like it holds powders).
     o.vx += ax;
     o.vy += ay;
+    // Buoyancy (Archimedes) + fluid drag. The buoyant acceleration opposes
+    // gravity with magnitude (Σ displaced-fluid density · g) / mass — since mass
+    // is the object's own density × footprint area, a body lighter than the
+    // fluid (rubber ball vs. water) nets upward and floats, settling where the
+    // submerged fraction balances the density ratio. Drag (scaled by how much of
+    // the footprint is actually in fluid) damps the bob and sideways drift.
+    const fs = fluidSample(o, ctx);
+    if (fs.densitySum > 0) {
+      const ab = (fs.densitySum * OBJECT_GRAVITY * s) / o.mass;
+      o.vx -= ctx.gravityX * ab;
+      o.vy -= ctx.gravityY * ab;
+      const drag = OBJECT_FLUID_DRAG * (fs.submerged / (fs.footprint || 1));
+      o.vx -= o.vx * drag;
+      o.vy -= o.vy * drag;
+    }
     // Integrate position over substeps ≤ MAX_SUBSTEP so nothing tunnels, with a
     // read-only solid-grid collision resolve after each. Time-based, so a bounce
     // mid-tick changes direction for the remainder of the tick.
