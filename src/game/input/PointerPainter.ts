@@ -152,6 +152,13 @@ export class PointerPainter {
    *  beside the grid, so this just appends to grid.objects — no cells written. */
   private spawnObject(cx: number, cy: number): void {
     if (!this.grid.inBounds(cx, cy)) return;
+    // Don't drop a ball whose center lands inside solid terrain (walls/solids) —
+    // it would spawn embedded. A click on open ground/fluid/powder is fine.
+    const hit = this.grid.get(cx, cy);
+    if (hit !== 0) {
+      const m = getMaterial(hit);
+      if (m.isWall || m.phase === Phase.Solid) return;
+    }
     const r = Math.max(2, $brushSize.get());
     this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
   }

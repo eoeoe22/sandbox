@@ -51,15 +51,18 @@ export const OBJECT_GRAVITY = 0.25;
 export const RUBBER_BALL_DENSITY = 1.2;
 export const RUBBER_BALL_RESTITUTION = 0.82;
 
-/** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. */
+/** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. `r` is
+ *  clamped to a small positive minimum so mass is never zero (buoyancy divides
+ *  by it). */
 export function createRubberBall(x: number, y: number, r = 4): SimObject {
-  const area = Math.PI * r * r;
+  const rr = r > 0.5 ? r : 0.5;
+  const area = Math.PI * rr * rr;
   return {
     x,
     y,
     vx: 0,
     vy: 0,
-    r,
+    r: rr,
     mass: RUBBER_BALL_DENSITY * area,
     restitution: RUBBER_BALL_RESTITUTION,
   };
@@ -245,8 +248,17 @@ function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
           nx = 0;
           ny = 1;
         }
-        if (bp === Infinity) continue; // fully enclosed — nowhere to push
-        pen = bp + r;
+        if (bp === Infinity) {
+          // Fully enclosed inside solid (spawned into a wall, or terrain painted
+          // around it): no open face to exit through. Rather than freezing the
+          // object inside the terrain, nudge it against gravity so it squeezes
+          // out the top over the next few ticks instead of getting stuck.
+          nx = -ctx.gravityX;
+          ny = -ctx.gravityY;
+          pen = 1;
+        } else {
+          pen = bp + r;
+        }
       }
 
       if (pen > bestPen) {
