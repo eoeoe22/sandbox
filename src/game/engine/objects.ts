@@ -1,5 +1,6 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
+import { AMBIENT_TEMP } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST } from '../materials/blast';
@@ -43,6 +44,11 @@ export interface SimObject {
    *  destruction is time-gated (like the drum's melt) so a stray hot pixel
    *  doesn't pop the ball — only sustained exposure does. */
   heatTicks: number;
+  /** The body's own heat reservoir (°). Relaxes toward the surrounding footprint
+   *  temperature each tick and is what the 가열/냉각 brush writes, so heat/cool
+   *  reaches a body even where it floats over empty air (which the cell heat brush
+   *  can't warm). The burn trigger judges by max(surroundings, this). */
+  temp: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimCapsule via SimBody. */
@@ -91,6 +97,7 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
     mass: RUBBER_BALL_DENSITY * area,
     restitution: RUBBER_BALL_RESTITUTION,
     heatTicks: 0,
+    temp: AMBIENT_TEMP,
   };
 }
 
@@ -149,6 +156,10 @@ export interface SimCapsule {
   /** Consecutive ticks the footprint has sampled above the melt threshold, so a
    *  brief brush with heat doesn't melt it — only sustained exposure does. */
   heatTicks: number;
+  /** The drum's own heat reservoir (°) — see SimObject.temp. Lets the 가열/냉각
+   *  brush melt a drum floating in air, and holds heat picked up from a hot
+   *  surrounding so it keeps melting briefly after being pulled out. */
+  temp: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimObject via SimBody. */
@@ -221,6 +232,7 @@ export function createDrum(
     restitution: DRUM_RESTITUTION,
     state: 'intact',
     heatTicks: 0,
+    temp: AMBIENT_TEMP,
     fill,
   };
 }
@@ -1284,6 +1296,13 @@ const BLAST_KNOCK_SPIN = 0.12;
  *  transient shove-into-terrain, so only a genuinely stuck body reaches it. */
 const CRUSH_SOLID_FRAC = 0.6;
 
+/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward its
+ *  surrounding footprint temperature — Newtonian conduction between the object
+ *  and the medium it sits in. Small, so brush-applied heat/cool lingers a couple
+ *  of seconds and a body carries heat briefly after leaving a fire, rather than
+ *  snapping to ambient in one tick. Feel knob. */
+const OBJECT_HEAT_CONDUCTION = 0.08;
+
 /** Quick test: does a shockwave flash cell overlap the body's footprint *right
  *  now*? A direct hit is captured at the tick's start (before knockback can move
  *  the body out of the blast) so a body engulfed by an explosion is reliably
@@ -1499,10 +1518,22 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
     destroyByproduct(o, ctx);
     return false; // ball: no byproduct
   }
+  // The body's own heat reservoir relaxes toward its surroundings each tick
+  // (Newtonian conduction): a body in a hot medium warms up, one in cool air (or
+  // cooled by the 냉각 brush) sheds heat back toward ambient — so brush-applied
+  // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
+  // briefly. `maxTemp` is finite for any in-world body (its footprint always has
+  // an in-bounds cell, and empty cells read ambient), so no guard is needed.
+  o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  // Judge heat by the hotter of the surroundings and the body's own reservoir:
+  // ambient heat (lava/fire under the footprint) still triggers instantly as
+  // before — no regression — while the 가열 brush, which writes only `temp`, can
+  // now melt/burn a body floating over empty air the cell heat brush can't warm.
+  const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
-  if (exp.maxTemp >= threshold) {
+  if (heat >= threshold) {
     o.heatTicks++;
     if (o.heatTicks >= ticksNeeded) {
       if (o.kind === 'drum') {

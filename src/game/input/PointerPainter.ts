@@ -41,6 +41,14 @@ const OVERWRITE_PHASE_ORDER = [Phase.Gas, Phase.Liquid, Phase.Powder, Phase.Soli
  *  can't launch it across the world in one tick. */
 const DRAG_THROW_MAX = 8;
 
+/** Mix (섞기) brush shove on a free object under it: a random jostle with a slight
+ *  outward bias so the stir pushes bodies out of the stirred pocket (밀려나게).
+ *  Applied per stamp, but only while the body is below MIX_MAX_SPEED, so held or
+ *  repeated stamps jostle it lively without the velocity piling up unbounded. */
+const MIX_PUSH_SPEED = 1.1;
+const MIX_SPIN = 0.15;
+const MIX_MAX_SPEED = 4;
+
 /**
  * Whether the brush may paint over whatever currently occupies (x, y), given
  * the current overwrite level. Empty cells are always paintable. Level 0
@@ -217,6 +225,48 @@ export class PointerPainter {
     if (this.dragBody && distanceToBody(this.dragBody, bx, by) <= rad) this.dragBody = null;
   }
 
+  /** Apply the 가열/냉각 brush to any free object under it: nudge the body's own
+   *  heat reservoir (SimBody.temp) by `delta`, clamped to the same range as the
+   *  cell heat brush. This is how heat/cool reaches an object — especially one
+   *  floating over empty air, which the cell heat brush (zero-conductivity air)
+   *  can't warm — letting the brush melt a drum or burn a ball. */
+  private heatObjectsUnderBrush(cx: number, cy: number, delta: number): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    const rad = $brushSize.get();
+    const bx = cx + 0.5;
+    const by = cy + 0.5;
+    for (const o of objs) {
+      if (o.held) continue; // a dragged body is shielded; don't cook it
+      if (distanceToBody(o, bx, by) > rad) continue;
+      const t = o.temp + delta;
+      o.temp = t < HEAT_BRUSH_MIN ? HEAT_BRUSH_MIN : t > HEAT_BRUSH_MAX ? HEAT_BRUSH_MAX : t;
+    }
+  }
+
+  /** Shove any free object under the 섞기 brush — a random jostle with a slight
+   *  outward push, so stirring scatters/ejects bodies the way it disperses cells.
+   *  Drums also get a random spin. Skips a held body (the drag owns it) and any
+   *  body already moving fast, so repeated stamps don't accumulate to a rocket. */
+  private mixPushObjectsUnderBrush(cx: number, cy: number): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    const rad = $brushSize.get();
+    const bx = cx + 0.5;
+    const by = cy + 0.5;
+    for (const o of objs) {
+      if (o.held) continue;
+      if (distanceToBody(o, bx, by) > rad) continue;
+      if (Math.hypot(o.vx, o.vy) >= MIX_MAX_SPEED) continue; // already lively — don't pile on
+      const dx = o.x - bx;
+      const dy = o.y - by;
+      const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
+      o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
+      o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
+      if (o.kind === 'drum') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
+    }
+  }
+
   /** Reposition the dragged body to follow the pointer (keeping the grab offset),
    *  clamped inside the sandbox, and track a smoothed release velocity so letting
    *  go flings it. Called from onMove while a drag is active. */
@@ -243,11 +293,14 @@ export class PointerPainter {
     if (this.erasing) return this.paint(cx, cy, true);
     switch ($tool.get()) {
       case 'heat':
-        return heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        return this.heatObjectsUnderBrush(cx, cy, HEAT_BRUSH_DELTA);
       case 'cool':
-        return heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        return this.heatObjectsUnderBrush(cx, cy, -HEAT_BRUSH_DELTA);
       case 'mix':
-        return mixCells(this.grid, this.brushCells(cx, cy));
+        mixCells(this.grid, this.brushCells(cx, cy));
+        return this.mixPushObjectsUnderBrush(cx, cy);
       case 'erase':
         return this.paint(cx, cy, true);
       case 'blend':
