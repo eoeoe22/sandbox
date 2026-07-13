@@ -7,12 +7,14 @@ import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP, FIRE_SMOKE_CHANCE } from '../config';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
+import { SUGAR_WATER } from './sugarwater';
 import { STEAM } from './steam';
 import { SMOKE } from './smoke';
 
 // Gas: rises/flickers like the default gas behavior. Each tick: any
-// Water/Saltwater neighbor extinguishes it (self -> Empty, that neighbor ->
-// Steam, deterministic — "물 인접 시 즉시 소화"); otherwise any `flammable`
+// Water/Saltwater/Sugar Water neighbor extinguishes it (self -> Empty, that
+// neighbor -> Steam, deterministic — "물 인접 시 즉시 소화"; the water-based
+// solutions all douse); otherwise any `flammable`
 // neighbor has a low per-tick chance to ignite (spread is deliberately slow —
 // see comment on IGNITE_CHANCE); otherwise a small chance to burn out to
 // Smoke each tick.
@@ -29,7 +31,7 @@ function updateFire(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === WATER.id || nid === SALTWATER.id) {
+    if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
       sim.spawn(nx, ny, STEAM.id);
       extinguished = true;
     }

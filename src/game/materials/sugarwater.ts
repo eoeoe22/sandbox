@@ -34,8 +34,8 @@ import { CO2 } from './co2';
 // free neighbour first; if boxed in with nowhere for the steam to go, the cell
 // stays Sugar Water and retries next tick instead of evaporating anyway.
 const FERMENT_CHANCE = 0.12; // per adjacent-yeast contact per tick (matches yeast.ts)
-// Fermentation is biological, so it stops when things get hot — mirrors the
-// DIE_TEMP (~60°) at which the yeast itself dies (see yeast.ts).
+// Fermentation is biological, so it stops when things get hot — set a little
+// below the DIE_TEMP (60°) at which the yeast itself dies (see yeast.ts).
 const FERMENT_MAX_TEMP = 55;
 
 /** Burp a CO₂ bubble into a free neighbour, preferring straight "up" (against

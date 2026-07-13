@@ -51,6 +51,10 @@ function dissolveToWater(x: number, y: number, sim: SimContext): void {
     }
   }
   sim.set(x, y, WATER.id); // this cell has fully reverted to water
+  // set() only auto-clears aux on an EMPTY write, so scrub the dissolve marker
+  // by hand — otherwise the fresh Water would carry aux 1, which Water reads as a
+  // spark refractory and would (for one tick) refuse to conduct current.
+  sim.setAux(x, y, 0);
 }
 
 function updateSlime(x: number, y: number, sim: SimContext): void {
