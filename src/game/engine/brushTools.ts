@@ -1,4 +1,5 @@
 import type { Grid } from './Grid';
+import type { MatId } from './types';
 import { EMPTY, Phase } from './types';
 import { getMaterial } from '../materials/registry';
 
@@ -134,4 +135,74 @@ function pushIfEligible(
     visited.add(idx);
     stack.push(idx);
   }
+}
+
+/** One material's share of what the inspect (돋보기) brush sees under its
+ *  footprint: the material id/name/color (for a UI swatch) and how many cells
+ *  it occupies. `count` is a cell count; the UI derives the percentage from
+ *  `InspectStats.occupied`. */
+export interface InspectEntry {
+  id: MatId;
+  name: string;
+  /** Packed 0xAABBGGRR base color, for a UI swatch (see render/color.ts). */
+  color: number;
+  count: number;
+}
+
+/** What the inspect (돋보기) brush reports for the cells under its footprint:
+ *  how full the brush is, the average temperature of the occupied cells, and a
+ *  per-material breakdown sorted by count. Empty air is excluded from the
+ *  breakdown and the temperature average (it has no material and resets to
+ *  ambient anyway); Wall counts toward occupancy but is left out of the average
+ *  since it sits outside the temperature system (see wall.ts / heatCells). */
+export interface InspectStats {
+  /** Total cells the brush mask covers (including empty air). */
+  footprint: number;
+  /** Occupied (non-Empty) cells in the footprint. */
+  occupied: number;
+  /** Mean temperature over occupied, non-Wall cells, or null if there are none. */
+  avgTemp: number | null;
+  /** Per-material breakdown, most-common first (ties broken by id for stability). */
+  entries: InspectEntry[];
+}
+
+/**
+ * Survey the cells under the brush for the inspect (돋보기) tool: tally each
+ * material, count occupancy, and average the temperature. Pure grid logic, no
+ * DOM — the input layer gathers the footprint and hands it here, exactly like
+ * the heat/mix brushes, so the readout stays unit-testable without a browser.
+ */
+export function inspectCells(grid: Grid, cells: readonly number[]): InspectStats {
+  const counts = new Map<MatId, number>();
+  let occupied = 0;
+  let tempSum = 0;
+  let tempCount = 0;
+  for (let k = 0; k < cells.length; k += 2) {
+    const x = cells[k];
+    const y = cells[k + 1];
+    const id = grid.get(x, y);
+    if (id === EMPTY) continue;
+    occupied++;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+    // Wall is deliberately outside the temperature system, so leave it out of
+    // the average (mirrors heatCells) — otherwise a wall's fixed ambient reading
+    // would drag the mean toward 20°C.
+    if (!getMaterial(id).isWall) {
+      tempSum += grid.getTemp(x, y);
+      tempCount++;
+    }
+  }
+  const entries: InspectEntry[] = [];
+  for (const [id, count] of counts) {
+    const mat = getMaterial(id);
+    entries.push({ id, name: mat.name, color: mat.color, count });
+  }
+  // Most-common first; ties by id so the list order is stable frame to frame.
+  entries.sort((a, b) => b.count - a.count || a.id - b.id);
+  return {
+    footprint: cells.length / 2,
+    occupied,
+    avgTemp: tempCount > 0 ? tempSum / tempCount : null,
+    entries,
+  };
 }

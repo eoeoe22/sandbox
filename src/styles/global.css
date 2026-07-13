@@ -103,6 +103,20 @@ body {
 .brush-cursor[data-tool='blend'] {
   border-color: rgba(120, 220, 160, 0.95);
 }
+/* 보기 (view) is an inert brush — a dim, dashed outline signals it places
+   nothing on a left press. */
+.brush-cursor[data-tool='view'] {
+  border-color: rgba(150, 150, 165, 0.7);
+  border-style: dashed;
+}
+/* 돋보기 inspect overlay is independent of the tool, so its accent layers on top
+   of whatever tool tint is active: a soft amber glow marking the survey area. */
+.brush-cursor[data-inspect='on'] {
+  border-color: rgba(240, 200, 90, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 10px 1px rgba(240, 200, 90, 0.35);
+}
 
 .notfound {
   display: flex;

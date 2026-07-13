@@ -8,6 +8,8 @@ import {
   $overwriteLevel,
   $tool,
   $blendBrush,
+  $inspect,
+  $inspectData,
 } from '../../state/store';
 import {
   BRUSH_MIN,
@@ -21,7 +23,7 @@ import {
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { heatCells, mixCells } from '../engine/brushTools';
+import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 
 /**
@@ -103,6 +105,16 @@ export class PointerPainter {
     $brushSize.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $tool.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
+    // Toggling the 돋보기 inspect overlay: retint the cursor and either populate
+    // the readout right away (from where the pointer already rests) or clear it.
+    $inspect.listen(() => {
+      this.updateCursor(this.lastClientX, this.lastClientY);
+      this.refreshInspect();
+    });
+    // A larger/smaller brush surveys a different footprint; re-read under the
+    // stationary pointer so the readout tracks the size change immediately.
+    $brushSize.listen(() => this.refreshInspect());
+    $brushShape.listen(() => this.refreshInspect());
   }
 
   private lastClientX = 0;
@@ -110,13 +122,17 @@ export class PointerPainter {
   private hovering = false;
 
   private toCell(e: PointerEvent): [number, number] {
+    return this.clientToCell(e.clientX, e.clientY);
+  }
+
+  /** Map a client (screen) point to a grid cell, using the same sandbox rect the
+   *  renderer draws into (CSS px) so pointer coords land on the right cell. Points
+   *  outside the sandbox map out of bounds and get filtered by stamp/inspect. */
+  private clientToCell(clientX: number, clientY: number): [number, number] {
     const r = this.canvas.getBoundingClientRect();
-    // Use the same sandbox rect the renderer draws into (CSS px) so pointer
-    // coords land on the right cell. Taps outside the sandbox map out of bounds
-    // and get filtered by stamp.
     const rect = this.layout.cssRect();
-    const localX = e.clientX - r.left - rect.x;
-    const localY = e.clientY - r.top - rect.y;
+    const localX = clientX - r.left - rect.x;
+    const localY = clientY - r.top - rect.y;
     const gx = Math.floor((localX / rect.width) * this.grid.width);
     const gy = Math.floor((localY / rect.height) * this.grid.height);
     return [gx, gy];
@@ -138,6 +154,11 @@ export class PointerPainter {
         return this.paint(cx, cy, true);
       case 'blend':
         return this.paintBlend(cx, cy);
+      case 'view':
+        // 보기: an inert brush — a left press places nothing so you can move over
+        // the world without disturbing it. (A right-button press is caught above
+        // as erasing, so the eraser still works.)
+        return;
     }
     this.paint(cx, cy);
   }
@@ -297,6 +318,9 @@ export class PointerPainter {
 
   private onMove = (e: PointerEvent): void => {
     this.updateCursor(e.clientX, e.clientY);
+    // Keep the inspect readout tracking the pointer even when not pressed — the
+    // 돋보기 overlay is a hover survey, not a click action.
+    this.refreshInspect();
     if (!this.down) return;
     const [x, y] = this.toCell(e);
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
@@ -321,6 +345,8 @@ export class PointerPainter {
     this.cursorEl.style.display = 'none';
     // Restore the CSS fallback cursor now that our overlay is hidden again.
     this.canvas.style.cursor = 'crosshair';
+    // The pointer left the canvas — nothing under the brush to report.
+    this.refreshInspect();
   };
 
   private onWheel = (e: WheelEvent): void => {
@@ -357,6 +383,9 @@ export class PointerPainter {
     // Tint the outline per tool (heat = warm, cool = cold, mix = violet) so the
     // active special brush is obvious; 'material' leaves the default neutral.
     this.cursorEl.dataset.tool = $tool.get();
+    // The 돋보기 inspect overlay is independent of the tool, so flag it
+    // separately — the outline picks up a magnifier accent while surveying.
+    this.cursorEl.dataset.inspect = $inspect.get() ? 'on' : 'off';
   }
 
   /**
@@ -366,6 +395,23 @@ export class PointerPainter {
    */
   refreshCursor(): void {
     this.updateCursor(this.lastClientX, this.lastClientY);
+  }
+
+  /**
+   * Recompute the 돋보기 inspect readout ($inspectData) from the cells under the
+   * brush at the pointer's current resting position. Publishes null (once) when
+   * inspect is off or the pointer isn't over the canvas, so the UI panel hides.
+   * Cheap — the footprint is at most a ~25×25 mask — and called both on pointer
+   * move and once per sim tick (see update()) so the numbers stay live as the
+   * world changes under a still cursor.
+   */
+  private refreshInspect(): void {
+    if (!$inspect.get() || !this.hovering) {
+      if ($inspectData.get() !== null) $inspectData.set(null);
+      return;
+    }
+    const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
+    $inspectData.set(inspectCells(this.grid, this.brushCells(cx, cy)));
   }
 
   /**
@@ -379,5 +425,8 @@ export class PointerPainter {
    */
   update(): void {
     if (this.down) this.stamp(this.px, this.py);
+    // Keep the inspect readout live as the simulation flows beneath a still
+    // pointer (falling sand, spreading water). No-ops cheaply when inspect is off.
+    this.refreshInspect();
   }
 }
