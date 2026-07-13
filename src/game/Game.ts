@@ -214,6 +214,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
       acc = 0;
     }
 
+    // Refresh the 돋보기 inspect readout once per rendered frame (not per sim
+    // tick) so it stays live under a still cursor without over-recomputing when
+    // the loop substeps. Cheap no-op when the overlay is off.
+    painter.refreshInspect();
+
     renderer.render(grid);
 
     frames++;

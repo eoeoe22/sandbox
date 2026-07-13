@@ -24,6 +24,7 @@ import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
+import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 
 /**
@@ -64,6 +65,30 @@ function canOverwrite(existingId: number, level: number): boolean {
  * Also owns two pieces of pointer-adjacent UX: a brush-size cursor outline
  * that follows the pointer, and mouse-wheel resizing of the brush.
  */
+/** Whether two inspect surveys are identical, so refreshInspect() can skip
+ *  re-publishing (and re-rendering the panel) when nothing under the cursor
+ *  changed. Compares the scalar tallies and each breakdown entry's id+count;
+ *  entries are always sorted the same way (see inspectCells), so positional
+ *  comparison is sound. */
+function sameInspect(a: InspectStats | null, b: InspectStats): boolean {
+  if (a === null) return false;
+  if (
+    a.occupied !== b.occupied ||
+    a.overlapped !== b.overlapped ||
+    a.footprint !== b.footprint ||
+    a.avgTemp !== b.avgTemp ||
+    a.entries.length !== b.entries.length
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.entries.length; i++) {
+    if (a.entries[i].id !== b.entries[i].id || a.entries[i].count !== b.entries[i].count) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export class PointerPainter {
   private down = false;
   /** Whether the active press is erasing: the secondary (right) button always
@@ -120,6 +145,11 @@ export class PointerPainter {
   private lastClientX = 0;
   private lastClientY = 0;
   private hovering = false;
+  /** Last inspect survey published to the store, kept so refreshInspect() can
+   *  skip a redundant `$inspectData.set` (and the Svelte re-render it triggers)
+   *  when the cells under a still cursor haven't changed — e.g. paused with the
+   *  overlay on, where the frame loop would otherwise re-publish 60×/s. */
+  private lastInspect: InspectStats | null = null;
 
   private toCell(e: PointerEvent): [number, number] {
     return this.clientToCell(e.clientX, e.clientY);
@@ -318,9 +348,9 @@ export class PointerPainter {
 
   private onMove = (e: PointerEvent): void => {
     this.updateCursor(e.clientX, e.clientY);
-    // Keep the inspect readout tracking the pointer even when not pressed — the
-    // 돋보기 overlay is a hover survey, not a click action.
-    this.refreshInspect();
+    // The inspect readout tracks the pointer too, but it's refreshed once per
+    // frame from the game loop (see refreshInspect) off `lastClientX/Y`, which
+    // updateCursor just updated — so a hover survey needs nothing more here.
     if (!this.down) return;
     const [x, y] = this.toCell(e);
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
@@ -401,17 +431,27 @@ export class PointerPainter {
    * Recompute the 돋보기 inspect readout ($inspectData) from the cells under the
    * brush at the pointer's current resting position. Publishes null (once) when
    * inspect is off or the pointer isn't over the canvas, so the UI panel hides.
-   * Cheap — the footprint is at most a ~25×25 mask — and called both on pointer
-   * move and once per sim tick (see update()) so the numbers stay live as the
-   * world changes under a still cursor.
+   *
+   * Called once per animation frame from the game loop (see Game.ts) so the
+   * numbers stay live as the world flows beneath a still cursor, without the
+   * per-sim-tick over-recompute a call inside update() would cause. When inspect
+   * is off this is a two-`.get()` early return; when on, it surveys at most a
+   * ~25×25 footprint and only writes the store when the result actually changed,
+   * so a paused, resting cursor doesn't re-render the panel every frame.
    */
-  private refreshInspect(): void {
+  refreshInspect(): void {
     if (!$inspect.get() || !this.hovering) {
-      if ($inspectData.get() !== null) $inspectData.set(null);
+      if (this.lastInspect !== null) {
+        this.lastInspect = null;
+        $inspectData.set(null);
+      }
       return;
     }
     const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
-    $inspectData.set(inspectCells(this.grid, this.brushCells(cx, cy)));
+    const stats = inspectCells(this.grid, this.brushCells(cx, cy));
+    if (sameInspect(this.lastInspect, stats)) return;
+    this.lastInspect = stats;
+    $inspectData.set(stats);
   }
 
   /**
@@ -425,8 +465,5 @@ export class PointerPainter {
    */
   update(): void {
     if (this.down) this.stamp(this.px, this.py);
-    // Keep the inspect readout live as the simulation flows beneath a still
-    // pointer (falling sand, spreading water). No-ops cheaply when inspect is off.
-    this.refreshInspect();
   }
 }

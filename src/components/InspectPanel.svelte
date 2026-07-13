@@ -9,11 +9,14 @@
   // keeps $inspectData live; it goes null when the pointer leaves the canvas.
   const data = $derived($inspectData);
   const occupied = $derived(data?.occupied ?? 0);
+  const overlapped = $derived(data?.overlapped ?? 0);
 
-  // Composition ratio is per-material over the *occupied* cells (empty air is
-  // "nothing there", not a material), matching how the breakdown reads.
+  // Composition ratio is per-material over every material *occurrence* — a cell
+  // of wet sand holds two (the sand host + the water soaked into it, 겹침), so
+  // the denominator is occupied + overlapped and the ratios still sum to 100%.
+  const totalInstances = $derived(occupied + overlapped);
   function pct(count: number): number {
-    return occupied > 0 ? Math.round((count / occupied) * 100) : 0;
+    return totalInstances > 0 ? Math.round((count / totalInstances) * 100) : 0;
   }
 
   // Fill ratio uses the whole footprint so "how full is the brush" stays honest.
@@ -46,6 +49,12 @@
         {#if data.avgTemp !== null}
           <span title="입자가 있는 칸의 평균 온도 (벽 제외)">
             평균 {Math.round(data.avgTemp).toLocaleString()}°C
+          </span>
+        {/if}
+        {#if overlapped > 0}
+          <span class="wet" title="액체가 스며든(겹친) 칸 수 — 예: 젖은 모래">
+            <i class="bi bi-droplet-half" aria-hidden="true"></i>
+            겹침 {overlapped.toLocaleString()}칸
           </span>
         {/if}
       </div>
@@ -115,6 +124,13 @@
     margin-bottom: 6px;
     color: #cfcfd8;
     font-variant-numeric: tabular-nums;
+  }
+  /* 겹침(젖음) count — tinted like a liquid so it reads apart from the dry tallies. */
+  .wet {
+    color: #6ea8fe;
+  }
+  .wet i {
+    font-size: 11px;
   }
 
   .breakdown {
