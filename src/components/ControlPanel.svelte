@@ -8,6 +8,7 @@
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
     $tool as tool,
+    $inspect as inspect,
     $selectedMaterial as selectedMaterial,
     $fps as fps,
     $fpsPeak as fpsPeak,
@@ -43,6 +44,7 @@
   import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
+  import InspectPanel from './InspectPanel.svelte';
 
   // Name of the currently selected paint material, shown on the 재료 (draw) brush
   // button so the active material is always visible without opening the palette.
@@ -255,6 +257,33 @@
         >
           <i class="bi bi-eraser-fill" aria-hidden="true"></i>
           <span class="label">지우개</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'view'}
+          onclick={() => tool.set('view')}
+          aria-pressed={$tool === 'view'}
+          aria-label="보기"
+          title="보기 모드 — 클릭해도 아무것도 그리지 않습니다 (오른쪽 클릭 지우개는 사용 가능)"
+        >
+          <i class="bi bi-eye" aria-hidden="true"></i>
+          <span class="label">보기</span>
+        </button>
+      </div>
+
+      <!-- 돋보기 inspect overlay: an independent toggle (not one of the brush
+           tools) that surveys what's under the brush while on. -->
+      <div class="group" role="group" aria-label="관찰 도구">
+        <button
+          class="ctl"
+          class:active={$inspect}
+          onclick={() => inspect.set(!$inspect)}
+          aria-pressed={$inspect}
+          aria-label="돋보기"
+          title="돋보기 — 브러시 영역의 파티클 종류·개수·비율·평균온도를 표시합니다 (그리기와 별도로 켜짐)"
+        >
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <span class="label">돋보기</span>
         </button>
       </div>
 
@@ -573,6 +602,10 @@
     </p>
   </div>
 </aside>
+
+<!-- 돋보기 readout, floating over the top of the sandbox (shown only while the
+     inspect overlay is on and the pointer is over the canvas). -->
+<InspectPanel />
 
 <style>
   /* --------------------------------------------------------------------- */
