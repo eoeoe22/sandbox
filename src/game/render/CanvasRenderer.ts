@@ -2,7 +2,7 @@ import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
-import type { BorderMode } from '../engine/types';
+import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 
 /**
@@ -16,6 +16,23 @@ import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
  * sandbox was resized). Fast enough for a wide range of grid sizes and
  * swappable for a WebGL renderer via the Renderer interface.
  */
+/** Heat-overlay ramp bounds and resolution. Cells at/below HEAT_MIN read fully
+ *  cold, at/above HEAT_MAX fully white-hot; everything between is interpolated
+ *  through HEAT_STOPS into a HEAT_LUT_SIZE-entry lookup table. */
+const HEAT_MIN = -50;
+const HEAT_MAX = 1500;
+const HEAT_LUT_SIZE = 256;
+/** Thermal-camera colour stops: [temperature°, r, g, b], cold → hot. */
+const HEAT_STOPS: readonly [number, number, number, number][] = [
+  [-50, 20, 40, 130],
+  [20, 30, 64, 96],
+  [120, 70, 44, 96],
+  [320, 150, 40, 44],
+  [620, 232, 72, 24],
+  [1000, 255, 168, 36],
+  [1500, 255, 244, 210],
+];
+
 /** Precomputed temperature→color ramp for a glowing material (see Material.glow). */
 interface GlowRamp {
   min: number;
@@ -57,6 +74,14 @@ export class CanvasRenderer implements Renderer {
   private lattice: Uint32Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
+  /** When true, occupied cells are drawn by temperature (thermal camera) instead
+   *  of their material colour (see setHeatOverlay / HEAT_LUT). */
+  private heatOverlay = false;
+  /** Reference-grid line spacing in cells; 0 = no overlay (see setGridDivision). */
+  private gridDivision = 0;
+  /** Packed temperature→colour lookup for the heat overlay, spanning
+   *  [HEAT_MIN, HEAT_MAX]° in HEAT_LUT_SIZE steps (built once in the ctor). */
+  private heatLut: Uint32Array;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -72,6 +97,7 @@ export class CanvasRenderer implements Renderer {
     if (!offCtx) throw new Error('Offscreen 2D context unavailable');
     this.offCtx = offCtx;
     this.allocForGrid(grid);
+    this.heatLut = CanvasRenderer.buildHeatLut();
 
     // Precompute id → color. Materials are registered before the renderer is
     // constructed, so this stays in sync for the milestone's fixed set.
@@ -174,6 +200,35 @@ export class CanvasRenderer implements Renderer {
     return (0xff000000 | (b << 16) | (gr << 8) | r) >>> 0;
   }
 
+  /** Build the temperature→colour lookup for the heat overlay by linearly
+   *  interpolating HEAT_STOPS across HEAT_LUT_SIZE entries spanning
+   *  [HEAT_MIN, HEAT_MAX]. Packed 0xAABBGGRR, fully opaque. */
+  private static buildHeatLut(): Uint32Array {
+    const lut = new Uint32Array(HEAT_LUT_SIZE);
+    for (let i = 0; i < HEAT_LUT_SIZE; i++) {
+      const t = HEAT_MIN + (i / (HEAT_LUT_SIZE - 1)) * (HEAT_MAX - HEAT_MIN);
+      // Find the bracketing stop pair.
+      let s = 0;
+      while (s < HEAT_STOPS.length - 2 && t > HEAT_STOPS[s + 1][0]) s++;
+      const [t0, r0, g0, b0] = HEAT_STOPS[s];
+      const [t1, r1, g1, b1] = HEAT_STOPS[s + 1];
+      const f = t1 === t0 ? 0 : Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+      const r = (r0 + (r1 - r0) * f) & 0xff;
+      const g = (g0 + (g1 - g0) * f) & 0xff;
+      const b = (b0 + (b1 - b0) * f) & 0xff;
+      lut[i] = (0xff000000 | (b << 16) | (g << 8) | r) >>> 0;
+    }
+    return lut;
+  }
+
+  /** Map a temperature to its packed heat-overlay colour via the LUT. */
+  private heatColor(t: number): number {
+    let idx = ((t - HEAT_MIN) / (HEAT_MAX - HEAT_MIN)) * (HEAT_LUT_SIZE - 1);
+    if (idx < 0) idx = 0;
+    else if (idx > HEAT_LUT_SIZE - 1) idx = HEAT_LUT_SIZE - 1;
+    return this.heatLut[idx | 0];
+  }
+
   /** (Re)size the offscreen buffer to match the grid resolution. */
   private allocForGrid(grid: Grid): void {
     this.off.width = grid.width;
@@ -204,7 +259,15 @@ export class CanvasRenderer implements Renderer {
     const latCol = this.lattice;
     const ovArr = grid.overlay;
     const w = grid.width;
+    const heat = this.heatOverlay;
     for (let i = 0; i < cells.length; i++) {
+      // Heat overlay: recolor occupied cells by temperature (a live thermal
+      // camera); empty cells keep the ambient background so shapes read against
+      // it. Bypasses all the material-color machinery below.
+      if (heat) {
+        buf[i] = cells[i] === EMPTY ? pal[EMPTY] : this.heatColor(temp[i]);
+        continue;
+      }
       let id = cells[i];
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
       // flung grain wears its own material's color instead of the carrier's.
@@ -258,12 +321,60 @@ export class CanvasRenderer implements Renderer {
     this.ctx.clearRect(0, 0, cw, ch);
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(this.off, rect.x, rect.y, rect.width, rect.height);
+    if (this.gridDivision > 0) {
+      this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
+    }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /** Draw a faint reference grid every `gridDivision` cells over the sandbox
+   *  rectangle. Line positions are snapped to whole cell boundaries and skip the
+   *  outer edges (the boundary outline already draws those). */
+  private drawGrid(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    cols: number,
+    rows: number,
+    scale: number,
+  ): void {
+    const step = this.gridDivision;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150, 160, 180, 0.16)';
+    ctx.lineWidth = Math.max(1, Math.round(scale));
+    ctx.beginPath();
+    // Vertical lines at every `step`-th column boundary (interior only).
+    for (let c = step; c < cols; c += step) {
+      // Round to the device pixel so the thin line stays crisp.
+      const px = Math.round(x + (c / cols) * w) + 0.5;
+      ctx.moveTo(px, y);
+      ctx.lineTo(px, y + h);
+    }
+    // Horizontal lines at every `step`-th row boundary (interior only).
+    for (let r = step; r < rows; r += step) {
+      const py = Math.round(y + (r / rows) * h) + 0.5;
+      ctx.moveTo(x, py);
+      ctx.lineTo(x + w, py);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** Pick which edge mode to signal in the boundary outline. */
   setBorderMode(mode: BorderMode): void {
     this.borderMode = mode;
+  }
+
+  /** Toggle the temperature heat-map overlay (occupied cells drawn by temp). */
+  setHeatOverlay(on: boolean): void {
+    this.heatOverlay = on;
+  }
+
+  /** Set the reference-grid line spacing in cells (0 = off). */
+  setGridDivision(cells: number): void {
+    this.gridDivision = cells;
   }
 
   /** Outline the real sandbox space so its edges are visible against the page.
