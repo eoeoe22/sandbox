@@ -237,9 +237,19 @@ export interface Material {
    * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw
    * the base — a cheap, position-tied two-tone weave the renderer applies before
    * any tint/glow. Purely a rendering hint; the simulation never reads it. Omit
-   * for an ordinary flat material.
+   * for an ordinary flat material. (A material tagged `arrow` reuses this as the
+   * chevron color instead of a checkerboard.)
    */
   lattice?: number;
+  /**
+   * Draw a directional chevron (in the `lattice` color, over the base `color`)
+   * whose direction is read from the cell's `aux` byte — 2 points left, anything
+   * else points right. The Conveyor uses it so a belt visibly shows which way it
+   * runs (좌우 화살표). Takes precedence over a plain `lattice` weave in the
+   * renderer; purely a rendering hint the simulation never reads. Omit for an
+   * ordinary material.
+   */
+  arrow?: boolean;
   /**
    * Render this cell using the *carried* material named by its `aux` byte, not
    * this material's own `color`. Debris sets it: a flying fragment carries its

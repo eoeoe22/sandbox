@@ -5,6 +5,7 @@ import { tryReact } from './reactions';
 import { EMPTY, type BorderMode } from './types';
 import {
   HEAT_DIFFUSION_RATE,
+  HEAT_DIFFUSION_SUBSTEPS,
   DEFAULT_CONDUCTIVITY,
   type SmokeLevel,
   type GravityDir,
@@ -76,7 +77,9 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
-    this.diffuseHeat();
+    // Run several conduction substeps per tick so heat spreads ~3× faster
+    // globally while each substep stays numerically stable (see config).
+    for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
     this.ctx.tick = this.tick;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;

@@ -115,6 +115,13 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [
 const REACH_GAIN = 0.14;
 const R_MAX = 64;
 
+// Global blast-range scale: every detonation's crater reach is trimmed to this
+// fraction, so the whole game's explosions are dialed down at a single knob
+// (기획: 폭발 범위 전체 2/3 축소). Applied to both the surveyed √-law reach and any
+// fixed `opts.reach`, so shaped blasts (napalm's fixed fireball) shrink in the
+// same proportion rather than escaping the reduction.
+const BLAST_REACH_SCALE = 2 / 3;
+
 // Cap on how many connected explosive cells one survey (phase 1) sums before it
 // gives up and detonates with the partial yield gathered so far — a graceful
 // bound on a pathologically huge mass, never a hang. MAX_SURVEY_CELLS_PER_TICK
@@ -144,8 +151,23 @@ const MAX_DETONATE_CELLS_PER_TICK = 80_000;
 // dead at the crater rim. It's a light bolt-on to the existing dilate flood: a
 // second, non-destructive ring seeded from the crater's rim, expanding outward,
 // blocked (shadowed) by solids it can't move but flowing around them through gaps.
-const PRESSURE_REACH = 5; // cells beyond the crater the shove wave travels
+//
+// Its reach is *dynamic*: it scales with the blast's crater reach R, so a strong
+// detonation shoves matter proportionally farther out while a firecracker barely
+// nudges its surroundings (기획: 강한 폭발일수록 넓은 동적 충격파). Clamped at both
+// ends so even a lone pop rings out a little and a giant mass can't shove across
+// the whole screen.
+const PRESSURE_REACH_FACTOR = 0.6; // pressure reach ≈ this × crater reach R
+const PRESSURE_REACH_MIN = 2;
+const PRESSURE_REACH_MAX = 24;
 const PRESSURE_LAUNCH_CHANCE = 0.5; // per loose cell reached, chance it's flung
+
+/** The pressure wave's reach (cells beyond the crater) for a blast of crater
+ *  reach `R` — proportional to R, clamped to [MIN, MAX]. */
+function pressureReachFor(R: number): number {
+  const r = Math.round(R * PRESSURE_REACH_FACTOR);
+  return r < PRESSURE_REACH_MIN ? PRESSURE_REACH_MIN : r > PRESSURE_REACH_MAX ? PRESSURE_REACH_MAX : r;
+}
 // Modest outward launch — a shove, not the fierce fountain the in-crater
 // concussion throws (that scales with the blast budget; this is a fixed nudge).
 const PRESSURE_SHOVE: LaunchSpec = {
@@ -547,7 +569,9 @@ export function detonate(
   const srcX: number[] = [];
   const srcY: number[] = [];
   const { Y, maxYield, power } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
-  const R = opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield);
+  // Trim every blast's reach to the global scale (2/3), whether it came from the
+  // surveyed √-law or a fixed opts.reach, so the whole game's craters shrink.
+  const R = (opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield)) * BLAST_REACH_SCALE;
 
   // ── Phase 2: dilate the whole mass outward by R, destroying what it reaches ──
   // A fresh stamp id on the same buffer marks the dilation's visited set; it never
@@ -653,8 +677,11 @@ export function detonate(
   }
 
   // Shockwave pressure wave: rings out past the crater rim to shove loose matter
-  // radially outward (concussion), without breaking anything. On by default.
-  if (opts.pressure !== false) pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d);
+  // radially outward (concussion), without breaking anything. On by default, its
+  // reach scaling with this blast's crater reach R (bigger blast → wider shove).
+  if (opts.pressure !== false) {
+    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R));
+  }
 
   const rimHandler = opts.rimHandler;
   const rimEmberChance = opts.rimEmberChance !== undefined ? opts.rimEmberChance : RIM_EMBER_CHANCE;
@@ -672,8 +699,9 @@ export function detonate(
 /**
  * Non-destructive pressure wave — the "충격파 압력전파" that rings out past the
  * crater. Seeded from the crater's rim cells (each with the outward normal the
- * dilation recorded), it floods PRESSURE_REACH cells further using the same
- * chamfer metric, and every loose cell (powder/liquid) it reaches is flung
+ * dilation recorded), it floods `reach` cells further (scaled to the blast's
+ * crater reach R by the caller) using the same chamfer metric, and every loose
+ * cell (powder/liquid) it reaches is flung
  * radially outward as Debris (mass-conserving — it rains back). It never breaks
  * anything: a solid stops the wave and shadows what's behind it, while it flows
  * around solids through open gaps. `stamp`/`id_d` are the destruction flood's
@@ -689,6 +717,7 @@ function pressureRing(
   seedDY: number[],
   stamp: Int32Array,
   id_d: number,
+  reach: number,
 ): void {
   const w = sim.width;
   const h = sim.height;
@@ -717,7 +746,7 @@ function pressureRing(
     stamp[nidx] = id_p;
     qx.push(nx);
     qy.push(ny);
-    qb.push(PRESSURE_REACH);
+    qb.push(reach);
     qdx.push(dx);
     qdy.push(dy);
   }

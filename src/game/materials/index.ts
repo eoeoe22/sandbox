@@ -98,6 +98,9 @@ import { HELIUM } from './helium';
 import { AEROGEL } from './aerogel';
 import { AMMONIUM_NITRATE } from './ammoniumnitrate';
 import { CONVEYOR } from './conveyor';
+import { SOAPY_WATER } from './soapywater';
+import { BUBBLE } from './bubble';
+import { SOAP } from './soap';
 
 export {
   EMPTY_MAT,
@@ -195,6 +198,9 @@ export {
   AEROGEL,
   AMMONIUM_NITRATE,
   CONVEYOR,
+  SOAPY_WATER,
+  BUBBLE,
+  SOAP,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -215,7 +221,10 @@ export {
  *     real velocity (see ballistic.ts): the loose grains a weak blast shoves
  *     aside (the built-in concussion — see blast.ts/debris.ts), a cluster shell's
  *     submunitions, and a napalm shell's sticky fire-gel. Like Ember they only
- *     exist mid-flight; painted by hand they'd fall inert at once. */
+ *     exist mid-flight; painted by hand they'd fall inert at once.
+ *   • BUBBLE — the air bubble only Soapy Water produces (see bubble.ts); it rises
+ *     and pops back to soapy water, so hand-placed in open air it just pops at
+ *     once. */
 export const MATERIALS = [
   WALL,
   SAND,
@@ -253,6 +262,7 @@ export const MATERIALS = [
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
+  AMMONIUM_NITRATE,
   OXYGEN,
   HYDROGEN,
   BATTERY,
@@ -261,6 +271,8 @@ export const MATERIALS = [
   MERCURY,
   HONEY,
   ALCOHOL,
+  SOAPY_WATER,
+  SOAP,
   DIRT,
   MUD,
   CEMENT,
@@ -278,7 +290,6 @@ export const MATERIALS = [
   CLUSTER,
   NAPALM,
   C4,
-  AMMONIUM_NITRATE,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
