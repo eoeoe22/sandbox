@@ -103,6 +103,33 @@ export function updateGas(x: number, y: number, sim: SimContext): void {
   sim.moveSideways(x, y);
 }
 
+// A heavy gas (CO₂, Chlorine) is the sinking mirror of updateGas: instead of
+// rising it slumps to the floor and pools, spreading sideways to fill low
+// ground and settling on top of any liquid it can't sink into. Same imperfect
+// wobble as the rising gas — a chance to stall for a beat and a chance to prefer
+// the diagonal step — so it reads as a drifting, spreading cloud rather than a
+// rigid falling column. Movement is still density-sorted by tryMove, so a heavy
+// gas displaces the lighter ordinary gases (Smoke/Steam/Fire) beneath it and
+// slides under them, while never sinking into a denser liquid.
+const HEAVY_GAS_STALL_CHANCE = 0.35;
+const HEAVY_GAS_WOBBLE_CHANCE = 0.4;
+
+/** Heavy gas: sink, else drift diagonally down, else spread sideways — with a
+ *  chance to stall (slower fall) and a chance to wobble diagonally instead of
+ *  dropping straight down (a spreading cloud, not a rigid column). The downward
+ *  counterpart of updateGas. */
+export function updateHeavyGas(x: number, y: number, sim: SimContext): void {
+  if (sim.chance(HEAVY_GAS_STALL_CHANCE)) return;
+  if (sim.chance(HEAVY_GAS_WOBBLE_CHANCE)) {
+    if (sim.moveDiagonalDown(x, y)) return;
+    if (sim.moveDown(x, y)) return;
+  } else {
+    if (sim.moveDown(x, y)) return;
+    if (sim.moveDiagonalDown(x, y)) return;
+  }
+  sim.moveSideways(x, y);
+}
+
 /** Resolve the default update for a phase (Solid/Empty are static → no update). */
 export function defaultUpdate(
   phase: Phase,
