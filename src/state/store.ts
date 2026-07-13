@@ -21,6 +21,7 @@ import type {
   GridDivision,
 } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
+import type { InspectStats } from '../game/engine/brushTools';
 
 // Framework-neutral bridge between the Svelte control panel and the vanilla
 // engine (the Astro-recommended nanostores pattern). The engine reads/listens;
@@ -56,11 +57,35 @@ export const $brushMode = atom<BrushMode>('full');
  * stay put), and 'erase' clears cells to Empty (the same as a right-button
  * drag, promoted to its own selectable tool). 'object' spawns a free rigid
  * object (the rubber ball) at the click instead of painting cells — the 독립
- * 오브젝트 layer's placement tool. See PointerPainter and config.ts. Selecting a
- * material in the palette snaps this back to 'material'.
+ * 오브젝트 layer's placement tool. 'view' (보기) is an inert brush: a
+ * left-click/drag places nothing, so you can move the pointer over the world
+ * without disturbing it — a right-button drag still erases (the secondary
+ * button always erases, see PointerPainter). Handy paired with the 돋보기
+ * inspect overlay ($inspect) to survey the world without painting. See
+ * PointerPainter and config.ts. Selecting a material in the palette snaps this
+ * back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view';
 export const $tool = atom<Tool>('material');
+
+/**
+ * The 돋보기 (inspect) overlay toggle. Independent of `$tool` — it can be on
+ * alongside any brush — this is a separate mode that, while on, surveys the
+ * cells under the brush and reports what's there (material breakdown, counts,
+ * composition ratio, average temperature) via `$inspectData`. It never paints
+ * or alters the world; it only reads. Toggle it on and it works whenever the
+ * pointer hovers the canvas. See PointerPainter and InspectPanel.svelte.
+ */
+export const $inspect = atom<boolean>(false);
+
+/**
+ * Live readout for the 돋보기 inspect overlay: a survey of the cells currently
+ * under the brush, refreshed by PointerPainter as the pointer moves and as the
+ * simulation runs beneath a still cursor. `null` when inspect is off or the
+ * pointer isn't over the canvas. See `InspectStats` (engine/brushTools) and
+ * InspectPanel.svelte.
+ */
+export const $inspectData = atom<InspectStats | null>(null);
 
 /**
  * One component of the blend (혼합) brush: a material id and the percentage
@@ -232,6 +257,7 @@ export const resetSettings = (): void => {
   $brushShape.set('circle');
   $brushMode.set('full');
   $tool.set('material');
+  $inspect.set(false);
   $overwriteLevel.set(OVERWRITE_LEVEL_MAX);
   $borderMode.set('wall');
   $smokeLevel.set(SMOKE_LEVEL_DEFAULT);
