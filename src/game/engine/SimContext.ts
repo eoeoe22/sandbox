@@ -10,6 +10,7 @@ import {
   DISPLACE_SIDE_PUSH,
   OVERLAP_ABSORB_CHANCE,
   OVERLAP_SOAK_CHANCE,
+  POWDER_LIQUID_OVERLAP_DEFAULT,
   type SmokeLevel,
   SMOKE_LEVEL_DEFAULT,
   SMOKE_MEDIUM_KEEP,
@@ -306,6 +307,42 @@ export class SimContext {
     return f !== undefined && this.grid.getTemp(x, y) <= f.temp;
   }
 
+  /**
+   * 겹침 admission for a *specific* host cell — layered on top of the type-level
+   * `canHostOverlap` so overlap is partial, not all-or-nothing: some cells admit
+   * a fluid and some block it, which is what restores a water-level rise and a
+   * little drag instead of a powder passing every drop straight through. A
+   * blocked cell fails every 겹침 entry point (absorb, soak, host-to-host
+   * percolation, porous entry), so the fluid displaces/pools against it.
+   *
+   *   - Powder: a per-grain split by the grain's stable `tint` byte against the
+   *     material's 액체 겹침 계수 (`liquidOverlap`, default
+   *     POWDER_LIQUID_OVERLAP_DEFAULT). The coefficient is the fraction that
+   *     admit; because `tint` is fixed for a grain's life (see game/tint.ts) a
+   *     given grain is consistently hosting or blocking.
+   *   - Lattice porous (Mesh): only the light checkerboard cells admit; the dark
+   *     woven cells — the ones the renderer draws in `lattice` — block, so a
+   *     screen filters at half its pore density (fluids thread the light cells,
+   *     which connect diagonally, same parity). Ties the block pattern to the
+   *     exact cells that look solid.
+   *   - Plain porous (Turbine): every cell admits — fluids pass freely.
+   */
+  private canOverlapAt(x: number, y: number, hostId: number, fluidId: number): boolean {
+    if (!canHostOverlap(hostId, fluidId)) return false;
+    const host = getMaterial(hostId);
+    if (host.phase === Phase.Powder) {
+      const coeff = host.liquidOverlap ?? POWDER_LIQUID_OVERLAP_DEFAULT;
+      if (coeff >= 1) return true;
+      if (coeff <= 0) return false;
+      // tint is uniform in [0,256): P(tint < coeff*256) = coeff grains admit.
+      return this.grid.getTint(x, y) < coeff * 256;
+    }
+    // Mesh's dark checkerboard cells ((x^y) odd, drawn in `lattice`) block; the
+    // light cells admit. Plain porous solids have no lattice → always admit.
+    if (host.lattice !== undefined) return ((x ^ y) & 1) === 0;
+    return true;
+  }
+
   /** True with probability `p` (0-1). Routes material randomness through the
    * same seam as movement, so a future deterministic/worker RNG swap only
    * touches this file. */
@@ -442,16 +479,18 @@ export class SimContext {
     }
     const srcId = this.get(x, y);
     const src = getMaterial(srcId);
-    // 겹침 entry: to a moving liquid or gas, a porous solid (Mesh, Turbine) with
-    // a free overlap slot is as good as empty — the fluid slips into the slot
-    // and keeps travelling through the screen under its own rules (see
-    // updateOverlay). One fluid per cell: a saturated screen blocks like any
-    // solid until its fluid moves on. Powders are NOT entered here — soaking
-    // into a bed is a deliberate last resort (soakDown), not a movement path,
-    // or water would dive into sand instead of pooling on it.
+    // 겹침 entry: to a moving liquid or gas, a porous solid (Mesh, Turbine) whose
+    // cell admits the fluid (canOverlapAt — a Mesh blocks on its dark
+    // checkerboard cells) and has a free overlap slot is as good as empty — the
+    // fluid slips into the slot and keeps travelling through the screen under its
+    // own rules (see updateOverlay). One fluid per cell: a saturated screen
+    // blocks like any solid until its fluid moves on. Powders are NOT entered
+    // here — soaking into a bed is a deliberate last resort (soakDown), not a
+    // movement path, or water would dive into sand instead of pooling on it.
     if (
       (src.phase === Phase.Liquid || src.phase === Phase.Gas) &&
       getMaterial(targetId).porous === true &&
+      this.canOverlapAt(tx, ty, targetId, srcId) &&
       this.grid.getOverlay(tx, ty) === EMPTY &&
       !this.isFrozen(x, y)
     ) {
@@ -477,17 +516,20 @@ export class SimContext {
         const gap = Math.abs(src.density - tgt.density);
         const p = DISPLACE_DRAG_BASE + gap * DISPLACE_DRAG_SCALE;
         if (p < 1 && !this.chance(p)) return true;
-        // 겹침 absorb: a dry fluid-hosting powder sinking into a liquid can
+        // 겹침 absorb: a dry fluid-hosting powder grain sinking into a liquid can
         // swallow the liquid it displaces instead of shoving it aside — the
         // grain takes the liquid's cell, the liquid rides along in the grain's
         // overlap slot, and the vacated source cell closes up empty (two cells
-        // become one). Chance-gated so only SOME grains absorb: sand poured
-        // into water raises the level by the grains that didn't, not by the
-        // sand's full volume. The absorbed water percolates on down through
-        // the bed afterwards (updateOverlay).
+        // become one). Gated two ways so only SOME grains absorb: the per-grain
+        // 액체 겹침 계수 (canOverlapAt) rules a "겹침 불가" grain out entirely, and
+        // the rest absorb only by OVERLAP_ABSORB_CHANCE. The blocked grains
+        // instead shove the water aside, so sand poured into water raises the
+        // level (and drags a little) rather than overlapping it away completely.
+        // The absorbed water percolates on down through the bed afterwards
+        // (updateOverlay).
         if (
           along > 0 &&
-          canHostOverlap(srcId, targetId) &&
+          this.canOverlapAt(x, y, srcId, targetId) &&
           this.grid.getOverlay(x, y) === EMPTY &&
           this.chance(OVERLAP_ABSORB_CHANCE)
         ) {
@@ -640,7 +682,9 @@ export class SimContext {
     // ordinary movement (tryMove), so they never need the soak fallback.
     if (getMaterial(targetId).phase !== Phase.Powder) return false;
     const srcId = this.get(x, y);
-    if (!canHostOverlap(targetId, srcId)) return false;
+    // A "겹침 불가" grain (per its 액체 겹침 계수) refuses the soak, so a pool over
+    // a partly-permeable bed sinks in only through the hosting grains.
+    if (!this.canOverlapAt(tx, ty, targetId, srcId)) return false;
     if (this.grid.getOverlay(tx, ty) !== EMPTY) return false;
     this.enterOverlay(x, y, tx, ty, srcId);
     return true;
@@ -704,7 +748,7 @@ export class SimContext {
       g.overlayAux[i] = 0;
       return true;
     }
-    if (canHostOverlap(targetId, fluidId) && g.overlay[g.idx(tx, ty)] === 0) {
+    if (this.canOverlapAt(tx, ty, targetId, fluidId) && g.overlay[g.idx(tx, ty)] === 0) {
       const t = g.idx(tx, ty);
       g.overlay[t] = fluidId;
       g.overlayAux[t] = g.overlayAux[i]; // the parked aux rides along, host to host

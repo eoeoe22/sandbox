@@ -217,6 +217,19 @@ export const OVERLAP_ABSORB_CHANCE = 0.5;
 export const OVERLAP_SOAK_CHANCE = 0.35;
 
 /**
+ * 액체 겹침 계수 (liquid-overlap coefficient) for a Powder that doesn't set its
+ * own `liquidOverlap` (Material) — the fraction of grains that may host a 겹침
+ * overlap liquid, the rest blocking it (see SimContext.canOverlapAt). Below 1
+ * so a powder bed is partly permeable: poured into water the blocked grains
+ * displace it (the level rises) and drag on it a little, while the hosting
+ * grains still drain water on down through the bed. 1 would restore the old
+ * "every grain soaks, water passes straight through" behavior; 0 makes the bed
+ * an impermeable solid to liquids. 0.6 leaves a clear majority draining while a
+ * visible minority blocks.
+ */
+export const POWDER_LIQUID_OVERLAP_DEFAULT = 0.6;
+
+/**
  * Smoke output level for reactions (combustion/explosion/etc.), a three-step
  * control replacing the old on/off toggle. `high` is the original "smoke on"
  * level (reactions emit exactly as much Smoke as they always did); `off`
