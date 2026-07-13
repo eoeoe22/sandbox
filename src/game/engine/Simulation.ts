@@ -2,7 +2,12 @@ import type { Grid } from './Grid';
 import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
 import { EMPTY, type BorderMode } from './types';
-import { HEAT_DIFFUSION_RATE, DEFAULT_CONDUCTIVITY, type SmokeLevel } from '../config';
+import {
+  HEAT_DIFFUSION_RATE,
+  DEFAULT_CONDUCTIVITY,
+  type SmokeLevel,
+  type GravityDir,
+} from '../config';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 
 /**
@@ -46,19 +51,50 @@ export class Simulation {
     this.ctx.smokeLevel = level;
   }
 
+  /** Point gravity in `dir` at `strength` (0..1). Forwarded to the SimContext
+   *  the movement primitives read; the per-tick scan orients itself to match
+   *  (see step). */
+  setGravity(dir: GravityDir, strength: number): void {
+    this.ctx.setGravity(dir, strength);
+  }
+
   step(): void {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
     this.diffuseHeat();
     this.ctx.tick = this.tick;
-    const leftToRight = (this.tick++ & 1) === 0;
+    // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
+    const flip = (this.tick++ & 1) === 0;
 
-    for (let y = g.height - 1; y >= 0; y--) {
-      if (leftToRight) {
-        for (let x = 0; x < g.width; x++) this.updateCell(x, y);
-      } else {
-        for (let x = g.width - 1; x >= 0; x--) this.updateCell(x, y);
+    // Scan cells in the gravity direction first (the cell a grain falls *into*
+    // is processed before the grain), so a column settles a cell per tick
+    // instead of draining slowly. For default down-gravity this is the classic
+    // bottom-to-top, left/right-alternating scan. The `moved` guard makes any
+    // order correct (no teleporting); orienting it just keeps the settle crisp.
+    const w = g.width;
+    const h = g.height;
+    if (this.ctx.gravityX === 0) {
+      // Vertical gravity: outer over rows from the gravity end, inner over cols.
+      const down = this.ctx.gravityY >= 0;
+      for (let k = 0; k < h; k++) {
+        const y = down ? h - 1 - k : k;
+        if (flip) {
+          for (let x = 0; x < w; x++) this.updateCell(x, y);
+        } else {
+          for (let x = w - 1; x >= 0; x--) this.updateCell(x, y);
+        }
+      }
+    } else {
+      // Horizontal gravity: outer over cols from the gravity end, inner over rows.
+      const right = this.ctx.gravityX >= 0;
+      for (let k = 0; k < w; k++) {
+        const x = right ? w - 1 - k : k;
+        if (flip) {
+          for (let y = 0; y < h; y++) this.updateCell(x, y);
+        } else {
+          for (let y = h - 1; y >= 0; y--) this.updateCell(x, y);
+        }
       }
     }
 

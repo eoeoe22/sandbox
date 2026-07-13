@@ -14,8 +14,16 @@
     $gridDims as gridDims,
     $borderMode as borderMode,
     $smokeLevel as smokeLevel,
+    $gravityDir as gravityDir,
+    $gravityStrength as gravityStrength,
+    $cellScale as cellScale,
+    $heatOverlay as heatOverlay,
+    $gridDivision as gridDivision,
+    $particleCount as particleCount,
+    $frameMs as frameMs,
     requestClear,
     requestStep,
+    resetSettings,
   } from '../state/store';
   import {
     BRUSH_MIN,
@@ -23,7 +31,15 @@
     OVERWRITE_LEVELS,
     OVERWRITE_LEVEL_MIN,
     OVERWRITE_LEVEL_MAX,
+    SIM_SPEEDS,
+    TICK_HZ,
+    GRAVITY_STRENGTH_MIN,
+    GRAVITY_STRENGTH_MAX,
+    GRAVITY_STRENGTH_STEP,
+    CELL_SCALES,
+    GRID_DIVISIONS,
   } from '../game/config';
+  import type { GravityDir } from '../game/config';
   import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
@@ -57,6 +73,52 @@
     }, 2000);
   }
 
+  // 기본값 복원 is also a two-step confirm (it resets every setting at once), the
+  // same arm-then-confirm pattern as 전체 지우기. It never touches the world or
+  // the user's favorites — only the sliders/toggles in this sheet.
+  let resetArmed = $state(false);
+  let resetTimer: ReturnType<typeof setTimeout> | undefined;
+  function handleReset(): void {
+    if (resetArmed) {
+      clearTimeout(resetTimer);
+      resetArmed = false;
+      resetSettings();
+      return;
+    }
+    resetArmed = true;
+    resetTimer = setTimeout(() => {
+      resetArmed = false;
+    }, 2000);
+  }
+
+  // Gravity direction buttons: an arrow icon + label per direction, laid out to
+  // read like a D-pad (up on top, left/right in the middle, down on the bottom).
+  const GRAVITY_DIRS_META: { dir: GravityDir; icon: string; label: string }[] = [
+    { dir: 'up', icon: 'bi-arrow-up', label: '위' },
+    { dir: 'left', icon: 'bi-arrow-left', label: '왼쪽' },
+    { dir: 'right', icon: 'bi-arrow-right', label: '오른쪽' },
+    { dir: 'down', icon: 'bi-arrow-down', label: '아래' },
+  ];
+  const gravityPct = $derived(Math.round($gravityStrength * 100));
+
+  // Resolution slider works on the index into CELL_SCALES (coarse→fine); the
+  // slider position maps directly to a scale value.
+  const cellScaleIndex = $derived(Math.max(0, CELL_SCALES.indexOf($cellScale)));
+  function setCellScaleFromIndex(i: number): void {
+    const scale = CELL_SCALES[Math.min(CELL_SCALES.length - 1, Math.max(0, i))];
+    if (scale !== undefined) cellScale.set(scale);
+  }
+
+  // Expanded HUD readouts.
+  const fillPct = $derived.by(() => {
+    const total = $gridDims.w * $gridDims.h;
+    return total > 0 ? Math.round(($particleCount / total) * 1000) / 10 : 0;
+  });
+  // Actual step rate: the loop's interval is 2000/(TICK_HZ*mult) ms, i.e.
+  // TICK_HZ*mult/2 Hz — so ×1 is 30 Hz (half of TICK_HZ), ×2 is 60, ×4 is 120.
+  const simHz = $derived(Math.round((TICK_HZ * $simSpeed) / 2));
+  const gridLabel = $derived($gridDivision === 0 ? '끔' : `${$gridDivision}`);
+
   // Mobile settings sheet has no X button — tapping the toggle again or anywhere
   // outside the sheet closes it. The toggle's own click runs before this bubbles
   // to window, so `toggleEl` guards against it reopening/closing twice. On desktop
@@ -78,7 +140,10 @@
     sheetOpen = false;
   }
 
-  onDestroy(() => clearTimeout(clearTimer));
+  onDestroy(() => {
+    clearTimeout(clearTimer);
+    clearTimeout(resetTimer);
+  });
 </script>
 
 <svelte:window onpointerdown={handleWindowPointerDown} />
@@ -219,27 +284,52 @@
     </div>
 
     <div class="field">
-      <span class="field-label">속도: {$simSpeed === 2 ? '×2 (원래 속도)' : '×1 (기본)'}</span>
-      <div class="seg" role="group" aria-label="시뮬레이션 속도">
-        <button
-          class="ctl"
-          class:active={$simSpeed === 1}
-          onclick={() => simSpeed.set(1)}
-          aria-pressed={$simSpeed === 1}
-          title="기본 속도 (원래 속도의 절반)"
-        >
-          ×1
-        </button>
-        <button
-          class="ctl"
-          class:active={$simSpeed === 2}
-          onclick={() => simSpeed.set(2)}
-          aria-pressed={$simSpeed === 2}
-          title="2배 속도 (원래 속도)"
-        >
-          ×2
-        </button>
+      <span class="field-label">
+        속도: ×{$simSpeed}{#if $simSpeed === 1}<span class="wheel-hint"> (기본)</span>{/if}
+      </span>
+      <div class="seg speed-seg" role="group" aria-label="시뮬레이션 속도">
+        {#each SIM_SPEEDS as sp (sp)}
+          <button
+            class="ctl"
+            class:active={$simSpeed === sp}
+            onclick={() => simSpeed.set(sp)}
+            aria-pressed={$simSpeed === sp}
+            title={`시뮬레이션 속도 ×${sp}`}
+          >
+            ×{sp}
+          </button>
+        {/each}
       </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">
+        중력: {GRAVITY_DIRS_META.find((g) => g.dir === $gravityDir)?.label}
+        · {gravityPct === 0 ? '무중력' : `세기 ${gravityPct}%`}
+      </span>
+      <div class="gravity-pad" role="group" aria-label="중력 방향">
+        {#each GRAVITY_DIRS_META as g (g.dir)}
+          <button
+            class={`ctl grav-${g.dir}`}
+            class:active={$gravityDir === g.dir}
+            onclick={() => gravityDir.set(g.dir)}
+            aria-pressed={$gravityDir === g.dir}
+            aria-label={`중력 ${g.label}`}
+            title={`중력을 ${g.label}쪽으로`}
+          >
+            <i class={`bi ${g.icon}`} aria-hidden="true"></i>
+          </button>
+        {/each}
+      </div>
+      <input
+        type="range"
+        aria-label="중력 세기"
+        min={GRAVITY_STRENGTH_MIN}
+        max={GRAVITY_STRENGTH_MAX}
+        step={GRAVITY_STRENGTH_STEP}
+        value={$gravityStrength}
+        oninput={(e) => gravityStrength.set(+e.currentTarget.value)}
+      />
     </div>
 
     <label class="field">
@@ -386,6 +476,68 @@
       </div>
     </div>
 
+    <label class="field">
+      <span class="field-label">
+        해상도: {$gridDims.w}×{$gridDims.h}
+        <span class="wheel-hint"> (셀 크기)</span>
+      </span>
+      <input
+        type="range"
+        min="0"
+        max={CELL_SCALES.length - 1}
+        step="1"
+        value={cellScaleIndex}
+        oninput={(e) => setCellScaleFromIndex(+e.currentTarget.value)}
+      />
+      <div class="range-ends" aria-hidden="true">
+        <span>저해상도</span>
+        <span>고해상도</span>
+      </div>
+    </label>
+
+    <div class="field">
+      <span class="field-label">온도 열지도</span>
+      <div class="seg" role="group" aria-label="온도 열지도 오버레이">
+        <button
+          class="ctl"
+          class:active={!$heatOverlay}
+          onclick={() => heatOverlay.set(false)}
+          aria-pressed={!$heatOverlay}
+          title="일반 물질 색으로 표시합니다"
+        >
+          <i class="bi bi-palette" aria-hidden="true"></i>
+          <span class="label">일반</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$heatOverlay}
+          onclick={() => heatOverlay.set(true)}
+          aria-pressed={$heatOverlay}
+          title="온도에 따라 색을 입혀 열화상처럼 표시합니다"
+        >
+          <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+          <span class="label">열지도</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">격자 표시: {gridLabel}</span>
+      <div class="seg grid-seg" role="group" aria-label="격자 표시 간격">
+        {#each GRID_DIVISIONS as gd (gd)}
+          <button
+            class="ctl"
+            class:active={$gridDivision === gd}
+            onclick={() => gridDivision.set(gd)}
+            aria-pressed={$gridDivision === gd}
+            title={gd === 0 ? '격자선을 표시하지 않습니다' : `${gd}칸마다 격자선을 표시합니다`}
+          >
+            {gd === 0 ? '끔' : gd}
+          </button>
+        {/each}
+      </div>
+    </div>
+
     <div class="field">
       <span class="field-label">혼합 브러시</span>
       <BlendBrush />
@@ -393,13 +545,28 @@
 
     <div class="hud">
       <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
+      <span title="현재 배치된 입자 수 (빈칸 제외)">입자 {$particleCount.toLocaleString()}</span>
+      <span title="격자에서 입자가 차지하는 비율">채움 {fillPct}%</span>
       <span
         class="fps"
         title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
       >
         {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
       </span>
+      <span title="프레임 렌더링에 걸린 평균 시간">{$frameMs} ms/프레임</span>
+      <span title="현재 시뮬레이션 갱신 속도 (속도 배율 × 기본 틱레이트)">시뮬 {simHz} Hz</span>
     </div>
+
+    <button
+      class="ctl reset-btn"
+      class:armed={resetArmed}
+      onclick={handleReset}
+      aria-label={resetArmed ? '기본값 복원 확인' : '모든 설정 기본값 복원'}
+      title="모든 설정을 기본값으로 되돌립니다 (월드·즐겨찾기는 유지)"
+    >
+      <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+      <span class="label">{resetArmed ? '기본값으로 되돌릴까요?' : '설정 기본값 복원'}</span>
+    </button>
 
     <p class="hint">
       캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.
@@ -587,6 +754,56 @@
     color: #6a6a78;
     font-size: 11px;
     line-height: 1.4;
+  }
+
+  /* Speed (5 steps) and grid (5 steps) segmented controls pack more buttons into
+     the same width, so tighten the padding and shrink the numeric labels. */
+  .speed-seg .ctl,
+  .grid-seg .ctl {
+    padding: 6px 2px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Gravity direction as a D-pad: up on top, left/right flanking an empty
+     center, down on the bottom — so the layout itself reads as a direction. */
+  .gravity-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-areas:
+      '. up .'
+      'left . right'
+      '. down .';
+    gap: 6px;
+  }
+  .gravity-pad .ctl {
+    padding: 6px 0;
+  }
+  .grav-up {
+    grid-area: up;
+  }
+  .grav-left {
+    grid-area: left;
+  }
+  .grav-right {
+    grid-area: right;
+  }
+  .grav-down {
+    grid-area: down;
+  }
+
+  /* Min/max captions under a range slider. */
+  .range-ends {
+    display: flex;
+    justify-content: space-between;
+    color: #8a8a99;
+    font-size: 10px;
+  }
+
+  /* Restore-defaults button: full width, armed amber like 전체 지우기. */
+  .reset-btn {
+    width: 100%;
+    justify-content: center;
   }
 
   /* The settings sheet header (label only) + toggle are mobile-only affordances. */

@@ -216,6 +216,22 @@ export interface Material {
    */
   porous?: boolean;
   /**
+   * 액체 겹침 계수 (liquid-overlap coefficient), 0..1 — for a Powder, the fraction
+   * of its grains that may host a 겹침 (overlap) liquid; the rest are "겹침 불가"
+   * and block it. A blocked grain doesn't swallow the liquid it sinks through
+   * (so the level rises) and doesn't let a soaking/percolating liquid pass (so
+   * the flow is impeded) — which is what keeps sand poured into water from
+   * overlapping *completely* (no level change, no drag) while still letting the
+   * unblocked grains drain water on down through the bed. The split is per-grain
+   * and stable: it's read off each grain's fixed `tint` byte, so a given grain
+   * is consistently blocking or hosting for its whole life. 1 = every grain
+   * hosts (the old full-overlap behavior), 0 = none do (acts like a plain solid
+   * bed). Omitted ⇒ POWDER_LIQUID_OVERLAP_DEFAULT (see config.ts). Only read for
+   * Powders; Mesh uses its own dark-checkerboard split instead (see SimContext
+   * canOverlapAt), and plain porous solids (Turbine) always host.
+   */
+  liquidOverlap?: number;
+  /**
    * A second packed color woven through the base `color` as a positional
    * checkerboard, so the material reads as a grid/lattice screen rather than a
    * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw

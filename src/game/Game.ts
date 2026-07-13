@@ -15,7 +15,15 @@ import {
   $borderMode,
   $simSpeed,
   $smokeLevel,
+  $gravityDir,
+  $gravityStrength,
+  $cellScale,
+  $heatOverlay,
+  $gridDivision,
+  $particleCount,
+  $frameMs,
 } from '../state/store';
+import { EMPTY } from './engine/types';
 import './materials'; // register all materials (side effect)
 
 /**
@@ -40,6 +48,10 @@ export function startGame(canvas: HTMLCanvasElement): void {
   initSettingsPersistence();
 
   const layout = new SandboxLayout();
+  // Seed the resolution multiplier from the restored setting before the first
+  // grid is derived, so a saved cellScale takes effect on the initial world
+  // rather than only on the next live change.
+  layout.setCellScale($cellScale.get());
   layout.setViewport(canvas.clientWidth, canvas.clientHeight);
 
   // Restore the previous session's world. The saved cells are copied into the
@@ -105,6 +117,26 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // immediately, seeding the engine with the restored/default level on startup.
   $smokeLevel.subscribe((level) => sim.setSmokeLevel(level));
 
+  // Gravity direction + strength. Both feed one engine call, so re-apply from a
+  // small helper whenever either changes. subscribe fires immediately, seeding
+  // the engine (and the scan orientation) with the restored/default values.
+  const applyGravity = (): void => sim.setGravity($gravityDir.get(), $gravityStrength.get());
+  $gravityDir.subscribe(applyGravity);
+  $gravityStrength.subscribe(applyGravity);
+
+  // Temperature heat-map overlay and reference-grid overlay — pure render modes.
+  // subscribe fires immediately, seeding the renderer with the restored values.
+  $heatOverlay.subscribe((on) => renderer.setHeatOverlay(on));
+  $gridDivision.subscribe((cells) => renderer.setGridDivision(cells));
+
+  // Cell size / resolution. Changing it re-derives the grid from the current
+  // canvas and resizes in place (content anchored bottom-left, like a window
+  // resize). listen (not subscribe): the initial layout was already derived from
+  // the restored cellScale (seeded above), so only later user changes re-resize.
+  $cellScale.listen((scale) => {
+    if (layout.setCellScale(scale)) applyLayout();
+  });
+
   // UI command signals.
   $clearSignal.listen(() => grid.clear());
   $stepSignal.listen(() => {
@@ -121,13 +153,24 @@ export function startGame(canvas: HTMLCanvasElement): void {
   });
 
   // Fixed simulation step interval, driven by the UI speed multiplier. TICK_HZ
-  // is full speed (×2); the default (×1) runs at half that, so the interval is
-  // 2000/(TICK_HZ*mult) ms. subscribe fires immediately, seeding stepMs with the
-  // restored/default speed, and updates it live when the user toggles ×1/×2.
+  // is full speed (the ×2 step); ×1 runs at half that, so the interval is
+  // 2000/(TICK_HZ*mult) ms. The range spans ×0.25 (slow) to ×4 (double the
+  // original full rate; the loop substeps to keep up). subscribe fires
+  // immediately, seeding stepMs with the restored/default speed.
   let stepMs = 2000 / (TICK_HZ * $simSpeed.get());
   $simSpeed.subscribe((mult) => {
     stepMs = 2000 / (TICK_HZ * mult);
   });
+
+  // Count occupied (non-Empty) cells for the HUD particle readout. One linear
+  // pass — only run on the HUD cadence (a couple of times a second), not every
+  // frame, so it never touches the frame budget.
+  const countParticles = (): number => {
+    const cells = grid.cells;
+    let n = 0;
+    for (let i = 0; i < cells.length; i++) if (cells[i] !== EMPTY) n++;
+    return n;
+  };
   let last = performance.now();
   let acc = 0;
   let frames = 0;
@@ -138,11 +181,16 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // so the HUD can show the device's real capability.
   let fpsSmooth = 0;
   let fpsPeak = 0;
+  let frameMsSmooth = 0;
   let lastAutosave = last;
 
   const frame = (now: number): void => {
-    acc += now - last;
+    const dt = now - last;
+    acc += dt;
     last = now;
+    // Smooth the raw frame delta the same way FPS is smoothed, so the HUD's
+    // millisecond readout doesn't jitter frame to frame.
+    frameMsSmooth = frameMsSmooth === 0 ? dt : frameMsSmooth * 0.8 + dt * 0.2;
 
     // Re-stamp the held brush so a stationary press keeps painting/heating
     // (pointermove stops firing once the pointer stops moving). While running we
@@ -175,6 +223,8 @@ export function startGame(canvas: HTMLCanvasElement): void {
       if (fpsSmooth > fpsPeak) fpsPeak = fpsSmooth;
       $fps.set(Math.round(fpsSmooth));
       $fpsPeak.set(Math.round(fpsPeak));
+      $frameMs.set(Math.round(frameMsSmooth * 10) / 10);
+      $particleCount.set(countParticles());
       frames = 0;
       fpsLast = now;
     }

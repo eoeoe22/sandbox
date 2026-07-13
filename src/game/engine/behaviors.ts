@@ -65,6 +65,13 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
   sim.moveDiagonalDown(x, y);
 }
 
+/** Fraction of the gas diffusion rate that liquids get: like a gas, a liquid
+ *  spreads more as gravity weakens (see updateGas), but only creeps — a globule
+ *  drifting apart in zero-g, not a billowing cloud — so it diffuses at this
+ *  fraction of the gas rate. 0 at full gravity either way, so the default flow
+ *  is unchanged. */
+const LIQUID_DIFFUSE_SCALE = 0.35;
+
 /** Liquid: fall, else flow diagonally down, else seep into a powder bed below
  *  as a 겹침 overlap fluid (SimContext.soakDown — chance-gated, so a pool sinks
  *  into sand gradually), else spread sideways to level out. The soak comes
@@ -74,6 +81,13 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
  *  frozen solid — it stays put until it warms up. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.isFrozen(x, y)) return;
+  // Slow thermal diffusion, scaled by how weak gravity is — a fraction of the
+  // gas rate so liquids creep rather than billow. 0 at full gravity (default
+  // flow unchanged); toward zero gravity a liquid slowly spreads in all
+  // directions instead of freezing in place. A frozen liquid (above) never
+  // reaches here, so chilled puddles stay put.
+  const diffuse = (1 - sim.gravityStrength) * LIQUID_DIFFUSE_SCALE;
+  if (diffuse > 0 && sim.chance(diffuse) && sim.moveRandom(x, y)) return;
   if (sim.moveDown(x, y)) return;
   if (sim.moveDiagonalDown(x, y)) return;
   if (sim.soakDown(x, y)) return;
@@ -90,8 +104,18 @@ const GAS_WOBBLE_CHANCE = 0.4; // try the diagonal step before the straight one
 
 /** Gas: rise, else drift diagonally up, else spread sideways — with a chance
  *  to stall (slower climb) and a chance to wobble diagonally instead of
- *  going straight up (less of a rigid vertical column). */
+ *  going straight up (less of a rigid vertical column).
+ *
+ *  Thermal diffusion is layered on top and scaled by how weak gravity is:
+ *  buoyancy (rising) needs gravity, but the random thermal spreading of a gas
+ *  does not. At full gravity (strength 1) the diffusion chance is 0, so this is
+ *  exactly the old buoyant behavior; as gravity weakens the gas increasingly
+ *  spreads in every direction instead of only rising, and at zero gravity it
+ *  diffuses isotropically rather than freezing in place like a solid. */
 export function updateGas(x: number, y: number, sim: SimContext): void {
+  const diffuse = 1 - sim.gravityStrength;
+  if (diffuse > 0 && sim.chance(diffuse) && sim.moveRandom(x, y)) return;
+
   if (sim.chance(GAS_STALL_CHANCE)) return;
   if (sim.chance(GAS_WOBBLE_CHANCE)) {
     if (sim.moveDiagonalUp(x, y)) return;
