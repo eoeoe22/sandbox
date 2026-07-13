@@ -27,8 +27,8 @@ import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
-import { createRubberBall, createBlueDrum, pickBody, distanceToBody } from '../engine/objects';
-import type { SimBody } from '../engine/objects';
+import { createRubberBall, createDrum, pickBody, distanceToBody } from '../engine/objects';
+import type { SimBody, DrumFill } from '../engine/objects';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -279,8 +279,12 @@ export class PointerPainter {
       const m = getMaterial(hit);
       if (m.isWall || m.phase === Phase.Solid) return;
     }
-    if ($selectedObject.get() === 'drum') {
-      this.grid.objects.push(createBlueDrum(cx + 0.5, cy + 0.5));
+    const kind = $selectedObject.get();
+    if (kind === 'drum' || kind === 'oildrum' || kind === 'aciddrum') {
+      // All three drums share one capsule; only the fill (spill contents + tint)
+      // differs. 빈 드럼통 → empty, 원유 드럼통 → oil, 산 드럼통 → acid.
+      const fill: DrumFill = kind === 'oildrum' ? 'oil' : kind === 'aciddrum' ? 'acid' : 'empty';
+      this.grid.objects.push(createDrum(cx + 0.5, cy + 0.5, fill));
     } else {
       const r = Math.max(2, $brushSize.get());
       this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));

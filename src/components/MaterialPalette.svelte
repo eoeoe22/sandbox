@@ -25,11 +25,14 @@
   // The 독립 오브젝트 layer isn't made of materials, so it gets its own palette
   // tab appended after the material categories. Picking an item here switches to
   // the 'object' tool, and a click on the canvas spawns that object (see
-  // PointerPainter). Only the rubber ball exists this milestone.
+  // PointerPainter). The three drums share one capsule and differ only in what
+  // they spill when destroyed; the swatch color matches each drum's sprite.
   const OBJECT_KEY = '오브젝트';
   const OBJECT_ITEMS: { key: ObjectKind; label: string; color: string; shape: 'ball' | 'drum' }[] = [
     { key: 'ball', label: '고무공', color: '#d84652', shape: 'ball' },
     { key: 'drum', label: '빈 드럼통', color: '#2563eb', shape: 'drum' },
+    { key: 'oildrum', label: '원유 드럼통', color: '#7a5430', shape: 'drum' },
+    { key: 'aciddrum', label: '산 드럼통', color: '#86c23a', shape: 'drum' },
   ];
 
   // --- Search --------------------------------------------------------------

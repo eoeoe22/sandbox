@@ -5,6 +5,8 @@ import { launchDebris } from '../materials/debris';
 import { BLAST } from '../materials/blast';
 import { MOLTEN_METAL } from '../materials/moltenmetal';
 import { METAL_POWDER } from '../materials/metalpowder';
+import { OIL } from '../materials/oil';
+import { ACID } from '../materials/acid';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -104,6 +106,16 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
  */
 export type DrumState = 'intact' | 'destroyed' | 'melted';
 
+/**
+ * What a drum is filled with. An empty drum (빈 드럼통) spills nothing; a filled
+ * one pours out its liquid contents when destroyed (파괴 시 쏟아짐) — 원유 드럼통
+ * gushes Crude Oil, 산 드럼통 gushes Acid — but is otherwise identical to the
+ * empty drum in every physical respect (나머지는 드럼통과 동일). Kept separate
+ * from `kind` so all drums share one capsule physics path; only the spill
+ * byproduct and the sprite tint vary by fill.
+ */
+export type DrumFill = 'empty' | 'oil' | 'acid';
+
 export interface SimCapsule {
   kind: 'drum';
   /** Center position (float, grid coordinates). */
@@ -131,6 +143,9 @@ export interface SimCapsule {
   /** Lifecycle: intact until a trigger removes it. Both non-intact states are
    *  terminal — the object is dropped from the array the tick it reaches one. */
   state: DrumState;
+  /** What the drum is carrying — what (if anything) it spills when destroyed.
+   *  Does not affect physics; see DrumFill and spawnFillSpill. */
+  fill: DrumFill;
   /** Consecutive ticks the footprint has sampled above the melt threshold, so a
    *  brief brush with heat doesn't melt it — only sustained exposure does. */
   heatTicks: number;
@@ -168,14 +183,18 @@ export const DRUM_MELT_TEMP = 1200;
 export const DRUM_MELT_TICKS = 24;
 
 /**
- * Build an empty blue drum centered at (x,y), at rest and upright. Mass is the
- * capsule area × density; the moment of inertia uses the bounding-box rectangle
- * approximation I = m(w² + h²)/12 (w=2·radius, h=2·(halfLength+radius)) — a
- * homogeneous-capsule近似 that's cheap and stable, not a real capsule integral.
+ * Build a drum centered at (x,y), at rest and upright, carrying `fill` (default
+ * an empty blue drum). Mass is the capsule area × density; the moment of inertia
+ * uses the bounding-box rectangle approximation I = m(w² + h²)/12 (w=2·radius,
+ * h=2·(halfLength+radius)) — a homogeneous-capsule近似 that's cheap and stable,
+ * not a real capsule integral. The fill is inert to physics (every drum weighs
+ * and moves the same, 나머지는 드럼통과 동일); it only decides the destruction
+ * spill and the sprite tint.
  */
-export function createBlueDrum(
+export function createDrum(
   x: number,
   y: number,
+  fill: DrumFill = 'empty',
   radius = DRUM_RADIUS,
   halfLength = DRUM_HALF_LENGTH,
 ): SimCapsule {
@@ -202,6 +221,7 @@ export function createBlueDrum(
     restitution: DRUM_RESTITUTION,
     state: 'intact',
     heatTicks: 0,
+    fill,
   };
 }
 
@@ -1111,6 +1131,53 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
   }
 }
 
+/** Per-cell chance a filled drum floods a footprint cell with its contents. Far
+ *  denser than the hollow shell's sparse metal (0.3): a full drum is brim-full of
+ *  liquid, so it gushes a proper puddle (쏟아짐), not a scatter. */
+const FILL_SPILL_CHANCE = 0.7;
+
+/** The liquid a filled drum pours out when destroyed, or null for an empty drum
+ *  (which spills nothing). 원유 드럼통 → Crude Oil, 산 드럼통 → Acid. */
+function fillSpillId(fill: DrumFill): number | null {
+  if (fill === 'oil') return OIL.id;
+  if (fill === 'acid') return ACID.id;
+  return null;
+}
+
+/**
+ * Spill a filled drum's liquid contents across its footprint when it's destroyed
+ * — the 기름/산 that pours out (쏟아짐). Floods the cells the drum occupied with
+ * its fill liquid, but only over air/loose matter — never over solid terrain (the
+ * object layer stays read-only over solids, same guard as the metal byproducts).
+ * The liquid is spawned at ambient temperature, so a spill into a hot zone (an
+ * oil drum melted in lava) heats up and ignites/boils on its own the next few
+ * ticks rather than vanishing on contact. An empty drum has no fill: no-op.
+ */
+function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
+  const id = fillSpillId(o.fill);
+  if (id === null) return;
+  const r = o.radius;
+  const r2 = r * r;
+  const [ax, ay, bx, by] = capsuleEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      const cell = ctx.get(cx, cy);
+      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
+      if (!ctx.chance(FILL_SPILL_CHANCE)) continue;
+      ctx.spawn(cx, cy, id);
+    }
+  }
+}
+
 /**
  * Advance one drum a tick — physics only. Same order as the ball (gravity →
  * buoyancy/drag → integrate → grid collision) with rotation integrated alongside
@@ -1408,10 +1475,12 @@ function resolveObjectPairs(objects: SimBody[]): void {
  * drop it (byproducts, if any, already spawned).
  */
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
- *  scattered Metal Powder, a rubber ball leaves nothing behind. */
+ *  scattered Metal Powder and, if it was carrying anything, gushes its contents
+ *  (원유/산) across the wreckage; a rubber ball leaves nothing behind. */
 function destroyByproduct(o: SimBody, ctx: SimContext): void {
   if (o.kind === 'drum') {
-    spawnDrumDebris(o, ctx);
+    spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
+    spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
     o.state = 'destroyed';
   }
 }
@@ -1436,6 +1505,7 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
     o.heatTicks++;
     if (o.heatTicks >= ticksNeeded) {
       if (o.kind === 'drum') {
+        spawnFillSpill(o, ctx); // contents pour out, then the shell melts over them
         spawnMoltenPuddle(o, ctx);
         o.state = 'melted';
       }
