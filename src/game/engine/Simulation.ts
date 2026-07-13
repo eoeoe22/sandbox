@@ -11,6 +11,7 @@ import {
   type GravityDir,
 } from '../config';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
+import { stepObjects } from './objects';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -114,6 +115,11 @@ export class Simulation {
         }
       }
     }
+
+    // Free rigid objects (the 독립 오브젝트 layer) advance in their own pass,
+    // after the CA scan and fully separate from it — they carry their own
+    // continuous position/velocity and only read the grid (see engine/objects.ts).
+    stepObjects(g.objects, this.ctx);
 
     this.driftBackground();
   }

@@ -1,5 +1,6 @@
 import { EMPTY } from './types';
 import { AMBIENT_TEMP } from '../config';
+import type { SimObject } from './objects';
 
 /** A Uint8Array of `n` random bytes — used to seed the positional background
  *  tint field with an initial texture (see Grid.bgTint). */
@@ -105,6 +106,17 @@ export class Grid {
    */
   bgTint: Uint8Array;
 
+  /**
+   * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
+   * position/velocity/physics, living *beside* the cell grid rather than in it
+   * (see engine/objects.ts). Stepped by Simulation as a pass separate from the
+   * CA scan, drawn by the renderer as an overlay that never touches the cell
+   * buffer, and hit-tested against the grid read-only. Empty in a world with no
+   * objects; not tied to the flat TypedArrays, so a future Worker port would
+   * carry this list alongside the transferred buffers.
+   */
+  objects: SimObject[] = [];
+
   // Still reserved for a future per-cell velocity field (see ember.ts, which
   // currently packs velocity into `temp`).
   // vel: Int8Array;
@@ -195,6 +207,7 @@ export class Grid {
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
     this.tint.fill(0);
+    this.objects.length = 0; // free objects live beside the grid; clear them too
   }
 
   /**
