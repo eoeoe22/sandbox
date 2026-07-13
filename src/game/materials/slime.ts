@@ -17,7 +17,6 @@ import { SMOKE } from './smoke';
 // Fire is its bane: an open flame beside it (or enough heat) melts the goo, and it
 // boils away as a puff of Smoke. So the way to deal with a spreading slime is to
 // burn it back.
-const FLOW_CHANCE = 0.14; // very viscous — holds a mound, oozes slowly
 const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more slime
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
@@ -49,7 +48,8 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly.
+  updateLiquid(x, y, sim);
 }
 
 export const SLIME = register({
@@ -61,6 +61,11 @@ export const SLIME = register({
   // it drinks the water around it.
   density: 4,
   category: '생명',
+  // Thick, gooey ooze — holds a mound instead of spreading flat.
+  viscosity: 0.86,
+  // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
+  // (high coefficient of restitution) before it settles (see debris.ts 탄성).
+  elasticity: 0.92,
   thermal: { conductivity: 0.2 },
   update: updateSlime,
 });

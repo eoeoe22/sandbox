@@ -13,7 +13,6 @@ import { DIRT } from './dirt';
 // leveling out like water. Away from any water it slowly dries back into solid
 // Dirt, so mud is the transient wet state between dry dirt and a puddle. Denser
 // than water (5.5), so a mud layer sinks beneath standing water.
-const FLOW_CHANCE = 0.2;
 const DRY_CHANCE = 0.01;
 
 function updateMud(x: number, y: number, sim: SimContext): void {
@@ -35,7 +34,8 @@ function updateMud(x: number, y: number, sim: SimContext): void {
     return;
   }
 
-  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+  // Thick and sluggish: `viscosity` holds a soft mound rather than leveling out.
+  updateLiquid(x, y, sim);
 }
 
 export const MUD = register({
@@ -45,6 +45,8 @@ export const MUD = register({
   color: rgb(84, 60, 40),
   density: 5.5,
   category: '액체',
+  // Sluggish — slumps and oozes, holding a soft mound.
+  viscosity: 0.82,
   thermal: { conductivity: 0.35 },
   // Freezes into hard, immobile frozen ground just below zero.
   freeze: { temp: -3 },

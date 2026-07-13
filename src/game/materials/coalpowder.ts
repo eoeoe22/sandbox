@@ -90,6 +90,8 @@ export const COAL_POWDER = register({
   density: 5,
   combustible: true,
   category: '제련',
+  // Angular, dusty grains grip hard — a coal-dust heap piles steeply (마찰).
+  friction: 0.48,
   thermal: { conductivity: 0.2 },
   update: updateCoalPowder,
 });

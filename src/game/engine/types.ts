@@ -248,8 +248,117 @@ export interface Material {
    * rendering hint — the simulation still treats the cell as this material.
    */
   renderAsAux?: boolean;
+  /**
+   * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
+   * spreading sideways to level out, so a thick liquid holds a slumping mound
+   * before it slowly flattens. It never blocks straight-down fall (a viscous blob
+   * still drops under gravity — 점성 흐름 개선), only the lateral leveling and
+   * diagonal creep, so honey/mud/slime ooze instead of racing flat like water.
+   * 0 (or omitted) ⇒ frictionless flow (Water). Read by updateLiquid; ignored for
+   * non-liquids. Replaces the old per-material `chance(FLOW)` throttle.
+   */
+  viscosity?: number;
+  /**
+   * 마찰·안식각 (friction / angle of repose), 0..1 — for a Powder, the per-tick
+   * chance a grain *grips* instead of tumbling diagonally off a slope, so a
+   * higher value piles steeper (a taller angle of repose). It never blocks
+   * straight-down fall, only the diagonal slide, so grains still settle but hold
+   * a sharper cone. 0 (or omitted) ⇒ the loosest pile (grains always slide).
+   * Read by updatePowder; ignored for non-powders.
+   */
+  friction?: number;
+  /**
+   * 탄성 (elasticity / coefficient of restitution), 0..1 — how much speed a
+   * ballistic fragment of this material keeps when it ricochets off a solid
+   * (see debris.ts / the explosion pressure wave). 1 = a perfectly bouncy grain
+   * that ping-pongs around for its whole flight; low = a dead thud that settles
+   * on first impact. Omitted ⇒ a middling default restitution (DEBRIS_RESTITUTION),
+   * so existing ejecta are unchanged; set it high for a springy material (Slime)
+   * or low for something that lands flat. Only read while the material is airborne
+   * as blast/pressure debris — a resting cell has no velocity to bounce.
+   */
+  elasticity?: number;
+  /**
+   * 표면장력 (surface tension), 0..1 — for a Liquid, the per-tick chance a
+   * poorly-connected (edge/straggler) cell pulls itself toward wherever it would
+   * touch more of its own kind, so droplets round up and thin films pinch off
+   * into beads instead of smearing flat. Only cells with few same-material
+   * neighbors move (the bulk of a pool is left to flow normally), and a cell only
+   * ever moves to *gain* contact, so it converges rather than jittering. 0 (or
+   * omitted) ⇒ no cohesion. Read by updateLiquid; ignored for non-liquids.
+   */
+  surfaceTension?: number;
+  /**
+   * 파티클 수명 (generalized lifetime): the cell has a finite life and, each tick,
+   * decays with probability ≈ 1/`ticks` into `into` (default Empty) — the
+   * memoryless model Smoke always used, lifted to a tag so any ephemeral particle
+   * (a puff, a spark, a transient reaction product) expires the same way without
+   * its own countdown code. Stateless (no `aux` used), so it never collides with
+   * a material's own aux state. The engine applies it before the material's
+   * `update`; a cell that decays this tick skips its update. Omit for a permanent
+   * material.
+   */
+  life?: { ticks: number; into?: MatId };
+  /**
+   * Declarative contact reactions (see ReactionRule / engine/reactions.ts). The
+   * engine runs a single contact pass each tick before this material's `update`:
+   * a cell that reacts is transformed and marked moved (so it skips its own update
+   * that tick). Omit for a material with no simple 2-body reactions; complex
+   * multi-stage behavior still lives in `update`.
+   */
+  reactions?: ReactionRule[];
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
+}
+
+/**
+ * A single declarative contact-reaction rule (see engine/reactions.ts). Attached
+ * to a material via `Material.reactions`, it describes a simple two-body
+ * substitution "when a cell of this material touches a cell of `with`, they
+ * become something else" — the same scan-order-independent, moved-guarded
+ * discipline the `flammable`/`conductive` tags use, generalized into data. Only
+ * *simple* 2-body swaps live here; multi-stage behaviors (blast survey,
+ * distillation, the combustion front) stay in each material's `update`.
+ *
+ * The rule fires from the cell that *declares* it: when a declaring cell finds a
+ * `with` neighbor and all gates pass, `produce` replaces the declaring cell and
+ * `otherBecomes` (if set) replaces the neighbor. Both cells are marked moved so
+ * neither re-reacts this tick (no double reaction, no scan-order runaway).
+ */
+export interface ReactionRule {
+  /** The neighbor material this cell reacts on contact with (8-neighborhood). */
+  with: MatId;
+  /** What the *declaring* cell becomes. Omit to leave it unchanged (e.g. a
+   *  catalytic surface that only transforms the other cell / emits a byproduct). */
+  produce?: MatId;
+  /** What the *neighbor* (`with`) cell becomes. Omit to leave it unchanged — used
+   *  for a catalyst/surface that isn't consumed, or a one-sided transformation. */
+  otherBecomes?: MatId;
+  /** Per-tick, per-contact chance the reaction fires (0..1). Omit ⇒ 1 (every
+   *  contact). Lower values make a reaction creep forward gradually. */
+  probability?: number;
+  /** Only react when the declaring cell's temperature is ≥ this (activation heat). */
+  tempMin?: number;
+  /** Only react when the declaring cell's temperature is ≤ this (a reaction that
+   *  stops once things get too hot — e.g. a dissolution that gives way to
+   *  decomposition). */
+  tempMax?: number;
+  /**
+   * Heat released (>0, exothermic) or absorbed (<0, endothermic) by the reaction,
+   * added to both reacting cells' temperature. This is the knob behind thermal
+   * runaway (an exothermic reaction that heats its neighbors into reacting too)
+   * and self-cooling (an endothermic one, e.g. an instant cold pack).
+   */
+  heat?: number;
+  /** A gas/particle emitted into an adjacent empty cell when the reaction fires
+   *  (O₂ off a decomposition, etc.). Skipped silently if the cell is boxed in. */
+  byproduct?: MatId;
+  /** If a cell of this id sits in the neighborhood, the reaction runs faster
+   *  (probability × `catalystFactor`) without the catalyst being consumed — the
+   *  textbook catalyst. Only meaningful alongside `probability` < 1. */
+  catalyst?: MatId;
+  /** Probability multiplier applied while `catalyst` is present (default 4). */
+  catalystFactor?: number;
 }
 
 /** The Empty (background) material id. Always 0. */

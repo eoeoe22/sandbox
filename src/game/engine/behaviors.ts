@@ -1,6 +1,7 @@
 import type { SimContext } from './SimContext';
 import { Phase } from './types';
-import { DIR4 } from './directions';
+import { DIR4, DIR8 } from './directions';
+import { getMaterial } from '../materials/registry';
 
 // Default per-cell update rules keyed by Phase. A material without its own
 // `update` inherits one of these, so most materials are pure data (one file,
@@ -37,9 +38,14 @@ export function diffuseWith(
   return false;
 }
 
-/** Powder: fall straight down, else tumble diagonally (forms piles). */
+/** Powder: fall straight down, else tumble diagonally (forms piles). A material's
+ *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
+ *  grips the slope and stays put more often, so the pile stands steeper — while
+ *  the straight-down fall is never blocked (grains still settle). */
 export function updatePowder(x: number, y: number, sim: SimContext): void {
   if (sim.moveDown(x, y)) return;
+  const friction = getMaterial(sim.get(x, y)).friction;
+  if (friction !== undefined && friction > 0 && sim.chance(friction)) return;
   sim.moveDiagonalDown(x, y);
 }
 
@@ -72,15 +78,72 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
  *  is unchanged. */
 const LIQUID_DIFFUSE_SCALE = 0.35;
 
-/** Liquid: fall, else flow diagonally down, else seep into a powder bed below
- *  as a 겹침 overlap fluid (SimContext.soakDown — chance-gated, so a pool sinks
- *  into sand gradually), else spread sideways to level out. The soak comes
- *  before the sideways step on purpose: after it, a droplet skating along a dry
- *  bed with open air on both sides would keep sliding forever and never soak
- *  in. A liquid chilled to/below its freezing point (see Material.freeze) is
- *  frozen solid — it stays put until it warms up. */
+/** A liquid cell is "well connected" (part of a bulk pool, not an edge droplet)
+ *  once it has at least this many same-material 8-neighbors. Surface tension only
+ *  acts on cells below this, so it rounds up stragglers and thin films into beads
+ *  without freezing the interior of a pool in place. */
+const COHESION_STABLE = 4;
+
+/**
+ * Surface-tension cohesion move for a poorly-connected liquid cell: with
+ * probability `st`, a straggler (fewer than COHESION_STABLE same-material
+ * neighbors) hops into the adjacent empty cell where it would touch the MOST of
+ * its own kind, so isolated cells ball up into rounded droplets and thin films
+ * pinch off. It only ever moves to strictly *gain* contact, so the process
+ * converges (no perpetual jitter) and never smears a liquid apart. Returns true
+ * if it moved. A frozen liquid doesn't bead (it's solid).
+ */
+function surfaceTensionMove(x: number, y: number, sim: SimContext, st: number): boolean {
+  if (sim.isFrozen(x, y) || !sim.chance(st)) return false;
+  const id = sim.get(x, y);
+  let myContact = 0;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === id) myContact++;
+  }
+  if (myContact >= COHESION_STABLE) return false; // in the bulk — let it flow normally
+
+  let bestX = -1;
+  let bestY = -1;
+  let bestContact = myContact; // only relocate if it strictly improves contact
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny) || !sim.isEmpty(nx, ny)) continue;
+    let c = 0;
+    for (const [ex, ey] of DIR8) {
+      const ax = nx + ex;
+      const ay = ny + ey;
+      // Count same-material neighbors of the candidate cell, excluding this very
+      // cell (we'd be vacating it) so the score reflects the contact it gains.
+      if ((ax !== x || ay !== y) && sim.inBounds(ax, ay) && sim.get(ax, ay) === id) c++;
+    }
+    if (c > bestContact) {
+      bestContact = c;
+      bestX = nx;
+      bestY = ny;
+    }
+  }
+  if (bestX < 0) return false;
+  sim.swap(x, y, bestX, bestY);
+  return true;
+}
+
+/** Liquid: (surface tension pulls stragglers into beads first, then) fall, else
+ *  flow diagonally down, else seep into a powder bed below as a 겹침 overlap fluid
+ *  (SimContext.soakDown — chance-gated, so a pool sinks into sand gradually), else
+ *  spread sideways to level out. The soak comes before the sideways step on
+ *  purpose: after it, a droplet skating along a dry bed with open air on both
+ *  sides would keep sliding forever and never soak in. `viscosity` (점도) gates
+ *  only the lateral spread (diagonal creep + sideways leveling), so a thick liquid
+ *  still falls under gravity but holds a slumping mound instead of racing flat. A
+ *  liquid chilled to/below its freezing point (see Material.freeze) is frozen
+ *  solid — it stays put until it warms up. */
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.isFrozen(x, y)) return;
+  const m = getMaterial(sim.get(x, y));
+  if (m.surfaceTension !== undefined && surfaceTensionMove(x, y, sim, m.surfaceTension)) return;
   // Slow thermal diffusion, scaled by how weak gravity is — a fraction of the
   // gas rate so liquids creep rather than billow. 0 at full gravity (default
   // flow unchanged); toward zero gravity a liquid slowly spreads in all
@@ -89,6 +152,9 @@ export function updateLiquid(x: number, y: number, sim: SimContext): void {
   const diffuse = (1 - sim.gravityStrength) * LIQUID_DIFFUSE_SCALE;
   if (diffuse > 0 && sim.chance(diffuse) && sim.moveRandom(x, y)) return;
   if (sim.moveDown(x, y)) return;
+  // Viscosity resists lateral spreading (leveling), not the straight fall above:
+  // a thick liquid that can't drop this tick just holds, so a poured blob mounds.
+  if (m.viscosity !== undefined && m.viscosity > 0 && sim.chance(m.viscosity)) return;
   if (sim.moveDiagonalDown(x, y)) return;
   if (sim.soakDown(x, y)) return;
   sim.moveSideways(x, y);

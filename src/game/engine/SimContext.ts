@@ -294,6 +294,22 @@ export class SimContext {
     return this.grid.get(x, y) === EMPTY;
   }
 
+  /** Mark a cell as already processed this tick, so it isn't updated or reacted
+   *  again in the same scan. The reaction pass (engine/reactions.ts) uses this on
+   *  both cells it transforms — the same guarantee `spawn`/`swap` bake in for
+   *  their writes — so a fresh reaction product can't reverse-react or be
+   *  reprocessed within the tick it formed. Bounds-checked. */
+  markMoved(x: number, y: number): void {
+    if (this.inBounds(x, y)) this.grid.moved[this.grid.idx(x, y)] = 1;
+  }
+
+  /** True if the cell already moved/was processed this tick (see Grid.moved).
+   *  A Conveyor reads this so a row of belts advances a carried cell exactly one
+   *  step per tick instead of relaying it clear across in a single scan. */
+  hasMoved(x: number, y: number): boolean {
+    return this.inBounds(x, y) && this.grid.moved[this.grid.idx(x, y)] === 1;
+  }
+
   /**
    * True if the liquid at (x,y) is at or below its freezing point (see
    * Material.freeze). A frozen liquid acts solid: its own update stops flowing

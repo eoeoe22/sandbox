@@ -149,11 +149,17 @@ function passableForDebris(sim: SimContext, nx: number, ny: number): boolean {
   return id === EMPTY || getMaterial(id).phase !== Phase.Solid;
 }
 
-/** Reflect a velocity component off a solid, shedding ~1/4 of its speed so the
- *  ricochet settles over a few bounces instead of ringing forever (small speeds
- *  decay to a stop). */
-function bounceV(vQ: number): number {
-  return clampV(-(((vQ * 3) / 4) | 0));
+/** Default coefficient of restitution for a fragment whose carried material sets
+ *  no `elasticity` — sheds ~1/4 of its speed on a bounce, the ricochet feel every
+ *  pre-existing blast was tuned against. */
+const DEBRIS_RESTITUTION = 0.75;
+
+/** Reflect a velocity component off a solid, keeping the fraction `restitution`
+ *  of its speed (the carried material's 탄성): a springy grain (near 1) ping-pongs
+ *  for its whole flight, a dead one settles after a bounce or two as small speeds
+ *  decay to a stop. */
+function bounceV(vQ: number, restitution: number): number {
+  return clampV(-((vQ * restitution) | 0));
 }
 
 function updateDebris(x: number, y: number, sim: SimContext): void {
@@ -171,6 +177,10 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
     sim.spawn(x, y, origId);
     return;
   }
+  // The carried material's 탄성 (elasticity) sets how bouncy this fragment is when
+  // it ricochets off a solid — a springy material keeps most of its speed, a dull
+  // one thuds and settles. Read from the origin id it's carrying in aux.
+  const restitution = getMaterial(origId).elasticity ?? DEBRIS_RESTITUTION;
   let vxQ = st.vxQ;
   let vyQ = clampV(st.vyQ + GRAVITY_Q); // brisk gravity every tick → a quick arc
   if (Math.abs(vxQ) <= STILL_Q && Math.abs(vyQ) <= STILL_Q) {
@@ -198,8 +208,8 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
         sim.set(cx, cy, EMPTY); // flew out of an open border — the grain leaves the world
         return;
       }
-      if (nx !== cx) vxQ = bounceV(vxQ); // solid container edge: ricochet back in
-      if (ny !== cy) vyQ = bounceV(vyQ);
+      if (nx !== cx) vxQ = bounceV(vxQ, restitution); // solid container edge: ricochet back in
+      if (ny !== cy) vyQ = bounceV(vyQ, restitution);
       break;
     }
     if (passableForDebris(sim, nx, ny)) {
@@ -209,8 +219,8 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
       continue;
     }
     // A solid it can't pass: ricochet off the blocked axes and stop this tick.
-    if (nx !== cx) vxQ = bounceV(vxQ);
-    if (ny !== cy) vyQ = bounceV(vyQ);
+    if (nx !== cx) vxQ = bounceV(vxQ, restitution);
+    if (ny !== cy) vyQ = bounceV(vyQ, restitution);
     break;
   }
   sim.setTemp(cx, cy, encodeFlight(st.life - 1, clampV(vxQ), clampV(vyQ)));

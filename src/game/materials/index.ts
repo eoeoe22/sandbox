@@ -96,6 +96,8 @@ import { SUGAR } from './sugar';
 import { CHLORINE } from './chlorine';
 import { HELIUM } from './helium';
 import { AEROGEL } from './aerogel';
+import { AMMONIUM_NITRATE } from './ammoniumnitrate';
+import { CONVEYOR } from './conveyor';
 
 export {
   EMPTY_MAT,
@@ -191,6 +193,8 @@ export {
   CHLORINE,
   HELIUM,
   AEROGEL,
+  AMMONIUM_NITRATE,
+  CONVEYOR,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -274,6 +278,7 @@ export const MATERIALS = [
   CLUSTER,
   NAPALM,
   C4,
+  AMMONIUM_NITRATE,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
@@ -296,6 +301,7 @@ export const MATERIALS = [
   WHITE_PHOSPHORUS,
   AMBER,
   AEROGEL,
+  CONVEYOR,
   SEED,
   YEAST,
   SLIME,
