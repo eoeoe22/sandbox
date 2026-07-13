@@ -5,11 +5,13 @@
   import {
     $selectedMaterial as selected,
     $tool as tool,
+    $selectedObject as selectedObject,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
     recordMaterialUse,
     toggleFavorite,
   } from '../state/store';
+  import type { ObjectKind } from '../state/store';
   import { MATERIALS, getMaterial } from '../game/materials';
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoryOf } from '../game/materials/categories';
@@ -25,7 +27,10 @@
   // the 'object' tool, and a click on the canvas spawns that object (see
   // PointerPainter). Only the rubber ball exists this milestone.
   const OBJECT_KEY = '오브젝트';
-  const OBJECT_ITEMS = [{ key: 'ball', label: '고무공', color: '#d84652' }];
+  const OBJECT_ITEMS: { key: ObjectKind; label: string; color: string; shape: 'ball' | 'drum' }[] = [
+    { key: 'ball', label: '고무공', color: '#d84652', shape: 'ball' },
+    { key: 'drum', label: '빈 드럼통', color: '#2563eb', shape: 'drum' },
+  ];
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
@@ -206,10 +211,11 @@
     toggleFavorite(id);
   }
 
-  // Picking an object switches to the 'object' placement tool (a canvas click
-  // then spawns it). Mirrors pick() for materials — closes the flyout.
-  function pickObject(): void {
+  // Picking an object selects it and switches to the 'object' placement tool (a
+  // canvas click then spawns it). Mirrors pick() for materials — closes the flyout.
+  function pickObject(kind: ObjectKind): void {
     clearTimeout(closeTimer);
+    selectedObject.set(kind);
     tool.set('object');
     pinned = null;
     hovered = null;
@@ -366,11 +372,11 @@
         <button
           class="chip"
           role="menuitem"
-          class:active={$tool === 'object'}
-          onclick={() => pickObject()}
+          class:active={$tool === 'object' && $selectedObject === it.key}
+          onclick={() => pickObject(it.key)}
           title={it.label}
         >
-          <span class="swatch ball" style={`background:${it.color}`}></span>
+          <span class="swatch" class:ball={it.shape === 'ball'} class:drum={it.shape === 'drum'} style={`background:${it.color}`}></span>
           <span class="label">{it.label}</span>
         </button>
       {/each}
@@ -649,9 +655,14 @@
     border: 1px solid rgba(255, 255, 255, 0.15);
     flex: none;
   }
-  /* An object swatch is a ball, drawn round to read as the object it places. */
+  /* An object swatch hints at the object it places: a ball is round, a drum is
+     a tall rounded rectangle (its capsule/upright silhouette). */
   .chip .swatch.ball {
     border-radius: 50%;
+  }
+  .chip .swatch.drum {
+    width: 14px;
+    border-radius: 5px / 7px;
   }
   .chip .label {
     max-width: 100%;

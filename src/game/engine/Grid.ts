@@ -1,6 +1,6 @@
 import { EMPTY } from './types';
 import { AMBIENT_TEMP } from '../config';
-import type { SimObject } from './objects';
+import type { SimBody } from './objects';
 
 /** A Uint8Array of `n` random bytes — used to seed the positional background
  *  tint field with an initial texture (see Grid.bgTint). */
@@ -115,7 +115,7 @@ export class Grid {
    * objects; not tied to the flat TypedArrays, so a future Worker port would
    * carry this list alongside the transferred buffers.
    */
-  objects: SimObject[] = [];
+  objects: SimBody[] = [];
 
   // Still reserved for a future per-cell velocity field (see ember.ts, which
   // currently packs velocity into `temp`).

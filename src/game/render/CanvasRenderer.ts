@@ -5,6 +5,7 @@ import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
+import { DRUM_SPRITE, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -367,27 +368,92 @@ export class CanvasRenderer implements Renderer {
    * a plain disc fill — no sprite, no rotation, no gloss.
    */
   private rasterizeObjects(grid: Grid, buf: Uint32Array): void {
+    for (const o of grid.objects) {
+      if (o.kind === 'ball') this.rasterizeBall(grid, buf, o);
+      else this.rasterizeDrum(grid, buf, o);
+    }
+  }
+
+  /** Rasterize one rubber ball: fill each cell whose center is inside the disc. */
+  private rasterizeBall(grid: Grid, buf: Uint32Array, o: { x: number; y: number; r: number }): void {
     const w = grid.width;
     const h = grid.height;
-    for (const o of grid.objects) {
-      const r = o.r;
-      const r2 = r * r;
-      // Bounding box in cells, clamped to the grid.
-      let x0 = Math.floor(o.x - r);
-      let x1 = Math.ceil(o.x + r);
-      let y0 = Math.floor(o.y - r);
-      let y1 = Math.ceil(o.y + r);
-      if (x0 < 0) x0 = 0;
-      if (y0 < 0) y0 = 0;
-      if (x1 > w) x1 = w;
-      if (y1 > h) y1 = h;
-      for (let cy = y0; cy < y1; cy++) {
-        const dy = cy + 0.5 - o.y; // pixel-center sample point
-        const row = cy * w;
-        for (let cx = x0; cx < x1; cx++) {
-          const dx = cx + 0.5 - o.x;
-          if (dx * dx + dy * dy <= r2) buf[row + cx] = BALL_COLOR;
-        }
+    const r = o.r;
+    const r2 = r * r;
+    let x0 = Math.floor(o.x - r);
+    let x1 = Math.ceil(o.x + r);
+    let y0 = Math.floor(o.y - r);
+    let y1 = Math.ceil(o.y + r);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    for (let cy = y0; cy < y1; cy++) {
+      const dy = cy + 0.5 - o.y; // pixel-center sample point
+      const row = cy * w;
+      for (let cx = x0; cx < x1; cx++) {
+        const dx = cx + 0.5 - o.x;
+        if (dx * dx + dy * dy <= r2) buf[row + cx] = BALL_COLOR;
+      }
+    }
+  }
+
+  /**
+   * Rasterize one drum: rotate the pixel-art sprite by the capsule's `angle` and
+   * sample it per grid cell. For each cell in the drum's rotated bounding box we
+   * take the vector from center, un-rotate it into the sprite's upright frame,
+   * map to a sprite pixel, and write that pixel's color (skipping transparent
+   * ones). Nearest-neighbor sampling with no anti-aliasing, so the drum reads as
+   * crisp pixel art in the same grain as the cells — the rubber ball's philosophy
+   * plus rotation. The sprite's 24×32 box maps onto the physics capsule's box
+   * (2·radius wide × 2·(halfLength+radius) tall), so display and collision agree.
+   */
+  private rasterizeDrum(
+    grid: Grid,
+    buf: Uint32Array,
+    o: {
+      x: number;
+      y: number;
+      angle: number;
+      halfLength: number;
+      radius: number;
+    },
+  ): void {
+    const w = grid.width;
+    const h = grid.height;
+    const halfW = o.radius; // half the drum's short (width) extent, in cells
+    const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
+    // Bounding box that contains the drum at any rotation (a circle of the long
+    // half-extent), clamped to the grid.
+    const reach = halfL;
+    let x0 = Math.floor(o.x - reach);
+    let x1 = Math.ceil(o.x + reach);
+    let y0 = Math.floor(o.y - reach);
+    let y1 = Math.ceil(o.y + reach);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    const cos = Math.cos(o.angle);
+    const sin = Math.sin(o.angle);
+    // Sprite-pixels per grid cell along each local axis (display box → sprite box).
+    const sxScale = DRUM_SPRITE_W / (2 * halfW);
+    const syScale = DRUM_SPRITE_H / (2 * halfL);
+    for (let cy = y0; cy < y1; cy++) {
+      const wy = cy + 0.5 - o.y;
+      const row = cy * w;
+      for (let cx = x0; cx < x1; cx++) {
+        const wx = cx + 0.5 - o.x;
+        // Un-rotate into the drum's local frame: local-x across width (unit
+        // (cos,−sin)), local-y along length (unit (sin,cos)).
+        const lx = wx * cos - wy * sin;
+        const ly = wx * sin + wy * cos;
+        // Local coords → sprite pixel (sprite center at its box center).
+        const spx = DRUM_SPRITE_W * 0.5 + lx * sxScale;
+        const spy = DRUM_SPRITE_H * 0.5 + ly * syScale;
+        if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
+        const color = DRUM_SPRITE[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
+        if (color !== 0) buf[row + cx] = color; // 0 = transparent sprite pixel
       }
     }
   }

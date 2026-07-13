@@ -10,6 +10,7 @@ import {
   $blendBrush,
   $inspect,
   $inspectData,
+  $selectedObject,
 } from '../../state/store';
 import {
   BRUSH_MIN,
@@ -26,7 +27,7 @@ import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
-import { createRubberBall } from '../engine/objects';
+import { createRubberBall, createBlueDrum } from '../engine/objects';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -198,20 +199,26 @@ export class PointerPainter {
     this.paint(cx, cy);
   }
 
-  /** Spawn a rubber ball centered on the clicked cell. Radius follows the brush
-   *  size (min 2 so it's never a single pixel). The 독립 오브젝트 layer lives
-   *  beside the grid, so this just appends to grid.objects — no cells written. */
+  /** Spawn the selected free object centered on the clicked cell. A ball's radius
+   *  follows the brush size (min 2 so it's never a single pixel); a drum uses its
+   *  own medium capsule size (its sprite dictates the aspect). The 독립 오브젝트
+   *  layer lives beside the grid, so this just appends to grid.objects — no cells
+   *  written. */
   private spawnObject(cx: number, cy: number): void {
     if (!this.grid.inBounds(cx, cy)) return;
-    // Don't drop a ball whose center lands inside solid terrain (walls/solids) —
-    // it would spawn embedded. A click on open ground/fluid/powder is fine.
+    // Don't drop an object whose center lands inside solid terrain (walls/solids)
+    // — it would spawn embedded. A click on open ground/fluid/powder is fine.
     const hit = this.grid.get(cx, cy);
     if (hit !== 0) {
       const m = getMaterial(hit);
       if (m.isWall || m.phase === Phase.Solid) return;
     }
-    const r = Math.max(2, $brushSize.get());
-    this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
+    if ($selectedObject.get() === 'drum') {
+      this.grid.objects.push(createBlueDrum(cx + 0.5, cy + 0.5));
+    } else {
+      const r = Math.max(2, $brushSize.get());
+      this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
+    }
   }
 
   /** The in-bounds cells the brush covers at (cx,cy), packed flat as

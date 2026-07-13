@@ -69,6 +69,15 @@ export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'o
 export const $tool = atom<Tool>('material');
 
 /**
+ * Which free object the 'object' tool spawns on a canvas click — the object
+ * layer's answer to `$selectedMaterial`. The 독립 오브젝트 palette tab sets this
+ * when an item is picked; PointerPainter reads it to build the right body (a
+ * rubber ball or a blue drum). See MaterialPalette and PointerPainter.
+ */
+export type ObjectKind = 'ball' | 'drum';
+export const $selectedObject = atom<ObjectKind>('ball');
+
+/**
  * The 돋보기 (inspect) overlay toggle. Independent of `$tool` — it can be on
  * alongside any brush — this is a separate mode that, while on, surveys the
  * cells under the brush and reports what's there (material breakdown, counts,
