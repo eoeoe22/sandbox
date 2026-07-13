@@ -5,18 +5,48 @@ import { getMaterial } from '../materials/registry';
 import {
   OBJECT_AIR_DENSITY,
   OBJECT_AIR_DRAG,
+  OBJECT_BUOY_GAIN,
+  OBJECT_DISPLACE_SEARCH_R,
   OBJECT_FRICTION,
   OBJECT_GRAVITY,
   OBJECT_MAX,
   OBJECT_MAX_SPEED,
   OBJECT_REST_EPSILON,
+  OBJECT_SPLASH_MAX_DROPLETS,
+  OBJECT_SPLASH_SPEED,
   OBJECT_SUBSTEP,
   OBJECT_SUBSTEP_MAX,
 } from '../config';
 import { ObjState, type SandboxObject, type SavedObject } from './types';
 import { getObjectDef, type RegisteredObjectDef } from './registry';
-import { coreDistance, coreHalfLen, corePointY, distToCore, forEachCellNear, halfHeight } from './footprint';
+import {
+  containsPoint,
+  coreDistance,
+  coreHalfLen,
+  corePointY,
+  distToCore,
+  forEachCellNear,
+  halfHeight,
+} from './footprint';
 import { updateObjectState } from './events';
+
+/** 8방향, 각도 순 (변위 탐색의 ±45° 회전이 인덱스 ±1로 떨어지게). */
+const DIRS8: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+];
+
+/** 단위 벡터를 가장 가까운 8방향 인덱스로. */
+function dirIndex(x: number, y: number): number {
+  const a = Math.atan2(y, x); // -π..π
+  return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
+}
 
 /**
  * 독립 오브젝트 레이어: 셀 그리드와 나란히 살면서 매 틱 O(오브젝트 수 × 발자국)
@@ -151,9 +181,11 @@ export class ObjectLayer {
 
     // --- 힘: 중력·부력을 한 항으로 (아르키메데스 — 주변 평균 밀도가 자기
     // 밀도보다 크면 계수가 음수가 되어 중력 반대 방향으로 뜬다). 중력 세기
-    // 0이면 부력도 0 — 무중력에선 뜰 이유도 없다.
+    // 0이면 부력도 0 — 무중력에선 뜰 이유도 없다. 액체에 잠긴 만큼 부력
+    // 증폭(OBJECT_BUOY_GAIN)이 걸린다: 평형점은 그대로, 복원만 빠르게.
     const buoy = 1 - avgDensity / def.density;
-    const acc = OBJECT_GRAVITY * ctx.gravityStrength * buoy;
+    const gain = 1 + (OBJECT_BUOY_GAIN - 1) * liquidFrac;
+    const acc = OBJECT_GRAVITY * ctx.gravityStrength * buoy * gain;
     o.vx += ctx.gravityX * acc;
     o.vy += ctx.gravityY * acc;
 
@@ -174,6 +206,13 @@ export class ObjectLayer {
     const n = Math.min(OBJECT_SUBSTEP_MAX, Math.max(1, Math.ceil(maxV / OBJECT_SUBSTEP)));
     let collided = false;
     let impact = 0;
+    // 입수 스플래시 예산: 공기에 있다가 이 틱에 빠르게 액체를 때렸으면,
+    // 변위될 액체 몇 셀이 옆이 아니라 수면 위로 튄다 (재배치 — 질량 보존).
+    const speedNow = Math.hypot(o.vx, o.vy);
+    let splashBudget =
+      !o.wasInLiquid && liquidFrac > 0.2 && speedNow >= OBJECT_SPLASH_SPEED
+        ? OBJECT_SPLASH_MAX_DROPLETS
+        : 0;
     for (let s = 0; s < n; s++) {
       o.x += o.vx / n;
       o.y += o.vy / n;
@@ -188,6 +227,7 @@ export class ObjectLayer {
       const hit = this.collideSolids(ctx, o, def);
       if (hit > 0) collided = true;
       if (hit > impact) impact = hit;
+      splashBudget = this.displaceFluids(ctx, o, def, splashBudget);
     }
 
     // --- 정지 처리: 고체에 닿은 틱에 이 속도 미만이면 멈춘 것으로 본다 —
@@ -357,6 +397,120 @@ export class ObjectLayer {
         }
       }
     }
+  }
+
+  /**
+   * 제한적 양방향의 두 번째 축 — 발자국 액체 밀어내기. 발자국 안의 (얼지 않은)
+   * 액체 셀을 몸체 바깥의 빈 칸으로 swap 해서, CA에는 보이지 않는 오브젝트가
+   * 물에게는 불투과 몸체로 읽히게 한다: 잠긴 만큼 주변 수위가 실제로 올라간다
+   * (아르키메데스). 전부 swap이라 질량은 절대 변하지 않고, 밀어낼 곳이 없으면
+   * (빽빽한 물속) 그대로 둔다 — "잠김"은 부력 샘플이 이미 읽는 상태다.
+   *
+   * 탐색: 셀에서 코어 반대(바깥) 방향과 그 ±45°, 그리고 중력 반대 방향으로
+   * 최대 OBJECT_DISPLACE_SEARCH_R 셀 걷는다. 발자국 안이나 액체/기체는 지나
+   * 가고(수면까지 이어 걷기), 고체/가루/동결에서 끊는다. private pushAside
+   * (SimContext)와 같은 규율: 빈 칸에만 swap, 재귀 없음.
+   *
+   * `splashBudget` > 0이면 (고속 입수 틱) 그 수만큼의 변위가 옆이 아니라
+   * 수면 위 2~4셀·수평 ±3셀의 빈 칸으로 간다 — 물보라. 남은 예산을 돌려준다.
+   */
+  private displaceFluids(
+    ctx: SimContext,
+    o: SandboxObject,
+    def: RegisteredObjectDef,
+    splashBudget: number,
+  ): number {
+    const gx = ctx.gravityX;
+    const gy = ctx.gravityY;
+    forEachCellNear(o.x, o.y, def.shape, 0, ctx.width, ctx.height, (cx, cy) => {
+      const id = ctx.get(cx, cy);
+      if (id === EMPTY) return;
+      const m = getMaterial(id);
+      if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) return;
+      // 스플래시 우선: 수면 위로 던질 빈 칸을 찾으면 예산을 쓴다.
+      if (splashBudget > 0 && this.trySplash(ctx, o, def, cx, cy, gx, gy)) {
+        splashBudget--;
+        return;
+      }
+      this.tryVacate(ctx, o, def, cx, cy, gx, gy);
+    });
+    return splashBudget;
+  }
+
+  /** 변위 대상 액체 셀 하나를 몸체 바깥 빈 칸으로 swap. 성공 여부 반환. */
+  private tryVacate(
+    ctx: SimContext,
+    o: SandboxObject,
+    def: RegisteredObjectDef,
+    cx: number,
+    cy: number,
+    gx: number,
+    gy: number,
+  ): boolean {
+    // 바깥(코어 반대) 방향 — 셀이 코어 위에 정확히 얹혔으면 중력 반대로.
+    const hl = coreHalfLen(def.shape);
+    const ax = cx + 0.5 - o.x;
+    const ay = cy + 0.5 - corePointY(cy + 0.5, o.y, hl);
+    const away = Math.hypot(ax, ay) > 1e-6 ? dirIndex(ax, ay) : dirIndex(-gx, -gy);
+    const flip = Math.random() < 0.5 ? 1 : -1;
+    const up = dirIndex(-gx, -gy);
+    const tried = [away, (away + flip + 8) % 8, (away - flip + 8) % 8, up];
+    // 발자국 안을 지나는 걸음은 탐색 예산을 쓰지 않는다 — 캡슐 바닥 셀도
+    // 몸통을 관통해 반대편/수면 쪽 빈 칸에 닿을 수 있다. 전체 걸음은 형태
+    // 지름 + 예산을 덮는 상수로 캡.
+    const maxSteps = 2 * Math.ceil(halfHeight(def.shape)) + OBJECT_DISPLACE_SEARCH_R + 2;
+    for (const di of tried) {
+      const [dx, dy] = DIRS8[di];
+      let outside = 0;
+      let tx = cx;
+      let ty = cy;
+      for (let step = 0; step < maxSteps && outside < OBJECT_DISPLACE_SEARCH_R; step++) {
+        tx += dx;
+        ty += dy;
+        if (!ctx.inBounds(tx, ty)) break;
+        // 발자국 안은 통과해서 계속 바깥을 찾는다.
+        if (containsPoint(tx + 0.5, ty + 0.5, o.x, o.y, def.shape)) continue;
+        outside++;
+        const tid = ctx.get(tx, ty);
+        if (tid === EMPTY) {
+          ctx.swap(cx, cy, tx, ty);
+          return true;
+        }
+        const tm = getMaterial(tid);
+        // 액체/기체 몸체는 이어 걷어 수면(빈 칸)까지 가 본다; 고체류에서 끊는다.
+        if (tm.phase !== Phase.Liquid && tm.phase !== Phase.Gas) break;
+        if (ctx.isFrozen(tx, ty)) break;
+      }
+    }
+    return false;
+  }
+
+  /** 입수 물보라: 변위 액체 셀을 수면 위(중력 반대 2~4셀, 수평 ±3셀)의 빈
+   *  칸으로 swap. 스폰이 아니라 재배치라 질량이 보존된다. */
+  private trySplash(
+    ctx: SimContext,
+    o: SandboxObject,
+    def: RegisteredObjectDef,
+    cx: number,
+    cy: number,
+    gx: number,
+    gy: number,
+  ): boolean {
+    // 중력 수직축 (수평 흩뿌림 방향).
+    const px = -gy;
+    const py = gx;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const upN = 2 + ((Math.random() * 3) | 0);
+      const side = ((Math.random() * 7) | 0) - 3;
+      const tx = Math.round(cx - gx * upN + px * side);
+      const ty = Math.round(cy - gy * upN + py * side);
+      if (!ctx.inBounds(tx, ty)) continue;
+      if (containsPoint(tx + 0.5, ty + 0.5, o.x, o.y, def.shape)) continue;
+      if (ctx.get(tx, ty) !== EMPTY) continue;
+      ctx.swap(cx, cy, tx, ty);
+      return true;
+    }
+    return false;
   }
 
   /** 이 셀이 오브젝트를 막는가: Solid/Powder, 동결 액체. (액체/기체는 매질.) */
