@@ -80,11 +80,21 @@ function applyReaction(
   // Transform the partner cell (a non-self write, so it must be marked moved —
   // that's exactly what spawn() is for, but we want to keep the cell's own temp
   // for the heat delta, so use set()+markMoved like the self cell).
-  if (rule.otherBecomes !== undefined && rule.otherBecomes !== otherId) {
-    sim.set(nx, ny, rule.otherBecomes);
+  const partnerTransformed = rule.otherBecomes !== undefined && rule.otherBecomes !== otherId;
+  if (partnerTransformed) {
+    sim.set(nx, ny, rule.otherBecomes!);
   }
   if (heat !== 0 && sim.get(nx, ny) !== EMPTY) sim.setTemp(nx, ny, sim.getTemp(nx, ny) + heat);
-  sim.markMoved(nx, ny);
+  // Guard the partner against same-tick re-processing only when the reaction
+  // actually changed it — or when it declares reactions of its own and could
+  // otherwise run the reverse reaction later in this same scan. An *untouched*
+  // catalyst/surface partner (H2O2's Iron/Yeast) stays unmarked so its own
+  // update still runs this tick: Iron keeps ticking its spark-refractory
+  // countdown and checking its melt point (which the heat just deposited above
+  // feeds into), Yeast keeps growing/falling.
+  if (partnerTransformed || getMaterial(otherId).reactions !== undefined) {
+    sim.markMoved(nx, ny);
+  }
 
   if (rule.byproduct !== undefined) ventByproduct(x, y, sim, rule.byproduct);
 }
@@ -112,6 +122,14 @@ export function tryReact(x: number, y: number, sim: SimContext): boolean {
       const ny = y + dy;
       if (!sim.inBounds(nx, ny)) continue;
       if (sim.get(nx, ny) !== rule.with) continue;
+      // A partner already written/moved this tick is ineligible until the next
+      // one. Without this, a rule whose `produce` equals its own `with` (AN
+      // dissolving to Water beside more AN) would cascade down the scan
+      // direction within a single tick — exactly the scan-order-dependent
+      // multi-cell chain the moved discipline exists to prevent. A just-settled
+      // droplet likewise waits a tick; chains happen across ticks, never as a
+      // same-tick cascade.
+      if (sim.hasMoved(nx, ny)) continue;
 
       let p = rule.probability ?? 1;
       if (rule.catalyst !== undefined && neighborHas(x, y, sim, rule.catalyst)) {
