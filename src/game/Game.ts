@@ -25,6 +25,7 @@ import {
 } from '../state/store';
 import { EMPTY } from './engine/types';
 import './materials'; // register all materials (side effect)
+import './objects'; // register all 오브젝트 types (side effect)
 
 /**
  * Wires the engine, renderer, and input together and drives the main loop on
@@ -78,8 +79,12 @@ export function startGame(canvas: HTMLCanvasElement): void {
     grid.randomizeTints();
   }
   const sim = new Simulation(grid);
+  // 저장된 오브젝트 복원: 셀과 같은 bottom-left 앵커로 옮겨 싣는다. 셀의
+  // resizeFrom 배열 복사가 오브젝트까지 옮겨주지 않으므로 별도 단계다.
+  if (savedWorld?.objects) sim.objects.load(savedWorld.objects, savedWorld.w, savedWorld.h);
   const renderer = new CanvasRenderer(canvas, grid, layout);
-  const painter = new PointerPainter(canvas, grid, layout);
+  renderer.setObjects(sim.objects);
+  const painter = new PointerPainter(canvas, grid, layout, sim.objects);
 
   // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
   // change).
@@ -88,9 +93,15 @@ export function startGame(canvas: HTMLCanvasElement): void {
     $gridDims.set({ w: layout.gw, h: layout.gh });
   };
   // Resize the grid from its own contents, then sync (window resize / layout
-  // switch between the desktop sidebar and mobile bottom bar).
+  // switch between the desktop sidebar and mobile bottom bar). 오브젝트는 셀
+  // 배열 복사에 실려가지 않으므로 같은 bottom-left 규칙으로 직접 재앵커한다.
   const applyLayout = (): void => {
+    const oldW = grid.width;
+    const oldH = grid.height;
     grid.resize(layout.gw, layout.gh);
+    if (grid.width !== oldW || grid.height !== oldH) {
+      sim.objects.reanchor(oldW, oldH, grid.width, grid.height);
+    }
     syncLayoutOutputs();
   };
 
@@ -137,8 +148,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
     if (layout.setCellScale(scale)) applyLayout();
   });
 
-  // UI command signals.
-  $clearSignal.listen(() => grid.clear());
+  // UI command signals. 전체 지우기는 오브젝트 레이어도 함께 비운다.
+  $clearSignal.listen(() => {
+    grid.clear();
+    sim.objects.clear();
+  });
   $stepSignal.listen(() => {
     if (!$running.get()) sim.step();
   });
@@ -146,7 +160,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // Auto-save the world: on a fixed interval from the frame loop (below), and
   // immediately when the tab is hidden or closed so the last few seconds of
   // painting aren't lost. saveWorld itself skips the write when nothing changed.
-  const saveNow = (): void => saveWorld(grid);
+  const saveNow = (): void => saveWorld(grid, sim.objects.serialize());
   window.addEventListener('pagehide', saveNow);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();

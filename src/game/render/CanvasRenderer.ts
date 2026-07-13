@@ -4,6 +4,10 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import type { ObjectLayer } from '../objects/ObjectLayer';
+import { getObjectDef } from '../objects/registry';
+import { coreHalfLen } from '../objects/footprint';
+import { ObjState } from '../objects/types';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -82,6 +86,9 @@ export class CanvasRenderer implements Renderer {
   private heatOverlay = false;
   /** Reference-grid line spacing in cells; 0 = no overlay (see setGridDivision). */
   private gridDivision = 0;
+  /** 독립 오브젝트 레이어 — 셀 버퍼가 아니라 메인 캔버스 위에 벡터(arc/캡슐)로
+   *  그려서 픽셀 입자와 확실히 구분되는 "몸체"로 읽히게 한다 (see setObjects). */
+  private objects: ObjectLayer | null = null;
   /** Packed temperature→colour lookup for the heat overlay, spanning
    *  [HEAT_MIN, HEAT_MAX]° in HEAT_LUT_SIZE steps (built once in the ctor). */
   private heatLut: Uint32Array;
@@ -341,7 +348,71 @@ export class CanvasRenderer implements Renderer {
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
+    if (this.objects && this.objects.list.length > 0) {
+      this.drawObjects(rect.x, rect.y, rect.width / grid.width, scale);
+    }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /** Hand the renderer the live object layer (or null to stop drawing it). */
+  setObjects(layer: ObjectLayer | null): void {
+    this.objects = layer;
+  }
+
+  /**
+   * 오브젝트 오버레이: 그리드 픽셀 위에 원/캡슐을 벡터로 그린다. 그리드→캔버스
+   * 변환은 셀 하나가 `cellPx` 디바이스 픽셀 — 오브젝트 좌표(셀 단위 float)에
+   * 곱하면 된다. 채움+윤곽+작은 하이라이트로 "매끈한 몸체"를 만들고, 심지가
+   * 타는 다이너마이트는 깜빡이는 불씨를, 누출 중인 탱크는 분사선을 얹는다.
+   */
+  private drawObjects(ox: number, oy: number, cellPx: number, scale: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineWidth = Math.max(1, Math.round(1.2 * scale));
+    for (const o of this.objects!.list) {
+      const def = getObjectDef(o.type);
+      if (!def) continue;
+      const px = ox + o.x * cellPx;
+      const py = oy + o.y * cellPx;
+      const pr = def.shape.r * cellPx;
+      const hl = coreHalfLen(def.shape) * cellPx;
+      ctx.beginPath();
+      if (hl > 0) {
+        // 세로 캡슐: 위 반원 → 오른쪽 변 → 아래 반원 → 왼쪽 변.
+        ctx.arc(px, py - hl, pr, Math.PI, 0);
+        ctx.arc(px, py + hl, pr, 0, Math.PI);
+        ctx.closePath();
+      } else {
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = def.cssFill;
+      ctx.strokeStyle = def.cssOutline;
+      ctx.fill();
+      ctx.stroke();
+      // 좌상단의 작은 반사광 — 입자와 다른 "매끈한 강체" 질감의 마감.
+      ctx.beginPath();
+      ctx.arc(px - pr * 0.35, py - hl - pr * 0.35, pr * 0.28, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fill();
+      if (o.state === ObjState.Leaking) {
+        // 누출 분사선: 노즐 방향으로 뻗는 흰 선 (로켓 비행의 시각 신호).
+        ctx.beginPath();
+        ctx.moveTo(px + o.leakDx * pr, py + o.leakDy * (pr + hl));
+        ctx.lineTo(px + o.leakDx * pr * 2.6, py + o.leakDy * (pr + hl) * 1.9);
+        ctx.strokeStyle = 'rgba(235, 245, 255, 0.8)';
+        ctx.stroke();
+        ctx.strokeStyle = def.cssOutline; // 복구
+      } else if (def.triggers?.timerTicks !== undefined && o.state !== ObjState.Defused) {
+        // 타는 심지: 틱 패리티로 깜빡이는 불씨를 머리 위에.
+        if (((o.timer >> 2) & 1) === 0) {
+          ctx.beginPath();
+          ctx.arc(px, py - hl - pr - 2 * scale, Math.max(1.5, pr * 0.3), 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 196, 64, 0.95)';
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
   }
 
   /** Draw a faint reference grid every `gridDivision` cells over the sandbox

@@ -1,5 +1,6 @@
 import {
   $selectedMaterial,
+  $selectedObject,
   $brushSize,
   $brushShape,
   $brushMode,
@@ -23,6 +24,7 @@ import {
   type BlendComponent,
 } from './store';
 import { getMaterial, MATERIALS } from '../game/materials';
+import { getObjectDef, type SavedObject } from '../game/objects';
 import {
   AMBIENT_TEMP,
   BRUSH_MIN,
@@ -39,6 +41,7 @@ import {
   CELL_SCALES,
   GRID_DIVISIONS,
   RECENT_MATERIALS_MAX,
+  OBJECT_MAX,
 } from '../game/config';
 import type { SimSpeed, SmokeLevel } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
@@ -83,7 +86,7 @@ function writeString(key: string, value: string): boolean {
 
 const BRUSH_SHAPES: readonly BrushShape[] = ['circle', 'square'];
 const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
-const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend'];
+const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 
@@ -174,6 +177,10 @@ function hydrateSettings(): void {
   const mat = clampInt(s.selectedMaterial, 0, 255, -1);
   if (mat >= 0 && getMaterial(mat)) $selectedMaterial.set(mat);
 
+  // 선택된 오브젝트도 물질과 같은 규칙: 레지스트리에 아직 있는 id만 복원.
+  const obj = clampInt(s.selectedObject, 0, 255, -1);
+  if (obj >= 0 && getObjectDef(obj)) $selectedObject.set(obj);
+
   $brushSize.set(clampInt(s.brushSize, BRUSH_MIN, BRUSH_MAX, $brushSize.get()));
   $brushShape.set(oneOf(s.brushShape, BRUSH_SHAPES, $brushShape.get()));
   $brushMode.set(oneOf(s.brushMode, BRUSH_MODES, $brushMode.get()));
@@ -217,6 +224,7 @@ function saveSettings(): void {
     SETTINGS_KEY,
     JSON.stringify({
       selectedMaterial: $selectedMaterial.get(),
+      selectedObject: $selectedObject.get(),
       brushSize: $brushSize.get(),
       brushShape: $brushShape.get(),
       brushMode: $brushMode.get(),
@@ -273,6 +281,7 @@ export function initSettingsPersistence(): void {
   // listen (not subscribe): only user changes should write, not the hydration
   // we just performed.
   $selectedMaterial.listen(schedule);
+  $selectedObject.listen(schedule);
   $brushSize.listen(schedule);
   $brushShape.listen(schedule);
   $brushMode.listen(schedule);
@@ -432,6 +441,10 @@ export interface PersistedWorld {
   /** The overlap fluid's parked aux state (Grid.overlayAux), paired with
    *  `overlay`. Undefined on saves that predate it (reloads as zero). */
   overlayAux?: Uint8Array;
+  /** 독립 오브젝트 레이어 (see game/objects). Older saves lack it and reload
+   *  object-less; a corrupt entry list is dropped the same way aux/overlay
+   *  degrade instead of losing the world. */
+  objects?: SavedObject[];
 }
 
 let lastWorldJson: string | null = null;
@@ -441,12 +454,16 @@ let lastWorldJson: string | null = null;
  * pass over the two arrays, and the write is skipped entirely when nothing
  * changed since the last save.
  */
-export function saveWorld(grid: Grid): void {
+export function saveWorld(grid: Grid, objects: readonly SavedObject[] = []): void {
   if (!storageAvailable()) return;
   const json = JSON.stringify({
     v: 1,
     w: grid.width,
     h: grid.height,
+    // 독립 오브젝트 레이어 — 몇십 개뿐이라 평범한 JSON 배열이면 충분하다
+    // (셀처럼 RLE/base64로 짤 이유가 없다). 빈 배열은 키를 생략해 구버전
+    // 세이브와 같은 모양을 유지한다.
+    ...(objects.length > 0 ? { obj: objects } : {}),
     cells: bytesToBase64(encodeCellsRle(grid.cells)),
     temp: bytesToBase64(encodeTempRle(quantizeTemps(grid.cells, grid.temp))),
     // Per-cell material state (Grid.aux) — an ordinary u8 field, RLE'd like
@@ -528,6 +545,10 @@ export function loadWorld(): PersistedWorld | null {
     }
   }
 
+  // 오브젝트 레이어도 같은 관용 규칙: 항목 단위로 검증해 못 믿을 것만 버리고,
+  // 통째로 손상됐으면 undefined로 강등 — 월드 자체는 살아서 로드된다.
+  const objects = parseObjects(j.obj, w, h);
+
   for (let i = 0; i < cells.length; i++) {
     if (!getMaterial(cells[i])) cells[i] = EMPTY;
     if (cells[i] === EMPTY) {
@@ -544,5 +565,41 @@ export function loadWorld(): PersistedWorld | null {
     if (overlayAux && (!overlay || overlay[i] === 0)) overlayAux[i] = 0;
   }
 
-  return { w, h, cells, temp, aux, overlay, overlayAux };
+  return { w, h, cells, temp, aux, overlay, overlayAux, objects };
+}
+
+/**
+ * Validate a persisted 오브젝트 list. Each entry must name a type still in the
+ * object registry, with finite numbers; positions are clamped to the saved
+ * grid's bounds and the count capped at OBJECT_MAX. Malformed input (or a
+ * non-array) yields undefined — the world reloads object-less, mirroring how a
+ * bad aux/overlay decode degrades instead of failing the load.
+ */
+function parseObjects(v: unknown, w: number, h: number): SavedObject[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: SavedObject[] = [];
+  const num = (x: unknown): number | null =>
+    typeof x === 'number' && Number.isFinite(x) ? x : null;
+  for (const item of v) {
+    if (out.length >= OBJECT_MAX) break;
+    if (!item || typeof item !== 'object') continue;
+    const s = item as Record<string, unknown>;
+    const t = num(s.t);
+    const x = num(s.x);
+    const y = num(s.y);
+    if (t === null || x === null || y === null) continue;
+    if (!Number.isInteger(t) || !getObjectDef(t)) continue;
+    out.push({
+      t,
+      x: Math.min(Math.max(0, x), w),
+      y: Math.min(Math.max(0, y), h),
+      vx: num(s.vx) ?? 0,
+      vy: num(s.vy) ?? 0,
+      st: clampInt(s.st, 0, 2, 0),
+      tm: clampInt(s.tm, 0, 100_000, 0),
+      ldx: num(s.ldx) ?? 0,
+      ldy: num(s.ldy) ?? 0,
+    });
+  }
+  return out;
 }

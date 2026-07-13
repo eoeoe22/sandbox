@@ -2,6 +2,7 @@ import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import {
   $selectedMaterial,
+  $selectedObject,
   $brushSize,
   $brushShape,
   $brushMode,
@@ -9,6 +10,9 @@ import {
   $tool,
   $blendBrush,
 } from '../../state/store';
+import type { ObjectLayer } from '../objects/ObjectLayer';
+import { getObjectDef } from '../objects/registry';
+import { coreHalfLen } from '../objects/footprint';
 import {
   BRUSH_MIN,
   BRUSH_MAX,
@@ -81,6 +85,9 @@ export class PointerPainter {
     private canvas: HTMLCanvasElement,
     private grid: Grid,
     private layout: SandboxLayout,
+    /** 독립 오브젝트 레이어 — 'object' 툴의 배치와 지우개의 오브젝트 제거가
+     *  여기로 간다 (see stamp/onDown). */
+    private objects: ObjectLayer,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -103,6 +110,7 @@ export class PointerPainter {
     $brushSize.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $tool.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
+    $selectedObject.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
   }
 
   private lastClientX = 0;
@@ -126,7 +134,12 @@ export class PointerPainter {
    *  normal press paints the selected material, or — for a special brush —
    *  heats/cools or mixes the cells already there. */
   private stamp(cx: number, cy: number): void {
-    if (this.erasing) return this.paint(cx, cy, true);
+    // 지우기는 커서 아래의 오브젝트를 먼저 잡는다: 히트하면 그 스탬프는
+    // 오브젝트 제거로 소비되고 셀은 건드리지 않는다 (내용물 유출 없음).
+    if (this.erasing || $tool.get() === 'erase') {
+      if (this.eraseObjectAt(cx, cy)) return;
+      return this.paint(cx, cy, true);
+    }
     switch ($tool.get()) {
       case 'heat':
         return heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
@@ -134,12 +147,23 @@ export class PointerPainter {
         return heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
       case 'mix':
         return mixCells(this.grid, this.brushCells(cx, cy));
-      case 'erase':
-        return this.paint(cx, cy, true);
       case 'blend':
         return this.paintBlend(cx, cy);
+      case 'object':
+        // 오브젝트는 이산적인 몸체라 붓처럼 붓지 않는다 — pointerdown에서만
+        // 놓는다 (onDown 참조). 드래그/프레임 재스탬프는 no-op.
+        return;
     }
     this.paint(cx, cy);
+  }
+
+  /** 브러시 중심의 오브젝트를 지운다 (셀 좌표 중심점 히트테스트). 지웠으면
+   *  true — 그 스탬프는 소비된 것. */
+  private eraseObjectAt(cx: number, cy: number): boolean {
+    const hit = this.objects.hitTest(cx + 0.5, cy + 0.5);
+    if (hit === -1) return false;
+    this.objects.removeAt(hit);
+    return true;
   }
 
   /** The in-bounds cells the brush covers at (cx,cy), packed flat as
@@ -292,6 +316,12 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     this.px = x;
     this.py = y;
+    // 오브젝트 배치는 클릭 한 번 = 몸체 하나 (stamp의 'object' no-op과 짝).
+    // 실패(막힌 자리/상한)는 브러시의 막힌 칠처럼 조용히 지나간다.
+    if (!this.erasing && $tool.get() === 'object') {
+      this.objects.trySpawn($selectedObject.get(), x + 0.5, y + 0.5);
+      return;
+    }
     this.stamp(x, y);
   };
 
@@ -343,7 +373,19 @@ export class PointerPainter {
     const rad = $brushSize.get();
     const shape = $brushShape.get();
     const cell = this.layout.cell;
-    const size = (2 * rad + 1) * cell;
+    let width = (2 * rad + 1) * cell;
+    let height = width;
+    let round = shape === 'circle';
+    // 오브젝트 툴은 브러시 크기 대신 선택된 오브젝트의 실제 형태를 미리 보여
+    // 준다 — 원은 지름, 캡슐은 지름×전체 높이의 알약형.
+    if ($tool.get() === 'object') {
+      const def = getObjectDef($selectedObject.get());
+      if (def) {
+        width = 2 * def.shape.r * cell;
+        height = 2 * (def.shape.r + coreHalfLen(def.shape)) * cell;
+        round = true;
+      }
+    }
 
     // Only hide the native cursor once the overlay is actually in place, so
     // there's no moment with neither cursor visible.
@@ -351,9 +393,10 @@ export class PointerPainter {
     this.cursorEl.style.display = 'block';
     this.cursorEl.style.left = `${clientX}px`;
     this.cursorEl.style.top = `${clientY}px`;
-    this.cursorEl.style.width = `${size}px`;
-    this.cursorEl.style.height = `${size}px`;
-    this.cursorEl.style.borderRadius = shape === 'circle' ? '50%' : '0';
+    this.cursorEl.style.width = `${width}px`;
+    this.cursorEl.style.height = `${height}px`;
+    // 캡슐은 가로 반지름만큼 둥글리면 알약형이 된다 (50%는 타원이 됨).
+    this.cursorEl.style.borderRadius = round ? `${Math.max(width, 1) / 2}px` : '0';
     // Tint the outline per tool (heat = warm, cool = cold, mix = violet) so the
     // active special brush is obvious; 'material' leaves the default neutral.
     this.cursorEl.dataset.tool = $tool.get();

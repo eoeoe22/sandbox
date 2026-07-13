@@ -1,5 +1,6 @@
 import { atom } from 'nanostores';
 import { SAND, WATER } from '../game/materials';
+import { RUBBER_BALL } from '../game/objects';
 import {
   GRID_W,
   GRID_H,
@@ -56,9 +57,16 @@ export const $brushMode = atom<BrushMode>('full');
  * stay put), and 'erase' clears cells to Empty (the same as a right-button
  * drag, promoted to its own selectable tool). See PointerPainter and config.ts.
  * Selecting a material in the palette snaps this back to 'material'.
+ * 'object' places the `$selectedObject` 독립 오브젝트 on click (drag doesn't
+ * pour — objects are discrete bodies); selecting an object in the palette sets
+ * this, and picking any material snaps back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object';
 export const $tool = atom<Tool>('material');
+
+/** Currently selected 오브젝트 type id (see game/objects) — used while `$tool`
+ *  is 'object'. Defaults to the rubber ball. */
+export const $selectedObject = atom<number>(RUBBER_BALL.id);
 
 /**
  * One component of the blend (혼합) brush: a material id and the percentage

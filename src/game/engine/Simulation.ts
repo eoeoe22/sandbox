@@ -11,6 +11,7 @@ import {
   type GravityDir,
 } from '../config';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
+import { ObjectLayer } from '../objects/ObjectLayer';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -24,6 +25,10 @@ import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '..
  */
 export class Simulation {
   readonly grid: Grid;
+  /** 독립 오브젝트 레이어 — 셀 그리드 밖에 사는 원/캡슐 개체들. 매 스텝의 CA
+   *  스캔이 끝난 뒤 적분된다 (step 참조); Game이 렌더러/입력에 이 참조를 물려
+   *  배치·그리기를 잇는다. */
+  readonly objects: ObjectLayer;
   private ctx: SimContext;
   private tick = 0;
   /** Conductivity per material id (0..1), flattened for the diffusion hot loop. */
@@ -40,6 +45,7 @@ export class Simulation {
   constructor(grid: Grid) {
     this.grid = grid;
     this.ctx = new SimContext(grid);
+    this.objects = new ObjectLayer(grid);
     this.cond = new Float32Array(256).fill(DEFAULT_CONDUCTIVITY);
     this.lifeP = new Float32Array(256);
     this.lifeInto = new Uint8Array(256);
@@ -114,6 +120,11 @@ export class Simulation {
         }
       }
     }
+
+    // 오브젝트 레이어는 CA 스캔이 끝난, 이 틱의 정착된 그리드를 상대로
+    // 적분한다. 여기서 그리드에 쓴 것(터미널 이벤트/변위)은 moved 마킹되어
+    // 다음 틱의 CA가 물질 update와 같은 계약으로 처리한다.
+    this.objects.step(this.ctx);
 
     this.driftBackground();
   }

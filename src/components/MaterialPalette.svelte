@@ -4,6 +4,7 @@
   import { onDestroy } from 'svelte';
   import {
     $selectedMaterial as selected,
+    $selectedObject as selectedObject,
     $tool as tool,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
@@ -11,6 +12,7 @@
     toggleFavorite,
   } from '../state/store';
   import { MATERIALS, getMaterial } from '../game/materials';
+  import { OBJECTS } from '../game/objects';
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
@@ -19,6 +21,11 @@
   // shared `categories` module so the blend brush's picker groups materials
   // identically. This is the ordered list of category tabs with their members.
   const categories = buildCategories(MATERIALS);
+
+  // 독립 오브젝트 탭 — 물질 카테고리 기계(buildCategories/즐겨찾기/혼합)와는
+  // 별개의 병렬 탭이다. 오브젝트는 Material이 아니라서 그 파이프라인(PALETTE_IDS
+  // 검증, 최근 사용, 혼합 브러시)에 섞이면 안 된다; 탭 하나로만 노출한다.
+  const OBJECT_TAB = '오브젝트';
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
@@ -192,6 +199,16 @@
     hovered = null;
   }
 
+  // 오브젝트 선택 = 배치 요청: 'object' 툴로 전환한다 (물질을 고르면 pick()이
+  // 'material'로 되돌리므로 두 모드가 동시에 켜질 일은 없다).
+  function pickObject(id: number): void {
+    clearTimeout(closeTimer);
+    selectedObject.set(id);
+    tool.set('object');
+    pinned = null;
+    hovered = null;
+  }
+
   // Star / unstar a material without selecting it (the star sits on top of the
   // chip, so stop the click from also reaching the chip's pick handler).
   function toggleFav(e: MouseEvent, id: number): void {
@@ -308,6 +325,28 @@
           </button>
         </div>
       {/each}
+      <!-- 독립 오브젝트 탭: 물질 카테고리 뒤에 붙는 병렬 탭 (같은 flyout 기계 재사용) -->
+      <div
+        class="category"
+        onmouseenter={() => openOnHover(OBJECT_TAB)}
+        onmouseleave={scheduleHoverClose}
+      >
+        <button
+          use:registerButton={OBJECT_TAB}
+          id={`cat-btn-${categories.length}`}
+          class:active={open === OBJECT_TAB}
+          class:selected={$tool === 'object'}
+          onclick={() => toggleCategory(OBJECT_TAB)}
+          aria-expanded={open === OBJECT_TAB}
+          aria-haspopup="true"
+          aria-controls={`cat-flyout-${categories.length}`}
+          title={OBJECT_TAB}
+        >
+          <i class="bi bi-circle-fill icon" aria-hidden="true"></i>
+          <span class="cat-label">{OBJECT_TAB}</span>
+          <span class="count">{OBJECTS.length}</span>
+        </button>
+      </div>
     </div>
   {/if}
 
@@ -335,6 +374,36 @@
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
             <span class="label">{m.name}</span>
+          </button>
+        {/each}
+      </div>
+    {:else if open === OBJECT_TAB}
+      <div
+        class="flyout"
+        use:portal
+        bind:this={flyoutEl}
+        id={`cat-flyout-${categories.length}`}
+        role="menu"
+        aria-label={OBJECT_TAB}
+        style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
+        onmouseenter={() => openOnHover(OBJECT_TAB)}
+        onmouseleave={scheduleHoverClose}
+      >
+        {#each OBJECTS as d (d.id)}
+          <button
+            class="chip"
+            role="menuitem"
+            class:active={$selectedObject === d.id && $tool === 'object'}
+            onclick={() => pickObject(d.id)}
+            title={d.name}
+          >
+            <!-- 오브젝트 스와치는 형태를 그대로: 원은 원형, 캡슐은 알약형 -->
+            <span
+              class="swatch obj-swatch"
+              class:capsule={d.shape.kind === 'capsule'}
+              style={`background:${d.cssFill}; border-color:${d.cssOutline}`}
+            ></span>
+            <span class="label">{d.name}</span>
           </button>
         {/each}
       </div>
@@ -584,6 +653,15 @@
     border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     flex: none;
+  }
+  /* 오브젝트 스와치: 물질과 달리 몸체 형태(원/알약)를 그대로 보여준다. */
+  .chip .obj-swatch {
+    border-radius: 50%;
+    border-width: 2px;
+  }
+  .chip .obj-swatch.capsule {
+    width: 14px;
+    border-radius: 7px;
   }
   .chip .label {
     max-width: 100%;
