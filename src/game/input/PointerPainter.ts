@@ -27,7 +27,8 @@ import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
-import { createRubberBall, createBlueDrum } from '../engine/objects';
+import { createRubberBall, createBlueDrum, pickBody, distanceToBody } from '../engine/objects';
+import type { SimBody } from '../engine/objects';
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -35,6 +36,10 @@ import { createRubberBall, createBlueDrum } from '../engine/objects';
  * own phase, so it's checked separately and always sits at the top.
  */
 const OVERWRITE_PHASE_ORDER = [Phase.Gas, Phase.Liquid, Phase.Powder, Phase.Solid];
+
+/** Max release speed (cells/tick) when flinging a dragged object, so a fast flick
+ *  can't launch it across the world in one tick. */
+const DRAG_THROW_MAX = 8;
 
 /**
  * Whether the brush may paint over whatever currently occupies (x, y), given
@@ -104,6 +109,18 @@ export class PointerPainter {
   private beltDirX = 1;
   private px = 0;
   private py = 0;
+  /** The object currently being dragged in 보기(view) mode, or null. While set,
+   *  pointer moves reposition it instead of painting, and its own physics are
+   *  suspended (body.held) so it tracks the cursor. */
+  private dragBody: SimBody | null = null;
+  /** Offset from the grabbed body's center to the grab point (grid cells), so the
+   *  body doesn't snap its center to the cursor on grab. */
+  private dragOffX = 0;
+  private dragOffY = 0;
+  /** Smoothed per-move delta of the grabbed body — its release velocity, so you
+   *  can fling an object by flicking on release. */
+  private dragVX = 0;
+  private dragVY = 0;
   private cursorEl: HTMLDivElement;
 
   constructor(
@@ -168,6 +185,55 @@ export class PointerPainter {
     const gx = Math.floor((localX / rect.width) * this.grid.width);
     const gy = Math.floor((localY / rect.height) * this.grid.height);
     return [gx, gy];
+  }
+
+  /** Like clientToCell but keeps sub-cell precision — the object layer lives in
+   *  float grid coordinates, so picking/dragging needs the continuous position. */
+  private clientToGridFloat(clientX: number, clientY: number): [number, number] {
+    const r = this.canvas.getBoundingClientRect();
+    const rect = this.layout.cssRect();
+    const gx = ((clientX - r.left - rect.x) / rect.width) * this.grid.width;
+    const gy = ((clientY - r.top - rect.y) / rect.height) * this.grid.height;
+    return [gx, gy];
+  }
+
+  /** Remove any free object the eraser brush touches. The brush is a disc of
+   *  radius `brushSize` centered on the cell; an object is deleted when that disc
+   *  reaches its surface. Shared by the right-button erase and the 지우개 tool
+   *  (both go through paint(erase)). */
+  private eraseObjectsUnderBrush(cx: number, cy: number): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    const rad = $brushSize.get();
+    const bx = cx + 0.5;
+    const by = cy + 0.5;
+    let w = 0;
+    for (let i = 0; i < objs.length; i++) {
+      // Keep objects the brush doesn't reach; drop the rest (deleted, no trace).
+      if (distanceToBody(objs[i], bx, by) > rad) objs[w++] = objs[i];
+    }
+    objs.length = w;
+    // If the erased object was the one being dragged, end the drag cleanly.
+    if (this.dragBody && distanceToBody(this.dragBody, bx, by) <= rad) this.dragBody = null;
+  }
+
+  /** Reposition the dragged body to follow the pointer (keeping the grab offset),
+   *  clamped inside the sandbox, and track a smoothed release velocity so letting
+   *  go flings it. Called from onMove while a drag is active. */
+  private dragTo(clientX: number, clientY: number): void {
+    const body = this.dragBody;
+    if (!body) return;
+    const [gx, gy] = this.clientToGridFloat(clientX, clientY);
+    const nx = gx + this.dragOffX;
+    const ny = gy + this.dragOffY;
+    // Smooth the per-move delta into the throw velocity (cells/tick on release).
+    this.dragVX = this.dragVX * 0.4 + (nx - body.x) * 0.6;
+    this.dragVY = this.dragVY * 0.4 + (ny - body.y) * 0.6;
+    // Clamp the center to the grid so an object can't be dragged off-world.
+    body.x = nx < 0.5 ? 0.5 : nx > this.grid.width - 0.5 ? this.grid.width - 0.5 : nx;
+    body.y = ny < 0.5 ? 0.5 : ny > this.grid.height - 0.5 ? this.grid.height - 0.5 : ny;
+    body.vx = 0;
+    body.vy = 0;
   }
 
   /** Apply the active brush at (cx,cy). A right-button press always erases; a
@@ -247,6 +313,8 @@ export class PointerPainter {
    *  (right-button press), Empty is stamped instead, ignoring the material and
    *  active tool entirely. */
   private paint(cx: number, cy: number, erase = false): void {
+    // The eraser also clears the free-object layer it passes over (오브젝트 삭제).
+    if (erase) this.eraseObjectsUnderBrush(cx, cy);
     const id = erase ? 0 : $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
@@ -377,11 +445,32 @@ export class PointerPainter {
       this.down = false;
       return;
     }
+    // 보기(view) mode: grab the object under the cursor and drag it — brush is
+    // inert here, so a press on a body picks it up instead of painting.
+    if (!this.erasing && $tool.get() === 'view') {
+      const [gx, gy] = this.clientToGridFloat(e.clientX, e.clientY);
+      const body = pickBody(this.grid.objects, gx, gy);
+      if (body) {
+        this.dragBody = body;
+        body.held = true;
+        this.dragOffX = body.x - gx;
+        this.dragOffY = body.y - gy;
+        this.dragVX = 0;
+        this.dragVY = 0;
+        this.down = false; // a drag gesture, not a paint stroke
+        return;
+      }
+    }
     this.stamp(x, y);
   };
 
   private onMove = (e: PointerEvent): void => {
     this.updateCursor(e.clientX, e.clientY);
+    // Dragging an object (보기 mode): reposition it and skip all painting.
+    if (this.dragBody) {
+      this.dragTo(e.clientX, e.clientY);
+      return;
+    }
     // The inspect readout tracks the pointer too, but it's refreshed once per
     // frame from the game loop (see refreshInspect) off `lastClientX/Y`, which
     // updateCursor just updated — so a hover survey needs nothing more here.
@@ -396,6 +485,17 @@ export class PointerPainter {
   };
 
   private onUp = (): void => {
+    // Release a dragged object: hand it the smoothed drag velocity so a flick
+    // flings it, clamped so a fast flick can't launch it across the world.
+    if (this.dragBody) {
+      const body = this.dragBody;
+      body.held = false;
+      const clamp = (v: number): number =>
+        v < -DRAG_THROW_MAX ? -DRAG_THROW_MAX : v > DRAG_THROW_MAX ? DRAG_THROW_MAX : v;
+      body.vx = clamp(this.dragVX);
+      body.vy = clamp(this.dragVY);
+      this.dragBody = null;
+    }
     this.down = false;
   };
 

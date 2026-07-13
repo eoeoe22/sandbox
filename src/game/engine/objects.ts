@@ -37,6 +37,14 @@ export interface SimObject {
   /** Coefficient of restitution (0..1) — how much speed it keeps bouncing off
    *  solid terrain. A rubber ball sets this high. */
   restitution: number;
+  /** Consecutive ticks the footprint has sampled above the burn threshold. Heat
+   *  destruction is time-gated (like the drum's melt) so a stray hot pixel
+   *  doesn't pop the ball — only sustained exposure does. */
+  heatTicks: number;
+  /** True while the pointer is dragging this body (보기 모드 grab): its own
+   *  physics and all destruction triggers are suspended so it tracks the cursor
+   *  and can be pulled out of harm. Shared with SimCapsule via SimBody. */
+  held?: boolean;
 }
 
 /**
@@ -57,6 +65,13 @@ export const OBJECT_GRAVITY = 0.25;
  */
 export const RUBBER_BALL_DENSITY = 1.2;
 export const RUBBER_BALL_RESTITUTION = 0.82;
+/** Footprint temperature (°) at/above which a rubber ball counts a tick of heat
+ *  exposure — rubber scorches far below metal, so a campfire (Fire 1000°) melts
+ *  it while a warm room doesn't. Well under the drum's 1200° metal threshold. */
+export const BALL_BURN_TEMP = 300;
+/** Sustained ticks above BALL_BURN_TEMP before the ball is destroyed. Shorter
+ *  than the drum's melt (thin rubber gives way faster than a metal shell). */
+export const BALL_BURN_TICKS = 10;
 
 /** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. `r` is
  *  clamped to a small positive minimum so mass is never zero (buoyancy divides
@@ -73,6 +88,7 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
     r: rr,
     mass: RUBBER_BALL_DENSITY * area,
     restitution: RUBBER_BALL_RESTITUTION,
+    heatTicks: 0,
   };
 }
 
@@ -118,6 +134,10 @@ export interface SimCapsule {
   /** Consecutive ticks the footprint has sampled above the melt threshold, so a
    *  brief brush with heat doesn't melt it — only sustained exposure does. */
   heatTicks: number;
+  /** True while the pointer is dragging this body (보기 모드 grab): its own
+   *  physics and all destruction triggers are suspended so it tracks the cursor
+   *  and can be pulled out of harm. Shared with SimObject via SimBody. */
+  held?: boolean;
 }
 
 /** Anything in the object layer: circles (balls) and capsules (drums) share one
@@ -668,6 +688,109 @@ function closestOnSegment(
   return [ax + t * dx, ay + t * dy];
 }
 
+// ── Body-generic geometry (balls and drums share one representation) ─────────
+// Every body reduces to a *medial segment + a cap radius*: a ball is the
+// degenerate case where the segment is a single point (its center), a drum is a
+// real segment. Expressing both this way lets object-object collision, picking,
+// and the exposure scan run one code path over `SimBody` instead of per-kind
+// branches. Balls carry no rotation, so their inverse inertia is 0 (a contact
+// torque can't spin them) — that single difference is all the pair solver needs.
+
+/** The cap radius of any body (ball radius or drum cap radius). */
+export function bodyRadius(o: SimBody): number {
+  return o.kind === 'ball' ? o.r : o.radius;
+}
+
+/** The body's medial segment endpoints [ax,ay,bx,by]. A ball's segment is its
+ *  center twice (a point); a drum's is its capsule axis. */
+function bodyEnds(o: SimBody): [number, number, number, number] {
+  if (o.kind === 'ball') return [o.x, o.y, o.x, o.y];
+  return capsuleEnds(o);
+}
+
+/** Half-extent from center to the farthest point of the body — the radius of the
+ *  smallest circle covering it. Used to size scan/pick bounding boxes. */
+export function bodyReach(o: SimBody): number {
+  return o.kind === 'ball' ? o.r : o.halfLength + o.radius;
+}
+
+/** Inverse mass — 0 while held (the pointer pins it as an immovable anchor, so
+ *  it shoves others without being shoved). */
+function invMassOf(o: SimBody): number {
+  return o.held ? 0 : 1 / o.mass;
+}
+
+/** Inverse rotational inertia — 0 for a ball (no rotation) and for any held body. */
+function invInertiaOf(o: SimBody): number {
+  return o.held || o.kind === 'ball' ? 0 : 1 / o.momentOfInertia;
+}
+
+/** Shortest distance from point (px,py) to the body's solid shape (0 if inside).
+ *  Distance to the medial segment minus the cap radius, floored at 0. Exported
+ *  for pointer picking / eraser hit-testing over the object layer. */
+export function distanceToBody(o: SimBody, px: number, py: number): number {
+  const [ax, ay, bx, by] = bodyEnds(o);
+  const [qx, qy] = closestOnSegment(ax, ay, bx, by, px, py);
+  const d = Math.hypot(px - qx, py - qy) - bodyRadius(o);
+  return d < 0 ? 0 : d;
+}
+
+/** The topmost body whose shape contains (px,py), or null. Iterates from the end
+ *  so the most-recently-spawned (drawn last / on top) body wins a pick. */
+export function pickBody(objects: SimBody[], px: number, py: number): SimBody | null {
+  for (let i = objects.length - 1; i >= 0; i--) {
+    if (distanceToBody(objects[i], px, py) <= 0) return objects[i];
+  }
+  return null;
+}
+
+/** Closest points between two segments P1→Q1 and P2→Q2, returned as
+ *  [c1x,c1y,c2x,c2y]. Handles degenerate (zero-length) segments, so a ball's
+ *  point-segment and point-point cases fall out of the same routine (Ericson,
+ *  Real-Time Collision Detection §5.1.9). This is the whole of capsule-capsule
+ *  proximity: the two bodies touch iff |c1−c2| < rA+rB. */
+function closestBetweenSegments(
+  p1x: number, p1y: number, q1x: number, q1y: number,
+  p2x: number, p2y: number, q2x: number, q2y: number,
+): [number, number, number, number] {
+  const d1x = q1x - p1x, d1y = q1y - p1y; // direction of segment 1
+  const d2x = q2x - p2x, d2y = q2y - p2y; // direction of segment 2
+  const rx = p1x - p2x, ry = p1y - p2y;
+  const a = d1x * d1x + d1y * d1y; // squared length of seg 1
+  const e = d2x * d2x + d2y * d2y; // squared length of seg 2
+  const f = d2x * rx + d2y * ry;
+  const EPS = 1e-9;
+  const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+  let s: number;
+  let t: number;
+  if (a <= EPS && e <= EPS) {
+    s = 0;
+    t = 0;
+  } else if (a <= EPS) {
+    s = 0;
+    t = clamp01(f / e);
+  } else {
+    const c = d1x * rx + d1y * ry;
+    if (e <= EPS) {
+      t = 0;
+      s = clamp01(-c / a);
+    } else {
+      const b = d1x * d2x + d1y * d2y;
+      const denom = a * e - b * b;
+      s = denom > EPS ? clamp01((b * f - c * e) / denom) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) {
+        t = 0;
+        s = clamp01(-c / a);
+      } else if (t > 1) {
+        t = 1;
+        s = clamp01((b - c) / a);
+      }
+    }
+  }
+  return [p1x + d1x * s, p1y + d1y * s, p2x + d2x * t, p2y + d2y * t];
+}
+
 interface CapsuleContact {
   nx: number;
   ny: number;
@@ -890,35 +1013,43 @@ function sampleMediumCapsule(o: SimCapsule, ctx: SimContext): {
 }
 
 /**
- * Scan the capsule's footprint for the two terminal triggers (read-only): a
- * Blast flash cell touching it (an explosion swept over it — see blast.ts, whose
- * cleared cells become short-lived BLAST cells), and the hottest footprint
- * temperature (heat exposure). Blast is edge-y and instant; heat is judged over
- * time by the caller. Reuses the same segment footprint as sampleMediumCapsule.
+ * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
+ * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
+ * cleared cells become short-lived BLAST cells → instant destruction), the
+ * hottest footprint temperature (heat exposure, judged over time by the caller),
+ * and the *fraction of the footprint buried in solid* (a wedged/entombed body is
+ * crushed). Works for balls and drums alike via the segment+radius footprint.
  */
-function scanCapsuleExposure(o: SimCapsule, ctx: SimContext): { blast: boolean; maxTemp: number } {
-  const r = o.radius;
+function scanBodyExposure(
+  o: SimBody,
+  ctx: SimContext,
+): { blast: boolean; maxTemp: number; solidFrac: number } {
+  const r = bodyRadius(o);
   const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
+  const [ax, ay, bx, by] = bodyEnds(o);
   const x0 = Math.floor(Math.min(ax, bx) - r);
   const x1 = Math.ceil(Math.max(ax, bx) + r);
   const y0 = Math.floor(Math.min(ay, by) - r);
   const y1 = Math.ceil(Math.max(ay, by) + r);
   let blast = false;
   let maxTemp = -Infinity;
+  let footprint = 0;
+  let solid = 0;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
-      if (!ctx.inBounds(cx, cy)) continue;
       const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
+      footprint++;
+      if (isSolidCell(cx, cy, ctx)) solid++;
+      if (!ctx.inBounds(cx, cy)) continue;
       if (ctx.get(cx, cy) === BLAST.id) blast = true;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
     }
   }
-  return { blast, maxTemp };
+  return { blast, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
 /**
@@ -978,13 +1109,13 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
 }
 
 /**
- * Advance one drum a tick and evaluate its triggers. Same order as the ball
- * (gravity → buoyancy/drag → integrate → collision) with rotation integrated
- * alongside position and contact torque folded into the collision resolve, then
- * a read-only exposure scan that can flip the drum to a terminal state. Returns
- * the drum's state so the caller can drop it when it's no longer intact.
+ * Advance one drum a tick — physics only. Same order as the ball (gravity →
+ * buoyancy/drag → integrate → grid collision) with rotation integrated alongside
+ * position and contact torque folded into the collision resolve. Object-object
+ * collisions and the terminal-state triggers (blast/heat/crush) are evaluated
+ * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
  */
-function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: number): DrumState {
+function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: number): void {
   o.vx += ax;
   o.vy += ay;
   const ms = sampleMediumCapsule(o, ctx);
@@ -1044,52 +1175,315 @@ function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: 
   // wrap; the modulo handles any number of turns in a tick).
   const TWO_PI = 2 * Math.PI;
   o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
+}
 
-  // Terminal triggers (read-only scan): a blast sweeping over it destroys it
-  // instantly; sustained heat melts it. Blast wins if both fire the same tick.
-  const exp = scanCapsuleExposure(o, ctx);
-  if (exp.blast) {
-    spawnDrumDebris(o, ctx);
-    o.state = 'destroyed';
-    return 'destroyed';
-  }
-  if (exp.maxTemp >= DRUM_MELT_TEMP) {
-    o.heatTicks++;
-    if (o.heatTicks >= DRUM_MELT_TICKS) {
-      spawnMoltenPuddle(o, ctx);
-      o.state = 'melted';
-      return 'melted';
+// ── Object-object collision, blast knockback, and crush ─────────────────────
+// The object layer is fully interactive: bodies collide with one another (an
+// impulse solve over the shared segment+radius representation, torque included so
+// a thrown ball can spin a drum), a blast that doesn't consume a body shoves it
+// hard, and a body entombed in solid is crushed. The pair solve is pure
+// object↔object; the knockback and crush read the grid but never write it.
+
+/** Coulomb friction coefficient for object-object contacts — enough grip that a
+ *  rolling drum drags a ball along and a stack doesn't instantly slide apart. */
+const OBJECT_FRICTION = 0.5;
+/** Below this closing speed an object-object contact is treated as inelastic, so
+ *  a resting stack doesn't jitter on gravity's per-tick nudge (mirrors REST_EPS). */
+const PAIR_REST_EPS = 0.35;
+/** Relaxation passes over all overlapping pairs each tick. A handful is plenty
+ *  for the small object counts here and keeps a stack from sinking together. */
+const PAIR_ITERATIONS = 4;
+
+/** Cells beyond a body's own footprint that a blast flash can still reach to
+ *  shove it — the concussion past the crater rim (mirrors blast.ts's pressure
+ *  ring, but for the object layer, which the cell-based ring can't touch). */
+const BLAST_KNOCK_RADIUS = 12;
+/** Peak outward speed (cells/tick) a blast imparts to a body it doesn't destroy.
+ *  Applied as a floor on the outward velocity component (not accumulated), so a
+ *  flash lingering several ticks gives one strong shove, not an ever-growing one. */
+const BLAST_KNOCK_SPEED = 7;
+/** Spin (rad/tick) a blast kicks into a drum as it's flung, so it tumbles away
+ *  in the direction it's shoved (see stepCapsule's y-down rolling convention). */
+const BLAST_KNOCK_SPIN = 0.12;
+
+/** Footprint-solid fraction at/above which a body is judged crushed (entombed in
+ *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
+ *  ordinary ground contact — a thin slice of the footprint — never triggers it. */
+const CRUSH_SOLID_FRAC = 0.6;
+
+/** Quick test: does a shockwave flash cell overlap the body's footprint *right
+ *  now*? A direct hit is captured at the tick's start (before knockback can move
+ *  the body out of the blast) so a body engulfed by an explosion is reliably
+ *  destroyed rather than yeeted clear of the destroy check. Footprint-only scan. */
+function footprintHasBlast(o: SimBody, ctx: SimContext): boolean {
+  const r = bodyRadius(o);
+  const r2 = r * r;
+  const [ax, ay, bx, by] = bodyEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== BLAST.id) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy <= r2) return true;
     }
-  } else if (o.heatTicks > 0) {
-    o.heatTicks--; // cools off if pulled away from heat before melting
   }
-  return 'intact';
+  return false;
 }
 
 /**
- * Advance every free object one tick, then drop any that reached a terminal
- * state this tick (a drum destroyed or melted). Balls and drums live in one
- * array discriminated by `kind`; each is stepped by its own path. Run as a pass
- * at the end of Simulation.step(), fully separate from the CA cell scan. Gravity
- * follows the world's gravity vector and strength, so flipping or weakening
- * gravity carries the objects along with the rest of the sandbox.
+ * A blast that doesn't consume a body still shoves it. Scan the ring just outside
+ * the body's footprint for shockwave flash cells; if any are near, push the body
+ * outward along the summed away-from-blast direction. The push is a *floor* on
+ * outward speed (capped at BLAST_KNOCK_SPEED), not an accumulating force, so a
+ * lingering flash delivers a single punchy shove. A drum also gets a spin so it
+ * tumbles. (A blast cell actually overlapping the footprint is the destroy case,
+ * handled in evaluateTriggers — this only fires for the near-miss concussion.)
+ */
+function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
+  const reach = bodyReach(o) + BLAST_KNOCK_RADIUS;
+  const reach2 = reach * reach;
+  const x0 = Math.floor(o.x - reach);
+  const x1 = Math.ceil(o.x + reach);
+  const y0 = Math.floor(o.y - reach);
+  const y1 = Math.ceil(o.y + reach);
+  let px = 0;
+  let py = 0;
+  let found = false;
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== BLAST.id) continue;
+      const dx = o.x - (cx + 0.5);
+      const dy = o.y - (cy + 0.5);
+      const d2 = dx * dx + dy * dy;
+      if (d2 > reach2 || d2 < 1e-6) continue;
+      // Weight by 1/distance so nearer flash cells dominate the push direction.
+      const inv2 = 1 / d2;
+      px += dx * inv2;
+      py += dy * inv2;
+      found = true;
+    }
+  }
+  if (!found) return;
+  const plen = Math.hypot(px, py);
+  if (plen < 1e-6) return;
+  const nx = px / plen;
+  const ny = py / plen;
+  const outward = o.vx * nx + o.vy * ny;
+  if (outward < BLAST_KNOCK_SPEED) {
+    const add = BLAST_KNOCK_SPEED - outward;
+    o.vx += nx * add;
+    o.vy += ny * add;
+  }
+  // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
+  if (o.kind === 'drum') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
+}
+
+/**
+ * Resolve one overlapping pair with a 2D impulse. Both bodies are stadiums
+ * (segment + cap radius), so the contact is the closest points between their
+ * medial segments; from there it's a standard normal (restitution) + Coulomb
+ * friction impulse, each drum's spin fed by the torque r × J (a ball's inverse
+ * inertia is 0, so it only translates). A held body has inverse mass/inertia 0,
+ * so it acts as an immovable anchor — you can shove others with the one you drag,
+ * but it stays glued to the cursor.
+ */
+function resolvePair(a: SimBody, b: SimBody): void {
+  const imA = invMassOf(a);
+  const imB = invMassOf(b);
+  if (imA === 0 && imB === 0) return; // both immovable (e.g. two held)
+  const iIA = invInertiaOf(a);
+  const iIB = invInertiaOf(b);
+  const [a1x, a1y, a2x, a2y] = bodyEnds(a);
+  const [b1x, b1y, b2x, b2y] = bodyEnds(b);
+  const [cax, cay, cbx, cby] = closestBetweenSegments(a1x, a1y, a2x, a2y, b1x, b1y, b2x, b2y);
+  let dx = cbx - cax;
+  let dy = cby - cay;
+  let dist = Math.hypot(dx, dy);
+  const sumR = bodyRadius(a) + bodyRadius(b);
+  if (dist >= sumR) return; // not touching
+  let nx: number; // contact normal, from A toward B
+  let ny: number;
+  if (dist > 1e-6) {
+    nx = dx / dist;
+    ny = dy / dist;
+  } else {
+    nx = 0; // perfectly concentric — pick an arbitrary separating axis
+    ny = -1;
+    dist = 0;
+  }
+  const pen = sumR - dist;
+  // Split the positional correction by inverse mass (an anchor doesn't move).
+  const imSum = imA + imB;
+  a.x -= nx * pen * (imA / imSum);
+  a.y -= ny * pen * (imA / imSum);
+  b.x += nx * pen * (imB / imSum);
+  b.y += ny * pen * (imB / imSum);
+  // Contact point: midway between the two surface points along the normal.
+  const px = (cax + nx * bodyRadius(a) + (cbx - nx * bodyRadius(b))) / 2;
+  const py = (cay + ny * bodyRadius(a) + (cby - ny * bodyRadius(b))) / 2;
+  const rax = px - a.x;
+  const ray = py - a.y;
+  const rbx = px - b.x;
+  const rby = py - b.y;
+  const wA = a.kind === 'drum' ? a.angularVelocity : 0;
+  const wB = b.kind === 'drum' ? b.angularVelocity : 0;
+  // Contact velocities (v + ω×r, ω×r = ω·(−r_y, r_x)), relative B−A.
+  const vrx = b.vx - wB * rby - (a.vx - wA * ray);
+  const vry = b.vy + wB * rbx - (a.vy + wA * rax);
+  const vn = vrx * nx + vry * ny;
+  if (vn >= 0) return; // separating — positional fix already done
+  const raCrossN = rax * ny - ray * nx;
+  const rbCrossN = rbx * ny - rby * nx;
+  const effN = imSum + iIA * raCrossN * raCrossN + iIB * rbCrossN * rbCrossN;
+  // Restitution: the softer of the two bodies, dropped to 0 for a slow contact.
+  const e = -vn < PAIR_REST_EPS ? 0 : Math.min(restitutionOf(a), restitutionOf(b));
+  const jn = (-(1 + e) * vn) / effN;
+  a.vx -= jn * nx * imA;
+  a.vy -= jn * ny * imA;
+  b.vx += jn * nx * imB;
+  b.vy += jn * ny * imB;
+  if (a.kind === 'drum') a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
+  if (b.kind === 'drum') b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
+  // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
+  // relative velocity — the torque source that lets one body spin another.
+  const tx = -ny;
+  const ty = nx;
+  const wA2 = a.kind === 'drum' ? a.angularVelocity : 0;
+  const wB2 = b.kind === 'drum' ? b.angularVelocity : 0;
+  const vrx2 = b.vx - wB2 * rby - (a.vx - wA2 * ray);
+  const vry2 = b.vy + wB2 * rbx - (a.vy + wA2 * rax);
+  const vt = vrx2 * tx + vry2 * ty;
+  const raCrossT = rax * ty - ray * tx;
+  const rbCrossT = rbx * ty - rby * tx;
+  const effT = imSum + iIA * raCrossT * raCrossT + iIB * rbCrossT * rbCrossT;
+  let jt = -vt / effT;
+  const maxF = OBJECT_FRICTION * jn;
+  if (jt > maxF) jt = maxF;
+  else if (jt < -maxF) jt = -maxF;
+  a.vx -= jt * tx * imA;
+  a.vy -= jt * ty * imA;
+  b.vx += jt * tx * imB;
+  b.vy += jt * ty * imB;
+  if (a.kind === 'drum') a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
+  if (b.kind === 'drum') b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
+}
+
+/** Restitution of any body (ball or drum). */
+function restitutionOf(o: SimBody): number {
+  return o.restitution;
+}
+
+/** Relax every overlapping pair a few passes (O(n²) per pass — object counts are
+ *  small). This is the "완전한 물리적 상호작용" between bodies. */
+function resolveObjectPairs(objects: SimBody[]): void {
+  const n = objects.length;
+  if (n < 2) return;
+  for (let iter = 0; iter < PAIR_ITERATIONS; iter++) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        resolvePair(objects[i], objects[j]);
+      }
+    }
+  }
+}
+
+/**
+ * Evaluate a body's terminal triggers after all motion this tick has settled.
+ * Priority: a direct blast hit or being crushed in solid destroys it outright;
+ * otherwise sustained heat destroys it over time. A drum leaves a byproduct
+ * (metal powder when shattered by blast/crush, a molten-metal puddle when melted
+ * by heat); a rubber ball leaves nothing. Returns true to KEEP the body, false to
+ * drop it (byproducts, if any, already spawned).
+ */
+/** The byproduct of a body destroyed by blast or crush: a drum shatters into
+ *  scattered Metal Powder, a rubber ball leaves nothing behind. */
+function destroyByproduct(o: SimBody, ctx: SimContext): void {
+  if (o.kind === 'drum') {
+    spawnDrumDebris(o, ctx);
+    o.state = 'destroyed';
+  }
+}
+
+function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
+  const exp = scanBodyExposure(o, ctx);
+  // Instant destruction: a blast flash overlapping the footprint (직격), or being
+  // entombed/pinched in solid (끼임). A drum shatters into metal powder.
+  if (exp.blast || exp.solidFrac >= CRUSH_SOLID_FRAC) {
+    destroyByproduct(o, ctx);
+    return false; // ball: no byproduct
+  }
+  // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
+  const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
+  const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
+  if (exp.maxTemp >= threshold) {
+    o.heatTicks++;
+    if (o.heatTicks >= ticksNeeded) {
+      if (o.kind === 'drum') {
+        spawnMoltenPuddle(o, ctx);
+        o.state = 'melted';
+      }
+      return false;
+    }
+  } else if (o.heatTicks > 0) {
+    o.heatTicks--; // cools off if pulled from heat before destruction
+  }
+  return true;
+}
+
+/**
+ * Advance every free object one tick in three phases: (A) each body's own physics
+ * — a near-miss blast shoves it, then gravity/buoyancy/grid-collision integration
+ * — skipped while the pointer holds it; (B) resolve collisions *between* bodies so
+ * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
+ * crush) and compact out anything destroyed this tick. Run at the end of
+ * Simulation.step(), fully separate from the CA cell scan. Gravity follows the
+ * world's gravity vector and strength, so flipping or weakening it carries the
+ * objects along with the rest of the sandbox. A held body is never stepped nor
+ * destroyed — dragging it suspends its physics and shields it (see 보기 드래그).
  */
 export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   if (objects.length === 0) return;
   const s = ctx.gravityStrength;
   const ax = ctx.gravityX * OBJECT_GRAVITY * s;
   const ay = ctx.gravityY * OBJECT_GRAVITY * s;
-  // Compact in place: step each object, keep only the survivors (an intact drum
-  // or any ball). Terminal drums have already spawned their debris/molten trail.
+  // Direct blast hits are captured at the tick's *start* position: a body engulfed
+  // by an explosion is destroyed even though the same blast's knockback is about
+  // to fling it clear of the destroy check. (A near-miss blast has no footprint
+  // overlap here, so it falls through to the knockback shove instead.)
+  const doomed = new Set<SimBody>();
+  // Phase A — each body's own physics (a held body follows the cursor instead).
+  for (let i = 0; i < objects.length; i++) {
+    const o = objects[i];
+    if (o.held) continue;
+    if (footprintHasBlast(o, ctx)) {
+      doomed.add(o); // destroyed below; don't bother moving it
+      continue;
+    }
+    applyBlastKnockback(o, ctx);
+    if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
+    else stepCapsule(o, ctx, ax, ay, s);
+  }
+  // Phase B — resolve collisions between bodies (fully interactive layer).
+  resolveObjectPairs(objects);
+  // Phase C — terminal triggers, then compact out any body destroyed this tick. A
+  // held body is never destroyed (dragging shields it); a directly-hit body spawns
+  // its byproduct; everything else is judged by its settled position (heat/crush).
   let w = 0;
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
-    if (o.kind === 'ball') {
-      stepBall(o, ctx, ax, ay, s);
+    if (o.held) {
       objects[w++] = o;
-    } else {
-      const state = stepCapsule(o, ctx, ax, ay, s);
-      if (state === 'intact') objects[w++] = o;
+    } else if (doomed.has(o)) {
+      destroyByproduct(o, ctx);
+    } else if (evaluateTriggers(o, ctx)) {
+      objects[w++] = o;
     }
   }
   objects.length = w;
