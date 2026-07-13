@@ -19,11 +19,12 @@ import { MOLTEN_GLASS } from './moltenglass';
 // Thermite — a powder that, once lit, burns hotter than anything else in the
 // game and *melts its way through terrain*. Its life is a three-beat arc:
 //
-//   1. Ignite — a flame/blast/hot neighbor, or enough radiant heat, lights it.
+//   1. Ignite — a flame/blast/molten neighbor, or enough radiant heat, lights it.
 //   2. Molten burn — for BURN_TICKS it pins itself to a blistering BURN_TEMP,
 //      glows white-hot, and cuts: Stone→Lava, Sand/Glass→Molten Glass,
 //      Iron→Molten Metal, flammables→Fire, wreathing itself in flame. This is
-//      the "cutting torch" window, and lasts the same ~BURN_TICKS as ever.
+//      the "cutting torch" window; it now lasts 2.5× as long as it once did
+//      (BURN_TICKS), so a lit grain lingers and bores far deeper before it fades.
 //   3. Fade — when the burn timer runs out it does NOT blink out instantly.
 //      It becomes a spent but still-molten blob that stops re-heating itself
 //      and slowly evaporates, leaving nothing behind. While still hot it fades
@@ -39,13 +40,22 @@ import { MOLTEN_GLASS } from './moltenglass';
 //
 // It uses its per-cell `aux` byte as its whole state: 0 = unlit, 1..BURN_TICKS =
 // the molten-burn countdown, and AUX_FADING = the spent cooling blob. It lights
-// the way the explosives detect their triggers — scanning for flame/blast ids,
-// not via the `flammable` tag — plus an autoignition point so radiant heat alone
-// sets it off. A burning (or still-hot fading) cell chains the reaction through
-// a whole pile via its wreath-Fire and its pinned/residual heat.
+// the way the explosives detect their triggers — scanning for flame/blast/molten
+// ids, not via the `flammable` tag — plus an autoignition point so radiant heat
+// alone sets it off. It has NO direct grain-to-grain ignition chain: a lit grain
+// spreads the burn only *naturally*, the way any combustible does — its pinned
+// BURN_TEMP heat conducts into the touching grains until they autoignite, and its
+// wreath-Fire carries the front across open gaps. So a pile lights up as a visible
+// advancing front over a beat, not all at once (the old instant chain — a grain
+// igniting the moment it sensed a hot Thermite neighbour — was removed as
+// unrealistically fast).
 const AUTOIGNITE_TEMP = 900;
 const BURN_TEMP = 2800; // hotter than Blue Flame (1800) → melts everything it touches
-const BURN_TICKS = 30; // ~0.5–1 s of cutting (fits in aux's 0..255 range)
+// Ignited thermite burns 2.5× longer than it used to (was 30) — a lit grain lingers
+// white-hot and keeps cutting/melting much longer. Still well inside aux's 1..254
+// countdown range (AUX_FADING = 255 is distinct), so a fading cell is never
+// mistaken for a mid-burn one.
+const BURN_TICKS = 75; // ~1.25–2.5 s of cutting (fits in aux's 0..255 range)
 const MELT_CHANCE = 0.3; // per-tick chance to melt one adjacent meltable cell
 const WREATH_CHANCE = 0.25; // …and to drop a lick of Fire into open air
 
@@ -71,19 +81,26 @@ function isIgniter(id: number): boolean {
 }
 
 function shouldIgnite(x: number, y: number, sim: SimContext): boolean {
+  // Autoignition: enough heat in the grain itself sets it off with no flame
+  // contact. This is now the *only* way one burning grain lights the next in a
+  // packed pile — a lit grain pins itself at BURN_TEMP and its heat conducts into
+  // the touching grains (thermal.conductivity below), which climb past this point
+  // over a few ticks and catch. That heat-driven spread is deliberately gradual,
+  // so a lit pile burns through as a visible advancing front like any ordinary
+  // combustible, instead of the old instant grain-to-grain ignition chain (which
+  // detected a hot Thermite neighbour and lit up the whole pile almost at once —
+  // unrealistically fast). Removing that chain leaves ignition to spread only
+  // naturally: by conducted heat here, and by the wreath-Fire a burning grain
+  // drops into open gaps (caught below via isIgniter).
   if (sim.getTemp(x, y) >= AUTOIGNITE_TEMP) return true;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    // A neighboring flame/blast, or an already-hot Thermite cell (burning, or
-    // still molten while fading), lights this grain — the latter is what chains
-    // the reaction fast through a pile even where no Fire licks between two
-    // touching grains.
-    if (isIgniter(nid) || (nid === THERMITE.id && sim.getTemp(nx, ny) >= AUTOIGNITE_TEMP)) {
-      return true;
-    }
+    // A neighbouring flame/blast/molten cell lights this grain (the same id-based
+    // trigger the explosives use). Wreath-Fire from a burning neighbour landing in
+    // an open cell is what carries the front across gaps between grains.
+    if (isIgniter(sim.get(nx, ny))) return true;
   }
   return false;
 }

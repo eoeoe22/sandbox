@@ -7,6 +7,7 @@ import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
+import { SUGAR_WATER } from './sugarwater';
 import { STEAM } from './steam';
 import { OXYGEN } from './oxygen';
 import { AMBIENT_TEMP } from '../config';
@@ -142,10 +143,11 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    // Water/Saltwater smothers it: the fuel survives (unlit, back to ambient)
-    // and the water it touched flashes to Steam — mirroring Fire's own
-    // "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule.
-    if (nid === WATER.id || nid === SALTWATER.id) {
+    // Water/Saltwater/Sugar Water smothers it: the fuel survives (unlit, back to
+    // ambient) and the water it touched flashes to Steam — mirroring Fire's own
+    // "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule. All the water-based liquids
+    // douse (a burning petroleum slick still floats and keeps burning, below).
+    if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
       if (isPetroleum) {
         onWater = true; // oil fire on water: not doused, water not steamed
         continue;

@@ -13,6 +13,7 @@ import { ACID } from './acid';
 import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
+import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -23,13 +24,18 @@ import { NICHROME, nichromeJouleHeat } from './nichrome';
 // Conductors and strength: current flows only through `conductive` materials
 // (Iron, Mercury, Nichrome, Water, Saltwater, Acid); everything else is an
 // insulator that blocks it outright. A pulse carries a *strength* that decays as
-// it travels, so it fades out in a resistive medium instead of running forever:
+// it travels, so it fades out in a resistive medium instead of running forever.
+// The whole subsystem's conductivity lives in the two knobs below (FULL_STRENGTH
+// and CONDUCTOR_LOSS) — raise the first or lower the second and *every* conductor
+// carries current further, without touching any material's own definition:
 //   • Iron / Mercury (metal) — no loss, the pulse keeps full strength end to end.
-//   • Nichrome — a deliberate resistor, bleeds slightly (a long run's worth) and
-//     heats up as pulses pass (Joule heating — see nichrome.ts).
-//   • Saltwater / Acid — electrolytes, bleed strength slowly (carry a good way);
+//   • Nichrome — a mild resistor, bleeds a little and heats up as pulses pass
+//     (Joule heating — see nichrome.ts); still carries most of a wire's length.
+//   • Saltwater / Acid — electrolytes, bleed strength slowly (carry a long way);
 //     both conduct at the same rate.
-//   • Water — bleeds strength fast (dies after just a few cells).
+//   • Water — bleeds strength faster than the electrolytes, but a pulse now still
+//     runs a good stretch through it (roughly a third of a full wire) instead of
+//     dying after a couple of cells.
 //
 // State packed into the spark cell's single `aux` byte:
 //   • the conductor CLASS (low 3 bits) — which conductor to revert back into
@@ -44,31 +50,42 @@ import { NICHROME, nichromeJouleHeat } from './nichrome';
 // subtracting that medium's strength loss (a pulse too weak to survive the next
 // cell simply stops); (2) if an *explosive* is adjacent, drops a lick of Fire
 // into open air beside it so the ordinary rules set the charge off (an electric
-// detonator) — it no longer ignites ordinary fuels or flammable gas; then (3)
-// reverts to its conductor and stamps a refractory countdown so the wave only
-// moves forward. Sparks travelling through Water/Saltwater/Acid also, at a low
-// rate, electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂), leaving
-// no residue behind.
+// detonator) — it no longer ignites ordinary fuels or flammable gas; (2b) if
+// *Slime* is adjacent, seeds ONE electric-dissolve front on it (a bounded, ragged
+// bite back to Water — see slime.ts; one seed per pulse, exactly how one H₂O₂ cell
+// seeds one Virus corrosion front, so a single spark can't dissolve a whole blob);
+// then (3) reverts to its conductor and stamps a refractory countdown so the wave
+// only moves forward. Sparks travelling through Water/Saltwater/Acid also, at a
+// low rate, electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂),
+// leaving no residue behind.
 const REFRACTORY_TICKS = 3;
 
 // --- Electricity strength -----------------------------------------------------
 const CLASS_BITS = 3;
 const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b111 — low bits hold the conductor class
 const MAX_STRENGTH = 0xff >> CLASS_BITS; // 31 — high 5 bits hold strength
-/** Strength a fresh pulse starts at (what a Battery injects). */
-export const FULL_STRENGTH = 30;
+/** Strength a fresh pulse starts at (what a Battery/Turbine injects). Sits at the
+ *  packing's ceiling (MAX_STRENGTH) so every conductor gets the longest reach the
+ *  5-bit strength field allows — the engine-wide "more range" knob. */
+export const FULL_STRENGTH = 31;
 
 // Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
 // appending a new conductor keeps existing packed values valid. Every material
 // tagged `conductive` must appear here so a spark on it knows what to revert to.
 const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id, ACID.id];
-// Strength lost entering a cell of each class: metal keeps it (0), brine bleeds
-// slowly (2 → ~15 cells), fresh water bleeds fast (8 → ~4 cells), nichrome is a
-// deliberate resistor (1 → ~30 cells), acid is an electrolyte that conducts on a
-// par with brine (2 → ~15 cells). Nichrome's resistance also shows up as heat:
-// each passing pulse deposits a fixed dose of Joule heat into the wire on revert
-// (see nichromeJouleHeat), separate from this per-cell strength loss.
-const CONDUCTOR_LOSS = [0, 0, 8, 2, 1, 2];
+// Strength lost entering a cell of each class — the engine's per-medium
+// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 31:
+// metal keeps it (0 → runs the whole wire), brine and acid barely bleed
+// (1 → ~31 cells, essentially across a tank), nichrome is a mild resistor
+// (1 → ~31 cells, but also Joule-heats), and fresh water bleeds fastest yet still
+// carries a good stretch (3 → ~10 cells). These were raised across the board from
+// the old [8,2,1,2] water/brine/nichrome/acid, where a pulse died after only a
+// few cells of water — the whole-subsystem conductivity uplift, done here in the
+// engine rather than by editing any material's `conductive` flag. Nichrome's
+// resistance also shows up as heat: each passing pulse deposits a fixed dose of
+// Joule heat into the wire on revert (see nichromeJouleHeat), separate from this
+// per-cell strength loss.
+const CONDUCTOR_LOSS = [0, 0, 3, 1, 1, 1];
 
 // Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
 // it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
@@ -141,6 +158,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   const strength = aux >> CLASS_BITS;
 
   let arced = false;
+  let seededSlime = false;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -170,6 +188,15 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       } else {
         arced = arcFireBeside(sim, nx, ny);
       }
+    } else if (!seededSlime && nid === SLIME.id && sim.getAux(nx, ny) === 0) {
+      // Electric shock reverts Slime to Water: seed a single bounded dissolve front
+      // on the touched cell (slime.ts carries the reach budget through the blob).
+      // Only ONE seed per pulse — exactly how one H₂O₂ cell seeds one Virus front —
+      // so a lone spark takes a small bite, not the whole blob. Re-stamp so it's
+      // flagged moved (acts next tick), then stamp the reach budget.
+      sim.spawn(nx, ny, SLIME.id);
+      sim.setAux(nx, ny, SLIME_DISSOLVE_BUDGET);
+      seededSlime = true;
     }
   }
 

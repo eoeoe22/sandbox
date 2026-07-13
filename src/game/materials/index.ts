@@ -94,6 +94,7 @@ import { RESIN } from './resin';
 import { AMBER } from './amber';
 import { WHITE_PHOSPHORUS } from './whitephosphorus';
 import { SUGAR } from './sugar';
+import { SUGAR_WATER } from './sugarwater';
 import { CHLORINE } from './chlorine';
 import { HELIUM } from './helium';
 import { AEROGEL } from './aerogel';
@@ -195,6 +196,7 @@ export {
   AMBER,
   WHITE_PHOSPHORUS,
   SUGAR,
+  SUGAR_WATER,
   CHLORINE,
   HELIUM,
   AEROGEL,
@@ -233,6 +235,7 @@ export const MATERIALS = [
   WATER,
   STONE,
   SALTWATER,
+  SUGAR_WATER,
   SMOKE,
   SALT,
   SODA,
