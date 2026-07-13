@@ -935,6 +935,10 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
     const cx = Math.round(ax + (bx - ax) * t);
     const cy = Math.round(ay + (by - ay) * t);
     if (!ctx.inBounds(cx, cy)) continue;
+    // Don't fling from (and thereby overwrite) a solid cell — the object layer is
+    // read-only over terrain, spawning only into air/loose matter. Mirrors the
+    // guard in spawnMoltenPuddle; a launch point buried in stone/wall is skipped.
+    if (isSolidCell(cx, cy, ctx)) continue;
     launchDebris(ctx, cx, cy, IRON.id, i % 2 === 0 ? 1 : -1, -1, 2);
   }
 }
@@ -1025,9 +1029,11 @@ function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: 
     o.vx -= o.vx * ROLL_RESISTANCE;
     o.vy -= o.vy * ROLL_RESISTANCE;
   }
-  // Keep the angle bounded so it never grows to a precision-losing magnitude.
-  if (o.angle > Math.PI) o.angle -= 2 * Math.PI;
-  else if (o.angle < -Math.PI) o.angle += 2 * Math.PI;
+  // Keep the angle wrapped to (−π, π] so it never grows to a precision-losing
+  // magnitude, even after a very fast spin (a plain ±2π shift would only fix one
+  // wrap; the modulo handles any number of turns in a tick).
+  const TWO_PI = 2 * Math.PI;
+  o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
 
   // Terminal triggers (read-only scan): a blast sweeping over it destroys it
   // instantly; sustained heat melts it. Blast wins if both fire the same tick.
