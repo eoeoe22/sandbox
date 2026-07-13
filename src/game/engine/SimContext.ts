@@ -130,6 +130,15 @@ export class SimContext {
   saltDebt = 0;
 
   /**
+   * The sugar counterpart of `saltDebt` (see sugar.ts SUGAR_WATER_RATIO). One
+   * Sugar grain sweetens many Water cells into Sugar Water, and boiling Sugar
+   * Water deposits Sugar back only once this running total reaches a whole grain
+   * — kept separate from `saltDebt` so the two round trips never leak mass into
+   * each other.
+   */
+  sugarDebt = 0;
+
+  /**
    * Per-tick memo for the Turbine's body-flood (materials/turbine.ts). When
    * steam is passing through a solid turbine block, its generated pulse walks
    * the whole connected turbine body to reach conductors on the outer faces;
