@@ -40,6 +40,29 @@ export interface SimObject {
 export const OBJECT_GRAVITY = 0.25;
 
 /**
+ * Rubber-ball defaults for the validation object. Density is well below Water
+ * (3) so a ball floats; restitution is high so it bounces (see the plan's
+ * 고무공 spec). Mass is derived from the disc area so a bigger ball is heavier,
+ * which keeps buoyancy (mass vs. displaced fluid) consistent across sizes.
+ */
+export const RUBBER_BALL_DENSITY = 1.2;
+export const RUBBER_BALL_RESTITUTION = 0.82;
+
+/** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. */
+export function createRubberBall(x: number, y: number, r = 4): SimObject {
+  const area = Math.PI * r * r;
+  return {
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    r,
+    mass: RUBBER_BALL_DENSITY * area,
+    restitution: RUBBER_BALL_RESTITUTION,
+  };
+}
+
+/**
  * Advance every free object one tick: apply gravity, then integrate position.
  * Run as its own pass at the end of Simulation.step(), fully separate from the
  * CA cell scan. Gravity follows the world's gravity vector and strength (the

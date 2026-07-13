@@ -24,6 +24,7 @@ import {
   $frameMs,
 } from '../state/store';
 import { EMPTY } from './engine/types';
+import { createRubberBall } from './engine/objects';
 import './materials'; // register all materials (side effect)
 
 /**
@@ -80,6 +81,31 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
+
+  // DEBUG spawn hook for the 고무공 validation harness — there is no user-facing
+  // spawn UI in this milestone (the first exposed object is the drum, next
+  // milestone), so expose a console affordance to drop balls for verifying the
+  // object layer. `__dropBall(fracX, r)` drops from the top at a fractional x;
+  // `__spawnBall(gx, gy, r)` places one at grid coords. Remove when the real
+  // spawn tool lands.
+  const dbg = window as unknown as {
+    __spawnBall?: (gx: number, gy: number, r?: number) => void;
+    __dropBall?: (fracX?: number, r?: number) => void;
+    __objectsPeek?: () => unknown;
+  };
+  dbg.__spawnBall = (gx, gy, r = 4): void => {
+    grid.objects.push(createRubberBall(gx, gy, r));
+  };
+  dbg.__dropBall = (fracX = 0.5, r = 4): void => {
+    grid.objects.push(createRubberBall(layout.gw * fracX, r + 1, r));
+  };
+  dbg.__objectsPeek = (): unknown =>
+    grid.objects.map((o) => ({
+      x: Math.round(o.x * 10) / 10,
+      y: Math.round(o.y * 10) / 10,
+      vy: Math.round(o.vy * 100) / 100,
+      r: o.r,
+    }));
 
   // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
   // change).

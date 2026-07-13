@@ -4,6 +4,7 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import type { ViewRect } from './viewport';
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -341,7 +342,50 @@ export class CanvasRenderer implements Renderer {
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
+    // Free objects (the 독립 오브젝트 layer) are drawn as a vector overlay on top
+    // of the scaled grid image — an independent pass that never touches the cell
+    // buffer (grid.cells / buf32). Drawn before the boundary so the frame stays
+    // on top.
+    this.drawObjects(grid, rect);
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Draw the free rigid objects (see Grid.objects / engine/objects.ts) as filled
+   * circles over the sandbox rectangle. Grid coordinates map to device pixels
+   * through the same rect the grid image was drawn into, so an object sits
+   * exactly where its cell-space center says. This milestone renders every
+   * object as a glossy rubber ball (the only object type); the physics shape is
+   * a circle, so a plain `ctx.arc` is the whole of it — no sprite, no rotation.
+   */
+  private drawObjects(grid: Grid, rect: ViewRect): void {
+    const objs = grid.objects;
+    if (objs.length === 0) return;
+    // Uniform cell→device scale (rect preserves the grid aspect, so x and y
+    // scales are equal); use it for both the center and the radius.
+    const s = rect.width / grid.width;
+    const ctx = this.ctx;
+    ctx.save();
+    for (const o of objs) {
+      const cx = rect.x + o.x * s;
+      const cy = rect.y + o.y * s;
+      const r = Math.max(1, o.r * s);
+      // Body.
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#d84652'; // rubber red
+      ctx.fill();
+      // Rim, so the ball reads against a same-colored background.
+      ctx.lineWidth = Math.max(1, r * 0.12);
+      ctx.strokeStyle = 'rgba(90, 20, 26, 0.9)';
+      ctx.stroke();
+      // Specular highlight (upper-left) for a glossy look.
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.32, cy - r * 0.32, Math.max(0.5, r * 0.28), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** Draw a faint reference grid every `gridDivision` cells over the sandbox
