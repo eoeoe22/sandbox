@@ -97,6 +97,12 @@ export function startGame(canvas: HTMLCanvasElement): void {
     __paintCell?: (gx: number, gy: number, id?: number) => void;
     __setRunning?: (on: boolean) => void;
     __stepSim?: (n?: number) => void;
+    __countCells?: (id: number) => number;
+  };
+  dbg.__countCells = (id): number => {
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === id) n++;
+    return n;
   };
   dbg.__setRunning = (on): void => $running.set(on);
   dbg.__stepSim = (n = 1): void => {

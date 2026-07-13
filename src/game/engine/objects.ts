@@ -1,6 +1,7 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
 import { getMaterial } from '../materials/registry';
+import { launchDebris } from '../materials/debris';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -80,6 +81,17 @@ const MAX_SUBSTEP = 0.5;
  * oscillating. Purely a feel knob.
  */
 const OBJECT_FLUID_DRAG = 0.12;
+
+/**
+ * Minimum entry speed (cells/tick, along gravity) for a water-surface entry to
+ * throw a splash. Below it the object slips in without one, so gently lowering a
+ * ball onto water doesn't spray. See spawnSplash.
+ */
+const SPLASH_MIN_SPEED = 1.2;
+
+/** Upper bound on droplets a single splash throws — the "narrow the scope"
+ *  reuse of the blast-fragment scatter: a handful of drops, not a fountain. */
+const SPLASH_MAX_DROPLETS = 6;
 
 /**
  * Below this outward normal speed (cells/tick) a bounce is treated as a rest:
@@ -290,6 +302,46 @@ function fluidSample(o: SimObject, ctx: SimContext): {
 }
 
 /**
+ * Throw a splash on water entry — a *discrete* one-shot event fired the tick an
+ * object first breaks the surface, NOT a continuous per-tick coupling. It reuses
+ * the blast-fragment scatter (launchDebris): a handful of surface liquid cells
+ * around the entry point are relaunched as ballistic droplets that arc up and
+ * out carrying their own liquid, then rain back down — the crown of a splash,
+ * with the fragment count/speed scaled to the entry speed and capped small. The
+ * only place the object layer writes fluid cells; everywhere else it reads.
+ */
+function spawnSplash(o: SimObject, ctx: SimContext, entrySpeed: number): void {
+  const r = o.r;
+  const n = Math.min(SPLASH_MAX_DROPLETS, 2 + Math.floor(entrySpeed));
+  const outB = Math.min(3, entrySpeed * 0.6); // launchDebris speed budget
+  const yTop = Math.floor(o.y - r);
+  const yBot = Math.floor(o.y + r);
+  for (let i = 0; i < n; i++) {
+    // Spread the droplets across the entry rim (−r … +r around the center).
+    const frac = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+    const sx = Math.round(o.x + frac * r);
+    // Topmost non-frozen liquid cell in this column, within the ball's span —
+    // the surface the ball is punching through.
+    let surfY = -1;
+    let id = 0;
+    for (let yy = yTop; yy <= yBot; yy++) {
+      if (!ctx.inBounds(sx, yy)) continue;
+      const cid = ctx.get(sx, yy);
+      if (cid === EMPTY) continue;
+      const m = getMaterial(cid);
+      if (m.phase === Phase.Liquid && !ctx.isFrozen(sx, yy)) {
+        surfY = yy;
+        id = cid;
+        break;
+      }
+    }
+    if (surfY < 0) continue;
+    // Relaunch that liquid cell as a droplet, spraying up and out to its side.
+    launchDebris(ctx, sx, surfY, id, frac >= 0 ? 1 : -1, -1, outB);
+  }
+}
+
+/**
  * Advance every free object one tick: apply gravity, then integrate position in
  * collision-safe substeps, resolving against the solid grid after each. Run as
  * its own pass at the end of Simulation.step(), fully separate from the CA cell
@@ -325,6 +377,9 @@ export function stepObjects(objects: SimObject[], ctx: SimContext): void {
       o.vx -= o.vx * drag;
       o.vy -= o.vy * drag;
     }
+    // Impact speed along gravity, captured before integration — the speed the
+    // object hits the water surface at (used for the splash test below).
+    const entrySpeed = o.vx * ctx.gravityX + o.vy * ctx.gravityY;
     // Integrate position over substeps ≤ MAX_SUBSTEP so nothing tunnels, with a
     // read-only solid-grid collision resolve after each. Time-based, so a bounce
     // mid-tick changes direction for the remainder of the tick.
@@ -338,6 +393,14 @@ export function stepObjects(objects: SimObject[], ctx: SimContext): void {
       o.y += o.vy * dt;
       resolveGridCollision(o, ctx);
       remaining -= dt;
+    }
+    // Splash on surface entry: a discrete edge event, detected statelessly by
+    // comparing submersion before (fs, in air this tick) and after the move. It
+    // fires only on the tick the object first breaks the surface fast enough —
+    // next tick it's already submerged, so it can't retrigger (no continuous
+    // coupling, no extra per-object state).
+    if (fs.submerged === 0 && entrySpeed >= SPLASH_MIN_SPEED && fluidSample(o, ctx).submerged > 0) {
+      spawnSplash(o, ctx, entrySpeed);
     }
   }
 }
