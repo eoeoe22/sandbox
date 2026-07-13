@@ -24,7 +24,6 @@ import {
   $frameMs,
 } from '../state/store';
 import { EMPTY } from './engine/types';
-import { createRubberBall } from './engine/objects';
 import './materials'; // register all materials (side effect)
 
 /**
@@ -81,56 +80,6 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
-
-  // DEBUG spawn hook for the 고무공 validation harness — there is no user-facing
-  // spawn UI in this milestone (the first exposed object is the drum, next
-  // milestone), so expose a console affordance to drop balls for verifying the
-  // object layer. `__dropBall(fracX, r)` drops from the top at a fractional x;
-  // `__spawnBall(gx, gy, r)` places one at grid coords. Remove when the real
-  // spawn tool lands.
-  const dbg = window as unknown as {
-    __spawnBall?: (gx: number, gy: number, r?: number) => void;
-    __launchBall?: (gx: number, gy: number, r: number, vx: number, vy: number) => void;
-    __dropBall?: (fracX?: number, r?: number) => void;
-    __objectsPeek?: () => unknown;
-    __gridInfo?: () => { w: number; h: number };
-    __paintCell?: (gx: number, gy: number, id?: number) => void;
-    __setRunning?: (on: boolean) => void;
-    __stepSim?: (n?: number) => void;
-    __countCells?: (id: number) => number;
-  };
-  dbg.__countCells = (id): number => {
-    let n = 0;
-    for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === id) n++;
-    return n;
-  };
-  dbg.__setRunning = (on): void => $running.set(on);
-  dbg.__stepSim = (n = 1): void => {
-    for (let i = 0; i < n; i++) sim.step();
-  };
-  dbg.__spawnBall = (gx, gy, r = 4): void => {
-    grid.objects.push(createRubberBall(gx, gy, r));
-  };
-  dbg.__launchBall = (gx, gy, r, vx, vy): void => {
-    const b = createRubberBall(gx, gy, r);
-    b.vx = vx;
-    b.vy = vy;
-    grid.objects.push(b);
-  };
-  dbg.__dropBall = (fracX = 0.5, r = 4): void => {
-    grid.objects.push(createRubberBall(layout.gw * fracX, r + 1, r));
-  };
-  dbg.__objectsPeek = (): unknown =>
-    grid.objects.map((o) => ({
-      x: Math.round(o.x * 10) / 10,
-      y: Math.round(o.y * 10) / 10,
-      vy: Math.round(o.vy * 100) / 100,
-      r: o.r,
-    }));
-  dbg.__gridInfo = (): { w: number; h: number } => ({ w: grid.width, h: grid.height });
-  dbg.__paintCell = (gx, gy, id = 1): void => {
-    if (grid.inBounds(gx | 0, gy | 0)) grid.set(gx | 0, gy | 0, id);
-  };
 
   // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
   // change).
