@@ -54,6 +54,17 @@
   let pinned = $state<string | null>(null);
   const open = $derived(pinned ?? hovered);
 
+  // Entering search swaps the category list for the results grid and the
+  // template hides the flyout (`!searching` guard). Also drop any pinned/hovered
+  // category, so a flyout that was open before the user started typing doesn't
+  // spring back open on its own once the search is cleared.
+  $effect(() => {
+    if (searching) {
+      pinned = null;
+      hovered = null;
+    }
+  });
+
   let root: HTMLDivElement;
   let flyoutEl = $state<HTMLDivElement | null>(null);
   const buttons = new Map<string, HTMLButtonElement>();

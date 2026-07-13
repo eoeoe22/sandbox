@@ -149,7 +149,11 @@ function parseIdList(v: unknown, cap: number): number[] {
   const seen = new Set<number>();
   for (const item of v) {
     if (typeof item !== 'number' || !Number.isInteger(item)) continue;
-    if (seen.has(item) || !getMaterial(item)) continue;
+    // Validate against the curated palette, not the whole registry: some
+    // registered ids (Ember, Spark, Debris, the Eraser, …) are deliberately kept
+    // out of MATERIALS and must never surface in the quick-access bar. Reuses the
+    // same PALETTE_IDS gate parseBlend relies on.
+    if (seen.has(item) || !PALETTE_IDS.has(item)) continue;
     seen.add(item);
     out.push(item);
     if (out.length >= cap) break;
