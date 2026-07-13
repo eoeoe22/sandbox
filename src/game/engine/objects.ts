@@ -4,7 +4,7 @@ import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST } from '../materials/blast';
 import { MOLTEN_METAL } from '../materials/moltenmetal';
-import { IRON } from '../materials/iron';
+import { METAL_POWDER } from '../materials/metalpowder';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -922,10 +922,13 @@ function scanCapsuleExposure(o: SimCapsule, ctx: SimContext): { blast: boolean; 
 }
 
 /**
- * Destroyed by a blast: fling a few Iron fragments (reusing debris.ts's scatter,
- * count kept low — "몇 조각") so the drum bursts into shrapnel rather than
- * vanishing. Being empty, it spills no contents. Fragments carry Iron so they
- * fly metallic and rain back as small iron bits.
+ * Destroyed by a blast: the shell is torn apart, so fling a few Metal Powder
+ * fragments (reusing debris.ts's scatter, count kept low — "몇 조각") that arc up
+ * and rain back down as a heap of steel grains rather than the drum vanishing.
+ * Metal Powder (metalpowder.ts) — not solid Iron — is the destroyed form: an
+ * explosion shatters the metal into dust, and the powder still melts back to
+ * Molten Metal if it later lands in heat. Being empty, the drum spills no
+ * contents.
  */
 function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
   const n = 5;
@@ -939,7 +942,7 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
     // read-only over terrain, spawning only into air/loose matter. Mirrors the
     // guard in spawnMoltenPuddle; a launch point buried in stone/wall is skipped.
     if (isSolidCell(cx, cy, ctx)) continue;
-    launchDebris(ctx, cx, cy, IRON.id, i % 2 === 0 ? 1 : -1, -1, 2);
+    launchDebris(ctx, cx, cy, METAL_POWDER.id, i % 2 === 0 ? 1 : -1, -1, 2);
   }
 }
 
