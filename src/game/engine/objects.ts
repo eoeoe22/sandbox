@@ -1018,7 +1018,14 @@ function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: 
     const dt = Math.min(remaining, MAX_SUBSTEP / speed);
     o.x += o.vx * dt;
     o.y += o.vy * dt;
-    o.angle += o.angularVelocity * dt;
+    // Integrate orientation. The screen y-axis points DOWN, so a positive
+    // angularVelocity (from the ω×r / r×J contact solve, which is self-consistent
+    // in that frame) corresponds to a *clockwise* visual spin. The capsule axis
+    // (sin θ, cos θ) rotates counter-clockwise as θ grows, so θ must DECREASE to
+    // track a clockwise spin — hence `-=`. With `+=` the body (and its sprite)
+    // rotated opposite to its rolling direction (rolled right but spun as if going
+    // left), which read as "rolling the wrong way" on a slope.
+    o.angle -= o.angularVelocity * dt;
     if (resolveCapsuleCollision(o, ctx)) grounded = true;
     remaining -= dt;
   }

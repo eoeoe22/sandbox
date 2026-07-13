@@ -12,6 +12,13 @@ import { DRUM_SPRITE, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
  *  pixel art in the exact grain size — no vector circle, no anti-aliasing. */
 const BALL_COLOR = rgb(0xd8, 0x46, 0x52); // rubber red
 
+/** Free objects (balls, drums) are rasterized into a separate overlay buffer at
+ *  this many sub-pixels per grid cell, so they read at higher resolution than the
+ *  chunky cell grain — the drum sprite in particular gets its full native detail.
+ *  Still nearest-neighbor / no anti-aliasing, so it stays crisp pixel art, just
+ *  finer. */
+const OBJECT_SCALE = 2;
+
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
  * ImageData at grid resolution, then scales it up to the sandbox rectangle with
@@ -59,6 +66,13 @@ export class CanvasRenderer implements Renderer {
   private offCtx: CanvasRenderingContext2D;
   private image!: ImageData;
   private buf32!: Uint32Array;
+  /** Higher-resolution (OBJECT_SCALE×) overlay for the free-object layer, drawn
+   *  over the scaled-up grid image so objects render finer than the cells. Sized
+   *  to OBJECT_SCALE× the grid in allocForGrid; transparent where no object. */
+  private objOff: HTMLCanvasElement;
+  private objCtx: CanvasRenderingContext2D;
+  private objImage!: ImageData;
+  private objBuf32!: Uint32Array;
   private palette: Uint32Array;
   /** id → temperature ramp, or null for materials drawn with a flat color. */
   private glow: (GlowRamp | null)[];
@@ -106,6 +120,12 @@ export class CanvasRenderer implements Renderer {
     const offCtx = this.off.getContext('2d');
     if (!offCtx) throw new Error('Offscreen 2D context unavailable');
     this.offCtx = offCtx;
+
+    this.objOff = document.createElement('canvas');
+    const objCtx = this.objOff.getContext('2d');
+    if (!objCtx) throw new Error('Object overlay 2D context unavailable');
+    this.objCtx = objCtx;
+
     this.allocForGrid(grid);
     this.heatLut = CanvasRenderer.buildHeatLut();
 
@@ -247,6 +267,13 @@ export class CanvasRenderer implements Renderer {
     this.off.height = grid.height;
     this.image = this.offCtx.createImageData(grid.width, grid.height);
     this.buf32 = new Uint32Array(this.image.data.buffer);
+    // The object overlay is OBJECT_SCALE× the grid resolution.
+    const ow = grid.width * OBJECT_SCALE;
+    const oh = grid.height * OBJECT_SCALE;
+    this.objOff.width = ow;
+    this.objOff.height = oh;
+    this.objImage = this.objCtx.createImageData(ow, oh);
+    this.objBuf32 = new Uint32Array(this.objImage.data.buffer);
   }
 
   render(grid: Grid): void {
@@ -333,12 +360,6 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
-    // Free objects (the 독립 오브젝트 layer) are rasterized straight into the
-    // low-res render buffer, on top of the cell colors, before it's scaled up
-    // with smoothing off — so a ball reads as crisp pixel art in the same grain
-    // size as the cells (no vector circle, no anti-aliasing). The simulation
-    // state (grid.cells) is never touched; this is the render image only.
-    if (!heat && grid.objects.length > 0) this.rasterizeObjects(grid, buf);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -351,6 +372,16 @@ export class CanvasRenderer implements Renderer {
     this.ctx.clearRect(0, 0, cw, ch);
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(this.off, rect.x, rect.y, rect.width, rect.height);
+    // Free-object overlay: rasterized at OBJECT_SCALE× the grid into its own
+    // buffer, then drawn over the scaled-up grid into the same rect (smoothing
+    // off) so objects render at higher resolution than the cells while staying
+    // crisp pixel art. Skipped in the heat overlay (objects aren't thermal) and
+    // when there are no objects, so it costs nothing in the common case.
+    if (!heat && grid.objects.length > 0) {
+      this.rasterizeObjects(grid);
+      this.objCtx.putImageData(this.objImage, 0, 0);
+      this.ctx.drawImage(this.objOff, rect.x, rect.y, rect.width, rect.height);
+    }
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
@@ -359,58 +390,70 @@ export class CanvasRenderer implements Renderer {
 
   /**
    * Rasterize the free rigid objects (see Grid.objects / engine/objects.ts) into
-   * the low-res render buffer `buf`, one grid cell per pixel. A cell is filled
-   * with the ball color when its *center* falls inside the circle (pixel-center
-   * sampling, no anti-aliasing), so the ball snaps to the same pixel grid as the
-   * cells and scales up crisp as pixel art. Writes only the render image — the
-   * simulation's cell buffer is never touched. Milestone renders every object as
-   * a flat rubber ball (the only object type); the shape is a circle, so this is
-   * a plain disc fill — no sprite, no rotation, no gloss.
+   * the OBJECT_SCALE× overlay buffer (this.objBuf32), which is then drawn over the
+   * scaled grid. The buffer is cleared to transparent first so only object pixels
+   * show. Sampling is nearest-neighbor at sub-pixel centers (no anti-aliasing), so
+   * objects stay crisp pixel art — just finer than the cell grain. Writes only the
+   * render image; the simulation's cell buffer is never touched.
    */
-  private rasterizeObjects(grid: Grid, buf: Uint32Array): void {
+  private rasterizeObjects(grid: Grid): void {
+    const buf = this.objBuf32;
+    buf.fill(0); // transparent overlay — only object pixels are written below
+    const s = OBJECT_SCALE;
+    const w = grid.width * s;
+    const h = grid.height * s;
     for (const o of grid.objects) {
-      if (o.kind === 'ball') this.rasterizeBall(grid, buf, o);
-      else this.rasterizeDrum(grid, buf, o);
+      if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o);
+      else this.rasterizeDrum(buf, w, h, s, o);
     }
   }
 
-  /** Rasterize one rubber ball: fill each cell whose center is inside the disc. */
-  private rasterizeBall(grid: Grid, buf: Uint32Array, o: { x: number; y: number; r: number }): void {
-    const w = grid.width;
-    const h = grid.height;
+  /** Rasterize one rubber ball into the overlay: fill each sub-pixel whose center
+   *  (in grid coordinates) falls inside the disc. `w`/`h` are the overlay's
+   *  sub-pixel dimensions, `s` the sub-pixels per cell. */
+  private rasterizeBall(
+    buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
+    o: { x: number; y: number; r: number },
+  ): void {
     const r = o.r;
     const r2 = r * r;
-    let x0 = Math.floor(o.x - r);
-    let x1 = Math.ceil(o.x + r);
-    let y0 = Math.floor(o.y - r);
-    let y1 = Math.ceil(o.y + r);
+    let x0 = Math.floor((o.x - r) * s);
+    let x1 = Math.ceil((o.x + r) * s);
+    let y0 = Math.floor((o.y - r) * s);
+    let y1 = Math.ceil((o.y + r) * s);
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > w) x1 = w;
     if (y1 > h) y1 = h;
-    for (let cy = y0; cy < y1; cy++) {
-      const dy = cy + 0.5 - o.y; // pixel-center sample point
-      const row = cy * w;
-      for (let cx = x0; cx < x1; cx++) {
-        const dx = cx + 0.5 - o.x;
-        if (dx * dx + dy * dy <= r2) buf[row + cx] = BALL_COLOR;
+    for (let sy = y0; sy < y1; sy++) {
+      const dy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
+      const row = sy * w;
+      for (let sx = x0; sx < x1; sx++) {
+        const dx = (sx + 0.5) / s - o.x;
+        if (dx * dx + dy * dy <= r2) buf[row + sx] = BALL_COLOR;
       }
     }
   }
 
   /**
-   * Rasterize one drum: rotate the pixel-art sprite by the capsule's `angle` and
-   * sample it per grid cell. For each cell in the drum's rotated bounding box we
-   * take the vector from center, un-rotate it into the sprite's upright frame,
-   * map to a sprite pixel, and write that pixel's color (skipping transparent
-   * ones). Nearest-neighbor sampling with no anti-aliasing, so the drum reads as
-   * crisp pixel art in the same grain as the cells — the rubber ball's philosophy
-   * plus rotation. The sprite's 24×32 box maps onto the physics capsule's box
-   * (2·radius wide × 2·(halfLength+radius) tall), so display and collision agree.
+   * Rasterize one drum into the overlay: rotate the pixel-art sprite by the
+   * capsule's `angle` and sample it per sub-pixel. For each sub-pixel in the
+   * drum's bounding box we take its center's vector from the drum center (in grid
+   * coords), un-rotate it into the sprite's upright frame, map to a sprite pixel,
+   * and write that pixel's color (skipping transparent ones). Nearest-neighbor, no
+   * anti-aliasing. The sprite's 24×32 box maps onto the physics capsule's box
+   * (2·radius wide × 2·(halfLength+radius) tall), so display and collision agree;
+   * at OBJECT_SCALE = 2 the 12×16-cell drum samples the sprite near its native
+   * 24×32 resolution.
    */
   private rasterizeDrum(
-    grid: Grid,
     buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
     o: {
       x: number;
       y: number;
@@ -419,17 +462,15 @@ export class CanvasRenderer implements Renderer {
       radius: number;
     },
   ): void {
-    const w = grid.width;
-    const h = grid.height;
     const halfW = o.radius; // half the drum's short (width) extent, in cells
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
     // Bounding box that contains the drum at any rotation (a circle of the long
-    // half-extent), clamped to the grid.
+    // half-extent), clamped to the overlay.
     const reach = halfL;
-    let x0 = Math.floor(o.x - reach);
-    let x1 = Math.ceil(o.x + reach);
-    let y0 = Math.floor(o.y - reach);
-    let y1 = Math.ceil(o.y + reach);
+    let x0 = Math.floor((o.x - reach) * s);
+    let x1 = Math.ceil((o.x + reach) * s);
+    let y0 = Math.floor((o.y - reach) * s);
+    let y1 = Math.ceil((o.y + reach) * s);
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > w) x1 = w;
@@ -439,11 +480,11 @@ export class CanvasRenderer implements Renderer {
     // Sprite-pixels per grid cell along each local axis (display box → sprite box).
     const sxScale = DRUM_SPRITE_W / (2 * halfW);
     const syScale = DRUM_SPRITE_H / (2 * halfL);
-    for (let cy = y0; cy < y1; cy++) {
-      const wy = cy + 0.5 - o.y;
-      const row = cy * w;
-      for (let cx = x0; cx < x1; cx++) {
-        const wx = cx + 0.5 - o.x;
+    for (let sy = y0; sy < y1; sy++) {
+      const wy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
+      const row = sy * w;
+      for (let sx = x0; sx < x1; sx++) {
+        const wx = (sx + 0.5) / s - o.x;
         // Un-rotate into the drum's local frame: local-x across width (unit
         // (cos,−sin)), local-y along length (unit (sin,cos)).
         const lx = wx * cos - wy * sin;
@@ -453,7 +494,7 @@ export class CanvasRenderer implements Renderer {
         const spy = DRUM_SPRITE_H * 0.5 + ly * syScale;
         if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
         const color = DRUM_SPRITE[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
-        if (color !== 0) buf[row + cx] = color; // 0 = transparent sprite pixel
+        if (color !== 0) buf[row + sx] = color; // 0 = transparent sprite pixel
       }
     }
   }
