@@ -94,6 +94,32 @@ const SPLASH_MIN_SPEED = 1.2;
 const SPLASH_MAX_DROPLETS = 6;
 
 /**
+ * Granular-bearing support (cells/tick², per unit of submerged footprint
+ * fraction), how hard an embedded object is held up by the powder it sits in.
+ * Always capped at exactly canceling gravity, so the medium is *plastic*: it
+ * arrests the object and holds it, and never springs it back out. Sized so a
+ * gently-set ball needs only ≈ OBJECT_GRAVITY / POWDER_BEARING of its footprint
+ * embedded (~1/6) to be borne — it rests lightly on the surface rather than
+ * sinking, while a fast one punches deeper and stays there.
+ */
+const POWDER_BEARING = 1.5;
+
+/**
+ * Granular drag (per-tick velocity damping per unit submerged fraction). Powder
+ * bleeds momentum far harder than water, so penetration depth tracks entry speed
+ * — a fast drop drives deep before stopping, a slow one barely dents the surface.
+ * Read-only: the object samples the grains to resist, it doesn't shove them.
+ */
+const POWDER_DRAG = 0.34;
+
+/** Minimum entry speed (along gravity) to throw a powder scatter on impact. */
+const POWDER_IMPACT_MIN_SPEED = 1.0;
+
+/** Upper bound on grains a powder-impact scatter throws — deliberately fewer and
+ *  slower than a water splash (물보다 약하게). */
+const POWDER_SCATTER_MAX = 4;
+
+/**
  * Below this outward normal speed (cells/tick) a bounce is treated as a rest:
  * the normal velocity is zeroed instead of bouncing. Without it, gravity would
  * re-inject a hair of downward speed every tick and a "resting" ball would
@@ -261,16 +287,17 @@ function resolveGridCollision(o: SimObject, ctx: SimContext): void {
 }
 
 /**
- * Sample the fluid the circle's footprint sits in, for buoyancy. Walk the cells
- * whose center is inside the circle (the same footprint the renderer fills) and,
- * for each that holds a (non-frozen) liquid, add its density and count it as
- * submerged. Returns the density sum (the Archimedes term — displaced fluid per
- * unit cell), the submerged cell count, and the total footprint cell count (for
- * the drag fraction). Read-only: buoyancy never disturbs the fluid cells.
+ * Sample the medium the circle's footprint sits in — for buoyancy (liquid) and
+ * granular penetration (powder). Walk the cells whose center is inside the circle
+ * (the same footprint the renderer fills) and bucket them: non-frozen liquid adds
+ * its density (the Archimedes term) and a submerged count; powder adds a count.
+ * Returns those plus the total footprint cell count (for the drag fractions).
+ * Read-only: neither buoyancy nor penetration disturbs the sampled cells.
  */
-function fluidSample(o: SimObject, ctx: SimContext): {
-  densitySum: number;
-  submerged: number;
+function sampleMedium(o: SimObject, ctx: SimContext): {
+  liquidDensity: number;
+  liquidCells: number;
+  powderCells: number;
   footprint: number;
 } {
   const r = o.r;
@@ -279,8 +306,9 @@ function fluidSample(o: SimObject, ctx: SimContext): {
   const x1 = Math.ceil(o.x + r);
   const y0 = Math.floor(o.y - r);
   const y1 = Math.ceil(o.y + r);
-  let densitySum = 0;
-  let submerged = 0;
+  let liquidDensity = 0;
+  let liquidCells = 0;
+  let powderCells = 0;
   let footprint = 0;
   for (let cy = y0; cy < y1; cy++) {
     const dy = cy + 0.5 - o.y;
@@ -292,13 +320,17 @@ function fluidSample(o: SimObject, ctx: SimContext): {
       const id = ctx.get(cx, cy);
       if (id === EMPTY) continue;
       const m = getMaterial(id);
-      if (m.phase === Phase.Liquid && !ctx.isFrozen(cx, cy)) {
-        densitySum += m.density;
-        submerged++;
+      if (m.phase === Phase.Liquid) {
+        if (!ctx.isFrozen(cx, cy)) {
+          liquidDensity += m.density;
+          liquidCells++;
+        }
+      } else if (m.phase === Phase.Powder) {
+        powderCells++;
       }
     }
   }
-  return { densitySum, submerged, footprint };
+  return { liquidDensity, liquidCells, powderCells, footprint };
 }
 
 /**
@@ -342,6 +374,42 @@ function spawnSplash(o: SimObject, ctx: SimContext, entrySpeed: number): void {
 }
 
 /**
+ * Throw a scatter of grains on powder impact — the same discrete, one-shot,
+ * on-impact reuse of the blast-fragment scatter (launchDebris) as the water
+ * splash, but deliberately weaker (물보다 약하게): fewer grains, lower launch
+ * speed. A handful of surface grains around the entry point are flung up and out
+ * carrying their own powder, then rain back down as a little crater rim. Fires
+ * only on the impact tick; the resting penetration below never moves grains.
+ */
+function spawnPowderScatter(o: SimObject, ctx: SimContext, entrySpeed: number): void {
+  const r = o.r;
+  const n = Math.min(POWDER_SCATTER_MAX, 1 + Math.floor(entrySpeed / 2));
+  const outB = Math.min(1.5, entrySpeed * 0.35); // weaker than a splash's budget
+  const yTop = Math.floor(o.y - r);
+  const yBot = Math.floor(o.y + r);
+  for (let i = 0; i < n; i++) {
+    const frac = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+    const sx = Math.round(o.x + frac * r);
+    // Topmost powder cell in this column, within the ball's span — the surface
+    // the ball is punching into.
+    let surfY = -1;
+    let id = 0;
+    for (let yy = yTop; yy <= yBot; yy++) {
+      if (!ctx.inBounds(sx, yy)) continue;
+      const cid = ctx.get(sx, yy);
+      if (cid === EMPTY) continue;
+      if (getMaterial(cid).phase === Phase.Powder) {
+        surfY = yy;
+        id = cid;
+        break;
+      }
+    }
+    if (surfY < 0) continue;
+    launchDebris(ctx, sx, surfY, id, frac >= 0 ? 1 : -1, -1, outB);
+  }
+}
+
+/**
  * Advance every free object one tick: apply gravity, then integrate position in
  * collision-safe substeps, resolving against the solid grid after each. Run as
  * its own pass at the end of Simulation.step(), fully separate from the CA cell
@@ -368,18 +436,39 @@ export function stepObjects(objects: SimObject[], ctx: SimContext): void {
     // fluid (rubber ball vs. water) nets upward and floats, settling where the
     // submerged fraction balances the density ratio. Drag (scaled by how much of
     // the footprint is actually in fluid) damps the bob and sideways drift.
-    const fs = fluidSample(o, ctx);
-    if (fs.densitySum > 0) {
-      const ab = (fs.densitySum * OBJECT_GRAVITY * s) / o.mass;
+    const ms = sampleMedium(o, ctx);
+    const footprint = ms.footprint || 1;
+    if (ms.liquidDensity > 0) {
+      const ab = (ms.liquidDensity * OBJECT_GRAVITY * s) / o.mass;
       o.vx -= ctx.gravityX * ab;
       o.vy -= ctx.gravityY * ab;
-      const drag = OBJECT_FLUID_DRAG * (fs.submerged / (fs.footprint || 1));
+      const drag = OBJECT_FLUID_DRAG * (ms.liquidCells / footprint);
+      o.vx -= o.vx * drag;
+      o.vy -= o.vy * drag;
+    }
+    if (ms.powderCells > 0) {
+      const frac = ms.powderCells / footprint;
+      // Granular bearing: a static support opposing gravity that grows with how
+      // embedded the ball is, capped at exactly canceling gravity so the medium
+      // is plastic — it arrests and holds the ball, never springs it back out. A
+      // gently-set ball sinks only until enough grains bear it (rests on top).
+      const bearing = Math.min(OBJECT_GRAVITY * s, POWDER_BEARING * frac * s);
+      o.vx -= ctx.gravityX * bearing;
+      o.vy -= ctx.gravityY * bearing;
+      // Granular drag: bleeds momentum hard, so penetration depth tracks entry
+      // speed (fast → deep, slow → shallow). Grains aren't moved (read-only).
+      const drag = Math.min(0.9, POWDER_DRAG * frac);
       o.vx -= o.vx * drag;
       o.vy -= o.vy * drag;
     }
     // Impact speed along gravity, captured before integration — the speed the
-    // object hits the water surface at (used for the splash test below).
+    // object hits a medium's surface at (drives the splash / scatter tests below).
     const entrySpeed = o.vx * ctx.gravityX + o.vy * ctx.gravityY;
+    // Which surface, if any, this object breaks *this* tick: it must have been
+    // clear of that medium at tick start (edge-triggered) and moving in fast
+    // enough. Prioritize liquid when a cell somehow holds both interpretations.
+    const enteredLiquid = ms.liquidCells === 0 && entrySpeed >= SPLASH_MIN_SPEED;
+    const enteredPowder = ms.powderCells === 0 && entrySpeed >= POWDER_IMPACT_MIN_SPEED;
     // Integrate position over substeps ≤ MAX_SUBSTEP so nothing tunnels, with a
     // read-only solid-grid collision resolve after each. Time-based, so a bounce
     // mid-tick changes direction for the remainder of the tick.
@@ -394,13 +483,16 @@ export function stepObjects(objects: SimObject[], ctx: SimContext): void {
       resolveGridCollision(o, ctx);
       remaining -= dt;
     }
-    // Splash on surface entry: a discrete edge event, detected statelessly by
-    // comparing submersion before (fs, in air this tick) and after the move. It
-    // fires only on the tick the object first breaks the surface fast enough —
-    // next tick it's already submerged, so it can't retrigger (no continuous
-    // coupling, no extra per-object state).
-    if (fs.submerged === 0 && entrySpeed >= SPLASH_MIN_SPEED && fluidSample(o, ctx).submerged > 0) {
-      spawnSplash(o, ctx, entrySpeed);
+    // Surface-entry scatter: a discrete edge event, detected statelessly by
+    // comparing the medium before (ms, clear this tick) and after the move. It
+    // fires only on the tick the object first breaks a surface fast enough — next
+    // tick it's already inside, so it can't retrigger (no continuous coupling, no
+    // extra per-object state). Water throws a splash; powder throws a weaker
+    // grain scatter (물보다 약하게).
+    if (enteredLiquid || enteredPowder) {
+      const after = sampleMedium(o, ctx);
+      if (enteredLiquid && after.liquidCells > 0) spawnSplash(o, ctx, entrySpeed);
+      else if (enteredPowder && after.powderCells > 0) spawnPowderScatter(o, ctx, entrySpeed);
     }
   }
 }
