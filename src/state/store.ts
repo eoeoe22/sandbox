@@ -72,9 +72,11 @@ export const $tool = atom<Tool>('material');
  * Which free object the 'object' tool spawns on a canvas click — the object
  * layer's answer to `$selectedMaterial`. The 독립 오브젝트 palette tab sets this
  * when an item is picked; PointerPainter reads it to build the right body (a
- * rubber ball or a blue drum). See MaterialPalette and PointerPainter.
+ * rubber ball, or a drum: empty 빈 드럼통, 원유 드럼통, or 산 드럼통 — the three
+ * drums share one capsule and differ only in what they spill when destroyed).
+ * See MaterialPalette and PointerPainter.
  */
-export type ObjectKind = 'ball' | 'drum';
+export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum';
 export const $selectedObject = atom<ObjectKind>('ball');
 
 /**

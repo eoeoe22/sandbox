@@ -5,7 +5,8 @@ import { getMaterial } from '../materials/registry';
 import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
-import { DRUM_SPRITE, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
+import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
+import type { DrumFill } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -470,8 +471,10 @@ export class CanvasRenderer implements Renderer {
       angle: number;
       halfLength: number;
       radius: number;
+      fill: DrumFill;
     },
   ): void {
+    const sprite = drumSpriteFor(o.fill); // body tint varies by fill; shape shared
     const halfW = o.radius; // half the drum's short (width) extent, in cells
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
     // Bounding box that contains the drum at any rotation (a circle of the long
@@ -503,7 +506,7 @@ export class CanvasRenderer implements Renderer {
         const spx = DRUM_SPRITE_W * 0.5 + lx * sxScale;
         const spy = DRUM_SPRITE_H * 0.5 + ly * syScale;
         if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
-        const color = DRUM_SPRITE[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
+        const color = sprite[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
         if (color !== 0) buf[row + sx] = color; // 0 = transparent sprite pixel
       }
     }

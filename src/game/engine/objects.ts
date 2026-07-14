@@ -1,10 +1,13 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
+import { AMBIENT_TEMP } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST } from '../materials/blast';
 import { MOLTEN_METAL } from '../materials/moltenmetal';
 import { METAL_POWDER } from '../materials/metalpowder';
+import { OIL } from '../materials/oil';
+import { ACID } from '../materials/acid';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -41,6 +44,11 @@ export interface SimObject {
    *  destruction is time-gated (like the drum's melt) so a stray hot pixel
    *  doesn't pop the ball — only sustained exposure does. */
   heatTicks: number;
+  /** The body's own heat reservoir (°). Relaxes toward the surrounding footprint
+   *  temperature each tick and is what the 가열/냉각 brush writes, so heat/cool
+   *  reaches a body even where it floats over empty air (which the cell heat brush
+   *  can't warm). The burn trigger judges by max(surroundings, this). */
+  temp: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimCapsule via SimBody. */
@@ -89,6 +97,7 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
     mass: RUBBER_BALL_DENSITY * area,
     restitution: RUBBER_BALL_RESTITUTION,
     heatTicks: 0,
+    temp: AMBIENT_TEMP,
   };
 }
 
@@ -103,6 +112,16 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
  * The display (a drum sprite) is separate from this collision shape.
  */
 export type DrumState = 'intact' | 'destroyed' | 'melted';
+
+/**
+ * What a drum is filled with. An empty drum (빈 드럼통) spills nothing; a filled
+ * one pours out its liquid contents when destroyed (파괴 시 쏟아짐) — 원유 드럼통
+ * gushes Crude Oil, 산 드럼통 gushes Acid — but is otherwise identical to the
+ * empty drum in every physical respect (나머지는 드럼통과 동일). Kept separate
+ * from `kind` so all drums share one capsule physics path; only the spill
+ * byproduct and the sprite tint vary by fill.
+ */
+export type DrumFill = 'empty' | 'oil' | 'acid';
 
 export interface SimCapsule {
   kind: 'drum';
@@ -131,9 +150,16 @@ export interface SimCapsule {
   /** Lifecycle: intact until a trigger removes it. Both non-intact states are
    *  terminal — the object is dropped from the array the tick it reaches one. */
   state: DrumState;
+  /** What the drum is carrying — what (if anything) it spills when destroyed.
+   *  Does not affect physics; see DrumFill and spawnFillSpill. */
+  fill: DrumFill;
   /** Consecutive ticks the footprint has sampled above the melt threshold, so a
    *  brief brush with heat doesn't melt it — only sustained exposure does. */
   heatTicks: number;
+  /** The drum's own heat reservoir (°) — see SimObject.temp. Lets the 가열/냉각
+   *  brush melt a drum floating in air, and holds heat picked up from a hot
+   *  surrounding so it keeps melting briefly after being pulled out. */
+  temp: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimObject via SimBody. */
@@ -168,14 +194,18 @@ export const DRUM_MELT_TEMP = 1200;
 export const DRUM_MELT_TICKS = 24;
 
 /**
- * Build an empty blue drum centered at (x,y), at rest and upright. Mass is the
- * capsule area × density; the moment of inertia uses the bounding-box rectangle
- * approximation I = m(w² + h²)/12 (w=2·radius, h=2·(halfLength+radius)) — a
- * homogeneous-capsule近似 that's cheap and stable, not a real capsule integral.
+ * Build a drum centered at (x,y), at rest and upright, carrying `fill` (default
+ * an empty blue drum). Mass is the capsule area × density; the moment of inertia
+ * uses the bounding-box rectangle approximation I = m(w² + h²)/12 (w=2·radius,
+ * h=2·(halfLength+radius)) — a homogeneous-capsule近似 that's cheap and stable,
+ * not a real capsule integral. The fill is inert to physics (every drum weighs
+ * and moves the same, 나머지는 드럼통과 동일); it only decides the destruction
+ * spill and the sprite tint.
  */
-export function createBlueDrum(
+export function createDrum(
   x: number,
   y: number,
+  fill: DrumFill = 'empty',
   radius = DRUM_RADIUS,
   halfLength = DRUM_HALF_LENGTH,
 ): SimCapsule {
@@ -202,6 +232,8 @@ export function createBlueDrum(
     restitution: DRUM_RESTITUTION,
     state: 'intact',
     heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    fill,
   };
 }
 
@@ -1055,28 +1087,47 @@ function scanBodyExposure(
   return { blast, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
+/** Per-cell chance a shattered drum flings a Metal Powder fragment from that
+ *  footprint cell. Sparse like the hollow shell's melt puddle (0.3) — a thin
+ *  shell, not a solid block — but applied across the whole footprint (~160 cells)
+ *  it yields a clearly visible heap of steel grains instead of a few stray specks
+ *  (the old 5-point medial scatter left only 1–4 grains, easy to mistake for
+ *  nothing). Melt still leaves Molten Metal; only the shatter's yield changed. */
+const DRUM_DEBRIS_CHANCE = 0.2;
+
 /**
- * Destroyed by a blast: the shell is torn apart, so fling a few Metal Powder
- * fragments (reusing debris.ts's scatter, count kept low — "몇 조각") that arc up
- * and rain back down as a heap of steel grains rather than the drum vanishing.
- * Metal Powder (metalpowder.ts) — not solid Iron — is the destroyed form: an
- * explosion shatters the metal into dust, and the powder still melts back to
- * Molten Metal if it later lands in heat. Being empty, the drum spills no
- * contents.
+ * Destroyed by a blast/crush: the shell is torn apart, so fling Metal Powder
+ * fragments (reusing debris.ts's scatter) from across the drum's whole footprint,
+ * arcing up and raining back down as a visible heap of steel grains rather than
+ * the drum vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
+ * destroyed form: an explosion shatters the metal into dust, and the powder still
+ * melts back to Molten Metal if it later lands in heat. Being a hollow shell only
+ * a fraction of the footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are
+ * skipped (the object layer is read-only over terrain). The fill spill, if any,
+ * is spawned separately (see spawnFillSpill).
  */
 function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
-  const n = 5;
+  const r = o.radius;
+  const r2 = r * r;
   const [ax, ay, bx, by] = capsuleEnds(o);
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1); // 0..1 along the segment (n is fixed > 1)
-    const cx = Math.round(ax + (bx - ax) * t);
-    const cy = Math.round(ay + (by - ay) * t);
-    if (!ctx.inBounds(cx, cy)) continue;
-    // Don't fling from (and thereby overwrite) a solid cell — the object layer is
-    // read-only over terrain, spawning only into air/loose matter. Mirrors the
-    // guard in spawnMoltenPuddle; a launch point buried in stone/wall is skipped.
-    if (isSolidCell(cx, cy, ctx)) continue;
-    launchDebris(ctx, cx, cy, METAL_POWDER.id, i % 2 === 0 ? 1 : -1, -1, 2);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      // Don't fling from (and thereby overwrite) a solid cell — the object layer
+      // is read-only over terrain, spawning only into air/loose matter.
+      if (isSolidCell(cx, cy, ctx)) continue;
+      if (!ctx.chance(DRUM_DEBRIS_CHANCE)) continue;
+      // Spray outward from the drum's center (left cells fly left, right fly right).
+      launchDebris(ctx, cx, cy, METAL_POWDER.id, cx + 0.5 < o.x ? -1 : 1, -1, 2);
+    }
   }
 }
 
@@ -1107,6 +1158,54 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
       if (id !== EMPTY && getMaterial(id).phase === Phase.Solid) continue;
       if (!ctx.chance(0.3)) continue;
       ctx.spawn(cx, cy, MOLTEN_METAL.id);
+    }
+  }
+}
+
+/** Per-cell chance a filled drum floods a footprint cell with its contents. Far
+ *  denser than the hollow shell's sparse metal (0.3): a full drum is brim-full of
+ *  liquid, so it gushes a proper puddle (쏟아짐), not a scatter. */
+const FILL_SPILL_CHANCE = 0.7;
+
+/** The liquid a filled drum pours out when destroyed, or null for an empty drum
+ *  (which spills nothing). 원유 드럼통 → Crude Oil, 산 드럼통 → Acid. */
+function fillSpillId(fill: DrumFill): number | null {
+  if (fill === 'oil') return OIL.id;
+  if (fill === 'acid') return ACID.id;
+  return null;
+}
+
+/**
+ * Spill a filled drum's liquid contents across its footprint when it's destroyed
+ * — the 기름/산 that pours out (쏟아짐). Floods the cells the drum occupied with
+ * its fill liquid, but only over air/loose matter — never over solid terrain (the
+ * object layer stays read-only over solids, same Phase.Solid guard as the
+ * molten-metal puddle; a frozen liquid isn't treated as solid here).
+ * The liquid is spawned at ambient temperature, so a spill into a hot zone (an
+ * oil drum melted in lava) heats up and ignites/boils on its own the next few
+ * ticks rather than vanishing on contact. An empty drum has no fill: no-op.
+ */
+function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
+  const id = fillSpillId(o.fill);
+  if (id === null) return;
+  const r = o.radius;
+  const r2 = r * r;
+  const [ax, ay, bx, by] = capsuleEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      const cell = ctx.get(cx, cy);
+      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
+      if (!ctx.chance(FILL_SPILL_CHANCE)) continue;
+      ctx.spawn(cx, cy, id);
     }
   }
 }
@@ -1215,6 +1314,13 @@ const BLAST_KNOCK_SPIN = 0.12;
  *  Evaluated after the post-collision grid re-resolve (phase B.5) frees any
  *  transient shove-into-terrain, so only a genuinely stuck body reaches it. */
 const CRUSH_SOLID_FRAC = 0.6;
+
+/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward its
+ *  surrounding footprint temperature — Newtonian conduction between the object
+ *  and the medium it sits in. Small, so brush-applied heat/cool lingers a couple
+ *  of seconds and a body carries heat briefly after leaving a fire, rather than
+ *  snapping to ambient in one tick. Feel knob. */
+const OBJECT_HEAT_CONDUCTION = 0.08;
 
 /** Quick test: does a shockwave flash cell overlap the body's footprint *right
  *  now*? A direct hit is captured at the tick's start (before knockback can move
@@ -1408,10 +1514,12 @@ function resolveObjectPairs(objects: SimBody[]): void {
  * drop it (byproducts, if any, already spawned).
  */
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
- *  scattered Metal Powder, a rubber ball leaves nothing behind. */
+ *  scattered Metal Powder and, if it was carrying anything, gushes its contents
+ *  (원유/산) across the wreckage; a rubber ball leaves nothing behind. */
 function destroyByproduct(o: SimBody, ctx: SimContext): void {
   if (o.kind === 'drum') {
-    spawnDrumDebris(o, ctx);
+    spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
+    spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
     o.state = 'destroyed';
   }
 }
@@ -1429,13 +1537,32 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
     destroyByproduct(o, ctx);
     return false; // ball: no byproduct
   }
+  // The body's own heat reservoir relaxes toward its surroundings each tick
+  // (Newtonian conduction): a body in a hot medium warms up, one in cool air (or
+  // cooled by the 냉각 brush) sheds heat back toward ambient — so brush-applied
+  // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
+  // briefly. `maxTemp` is -Infinity only when the footprint has NO in-bounds cell
+  // — a body that has drifted fully out of a `void` border — in which case we
+  // freeze the reservoir (skip conduction) rather than let it decay to −Infinity
+  // (then NaN the next such tick), which would permanently break the max() heat
+  // test if the body re-entered the world.
+  if (Number.isFinite(exp.maxTemp)) {
+    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  }
+  // Judge heat by the hotter of the surroundings and the body's own reservoir:
+  // ambient heat (lava/fire under the footprint) still triggers instantly as
+  // before — no regression — while the 가열 brush, which writes only `temp`, can
+  // now melt/burn a body floating over empty air the cell heat brush can't warm.
+  // (An out-of-world body has maxTemp −Inf, so this picks its finite reservoir.)
+  const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
-  if (exp.maxTemp >= threshold) {
+  if (heat >= threshold) {
     o.heatTicks++;
     if (o.heatTicks >= ticksNeeded) {
       if (o.kind === 'drum') {
+        spawnFillSpill(o, ctx); // contents pour out, then the shell melts over them
         spawnMoltenPuddle(o, ctx);
         o.state = 'melted';
       }
