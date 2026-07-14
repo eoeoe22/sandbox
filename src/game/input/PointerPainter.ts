@@ -703,11 +703,12 @@ export class PointerPainter {
     // 영역 (rect) marquee release: touch pointers confirm the fill immediately
     // (one gesture → one fill); mouse/pen pointers leave the marquee pending
     // so the user can review it and press Enter to apply (or Escape to cancel).
+    // Note: confirmRect() reads rectDragging, so it must run before we clear it.
     if (this.rectDragging) {
-      this.rectDragging = false;
       if (e.pointerType === 'touch') {
-        this.confirmRect();
+        this.confirmRect(); // calls cancelRect() internally (clears dragging)
       } else {
+        this.rectDragging = false;
         this.rectPending = true;
         this.updateRectOverlay();
       }

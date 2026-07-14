@@ -201,12 +201,15 @@ export function registerGridForSnapshots(grid: Grid | null, applied?: () => void
  * the current grid from it (bottom-left anchored, same rule as a window
  * resize), so a world saved at a different size is remapped onto the current
  * sandbox. Returns true on success. The live grid's own resolution is kept; the
- * snapshot's content is fitted into it.
+ * snapshot's content is fitted into it. Free objects (balls, drums) are cleared
+ * first — snapshots don't serialize the object layer, so leaving the current
+ * session's objects on top of loaded cells would mix two unrelated scenes.
  */
 export function applySnapshot(id: string): boolean {
   if (!liveGrid) return false;
   const world = loadSnapshot(id);
   if (!world) return false;
+  liveGrid.objects.length = 0; // snapshot doesn't carry objects — start clean
   liveGrid.resizeFrom(
     liveGrid.width,
     liveGrid.height,

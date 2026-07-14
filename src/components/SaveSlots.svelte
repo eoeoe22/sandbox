@@ -44,12 +44,18 @@
   }
 
   function handleSave(): void {
+    // Check the deterministic cap before attempting the write so the user can
+    // tell "delete a slot" from "storage is full".
+    if (snapshots.length >= 50) {
+      showFlash('저장 한도(50개) 초과 — 기존 스냅샷을 삭제하세요');
+      return;
+    }
     const meta = saveLiveSnapshot(newName);
     if (meta) {
       newName = '';
       showFlash(`"${meta.name}" 저장됨`);
     } else {
-      showFlash('저장 실패 (저장 공간이 부족하거나 제한 초과)');
+      showFlash('저장 실패 (저장 공간이 부족합니다)');
     }
     refresh();
   }
@@ -73,8 +79,9 @@
 
   function commitRename(id: string): void {
     if (renamingId !== id) return;
-    renameSnapshot(id, renameValue);
+    const ok = renameSnapshot(id, renameValue);
     renamingId = null;
+    if (!ok) showFlash('이름 변경 실패 (저장 공간 부족)');
     refresh();
   }
 
