@@ -112,6 +112,24 @@ export const RECENT_MATERIALS_MAX = 8;
 export const BRUSH_SIZE_DEFAULT = 3;
 
 /**
+ * Bottom dead zone — CSS px of play area reserved at the very bottom of the
+ * viewport, below the canvas (and below the mobile control bar). It exists to
+ * dodge browser chrome that overlaps the bottom of the visible area on some
+ * devices: on Android tablet Chrome the desktop layout's `100vh` canvas is the
+ * *large* layout viewport, so its bottom spills behind the address/navigation
+ * bar and the lowest slice of the sandbox is cut off (PC has no such bar, so it
+ * renders fine). Reserving this many pixels lifts the canvas clear of that
+ * chrome. `0` (the default) keeps every existing device pixel-identical; the UI
+ * slider lets a user on an affected device dial in just enough clearance. The
+ * canvas height subtracts it (see global.css) and the grid re-derives from the
+ * shrunken canvas, so nothing is hidden — the reserved band is simply empty.
+ */
+export const BOTTOM_DEADZONE_DEFAULT = 0;
+export const BOTTOM_DEADZONE_MIN = 0;
+export const BOTTOM_DEADZONE_MAX = 240;
+export const BOTTOM_DEADZONE_STEP = 8;
+
+/**
  * Heat conduction (direct conduction only — no convection or radiation).
  *
  * Every cell carries a temperature on an arbitrary unitless scale where

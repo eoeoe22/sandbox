@@ -15,6 +15,7 @@ import {
   $cellScale,
   $heatOverlay,
   $gridDivision,
+  $bottomDeadzone,
   $favorites,
   $recentMaterials,
   type BrushShape,
@@ -38,6 +39,9 @@ import {
   GRAVITY_STRENGTH_MAX,
   CELL_SCALES,
   GRID_DIVISIONS,
+  BOTTOM_DEADZONE_MIN,
+  BOTTOM_DEADZONE_MAX,
+  BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
 } from '../game/config';
 import type { SimSpeed, SmokeLevel } from '../game/config';
@@ -204,6 +208,9 @@ function hydrateSettings(): void {
   $cellScale.set(oneOf(s.cellScale, CELL_SCALES, $cellScale.get()));
   if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
   $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
+  $bottomDeadzone.set(
+    clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
+  );
 
   // Favorites/recents are validated against the curated palette (ids not in
   // PALETTE_IDS — hidden/unknown — are dropped). Favorites can hold at most one
@@ -232,6 +239,7 @@ function saveSettings(): void {
       cellScale: $cellScale.get(),
       heatOverlay: $heatOverlay.get(),
       gridDivision: $gridDivision.get(),
+      bottomDeadzone: $bottomDeadzone.get(),
       favorites: $favorites.get(),
       recentMaterials: $recentMaterials.get(),
     }),
@@ -288,6 +296,7 @@ export function initSettingsPersistence(): void {
   $cellScale.listen(schedule);
   $heatOverlay.listen(schedule);
   $gridDivision.listen(schedule);
+  $bottomDeadzone.listen(schedule);
   $favorites.listen(schedule);
   $recentMaterials.listen(schedule);
 

@@ -8,6 +8,16 @@
      home-indicator safe area so the bar clears it). */
   --sidebar-w: 216px;
   --bottombar-h: calc(104px + env(safe-area-inset-bottom, 0px));
+
+  /* User-adjustable empty band reserved at the bottom of the viewport, below the
+     canvas (and below the mobile control bar). Dodges browser chrome that
+     overlaps the visible area's bottom — most visibly Android tablet Chrome,
+     where the desktop layout's 100vh canvas is the *large* layout viewport and
+     its bottom spills behind the address bar, cutting off the lowest slice of
+     the sandbox. Seeded to 0px here (so untouched devices are pixel-identical)
+     and overwritten at runtime by the engine from the persisted setting
+     (Game.ts / $bottomDeadzone). */
+  --bottom-deadzone: 0px;
 }
 
 * {
@@ -48,7 +58,9 @@ body {
   top: 0;
   left: var(--sidebar-w);
   width: calc(100vw - var(--sidebar-w));
-  height: 100vh;
+  /* Subtract the bottom dead zone so the canvas ends above any browser chrome
+     the user has dialed clearance for (0px by default → unchanged). */
+  height: calc(100vh - var(--bottom-deadzone));
   display: block;
   background: #101014;
   touch-action: none;
@@ -68,9 +80,10 @@ body {
   #game {
     left: 0;
     width: 100vw;
-    /* vh fallback for browsers without dvh support. */
-    height: calc(100vh - var(--bottombar-h));
-    height: calc(100dvh - var(--bottombar-h));
+    /* vh fallback for browsers without dvh support. The bottom dead zone is
+       reserved below the control bar, so subtract it too. */
+    height: calc(100vh - var(--bottombar-h) - var(--bottom-deadzone));
+    height: calc(100dvh - var(--bottombar-h) - var(--bottom-deadzone));
   }
 }
 

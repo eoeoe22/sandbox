@@ -20,6 +20,7 @@ import {
   $cellScale,
   $heatOverlay,
   $gridDivision,
+  $bottomDeadzone,
   $particleCount,
   $frameMs,
 } from '../state/store';
@@ -105,6 +106,18 @@ export function startGame(canvas: HTMLCanvasElement): void {
   };
   resize();
   window.addEventListener('resize', resize);
+
+  // Bottom dead zone: publish it as a CSS variable the canvas height subtracts
+  // (see global.css), then resize so the grid re-derives from the shrunken
+  // canvas. This reserves empty space at the bottom of the viewport to clear
+  // browser chrome that would otherwise cut off the sandbox (e.g. Android tablet
+  // Chrome's address bar over the desktop layout's 100vh canvas). subscribe
+  // fires immediately, seeding the variable with the restored/default value —
+  // the extra resize on startup is idempotent (0px changes nothing).
+  $bottomDeadzone.subscribe((px) => {
+    document.documentElement.style.setProperty('--bottom-deadzone', `${px}px`);
+    resize();
+  });
 
   // Sandbox edge behavior (wall vs. void). subscribe fires immediately, so this
   // also seeds the engine and renderer with the current mode on startup.
