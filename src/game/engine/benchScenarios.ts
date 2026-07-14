@@ -55,7 +55,10 @@ function has(id: number): boolean {
 }
 
 function put(g: Grid, x: number, y: number, id: number, temp = AMBIENT): void {
-  if (!has(id)) return;
+  // Explicit bounds check so scene math near the edges (pillar caps, floor rows)
+  // is safe on any grid size rather than relying on TypedArray dropping an
+  // out-of-range write. `has` skips ids not present in this build.
+  if (!g.inBounds(x, y) || !has(id)) return;
   g.set(x, y, id);
   g.setTemp(x, y, temp);
 }

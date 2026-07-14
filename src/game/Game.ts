@@ -127,14 +127,6 @@ export function startGame(canvas: HTMLCanvasElement): void {
   resize();
   window.addEventListener('resize', resize);
 
-  // Load the fixed benchmark scene now that the grid has its final dimensions,
-  // and force the sim to run so it actually ticks under measurement.
-  if (benchScenario) {
-    seedBenchScenario(grid, benchScenario);
-    grid.randomizeTints();
-    $running.set(true);
-  }
-
   // Bottom dead zone: publish it as a CSS variable the canvas height subtracts
   // (see global.css), then resize so the grid re-derives from the shrunken
   // canvas. This reserves empty space at the bottom of the viewport to clear
@@ -146,6 +138,16 @@ export function startGame(canvas: HTMLCanvasElement): void {
     document.documentElement.style.setProperty('--bottom-deadzone', `${px}px`);
     resize();
   });
+
+  // Load the fixed benchmark scene last, once every startup resize (including
+  // the deadzone subscribe's immediate one) has settled the grid on its final
+  // dimensions — otherwise a restored non-zero deadzone would re-crop the
+  // "fixed" scene. Force the sim to run so it ticks under measurement.
+  if (benchScenario) {
+    seedBenchScenario(grid, benchScenario);
+    grid.randomizeTints();
+    $running.set(true);
+  }
 
   // Sandbox edge behavior (wall vs. void). subscribe fires immediately, so this
   // also seeds the engine and renderer with the current mode on startup.
