@@ -28,10 +28,11 @@
   // the 'object' tool, and a click on the canvas spawns that object (see
   // PointerPainter). The three drums share one capsule and differ only in what
   // they spill when destroyed; the swatch color matches each drum's sprite.
-  // Names are in English (이름 영어 통일). Each item's palette swatch is the object's
-  // real in-world shape as SVG (objectSvgFor), generated from the same sprite data
-  // the renderer draws — no more hand-approximated CSS swatch.
-  const OBJECT_KEY = 'Objects';
+  // Item names are in English (이름 영어 통일), but the category tab name stays
+  // Korean like the other palette categories. Each item's palette swatch is the
+  // object's real in-world shape as SVG (objectSvgFor), generated from the same
+  // sprite data the renderer draws — no more hand-approximated CSS swatch.
+  const OBJECT_KEY = '오브젝트';
   const OBJECT_ITEMS: {
     key: ObjectKind;
     label: string;

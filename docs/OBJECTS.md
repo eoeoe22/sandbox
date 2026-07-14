@@ -85,6 +85,6 @@
 
 - **스프라이트 데이터에서 SVG 생성(`objectSvg.ts`)**: 렌더러가 월드에 그릴 때 쓰는 바로 그 스프라이트 버퍼(`drumSprite.ts`·`dynamiteSprite.ts`의 Uint32 픽셀 그리드)에서 **픽셀 단위로 그대로** SVG `<rect>`를 만든다(가로 런 병합으로 마크업 압축, `shape-rendering="crispEdges"`로 픽셀아트 유지). 드럼통은 3종 색(빈=파랑·원유=검정계열·산=초록)의 밴딩 배럴 실루엣, 다이너마이트는 빨간 몸통·어두운 밴드에 렌더러가 캡 위로 그리는 **도화선 심지 nub**까지 포함. 고무공만 예외로 인게임 래스터화(`rasterizeBall`)를 본떠 **빨간 원반 + 얇은 검은 테두리**(테두리폭 ≈ 반지름의 12%)를 벡터 `<circle>`로 그린다(작은 크기에선 픽셀 근사보다 매끈한 원이 더 자연스러움).
 - **칸 사이즈에 맞게 축소**: SVG의 viewBox는 스프라이트의 원본 픽셀 박스 그대로 두고, 칩 CSS가 박스를 정하며 `preserveAspectRatio="xMidYMid meet"`로 비율 유지한 채 셀에 맞춰 축소·중앙 정렬. 그래서 칩이 **클릭 시 실제로 스폰되는 모양 그대로**를 보여준다.
-- **영어 이름 통일**: `고무공 → Rubber Ball`, `빈 드럼통 → Empty Drum`, `원유 드럼통 → Crude Oil Drum`, `산 드럼통 → Acid Drum`, `다이너마이트 → Dynamite`. 탭 이름도 `오브젝트 → Objects`.
+- **영어 이름 통일**: `고무공 → Rubber Ball`, `빈 드럼통 → Empty Drum`, `원유 드럼통 → Crude Oil Drum`, `산 드럼통 → Acid Drum`, `다이너마이트 → Dynamite`. 개별 오브젝트 이름만 영어로 통일하고, **카테고리 탭 이름은 다른 카테고리와 맞춰 한국어 `오브젝트`로 유지**한다.
 
 검증: `astro check`·`astro build` 클린, 헤드리스 Chromium 렌더로 5종 스와치가 인게임 실루엣과 일치함을 스크린샷 확인(빨간 테두리 공·밴딩 배럴 3색·도화선 달린 빨간 막대).
