@@ -524,6 +524,13 @@ export interface DetonateOptions {
    *  true, so every blast gets the concussion; set false for a self-contained blast
    *  that shouldn't disturb its surroundings. */
   pressure?: boolean;
+  /** Override the blast's destructive power (파괴력) — what it can break — instead
+   *  of taking it from the surveyed mass (or DEFAULT_DESTRUCTIVE_POWER for a seed).
+   *  A low value makes a deliberately *weak* blast that shoves loose matter aside
+   *  and is shadowed by solids it can't crack (the Gunpowder concussion), even at a
+   *  large `reach` — so a single seed can throw a wide, non-cratering shockwave.
+   *  See defaultCell / blocksBlast for how power meets each cell's durability. */
+  power?: number;
 }
 
 /**
@@ -568,7 +575,11 @@ export function detonate(
   const id_s = stampId;
   const srcX: number[] = [];
   const srcY: number[] = [];
-  const { Y, maxYield, power } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
+  const { Y, maxYield, power: surveyedPower } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
+  // Destructive power (파괴력) — the surveyed mass's, unless the caller overrides it
+  // (opts.power) to force a deliberately weak/strong blast regardless of the source
+  // (e.g. dynamite's wide, non-cratering shockwave from a single seed).
+  const power = opts.power !== undefined ? opts.power : surveyedPower;
   // Trim every blast's reach to the global scale (2/3), whether it came from the
   // surveyed √-law or a fixed opts.reach, so the whole game's craters shrink.
   const R = (opts.reach !== undefined ? opts.reach : computeReach(Y, maxYield)) * BLAST_REACH_SCALE;

@@ -27,7 +27,7 @@ import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
-import { createRubberBall, createDrum, pickBody, distanceToBody } from '../engine/objects';
+import { createRubberBall, createDrum, createDynamite, pickBody, distanceToBody } from '../engine/objects';
 import type { SimBody, DrumFill } from '../engine/objects';
 
 /**
@@ -263,7 +263,8 @@ export class PointerPainter {
       const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
       o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
-      if (o.kind === 'drum') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
+      // Any capsule body (drum or dynamite) also gets a random spin; a ball doesn't rotate.
+      if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
   }
 
@@ -338,6 +339,9 @@ export class PointerPainter {
       // differs. 빈 드럼통 → empty, 원유 드럼통 → oil, 산 드럼통 → acid.
       const fill: DrumFill = kind === 'oildrum' ? 'oil' : kind === 'aciddrum' ? 'acid' : 'empty';
       this.grid.objects.push(createDrum(cx + 0.5, cy + 0.5, fill));
+    } else if (kind === 'dynamite') {
+      // 다이너마이트: dropped with its fuse already lit — a live countdown to the blast.
+      this.grid.objects.push(createDynamite(cx + 0.5, cy + 0.5));
     } else {
       const r = Math.max(2, $brushSize.get());
       this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
