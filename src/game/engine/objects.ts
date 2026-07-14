@@ -9,6 +9,7 @@ import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
 import { ANTIMATTER } from '../materials/antimatter';
+import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
@@ -365,15 +366,19 @@ const DYNAMITE_HEAT_TICKS = 5;
 // craters, wrapped in a weak, wide 충격파 that only shoves loose matter. Both
 // reaches pass through blast.ts's global 2/3 scale, so the actual radii are ~2/3
 // of these.
-/** Core crater reach — full destructive power, small radius (강한 폭발 / 작은 반경).
- *  Bumped ×1.5 from the original 9 (기획: 폭발력 1.5배). */
-const DYNAMITE_CORE_REACH = 13.5;
+/** Core crater reach — full destructive power (강한 폭발). Widened from 13.5 to 24
+ *  (강한 폭발 부분 반경 확대): the full-destruction crater now fills two-thirds of the
+ *  total blast radius, so a stick levels a much bigger area up close while the
+ *  outer shockwave (below) — the *total* radius — is left unchanged. Still clearly
+ *  inside DYNAMITE_WAVE_REACH, so a weak-shockwave ring remains beyond the crater. */
+const DYNAMITE_CORE_REACH = 24;
 /** Core destructive power — high enough to level any ordinary matter within the
  *  core (matches blast.ts's DEFAULT_DESTRUCTIVE_POWER), forced explicitly so the
  *  core stays strong even if the stick happens to detonate on an explosive. */
 const DYNAMITE_CORE_POWER = 100_000;
 /** Shockwave reach — a wide ring (넓은 반경) that shoves sand/water/objects outward.
- *  Bumped ×1.5 from the original 24 (기획: 폭발력 1.5배). */
+ *  This is the dynamite's *total* blast radius and is deliberately unchanged (폭발
+ *  반경 유지); only the strong core inside it was widened. */
 const DYNAMITE_WAVE_REACH = 36;
 /** Shockwave power — Gunpowder-weak (파괴력 6): heaves loose matter aside but can't
  *  crater tough solids, which shadow it (충격파 = Gunpowder 같은 약한 폭발). */
@@ -508,6 +513,11 @@ function isSolidCell(x: number, y: number, ctx: SimContext): boolean {
   if (!ctx.inBounds(x, y)) return ctx.borderMode === 'wall';
   const id = ctx.get(x, y);
   if (id === EMPTY) return false;
+  // A Spark is a Phase.Solid material only so it sits still on a wire for its one
+  // tick of life — it is not a real surface. Objects pass straight through it
+  // (오브젝트가 spark 파티클과 물리적으로 상호작용하지 않게: 통과) instead of
+  // bouncing off a flickering electric dot as it races along a conductor.
+  if (id === SPARK.id) return false;
   const m = getMaterial(id);
   if (m.isWall || m.phase === Phase.Solid) return true;
   return ctx.isFrozen(x, y); // a frozen liquid acts solid
