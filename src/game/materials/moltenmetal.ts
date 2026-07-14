@@ -8,12 +8,13 @@ import { IRON } from './iron';
 import { FIRE } from './fire';
 
 // Molten Metal — the liquid, glowing counterpart to Iron, exactly mirroring the
-// Lava↔Stone pair one notch hotter. It's placed white-hot and dense enough (6)
-// to sink through water and oil (shoving them up out of its way), but within the
-// smelting hearth it's the *lightest* of the three molten phases — Molten Metal
-// (6) < Molten Iron Ore (7) < Slag (8) — so the reduced iron floats up and
-// collects as a bright pool on top of the hearth, over the ore and the denser
-// waste slag beneath. It flows sluggishly like thick lava, ignites
+// Lava↔Stone pair one notch hotter. It's placed white-hot and dense enough (8)
+// to sink through water and oil (shoving them up out of its way), and within the
+// smelting hearth it's the *densest* of the three molten phases — Slag (6) <
+// Molten Iron Ore (7) < Molten Metal (8) — so, just as pig iron does under the
+// slag in a real hearth, the reduced iron sinks and collects as a bright pool on
+// the floor, beneath the ore and the lighter waste slag floating above it. It
+// flows sluggishly like thick lava, ignites
 // flammable neighbors with its radiant heat, and freezes back into solid Iron
 // once conduction has pulled it below the freeze point. As with Lava, nothing
 // cold touching it means it never cools (air conducts no heat), so an isolated
@@ -55,7 +56,7 @@ export const MOLTEN_METAL = register({
   name: 'Molten Metal',
   phase: Phase.Liquid,
   color: rgb(255, 150, 50),
-  density: 6,
+  density: 8,
   category: '불·열',
   thermal: { init: MOLTEN_METAL_TEMP, conductivity: 0.85 },
   // Glows blazing yellow-white when fully molten and darkens to a dull ember as
