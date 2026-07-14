@@ -40,18 +40,29 @@ const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 420 };
 // inert Asphalt before it could ever get hot enough to read as burning.
 const BOIL_MIN = 150; // below this it's just liquid
 const GAS_BAND_TOP = 168; // top of the petroleum-gas band (lightest cut, never condenses)
+const GASOLINE_BAND_TOP = 250; // top of the gasoline band
+const KEROSENE_BAND_TOP = 312; // top of the kerosene band
 const RESIDUE_TEMP = 380; // at/above this the spent crude cracks to Asphalt
 const BURNING_TEMP = 600; // at/above this the cell is on fire (pinned ~800), not distilling
-const BOIL_CHANCE = 0.08; // per-tick chance a cell in a boiling band flashes off its cut
 
-// The petroleum-gas band (150–168) gets its own, far lower flash chance. The
-// liquid-cut chance (0.08) is per-tick, so even an 18°-wide gas band would boil
-// off ~77% of the crude that passes through it (0.92^18 ≈ 0.23) — the opposite
-// of reality, where refinery gas is only a few percent of crude. Dropping the
-// gas band to 0.003 means a slowly heated cell gives off gas only ~5% of the
-// time (1 − 0.997^18 ≈ 0.052) while the remaining ~95% sails through into the
-// liquid cuts, matching a real column's light-gas sliver.
+// Per-band flash chances. The flash check is *per-tick*, so a cell that lingers
+// longer in a wider band accumulates more rolls and boils off more readily. To
+// stop the widest band (gasoline, 82°) from swallowing nearly the whole charge,
+// each band's per-tick chance is scaled inversely to its width so that the
+// *cumulative* boil-off across the band is roughly equal (~39 % for every liquid
+// cut): width × chance ≈ 0.49. A cell passing through the gasoline band thus
+// gives off gasoline ~39 % of the time and carries the remaining ~61 % on to the
+// kerosene band, and so on down — so the widest band still yields the most cut
+// (as in a real column) while the heavier cuts remain visible.
+//
+//   gas     18° × 0.003 → ~5 %  (refinery gas is only a few % of crude)
+//   gasoline 82° × 0.006 → ~39 %
+//   kerosene 62° × 0.008 → ~39 %
+//   diesel   68° × 0.007 → ~38 %
 const GAS_BOIL_CHANCE = 0.003;
+const GASOLINE_BOIL_CHANCE = 0.006;
+const KEROSENE_BOIL_CHANCE = 0.008;
+const DIESEL_BOIL_CHANCE = 0.007;
 
 // Vapour aux tags read back by petroleumvapor.ts to pick the condensate.
 const VAPOR_GASOLINE = 1;
@@ -74,8 +85,8 @@ function boilOff(x: number, y: number, sim: SimContext, t: number): void {
     return;
   }
   sim.set(x, y, PETROLEUM_VAPOR.id);
-  if (t < 250) sim.setAux(x, y, VAPOR_GASOLINE);
-  else if (t < 312) sim.setAux(x, y, VAPOR_KEROSENE);
+  if (t < GASOLINE_BAND_TOP) sim.setAux(x, y, VAPOR_GASOLINE);
+  else if (t < KEROSENE_BAND_TOP) sim.setAux(x, y, VAPOR_KEROSENE);
   else sim.setAux(x, y, VAPOR_DIESEL);
 }
 
@@ -96,8 +107,13 @@ function updateOil(x: number, y: number, sim: SimContext): void {
       return;
     }
     if (t >= BOIL_MIN) {
-      // Gas band flashes far less often than the liquid cuts (see GAS_BOIL_CHANCE).
-      const flashChance = t < GAS_BAND_TOP ? GAS_BOIL_CHANCE : BOIL_CHANCE;
+      // Each band scales its per-tick chance inversely to its width so the
+      // cumulative boil-off is ~equal across all liquid cuts (see above).
+      const flashChance =
+        t < GAS_BAND_TOP          ? GAS_BOIL_CHANCE :
+        t < GASOLINE_BAND_TOP     ? GASOLINE_BOIL_CHANCE :
+        t < KEROSENE_BAND_TOP     ? KEROSENE_BOIL_CHANCE :
+                                    DIESEL_BOIL_CHANCE;
       if (sim.chance(flashChance)) {
         boilOff(x, y, sim, t);
         return;
