@@ -1,6 +1,6 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
-import { AMBIENT_TEMP } from '../config';
+import { AMBIENT_TEMP, TICK_HZ } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST, detonate } from '../materials/blast';
@@ -11,6 +11,7 @@ import { ACID } from '../materials/acid';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
+import { VOID } from '../materials/void';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -211,9 +212,12 @@ export interface SimDynamite {
    *  off. */
   temp: number;
   /** Whether the fuse is still burning. True from creation; a stronger extinguisher
-   *  or a smothering powder flips it false (a dud), which stops the countdown. */
+   *  or a smothering powder flips it false (a dud), which *pauses* the countdown
+   *  (fuseTicks is kept, not reset). A flame/heat touched to the fuse re-lights it
+   *  (back to true) and the countdown resumes from where it paused. */
   lit: boolean;
-  /** Ticks of fuse left before it detonates (only counts down while `lit`). */
+  /** Ticks of fuse left before it detonates (only counts down while `lit`; frozen
+   *  while a dud, so a snuffed-then-relit fuse resumes rather than restarts). */
   fuseTicks: number;
   /** True while the pointer is dragging this body (see SimObject.held): its physics
    *  and fuse/trigger evaluation are suspended so it tracks the cursor. */
@@ -318,7 +322,8 @@ export function createDrum(
  * Dynamite defaults. A short, slim stick (clearly smaller than the drum, so it
  * reads apart at a glance) that's *denser than Water* (3), so — unlike the hollow
  * drums — it sinks, and its fuse keeps burning as it goes down (물 안에서는 안 꺼짐).
- * Barely bounces. The fuse is a visible countdown of DYNAMITE_FUSE_TICKS.
+ * Barely bounces. The fuse is a visible countdown, each stick rolling a random
+ * length between DYNAMITE_FUSE_MIN_TICKS and _MAX_TICKS at creation.
  */
 export const DYNAMITE_RADIUS = 1.6;
 export const DYNAMITE_HALF_LENGTH = 3;
@@ -327,9 +332,21 @@ export const DYNAMITE_RESTITUTION = 0.2;
 /** Initial lean (radians) a freshly-placed stick spawns at, so it topples over to
  *  lie down instead of balancing bolt-upright on its rounded cap (바닥에 안 서게). */
 export const DYNAMITE_SPAWN_TILT = 0.4;
-/** Ticks the lit fuse burns before the stick detonates — long enough to read as a
- *  crawling countdown and to set up chains, short enough to stay punchy. */
-export const DYNAMITE_FUSE_TICKS = 140;
+/** Fuse length bounds (ticks). Each stick rolls a random burn time in [MIN, MAX]
+ *  at creation (기획: 폭발 시간 3~5초 랜덤). Sized in *seconds* at the default sim rate
+ *  — SIM_SPEED ×1 runs at TICK_HZ/2 Hz (see config) — so a stick burns ~3–5 real
+ *  seconds at the default speed (a faster/slower sim scales wall-clock time, as it
+ *  does for everything). The remaining fuse is *paused*, not reset, whenever the
+ *  flame is snuffed, and resumes from where it left off if the fuse is re-lit. */
+const DEFAULT_SIM_HZ = TICK_HZ / 2;
+export const DYNAMITE_FUSE_MIN_TICKS = Math.round(3 * DEFAULT_SIM_HZ);
+export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * DEFAULT_SIM_HZ);
+/** Tip temperature (°) at/above which a snuffed (dud) fuse catches again and the
+ *  countdown resumes — a flame/ember/hot surface touched to the fuse re-lights it.
+ *  Above ambient/boiling so warmth alone won't, but any real flame (Fire 1000°,
+ *  embers, molten metal) or hotter will; below the autoignite temp, so re-lighting
+ *  resumes the timer rather than detonating outright. */
+const FUSE_RELIGHT_TEMP = 200;
 /** Footprint temperature (°) at/above which an external heat source cooks the
  *  stick off (autoignition). Set deliberately *above ordinary Fire's 1000°* so the
  *  lit fuse's OWN emitted Fire (which sits right beside a resting stick) can never
@@ -373,13 +390,14 @@ const FUSE_SNUFF_TEMP = -20;
  *  warmed cell averages back below boiling before it can steam. Applied to the tip
  *  cell and its four orthogonal neighbours; the cluster's centre keeps its heat
  *  (its neighbours are heated too) and boils, while the arms shed theirs, so the
- *  boil stays a small wisp. Well under the stick's 240° autoignition (and the tip
+ *  boil stays a small wisp. Well under the stick's 1100° autoignition (and the tip
  *  sits cells away from the body's footprint), so it never cooks the stick itself. */
 const FUSE_BOIL_FLOOR = 130;
 
 /** Build a lit stick of dynamite centered at (x,y), at rest and slightly tilted
- *  (so it topples instead of balancing upright — see DYNAMITE_SPAWN_TILT). Mass
- *  and moment of inertia follow the same capsule formulas as the drum. */
+ *  (so it topples instead of balancing upright — see DYNAMITE_SPAWN_TILT), with a
+ *  random fuse length in [MIN, MAX] ticks (기획: 3~5초 랜덤). Mass and moment of
+ *  inertia follow the same capsule formulas as the drum. */
 export function createDynamite(
   x: number,
   y: number,
@@ -393,6 +411,8 @@ export function createDynamite(
   const w = 2 * r;
   const h = 2 * (l + r);
   const momentOfInertia = (mass * (w * w + h * h)) / 12;
+  const span = DYNAMITE_FUSE_MAX_TICKS - DYNAMITE_FUSE_MIN_TICKS;
+  const fuseTicks = DYNAMITE_FUSE_MIN_TICKS + Math.floor(Math.random() * (span + 1));
   return {
     kind: 'dynamite',
     x,
@@ -409,7 +429,7 @@ export function createDynamite(
     heatTicks: 0,
     temp: AMBIENT_TEMP,
     lit: true,
-    fuseTicks: DYNAMITE_FUSE_TICKS,
+    fuseTicks,
   };
 }
 
@@ -1524,6 +1544,36 @@ function footprintHasBlast(o: SimBody, ctx: SimContext): boolean {
 }
 
 /**
+ * Does a Void cell lie against this body? Void (materials/void.ts) is a bottomless
+ * sink; any object that reaches it is deleted OUTRIGHT — with no byproduct (no
+ * debris, spill, molten puddle, or blast), a clean 완전 삭제 that is deliberately NOT
+ * a 파괴/용해 trigger. Applies to every body kind. The +1-cell margin catches the Void
+ * a body comes to rest *against*: Void is a solid, so grid collision stops the body
+ * just shy of overlapping it, which a footprint-only scan (like the blast test
+ * above) would miss. Read-only.
+ */
+function footprintTouchesVoid(o: SimBody, ctx: SimContext): boolean {
+  const r = bodyRadius(o) + 1;
+  const r2 = r * r;
+  const [ax, ay, bx, by] = bodyEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== VOID.id) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * A blast that doesn't consume a body still shoves it. Scan the ring just outside
  * the body's footprint for shockwave flash cells; if any are near, push the body
  * outward along the summed away-from-blast direction. The push is a *floor* on
@@ -1719,15 +1769,17 @@ function detonateDynamite(o: SimDynamite, ctx: SimContext): void {
 
 /** Does the material/temperature at the fuse tip snuff a burning fuse? A stronger
  *  extinguisher (CO₂, Liquid N₂), a cryogenic pocket (an LN₂ pool, dry-ice fog),
- *  or being buried under a non-flammable powder puts it out; ordinary water does
- *  NOT (warm, and not a listed extinguisher) — the flame heats it instead (see
- *  heatFuseLiquid). */
+ *  or being buried under an *inert* non-flammable powder puts it out; ordinary
+ *  water does NOT (warm, and not a listed extinguisher) — the flame heats it
+ *  instead (see heatFuseLiquid). Explosive powders (Gunpowder, Ammonium Nitrate,
+ *  Sodium) do NOT smother it — a fuse buried in them should burn down and set the
+ *  pile off (chain), not fizzle. */
 function fuseSnuffed(id: number, temp: number): boolean {
   if (id === CO2.id || id === LIQUID_NITROGEN.id) return true;
   if (temp <= FUSE_SNUFF_TEMP) return true;
   if (id !== EMPTY) {
     const m = getMaterial(id);
-    if (m.phase === Phase.Powder && m.combustible !== true) return true;
+    if (m.phase === Phase.Powder && m.combustible !== true && m.explosive !== true) return true;
   }
   return false;
 }
@@ -1749,10 +1801,11 @@ function heatFuseLiquid(ctx: SimContext, x: number, y: number): void {
  *   1. External heat cooks it off (autoignition), time-gated so only sustained
  *      fire/lava/brush heat — not a stray hot pixel — sets it off; fires even for
  *      a snuffed dud.
- *   2. The flame at the tip meets the cell it touches: a stronger extinguisher or
- *      a smothering powder snuffs the fuse to a dud (stops the countdown); in open
- *      air it throws a real Fire particle; an ordinary liquid doesn't put it out —
- *      the flame heats/boils the liquid a little instead.
+ *   2. The tip meets the cell it touches: a stronger extinguisher or a smothering
+ *      inert powder snuffs the fuse to a dud (PAUSES the countdown); a flame/heat
+ *      touched to a snuffed fuse re-lights it (RESUMES, no reset). While lit it
+ *      throws a real Fire particle in open air, or — submerged — heats/boils the
+ *      liquid a little (an ordinary liquid never puts it out).
  *   3. The lit fuse burns down; at zero the stick detonates.
  * Returns true to keep the stick, false once it has detonated.
  */
@@ -1774,9 +1827,15 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   const tcy = Math.floor(o.y - uy * reach);
   if (ctx.inBounds(tcx, tcy)) {
     const tipId = ctx.get(tcx, tcy);
-    if (fuseSnuffed(tipId, ctx.getTemp(tcx, tcy))) {
-      o.lit = false; // a dud — no timed explosion (external heat can still cook it off)
-    } else if (o.lit) {
+    const tipTemp = ctx.getTemp(tcx, tcy);
+    if (fuseSnuffed(tipId, tipTemp)) {
+      o.lit = false; // a dud — countdown PAUSED (fuseTicks kept); heat can still cook it off
+    } else if (!o.lit && tipTemp >= FUSE_RELIGHT_TEMP) {
+      // A flame/ember/hot surface touched to the fuse re-lights a dud, and the
+      // countdown resumes from where it paused (not reset — 재개, 초기화 아님).
+      o.lit = true;
+    }
+    if (o.lit) {
       if (tipId === EMPTY) {
         // In open air the lit fuse throws a real Fire particle (not a painted-on
         // flame): it flickers, rises, and can ignite whatever the fuse leads to —
@@ -1818,6 +1877,10 @@ function destroyByproduct(o: SimBody, ctx: SimContext): void {
 }
 
 function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
+  // Void (특수 물질) swallows any body whole: deleted with NO byproduct — not a
+  // 파괴/용해 judgement. Checked before every other trigger so a stick doesn't
+  // explode (nor a drum shatter/spill) as it's drawn into the sink.
+  if (footprintTouchesVoid(o, ctx)) return false;
   const exp = scanBodyExposure(o, ctx);
   // Instant destruction: a blast flash overlapping the footprint (직격), or being
   // wedged/entombed in solid it can't escape (끼임). A genuine burial is measured
@@ -1923,7 +1986,9 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     if (o.held) {
       objects[w++] = o;
     } else if (doomed.has(o)) {
-      destroyByproduct(o, ctx);
+      // A blast reached it this tick — spawn its byproduct, UNLESS it's also being
+      // swallowed by Void, which deletes it cleanly (no byproduct) and wins.
+      if (!footprintTouchesVoid(o, ctx)) destroyByproduct(o, ctx);
     } else if (evaluateTriggers(o, ctx)) {
       objects[w++] = o;
     }
