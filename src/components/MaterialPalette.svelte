@@ -28,11 +28,17 @@
   // PointerPainter). The three drums share one capsule and differ only in what
   // they spill when destroyed; the swatch color matches each drum's sprite.
   const OBJECT_KEY = '오브젝트';
-  const OBJECT_ITEMS: { key: ObjectKind; label: string; color: string; shape: 'ball' | 'drum' }[] = [
+  const OBJECT_ITEMS: {
+    key: ObjectKind;
+    label: string;
+    color: string;
+    shape: 'ball' | 'drum' | 'dynamite';
+  }[] = [
     { key: 'ball', label: '고무공', color: '#d84652', shape: 'ball' },
     { key: 'drum', label: '빈 드럼통', color: '#2563eb', shape: 'drum' },
     { key: 'oildrum', label: '원유 드럼통', color: '#7a5430', shape: 'drum' },
     { key: 'aciddrum', label: '산 드럼통', color: '#86c23a', shape: 'drum' },
+    { key: 'dynamite', label: '다이너마이트', color: '#ff3b30', shape: 'dynamite' },
   ];
 
   // --- Search --------------------------------------------------------------
@@ -379,7 +385,7 @@
           onclick={() => pickObject(it.key)}
           title={it.label}
         >
-          <span class="swatch" class:ball={it.shape === 'ball'} class:drum={it.shape === 'drum'} style={`background:${it.color}`}></span>
+          <span class="swatch" class:ball={it.shape === 'ball'} class:drum={it.shape === 'drum'} class:dynamite={it.shape === 'dynamite'} style={`background:${it.color}`}></span>
           <span class="label">{it.label}</span>
         </button>
       {/each}
@@ -666,6 +672,12 @@
   .chip .swatch.drum {
     width: 14px;
     border-radius: 5px / 7px;
+  }
+  /* A dynamite swatch is a slim, tall red stick — narrower than the drum. */
+  .chip .swatch.dynamite {
+    width: 9px;
+    height: 20px;
+    border-radius: 3px;
   }
   .chip .label {
     max-width: 100%;
