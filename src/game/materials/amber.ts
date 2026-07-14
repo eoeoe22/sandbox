@@ -10,42 +10,46 @@ import { RESIN } from './resin';
 // (build with it, seal things behind it — the "insect trapped in amber" gag), but
 // it never forgot it was tree sap: it's still combustible, catching slowly and
 // burning with a low, resinous flame if you hold fire to it. Like Wood it has no
-// movement of its own — until it gets hot.
+// movement of its own — it just burns where it sits.
 //
-// Heat it up and it *un-cures*: fossilised resin remembers it was sap, so once a
-// cell reaches MELT_TEMP the hard solid liquefies straight back into sticky Resin
-// (see resin.ts), completing the reversible cycle — cold Resin slowly cures to
-// Amber, hot Amber melts back to Resin. The set is in place and keeps the cell's
-// heat, so the fresh Resin is already glowing and immediately burns/oozes: hold a
-// flame to a block of amber and it doesn't just char, it softens and drips as
-// burning, tarry sap.
+// But fossilised resin remembers it was sap: while a cell is *burning* (pinned to
+// the 800° burn temperature, well past MELT_TEMP), it has a small per-tick chance
+// to *un-cure* — liquefying back into a droplet of sticky Resin (see resin.ts)
+// instead of charring away. It's only a chance, so most of a burning amber block
+// just chars to Fire like Wood and only a small fraction (~1 in 10) softens and
+// drips as burning, tarry sap. The set is in place and keeps the cell's heat, so
+// that fresh Resin is already glowing and oozes/burns on. Left cold, molten Resin
+// re-cures to Amber, so the pair still loops — this just makes the melt an
+// occasional flourish of a fire rather than the whole block flashing to liquid.
 const SPEC: Combustible = { burnChance: 0.03, autoIgniteTemp: 400 };
 
-// Melt point. Pinned to Resin's autoignition / cure threshold (400°, see
-// resin.ts): Resin only *cures* to Amber while cooler than 400°, so making Amber
-// melt at that same 400° leaves no temperature where both conversions fire —
-// below 400° a cell settles as Amber, at/above it settles as (burning) Resin,
-// with no flip-flop band between. A cell caught by an adjacent flame is pinned to
-// the 800° burn temperature, well past this, so a lit amber block melts within a
-// tick or two of catching.
-const MELT_TEMP = 400;
+// Only *burning* amber melts, and only sometimes:
+//   • MELT_TEMP sits well above Resin's cure/autoignition threshold (400°, see
+//     resin.ts) so mere warmth never melts it — a cell has to actually be alight
+//     (burning pins it to 800°) to soften. The gap between 400° and MELT_TEMP is
+//     stable for both materials (amber won't melt, resin won't re-cure), so there
+//     is still no flip-flop band.
+//   • MELT_CHANCE is the per-tick chance a burning cell drips rather than chars.
+//     A burning amber cell is consumed to Fire at burnChance·CONSUME_RATIO ≈
+//     0.009/tick (see combustion.ts); pitting this melt roll against that as a
+//     race, the fraction that ends up as Resin is ≈ MELT_CHANCE / (MELT_CHANCE +
+//     0.009) ≈ 0.1 — about a tenth of a burning block melts, the rest burns away.
+const MELT_TEMP = 700;
+const MELT_CHANCE = 0.001;
 
 function updateAmber(x: number, y: number, sim: SimContext): void {
-  // Hot enough to un-cure: liquefy back into Resin. In-place `set` keeps the
-  // cell's temperature, so the new Resin stays at its current heat — if that was
-  // burning heat it carries the fire on as oozing, dripping sap.
-  if (sim.getTemp(x, y) >= MELT_TEMP) {
+  // Burn like Wood: catch from adjacent flame, self-ignite when hot enough,
+  // wreath in fire, spread to amber neighbors, and eventually char to Fire. If
+  // this consumed the cell to Fire, stop — it's no longer amber.
+  if (tryBurn(x, y, sim, SPEC)) return;
+  // Still burning amber: a small chance it un-cures to a Resin droplet instead of
+  // charring on. Only fires while genuinely alight (temp past MELT_TEMP), and only
+  // occasionally, so a burning block mostly chars and just weeps a little molten
+  // sap. In-place `set` keeps the cell's burning heat, so the Resin oozes and
+  // burns from the moment it forms.
+  if (sim.getTemp(x, y) >= MELT_TEMP && sim.chance(MELT_CHANCE)) {
     sim.set(x, y, RESIN.id);
-    return;
   }
-  // Solid and still cool: no fall/flow — catching fire is the only behavior.
-  // SPEC.burnChance here is just the catch-from-adjacent-flame rate; a catch pins
-  // the cell to the 800° burn temperature, so its very next turn melts it above
-  // before it could self-ignite as Amber. All the actual burning — self-ignition,
-  // wreathing flame, spreading, consuming to Fire — is deliberately handed off to
-  // the melted Resin at Resin's own (slower, stickier) pace. So amber's
-  // autoignition / burn-rate branch inside tryBurn is intentionally never taken.
-  tryBurn(x, y, sim, SPEC);
 }
 
 export const AMBER = register({

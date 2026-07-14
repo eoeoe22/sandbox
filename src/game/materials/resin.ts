@@ -16,8 +16,10 @@ import { AMBER } from './amber';
 // solid Amber (see amber.ts), so a poured runnel of resin gradually sets into a
 // glassy gold solid — drip it over something and it freezes the moment into amber.
 // Heat it and it burns before it can set; leave it cold and it hardens. The cure
-// is reversible: a hot Amber cell melts straight back into Resin (see amber.ts's
-// MELT_TEMP), so the pair loops — cold sets to solid, heat un-cures to sap.
+// is reversible: a *burning* Amber cell has a small chance to melt back into Resin
+// (see amber.ts's MELT_TEMP/MELT_CHANCE) — not the whole block at once, just an
+// occasional droplet weeping out of the fire — so the pair loops: cold sets to
+// solid, and a fraction of burning solid un-cures to sap.
 const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 400 };
 const FLOW_CHANCE = 0.18; // sticky and viscous, like Honey
 const HARDEN_CHANCE = 0.004; // slow cure into Amber
