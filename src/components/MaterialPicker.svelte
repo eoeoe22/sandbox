@@ -363,10 +363,13 @@
     color: #8a8a99;
   }
 
-  /* The popover, portaled to <body> and positioned via JS. */
+  /* The popover, portaled to <body> and positioned via JS. z-index sits above
+     the Modal overlay (z 40) because the blend-ratio editor that hosts this
+     picker lives inside that modal — a lower value would hide the popover behind
+     the modal's backdrop. */
   .flyout {
     position: fixed;
-    z-index: 30;
+    z-index: 50;
     width: max-content;
     max-width: min(80vw, 384px);
     max-height: min(70vh, 420px);

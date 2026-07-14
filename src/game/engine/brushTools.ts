@@ -147,6 +147,13 @@ export interface InspectEntry {
   /** Packed 0xAABBGGRR base color, for a UI swatch (see render/color.ts). */
   color: number;
   count: number;
+  /** Mean temperature over this material's occurrences that participate in the
+   *  temperature system, or null when none do. Wall / packedTemp occurrences are
+   *  excluded (same rule as the overall `InspectStats.avgTemp`). Note this counts
+   *  겹침 overlay occurrences too — a soaked fluid shares its host cell's temp —
+   *  whereas the overall `avgTemp` only averages base occupants, so per-material
+   *  temps need not reconcile to the overall mean when overlays are present. */
+  avgTemp: number | null;
 }
 
 /** What the inspect (돋보기) brush reports for the cells under its footprint:
@@ -187,10 +194,21 @@ export interface InspectStats {
  */
 export function inspectCells(grid: Grid, cells: readonly number[]): InspectStats {
   const counts = new Map<MatId, number>();
+  // Per-material temperature accumulators, filled in lockstep with `counts` for
+  // occurrences that participate in the temperature system (Wall / packedTemp
+  // excluded, same as the overall average). A material can appear in `counts`
+  // but not here (e.g. a wall), so `avgTemp` for it resolves to null.
+  const tempSums = new Map<MatId, number>();
+  const tempCounts = new Map<MatId, number>();
   let occupied = 0;
   let overlapped = 0;
   let tempSum = 0;
   let tempCount = 0;
+  // Add one temperature sample for material `id` at cell temp `t`.
+  const addTemp = (id: MatId, t: number): void => {
+    tempSums.set(id, (tempSums.get(id) ?? 0) + t);
+    tempCounts.set(id, (tempCounts.get(id) ?? 0) + 1);
+  };
   for (let k = 0; k < cells.length; k += 2) {
     const x = cells[k];
     const y = cells[k + 1];
@@ -206,23 +224,31 @@ export function inspectCells(grid: Grid, cells: readonly number[]): InspectStats
       // would otherwise wildly skew the reported mean (see Material.packedTemp).
       const mat = getMaterial(id);
       if (!mat.isWall && !mat.packedTemp) {
-        tempSum += grid.getTemp(x, y);
+        const t = grid.getTemp(x, y);
+        tempSum += t;
         tempCount++;
+        addTemp(id, t);
       }
     }
     // 겹침: a fluid soaked into this cell counts as its own occurrence, so wet
     // sand reports both the sand and the water it carries. An overlay only ever
-    // exists over a non-empty host, so this never runs on truly empty air.
+    // exists over a non-empty host, so this never runs on truly empty air. The
+    // overlay fluid shares the host cell's temperature, so it feeds that
+    // material's per-material average too (overlays are liquids, never Wall).
     const ov = grid.getOverlay(x, y);
     if (ov !== EMPTY) {
       overlapped++;
       counts.set(ov, (counts.get(ov) ?? 0) + 1);
+      const ovMat = getMaterial(ov);
+      if (!ovMat.isWall && !ovMat.packedTemp) addTemp(ov, grid.getTemp(x, y));
     }
   }
   const entries: InspectEntry[] = [];
   for (const [id, count] of counts) {
     const mat = getMaterial(id);
-    entries.push({ id, name: mat.name, color: mat.color, count });
+    const tc = tempCounts.get(id) ?? 0;
+    const avgTemp = tc > 0 ? (tempSums.get(id) ?? 0) / tc : null;
+    entries.push({ id, name: mat.name, color: mat.color, count, avgTemp });
   }
   // Most-common first; ties by id so the list order is stable frame to frame.
   entries.sort((a, b) => b.count - a.count || a.id - b.id);

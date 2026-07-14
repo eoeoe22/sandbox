@@ -64,6 +64,13 @@
           <li>
             <span class="swatch" style={`background:${toCss(e.color)}`}></span>
             <span class="name">{e.name}</span>
+            {#if e.avgTemp !== null}
+              <span class="temp" title={`${e.name} 평균 온도`}>
+                {Math.round(e.avgTemp).toLocaleString()}°C
+              </span>
+            {:else}
+              <span class="temp none" title="온도 없음 (벽 등)">—</span>
+            {/if}
             <span class="count">{e.count.toLocaleString()}</span>
             <span class="ratio">{pct(e.count)}%</span>
           </li>
@@ -85,7 +92,7 @@
     z-index: 8;
     top: 8px;
     left: calc(var(--sidebar-w) + 8px);
-    width: 208px;
+    width: 240px;
     max-width: calc(100vw - var(--sidebar-w) - 16px);
     padding: 8px 10px;
     background: rgba(20, 20, 26, 0.92);
@@ -156,13 +163,27 @@
   }
   .name {
     flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: #e8e8ee;
   }
+  /* Per-material average temperature — tinted amber like the summary temperature
+     so it reads as a heat value, not a count. */
+  .temp {
+    flex: none;
+    min-width: 46px;
+    text-align: right;
+    color: #f0c85a;
+  }
+  .temp.none {
+    color: #6a6a78;
+  }
   .count {
     flex: none;
+    min-width: 32px;
+    text-align: right;
     color: #cfcfd8;
   }
   .ratio {
