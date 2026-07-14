@@ -122,6 +122,12 @@ export function mixCells(grid: Grid, cells: readonly number[], rand: () => numbe
       if (x < w - 1) pushIfEligible(idx + 1, eligible, visited, stack);
     }
     shuffleIndices(grid, comp, rand);
+    // shuffleIndices writes cells/overlay directly (bypassing Grid.set), so wake
+    // every touched cell's tile for the active-tile scan — otherwise a grain
+    // stirred up into an otherwise-empty tile would be skipped and hang frozen
+    // (see engine/dirtyTiles.ts; this is the one occupancy write outside the
+    // Grid/SimContext seams).
+    for (const idx of comp) grid.markActive(idx % w, (idx / w) | 0);
   }
 }
 
