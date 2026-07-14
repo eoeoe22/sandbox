@@ -3,7 +3,8 @@ import { Simulation } from './engine/Simulation';
 import { CanvasRenderer } from './render/CanvasRenderer';
 import { PointerPainter } from './input/PointerPainter';
 import { SandboxLayout } from './layout';
-import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS } from './config';
+import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS, USE_WASM_HEAT } from './config';
+import { initHeatWasm } from './engine/heatWasm';
 import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
 import {
   $running,
@@ -47,6 +48,11 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // Restore saved settings before anything subscribes to the atoms, so the
   // border-mode subscription below seeds the engine with the restored value.
   initSettingsPersistence();
+
+  // Start loading the Rust/WASM heat kernel in the background. It's a no-op if
+  // disabled; the simulation runs the JS diffusion path until this resolves and
+  // stays on JS if it never does (unsupported/fetch failure). See heatWasm.ts.
+  if (USE_WASM_HEAT) void initHeatWasm();
 
   const layout = new SandboxLayout();
   // Seed the resolution multiplier from the restored setting before the first

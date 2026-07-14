@@ -7,11 +7,13 @@ import {
   HEAT_DIFFUSION_RATE,
   HEAT_DIFFUSION_SUBSTEPS,
   DEFAULT_CONDUCTIVITY,
+  USE_WASM_HEAT,
   type SmokeLevel,
   type GravityDir,
 } from '../config';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 import { stepObjects } from './objects';
+import { heatWasmReady, diffuseHeatWasm } from './heatWasm';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -79,8 +81,19 @@ export class Simulation {
     g.moved.fill(0);
     g.overlayMoved.fill(0);
     // Run several conduction substeps per tick so heat spreads ~3× faster
-    // globally while each substep stays numerically stable (see config).
-    for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
+    // globally while each substep stays numerically stable (see config). The
+    // Rust/WASM kernel runs all substeps in one call (bit-identical to the JS
+    // path, proven by wasm/test/golden.mjs); if it isn't loaded/enabled we fall
+    // back to the JS loop transparently.
+    if (
+      USE_WASM_HEAT &&
+      heatWasmReady() &&
+      diffuseHeatWasm(g.cells, this.cond, g.temp, g.width, g.height, HEAT_DIFFUSION_RATE, HEAT_DIFFUSION_SUBSTEPS)
+    ) {
+      // WASM wrote the diffused field back into g.temp in place.
+    } else {
+      for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
+    }
     this.ctx.tick = this.tick;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;

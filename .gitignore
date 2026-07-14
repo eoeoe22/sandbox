@@ -2,6 +2,9 @@
 dist/
 .astro/
 
+# rust wasm build output (the committed artifact is src/game/engine/heat.wasm)
+wasm/heat/target/
+
 # dependencies
 node_modules/
 

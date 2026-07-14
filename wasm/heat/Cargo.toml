@@ -1,0 +1,20 @@
+[package]
+name = "heat"
+version = "0.1.0"
+edition = "2021"
+description = "WASM heat-diffusion kernel for the sandbox simulator (docs/WASM-ENGINE-PORTING.md Phase 2, region A)."
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# Small, fast, self-contained wasm: no panic unwinding, aggressive inlining,
+# symbols stripped. There are no external crate dependencies on purpose — the
+# artifact ships as a committed `.wasm` so the Cloudflare static build needs no
+# Rust toolchain (see wasm/README.md).
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
