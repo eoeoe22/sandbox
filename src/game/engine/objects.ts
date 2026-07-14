@@ -269,9 +269,9 @@ export const DRUM_RESTITUTION = 0.26;
  *  of skating — the historically-missing piece was torque, supplied here. */
 export const DRUM_FRICTION = 0.7;
 /** Footprint temperature (°) at/above which the drum counts a tick of heat
- *  exposure. Below Iron's 1400° melt point (a thin processed shell melts a touch
- *  easier) but above ordinary Fire (1000°), so a campfire won't melt a drum while
- *  Lava (1500°) and Blue Flame (1800°) will. */
+ *  exposure. Level with Iron's melt point (1200°) — a thin processed shell — and
+ *  above ordinary Fire (1000°), so a campfire won't melt a drum while Lava
+ *  (1500°), Blue Flame (1800°), and an oxygen-blown coal fire (≥1300°) will. */
 export const DRUM_MELT_TEMP = 1200;
 /** Sustained ticks above DRUM_MELT_TEMP before the drum melts. */
 export const DRUM_MELT_TICKS = 24;

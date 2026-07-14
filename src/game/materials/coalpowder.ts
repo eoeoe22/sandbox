@@ -27,8 +27,8 @@ const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580 };
 // reduces to hot Molten Metal, that metal (which isn't ore) would otherwise
 // unshield and immediately burn the carbon that's meant to reduce the next
 // layer, so the pool only ever crusts at the top. Including Molten Metal keeps
-// the carbon alive through the churn (the reduced iron rises away while fresh ore
-// stays under the sinking carbon), so a dusted pool reduces top-down. Only coal
+// the carbon alive through the churn (the reduced iron sinks away to the floor
+// while fresh ore stays around the carbon), so a dusted pool keeps reducing. Only coal
 // *immediately* touching the hearth
 // is shielded — coal a cell or more away still burns, so a charcoal bed heaped
 // around a crucible still smoulders and heats it.

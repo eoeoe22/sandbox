@@ -23,8 +23,8 @@ import { SMOKE } from './smoke';
 //    sinks in to disperse (also coalpowder.ts) so the whole depth reduces rather
 //    than only the surface. The cell becomes *hot* Molten Metal (or Slag on a
 //    yield miss): reduction is treated as exothermic, forcing the fresh iron
-//    molten (≥ REDUCE_HEAT) so it stays liquid and flows clear (rising out of the
-//    pool, since the reduced metal is now the lightest phase) instead of freezing
+//    molten (≥ REDUCE_HEAT) so it stays liquid and flows clear (sinking out of the
+//    pool, since the reduced metal is now the densest phase) instead of freezing
 //    into a solid crust right where the carbon sits — a crust would seal the melt
 //    off and stall reduction (the original bug). A
 //    Limestone neighbour acts as flux, raising the iron yield.
@@ -33,8 +33,9 @@ import { SMOKE } from './smoke';
 //    the rework, just melt-first now.
 //
 // Density 7: Coal Powder (5) floats on the pool so you can dust carbon over its
-// surface, the reduced Molten Metal (6) floats up above it, and Slag (8) sinks
-// below — the furnace's vertical layers emerge on their own.
+// surface, the reduced Molten Metal (8) sinks below it to pool on the floor, and
+// Slag (6) floats up above — the furnace's vertical layers emerge on their own,
+// with the heavy iron settling under the light slag as in a real hearth.
 const SOLIDIFY_TEMP = 750; // cools below this without reduction → Slag
 const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (fast,
 // 1:1 — one carbon grain spent per ore cell, ~4 ticks: contact keeps up so a
@@ -44,7 +45,7 @@ const FLUX_YIELD = 0.95; // …raised when a Limestone flux grain is adjacent
 const FLUX_CONSUME = 0.5; // chance that flux grain is spent
 const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Metal)
 const REDUCE_HEAT = 1450; // exothermic: fresh iron is forced this hot so it stays
-// molten (above Molten Metal's 1350° freeze) and flows clear instead of crusting.
+// molten (well above Molten Metal's 1100° freeze) and sinks clear instead of crusting.
 
 function isCarbon(id: number): boolean {
   return id === COAL.id || id === COAL_POWDER.id;
@@ -88,7 +89,7 @@ function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
     sim.setAux(x, y, 0); // clear before handing the cell to Molten Metal
     const yield_ = fx >= 0 ? FLUX_YIELD : IRON_YIELD;
     if (sim.chance(yield_)) {
-      // Success → hot Molten Metal that floats clear (see REDUCE_HEAT). In-place set
+      // Success → hot Molten Metal that sinks clear (see REDUCE_HEAT). In-place set
       // keeps temp, so force it molten if the pool was only just melted.
       sim.set(x, y, MOLTEN_METAL.id);
       if (sim.getTemp(x, y) < REDUCE_HEAT) sim.setTemp(x, y, REDUCE_HEAT);
