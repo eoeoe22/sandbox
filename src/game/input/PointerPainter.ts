@@ -704,8 +704,12 @@ export class PointerPainter {
     // (one gesture → one fill); mouse/pen pointers leave the marquee pending
     // so the user can review it and press Enter to apply (or Escape to cancel).
     // Note: confirmRect() reads rectDragging, so it must run before we clear it.
+    // A pointercancel (OS scroll interrupt, palm rejection) is NOT a deliberate
+    // release — cancel the marquee instead of committing a surprise fill.
     if (this.rectDragging) {
-      if (e.pointerType === 'touch') {
+      if (e.type === 'pointercancel') {
+        this.cancelRect();
+      } else if (e.pointerType === 'touch') {
         this.confirmRect(); // calls cancelRect() internally (clears dragging)
       } else {
         this.rectDragging = false;
@@ -802,9 +806,22 @@ export class PointerPainter {
     this.rectEl.style.display = 'none';
   }
 
-  /** Key handler for the 영역 tool: Enter confirms, Escape cancels. */
+  /** Key handler for the 영역 tool: Enter confirms, Escape cancels. Skips
+   *  events originating from a text input / textarea / contenteditable so typing
+   *  Enter in a modal field (the SaveSlots name, a blend ratio, …) doesn't
+   *  accidentally commit a pending marquee. */
   private onKey = (e: KeyboardEvent): void => {
     if ($tool.get() !== 'rect') return;
+    const t = e.target as HTMLElement | null;
+    if (
+      t &&
+      (t.tagName === 'INPUT' ||
+        t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' ||
+        t.isContentEditable)
+    ) {
+      return;
+    }
     if (e.key === 'Escape') {
       if (this.rectDragging || this.rectPending) {
         e.preventDefault();
