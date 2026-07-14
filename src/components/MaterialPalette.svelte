@@ -404,7 +404,8 @@
           title={it.label}
         >
           <!-- The object's real in-world silhouette as SVG, scaled to the swatch
-               box (see objectSvgFor). eslint-disable-next-line — trusted markup. -->
+               box (see objectSvgFor). {@html} is safe here: the markup is built
+               only from trusted constant sprite data, never user input. -->
           <span class="swatch obj">{@html objectSvgFor(it.key)}</span>
           <span class="label">{it.label}</span>
         </button>
