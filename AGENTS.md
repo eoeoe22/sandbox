@@ -10,7 +10,7 @@
   개요·핵심 재미·주요 기능 하이라이트·플레이 가이드/배포 링크 정도만 담는다.
 - **개발 기록·상세 레퍼런스 = 저장소 `docs/` 폴더.** 분야별로 파일을 나눠
   하나가 지나치게 커지지 않게 관리한다(`ARCHITECTURE.md`, `FEATURES.md`,
-  `PHYSICS.md`, `MATERIALS.md`, `OBJECTS.md` 등). 새 분야는 새 파일 +
+  `PHYSICS.md`, `MATERIALS.md`, `MATERIAL-SYSTEMS.md`, `OBJECTS.md` 등). 새 분야는 새 파일 +
   `docs/README.md` 인덱스 링크로 추가한다.
 
 # 워크플로우

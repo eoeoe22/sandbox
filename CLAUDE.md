@@ -12,7 +12,7 @@
 - **개발 기록·상세 레퍼런스 = 저장소 `docs/` 폴더.** 기능·물질·물리 등 상세
   문서는 이곳에 둔다. **하나의 파일이 지나치게 커지지 않도록 분야별로 나눠서**
   관리한다(예: `ARCHITECTURE.md`, `FEATURES.md`, `PHYSICS.md`, `MATERIALS.md`,
-  `OBJECTS.md`). 새 분야가 생기면 새 파일을 만들고 `docs/README.md` 인덱스에
+  `MATERIAL-SYSTEMS.md`, `OBJECTS.md`). 새 분야가 생기면 새 파일을 만들고 `docs/README.md` 인덱스에
   링크를 추가한다.
 
 # 워크플로우
