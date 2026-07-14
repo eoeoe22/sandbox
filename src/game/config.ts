@@ -224,9 +224,21 @@ export const HEAT_BRUSH_MAX = 2000;
 export const HEAT_BRUSH_MIN = -50;
 
 /**
+ * Sentinel for the "auto" overwrite rule. When `$overwriteLevel` is this value,
+ * the brush derives its effective level from the *selected material's* phase:
+ * wall → 전체, solid → 고체까지 (wall 제외), powder → 가루까지, liquid → 액체+기체,
+ * gas → 기체만. See `effectiveOverwriteLevel` (PointerPainter). Slotted below
+ * `OVERWRITE_LEVEL_MIN` so it reads as "one notch looser than level 0" in the UI
+ * while still being representable in a single signed number.
+ */
+export const OVERWRITE_AUTO = -1;
+
+/**
  * Progressive brush overwrite levels, from most conservative to most permissive.
  * Each level also allows everything the previous levels allow (Empty cells are
- * always paintable regardless of level).
+ * always paintable regardless of level). The UI prepends an '자동' option (index
+ * `OVERWRITE_AUTO` = -1) that derives the level from the selected material; the
+ * numeric levels below start at 0.
  */
 export const OVERWRITE_LEVELS = [
   '덮어쓰기 없음',

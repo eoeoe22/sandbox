@@ -62,11 +62,14 @@ export const $brushMode = atom<BrushMode>('full');
  * left-click/drag places nothing, so you can move the pointer over the world
  * without disturbing it — a right-button drag still erases (the secondary
  * button always erases, see PointerPainter). Handy paired with the 돋보기
- * inspect overlay ($inspect) to survey the world without painting. See
+ * inspect overlay ($inspect) to survey the world without painting. 'rect'
+ * (영역) is a Photoshop-style rectangular marquee: drag a rectangle, then
+ * confirm with Enter on PC (or release on touch) to fill that rectangle with
+ * the selected material in one shot — same overwrite rule as the brush. See
  * PointerPainter and config.ts. Selecting a material in the palette snaps this
  * back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view' | 'rect';
 export const $tool = atom<Tool>('material');
 
 /**

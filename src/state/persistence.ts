@@ -30,6 +30,7 @@ import {
   BRUSH_MAX,
   OVERWRITE_LEVEL_MIN,
   OVERWRITE_LEVEL_MAX,
+  OVERWRITE_AUTO,
   SIM_SPEEDS,
   SMOKE_LEVELS,
   BLEND_MAX_SLOTS,
@@ -87,7 +88,7 @@ function writeString(key: string, value: string): boolean {
 
 const BRUSH_SHAPES: readonly BrushShape[] = ['circle', 'square'];
 const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
-const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object'];
+const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object', 'view', 'rect'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 
@@ -130,6 +131,17 @@ function clampInt(v: unknown, lo: number, hi: number, fallback: number): number 
   if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
   const n = Math.round(v);
   return n < lo ? lo : n > hi ? hi : n;
+}
+
+/**
+ * Validate a persisted overwrite level. Accepts the AUTO sentinel (-1) or any
+ * integer in the manual range; falls back to the current atom value otherwise
+ * (so a corrupt or pre-AUTO save keeps the live default rather than coercing
+ * to a wrong level).
+ */
+function clampOverwrite(v: unknown, fallback: number): number {
+  if (v === OVERWRITE_AUTO) return OVERWRITE_AUTO;
+  return clampInt(v, OVERWRITE_LEVEL_MIN, OVERWRITE_LEVEL_MAX, fallback);
 }
 
 /** Clamp a persisted float into [lo, hi], falling back when not a finite number. */
@@ -183,7 +195,7 @@ function hydrateSettings(): void {
   $brushMode.set(oneOf(s.brushMode, BRUSH_MODES, $brushMode.get()));
   $tool.set(oneOf(s.tool, TOOLS, $tool.get()));
   $overwriteLevel.set(
-    clampInt(s.overwriteLevel, OVERWRITE_LEVEL_MIN, OVERWRITE_LEVEL_MAX, $overwriteLevel.get()),
+    clampOverwrite(s.overwriteLevel, $overwriteLevel.get()),
   );
   $borderMode.set(oneOf(s.borderMode, BORDER_MODES, $borderMode.get()));
   $simSpeed.set(oneOf(s.simSpeed, SIM_SPEED_VALUES, $simSpeed.get()));
@@ -446,13 +458,13 @@ export interface PersistedWorld {
 let lastWorldJson: string | null = null;
 
 /**
- * Snapshot the grid into localStorage. Cheap enough to call on an interval: one
- * pass over the two arrays, and the write is skipped entirely when nothing
- * changed since the last save.
+ * Serialize a grid into the v1 JSON envelope (RLE+base64 cells/temps/aux/
+ * overlay). The same format `saveWorld` writes to localStorage, returned as a
+ * string so callers (the named-snapshot store) can stash it under their own
+ * keys. No storage side effects.
  */
-export function saveWorld(grid: Grid): void {
-  if (!storageAvailable()) return;
-  const json = JSON.stringify({
+export function serializeWorld(grid: Grid): string {
+  return JSON.stringify({
     v: 1,
     w: grid.width,
     h: grid.height,
@@ -475,21 +487,17 @@ export function saveWorld(grid: Grid): void {
     // identity across a reload. Also mostly zero.
     ova: bytesToBase64(encodeCellsRle(grid.overlayAux)),
   });
-  if (json === lastWorldJson) return;
-  if (writeString(WORLD_KEY, json)) lastWorldJson = json;
 }
 
 /**
- * Load the saved world, or null when there is none (or it fails validation).
- * Restored cells are sanitized: ids no longer in the material registry become
- * Empty, and Empty cells sit at ambient temperature — so a stale or corrupt
- * save can't feed the simulation values it was never written to handle. A world
- * saved at a different grid size is remapped onto the current sandbox by the
- * caller (Grid.resizeFrom).
+ * Parse a v1 JSON envelope (from `serializeWorld` / `saveWorld`) back into the
+ * typed arrays a `Grid.resizeFrom` call wants. Restored cells are sanitized:
+ * ids no longer in the material registry become Empty, and Empty cells sit at
+ * ambient temperature — so a stale or corrupt save can't feed the simulation
+ * values it was never written to handle. Returns null on any parse/validation
+ * failure so the caller can fall back gracefully.
  */
-export function loadWorld(): PersistedWorld | null {
-  if (!storageAvailable()) return null;
-  const raw = readJson(WORLD_KEY);
+export function deserializeWorld(raw: unknown): PersistedWorld | null {
   if (!raw || typeof raw !== 'object') return null;
   const j = raw as Record<string, unknown>;
   if (j.v !== 1) return null;
@@ -554,4 +562,26 @@ export function loadWorld(): PersistedWorld | null {
   }
 
   return { w, h, cells, temp, aux, overlay, overlayAux };
+}
+
+/**
+ * Snapshot the grid into localStorage. Cheap enough to call on an interval: one
+ * pass over the two arrays, and the write is skipped entirely when nothing
+ * changed since the last save.
+ */
+export function saveWorld(grid: Grid): void {
+  if (!storageAvailable()) return;
+  const json = serializeWorld(grid);
+  if (json === lastWorldJson) return;
+  if (writeString(WORLD_KEY, json)) lastWorldJson = json;
+}
+
+/**
+ * Load the saved auto-world, or null when there is none (or it fails
+ * validation). A world saved at a different grid size is remapped onto the
+ * current sandbox by the caller (Grid.resizeFrom).
+ */
+export function loadWorld(): PersistedWorld | null {
+  if (!storageAvailable()) return null;
+  return deserializeWorld(readJson(WORLD_KEY));
 }
