@@ -53,13 +53,19 @@ const VAPOR_DIESEL = 3;
  *  keeps the (hot) temperature, so the fresh vapour rises hot and condenses on
  *  its own as it cools higher up. */
 function boilOff(x: number, y: number, sim: SimContext, t: number): void {
-  if (t < 205) {
-    sim.set(x, y, PETROLEUM_GAS.id); // lightest — the gas product, never condenses
+  if (t < 168) {
+    // Lightest — the gas product (LPG), never condenses. Real refinery gas is
+    // only a few percent of crude and boils off well below the liquid cuts, so
+    // this band is kept a thin low sliver (150–168): a slowly heated cell passes
+    // through it briefly on its way up, giving off a modest puff of gas rather
+    // than the bulk of the charge. Most of the crude goes on to the condensable
+    // liquid cuts below (gasoline is the widest, as in a real column).
+    sim.set(x, y, PETROLEUM_GAS.id);
     return;
   }
   sim.set(x, y, PETROLEUM_VAPOR.id);
-  if (t < 258) sim.setAux(x, y, VAPOR_GASOLINE);
-  else if (t < 315) sim.setAux(x, y, VAPOR_KEROSENE);
+  if (t < 250) sim.setAux(x, y, VAPOR_GASOLINE);
+  else if (t < 312) sim.setAux(x, y, VAPOR_KEROSENE);
   else sim.setAux(x, y, VAPOR_DIESEL);
 }
 
