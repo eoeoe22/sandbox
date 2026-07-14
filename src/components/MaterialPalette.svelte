@@ -16,6 +16,7 @@
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
+  import { objectSvgFor } from '../game/render/objectSvg';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
@@ -27,18 +28,20 @@
   // the 'object' tool, and a click on the canvas spawns that object (see
   // PointerPainter). The three drums share one capsule and differ only in what
   // they spill when destroyed; the swatch color matches each drum's sprite.
+  // Item names are in English (이름 영어 통일), but the category tab name stays
+  // Korean like the other palette categories. Each item's palette swatch is the
+  // object's real in-world shape as SVG (objectSvgFor), generated from the same
+  // sprite data the renderer draws — no more hand-approximated CSS swatch.
   const OBJECT_KEY = '오브젝트';
   const OBJECT_ITEMS: {
     key: ObjectKind;
     label: string;
-    color: string;
-    shape: 'ball' | 'drum' | 'dynamite';
   }[] = [
-    { key: 'ball', label: '고무공', color: '#d84652', shape: 'ball' },
-    { key: 'drum', label: '빈 드럼통', color: '#2563eb', shape: 'drum' },
-    { key: 'oildrum', label: '원유 드럼통', color: '#7a5430', shape: 'drum' },
-    { key: 'aciddrum', label: '산 드럼통', color: '#86c23a', shape: 'drum' },
-    { key: 'dynamite', label: '다이너마이트', color: '#ff3b30', shape: 'dynamite' },
+    { key: 'ball', label: 'Rubber Ball' },
+    { key: 'drum', label: 'Empty Drum' },
+    { key: 'oildrum', label: 'Crude Oil Drum' },
+    { key: 'aciddrum', label: 'Acid Drum' },
+    { key: 'dynamite', label: 'Dynamite' },
   ];
 
   // --- Search --------------------------------------------------------------
@@ -401,7 +404,10 @@
           onclick={() => pickObject(it.key)}
           title={it.label}
         >
-          <span class="swatch" class:ball={it.shape === 'ball'} class:drum={it.shape === 'drum'} class:dynamite={it.shape === 'dynamite'} style={`background:${it.color}`}></span>
+          <!-- The object's real in-world silhouette as SVG, scaled to the swatch
+               box (see objectSvgFor). {@html} is safe here: the markup is built
+               only from trusted constant sprite data, never user input. -->
+          <span class="swatch obj">{@html objectSvgFor(it.key)}</span>
           <span class="label">{it.label}</span>
         </button>
       {/each}
@@ -694,20 +700,24 @@
     border: 1px solid rgba(255, 255, 255, 0.15);
     flex: none;
   }
-  /* An object swatch hints at the object it places: a ball is round, a drum is
-     a tall rounded rectangle (its capsule/upright silhouette). */
-  .chip .swatch.ball {
-    border-radius: 50%;
+  /* An object swatch shows the object's real in-world shape as SVG (objectSvgFor),
+     scaled to fit this box while keeping its aspect ratio — a round ball, an
+     upright drum, a slim dynamite stick. No fill/border of its own; the SVG is the
+     art. Taller than a material swatch so the upright drum/dynamite read clearly. */
+  .chip .swatch.obj {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 26px;
+    border: none;
+    border-radius: 0;
+    background: none;
   }
-  .chip .swatch.drum {
-    width: 14px;
-    border-radius: 5px / 7px;
-  }
-  /* A dynamite swatch is a slim, tall red stick — narrower than the drum. */
-  .chip .swatch.dynamite {
-    width: 9px;
-    height: 20px;
-    border-radius: 3px;
+  .chip .swatch.obj :global(svg.obj-svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
   .chip .label {
     max-width: 100%;
