@@ -331,9 +331,12 @@ export const DYNAMITE_RADIUS = 1.6;
 export const DYNAMITE_HALF_LENGTH = 3;
 export const DYNAMITE_DENSITY = 3.5;
 export const DYNAMITE_RESTITUTION = 0.2;
-/** Initial lean (radians) a freshly-placed stick spawns at, so it topples over to
- *  lie down instead of balancing bolt-upright on its rounded cap (바닥에 안 서게). */
-export const DYNAMITE_SPAWN_TILT = 0.4;
+/** Max magnitude (rad/tick) of the small random spin a freshly-placed stick spawns
+ *  with. The stick drops bolt-upright (수직 스폰) but gets a weak torque kicked in a
+ *  random left/right direction — a coin-flip sign times a random fraction of this —
+ *  so it tips over to one side or the other instead of balancing on its cap. Kept
+ *  well under the mix brush's 0.15 so the nudge stays gentle (약한 토크). */
+export const DYNAMITE_SPAWN_SPIN = 0.06;
 /** Fuse length bounds (ticks). Each stick rolls a random burn time in [MIN, MAX]
  *  at creation (기획: 폭발 시간 3~5초 랜덤). Sized in *seconds* at the default sim rate
  *  — SIM_SPEED ×1 runs at TICK_HZ/2 Hz (see config) — so a stick burns ~3–5 real
@@ -400,9 +403,10 @@ const FUSE_SNUFF_TEMP = -20;
  *  sits cells away from the body's footprint), so it never cooks the stick itself. */
 const FUSE_BOIL_FLOOR = 130;
 
-/** Build a lit stick of dynamite centered at (x,y), at rest and slightly tilted
- *  (so it topples instead of balancing upright — see DYNAMITE_SPAWN_TILT), with a
- *  random fuse length in [MIN, MAX] ticks (기획: 3~5초 랜덤). Mass and moment of
+/** Build a lit stick of dynamite centered at (x,y), spawned bolt-upright (수직) but
+ *  with a weak random spin kicked in a random left/right direction (see
+ *  DYNAMITE_SPAWN_SPIN) so it topples to one side instead of balancing on its cap,
+ *  and a random fuse length in [MIN, MAX] ticks (기획: 3~5초 랜덤). Mass and moment of
  *  inertia follow the same capsule formulas as the drum. */
 export function createDynamite(
   x: number,
@@ -425,8 +429,8 @@ export function createDynamite(
     y,
     vx: 0,
     vy: 0,
-    angle: DYNAMITE_SPAWN_TILT,
-    angularVelocity: 0,
+    angle: 0,
+    angularVelocity: (Math.random() * 2 - 1) * DYNAMITE_SPAWN_SPIN,
     halfLength: l,
     radius: r,
     mass,
