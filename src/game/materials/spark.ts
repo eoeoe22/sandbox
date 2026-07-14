@@ -93,6 +93,18 @@ const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id,
 // strength loss.
 const CONDUCTOR_LOSS = [0, 0, 3, 1, 1, 1, 6];
 
+// The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
+// byte, with class 0 reserved for "no conductor"; adding Slime brings the count
+// to 7, which exactly fills the 3-bit field (classes 1..CLASS_MASK). An 8th
+// conductor would encode as class CLASS_MASK+1, wrap to 0 under `& CLASS_MASK`,
+// and be silently deleted on revert (myClass===0 ⇒ set EMPTY) — so fail loudly at
+// load instead. Widen CLASS_BITS (at the cost of strength bits) before adding one.
+if (CONDUCTOR_IDS.length > CLASS_MASK) {
+  throw new Error(
+    `Too many spark conductors (${CONDUCTOR_IDS.length}) for a ${CLASS_BITS}-bit class field (max ${CLASS_MASK}).`,
+  );
+}
+
 // Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
 // it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
 // it's a slow trickle of gas, not a fizzing torrent.
@@ -231,15 +243,20 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     electrolyse(sim, x, y);
     return;
   }
-  if (conductorId === SLIME.id && sim.chance(SLIME_SHOCK_CHANCE)) {
-    // Shocked: revert to Slime but stamp the dissolve-front budget instead of a
-    // plain refractory mark. slime.ts's own updateSlime picks this up next tick
-    // (aux !== 0 ⇒ dissolveFront): THIS cell reverts to Water and hands off
-    // budget−1 to one random still-healthy neighbour — the same bounded, ragged
-    // bite as before, just seeded by current that passed through rather than a
-    // one-off touch.
+  if (conductorId === SLIME.id) {
+    // Slime uses its aux byte for ONE thing only — the dissolve-front budget, which
+    // slime.ts reads as "any non-zero aux ⇒ dissolve this cell next tick" and never
+    // ticks down as a refractory (unlike Iron/Water/…). So a reverting slime spark
+    // must NOT carry the ordinary REFRACTORY_TICKS stamp: updateSlime would misread
+    // that 3 as a reach-3 dissolve budget and eat the blob on EVERY hop, defeating
+    // the "poor conductor, sustained current needed" design. Instead a low-chance
+    // shock seeds a real bounded dissolve front (aux = budget, updateSlime reverts
+    // this cell to Water next tick and frays outward); every other hop reverts to
+    // inert Slime (aux 0). Slime therefore has no anti-doubleback refractory, but
+    // its heavy per-cell strength loss (CONDUCTOR_LOSS) already bounds how far a
+    // pulse can spread through a blob.
     sim.set(x, y, SLIME.id);
-    sim.setAux(x, y, SLIME_DISSOLVE_BUDGET);
+    sim.setAux(x, y, sim.chance(SLIME_SHOCK_CHANCE) ? SLIME_DISSOLVE_BUDGET : 0);
     return;
   }
   sim.set(x, y, conductorId);

@@ -100,6 +100,10 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
+  /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
+   *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
+   *  as background rather than colouring garbage packed values as white-hot. */
+  private packed: Uint8Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
   /** When true, occupied cells are drawn by temperature (thermal camera) instead
@@ -145,6 +149,7 @@ export class CanvasRenderer implements Renderer {
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
+    this.packed = new Uint8Array(256);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -153,6 +158,7 @@ export class CanvasRenderer implements Renderer {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
+        if (m.packedTemp) this.packed[i] = 1;
         if (m.lattice !== undefined) {
           this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
@@ -301,15 +307,20 @@ export class CanvasRenderer implements Renderer {
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
     const arrow = this.arrow;
+    const packed = this.packed;
     const ovArr = grid.overlay;
     const w = grid.width;
     const heat = this.heatOverlay;
     for (let i = 0; i < cells.length; i++) {
       // Heat overlay: recolor occupied cells by temperature (a live thermal
       // camera); empty cells keep the ambient background so shapes read against
-      // it. Bypasses all the material-color machinery below.
+      // it. Bypasses all the material-color machinery below. A packedTemp cell (a
+      // flying Ember/Debris/Blast fragment) keeps the background too: its `temp`
+      // holds packed flight/life state, not a real reading, so colouring it would
+      // flash it spuriously white-hot (see Material.packedTemp).
       if (heat) {
-        buf[i] = cells[i] === EMPTY ? pal[EMPTY] : this.heatColor(temp[i]);
+        const hid = cells[i];
+        buf[i] = hid === EMPTY || packed[hid] ? pal[EMPTY] : this.heatColor(temp[i]);
         continue;
       }
       let id = cells[i];
