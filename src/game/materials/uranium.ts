@@ -82,7 +82,13 @@ export const URANIUM = register({
   phase: Phase.Solid,
   color: rgb(210, 225, 70),
   density: 1000,
-  category: '특수',
+  category: '방사성',
+  // 방폭: every uranium-series material is immune to explosions — a Blast front
+  // stops at it, a flying Ember shatters on it, Antimatter skips it (see
+  // blast.ts/ember.ts/antimatter.ts). It does NOT stop a critical uranium's
+  // Heat Ray though (heatray.ts checks isWall/indestructible only), so the ray
+  // still melts a struck deposit exactly as before.
+  explosionProof: true,
   thermal: { conductivity: 0.5 },
   glow: { min: AMBIENT_TEMP, max: MELT_TEMP, cool: rgb(70, 90, 30) },
   update: updateUranium,

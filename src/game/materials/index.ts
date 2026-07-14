@@ -64,6 +64,9 @@ import { MOLTEN_SALT } from './moltensalt';
 import { DIAMOND } from './diamond';
 import { URANIUM } from './uranium';
 import { MOLTEN_URANIUM } from './moltenuranium';
+import { U238 } from './u238';
+import { MOLTEN_U238 } from './moltenu238';
+import { NUKE_WASTE } from './nukewaste';
 import { HEAT_RAY } from './heatray';
 import { LPG } from './lpg';
 import { COAL_POWDER } from './coalpowder';
@@ -166,6 +169,9 @@ export {
   DIAMOND,
   URANIUM,
   MOLTEN_URANIUM,
+  U238,
+  MOLTEN_U238,
+  NUKE_WASTE,
   HEAT_RAY,
   LPG,
   COAL_POWDER,
@@ -289,6 +295,9 @@ export const MATERIALS = [
   ANTIMATTER,
   URANIUM,
   MOLTEN_URANIUM,
+  U238,
+  MOLTEN_U238,
+  NUKE_WASTE,
   TNT,
   FUSE,
   THERMITE,
