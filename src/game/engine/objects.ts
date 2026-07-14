@@ -86,6 +86,19 @@ export const BALL_BURN_TEMP = 300;
 /** Sustained ticks above BALL_BURN_TEMP before the ball is destroyed. Shorter
  *  than the drum's melt (thin rubber gives way faster than a metal shell). */
 export const BALL_BURN_TICKS = 10;
+/** Max horizontal jitter — as a fraction of the ball's radius — applied to an
+ *  *interactively* spawned rubber ball, kicked a random amount to a random side.
+ *  Clicking repeatedly at one spot used to drop every ball on the exact same
+ *  column with zero velocity, so each landed square on the apex of the one below
+ *  and they balanced into a straight vertical tower (수직으로 쌓임). Nudging each
+ *  spawn a random sliver sideways drops it *off-centre* onto the pile, where the
+ *  unstable ball-on-ball contact rolls it off to spread into a low heap instead of
+ *  a tower. A position offset, not a velocity — a starting velocity would drift
+ *  forever on the friction-free floor (balls have no rolling resistance), whereas
+ *  an offset lets a lone ball still settle at rest right under the cursor. Scaled
+ *  to the radius so it stays proportionate across brush sizes, and small enough
+ *  that a single placement still lands essentially where you clicked (편의성). */
+export const RUBBER_BALL_SPAWN_SCATTER = 0.5;
 
 /** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. `r` is
  *  clamped to a small positive minimum so mass is never zero (buoyancy divides
