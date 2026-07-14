@@ -11,6 +11,7 @@ import {
   GRAVITY_STRENGTH_DEFAULT,
   CELL_SCALE_DEFAULT,
   GRID_DIVISION_DEFAULT,
+  BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
 } from '../game/config';
 import type {
@@ -204,6 +205,16 @@ export const $heatOverlay = atom<boolean>(false);
 export const $gridDivision = atom<GridDivision>(GRID_DIVISION_DEFAULT);
 
 /**
+ * Bottom dead zone in CSS px — empty play area reserved at the bottom of the
+ * viewport so browser chrome (e.g. Android tablet Chrome's address bar, which
+ * overlaps the desktop layout's `100vh` canvas) can't cut off the lowest slice
+ * of the sandbox. The engine sets a `--bottom-deadzone` CSS variable from this
+ * and re-derives the grid from the shrunken canvas (Game.ts). `0` = disabled
+ * (the default, so PC stays pixel-identical). See config `BOTTOM_DEADZONE_*`.
+ */
+export const $bottomDeadzone = atom<number>(BOTTOM_DEADZONE_DEFAULT);
+
+/**
  * Favorited material ids (starred in the palette's quick-access bar). Persisted,
  * ordered by when they were starred. User data, not a "setting" — untouched by
  * restore-defaults.
@@ -279,4 +290,5 @@ export const resetSettings = (): void => {
   $cellScale.set(CELL_SCALE_DEFAULT);
   $heatOverlay.set(false);
   $gridDivision.set(GRID_DIVISION_DEFAULT);
+  $bottomDeadzone.set(BOTTOM_DEADZONE_DEFAULT);
 };

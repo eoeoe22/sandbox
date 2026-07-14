@@ -20,6 +20,7 @@
     $cellScale as cellScale,
     $heatOverlay as heatOverlay,
     $gridDivision as gridDivision,
+    $bottomDeadzone as bottomDeadzone,
     $particleCount as particleCount,
     $frameMs as frameMs,
     requestClear,
@@ -39,6 +40,9 @@
     GRAVITY_STRENGTH_STEP,
     CELL_SCALES,
     GRID_DIVISIONS,
+    BOTTOM_DEADZONE_MIN,
+    BOTTOM_DEADZONE_MAX,
+    BOTTOM_DEADZONE_STEP,
   } from '../game/config';
   import type { GravityDir } from '../game/config';
   import { getMaterial } from '../game/materials';
@@ -567,6 +571,26 @@
       </div>
     </div>
 
+    <label class="field">
+      <span class="field-label">
+        아래 데드존: {$bottomDeadzone}px
+        <span class="wheel-hint"> (화면 아래 가림 방지)</span>
+      </span>
+      <input
+        type="range"
+        aria-label="아래 데드존"
+        min={BOTTOM_DEADZONE_MIN}
+        max={BOTTOM_DEADZONE_MAX}
+        step={BOTTOM_DEADZONE_STEP}
+        value={$bottomDeadzone}
+        oninput={(e) => bottomDeadzone.set(+e.currentTarget.value)}
+      />
+      <p class="field-note">
+        태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스
+        아래에 빈 공간을 확보합니다. (PC는 0 권장)
+      </p>
+    </label>
+
     <div class="field">
       <span class="field-label">혼합 브러시</span>
       <BlendBrush />
@@ -825,6 +849,14 @@
     grid-area: down;
   }
 
+  /* Small explanatory note under a control (e.g. the bottom dead-zone slider). */
+  .field-note {
+    margin: 2px 0 0;
+    color: #7a7a88;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
   /* Min/max captions under a range slider. */
   .range-ends {
     display: flex;
@@ -861,9 +893,10 @@
   /* --------------------------------------------------------------------- */
   @media (max-width: 768px) {
     .panel {
-      /* vh fallback for browsers without dvh support. */
-      top: calc(100vh - var(--bottombar-h));
-      top: calc(100dvh - var(--bottombar-h));
+      /* vh fallback for browsers without dvh support. The bottom dead zone is
+         reserved below the bar, so lift the bar by it too (0px by default). */
+      top: calc(100vh - var(--bottombar-h) - var(--bottom-deadzone));
+      top: calc(100dvh - var(--bottombar-h) - var(--bottom-deadzone));
       bottom: auto;
       left: 0;
       width: 100vw;
