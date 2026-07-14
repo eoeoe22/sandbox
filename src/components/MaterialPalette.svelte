@@ -67,6 +67,16 @@
     const recents = resolve($recentMaterials.filter((id) => !favSet.has(id)));
     return [...favs, ...recents];
   });
+  // The quick-access strip is a fixed-size grid so it never reflows the layout as
+  // materials come and go: always QUICK_SLOTS cells, each either a material chip
+  // or an empty placeholder box. Desktop shows all QUICK_SLOTS; mobile shows only
+  // the first QUICK_SLOTS_MOBILE (the rest hidden via CSS) so the strip stays a
+  // compact tap target beside the category buttons. See `.quick` styles.
+  const QUICK_SLOTS = 9;
+  const quickSlots = $derived.by<(Material | null)[]>(() => {
+    const items = quickItems.slice(0, QUICK_SLOTS);
+    return Array.from({ length: QUICK_SLOTS }, (_, i) => items[i] ?? null);
+  });
 
   // Which category's flyout is showing. `hovered` follows the pointer (mouse);
   // `pinned` is a click-to-lock override so touch devices (no hover) can open
@@ -293,10 +303,16 @@
       {/if}
     </div>
 
-    {#if quickItems.length > 0 && !searching}
+    {#if !searching}
       <div class="quick" role="group" aria-label="즐겨찾기·최근 사용">
-        {#each quickItems as m (m.id)}
-          {@render starChip(m)}
+        {#each quickSlots as m, i (i)}
+          {#if m}
+            {@render starChip(m)}
+          {:else}
+            <div class="chip-wrap placeholder" aria-hidden="true">
+              <div class="chip empty"></div>
+            </div>
+          {/if}
         {/each}
       </div>
     {/if}
@@ -520,6 +536,20 @@
     flex-wrap: wrap;
     gap: 4px;
   }
+  /* Empty quick-access slot: a faded dashed box that reserves a chip's footprint
+     so the strip keeps its shape whether or not there are favorites/recents. */
+  .chip.empty {
+    width: 56px;
+    height: 46px;
+    border-style: dashed;
+    border-color: #262630;
+    background: transparent;
+    opacity: 0.6;
+    cursor: default;
+  }
+  .chip.empty:hover {
+    border-color: #262630;
+  }
   .cat-list {
     display: flex;
     flex-direction: column;
@@ -728,6 +758,35 @@
     }
     .cat-label,
     .category > button .count {
+      display: none;
+    }
+
+    /* Quick-access recents/favorites shrink to compact swatch squares the same
+       size as the icon-only category buttons beside them, and only the first
+       three show (slots 4–9 stay in the DOM but are hidden) so the strip is a
+       small, predictable tap target. The corner star is dropped at this size —
+       favorites are still managed from the search results. */
+    .quick > *:nth-child(n + 4) {
+      display: none;
+    }
+    .quick .chip {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      justify-content: center;
+    }
+    .quick .chip .label {
+      display: none;
+    }
+    .quick .chip .swatch {
+      width: 22px;
+      height: 22px;
+    }
+    .quick .chip.empty {
+      width: 44px;
+      height: 44px;
+    }
+    .quick .star {
       display: none;
     }
   }

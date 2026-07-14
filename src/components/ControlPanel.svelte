@@ -49,17 +49,25 @@
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
   import InspectPanel from './InspectPanel.svelte';
+  import Modal from './Modal.svelte';
 
   // Name of the currently selected paint material, shown on the 재료 (draw) brush
   // button so the active material is always visible without opening the palette.
   const selectedName = $derived(getMaterial($selectedMaterial)?.name ?? '재료');
 
-  // Mobile-only: the secondary settings (speed, brush size/shape/mode, overwrite,
-  // edge mode, HUD) collapse behind a toggle so the bottom bar stays two rows.
-  // On desktop the sheet is always shown inline in the sidebar and this is unused.
-  let sheetOpen = $state(false);
-  let sheetEl = $state<HTMLDivElement | null>(null);
-  let toggleEl = $state<HTMLButtonElement | null>(null);
+  // Two modals, opened from the toolbar. The 설정 modal holds the settings that
+  // are set once and left alone (plus, on mobile, the frequently-tweaked ones,
+  // which live inline in the sidebar on desktop). The 혼합 브러시 modal holds the
+  // blend-ratio editor and pops up when the 혼합 tool is selected.
+  let settingsOpen = $state(false);
+  let blendOpen = $state(false);
+
+  // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
+  // click away; re-clicking it reopens the editor to fine-tune the ratios.
+  function pickBlend(): void {
+    tool.set('blend');
+    blendOpen = true;
+  }
 
   // 전체 지우기 is destructive, so it's a two-step confirm: the first click arms
   // the button (its label switches to a confirm prompt for 2s); a second click
@@ -81,7 +89,7 @@
 
   // 기본값 복원 is also a two-step confirm (it resets every setting at once), the
   // same arm-then-confirm pattern as 전체 지우기. It never touches the world or
-  // the user's favorites — only the sliders/toggles in this sheet.
+  // the user's favorites — only the sliders/toggles in the settings modal.
   let resetArmed = $state(false);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
   function handleReset(): void {
@@ -125,39 +133,337 @@
   const simHz = $derived(Math.round((TICK_HZ * $simSpeed) / 2));
   const gridLabel = $derived($gridDivision === 0 ? '끔' : `${$gridDivision}`);
 
-  // Mobile settings sheet has no X button — tapping the toggle again or anywhere
-  // outside the sheet closes it. The toggle's own click runs before this bubbles
-  // to window, so `toggleEl` guards against it reopening/closing twice. On desktop
-  // the sheet is always shown inline (its `.open` class is ignored), so closing
-  // `sheetOpen` here has no visible effect.
-  // Detect the dismissing tap on pointerdown, not click: the blend brush's
-  // material picker portals its popover out to <body>, and picking a material (or
-  // drilling into a category) detaches the tapped node from that popover before a
-  // bubbling `click` would run — so a click-time `closest` couldn't tell the tap
-  // came from the picker and would wrongly dismiss the sheet, forcing the user to
-  // reopen it for the next adjustment. At pointerdown the DOM is still intact.
-  function handleWindowPointerDown(e: PointerEvent): void {
-    if (!sheetOpen) return;
-    const t = e.target as Node;
-    if (sheetEl?.contains(t)) return;
-    if (toggleEl?.contains(t)) return;
-    // A tap inside the picker's portaled popover logically belongs to the sheet.
-    if (t instanceof Element && t.closest('[data-picker-portal]')) return;
-    sheetOpen = false;
-  }
-
   onDestroy(() => {
     clearTimeout(clearTimer);
     clearTimeout(resetTimer);
   });
 </script>
 
-<svelte:window onpointerdown={handleWindowPointerDown} />
+<!-- Frequently-tweaked settings. Shown inline in the sidebar on desktop and
+     inside the 설정 modal on mobile (rendered in both spots; CSS shows the right
+     one for the viewport — see .inline-settings / .modal-frequent). -->
+{#snippet frequentSettings()}
+  <label class="field">
+    <span class="field-label">
+      브러시 크기: {$brushSize}<span class="wheel-hint"> (휠로 조절)</span>
+    </span>
+    <input
+      type="range"
+      min={BRUSH_MIN}
+      max={BRUSH_MAX}
+      value={$brushSize}
+      oninput={(e) => brushSize.set(+e.currentTarget.value)}
+    />
+  </label>
+
+  <div class="field">
+    <span class="field-label">브러시 모양</span>
+    <div class="seg" role="group" aria-label="브러시 모양">
+      <button
+        class="ctl"
+        class:active={$brushShape === 'circle'}
+        onclick={() => brushShape.set('circle')}
+        aria-pressed={$brushShape === 'circle'}
+        title="원형 브러시"
+      >
+        <i class="bi bi-circle-fill" aria-hidden="true"></i>
+        <span class="label">원형</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$brushShape === 'square'}
+        onclick={() => brushShape.set('square')}
+        aria-pressed={$brushShape === 'square'}
+        title="사각형 브러시"
+      >
+        <i class="bi bi-square-fill" aria-hidden="true"></i>
+        <span class="label">사각형</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">채우기</span>
+    <div class="seg" role="group" aria-label="브러시 채우기 방식">
+      <button
+        class="ctl"
+        class:active={$brushMode === 'full'}
+        onclick={() => brushMode.set('full')}
+        aria-pressed={$brushMode === 'full'}
+        title="브러시 영역을 빈틈없이 채웁니다"
+      >
+        <i class="bi bi-grid-fill" aria-hidden="true"></i>
+        <span class="label">Full</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$brushMode === 'particle'}
+        onclick={() => brushMode.set('particle')}
+        aria-pressed={$brushMode === 'particle'}
+        title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
+      >
+        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
+        <span class="label">Particle</span>
+      </button>
+    </div>
+  </div>
+
+  <label class="field">
+    <span class="field-label">덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
+    <input
+      type="range"
+      min={OVERWRITE_LEVEL_MIN}
+      max={OVERWRITE_LEVEL_MAX}
+      step="1"
+      value={$overwriteLevel}
+      oninput={(e) => overwriteLevel.set(+e.currentTarget.value)}
+    />
+    <div class="overwrite-steps" aria-hidden="true">
+      {#each OVERWRITE_LEVELS as _, i}
+        <span class="step" class:filled={i <= $overwriteLevel}></span>
+      {/each}
+    </div>
+  </label>
+
+  <div class="field">
+    <span class="field-label">
+      속도: ×{$simSpeed}{#if $simSpeed === 1}<span class="wheel-hint"> (기본)</span>{/if}
+    </span>
+    <div class="seg speed-seg" role="group" aria-label="시뮬레이션 속도">
+      {#each SIM_SPEEDS as sp (sp)}
+        <button
+          class="ctl"
+          class:active={$simSpeed === sp}
+          onclick={() => simSpeed.set(sp)}
+          aria-pressed={$simSpeed === sp}
+          title={`시뮬레이션 속도 ×${sp}`}
+        >
+          ×{sp}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">
+      중력: {GRAVITY_DIRS_META.find((g) => g.dir === $gravityDir)?.label}
+      · {gravityPct === 0 ? '무중력' : `세기 ${gravityPct}%`}
+    </span>
+    <div class="gravity-pad" role="group" aria-label="중력 방향">
+      {#each GRAVITY_DIRS_META as g (g.dir)}
+        <button
+          class={`ctl grav-${g.dir}`}
+          class:active={$gravityDir === g.dir}
+          onclick={() => gravityDir.set(g.dir)}
+          aria-pressed={$gravityDir === g.dir}
+          aria-label={`중력 ${g.label}`}
+          title={`중력을 ${g.label}쪽으로`}
+        >
+          <i class={`bi ${g.icon}`} aria-hidden="true"></i>
+        </button>
+      {/each}
+    </div>
+    <input
+      type="range"
+      aria-label="중력 세기"
+      min={GRAVITY_STRENGTH_MIN}
+      max={GRAVITY_STRENGTH_MAX}
+      step={GRAVITY_STRENGTH_STEP}
+      value={$gravityStrength}
+      oninput={(e) => gravityStrength.set(+e.currentTarget.value)}
+    />
+  </div>
+
+  <!-- Temperature heat-map render mode. On desktop this is driven by the
+       eye/thermometer icons in the header, so the inline copy is hidden there
+       (.heat-field) and this control only surfaces in the mobile settings modal. -->
+  <div class="field heat-field">
+    <span class="field-label">온도 열지도</span>
+    <div class="seg" role="group" aria-label="온도 열지도 오버레이">
+      <button
+        class="ctl"
+        class:active={!$heatOverlay}
+        onclick={() => heatOverlay.set(false)}
+        aria-pressed={!$heatOverlay}
+        title="일반 물질 색으로 표시합니다"
+      >
+        <i class="bi bi-palette" aria-hidden="true"></i>
+        <span class="label">일반</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$heatOverlay}
+        onclick={() => heatOverlay.set(true)}
+        aria-pressed={$heatOverlay}
+        title="온도에 따라 색을 입혀 열화상처럼 표시합니다"
+      >
+        <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+        <span class="label">열지도</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">연기</span>
+    <div class="seg" role="group" aria-label="연기 세기">
+      <button
+        class="ctl"
+        class:active={$smokeLevel === 'high'}
+        onclick={() => smokeLevel.set('high')}
+        aria-pressed={$smokeLevel === 'high'}
+        title="연소·폭발 반응이 연기를 많이 냅니다"
+      >
+        <i class="bi bi-cloud-fog2" aria-hidden="true"></i>
+        <span class="label">상</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$smokeLevel === 'medium'}
+        onclick={() => smokeLevel.set('medium')}
+        aria-pressed={$smokeLevel === 'medium'}
+        title="연기를 적당히 냅니다 (기본값)"
+      >
+        <i class="bi bi-cloud" aria-hidden="true"></i>
+        <span class="label">중</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$smokeLevel === 'off'}
+        onclick={() => smokeLevel.set('off')}
+        aria-pressed={$smokeLevel === 'off'}
+        title="반응에서 연기를 내지 않습니다"
+      >
+        <i class="bi bi-cloud-slash" aria-hidden="true"></i>
+        <span class="label">끔</span>
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+<!-- Set-once settings: tucked in the 설정 modal on every viewport so they don't
+     crowd the常用 controls. -->
+{#snippet fixedSettings()}
+  <div class="field">
+    <span class="field-label">테두리</span>
+    <div class="seg" role="group" aria-label="테두리 모드">
+      <button
+        class="ctl"
+        class:active={$borderMode === 'wall'}
+        onclick={() => borderMode.set('wall')}
+        aria-pressed={$borderMode === 'wall'}
+        title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
+      >
+        <i class="bi bi-bricks" aria-hidden="true"></i>
+        <span class="label">벽</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$borderMode === 'void'}
+        onclick={() => borderMode.set('void')}
+        aria-pressed={$borderMode === 'void'}
+        title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
+      >
+        <i class="bi bi-dash-square-dotted" aria-hidden="true"></i>
+        <span class="label">공허</span>
+      </button>
+    </div>
+  </div>
+
+  <label class="field">
+    <span class="field-label">
+      해상도: {$gridDims.w}×{$gridDims.h}
+      <span class="wheel-hint"> (셀 크기)</span>
+    </span>
+    <input
+      type="range"
+      min="0"
+      max={CELL_SCALES.length - 1}
+      step="1"
+      value={cellScaleIndex}
+      oninput={(e) => setCellScaleFromIndex(+e.currentTarget.value)}
+    />
+    <div class="range-ends" aria-hidden="true">
+      <span>저해상도</span>
+      <span>고해상도</span>
+    </div>
+  </label>
+
+  <div class="field">
+    <span class="field-label">격자 표시: {gridLabel}</span>
+    <div class="seg grid-seg" role="group" aria-label="격자 표시 간격">
+      {#each GRID_DIVISIONS as gd (gd)}
+        <button
+          class="ctl"
+          class:active={$gridDivision === gd}
+          onclick={() => gridDivision.set(gd)}
+          aria-pressed={$gridDivision === gd}
+          title={gd === 0 ? '격자선을 표시하지 않습니다' : `${gd}칸마다 격자선을 표시합니다`}
+        >
+          {gd === 0 ? '끔' : gd}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <label class="field">
+    <span class="field-label">
+      아래 데드존: {$bottomDeadzone}px
+      <span class="wheel-hint"> (화면 아래 가림 방지)</span>
+    </span>
+    <input
+      type="range"
+      aria-label="아래 데드존"
+      min={BOTTOM_DEADZONE_MIN}
+      max={BOTTOM_DEADZONE_MAX}
+      step={BOTTOM_DEADZONE_STEP}
+      value={$bottomDeadzone}
+      oninput={(e) => bottomDeadzone.set(+e.currentTarget.value)}
+    />
+    <p class="field-note">
+      태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스
+      아래에 빈 공간을 확보합니다. (PC는 0 권장)
+    </p>
+  </label>
+{/snippet}
 
 <aside class="panel">
   <div class="head">
     <i class="bi bi-boxes" aria-hidden="true"></i>
     <h1>Particle Sandbox</h1>
+
+    <!-- Desktop top-left quick toggles: switch the render mode between normal
+         material color (eye) and the温도 heat-map (thermometer), plus the 설정
+         modal opener. The header is desktop-only (hidden on mobile). -->
+    <div class="head-actions">
+      <button
+        class="head-btn"
+        class:active={!$heatOverlay}
+        onclick={() => heatOverlay.set(false)}
+        aria-pressed={!$heatOverlay}
+        aria-label="일반 렌더링"
+        title="일반 렌더링 — 물질 색으로 표시"
+      >
+        <i class="bi bi-eye" aria-hidden="true"></i>
+      </button>
+      <button
+        class="head-btn"
+        class:active={$heatOverlay}
+        onclick={() => heatOverlay.set(true)}
+        aria-pressed={$heatOverlay}
+        aria-label="열지도 렌더링"
+        title="열지도 렌더링 — 온도에 따라 열화상처럼 표시"
+      >
+        <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+      </button>
+      <button
+        class="head-btn"
+        onclick={() => (settingsOpen = true)}
+        aria-label="설정"
+        title="설정"
+      >
+        <i class="bi bi-sliders2" aria-hidden="true"></i>
+      </button>
+    </div>
   </div>
 
   <!-- Primary controls (bottom-bar row 1 on mobile) + material palette (row 2). -->
@@ -209,6 +515,17 @@
         </button>
         <button
           class="ctl"
+          class:active={$tool === 'blend'}
+          onclick={pickBlend}
+          aria-pressed={$tool === 'blend'}
+          aria-label="혼합 브러시"
+          title="여러 물질을 비율대로 섞어 그립니다 (클릭하면 비율 조절 창이 열립니다)"
+        >
+          <i class="bi bi-palette-fill" aria-hidden="true"></i>
+          <span class="label">혼합</span>
+        </button>
+        <button
+          class="ctl"
           class:active={$tool === 'heat'}
           onclick={() => tool.set('heat')}
           aria-pressed={$tool === 'heat'}
@@ -239,17 +556,6 @@
         >
           <i class="bi bi-tornado" aria-hidden="true"></i>
           <span class="label">섞기</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'blend'}
-          onclick={() => tool.set('blend')}
-          aria-pressed={$tool === 'blend'}
-          aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (설정에서 비율 조절)"
-        >
-          <i class="bi bi-palette-fill" aria-hidden="true"></i>
-          <span class="label">혼합</span>
         </button>
         <button
           class="ctl"
@@ -291,13 +597,12 @@
         </button>
       </div>
 
-      <!-- Mobile only: reveal the settings sheet. -->
+      <!-- Mobile only: open the settings modal (the desktop opener lives in the
+           header, which is hidden on mobile). -->
       <button
-        class="ctl sheet-toggle"
-        bind:this={toggleEl}
-        onclick={() => (sheetOpen = !sheetOpen)}
+        class="ctl settings-toggle"
+        onclick={() => (settingsOpen = true)}
         aria-label="설정"
-        aria-expanded={sheetOpen}
         title="설정"
       >
         <i class="bi bi-sliders2" aria-hidden="true"></i>
@@ -309,323 +614,61 @@
     </div>
   </div>
 
-  <!-- Secondary settings. Desktop: inline in the sidebar. Mobile: pop-up sheet
-       (no X button — tap outside or the toggle to close; see handleWindowClick). -->
-  <div class="sheet" class:open={sheetOpen} bind:this={sheetEl}>
-    <div class="sheet-head">
-      <span>설정</span>
-    </div>
-
-    <div class="field">
-      <span class="field-label">
-        속도: ×{$simSpeed}{#if $simSpeed === 1}<span class="wheel-hint"> (기본)</span>{/if}
-      </span>
-      <div class="seg speed-seg" role="group" aria-label="시뮬레이션 속도">
-        {#each SIM_SPEEDS as sp (sp)}
-          <button
-            class="ctl"
-            class:active={$simSpeed === sp}
-            onclick={() => simSpeed.set(sp)}
-            aria-pressed={$simSpeed === sp}
-            title={`시뮬레이션 속도 ×${sp}`}
-          >
-            ×{sp}
-          </button>
-        {/each}
-      </div>
-    </div>
-
-    <div class="field">
-      <span class="field-label">
-        중력: {GRAVITY_DIRS_META.find((g) => g.dir === $gravityDir)?.label}
-        · {gravityPct === 0 ? '무중력' : `세기 ${gravityPct}%`}
-      </span>
-      <div class="gravity-pad" role="group" aria-label="중력 방향">
-        {#each GRAVITY_DIRS_META as g (g.dir)}
-          <button
-            class={`ctl grav-${g.dir}`}
-            class:active={$gravityDir === g.dir}
-            onclick={() => gravityDir.set(g.dir)}
-            aria-pressed={$gravityDir === g.dir}
-            aria-label={`중력 ${g.label}`}
-            title={`중력을 ${g.label}쪽으로`}
-          >
-            <i class={`bi ${g.icon}`} aria-hidden="true"></i>
-          </button>
-        {/each}
-      </div>
-      <input
-        type="range"
-        aria-label="중력 세기"
-        min={GRAVITY_STRENGTH_MIN}
-        max={GRAVITY_STRENGTH_MAX}
-        step={GRAVITY_STRENGTH_STEP}
-        value={$gravityStrength}
-        oninput={(e) => gravityStrength.set(+e.currentTarget.value)}
-      />
-    </div>
-
-    <label class="field">
-      <span class="field-label">
-        브러시 크기: {$brushSize}<span class="wheel-hint"> (휠로 조절)</span>
-      </span>
-      <input
-        type="range"
-        min={BRUSH_MIN}
-        max={BRUSH_MAX}
-        value={$brushSize}
-        oninput={(e) => brushSize.set(+e.currentTarget.value)}
-      />
-    </label>
-
-    <div class="field">
-      <span class="field-label">브러시 모양</span>
-      <div class="seg" role="group" aria-label="브러시 모양">
-        <button
-          class="ctl"
-          class:active={$brushShape === 'circle'}
-          onclick={() => brushShape.set('circle')}
-          aria-pressed={$brushShape === 'circle'}
-          title="원형 브러시"
-        >
-          <i class="bi bi-circle-fill" aria-hidden="true"></i>
-          <span class="label">원형</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$brushShape === 'square'}
-          onclick={() => brushShape.set('square')}
-          aria-pressed={$brushShape === 'square'}
-          title="사각형 브러시"
-        >
-          <i class="bi bi-square-fill" aria-hidden="true"></i>
-          <span class="label">사각형</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="field">
-      <span class="field-label">채우기</span>
-      <div class="seg" role="group" aria-label="브러시 채우기 방식">
-        <button
-          class="ctl"
-          class:active={$brushMode === 'full'}
-          onclick={() => brushMode.set('full')}
-          aria-pressed={$brushMode === 'full'}
-          title="브러시 영역을 빈틈없이 채웁니다"
-        >
-          <i class="bi bi-grid-fill" aria-hidden="true"></i>
-          <span class="label">Full</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$brushMode === 'particle'}
-          onclick={() => brushMode.set('particle')}
-          aria-pressed={$brushMode === 'particle'}
-          title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
-        >
-          <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
-          <span class="label">Particle</span>
-        </button>
-      </div>
-    </div>
-
-    <label class="field">
-      <span class="field-label">덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
-      <input
-        type="range"
-        min={OVERWRITE_LEVEL_MIN}
-        max={OVERWRITE_LEVEL_MAX}
-        step="1"
-        value={$overwriteLevel}
-        oninput={(e) => overwriteLevel.set(+e.currentTarget.value)}
-      />
-      <div class="overwrite-steps" aria-hidden="true">
-        {#each OVERWRITE_LEVELS as _, i}
-          <span class="step" class:filled={i <= $overwriteLevel}></span>
-        {/each}
-      </div>
-    </label>
-
-    <div class="field">
-      <span class="field-label">테두리</span>
-      <div class="seg" role="group" aria-label="테두리 모드">
-        <button
-          class="ctl"
-          class:active={$borderMode === 'wall'}
-          onclick={() => borderMode.set('wall')}
-          aria-pressed={$borderMode === 'wall'}
-          title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
-        >
-          <i class="bi bi-bricks" aria-hidden="true"></i>
-          <span class="label">벽</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$borderMode === 'void'}
-          onclick={() => borderMode.set('void')}
-          aria-pressed={$borderMode === 'void'}
-          title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
-        >
-          <i class="bi bi-dash-square-dotted" aria-hidden="true"></i>
-          <span class="label">공허</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="field">
-      <span class="field-label">연기</span>
-      <div class="seg" role="group" aria-label="연기 세기">
-        <button
-          class="ctl"
-          class:active={$smokeLevel === 'high'}
-          onclick={() => smokeLevel.set('high')}
-          aria-pressed={$smokeLevel === 'high'}
-          title="연소·폭발 반응이 연기를 많이 냅니다"
-        >
-          <i class="bi bi-cloud-fog2" aria-hidden="true"></i>
-          <span class="label">상</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$smokeLevel === 'medium'}
-          onclick={() => smokeLevel.set('medium')}
-          aria-pressed={$smokeLevel === 'medium'}
-          title="연기를 적당히 냅니다 (기본값)"
-        >
-          <i class="bi bi-cloud" aria-hidden="true"></i>
-          <span class="label">중</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$smokeLevel === 'off'}
-          onclick={() => smokeLevel.set('off')}
-          aria-pressed={$smokeLevel === 'off'}
-          title="반응에서 연기를 내지 않습니다"
-        >
-          <i class="bi bi-cloud-slash" aria-hidden="true"></i>
-          <span class="label">끔</span>
-        </button>
-      </div>
-    </div>
-
-    <label class="field">
-      <span class="field-label">
-        해상도: {$gridDims.w}×{$gridDims.h}
-        <span class="wheel-hint"> (셀 크기)</span>
-      </span>
-      <input
-        type="range"
-        min="0"
-        max={CELL_SCALES.length - 1}
-        step="1"
-        value={cellScaleIndex}
-        oninput={(e) => setCellScaleFromIndex(+e.currentTarget.value)}
-      />
-      <div class="range-ends" aria-hidden="true">
-        <span>저해상도</span>
-        <span>고해상도</span>
-      </div>
-    </label>
-
-    <div class="field">
-      <span class="field-label">온도 열지도</span>
-      <div class="seg" role="group" aria-label="온도 열지도 오버레이">
-        <button
-          class="ctl"
-          class:active={!$heatOverlay}
-          onclick={() => heatOverlay.set(false)}
-          aria-pressed={!$heatOverlay}
-          title="일반 물질 색으로 표시합니다"
-        >
-          <i class="bi bi-palette" aria-hidden="true"></i>
-          <span class="label">일반</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$heatOverlay}
-          onclick={() => heatOverlay.set(true)}
-          aria-pressed={$heatOverlay}
-          title="온도에 따라 색을 입혀 열화상처럼 표시합니다"
-        >
-          <i class="bi bi-thermometer-half" aria-hidden="true"></i>
-          <span class="label">열지도</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="field">
-      <span class="field-label">격자 표시: {gridLabel}</span>
-      <div class="seg grid-seg" role="group" aria-label="격자 표시 간격">
-        {#each GRID_DIVISIONS as gd (gd)}
-          <button
-            class="ctl"
-            class:active={$gridDivision === gd}
-            onclick={() => gridDivision.set(gd)}
-            aria-pressed={$gridDivision === gd}
-            title={gd === 0 ? '격자선을 표시하지 않습니다' : `${gd}칸마다 격자선을 표시합니다`}
-          >
-            {gd === 0 ? '끔' : gd}
-          </button>
-        {/each}
-      </div>
-    </div>
-
-    <label class="field">
-      <span class="field-label">
-        아래 데드존: {$bottomDeadzone}px
-        <span class="wheel-hint"> (화면 아래 가림 방지)</span>
-      </span>
-      <input
-        type="range"
-        aria-label="아래 데드존"
-        min={BOTTOM_DEADZONE_MIN}
-        max={BOTTOM_DEADZONE_MAX}
-        step={BOTTOM_DEADZONE_STEP}
-        value={$bottomDeadzone}
-        oninput={(e) => bottomDeadzone.set(+e.currentTarget.value)}
-      />
-      <p class="field-note">
-        태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스
-        아래에 빈 공간을 확보합니다. (PC는 0 권장)
-      </p>
-    </label>
-
-    <div class="field">
-      <span class="field-label">혼합 브러시</span>
-      <BlendBrush />
-    </div>
-
-    <div class="hud">
-      <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
-      <span title="현재 배치된 입자 수 (빈칸 제외)">입자 {$particleCount.toLocaleString()}</span>
-      <span title="격자에서 입자가 차지하는 비율">채움 {fillPct}%</span>
-      <span
-        class="fps"
-        title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
-      >
-        {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
-      </span>
-      <span title="프레임 렌더링에 걸린 평균 시간">{$frameMs} ms/프레임</span>
-      <span title="현재 시뮬레이션 갱신 속도 (속도 배율 × 기본 틱레이트)">시뮬 {simHz} Hz</span>
-    </div>
-
-    <button
-      class="ctl reset-btn"
-      class:armed={resetArmed}
-      onclick={handleReset}
-      aria-label={resetArmed ? '기본값 복원 확인' : '모든 설정 기본값 복원'}
-      title="모든 설정을 기본값으로 되돌립니다 (월드·즐겨찾기는 유지)"
-    >
-      <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-      <span class="label">{resetArmed ? '기본값으로 되돌릴까요?' : '설정 기본값 복원'}</span>
-    </button>
-
-    <p class="hint">
-      캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.
-    </p>
+  <!-- Desktop: frequently-tweaked settings inline under the palette (hidden on
+       mobile, where they move into the 설정 modal instead). -->
+  <div class="inline-settings">
+    {@render frequentSettings()}
   </div>
 </aside>
+
+<!-- 설정 modal. On mobile it also carries the frequently-tweaked settings (there
+     is no room for them inline in the bottom bar); on desktop those show inline
+     and .modal-frequent is hidden, leaving just the set-once settings here. -->
+<Modal open={settingsOpen} title="설정" icon="bi-sliders2" onclose={() => (settingsOpen = false)}>
+  <div class="modal-frequent">
+    {@render frequentSettings()}
+  </div>
+
+  {@render fixedSettings()}
+
+  <div class="hud">
+    <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
+    <span title="현재 배치된 입자 수 (빈칸 제외)">입자 {$particleCount.toLocaleString()}</span>
+    <span title="격자에서 입자가 차지하는 비율">채움 {fillPct}%</span>
+    <span
+      class="fps"
+      title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
+    >
+      {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
+    </span>
+    <span title="프레임 렌더링에 걸린 평균 시간">{$frameMs} ms/프레임</span>
+    <span title="현재 시뮬레이션 갱신 속도 (속도 배율 × 기본 틱레이트)">시뮬 {simHz} Hz</span>
+  </div>
+
+  <button
+    class="ctl reset-btn"
+    class:armed={resetArmed}
+    onclick={handleReset}
+    aria-label={resetArmed ? '기본값 복원 확인' : '모든 설정 기본값 복원'}
+    title="모든 설정을 기본값으로 되돌립니다 (월드·즐겨찾기는 유지)"
+  >
+    <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+    <span class="label">{resetArmed ? '기본값으로 되돌릴까요?' : '설정 기본값 복원'}</span>
+  </button>
+
+  <p class="hint">
+    캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.
+  </p>
+</Modal>
+
+<!-- 혼합 브러시 ratio editor, opened when the 혼합 tool is selected. -->
+<Modal open={blendOpen} title="혼합 브러시 비율" icon="bi-palette-fill" onclose={() => (blendOpen = false)}>
+  <p class="blend-hint">
+    최대 3가지 물질을 골라 비율을 정하면, 혼합 브러시가 그 비율대로 섞어 칠합니다. 막대의
+    경계를 드래그해 비율을 조절하세요.
+  </p>
+  <BlendBrush />
+</Modal>
 
 <!-- 돋보기 readout, floating over the top of the sandbox (shown only while the
      inspect overlay is on and the pointer is over the canvas). -->
@@ -680,7 +723,7 @@
     gap: 8px;
     color: #e8e8ee;
   }
-  .head i {
+  .head > i {
     font-size: 18px;
     color: #6ea8fe;
   }
@@ -690,9 +733,37 @@
     font-weight: 600;
     letter-spacing: 0.02em;
   }
+  /* Header quick actions: render-mode toggles (eye/thermometer) + 설정 opener,
+     pushed to the right edge of the header. */
+  .head-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+  .head-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #1b1b22;
+    color: #e8e8ee;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  .head-btn:hover {
+    border-color: #3a3a46;
+  }
+  .head-btn.active {
+    border-color: #6ea8fe;
+    background: #23324a;
+  }
 
   .bar,
-  .sheet {
+  .inline-settings {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -812,6 +883,12 @@
     font-size: 11px;
     line-height: 1.4;
   }
+  .blend-hint {
+    margin: 0;
+    color: #8a8a99;
+    font-size: 12px;
+    line-height: 1.5;
+  }
 
   /* Speed (5 steps) and grid (5 steps) segmented controls pack more buttons into
      the same width, so tighten the padding and shrink the numeric labels. */
@@ -871,17 +948,27 @@
     justify-content: center;
   }
 
-  /* The settings sheet header (label only) + toggle are mobile-only affordances. */
-  .sheet-head,
-  .sheet-toggle {
+  /* The frequently-tweaked settings render both inline (desktop) and inside the
+     settings modal (mobile). Each viewport shows exactly one copy. */
+  .modal-frequent {
+    display: none;
+  }
+  /* On desktop the heat-map mode is driven by the header eye/thermometer icons,
+     so hide the redundant inline segmented control there (it still shows in the
+     mobile settings modal, whose .modal-frequent copy this rule doesn't match). */
+  .inline-settings .heat-field {
+    display: none;
+  }
+
+  /* Mobile-only settings opener in the bar. */
+  .settings-toggle {
     display: none;
   }
 
   /* --------------------------------------------------------------------- */
   /* Mobile: the panel becomes a two-row bar docked along the bottom. Row 1 is
      the primary controls, row 2 the material palette; both scroll sideways if
-     they overflow. The secondary settings live in a sheet that pops up above
-     the bar when toggled.
+     they overflow. All secondary settings live in the 설정 modal.
 
      Anchored with `top` (not `bottom:0`) so it lands at the toolbar/canvas
      boundary measured from the dynamic viewport. `bottom:0` on a fixed element
@@ -960,43 +1047,26 @@
       font-size: 17px;
     }
 
-    .sheet-toggle {
+    .settings-toggle {
       display: inline-flex;
       flex: none;
       margin-left: auto;
     }
 
-    /* Sheet becomes a pop-up anchored to the top edge of the bar. It's
-       position:absolute (not fixed) so the panel's backdrop-filter containing
-       block keeps it pinned to the bar rather than the viewport. */
-    .sheet {
-      position: absolute;
-      left: 8px;
-      right: 8px;
-      bottom: calc(100% + 8px);
-      max-height: 60vh;
-      padding: 12px;
-      background: rgba(20, 20, 26, 0.97);
-      backdrop-filter: blur(8px);
-      border: 1px solid #2a2a33;
-      border-radius: 10px;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-      overflow-y: auto;
-      overscroll-behavior: contain;
+    /* Inline settings are desktop-only; on mobile they move into the modal. */
+    .inline-settings {
       display: none;
     }
-    .sheet.open {
+    /* Inside the modal, show the frequently-tweaked settings on mobile. */
+    .modal-frequent {
       display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
-    .sheet-head {
+    /* The mobile modal copy keeps the heat-map control (no header icons on
+       mobile), overriding the desktop .inline-settings .heat-field hide. */
+    .modal-frequent .heat-field {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: 600;
-    }
-    /* On the roomy sheet, restore icon+label buttons for clarity. */
-    .sheet .label {
-      display: inline;
     }
     .wheel-hint {
       display: none;
