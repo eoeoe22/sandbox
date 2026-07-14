@@ -237,6 +237,12 @@ export const $particleCount = atom<number>(0);
 /** Smoothed frame time in milliseconds (the render frame budget), for the HUD. */
 export const $frameMs = atom<number>(0);
 
+/** Phase 0 per-pass timing breakdown (heat/ca/objects/drift/render ms), or null
+ *  when the dev profiler is off (the default). Populated by the frame loop on
+ *  the HUD cadence when `?perf` is set; the HUD shows a breakdown line only
+ *  while it's non-null. See game/engine/profiler.ts. */
+export const $perfPasses = atom<import('../game/engine/profiler').PassStats | null>(null);
+
 // One-shot command signals: bump the counter to request the action. The engine
 // listens for changes.
 export const $clearSignal = atom<number>(0);

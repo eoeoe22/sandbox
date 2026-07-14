@@ -11,9 +11,11 @@ import {
   type SmokeLevel,
   type GravityDir,
 } from '../config';
+import { TILE, TILE_BITS } from './dirtyTiles';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 import { stepObjects } from './objects';
 import { heatWasmReady, diffuseHeatWasm } from './heatWasm';
+import { profiler } from './profiler';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -80,6 +82,11 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
+    // When the Phase 0 profiler is on, time each pass; `t` tracks the last mark.
+    // The whole block compiles to a boolean check per pass when it's off (the
+    // production default), so instrumentation is free unless you ask for it.
+    const prof = profiler.enabled;
+    let t = prof ? performance.now() : 0;
     // Run several conduction substeps per tick so heat spreads ~3× faster
     // globally while each substep stays numerically stable (see config). The
     // Rust/WASM kernel runs all substeps in one call (bit-identical to the JS
@@ -94,6 +101,11 @@ export class Simulation {
     } else {
       for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
     }
+    if (prof) {
+      const n = performance.now();
+      profiler.add('heat', n - t);
+      t = n;
+    }
     this.ctx.tick = this.tick;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;
@@ -103,38 +115,38 @@ export class Simulation {
     // instead of draining slowly. For default down-gravity this is the classic
     // bottom-to-top, left/right-alternating scan. The `moved` guard makes any
     // order correct (no teleporting); orienting it just keeps the settle crisp.
-    const w = g.width;
-    const h = g.height;
-    if (this.ctx.gravityX === 0) {
-      // Vertical gravity: outer over rows from the gravity end, inner over cols.
-      const down = this.ctx.gravityY >= 0;
-      for (let k = 0; k < h; k++) {
-        const y = down ? h - 1 - k : k;
-        if (flip) {
-          for (let x = 0; x < w; x++) this.updateCell(x, y);
-        } else {
-          for (let x = w - 1; x >= 0; x--) this.updateCell(x, y);
-        }
-      }
+    // The active-tile scan skips tiles holding only inert (empty, un-overlapped)
+    // cells — bit-identical to the full scan, just faster on scenes with empty
+    // space (see engine/dirtyTiles.ts). beginTick rolls this tick's scan set
+    // from the marks accumulated last tick; if disabled we walk every cell.
+    if (g.dirty.enabled) {
+      g.dirty.beginTick();
+      this.scanTiles(flip);
     } else {
-      // Horizontal gravity: outer over cols from the gravity end, inner over rows.
-      const right = this.ctx.gravityX >= 0;
-      for (let k = 0; k < w; k++) {
-        const x = right ? w - 1 - k : k;
-        if (flip) {
-          for (let y = 0; y < h; y++) this.updateCell(x, y);
-        } else {
-          for (let y = h - 1; y >= 0; y--) this.updateCell(x, y);
-        }
-      }
+      this.scanFull(flip);
+    }
+
+    if (prof) {
+      const n = performance.now();
+      profiler.add('ca', n - t);
+      t = n;
     }
 
     // Free rigid objects (the 독립 오브젝트 layer) advance in their own pass,
     // after the CA scan and fully separate from it — they carry their own
     // continuous position/velocity and only read the grid (see engine/objects.ts).
     stepObjects(g.objects, this.ctx);
+    if (prof) {
+      const n = performance.now();
+      profiler.add('objects', n - t);
+      t = n;
+    }
 
     this.driftBackground();
+    if (prof) {
+      profiler.add('drift', performance.now() - t);
+      profiler.tick();
+    }
   }
 
   /**
@@ -215,6 +227,141 @@ export class Simulation {
 
     g.temp = next;
     g.tempScratch = cur;
+  }
+
+  /**
+   * The full CA scan: visit every cell in gravity order. `flip` alternates the
+   * cross-gravity direction each tick to avoid a drift bias. This is the
+   * fallback path (USE_ACTIVE_TILES off) and the reference the active-tile scan
+   * is proven bit-identical against.
+   */
+  private scanFull(flip: boolean): void {
+    const g = this.grid;
+    const w = g.width;
+    const h = g.height;
+    if (this.ctx.gravityX === 0) {
+      // Vertical gravity: outer over rows from the gravity end, inner over cols.
+      const down = this.ctx.gravityY >= 0;
+      for (let k = 0; k < h; k++) {
+        const y = down ? h - 1 - k : k;
+        if (flip) {
+          for (let x = 0; x < w; x++) this.updateCell(x, y);
+        } else {
+          for (let x = w - 1; x >= 0; x--) this.updateCell(x, y);
+        }
+      }
+    } else {
+      // Horizontal gravity: outer over cols from the gravity end, inner over rows.
+      const right = this.ctx.gravityX >= 0;
+      for (let k = 0; k < w; k++) {
+        const x = right ? w - 1 - k : k;
+        if (flip) {
+          for (let y = 0; y < h; y++) this.updateCell(x, y);
+        } else {
+          for (let y = h - 1; y >= 0; y--) this.updateCell(x, y);
+        }
+      }
+    }
+  }
+
+  /**
+   * The active-tile scan: identical cell visit order to scanFull, but tiles
+   * holding only inert cells (empty + no overlay) are skipped — they can't do
+   * anything, so the result is bit-identical (see engine/dirtyTiles.ts). Each
+   * scanned tile is re-armed for next tick if it still holds an active cell, so
+   * a settled pile keeps being scanned while empty space falls away.
+   */
+  private scanTiles(flip: boolean): void {
+    const g = this.grid;
+    const w = g.width;
+    const h = g.height;
+    const dirty = g.dirty;
+    const tilesX = dirty.tilesX;
+    const cells = g.cells;
+    const overlay = g.overlay;
+    if (this.ctx.gravityX === 0) {
+      const down = this.ctx.gravityY >= 0;
+      for (let k = 0; k < h; k++) {
+        const y = down ? h - 1 - k : k;
+        const trow = (y >> TILE_BITS) * tilesX;
+        const rowBase = y * w;
+        if (flip) {
+          for (let tc = 0; tc < tilesX; tc++) {
+            const ti = trow + tc;
+            if (!dirty.shouldScan(ti)) continue;
+            const x0 = tc << TILE_BITS;
+            const x1 = x0 + TILE < w ? x0 + TILE : w;
+            let active = false;
+            for (let x = x0; x < x1; x++) {
+              this.updateCell(x, y);
+              // Re-arm this tile if it still holds an active cell. Short-circuit
+              // once found: on a dense tile that's one check, not one per cell.
+              if (!active) {
+                const i = rowBase + x;
+                if (cells[i] !== EMPTY || overlay[i] !== 0) active = true;
+              }
+            }
+            if (active) dirty.arm(ti);
+          }
+        } else {
+          for (let tc = tilesX - 1; tc >= 0; tc--) {
+            const ti = trow + tc;
+            if (!dirty.shouldScan(ti)) continue;
+            const x0 = tc << TILE_BITS;
+            const x1 = x0 + TILE < w ? x0 + TILE : w;
+            let active = false;
+            for (let x = x1 - 1; x >= x0; x--) {
+              this.updateCell(x, y);
+              if (!active) {
+                const i = rowBase + x;
+                if (cells[i] !== EMPTY || overlay[i] !== 0) active = true;
+              }
+            }
+            if (active) dirty.arm(ti);
+          }
+        }
+      }
+    } else {
+      const right = this.ctx.gravityX >= 0;
+      const tilesY = dirty.tilesY;
+      for (let k = 0; k < w; k++) {
+        const x = right ? w - 1 - k : k;
+        const tcol = x >> TILE_BITS;
+        if (flip) {
+          for (let tr = 0; tr < tilesY; tr++) {
+            const ti = tr * tilesX + tcol;
+            if (!dirty.shouldScan(ti)) continue;
+            const y0 = tr << TILE_BITS;
+            const y1 = y0 + TILE < h ? y0 + TILE : h;
+            let active = false;
+            for (let y = y0; y < y1; y++) {
+              this.updateCell(x, y);
+              if (!active) {
+                const i = y * w + x;
+                if (cells[i] !== EMPTY || overlay[i] !== 0) active = true;
+              }
+            }
+            if (active) dirty.arm(ti);
+          }
+        } else {
+          for (let tr = tilesY - 1; tr >= 0; tr--) {
+            const ti = tr * tilesX + tcol;
+            if (!dirty.shouldScan(ti)) continue;
+            const y0 = tr << TILE_BITS;
+            const y1 = y0 + TILE < h ? y0 + TILE : h;
+            let active = false;
+            for (let y = y1 - 1; y >= y0; y--) {
+              this.updateCell(x, y);
+              if (!active) {
+                const i = y * w + x;
+                if (cells[i] !== EMPTY || overlay[i] !== 0) active = true;
+              }
+            }
+            if (active) dirty.arm(ti);
+          }
+        }
+      }
+    }
   }
 
   private updateCell(x: number, y: number): void {

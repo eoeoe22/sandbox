@@ -1,5 +1,6 @@
 import { EMPTY } from './types';
-import { AMBIENT_TEMP } from '../config';
+import { AMBIENT_TEMP, USE_ACTIVE_TILES } from '../config';
+import { DirtyTiles } from './dirtyTiles';
 import type { SimBody } from './objects';
 
 /** A Uint8Array of `n` random bytes — used to seed the positional background
@@ -117,6 +118,14 @@ export class Grid {
    */
   objects: SimBody[] = [];
 
+  /**
+   * Active-tile tracker for the CA scan (see engine/dirtyTiles.ts). Every grid
+   * write marks its tile so the scan can skip tiles holding only inert (empty,
+   * un-overlapped) cells — bit-identical to the full scan, just faster. Inert
+   * unless USE_ACTIVE_TILES; the full-scan path never reads it.
+   */
+  dirty: DirtyTiles;
+
   // Still reserved for a future per-cell velocity field (see ember.ts, which
   // currently packs velocity into `temp`).
   // vel: Int8Array;
@@ -135,6 +144,14 @@ export class Grid {
     this.aux = new Uint8Array(this.size);
     this.tint = new Uint8Array(this.size); // 0 = neutral until seeded on placement
     this.bgTint = randomBytes(this.size); // positional background texture
+    this.dirty = new DirtyTiles(width, height);
+    this.dirty.enabled = USE_ACTIVE_TILES;
+  }
+
+  /** Mark the tile containing (x,y) awake for the active-tile scan. Called from
+   *  every occupancy-affecting write; a no-op when active tiles are disabled. */
+  markActive(x: number, y: number): void {
+    this.dirty.mark(x, y);
   }
 
   idx(x: number, y: number): number {
@@ -151,6 +168,7 @@ export class Grid {
 
   set(x: number, y: number, id: number): void {
     this.cells[y * this.width + x] = id;
+    this.dirty.mark(x, y);
   }
 
   getTemp(x: number, y: number): number {
@@ -176,6 +194,7 @@ export class Grid {
   setOverlay(x: number, y: number, id: number): void {
     this.overlay[y * this.width + x] = id;
     if (id === 0) this.overlayAux[y * this.width + x] = 0; // dry cell carries no state
+    this.dirty.mark(x, y);
   }
 
   getTint(x: number, y: number): number {
@@ -208,6 +227,8 @@ export class Grid {
     this.aux.fill(0);
     this.tint.fill(0);
     this.objects.length = 0; // free objects live beside the grid; clear them too
+    // Nothing is occupied now, so no tile needs scanning next tick.
+    this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
   }
 
   /**
@@ -295,5 +316,11 @@ export class Grid {
     this.aux = nextAux;
     this.tint = nextTint;
     this.bgTint = nextBgTint;
+    // Re-tile for the new dimensions and re-arm every tile holding kept content,
+    // so the active-tile scan resumes correctly after a resize/load.
+    const wasEnabled = this.dirty.enabled;
+    this.dirty = new DirtyTiles(width, height);
+    this.dirty.enabled = wasEnabled;
+    this.dirty.rebuild(this.cells, this.overlay, width, height);
   }
 }

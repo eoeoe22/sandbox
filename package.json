@@ -8,7 +8,10 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "deploy": "astro build && wrangler deploy"
+    "deploy": "astro build && wrangler deploy",
+    "test:heat": "node wasm/test/golden.mjs && node wasm/test/integration.mjs",
+    "test:active-tiles": "node test/run-active-tiles.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

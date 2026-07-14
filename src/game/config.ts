@@ -177,6 +177,16 @@ export const DEFAULT_CONDUCTIVITY = 0.3;
  */
 export const USE_WASM_HEAT = true;
 
+/**
+ * Skip empty regions in the CA material scan via active-tile tracking
+ * (engine/dirtyTiles.ts). Phase 0 measured the scan at 80%+ of a populated tick,
+ * much of it spent walking inert empty cells; this skips tiles holding only such
+ * cells. Bit-identical to the full scan (an empty, un-overlapped cell does no
+ * work in updateCell), so toggling it only changes speed, never behavior — the
+ * full-scan path stays as the fallback. See docs/PERFORMANCE.md.
+ */
+export const USE_ACTIVE_TILES = true;
+
 /** Brush radius bounds, in cells (shared by the store, painter, and UI slider/wheel). */
 export const BRUSH_MIN = 0;
 export const BRUSH_MAX = 12;

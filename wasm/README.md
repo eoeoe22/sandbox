@@ -24,6 +24,7 @@ wasm/
 │  ├─ Cargo.toml
 │  └─ src/lib.rs    # diffuse_heat 커널 + heat_alloc/heat_free
 ├─ test/golden.mjs  # JS 레퍼런스 대비 골든 패리티 테스트 (비트 동일 기대)
+├─ bench/heat-bench.mjs  # JS vs WASM 처리량 마이크로벤치 (Phase 0, docs/PERFORMANCE.md)
 ├─ build.sh         # 빌드 + 아티팩트 복사 + 골든 테스트
 └─ README.md
 ```
