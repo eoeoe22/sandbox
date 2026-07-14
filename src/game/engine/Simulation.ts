@@ -14,6 +14,7 @@ import {
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 import { stepObjects } from './objects';
 import { heatWasmReady, diffuseHeatWasm } from './heatWasm';
+import { profiler } from './profiler';
 
 /**
  * Cellular-automata update loop. Scans bottom-to-top so falling material settles
@@ -80,6 +81,11 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
+    // When the Phase 0 profiler is on, time each pass; `t` tracks the last mark.
+    // The whole block compiles to a boolean check per pass when it's off (the
+    // production default), so instrumentation is free unless you ask for it.
+    const prof = profiler.enabled;
+    let t = prof ? performance.now() : 0;
     // Run several conduction substeps per tick so heat spreads ~3× faster
     // globally while each substep stays numerically stable (see config). The
     // Rust/WASM kernel runs all substeps in one call (bit-identical to the JS
@@ -93,6 +99,11 @@ export class Simulation {
       // WASM wrote the diffused field back into g.temp in place.
     } else {
       for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
+    }
+    if (prof) {
+      const n = performance.now();
+      profiler.add('heat', n - t);
+      t = n;
     }
     this.ctx.tick = this.tick;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
@@ -129,12 +140,27 @@ export class Simulation {
       }
     }
 
+    if (prof) {
+      const n = performance.now();
+      profiler.add('ca', n - t);
+      t = n;
+    }
+
     // Free rigid objects (the 독립 오브젝트 layer) advance in their own pass,
     // after the CA scan and fully separate from it — they carry their own
     // continuous position/velocity and only read the grid (see engine/objects.ts).
     stepObjects(g.objects, this.ctx);
+    if (prof) {
+      const n = performance.now();
+      profiler.add('objects', n - t);
+      t = n;
+    }
 
     this.driftBackground();
+    if (prof) {
+      profiler.add('drift', performance.now() - t);
+      profiler.tick();
+    }
   }
 
   /**

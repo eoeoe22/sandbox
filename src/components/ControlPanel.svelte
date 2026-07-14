@@ -23,6 +23,7 @@
     $bottomDeadzone as bottomDeadzone,
     $particleCount as particleCount,
     $frameMs as frameMs,
+    $perfPasses as perfPasses,
     requestClear,
     requestStep,
     resetSettings,
@@ -124,6 +125,20 @@
   // TICK_HZ*mult/2 Hz — so ×1 is 30 Hz (half of TICK_HZ), ×2 is 60, ×4 is 120.
   const simHz = $derived(Math.round((TICK_HZ * $simSpeed) / 2));
   const gridLabel = $derived($gridDivision === 0 ? '끔' : `${$gridDivision}`);
+
+  // Phase 0 per-pass breakdown (dev only; non-null only under `?perf`). Each
+  // value is ms per sim tick, except render which is ms per frame. See
+  // game/engine/profiler.ts and docs/WASM-ENGINE-PORTING.md §Phase 0.
+  const perfLine = $derived.by(() => {
+    const p = $perfPasses;
+    if (!p) return null;
+    const f = (v: number): string => v.toFixed(3);
+    const sim = p.ms.heat + p.ms.ca + p.ms.objects + p.ms.drift;
+    return (
+      `열 ${f(p.ms.heat)} · CA ${f(p.ms.ca)} · 오브젝트 ${f(p.ms.objects)} · ` +
+      `드리프트 ${f(p.ms.drift)} · 렌더 ${f(p.ms.render)} (틱 ${f(sim)} ms/tick)`
+    );
+  });
 
   // Mobile settings sheet has no X button — tapping the toggle again or anywhere
   // outside the sheet closes it. The toggle's own click runs before this bubbles
@@ -608,6 +623,13 @@
       </span>
       <span title="프레임 렌더링에 걸린 평균 시간">{$frameMs} ms/프레임</span>
       <span title="현재 시뮬레이션 갱신 속도 (속도 배율 × 기본 틱레이트)">시뮬 {simHz} Hz</span>
+      {#if perfLine}
+        <span
+          class="perf"
+          title="Phase 0 개발 프로파일러 (?perf): 틱을 패스별로 계측한 평균 시간. 열=열확산, CA=물질 스캔, 렌더=프레임 렌더."
+          >{perfLine}</span
+        >
+      {/if}
     </div>
 
     <button
@@ -805,6 +827,12 @@
   }
   .fps {
     cursor: help;
+  }
+  .perf {
+    flex-basis: 100%;
+    cursor: help;
+    color: #6f9f7f;
+    font-size: 11px;
   }
   .hint {
     margin: 0;

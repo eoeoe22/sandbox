@@ -5,6 +5,8 @@ import { PointerPainter } from './input/PointerPainter';
 import { SandboxLayout } from './layout';
 import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS, USE_WASM_HEAT } from './config';
 import { initHeatWasm } from './engine/heatWasm';
+import { profiler } from './engine/profiler';
+import { seedBenchScenario, isBenchScenario } from './engine/benchScenarios';
 import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
 import {
   $running,
@@ -24,6 +26,7 @@ import {
   $bottomDeadzone,
   $particleCount,
   $frameMs,
+  $perfPasses,
 } from '../state/store';
 import { EMPTY } from './engine/types';
 import './materials'; // register all materials (side effect)
@@ -45,6 +48,17 @@ import './materials'; // register all materials (side effect)
  * touching material definitions or the UI.
  */
 export function startGame(canvas: HTMLCanvasElement): void {
+  // Phase 0 dev flags (docs/WASM-ENGINE-PORTING.md §Phase 0), read once from the
+  // URL: `?perf` turns on the per-pass profiler + HUD breakdown, and
+  // `?bench=<empty|static|active>` loads a fixed measurement scene. Both are
+  // dev-only and off on a normal load. A bench load is treated as ephemeral —
+  // it neither reads nor writes the saved world.
+  const params =
+    typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+  profiler.enabled = params.has('perf');
+  const benchParam = params.get('bench');
+  const benchScenario = isBenchScenario(benchParam) ? benchParam : null;
+
   // Restore saved settings before anything subscribes to the atoms, so the
   // border-mode subscription below seeds the engine with the restored value.
   initSettingsPersistence();
@@ -65,7 +79,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // current sandbox (whatever size this device's canvas derives) with the same
   // bottom-left-anchored rule a live resize uses, so a saved world survives
   // being reopened on a different screen size.
-  const savedWorld = loadWorld();
+  const savedWorld = benchScenario ? null : loadWorld();
 
   const grid = new Grid(layout.gw, layout.gh);
   if (savedWorld) {
@@ -112,6 +126,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
   };
   resize();
   window.addEventListener('resize', resize);
+
+  // Load the fixed benchmark scene now that the grid has its final dimensions,
+  // and force the sim to run so it actually ticks under measurement.
+  if (benchScenario) {
+    seedBenchScenario(grid, benchScenario);
+    grid.randomizeTints();
+    $running.set(true);
+  }
 
   // Bottom dead zone: publish it as a CSS variable the canvas height subtracts
   // (see global.css), then resize so the grid re-derives from the shrunken
@@ -165,7 +187,10 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // Auto-save the world: on a fixed interval from the frame loop (below), and
   // immediately when the tab is hidden or closed so the last few seconds of
   // painting aren't lost. saveWorld itself skips the write when nothing changed.
-  const saveNow = (): void => saveWorld(grid);
+  // A bench load is ephemeral: never persist its scene over the user's world.
+  const saveNow = (): void => {
+    if (!benchScenario) saveWorld(grid);
+  };
   window.addEventListener('pagehide', saveNow);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
@@ -238,7 +263,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
     // the loop substeps. Cheap no-op when the overlay is off.
     painter.refreshInspect();
 
-    renderer.render(grid);
+    if (profiler.enabled) {
+      const rt = performance.now();
+      renderer.render(grid);
+      profiler.add('render', performance.now() - rt);
+      profiler.frame();
+    } else {
+      renderer.render(grid);
+    }
 
     frames++;
     if (now - fpsLast >= 500) {
@@ -249,6 +281,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
       $fpsPeak.set(Math.round(fpsPeak));
       $frameMs.set(Math.round(frameMsSmooth * 10) / 10);
       $particleCount.set(countParticles());
+      // Publish the rolling per-pass breakdown (dev profiler only); snapshot()
+      // averages over the window and resets it, so the HUD shows a live mean.
+      if (profiler.enabled) $perfPasses.set(profiler.snapshot());
       frames = 0;
       fpsLast = now;
     }

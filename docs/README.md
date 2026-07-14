@@ -9,3 +9,4 @@
 - [MATERIAL-SYSTEMS.md](./MATERIAL-SYSTEMS.md) — 물질군·시스템 노트: 물질군 도입 라운드의 엔진/인프라 설계 노트(공용 헬퍼·데이터 태그·크로스-물질 메커니즘)와 플레이 가이드 링크.
 - [OBJECTS.md](./OBJECTS.md) — 독립 오브젝트 시스템: 고무공·드럼통·다이너마이트, 오브젝트 물리/상호작용/브러시 연동.
 - [WASM-ENGINE-PORTING.md](./WASM-ENGINE-PORTING.md) — 성능·이식 계획 + 착수 기록: WASM/멀티스레드 핵심 엔진 포팅 로드맵(측정→오프메인스레드→수치 커널 WASM→조건부 CA 스캔). **Phase 2 첫 커널(열확산 `diffuseHeat`)이 Rust/WASM으로 착수 완료**(§9) — 비트 동일 골든 테스트 + JS 폴백. 물질 89개는 워커 안 JS로 유지(포팅 부채 0)라는 결론은 그대로. 커널 빌드/구조는 [`wasm/README.md`](../wasm/README.md).
+- [PERFORMANCE.md](./PERFORMANCE.md) — 성능 계측: Phase 0 측정 하네스(인앱 패스별 프로파일러 `?perf`, 고정 벤치 장면 `?bench=`, 열 커널 JS-vs-WASM 마이크로벤치)와 **실측 결과**. 결론: 점유 장면에서 **CA 물질 스캔이 틱의 80%+** 로 지배적 → 다음 최대 레버리지는 SIMD가 아니라 활성-셀 추적.
