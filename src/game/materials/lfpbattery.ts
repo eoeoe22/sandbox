@@ -12,9 +12,11 @@ import { MOLTEN_METAL } from './moltenmetal';
 // way — a blast that reaches it destroys it like any solid (it is NOT
 // explosion-proof), and only truly extreme heat undoes it: well past an
 // ordinary flame's ~1000° ceiling it finally melts down into Molten Metal
-// (Blue Flame / Lava / Thermite grade — Iron's own 1400°, which also keeps it
-// safely above Molten Metal's 1350° freeze point so the melt actually stays
-// molten instead of instantly setting back to Iron). In between, it just
+// (Blue Flame / Lava / Thermite grade — 1400°, held deliberately high so a
+// battery is *tougher* than plain Iron (which now melts at 1200°) and won't
+// slump in an ordinary oxygen-blown coal fire; it also sits well above Molten
+// Metal's 1100° freeze so the melt stays molten instead of instantly setting
+// back to Iron). In between, it just
 // keeps ticking — the right power source to bury next to a Nichrome heater or
 // run through a burning building.
 const MELT_TEMP = 1400;

@@ -20,11 +20,21 @@ import { FIRE } from './fire';
 // cold touching it means it never cools (air conducts no heat), so an isolated
 // molten pool stays liquid forever; water or metal bridging the heat away is
 // what lets it set.
-export const IRON_MELT_TEMP = 1400;
+// Iron's melt point sits low enough that the *recommended* smelting fire — a
+// coal bed with a modest oxygen blast — actually reaches it: two Oxygen cells
+// pin a burning coal at 1300° (see combustion.ts), comfortably past this, so an
+// ore→iron→cast workflow no longer demands Lava/Blue Flame/Thermite. It stays
+// above a bare flame (~1000°), so ordinary Fire still can't melt iron, and just
+// above Stone's 1100° melt — so the blast that melts iron also slumps a stone
+// crucible, which is what makes a Diamond/Heatpipe hearth the recommended
+// container (both conduct superbly and never melt).
+export const IRON_MELT_TEMP = 1200;
 // Placed hotter than it freezes, with a wide gap so the surface has to shed a
 // lot of heat before it skins over into Iron — a gradual crust, like Lava's.
+// Freeze stays below the melt point (100° hysteresis) so a just-melted cell
+// can't instantly re-solidify and flicker at the boundary.
 const MOLTEN_METAL_TEMP = 1550;
-const MOLTEN_METAL_FREEZE_TEMP = 1350;
+const MOLTEN_METAL_FREEZE_TEMP = 1100;
 const IGNITE_CHANCE = 0.12;
 const FLOW_CHANCE = 0.2;
 

@@ -33,8 +33,8 @@ const NICHROME_JOULE_HEAT = 60;
  *  hot — enough to boil water, melt salt (800°) and ignite any fuel, but below
  *  Stone's 1100° melt and its own 1450° failure point. */
 export const NICHROME_MAX_JOULE_TEMP = 1050;
-// A touch above Iron (1400°): the alloy holds together slightly longer, but
-// Blue Flame / Thermite / Lava still destroy an element they engulf.
+// Well above Iron (now 1200°): the alloy holds together far longer than plain
+// wiring, but Blue Flame / Thermite / Lava still destroy an element they engulf.
 const NICHROME_MELT_TEMP = 1450;
 // Glowing this hot it radiantly ignites `flammable` neighbors (same contact
 // ignition Molten Metal uses) — the element sets fuel alight without a flame.
