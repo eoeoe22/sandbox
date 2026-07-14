@@ -295,5 +295,6 @@ export const HEAT_RAY = register({
   // `temp` alone so it can hold the packed life+direction state. init 0
   // decodes to a dead ray, so one placed by hand dies quietly on its first turn.
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateHeatRay,
 });

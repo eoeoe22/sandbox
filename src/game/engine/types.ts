@@ -187,6 +187,17 @@ export interface Material {
     conductivity?: number;
   };
   /**
+   * `temp` on this material holds packed non-thermal bookkeeping (flight
+   * velocity/life for Ember/Debris/Bomblet/Napalm Gel/Heat Ray, flash life for
+   * Blast — see ballistic.ts), not a real degree reading. `conductivity: 0` alone
+   * only stops the heat pass from touching it; it doesn't stop other code from
+   * misreading the packed number as an actual temperature (e.g. the free-object
+   * layer's heat-exposure scan — see engine/objects.ts's scanBodyExposure), so
+   * anything that samples `SimContext.getTemp` looking for a genuine ambient
+   * reading must skip a cell whose material sets this.
+   */
+  packedTemp?: boolean;
+  /**
    * Optional temperature → color ramp for the renderer. The cell is drawn
    * interpolated from `cool` (at temperature `min`) up to the material's base
    * `color` (at `max` and above), so a hot material like Lava visibly darkens

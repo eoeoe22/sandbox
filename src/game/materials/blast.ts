@@ -830,6 +830,7 @@ export const BLAST = register({
   // per-cell state (the flash's life / the seed marker) instead of real heat.
   // init = SEED_TEMP so a brush-placed cell reads as a seed and detonates.
   thermal: { init: SEED_TEMP, conductivity: 0 },
+  packedTemp: true,
   // Fade the flash white-hot → orange as its life (stored in temp) drops from
   // SHELL_MAX to 1, so the shockwave visibly cools as it dies.
   glow: { min: 1, max: SHELL_MAX, cool: rgb(255, 120, 24) },

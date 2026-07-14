@@ -8,6 +8,7 @@ import { MOLTEN_METAL } from '../materials/moltenmetal';
 import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
+import { ANTIMATTER } from '../materials/antimatter';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -1045,6 +1046,22 @@ function sampleMediumCapsule(o: SimCapsule, ctx: SimContext): {
 }
 
 /**
+ * True crush-relevant solidity: an actual Solid-phase material or the world
+ * wall, but NOT a merely-frozen liquid. `isSolidCell` (used for collision —
+ * standing on a frozen puddle is legitimately solid footing) deliberately
+ * widens "solid" to include a frozen liquid; the crush/entombment trigger must
+ * NOT (끼임 파괴 로직은 고체에만 적용) — a body sitting in an icy slush that's
+ * merely at/below its freeze point isn't wedged in solid matter the way one
+ * poured full of Stone or Wall is, so it must never be judged crushed for it.
+ */
+function isTrueSolidCell(x: number, y: number, ctx: SimContext): boolean {
+  const id = ctx.get(x, y);
+  if (id === EMPTY) return false;
+  const m = getMaterial(id);
+  return m.isWall === true || m.phase === Phase.Solid;
+}
+
+/**
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
  * cleared cells become short-lived BLAST cells → instant destruction), the
@@ -1078,8 +1095,17 @@ function scanBodyExposure(
       // container's wall border bounces a body off rather than crushing it, so a
       // body resting against the world edge must not read as entombed.
       if (!ctx.inBounds(cx, cy)) continue;
-      if (isSolidCell(cx, cy, ctx)) solid++;
-      if (ctx.get(cx, cy) === BLAST.id) blast = true;
+      if (isTrueSolidCell(cx, cy, ctx)) solid++;
+      const id = ctx.get(cx, cy);
+      if (id === BLAST.id) blast = true;
+      // Materials whose `temp` holds packed non-thermal bookkeeping (a flying
+      // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
+      // read as a real degree reading here — a water splash's Debris droplets
+      // passing through a floating ball's footprint carry garbage "temperatures"
+      // in the tens of thousands that would otherwise instantly "burn" it away
+      // (물에 빠지면 공이 사라지는 문제). Skip them; a cell holding only such
+      // material contributes nothing to maxTemp, same as an empty footprint cell.
+      if (id !== EMPTY && getMaterial(id).packedTemp) continue;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
     }
@@ -1167,6 +1193,15 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
  *  liquid, so it gushes a proper puddle (쏟아짐), not a scatter. */
 const FILL_SPILL_CHANCE = 0.7;
 
+/** Radius/half-length scale applied only to the flooded area (spawnFillSpill),
+ *  not to the drum's own physical shell — a real 55-gallon drum holds far more
+ *  liquid than its own silhouette can display a cell of, so a full drum gushes
+ *  past where it stood rather than being capped by its own footprint. Area scales
+ *  with the square of a uniform linear scale (4rl + πr²), so √2 doubles the
+ *  flooded area and, at the same FILL_SPILL_CHANCE, doubles the expected liquid
+ *  spilled (내용물이 있는 원유/산 양 두배 증가) versus flooding just the shell. */
+const FILL_SPILL_AREA_SCALE = Math.SQRT2;
+
 /** The liquid a filled drum pours out when destroyed, or null for an empty drum
  *  (which spills nothing). 원유 드럼통 → Crude Oil, 산 드럼통 → Acid. */
 function fillSpillId(fill: DrumFill): number | null {
@@ -1188,9 +1223,17 @@ function fillSpillId(fill: DrumFill): number | null {
 function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
   const id = fillSpillId(o.fill);
   if (id === null) return;
-  const r = o.radius;
+  const r = o.radius * FILL_SPILL_AREA_SCALE;
   const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
+  // Scaled capsule ends (not capsuleEnds(o), which is the drum's real physical
+  // shell) — only the flood zone widens, never the collision shape.
+  const [ux, uy] = capsuleAxis(o);
+  const hx = o.halfLength * FILL_SPILL_AREA_SCALE * ux;
+  const hy = o.halfLength * FILL_SPILL_AREA_SCALE * uy;
+  const ax = o.x - hx;
+  const ay = o.y - hy;
+  const bx = o.x + hx;
+  const by = o.y + hy;
   const x0 = Math.floor(Math.min(ax, bx) - r);
   const x1 = Math.ceil(Math.max(ax, bx) + r);
   const y0 = Math.floor(Math.min(ay, by) - r);
@@ -1345,6 +1388,39 @@ function footprintHasBlast(o: SimBody, ctx: SimContext): boolean {
     }
   }
   return false;
+}
+
+/**
+ * True if an Antimatter cell overlaps the body's footprint *right now* — checked
+ * at the tick's start (mirrors footprintHasBlast) so a body touched by antimatter
+ * is destroyed reliably rather than shoved clear first. Antimatter annihilates
+ * anything it touches one-for-one (see antimatter.ts); an object is far bigger
+ * than a single grain, so instead of the usual matter-for-matter swap it simply
+ * destroys the whole body while every touching grain is consumed in the contact
+ * (Antimatter 접촉시 모든 오브젝트 파괴) — no object is antimatter-proof.
+ */
+function footprintHasAntimatter(o: SimBody, ctx: SimContext): boolean {
+  const r = bodyRadius(o);
+  const r2 = r * r;
+  const [ax, ay, bx, by] = bodyEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  let hit = false;
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== ANTIMATTER.id) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      ctx.set(cx, cy, EMPTY); // consumed by the contact, same as any other annihilation
+      hit = true;
+    }
+  }
+  return hit;
 }
 
 /**
@@ -1599,7 +1675,11 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
     if (o.held) continue;
-    if (footprintHasBlast(o, ctx)) {
+    // `||` short-circuits, but footprintHasAntimatter's cell-consuming side effect
+    // only matters when it actually finds a touching grain — a blast-doomed body
+    // skips the antimatter scan this tick and is still caught by it (if any)
+    // next tick, same as any other pending contact.
+    if (footprintHasBlast(o, ctx) || footprintHasAntimatter(o, ctx)) {
       doomed.add(o); // destroyed below; don't bother moving it
       continue;
     }
