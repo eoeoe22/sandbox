@@ -11,6 +11,9 @@ import { DRUM_SPRITE, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
  *  pixel art in the exact grain size — no vector circle, no anti-aliasing. */
 const BALL_COLOR = rgb(0xd8, 0x46, 0x52); // rubber red
+/** Thin dark rim drawn around the rubber ball's edge so the disc reads as a
+ *  distinct object against similarly-colored terrain (e.g. Lava). */
+const BALL_BORDER_COLOR = rgb(0x1a, 0x10, 0x12); // near-black rubber outline
 
 /** Free objects (balls, drums) are rasterized into a separate overlay buffer at
  *  this many sub-pixels per grid cell, so they read at higher resolution than the
@@ -420,6 +423,12 @@ export class CanvasRenderer implements Renderer {
   ): void {
     const r = o.r;
     const r2 = r * r;
+    // Thin outline: sub-pixels whose center falls in the outer ring [rin, r] are
+    // drawn dark instead of red. Width is ≥1 sub-pixel so it never vanishes, and
+    // scales gently with radius so bigger balls keep a proportionate rim.
+    const border = Math.max(1 / s, r * 0.12);
+    const rin = r - border;
+    const rin2 = rin > 0 ? rin * rin : 0;
     let x0 = Math.floor((o.x - r) * s);
     let x1 = Math.ceil((o.x + r) * s);
     let y0 = Math.floor((o.y - r) * s);
@@ -433,7 +442,8 @@ export class CanvasRenderer implements Renderer {
       const row = sy * w;
       for (let sx = x0; sx < x1; sx++) {
         const dx = (sx + 0.5) / s - o.x;
-        if (dx * dx + dy * dy <= r2) buf[row + sx] = BALL_COLOR;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= r2) buf[row + sx] = d2 >= rin2 ? BALL_BORDER_COLOR : BALL_COLOR;
       }
     }
   }
