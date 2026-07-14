@@ -1522,13 +1522,18 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // (Newtonian conduction): a body in a hot medium warms up, one in cool air (or
   // cooled by the 냉각 brush) sheds heat back toward ambient — so brush-applied
   // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
-  // briefly. `maxTemp` is finite for any in-world body (its footprint always has
-  // an in-bounds cell, and empty cells read ambient), so no guard is needed.
-  o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  // briefly. `maxTemp` is -Infinity only when the footprint has NO in-bounds cell
+  // — a body that has drifted fully out of a `void` border — in which case we
+  // freeze the reservoir (skip conduction) rather than let (-Inf − temp) poison it
+  // to NaN, which would permanently break the max() heat test if it re-entered.
+  if (Number.isFinite(exp.maxTemp)) {
+    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  }
   // Judge heat by the hotter of the surroundings and the body's own reservoir:
   // ambient heat (lava/fire under the footprint) still triggers instantly as
   // before — no regression — while the 가열 brush, which writes only `temp`, can
   // now melt/burn a body floating over empty air the cell heat brush can't warm.
+  // (An out-of-world body has maxTemp −Inf, so this picks its finite reservoir.)
   const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
