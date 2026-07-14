@@ -17,7 +17,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, '..', 'heat', 'target', 'wasm32-unknown-unknown', 'release', 'heat.wasm');
 
 const RATE = 0.2; // HEAT_DIFFUSION_RATE
-const SUBSTEPS = 3; // HEAT_DIFFUSION_SUBSTEPS
+// Cover both substep parities: odd counts (3 = production) end with the latest
+// field in `scratch` and hit the kernel's copy-back-to-temp branch; even counts
+// end in `temp` and take the no-copy branch. 1 is the single-pass degenerate.
+const SUBSTEP_CASES = [1, 2, 3, 4];
 const TOL = Number(process.env.TOL ?? 0); // 0 = require bit-identical
 
 // --- JS reference: a faithful copy of Simulation.diffuseHeat, called SUBSTEPS
@@ -118,24 +121,28 @@ const sizes = [
 ];
 let maxDiff = 0;
 let checked = 0;
+let grids = 0;
 const rnd = mulberry32(0x51ed);
 for (let rep = 0; rep < 6; rep++) {
   for (const [w, h] of sizes) {
-    const { cells, cond, temp } = buildCase(rnd, w, h);
-    const js = diffuseHeatJs(cells, cond, temp.slice(), w, h, RATE, SUBSTEPS);
-    const rs = diffuseHeatWasm(cells, cond, temp, w, h, RATE, SUBSTEPS);
-    for (let i = 0; i < js.length; i++) {
-      const d = Math.abs(js[i] - rs[i]);
-      if (d > maxDiff) maxDiff = d;
-      if (d > TOL) {
-        console.error(
-          `MISMATCH ${w}x${h} rep${rep} cell ${i}: js=${js[i]} rs=${rs[i]} diff=${d}`,
-        );
-        process.exit(1);
+    for (const substeps of SUBSTEP_CASES) {
+      const { cells, cond, temp } = buildCase(rnd, w, h);
+      const js = diffuseHeatJs(cells, cond, temp.slice(), w, h, RATE, substeps);
+      const rs = diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps);
+      for (let i = 0; i < js.length; i++) {
+        const d = Math.abs(js[i] - rs[i]);
+        if (d > maxDiff) maxDiff = d;
+        if (d > TOL) {
+          console.error(
+            `MISMATCH ${w}x${h} substeps=${substeps} rep${rep} cell ${i}: js=${js[i]} rs=${rs[i]} diff=${d}`,
+          );
+          process.exit(1);
+        }
+        checked++;
       }
-      checked++;
+      grids++;
     }
   }
 }
 
-console.log(`OK — ${checked} cells checked across ${sizes.length * 6} grids, max |diff| = ${maxDiff} (tol ${TOL})`);
+console.log(`OK — ${checked} cells checked across ${grids} grids (substeps ${SUBSTEP_CASES.join(',')}), max |diff| = ${maxDiff} (tol ${TOL})`);
