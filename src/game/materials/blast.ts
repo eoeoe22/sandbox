@@ -289,6 +289,19 @@ function blocksBlast(id: number, power: number): boolean {
   return m.phase === Phase.Solid && durabilityOf(id) > power;
 }
 
+/** True if the cell shadows the non-destructive pressure wave (충격파 압력전파) —
+ *  it stops the wave and shelters what's behind it, and is never shoved as Debris.
+ *  Ordinarily only solids do this (loose powder/liquid is what the wave flings
+ *  aside), but a 방폭 material — explosion-proof or truly indestructible — is inert
+ *  to the whole blast regardless of phase, so a Molten U238 pool or a Nuke Waste
+ *  pile shrugs the concussion off instead of being scattered by it. (Compare
+ *  blocksBlast, the same idea for the destructive crater flood.) */
+function shadowsPressure(id: number): boolean {
+  if (id === EMPTY) return false;
+  const m = getMaterial(id);
+  return m.phase === Phase.Solid || m.explosionProof === true || m.indestructible === true;
+}
+
 /** Replace a cleared cell with a shockwave flash cell — a short-lived Blast cell
  *  whose life (in `temp`) both times its fade and drives its glow. spawn() marks
  *  it moved, so a not-yet-scanned cell isn't reprocessed this same tick. Exported
@@ -753,7 +766,7 @@ function pressureRing(
     const nidx = ny * w + nx;
     if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
     const nid = sim.get(nx, ny);
-    if (nid !== EMPTY && getMaterial(nid).phase === Phase.Solid) continue; // shadowed at once
+    if (shadowsPressure(nid)) continue; // solid or 방폭 matter shadows it at once
     stamp[nidx] = id_p;
     qx.push(nx);
     qy.push(ny);
@@ -775,8 +788,15 @@ function pressureRing(
     const id = sim.get(x, y);
     const phase = id === EMPTY ? Phase.Empty : getMaterial(id).phase;
     // Loose matter is shoved outward along the wave direction; it becomes a Debris
-    // fragment carrying its own id (rains back, so mass is conserved).
-    if ((phase === Phase.Powder || phase === Phase.Liquid) && sim.chance(PRESSURE_LAUNCH_CHANCE)) {
+    // fragment carrying its own id (rains back, so mass is conserved). A 방폭
+    // (explosion-proof) powder/liquid is exempt — it's inert to the blast, so the
+    // concussion can't fling it (it was already shadowed out of the flood above,
+    // but guard here too since a cell can be seeded as the wave's own origin).
+    if (
+      (phase === Phase.Powder || phase === Phase.Liquid) &&
+      !shadowsPressure(id) &&
+      sim.chance(PRESSURE_LAUNCH_CHANCE)
+    ) {
       launchBallistic(sim, x, y, edx, edy, DEBRIS.id, PRESSURE_SHOVE);
       sim.setAux(x, y, id);
     }
@@ -792,9 +812,9 @@ function pressureRing(
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
       const nid = sim.get(nx, ny);
-      // A solid stops the wave and shadows what's behind it; loose matter and
-      // empty air let it flow on through.
-      if (nid !== EMPTY && getMaterial(nid).phase === Phase.Solid) continue;
+      // A solid — or any 방폭 matter — stops the wave and shadows what's behind it;
+      // ordinary loose matter and empty air let it flow on through.
+      if (shadowsPressure(nid)) continue;
       stamp[nidx] = id_p;
       qx.push(nx);
       qy.push(ny);

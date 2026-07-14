@@ -14,7 +14,7 @@ export const LIMESTONE = register({
   name: 'Limestone',
   phase: Phase.Powder,
   color: rgb(216, 210, 196),
-  // Lighter than liquid Slag (8): a scatter of flux floats on a molten slag pool.
+  // Lighter than liquid Slag (6): a scatter of flux floats on a molten slag pool.
   density: 5,
   category: '제련',
   thermal: { conductivity: 0.35 },

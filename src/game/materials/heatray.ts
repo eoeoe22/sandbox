@@ -10,6 +10,8 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { URANIUM } from './uranium';
 import { MOLTEN_URANIUM, triggerMeltdownDecay } from './moltenuranium';
+import { U238 } from './u238';
+import { MOLTEN_U238 } from './moltenu238';
 
 // Heat Ray — the searing beam a critical uranium mass emits (see
 // moltenuranium.ts). Where an Ember is ballistic debris (drooping arc, short
@@ -251,6 +253,27 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
+    if (nid === U238.id) {
+      // U238 is fuel too, so a ray never destroys it — it flashes straight to
+      // meltdown just like U235 (a stray beam liquefies any uranium deposit it
+      // grazes). The difference is downstream: Molten U238 is non-explosive, so
+      // this only starts that pile cooking down toward Nuke Waste, never toward
+      // a criticality of its own.
+      sim.spawn(nx, ny, MOLTEN_U238.id);
+      [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
+      continue;
+    }
+    if (nid === MOLTEN_U238.id) {
+      // Molten U238 is fuel as well: the ray glances off (never destroyed) and
+      // dumps heat, which merely delays the pool's cooling into Nuke Waste.
+      // There's no criticality or decay-burn to trigger — it isn't an explosive
+      // melt — so, unlike Molten U235, a beam can't make it burn away faster.
+      sim.setTemp(nx, ny, sim.getTemp(nx, ny) + URANIUM_HEAT);
+      [vx, vy] = bounce(sim, wx, wy, vx, vy);
+      lifeCost += BOUNCE_LIFE_COST;
+      continue;
+    }
     const m = getMaterial(nid);
     if (m.isWall || m.indestructible) {
       // Wall stops the beam, and so does a truly indestructible solid (Clone) —
@@ -278,6 +301,20 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       [vx, vy] = bounce(sim, wx, wy, vx, vy);
       lifeCost += BOUNCE_LIFE_COST;
     }
+  }
+
+  // Sibling-ray gridlock (the "뭉침" a *large* U235 decay makes): rays are
+  // transparent to each other but can only *land* on an EMPTY cell, so a ray
+  // whose entire step path this tick was other rays — the dense pack a big
+  // critical mass throws — advances its walk cursor over them yet finds no empty
+  // landing (cx,cy never moved). Left alone it would just sit here shedding the
+  // baseline 1 life/tick for its full ~150-tick life, so the pack lingers as a
+  // stationary clump. Detect exactly that case (no landing, no bounce this tick,
+  // but it did walk over siblings) and drain it like a reflection, so such
+  // clumps dissolve in a couple dozen ticks instead of ~150. A ray crossing a
+  // lone sibling in open space still lands in the gap beyond and is untouched.
+  if (cx === x && cy === y && lifeCost === 1 && (wx !== x || wy !== y)) {
+    lifeCost += BOUNCE_LIFE_COST;
   }
 
   if (cx !== x || cy !== y) {

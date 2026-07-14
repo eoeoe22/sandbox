@@ -90,10 +90,12 @@ const WREATH_CHANCE = 0.25;
 // pin steps are chosen around the world's melt points: 0 oxygen = 800°
 // (unchanged bare burn — reduces iron ore but can't melt iron, and stays under
 // Stone's 1100° so furnace walls are safe), 1 = 1050° (a safe low blast, still
-// below stone), 2 = 1300°, 3+ = 1550° (past Iron's 1400° melt — a blast furnace
-// that runs molten iron, but now hot enough to start melting stone walls, which
-// is what forces water-jacket cooling). Being common to every fuel, Oxygen +
-// any fuel also becomes a hotter cutting torch as a free side effect.
+// below stone), 2 = 1300° (the recommended smelting blast — past Iron's 1200°
+// melt so a coal fire now runs molten iron, but also past Stone's 1100° so a
+// stone crucible slumps, which is what makes a Diamond/Heatpipe hearth the
+// container of choice), 3+ = 1550° (a fierce blast furnace). Being common to
+// every fuel, Oxygen + any fuel also becomes a hotter cutting torch as a free
+// side effect.
 const OXY_BOOST = 250;
 const OXY_MAX_PIN = 1550;
 const OXY_CONSUME = 0.5;

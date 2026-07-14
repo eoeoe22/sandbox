@@ -176,7 +176,8 @@ export const MOLTEN_URANIUM = register({
   phase: Phase.Liquid,
   color: rgb(235, 255, 90),
   density: 10, // densest liquid in the game — sinks through even Mercury (9)
-  category: '특수',
+  category: '방사성',
+  explosionProof: true, // 방폭 — see uranium.ts (Heat Ray still feeds it as before)
   thermal: { init: MOLTEN_URANIUM_TEMP, conductivity: 0.5 },
   // Glows from dull radioactive olive at the freeze point up to blazing
   // yellow-green as it approaches criticality, so how close a pool is to

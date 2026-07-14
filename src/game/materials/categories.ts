@@ -23,6 +23,7 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: '냉각', icon: 'bi-snow' },
   { key: '전기', icon: 'bi-lightning-charge-fill' },
   { key: '생명', icon: 'bi-flower1' },
+  { key: '방사성', icon: 'bi-radioactive' },
   { key: '특수', icon: 'bi-stars' },
 ];
 
