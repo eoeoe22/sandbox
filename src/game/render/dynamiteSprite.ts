@@ -5,9 +5,10 @@ import { rgb } from './color';
  * from its physics (a capsule; see engine/objects.ts SimDynamite). It's just the
  * red stick body: a colored cylinder banded and outlined in black, in the same
  * pixel-art idiom as the drum sprite (a flat Uint32 grid of packed 0xAABBGGRR
- * colors, 0 = transparent). The lit fuse and its flame are NOT baked in here —
- * they're drawn procedurally at the tip by the renderer (they flicker and vary
- * with the fuse state), poking out past the top cap. The sprite's 8×24 box maps
+ * colors, 0 = transparent). The fuse *flame* is NOT drawn here at all — the lit
+ * fuse emits real Fire particles into the grid at its tip (see objects.ts). The
+ * renderer draws only a short dark fuse-cord nub past the cap so the fuse reads as
+ * physical even on a spent dud. The sprite's 8×24 box maps
  * onto the physics capsule's box (2·radius wide × 2·(halfLength+radius) tall), so
  * display and collision agree and it samples near its native resolution at
  * OBJECT_SCALE = 2. Colors echo the design's reference art (body red #FF3B30).
@@ -50,9 +51,6 @@ function buildSprite(): Uint32Array {
 /** The prebuilt dynamite sprite pixels (0xAABBGGRR; 0 = transparent). */
 export const DYN_SPRITE = buildSprite();
 
-// Procedural fuse/flame colors, used by the renderer (not part of the sprite).
-/** The short fuse cord poking past the top cap. */
+/** The short dark fuse cord the renderer draws poking past the top cap (the flame
+ *  itself is real Fire particles, spawned by the engine — see objects.ts). */
 export const FUSE_CORD_COLOR = rgb(0x46, 0x3c, 0x30);
-/** Flame inner (hot) and outer (cooler) colors for the lit fuse tip. */
-export const FLAME_CORE_COLOR = rgb(0xff, 0xe8, 0x78);
-export const FLAME_EDGE_COLOR = rgb(0xff, 0xa8, 0x28);

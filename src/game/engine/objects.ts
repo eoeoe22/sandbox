@@ -10,6 +10,7 @@ import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
+import { FIRE } from '../materials/fire';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -314,38 +315,48 @@ export function createDrum(
 }
 
 /**
- * Dynamite defaults. A slim stick (thinner and a touch shorter than the drum, so
- * it reads apart at a glance) that's *denser than Water* (3), so — unlike the
- * hollow drums — it sinks, and its fuse keeps burning as it goes down (물 안에서는
- * 안 꺼짐). Barely bounces. The fuse is a visible countdown of DYNAMITE_FUSE_TICKS.
+ * Dynamite defaults. A short, slim stick (clearly smaller than the drum, so it
+ * reads apart at a glance) that's *denser than Water* (3), so — unlike the hollow
+ * drums — it sinks, and its fuse keeps burning as it goes down (물 안에서는 안 꺼짐).
+ * Barely bounces. The fuse is a visible countdown of DYNAMITE_FUSE_TICKS.
  */
-export const DYNAMITE_RADIUS = 2;
-export const DYNAMITE_HALF_LENGTH = 4;
+export const DYNAMITE_RADIUS = 1.6;
+export const DYNAMITE_HALF_LENGTH = 3;
 export const DYNAMITE_DENSITY = 3.5;
 export const DYNAMITE_RESTITUTION = 0.2;
+/** Initial lean (radians) a freshly-placed stick spawns at, so it topples over to
+ *  lie down instead of balancing bolt-upright on its rounded cap (바닥에 안 서게). */
+export const DYNAMITE_SPAWN_TILT = 0.4;
 /** Ticks the lit fuse burns before the stick detonates — long enough to read as a
  *  crawling countdown and to set up chains, short enough to stay punchy. */
 export const DYNAMITE_FUSE_TICKS = 140;
 /** Footprint temperature (°) at/above which an external heat source cooks the
- *  stick off (autoignition) — matches TNT, so Lava/Blue Flame/a sustained fire or
- *  the 가열 brush detonates it whether or not the fuse is still lit. */
-export const DYNAMITE_AUTOIGNITE_TEMP = 240;
-/** Sustained ticks above the autoignite temp before it goes off — a brief brush
- *  with heat (a passing spark, flung debris) doesn't, only real fire/lava does. */
-const DYNAMITE_HEAT_TICKS = 3;
+ *  stick off (autoignition). Set deliberately *above ordinary Fire's 1000°* so the
+ *  lit fuse's OWN emitted Fire (which sits right beside a resting stick) can never
+ *  self-detonate it — the fuse countdown stays the sole timer — while a genuinely
+ *  hotter bath (Lava 1500°, Blue Flame 1800°) or the 가열 brush (up to 2000°) still
+ *  cooks it off. This also reads true: real dynamite burns rather than detonates
+ *  in an open flame; it wants a blasting cap (here: the fuse, a blast, or a crush). */
+export const DYNAMITE_AUTOIGNITE_TEMP = 1100;
+/** Sustained ticks above the autoignite temp before it goes off, so a single hot
+ *  splash (a fleck of flung lava) doesn't instant-pop it — only a sustained bath
+ *  does. Short enough that Lava still detonates it promptly. */
+const DYNAMITE_HEAT_TICKS = 5;
 
 // The two-zone detonation (see detonateDynamite): a strong, tight core that
 // craters, wrapped in a weak, wide 충격파 that only shoves loose matter. Both
 // reaches pass through blast.ts's global 2/3 scale, so the actual radii are ~2/3
 // of these.
-/** Core crater reach — full destructive power, small radius (강한 폭발 / 작은 반경). */
-const DYNAMITE_CORE_REACH = 9;
+/** Core crater reach — full destructive power, small radius (강한 폭발 / 작은 반경).
+ *  Bumped ×1.5 from the original 9 (기획: 폭발력 1.5배). */
+const DYNAMITE_CORE_REACH = 13.5;
 /** Core destructive power — high enough to level any ordinary matter within the
  *  core (matches blast.ts's DEFAULT_DESTRUCTIVE_POWER), forced explicitly so the
  *  core stays strong even if the stick happens to detonate on an explosive. */
 const DYNAMITE_CORE_POWER = 100_000;
-/** Shockwave reach — a wide ring (넓은 반경) that shoves sand/water/objects outward. */
-const DYNAMITE_WAVE_REACH = 24;
+/** Shockwave reach — a wide ring (넓은 반경) that shoves sand/water/objects outward.
+ *  Bumped ×1.5 from the original 24 (기획: 폭발력 1.5배). */
+const DYNAMITE_WAVE_REACH = 36;
 /** Shockwave power — Gunpowder-weak (파괴력 6): heaves loose matter aside but can't
  *  crater tough solids, which shadow it (충격파 = Gunpowder 같은 약한 폭발). */
 const DYNAMITE_WAVE_POWER = 6;
@@ -366,8 +377,9 @@ const FUSE_SNUFF_TEMP = -20;
  *  sits cells away from the body's footprint), so it never cooks the stick itself. */
 const FUSE_BOIL_FLOOR = 130;
 
-/** Build a lit stick of dynamite centered at (x,y), at rest and upright (fuse up).
- *  Mass and moment of inertia follow the same capsule formulas as the drum. */
+/** Build a lit stick of dynamite centered at (x,y), at rest and slightly tilted
+ *  (so it topples instead of balancing upright — see DYNAMITE_SPAWN_TILT). Mass
+ *  and moment of inertia follow the same capsule formulas as the drum. */
 export function createDynamite(
   x: number,
   y: number,
@@ -387,7 +399,7 @@ export function createDynamite(
     y,
     vx: 0,
     vy: 0,
-    angle: 0,
+    angle: DYNAMITE_SPAWN_TILT,
     angularVelocity: 0,
     halfLength: l,
     radius: r,
@@ -1738,8 +1750,9 @@ function heatFuseLiquid(ctx: SimContext, x: number, y: number): void {
  *      fire/lava/brush heat — not a stray hot pixel — sets it off; fires even for
  *      a snuffed dud.
  *   2. The flame at the tip meets the cell it touches: a stronger extinguisher or
- *      a smothering powder snuffs the fuse to a dud (stops the countdown); an
- *      ordinary liquid doesn't put it out — the flame heats/boils it a little.
+ *      a smothering powder snuffs the fuse to a dud (stops the countdown); in open
+ *      air it throws a real Fire particle; an ordinary liquid doesn't put it out —
+ *      the flame heats/boils the liquid a little instead.
  *   3. The lit fuse burns down; at zero the stick detonates.
  * Returns true to keep the stick, false once it has detonated.
  */
@@ -1760,15 +1773,27 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   const tcx = Math.floor(o.x - ux * reach);
   const tcy = Math.floor(o.y - uy * reach);
   if (ctx.inBounds(tcx, tcy)) {
-    if (fuseSnuffed(ctx.get(tcx, tcy), ctx.getTemp(tcx, tcy))) {
+    const tipId = ctx.get(tcx, tcy);
+    if (fuseSnuffed(tipId, ctx.getTemp(tcx, tcy))) {
       o.lit = false; // a dud — no timed explosion (external heat can still cook it off)
     } else if (o.lit) {
-      // Boil the tip cell and its orthogonal neighbours if they're liquid (살짝 끓게).
-      heatFuseLiquid(ctx, tcx, tcy);
-      heatFuseLiquid(ctx, tcx + 1, tcy);
-      heatFuseLiquid(ctx, tcx - 1, tcy);
-      heatFuseLiquid(ctx, tcx, tcy + 1);
-      heatFuseLiquid(ctx, tcx, tcy - 1);
+      if (tipId === EMPTY) {
+        // In open air the lit fuse throws a real Fire particle (not a painted-on
+        // flame): it flickers, rises, and can ignite whatever the fuse leads to —
+        // a Gunpowder trail, a charge, a puddle of fuel. The tip sits cells beyond
+        // the body's footprint and the fire rises away from it, so the stick's own
+        // fuse doesn't cook it off early (the countdown stays the authority).
+        ctx.spawn(tcx, tcy, FIRE.id);
+      } else if (getMaterial(tipId).phase === Phase.Liquid && !ctx.isFrozen(tcx, tcy)) {
+        // Submerged/wet: the flame doesn't die — instead it heats the liquid it
+        // touches, boiling the tip cell and its neighbours a little (살짝 끓게). A
+        // real Fire particle can't live underwater, so this is the "flame" there.
+        heatFuseLiquid(ctx, tcx, tcy);
+        heatFuseLiquid(ctx, tcx + 1, tcy);
+        heatFuseLiquid(ctx, tcx - 1, tcy);
+        heatFuseLiquid(ctx, tcx, tcy + 1);
+        heatFuseLiquid(ctx, tcx, tcy - 1);
+      }
     }
   }
   if (o.lit && --o.fuseTicks <= 0) {
