@@ -761,32 +761,11 @@
       display: none;
     }
 
-    /* Quick-access recents/favorites shrink to compact swatch squares the same
-       size as the icon-only category buttons beside them, and only the first
-       three show (slots 4–9 stay in the DOM but are hidden) so the strip is a
-       small, predictable tap target. The corner star is dropped at this size —
-       favorites are still managed from the search results. */
+    /* Quick-access recents/favorites: only the first three slots show on mobile
+       (slots 4–9 stay in the DOM but are hidden) so the strip is a compact,
+       predictable part of the scrolling row. Each visible chip keeps its swatch,
+       material name, and corner star (favorite toggle) — same as desktop. */
     .quick > *:nth-child(n + 4) {
-      display: none;
-    }
-    .quick .chip {
-      width: 44px;
-      height: 44px;
-      padding: 0;
-      justify-content: center;
-    }
-    .quick .chip .label {
-      display: none;
-    }
-    .quick .chip .swatch {
-      width: 22px;
-      height: 22px;
-    }
-    .quick .chip.empty {
-      width: 44px;
-      height: 44px;
-    }
-    .quick .star {
       display: none;
     }
   }

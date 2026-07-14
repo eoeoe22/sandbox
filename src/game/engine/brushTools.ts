@@ -148,8 +148,11 @@ export interface InspectEntry {
   color: number;
   count: number;
   /** Mean temperature over this material's occurrences that participate in the
-   *  temperature system, or null when none do (Wall / packedTemp occurrences are
-   *  excluded, same rule as the overall `InspectStats.avgTemp`). */
+   *  temperature system, or null when none do. Wall / packedTemp occurrences are
+   *  excluded (same rule as the overall `InspectStats.avgTemp`). Note this counts
+   *  겹침 overlay occurrences too — a soaked fluid shares its host cell's temp —
+   *  whereas the overall `avgTemp` only averages base occupants, so per-material
+   *  temps need not reconcile to the overall mean when overlays are present. */
   avgTemp: number | null;
 }
 

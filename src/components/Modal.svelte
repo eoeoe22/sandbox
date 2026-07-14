@@ -4,6 +4,7 @@
   // the palette flyouts portal out). Used for the 설정 and 혼합 브러시 modals on
   // both desktop and mobile. Closes on the backdrop, the × button, or Escape.
   import type { Snippet } from 'svelte';
+  import { tick } from 'svelte';
 
   interface Props {
     /** Whether the modal is shown. */
@@ -20,6 +21,8 @@
 
   let { open, title, icon, onclose, children }: Props = $props();
 
+  let dialogEl = $state<HTMLDivElement | null>(null);
+
   function portal(node: HTMLElement) {
     document.body.appendChild(node);
     return {
@@ -29,10 +32,63 @@
     };
   }
 
+  // The tabbable controls inside the dialog card, for the focus trap and for
+  // moving focus in on open. Skips hidden/disabled controls.
+  function focusables(): HTMLElement[] {
+    if (!dialogEl) return [];
+    return Array.from(
+      dialogEl.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+  }
+
+  // On open, move focus into the dialog (a11y: keyboard/AT users land inside it,
+  // not on the toolbar behind the backdrop); on close, restore focus to whatever
+  // opened it. `tick()` waits for the `{#if open}` block to mount and bind
+  // `dialogEl` before focusing (it isn't bound yet when the effect first runs).
+  $effect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    let cancelled = false;
+    tick().then(() => {
+      if (!cancelled && open) (focusables()[0] ?? dialogEl)?.focus();
+    });
+    return () => {
+      cancelled = true;
+      opener?.focus?.();
+    };
+  });
+
   function onKeydown(e: KeyboardEvent): void {
-    if (open && e.key === 'Escape') {
+    if (!open) return;
+    if (e.key === 'Escape') {
       e.preventDefault();
       onclose();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    // A MaterialPicker popover (blend modal) portals its flyout out to <body>,
+    // so its focused item isn't a descendant of the dialog. Leave the picker's
+    // own keyboard handling alone while focus is inside it (identified by the
+    // data-picker-portal marker) — only trap Tab within the dialog otherwise.
+    const active = document.activeElement as HTMLElement | null;
+    if (active && active.closest('[data-picker-portal]')) return;
+    const f = focusables();
+    if (f.length === 0) {
+      e.preventDefault();
+      dialogEl?.focus();
+      return;
+    }
+    const first = f[0];
+    const last = f[f.length - 1];
+    const inside = active ? dialogEl?.contains(active) : false;
+    if (e.shiftKey && (active === first || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
     }
   }
 </script>
@@ -49,7 +105,7 @@
       if (e.target === e.currentTarget) onclose();
     }}
   >
-    <div class="modal" role="dialog" aria-modal="true" aria-label={title}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={dialogEl}>
       <div class="modal-head">
         {#if icon}<i class={`bi ${icon}`} aria-hidden="true"></i>{/if}
         <span class="modal-title">{title}</span>
