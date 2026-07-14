@@ -10,6 +10,15 @@ const byId: Material[] = [];
  * If `update` is omitted, the phase's default behavior is attached.
  */
 export function register(def: Material): Material {
+  // Two materials silently claiming the same id used to mean the
+  // later-imported one clobbered the earlier one in `byId` with no error —
+  // one vanished from the palette while its `.id` resolved to the wrong
+  // material everywhere else. Fail loudly instead.
+  if (byId[def.id] !== undefined) {
+    throw new Error(
+      `Material id ${def.id} already registered to "${byId[def.id].name}" — cannot register "${def.name}" with the same id.`,
+    );
+  }
   const material: Material = {
     ...def,
     update: def.update ?? defaultUpdate(def.phase),

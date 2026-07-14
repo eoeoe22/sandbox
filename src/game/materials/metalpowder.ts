@@ -25,7 +25,7 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
 }
 
 export const METAL_POWDER = register({
-  id: 104,
+  id: 105,
   name: 'Metal Powder',
   phase: Phase.Powder,
   // A grainier, slightly lighter steel-grey than solid Iron's rgb(135,140,150),
