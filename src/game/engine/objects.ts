@@ -1087,28 +1087,47 @@ function scanBodyExposure(
   return { blast, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
+/** Per-cell chance a shattered drum flings a Metal Powder fragment from that
+ *  footprint cell. Sparse like the hollow shell's melt puddle (0.3) — a thin
+ *  shell, not a solid block — but applied across the whole footprint (~160 cells)
+ *  it yields a clearly visible heap of steel grains instead of a few stray specks
+ *  (the old 5-point medial scatter left only 1–4 grains, easy to mistake for
+ *  nothing). Melt still leaves Molten Metal; only the shatter's yield changed. */
+const DRUM_DEBRIS_CHANCE = 0.2;
+
 /**
- * Destroyed by a blast: the shell is torn apart, so fling a few Metal Powder
- * fragments (reusing debris.ts's scatter, count kept low — "몇 조각") that arc up
- * and rain back down as a heap of steel grains rather than the drum vanishing.
- * Metal Powder (metalpowder.ts) — not solid Iron — is the destroyed form: an
- * explosion shatters the metal into dust, and the powder still melts back to
- * Molten Metal if it later lands in heat. Being empty, the drum spills no
- * contents.
+ * Destroyed by a blast/crush: the shell is torn apart, so fling Metal Powder
+ * fragments (reusing debris.ts's scatter) from across the drum's whole footprint,
+ * arcing up and raining back down as a visible heap of steel grains rather than
+ * the drum vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
+ * destroyed form: an explosion shatters the metal into dust, and the powder still
+ * melts back to Molten Metal if it later lands in heat. Being a hollow shell only
+ * a fraction of the footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are
+ * skipped (the object layer is read-only over terrain). The fill spill, if any,
+ * is spawned separately (see spawnFillSpill).
  */
 function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
-  const n = 5;
+  const r = o.radius;
+  const r2 = r * r;
   const [ax, ay, bx, by] = capsuleEnds(o);
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1); // 0..1 along the segment (n is fixed > 1)
-    const cx = Math.round(ax + (bx - ax) * t);
-    const cy = Math.round(ay + (by - ay) * t);
-    if (!ctx.inBounds(cx, cy)) continue;
-    // Don't fling from (and thereby overwrite) a solid cell — the object layer is
-    // read-only over terrain, spawning only into air/loose matter. Mirrors the
-    // guard in spawnMoltenPuddle; a launch point buried in stone/wall is skipped.
-    if (isSolidCell(cx, cy, ctx)) continue;
-    launchDebris(ctx, cx, cy, METAL_POWDER.id, i % 2 === 0 ? 1 : -1, -1, 2);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      // Don't fling from (and thereby overwrite) a solid cell — the object layer
+      // is read-only over terrain, spawning only into air/loose matter.
+      if (isSolidCell(cx, cy, ctx)) continue;
+      if (!ctx.chance(DRUM_DEBRIS_CHANCE)) continue;
+      // Spray outward from the drum's center (left cells fly left, right fly right).
+      launchDebris(ctx, cx, cy, METAL_POWDER.id, cx + 0.5 < o.x ? -1 : 1, -1, 2);
+    }
   }
 }
 
