@@ -38,8 +38,13 @@ function updateAmber(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, RESIN.id);
     return;
   }
-  // Solid and still cool: no fall/flow — catching fire is the only behavior. A
-  // catch pins the cell hot, so its next turn melts it above.
+  // Solid and still cool: no fall/flow — catching fire is the only behavior.
+  // SPEC.burnChance here is just the catch-from-adjacent-flame rate; a catch pins
+  // the cell to the 800° burn temperature, so its very next turn melts it above
+  // before it could self-ignite as Amber. All the actual burning — self-ignition,
+  // wreathing flame, spreading, consuming to Fire — is deliberately handed off to
+  // the melted Resin at Resin's own (slower, stickier) pace. So amber's
+  // autoignition / burn-rate branch inside tryBurn is intentionally never taken.
   tryBurn(x, y, sim, SPEC);
 }
 
