@@ -17,9 +17,10 @@ import { DIESEL } from './diesel';
 // when the cell above is blocked, so vapor pooling under a lid rains out faster
 // than vapor still rising freely. The lasting, legible result is the coloured,
 // density-stratified liquid layers it leaves behind, so one neutral grey fume
-// serves for all three cuts.
-const CONDENSE_CHANCE = 0.004;
-const CONDENSE_CHANCE_BLOCKED = 0.02;
+// serves for all three cuts — and it condenses briskly enough that the fume
+// turns back to liquid quickly instead of building into a big lingering cloud.
+const CONDENSE_CHANCE = 0.01;
+const CONDENSE_CHANCE_BLOCKED = 0.04;
 
 function condenseTarget(code: number): number {
   if (code === 2) return KEROSENE.id;
