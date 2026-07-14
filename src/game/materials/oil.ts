@@ -39,9 +39,19 @@ const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 420 };
 // far below the ignition band, so a conduction-heated still always distils to
 // inert Asphalt before it could ever get hot enough to read as burning.
 const BOIL_MIN = 150; // below this it's just liquid
+const GAS_BAND_TOP = 168; // top of the petroleum-gas band (lightest cut, never condenses)
 const RESIDUE_TEMP = 380; // at/above this the spent crude cracks to Asphalt
 const BURNING_TEMP = 600; // at/above this the cell is on fire (pinned ~800), not distilling
 const BOIL_CHANCE = 0.08; // per-tick chance a cell in a boiling band flashes off its cut
+
+// The petroleum-gas band (150–168) gets its own, far lower flash chance. The
+// liquid-cut chance (0.08) is per-tick, so even an 18°-wide gas band would boil
+// off ~77% of the crude that passes through it (0.92^18 ≈ 0.23) — the opposite
+// of reality, where refinery gas is only a few percent of crude. Dropping the
+// gas band to 0.003 means a slowly heated cell gives off gas only ~5% of the
+// time (1 − 0.997^18 ≈ 0.052) while the remaining ~95% sails through into the
+// liquid cuts, matching a real column's light-gas sliver.
+const GAS_BOIL_CHANCE = 0.003;
 
 // Vapour aux tags read back by petroleumvapor.ts to pick the condensate.
 const VAPOR_GASOLINE = 1;
@@ -53,13 +63,13 @@ const VAPOR_DIESEL = 3;
  *  keeps the (hot) temperature, so the fresh vapour rises hot and condenses on
  *  its own as it cools higher up. */
 function boilOff(x: number, y: number, sim: SimContext, t: number): void {
-  if (t < 168) {
+  if (t < GAS_BAND_TOP) {
     // Lightest — the gas product (LPG), never condenses. Real refinery gas is
-    // only a few percent of crude and boils off well below the liquid cuts, so
-    // this band is kept a thin low sliver (150–168): a slowly heated cell passes
-    // through it briefly on its way up, giving off a modest puff of gas rather
-    // than the bulk of the charge. Most of the crude goes on to the condensable
-    // liquid cuts below (gasoline is the widest, as in a real column).
+    // only a few percent of crude and boils off well below the liquid cuts.
+    // The band is a thin low sliver (150–168) *and* its flash chance is far
+    // lower (GAS_BOIL_CHANCE), so a slowly heated cell rarely flashes here and
+    // the bulk of the charge carries on into the condensable liquid cuts below
+    // (gasoline is the widest, as in a real column).
     sim.set(x, y, PETROLEUM_GAS.id);
     return;
   }
@@ -85,9 +95,13 @@ function updateOil(x: number, y: number, sim: SimContext): void {
       sim.set(x, y, ASPHALT.id);
       return;
     }
-    if (t >= BOIL_MIN && sim.chance(BOIL_CHANCE)) {
-      boilOff(x, y, sim, t);
-      return;
+    if (t >= BOIL_MIN) {
+      // Gas band flashes far less often than the liquid cuts (see GAS_BOIL_CHANCE).
+      const flashChance = t < GAS_BAND_TOP ? GAS_BOIL_CHANCE : BOIL_CHANCE;
+      if (sim.chance(flashChance)) {
+        boilOff(x, y, sim, t);
+        return;
+      }
     }
   }
   updateLiquid(x, y, sim);
