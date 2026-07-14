@@ -1524,8 +1524,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
   // briefly. `maxTemp` is -Infinity only when the footprint has NO in-bounds cell
   // — a body that has drifted fully out of a `void` border — in which case we
-  // freeze the reservoir (skip conduction) rather than let (-Inf − temp) poison it
-  // to NaN, which would permanently break the max() heat test if it re-entered.
+  // freeze the reservoir (skip conduction) rather than let it decay to −Infinity
+  // (then NaN the next such tick), which would permanently break the max() heat
+  // test if the body re-entered the world.
   if (Number.isFinite(exp.maxTemp)) {
     o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
   }
