@@ -6,6 +6,14 @@ import { EMPTY, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
+import {
+  DYN_SPRITE,
+  DYN_SPRITE_W,
+  DYN_SPRITE_H,
+  FUSE_CORD_COLOR,
+  FLAME_CORE_COLOR,
+  FLAME_EDGE_COLOR,
+} from './dynamiteSprite';
 import type { DrumFill } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -408,6 +416,7 @@ export class CanvasRenderer implements Renderer {
     const h = grid.height * s;
     for (const o of grid.objects) {
       if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o);
+      else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o);
       else this.rasterizeDrum(buf, w, h, s, o);
     }
   }
@@ -508,6 +517,106 @@ export class CanvasRenderer implements Renderer {
         if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
         const color = sprite[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
         if (color !== 0) buf[row + sx] = color; // 0 = transparent sprite pixel
+      }
+    }
+  }
+
+  /**
+   * Rasterize one dynamite stick: the red body sprite rotated by the capsule's
+   * angle (exactly like the drum), then — procedurally, past the top cap along the
+   * stick's long axis so it tracks the fuse end as the stick tumbles — a short fuse
+   * cord and, while the fuse is lit, a small two-tone flame. The flame is drawn
+   * here rather than baked into the sprite so it can flicker and disappear when the
+   * fuse is snuffed to a dud (o.lit === false). Nearest-neighbor, no anti-aliasing.
+   */
+  private rasterizeDynamite(
+    buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
+    o: {
+      x: number;
+      y: number;
+      angle: number;
+      halfLength: number;
+      radius: number;
+      lit: boolean;
+      fuseTicks: number;
+    },
+  ): void {
+    const halfW = o.radius; // half the stick's short (width) extent, in cells
+    const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
+    // Body: rotate-sample the stick sprite within the rotation-invariant bbox.
+    let x0 = Math.floor((o.x - halfL) * s);
+    let x1 = Math.ceil((o.x + halfL) * s);
+    let y0 = Math.floor((o.y - halfL) * s);
+    let y1 = Math.ceil((o.y + halfL) * s);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    const cos = Math.cos(o.angle);
+    const sin = Math.sin(o.angle);
+    const sxScale = DYN_SPRITE_W / (2 * halfW);
+    const syScale = DYN_SPRITE_H / (2 * halfL);
+    for (let sy = y0; sy < y1; sy++) {
+      const wy = (sy + 0.5) / s - o.y;
+      const row = sy * w;
+      for (let sx = x0; sx < x1; sx++) {
+        const wx = (sx + 0.5) / s - o.x;
+        const lx = wx * cos - wy * sin;
+        const ly = wx * sin + wy * cos;
+        const spx = DYN_SPRITE_W * 0.5 + lx * sxScale;
+        const spy = DYN_SPRITE_H * 0.5 + ly * syScale;
+        if (spx < 0 || spx >= DYN_SPRITE_W || spy < 0 || spy >= DYN_SPRITE_H) continue;
+        const color = DYN_SPRITE[(spy | 0) * DYN_SPRITE_W + (spx | 0)];
+        if (color !== 0) buf[row + sx] = color;
+      }
+    }
+    // Fuse + flame at the top cap, along the stick's (rotated) long axis. angle 0 ⇒
+    // axis (0,1) and the fuse points up (−axis); it rotates with the stick.
+    const ax = Math.sin(o.angle);
+    const ay = Math.cos(o.angle);
+    const capX = o.x - ax * halfL;
+    const capY = o.y - ay * halfL;
+    this.fillDisc(buf, w, h, s, capX - ax * 0.9, capY - ay * 0.9, 0.6, FUSE_CORD_COLOR);
+    if (o.lit) {
+      // A little size flicker tied to the countdown so the flame reads as alive.
+      const flick = ((o.fuseTicks & 3) - 1.5) * 0.12;
+      const fx = capX - ax * 2.0;
+      const fy = capY - ay * 2.0;
+      this.fillDisc(buf, w, h, s, fx, fy, 1.4 + flick, FLAME_EDGE_COLOR);
+      this.fillDisc(buf, w, h, s, fx + ax * 0.4, fy + ay * 0.4, 0.7 + flick * 0.5, FLAME_CORE_COLOR);
+    }
+  }
+
+  /** Fill overlay sub-pixels whose center (in grid coords) lies within `r` cells of
+   *  (cx,cy) with `color`. The disc primitive behind the dynamite's fuse flame. */
+  private fillDisc(
+    buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
+    cx: number,
+    cy: number,
+    r: number,
+    color: number,
+  ): void {
+    const r2 = r * r;
+    let x0 = Math.floor((cx - r) * s);
+    let x1 = Math.ceil((cx + r) * s);
+    let y0 = Math.floor((cy - r) * s);
+    let y1 = Math.ceil((cy + r) * s);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    for (let sy = y0; sy < y1; sy++) {
+      const dy = (sy + 0.5) / s - cy;
+      const row = sy * w;
+      for (let sx = x0; sx < x1; sx++) {
+        const dx = (sx + 0.5) / s - cx;
+        if (dx * dx + dy * dy <= r2) buf[row + sx] = color;
       }
     }
   }

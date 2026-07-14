@@ -73,10 +73,11 @@ export const $tool = atom<Tool>('material');
  * layer's answer to `$selectedMaterial`. The 독립 오브젝트 palette tab sets this
  * when an item is picked; PointerPainter reads it to build the right body (a
  * rubber ball, or a drum: empty 빈 드럼통, 원유 드럼통, or 산 드럼통 — the three
- * drums share one capsule and differ only in what they spill when destroyed).
+ * drums share one capsule and differ only in what they spill when destroyed —
+ * or a 다이너마이트 stick, whose lit fuse counts down to a two-zone blast).
  * See MaterialPalette and PointerPainter.
  */
-export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum';
+export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum' | 'dynamite';
 export const $selectedObject = atom<ObjectKind>('ball');
 
 /**

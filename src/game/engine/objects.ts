@@ -3,11 +3,13 @@ import { EMPTY, Phase } from './types';
 import { AMBIENT_TEMP } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
-import { BLAST } from '../materials/blast';
+import { BLAST, detonate } from '../materials/blast';
 import { MOLTEN_METAL } from '../materials/moltenmetal';
 import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
+import { CO2 } from '../materials/co2';
+import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -166,9 +168,83 @@ export interface SimCapsule {
   held?: boolean;
 }
 
-/** Anything in the object layer: circles (balls) and capsules (drums) share one
- *  array on the Grid, discriminated by `kind`. */
-export type SimBody = SimObject | SimCapsule;
+/**
+ * A stick of dynamite — a capsule body (it shares the drum's segment+radius
+ * physics and 1-axis rotation, so it tumbles and rolls) whose defining trait is a
+ * *lit fuse* at one end (the tip). The fuse is a countdown: each tick `fuseTicks`
+ * drops, and at zero the stick detonates into the two-zone blast (a strong, tight
+ * core + a weak, wide 충격파 — see detonateDynamite). The flame is drawn at the
+ * tip and interacts with whatever it touches: ordinary liquid doesn't put it out
+ * (it heats/boils the liquid a little instead), but a stronger extinguisher (CO₂,
+ * Liquid N₂) or being buried in a non-flammable powder snuffs it to a dud
+ * (`lit=false` — no timed explosion, though external heat/blast can still cook it
+ * off). Carries no drum `fill`/`state`; its only extra state is the fuse.
+ */
+export interface SimDynamite {
+  kind: 'dynamite';
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation of the long axis in radians (0 = upright, fuse pointing up). */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque. */
+  angularVelocity: number;
+  /** Half the straight segment between the two round caps (cells). */
+  halfLength: number;
+  /** Cap radius (cells). */
+  radius: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia (see SimCapsule). */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — a stick barely bounces. */
+  restitution: number;
+  /** Consecutive ticks the footprint has sampled above the autoignite threshold,
+   *  so a stray hot pixel doesn't cook it off — only sustained heat does. */
+  heatTicks: number;
+  /** The stick's own heat reservoir (°) — see SimObject.temp. The 가열 brush writes
+   *  it, so heating a dynamite (even in mid-air) past the autoignite point sets it
+   *  off. */
+  temp: number;
+  /** Whether the fuse is still burning. True from creation; a stronger extinguisher
+   *  or a smothering powder flips it false (a dud), which stops the countdown. */
+  lit: boolean;
+  /** Ticks of fuse left before it detonates (only counts down while `lit`). */
+  fuseTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its physics
+   *  and fuse/trigger evaluation are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
+/** Anything in the object layer: circles (balls) and capsules (drums, dynamite)
+ *  share one array on the Grid, discriminated by `kind`. */
+export type SimBody = SimObject | SimCapsule | SimDynamite;
+
+/**
+ * The physics-only fields every capsule body shares — a medial segment of
+ * half-length `halfLength` with cap radius `radius`, plus 1-axis rotation. The
+ * capsule collision / buoyancy / integration routines (capsuleEnds,
+ * deepestCapsuleContact, resolveCapsuleCollision, sampleMediumCapsule, stepCapsule)
+ * operate through this structural type, so both the drum and the dynamite reuse
+ * them with no per-kind branch — only the sprite and the destroy/trigger rules
+ * differ by kind. SimCapsule and SimDynamite are both assignable to it.
+ */
+type CapsuleBody = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  angularVelocity: number;
+  halfLength: number;
+  radius: number;
+  mass: number;
+  momentOfInertia: number;
+  restitution: number;
+};
 
 /**
  * Blue-drum defaults (the 빈 파란 드럼통). As an *empty* (hollow) drum its
@@ -234,6 +310,94 @@ export function createDrum(
     heatTicks: 0,
     temp: AMBIENT_TEMP,
     fill,
+  };
+}
+
+/**
+ * Dynamite defaults. A slim stick (thinner and a touch shorter than the drum, so
+ * it reads apart at a glance) that's *denser than Water* (3), so — unlike the
+ * hollow drums — it sinks, and its fuse keeps burning as it goes down (물 안에서는
+ * 안 꺼짐). Barely bounces. The fuse is a visible countdown of DYNAMITE_FUSE_TICKS.
+ */
+export const DYNAMITE_RADIUS = 2;
+export const DYNAMITE_HALF_LENGTH = 4;
+export const DYNAMITE_DENSITY = 3.5;
+export const DYNAMITE_RESTITUTION = 0.2;
+/** Ticks the lit fuse burns before the stick detonates — long enough to read as a
+ *  crawling countdown and to set up chains, short enough to stay punchy. */
+export const DYNAMITE_FUSE_TICKS = 140;
+/** Footprint temperature (°) at/above which an external heat source cooks the
+ *  stick off (autoignition) — matches TNT, so Lava/Blue Flame/a sustained fire or
+ *  the 가열 brush detonates it whether or not the fuse is still lit. */
+export const DYNAMITE_AUTOIGNITE_TEMP = 240;
+/** Sustained ticks above the autoignite temp before it goes off — a brief brush
+ *  with heat (a passing spark, flung debris) doesn't, only real fire/lava does. */
+const DYNAMITE_HEAT_TICKS = 3;
+
+// The two-zone detonation (see detonateDynamite): a strong, tight core that
+// craters, wrapped in a weak, wide 충격파 that only shoves loose matter. Both
+// reaches pass through blast.ts's global 2/3 scale, so the actual radii are ~2/3
+// of these.
+/** Core crater reach — full destructive power, small radius (강한 폭발 / 작은 반경). */
+const DYNAMITE_CORE_REACH = 9;
+/** Core destructive power — high enough to level any ordinary matter within the
+ *  core (matches blast.ts's DEFAULT_DESTRUCTIVE_POWER), forced explicitly so the
+ *  core stays strong even if the stick happens to detonate on an explosive. */
+const DYNAMITE_CORE_POWER = 100_000;
+/** Shockwave reach — a wide ring (넓은 반경) that shoves sand/water/objects outward. */
+const DYNAMITE_WAVE_REACH = 24;
+/** Shockwave power — Gunpowder-weak (파괴력 6): heaves loose matter aside but can't
+ *  crater tough solids, which shadow it (충격파 = Gunpowder 같은 약한 폭발). */
+const DYNAMITE_WAVE_POWER = 6;
+
+// Fuse-tip interactions with the cell it touches.
+/** Cell temperature (°) at/below which the surroundings snuff the fuse even
+ *  without a named extinguisher — a cryogenic pocket (an LN₂ pool, dry-ice fog).
+ *  Well below Water's ambient 20°, so plain water never puts the fuse out. */
+const FUSE_SNUFF_TEMP = -20;
+/** Hot floor (°) the flame holds the liquid it touches at, just past Water's 100°
+ *  boil so a submerged fuse gently steams its immediate surroundings (살짝 끓게).
+ *  Held as a *floor* (not a one-shot nudge) each tick so it survives the heat-
+ *  diffusion pass bleeding it into the surrounding cold liquid — otherwise a lone
+ *  warmed cell averages back below boiling before it can steam. Applied to the tip
+ *  cell and its four orthogonal neighbours; the cluster's centre keeps its heat
+ *  (its neighbours are heated too) and boils, while the arms shed theirs, so the
+ *  boil stays a small wisp. Well under the stick's 240° autoignition (and the tip
+ *  sits cells away from the body's footprint), so it never cooks the stick itself. */
+const FUSE_BOIL_FLOOR = 130;
+
+/** Build a lit stick of dynamite centered at (x,y), at rest and upright (fuse up).
+ *  Mass and moment of inertia follow the same capsule formulas as the drum. */
+export function createDynamite(
+  x: number,
+  y: number,
+  radius = DYNAMITE_RADIUS,
+  halfLength = DYNAMITE_HALF_LENGTH,
+): SimDynamite {
+  const r = radius > 1 ? radius : 1;
+  const l = halfLength > 0 ? halfLength : 0;
+  const area = 4 * r * l + Math.PI * r * r;
+  const mass = DYNAMITE_DENSITY * area;
+  const w = 2 * r;
+  const h = 2 * (l + r);
+  const momentOfInertia = (mass * (w * w + h * h)) / 12;
+  return {
+    kind: 'dynamite',
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: 0,
+    halfLength: l,
+    radius: r,
+    mass,
+    momentOfInertia,
+    restitution: DYNAMITE_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    lit: true,
+    fuseTicks: DYNAMITE_FUSE_TICKS,
   };
 }
 
@@ -691,12 +855,12 @@ const ROLL_RESISTANCE = 0.04;
 
 /** The capsule's long-axis unit vector for orientation `angle`. angle 0 ⇒ (0,1),
  *  i.e. upright (long axis vertical), matching the drum sprite. */
-function capsuleAxis(o: SimCapsule): [number, number] {
+function capsuleAxis(o: CapsuleBody): [number, number] {
   return [Math.sin(o.angle), Math.cos(o.angle)];
 }
 
 /** The two segment endpoints A,B = center ∓ halfLength · axis. */
-function capsuleEnds(o: SimCapsule): [number, number, number, number] {
+function capsuleEnds(o: CapsuleBody): [number, number, number, number] {
   const [ux, uy] = capsuleAxis(o);
   const hx = o.halfLength * ux;
   const hy = o.halfLength * uy;
@@ -841,7 +1005,7 @@ interface CapsuleContact {
  * the contact point that gives the torque lever arm. The same buried-internal-
  * face culling as the circle keeps a drum from rattling across a flat floor.
  */
-function deepestCapsuleContact(o: SimCapsule, ctx: SimContext): CapsuleContact | null {
+function deepestCapsuleContact(o: CapsuleBody, ctx: SimContext): CapsuleContact | null {
   const r = o.radius;
   const [ax, ay, bx, by] = capsuleEnds(o);
   const x0 = Math.floor(Math.min(ax, bx) - r);
@@ -950,7 +1114,7 @@ function deepestCapsuleContact(o: SimCapsule, ctx: SimContext): CapsuleContact |
  * capsule attempt lacked. Returns true if any contact was resolved (grounded),
  * so the caller can apply rolling resistance.
  */
-function resolveCapsuleCollision(o: SimCapsule, ctx: SimContext): boolean {
+function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
   const invMass = 1 / o.mass;
   const invI = 1 / o.momentOfInertia;
   let grounded = false;
@@ -1003,7 +1167,7 @@ function resolveCapsuleCollision(o: SimCapsule, ctx: SimContext): boolean {
  * disc footprint), bucketed for buoyancy (liquid density + submerged count) and
  * granular penetration (powder count), plus the total footprint. Read-only.
  */
-function sampleMediumCapsule(o: SimCapsule, ctx: SimContext): {
+function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
   liquidDensity: number;
   liquidCells: number;
   powderCells: number;
@@ -1217,7 +1381,7 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
  * collisions and the terminal-state triggers (blast/heat/crush) are evaluated
  * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
  */
-function stepCapsule(o: SimCapsule, ctx: SimContext, ax: number, ay: number, s: number): void {
+function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s: number): void {
   o.vx += ax;
   o.vy += ay;
   const ms = sampleMediumCapsule(o, ctx);
@@ -1393,7 +1557,8 @@ function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
-  if (o.kind === 'drum') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
+  // Any capsule body (drum or dynamite) spins; a ball has no rotation.
+  if (o.kind !== 'ball') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -1443,8 +1608,9 @@ function resolvePair(a: SimBody, b: SimBody): void {
   const ray = py - a.y;
   const rbx = px - b.x;
   const rby = py - b.y;
-  const wA = a.kind === 'drum' ? a.angularVelocity : 0;
-  const wB = b.kind === 'drum' ? b.angularVelocity : 0;
+  // Any capsule body (drum or dynamite) carries spin; a ball's ω is always 0.
+  const wA = a.kind !== 'ball' ? a.angularVelocity : 0;
+  const wB = b.kind !== 'ball' ? b.angularVelocity : 0;
   // Contact velocities (v + ω×r, ω×r = ω·(−r_y, r_x)), relative B−A.
   const vrx = b.vx - wB * rby - (a.vx - wA * ray);
   const vry = b.vy + wB * rbx - (a.vy + wA * rax);
@@ -1460,14 +1626,14 @@ function resolvePair(a: SimBody, b: SimBody): void {
   a.vy -= jn * ny * imA;
   b.vx += jn * nx * imB;
   b.vy += jn * ny * imB;
-  if (a.kind === 'drum') a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
-  if (b.kind === 'drum') b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
+  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
+  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
   // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
   // relative velocity — the torque source that lets one body spin another.
   const tx = -ny;
   const ty = nx;
-  const wA2 = a.kind === 'drum' ? a.angularVelocity : 0;
-  const wB2 = b.kind === 'drum' ? b.angularVelocity : 0;
+  const wA2 = a.kind !== 'ball' ? a.angularVelocity : 0;
+  const wB2 = b.kind !== 'ball' ? b.angularVelocity : 0;
   const vrx2 = b.vx - wB2 * rby - (a.vx - wA2 * ray);
   const vry2 = b.vy + wB2 * rbx - (a.vy + wA2 * rax);
   const vt = vrx2 * tx + vry2 * ty;
@@ -1482,8 +1648,8 @@ function resolvePair(a: SimBody, b: SimBody): void {
   a.vy -= jt * ty * imA;
   b.vx += jt * tx * imB;
   b.vy += jt * ty * imB;
-  if (a.kind === 'drum') a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
-  if (b.kind === 'drum') b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
+  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
+  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
 }
 
 /** Restitution of any body (ball or drum). */
@@ -1513,14 +1679,116 @@ function resolveObjectPairs(objects: SimBody[]): void {
  * by heat); a rubber ball leaves nothing. Returns true to KEEP the body, false to
  * drop it (byproducts, if any, already spawned).
  */
+/**
+ * Detonate a stick of dynamite at its current cell — the two-zone blast (기획): a
+ * strong, tight *core* that craters everything close (강한 폭발 / 작은 반경), fired
+ * first, then a weak, wide *shockwave* (충격파) that only shoves loose matter
+ * (sand/water/objects) radially outward and is shadowed by solids it can't crack
+ * (넓은 반경 / Gunpowder 같은 약한 폭발). Both reaches pass through blast.ts's global
+ * 2/3 scale. The power overrides keep the core strong and the wave weak regardless
+ * of what the stick sits on (so detonating on a charge pile can't weaken the core).
+ * A stick drifted out of a `void` world just vanishes with no blast.
+ */
+function detonateDynamite(o: SimDynamite, ctx: SimContext): void {
+  const cx = Math.floor(o.x);
+  const cy = Math.floor(o.y);
+  if (!ctx.inBounds(cx, cy)) return;
+  detonate(ctx, cx, cy, 0, {
+    reach: DYNAMITE_CORE_REACH,
+    power: DYNAMITE_CORE_POWER,
+    pressure: false, // the wide wave below is this blast's concussion
+  });
+  detonate(ctx, cx, cy, 0, {
+    reach: DYNAMITE_WAVE_REACH,
+    power: DYNAMITE_WAVE_POWER,
+    pressure: false,
+  });
+}
+
+/** Does the material/temperature at the fuse tip snuff a burning fuse? A stronger
+ *  extinguisher (CO₂, Liquid N₂), a cryogenic pocket (an LN₂ pool, dry-ice fog),
+ *  or being buried under a non-flammable powder puts it out; ordinary water does
+ *  NOT (warm, and not a listed extinguisher) — the flame heats it instead (see
+ *  heatFuseLiquid). */
+function fuseSnuffed(id: number, temp: number): boolean {
+  if (id === CO2.id || id === LIQUID_NITROGEN.id) return true;
+  if (temp <= FUSE_SNUFF_TEMP) return true;
+  if (id !== EMPTY) {
+    const m = getMaterial(id);
+    if (m.phase === Phase.Powder && m.combustible !== true) return true;
+  }
+  return false;
+}
+
+/** Hold one cell of liquid at the boiling-hot fuse floor — the heat the flame
+ *  gives off into the liquid it touches (살짝 끓게). No-op off a non-frozen liquid,
+ *  and never cools a cell that's already hotter (max, not set). */
+function heatFuseLiquid(ctx: SimContext, x: number, y: number): void {
+  if (!ctx.inBounds(x, y)) return;
+  const id = ctx.get(x, y);
+  if (id === EMPTY) return;
+  if (getMaterial(id).phase !== Phase.Liquid || ctx.isFrozen(x, y)) return;
+  if (ctx.getTemp(x, y) < FUSE_BOIL_FLOOR) ctx.setTemp(x, y, FUSE_BOIL_FLOOR);
+}
+
+/**
+ * Per-tick fuse + heat evaluation for a dynamite stick, after this tick's heat
+ * conduction (called from evaluateTriggers with the resolved `heat`). Order:
+ *   1. External heat cooks it off (autoignition), time-gated so only sustained
+ *      fire/lava/brush heat — not a stray hot pixel — sets it off; fires even for
+ *      a snuffed dud.
+ *   2. The flame at the tip meets the cell it touches: a stronger extinguisher or
+ *      a smothering powder snuffs the fuse to a dud (stops the countdown); an
+ *      ordinary liquid doesn't put it out — the flame heats/boils it a little.
+ *   3. The lit fuse burns down; at zero the stick detonates.
+ * Returns true to keep the stick, false once it has detonated.
+ */
+function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
+  if (heat >= DYNAMITE_AUTOIGNITE_TEMP) {
+    o.heatTicks++;
+    if (o.heatTicks >= DYNAMITE_HEAT_TICKS) {
+      detonateDynamite(o, ctx);
+      return false;
+    }
+  } else if (o.heatTicks > 0) {
+    o.heatTicks--;
+  }
+  // The flame sits just past the top cap along the stick's long axis (which
+  // rotates as the stick tumbles), so it tracks the fuse end at any orientation.
+  const [ux, uy] = capsuleAxis(o);
+  const reach = o.halfLength + o.radius + 0.5;
+  const tcx = Math.floor(o.x - ux * reach);
+  const tcy = Math.floor(o.y - uy * reach);
+  if (ctx.inBounds(tcx, tcy)) {
+    if (fuseSnuffed(ctx.get(tcx, tcy), ctx.getTemp(tcx, tcy))) {
+      o.lit = false; // a dud — no timed explosion (external heat can still cook it off)
+    } else if (o.lit) {
+      // Boil the tip cell and its orthogonal neighbours if they're liquid (살짝 끓게).
+      heatFuseLiquid(ctx, tcx, tcy);
+      heatFuseLiquid(ctx, tcx + 1, tcy);
+      heatFuseLiquid(ctx, tcx - 1, tcy);
+      heatFuseLiquid(ctx, tcx, tcy + 1);
+      heatFuseLiquid(ctx, tcx, tcy - 1);
+    }
+  }
+  if (o.lit && --o.fuseTicks <= 0) {
+    detonateDynamite(o, ctx);
+    return false;
+  }
+  return true;
+}
+
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
  *  scattered Metal Powder and, if it was carrying anything, gushes its contents
- *  (원유/산) across the wreckage; a rubber ball leaves nothing behind. */
+ *  (원유/산) across the wreckage; a stick of dynamite detonates (a knock or a
+ *  passing blast sets it off — chain reactions); a rubber ball leaves nothing. */
 function destroyByproduct(o: SimBody, ctx: SimContext): void {
   if (o.kind === 'drum') {
     spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
     spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
     o.state = 'destroyed';
+  } else if (o.kind === 'dynamite') {
+    detonateDynamite(o, ctx);
   }
 }
 
@@ -1555,6 +1823,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // now melt/burn a body floating over empty air the cell heat brush can't warm.
   // (An out-of-world body has maxTemp −Inf, so this picks its finite reservoir.)
   const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
+  // A dynamite stick has its own terminal logic (fuse countdown + heat cook-off +
+  // tip interactions); it never melts or burns away like a drum/ball.
+  if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
