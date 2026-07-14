@@ -27,7 +27,14 @@ import { Phase } from '../engine/types';
 import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
-import { createRubberBall, createDrum, createDynamite, pickBody, distanceToBody } from '../engine/objects';
+import {
+  createRubberBall,
+  createDrum,
+  createDynamite,
+  pickBody,
+  distanceToBody,
+  RUBBER_BALL_SPAWN_SCATTER,
+} from '../engine/objects';
 import type { SimBody, DrumFill } from '../engine/objects';
 
 /**
@@ -344,7 +351,14 @@ export class PointerPainter {
       this.grid.objects.push(createDynamite(cx + 0.5, cy + 0.5));
     } else {
       const r = Math.max(2, $brushSize.get());
-      this.grid.objects.push(createRubberBall(cx + 0.5, cy + 0.5, r));
+      // Nudge each spawn a random sliver left/right (수직 쌓임 방지): clicking
+      // repeatedly at one spot otherwise drops every ball on the same column with
+      // no velocity, balancing them into a straight tower. Off-centre, a new ball
+      // lands on the shoulder of the pile below and rolls off to spread into a
+      // heap. See RUBBER_BALL_SPAWN_SCATTER for why this is a position offset
+      // rather than a starting velocity.
+      const jitter = (Math.random() * 2 - 1) * RUBBER_BALL_SPAWN_SCATTER * r;
+      this.grid.objects.push(createRubberBall(cx + 0.5 + jitter, cy + 0.5, r));
     }
   }
 
