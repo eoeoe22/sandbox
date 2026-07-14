@@ -22,10 +22,11 @@ export const DRUM_SPRITE_W = 24;
 export const DRUM_SPRITE_H = 32;
 
 const BLACK = rgb(0x00, 0x00, 0x00);
-/** Body color per fill (see DrumFill). Blue = empty, brown = oil, green = acid. */
+/** Body color per fill (see DrumFill). Blue = empty, near-black = crude oil
+ *  (원유 드럼통 색상 검은색 계열 — crude oil itself reads black, not brown), green = acid. */
 const BODY_COLOR: Record<DrumFill, number> = {
   empty: rgb(0x25, 0x63, 0xeb),
-  oil: rgb(0x7a, 0x54, 0x30),
+  oil: rgb(0x33, 0x2c, 0x27),
   acid: rgb(0x86, 0xc2, 0x3a),
 };
 

@@ -166,5 +166,6 @@ export const NAPALM_GEL = register({
   // packed flight state; init 0 → a stray blob (aux 0, life 0) congeals and
   // burns where it sits rather than flying off with garbage velocity.
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateNapalmGel,
 });

@@ -187,6 +187,21 @@ export interface Material {
     conductivity?: number;
   };
   /**
+   * `temp` on this material holds packed non-thermal bookkeeping (flight
+   * velocity/life for Ember/Debris/Bomblet/Napalm Gel/Heat Ray, flash life for
+   * Blast — see ballistic.ts), not a real degree reading. `conductivity: 0` alone
+   * only stops the heat pass from touching it; it doesn't stop other code from
+   * misreading the packed number as an actual temperature. So any consumer that
+   * wants a genuine ambient reading — as opposed to the material's own `update`,
+   * which reads its packed state back on purpose — must skip a cell whose material
+   * sets this. Current consumers that do: the free-object heat-exposure scan
+   * (engine/objects.ts scanBodyExposure), the 돋보기 inspect readout
+   * (engine/brushTools.ts inspectCells), and the heat-overlay thermal camera
+   * (render/CanvasRenderer.ts). This flag supersedes the older `conductivity === 0`
+   * proxy some code (heatray.ts scorch) used for the same "packed, not real" test.
+   */
+  packedTemp?: boolean;
+  /**
    * Optional temperature → color ramp for the renderer. The cell is drawn
    * interpolated from `cool` (at temperature `min`) up to the material's base
    * `color` (at `max` and above), so a hot material like Lava visibly darkens

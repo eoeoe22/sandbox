@@ -17,12 +17,18 @@ export const CELL_PX = 4 / 1.5;
  * Upper bound on total cells. The simulation runs on the main thread at
  * TICK_HZ, so an unbounded 4K sandbox would blow the frame budget. When the
  * derived grid would exceed this, the effective cell size is scaled up
- * uniformly (coarser cells, same aspect) to stay under budget. Sized so a
- * full 1080p viewport (~292k cells at the 1.5×-resolution cell size) renders
- * at the true cell size uncapped; only larger screens (QHD/4K fullscreen) get
- * coarsened to protect the tick.
+ * uniformly (coarser cells, same aspect) to stay under budget.
+ *
+ * Raised from the original 292.5k (which covered only ~1080p uncapped) to 600k:
+ * the old bound coarsened the cells — visibly "zooming in" the sandbox — on any
+ * viewport past 1080p, including a 2560×1440 QHD monitor (~518k) and a
+ * 2960×1440 tablet whose browser reports devicePixelRatio ≈ 1 (~556k CSS cells).
+ * 600k renders all of those at the true fine cell size; only genuinely huge
+ * surfaces (4K/5K fullscreen at low dpr, >600k cells) still coarsen to protect
+ * the tick. If a device does drop frames at this resolution, the 해상도 slider
+ * (CELL_SCALES) coarsens the grid back down without touching this cap.
  */
-export const MAX_CELLS = 292_500;
+export const MAX_CELLS = 600_000;
 
 /** Smallest grid dimension, so a tiny drag still leaves a usable sandbox. */
 export const MIN_GRID_SIDE = 16;

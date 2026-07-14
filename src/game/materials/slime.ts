@@ -140,6 +140,12 @@ export const SLIME = register({
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
   // (high coefficient of restitution) before it settles (see debris.ts 탄성).
   elasticity: 0.92,
+  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): a thick, non-ionic goo,
+  // the poorest conductor in the roster, so a pulse creeps only a cell or two in
+  // before dying — but current that actually passes through it is what seeds the
+  // blob's own electric-dissolve front (전기전도성 추가; the goo's established
+  // weakness to electricity, now a genuine side effect of conducting it).
+  conductive: true,
   thermal: { conductivity: 0.2 },
   update: updateSlime,
 });

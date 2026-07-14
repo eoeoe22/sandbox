@@ -82,5 +82,6 @@ export const BOMBLET = register({
   density: 1,
   category: '폭발',
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateBomblet,
 });

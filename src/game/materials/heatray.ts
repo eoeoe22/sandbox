@@ -140,9 +140,13 @@ function bounce(sim: SimContext, cx: number, cy: number, vx: number, vy: number)
 
 /** The beam's ultra-high temperature, delivered at the impact point: splash
  *  heat into every non-empty neighbor of the struck cell so near-misses melt,
- *  boil and ignite. Cells whose conductivity is 0 are skipped — for those
- *  (Blast, Ember, a sibling ray) `temp` is packed private state, not heat,
- *  and adding to it would corrupt them. */
+ *  boil and ignite. Two kinds of cell are skipped: a `packedTemp` material
+ *  (Blast, Ember, a sibling ray) stores packed flight/life state in `temp`, not
+ *  heat, so adding to it would corrupt the packed value; and a zero-conductivity
+ *  insulator (Wall, Aerogel) sits outside the heat system and shouldn't be warmed
+ *  by a splash. (Every packedTemp material also has conductivity 0 today, so the
+ *  flag is redundant now — but it keeps this correct if a packed material ever
+ *  carries real conductivity, the case Material.packedTemp exists to cover.) */
 function scorch(sim: SimContext, x: number, y: number): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -150,7 +154,8 @@ function scorch(sim: SimContext, x: number, y: number): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === EMPTY) continue;
-    if (getMaterial(nid).thermal?.conductivity === 0) continue;
+    const m = getMaterial(nid);
+    if (m.packedTemp || m.thermal?.conductivity === 0) continue;
     sim.setTemp(nx, ny, sim.getTemp(nx, ny) + SCORCH_HEAT);
   }
 }
@@ -295,5 +300,6 @@ export const HEAT_RAY = register({
   // `temp` alone so it can hold the packed life+direction state. init 0
   // decodes to a dead ray, so one placed by hand dies quietly on its first turn.
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateHeatRay,
 });

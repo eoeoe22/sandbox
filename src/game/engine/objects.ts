@@ -8,6 +8,8 @@ import { MOLTEN_METAL } from '../materials/moltenmetal';
 import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
+import { ANTIMATTER } from '../materials/antimatter';
+import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
@@ -364,15 +366,19 @@ const DYNAMITE_HEAT_TICKS = 5;
 // craters, wrapped in a weak, wide 충격파 that only shoves loose matter. Both
 // reaches pass through blast.ts's global 2/3 scale, so the actual radii are ~2/3
 // of these.
-/** Core crater reach — full destructive power, small radius (강한 폭발 / 작은 반경).
- *  Bumped ×1.5 from the original 9 (기획: 폭발력 1.5배). */
-const DYNAMITE_CORE_REACH = 13.5;
+/** Core crater reach — full destructive power (강한 폭발). Widened from 13.5 to 24
+ *  (강한 폭발 부분 반경 확대): the full-destruction crater now fills two-thirds of the
+ *  total blast radius, so a stick levels a much bigger area up close while the
+ *  outer shockwave (below) — the *total* radius — is left unchanged. Still clearly
+ *  inside DYNAMITE_WAVE_REACH, so a weak-shockwave ring remains beyond the crater. */
+const DYNAMITE_CORE_REACH = 24;
 /** Core destructive power — high enough to level any ordinary matter within the
  *  core (matches blast.ts's DEFAULT_DESTRUCTIVE_POWER), forced explicitly so the
  *  core stays strong even if the stick happens to detonate on an explosive. */
 const DYNAMITE_CORE_POWER = 100_000;
 /** Shockwave reach — a wide ring (넓은 반경) that shoves sand/water/objects outward.
- *  Bumped ×1.5 from the original 24 (기획: 폭발력 1.5배). */
+ *  This is the dynamite's *total* blast radius and is deliberately unchanged (폭발
+ *  반경 유지); only the strong core inside it was widened. */
 const DYNAMITE_WAVE_REACH = 36;
 /** Shockwave power — Gunpowder-weak (파괴력 6): heaves loose matter aside but can't
  *  crater tough solids, which shadow it (충격파 = Gunpowder 같은 약한 폭발). */
@@ -507,6 +513,11 @@ function isSolidCell(x: number, y: number, ctx: SimContext): boolean {
   if (!ctx.inBounds(x, y)) return ctx.borderMode === 'wall';
   const id = ctx.get(x, y);
   if (id === EMPTY) return false;
+  // A Spark is a Phase.Solid material only so it sits still on a wire for its one
+  // tick of life — it is not a real surface. Objects pass straight through it
+  // (오브젝트가 spark 파티클과 물리적으로 상호작용하지 않게: 통과) instead of
+  // bouncing off a flickering electric dot as it races along a conductor.
+  if (id === SPARK.id) return false;
   const m = getMaterial(id);
   if (m.isWall || m.phase === Phase.Solid) return true;
   return ctx.isFrozen(x, y); // a frozen liquid acts solid
@@ -891,11 +902,15 @@ function capsuleAxis(o: CapsuleBody): [number, number] {
   return [Math.sin(o.angle), Math.cos(o.angle)];
 }
 
-/** The two segment endpoints A,B = center ∓ halfLength · axis. */
-function capsuleEnds(o: CapsuleBody): [number, number, number, number] {
+/** The two segment endpoints A,B = center ∓ halfLength · axis. `scale` (default 1)
+ *  optionally lengthens the segment about its center — used by spawnFillSpill to
+ *  widen the flood zone past the drum's real shell without a second copy of the
+ *  axis math. */
+function capsuleEnds(o: CapsuleBody, scale = 1): [number, number, number, number] {
   const [ux, uy] = capsuleAxis(o);
-  const hx = o.halfLength * ux;
-  const hy = o.halfLength * uy;
+  const h = o.halfLength * scale;
+  const hx = h * ux;
+  const hy = h * uy;
   return [o.x - hx, o.y - hy, o.x + hx, o.y + hy];
 }
 
@@ -1274,8 +1289,26 @@ function scanBodyExposure(
       // container's wall border bounces a body off rather than crushing it, so a
       // body resting against the world edge must not read as entombed.
       if (!ctx.inBounds(cx, cy)) continue;
-      if (isSolidCell(cx, cy, ctx)) solid++;
-      if (ctx.get(cx, cy) === BLAST.id) blast = true;
+      const id = ctx.get(cx, cy);
+      const m = id === EMPTY ? null : getMaterial(id);
+      // Crush counts only *true* solid — a real Solid-phase material or the world
+      // Wall, NOT a merely-frozen liquid (끼임 파괴 로직은 고체에만 적용). Collision
+      // (isSolidCell) treats a frozen puddle as solid footing, but a body sitting
+      // in icy slush at/below its freeze point isn't entombed the way one poured
+      // full of Stone is, so it must never read as crushed for it.
+      if (m !== null && (m.isWall === true || m.phase === Phase.Solid)) solid++;
+      if (id === BLAST.id) blast = true;
+      // Materials whose `temp` holds packed non-thermal bookkeeping (a flying
+      // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
+      // read as a real degree reading here — a water splash's Debris droplets
+      // passing through a floating ball's footprint carry garbage "temperatures"
+      // in the tens of thousands that would otherwise instantly "burn" it away
+      // (물에 빠지면 공이 사라지는 문제). Skip them; a cell holding only such
+      // material contributes nothing to maxTemp, same as an empty footprint cell —
+      // so a footprint that is ALL packed cells yields maxTemp −Infinity, which
+      // evaluateTriggers already handles like an out-of-world body (freeze the
+      // reservoir, no conduction).
+      if (m !== null && m.packedTemp) continue;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
     }
@@ -1363,6 +1396,15 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
  *  liquid, so it gushes a proper puddle (쏟아짐), not a scatter. */
 const FILL_SPILL_CHANCE = 0.7;
 
+/** Radius/half-length scale applied only to the flooded area (spawnFillSpill),
+ *  not to the drum's own physical shell — a real 55-gallon drum holds far more
+ *  liquid than its own silhouette can display a cell of, so a full drum gushes
+ *  past where it stood rather than being capped by its own footprint. Area scales
+ *  with the square of a uniform linear scale (4rl + πr²), so √2 doubles the
+ *  flooded area and, at the same FILL_SPILL_CHANCE, doubles the expected liquid
+ *  spilled (내용물이 있는 원유/산 양 두배 증가) versus flooding just the shell. */
+const FILL_SPILL_AREA_SCALE = Math.SQRT2;
+
 /** The liquid a filled drum pours out when destroyed, or null for an empty drum
  *  (which spills nothing). 원유 드럼통 → Crude Oil, 산 드럼통 → Acid. */
 function fillSpillId(fill: DrumFill): number | null {
@@ -1384,9 +1426,11 @@ function fillSpillId(fill: DrumFill): number | null {
 function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
   const id = fillSpillId(o.fill);
   if (id === null) return;
-  const r = o.radius;
+  const r = o.radius * FILL_SPILL_AREA_SCALE;
   const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
+  // Scaled capsule ends (capsuleEnds with a >1 scale) — only the flood zone widens,
+  // never the drum's real collision shell.
+  const [ax, ay, bx, by] = capsuleEnds(o, FILL_SPILL_AREA_SCALE);
   const x0 = Math.floor(Math.min(ax, bx) - r);
   const x1 = Math.ceil(Math.max(ax, bx) + r);
   const y0 = Math.floor(Math.min(ay, by) - r);
@@ -1518,11 +1562,22 @@ const CRUSH_SOLID_FRAC = 0.6;
  *  snapping to ambient in one tick. Feel knob. */
 const OBJECT_HEAT_CONDUCTION = 0.08;
 
-/** Quick test: does a shockwave flash cell overlap the body's footprint *right
- *  now*? A direct hit is captured at the tick's start (before knockback can move
- *  the body out of the blast) so a body engulfed by an explosion is reliably
- *  destroyed rather than yeeted clear of the destroy check. Footprint-only scan. */
-function footprintHasBlast(o: SimBody, ctx: SimContext): boolean {
+/**
+ * Scan the body's footprint once for the two instant-destruction contacts
+ * captured at the tick's *start* (before knockback can move the body clear of the
+ * check): a shockwave Blast flash cell overlapping it (직격 — an explosion swept
+ * over it), and an Antimatter grain touching it (접촉). Reports which were found.
+ *
+ * Antimatter is *consumed* on contact — each touching grain is annihilated to
+ * EMPTY (a body is far bigger than one grain, so contact destroys the whole body
+ * while every touched grain dies with it, instead of antimatter.ts's one-for-one
+ * swap; Antimatter 접촉시 모든 오브젝트 파괴, no object is antimatter-proof). So this
+ * scan mutates the grid, unconditionally over the whole footprint — a body that a
+ * Blast also dooms this tick still annihilates its touching grains. Blast cells
+ * are left alone (blast.ts expires them). One shared footprint pass rather than
+ * two so the bounding-box / culling geometry can't drift between them.
+ */
+function footprintHazards(o: SimBody, ctx: SimContext): { blast: boolean; antimatter: boolean } {
   const r = bodyRadius(o);
   const r2 = r * r;
   const [ax, ay, bx, by] = bodyEnds(o);
@@ -1530,17 +1585,26 @@ function footprintHasBlast(o: SimBody, ctx: SimContext): boolean {
   const x1 = Math.ceil(Math.max(ax, bx) + r);
   const y0 = Math.floor(Math.min(ay, by) - r);
   const y1 = Math.ceil(Math.max(ay, by) + r);
+  let blast = false;
+  let antimatter = false;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      if (ctx.get(cx, cy) !== BLAST.id) continue;
+      const id = ctx.get(cx, cy);
+      if (id !== BLAST.id && id !== ANTIMATTER.id) continue;
       const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
-      if (dx * dx + dy * dy <= r2) return true;
+      if (dx * dx + dy * dy > r2) continue;
+      if (id === BLAST.id) {
+        blast = true;
+      } else {
+        antimatter = true;
+        ctx.set(cx, cy, EMPTY); // grain consumed in the annihilation
+      }
     }
   }
-  return false;
+  return { blast, antimatter };
 }
 
 /**
@@ -1958,7 +2022,10 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
     if (o.held) continue;
-    if (footprintHasBlast(o, ctx)) {
+    // One footprint pass captures a direct Blast hit and consumes any touching
+    // Antimatter grain; either dooms the body this tick (see footprintHazards).
+    const hz = footprintHazards(o, ctx);
+    if (hz.blast || hz.antimatter) {
       doomed.add(o); // destroyed below; don't bother moving it
       continue;
     }

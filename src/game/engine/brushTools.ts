@@ -200,8 +200,12 @@ export function inspectCells(grid: Grid, cells: readonly number[]): InspectStats
       counts.set(id, (counts.get(id) ?? 0) + 1);
       // Wall is deliberately outside the temperature system, so leave it out of
       // the average (mirrors heatCells) — otherwise a wall's fixed ambient
-      // reading would drag the mean toward 20°C.
-      if (!getMaterial(id).isWall) {
+      // reading would drag the mean toward 20°C. A `packedTemp` material (a flying
+      // Ember/Debris/Blast cell) is likewise excluded: its `temp` holds packed
+      // flight/life state in the tens of thousands, not a real degree reading, and
+      // would otherwise wildly skew the reported mean (see Material.packedTemp).
+      const mat = getMaterial(id);
+      if (!mat.isWall && !mat.packedTemp) {
         tempSum += grid.getTemp(x, y);
         tempCount++;
       }

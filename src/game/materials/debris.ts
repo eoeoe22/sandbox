@@ -240,5 +240,6 @@ export const DEBRIS = register({
   // conductivity 0 keeps the heat pass off `temp`, which holds the packed
   // life+velocity; init 0 → life 0 so a hand-placed fragment dies immediately.
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateDebris,
 });

@@ -148,5 +148,6 @@ export const EMBER = register({
   // decodes to life 0 → an ember placed without launchEmber dies quietly on
   // its first turn instead of flying with garbage velocity.
   thermal: { init: 0, conductivity: 0 },
+  packedTemp: true,
   update: updateEmber,
 });
