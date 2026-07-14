@@ -17,12 +17,12 @@
 import type { Grid } from './Grid';
 import { getMaterial } from '../materials/registry';
 
-export type BenchScenario = 'empty' | 'static' | 'active';
+export type BenchScenario = 'empty' | 'sparse' | 'static' | 'active';
 
-export const BENCH_SCENARIOS: readonly BenchScenario[] = ['empty', 'static', 'active'];
+export const BENCH_SCENARIOS: readonly BenchScenario[] = ['empty', 'sparse', 'static', 'active'];
 
 export function isBenchScenario(v: string | null): v is BenchScenario {
-  return v === 'empty' || v === 'static' || v === 'active';
+  return v === 'empty' || v === 'sparse' || v === 'static' || v === 'active';
 }
 
 // Core material ids used by the scenes. Kept as literals (these are stable
@@ -71,6 +71,35 @@ export function seedBenchScenario(grid: Grid, scenario: BenchScenario): void {
   const rnd = mulberry32(0xb0a7 ^ (w * 73856093) ^ (h * 19349663));
 
   if (scenario === 'empty') return;
+
+  if (scenario === 'sparse') {
+    // A typical sandbox: mostly empty air with a few scattered features. This is
+    // the case active-tile scanning is built for — the empty majority is skipped
+    // entirely. A couple of sand dunes on the floor, one water pool, a small
+    // burning patch. Roughly ~12% of the grid occupied.
+    const floor = h - 1;
+    for (let x = 0; x < w; x++) {
+      // Two low dunes centered at ~1/4 and ~3/4 width.
+      const d1 = Math.max(0, 1 - Math.abs(x - w * 0.25) / (w * 0.12));
+      const d2 = Math.max(0, 1 - Math.abs(x - w * 0.72) / (w * 0.15));
+      const duneH = Math.floor((d1 + d2) * h * 0.18 + rnd() * 2);
+      for (let y = floor; y > floor - duneH && y > 0; y--) put(grid, x, y, SAND);
+    }
+    // A shallow water pool in the left third, one row deep-ish.
+    const poolTop = Math.floor(h * 0.55);
+    for (let x = 2; x < w * 0.3; x++) {
+      for (let y = poolTop; y < poolTop + 3 && y < h; y++) put(grid, x, y, WATER);
+    }
+    // A small fire patch up high on the right (fed nothing, just churns a bit).
+    const fx = Math.floor(w * 0.8);
+    const fy = Math.floor(h * 0.3);
+    for (let dx = 0; dx < 4; dx++) {
+      for (let dy = 0; dy < 3; dy++) {
+        if (rnd() < 0.6) put(grid, fx + dx, fy + dy, FIRE, 800);
+      }
+    }
+    return;
+  }
 
   if (scenario === 'static') {
     // Water pool across the bottom, sand dunes mounded on top — a settled

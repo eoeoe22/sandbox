@@ -424,6 +424,10 @@ export class SimContext {
     }
     g.moved[a] = 1;
     g.moved[b] = 1;
+    // swap writes cells/overlay directly (bypassing grid.set), so wake both
+    // endpoints' tiles for the active-tile scan (see engine/dirtyTiles.ts).
+    g.markActive(x1, y1);
+    g.markActive(x2, y2);
   }
 
   /** Fluids and gases can be displaced by denser materials; solids and powders block. */
@@ -678,7 +682,8 @@ export class SimContext {
     g.overlayAux[t] = g.getAux(x, y);
     g.overlayMoved[t] = 1;
     g.temp[t] = (g.temp[t] + g.getTemp(x, y)) / 2;
-    this.set(x, y, EMPTY);
+    g.markActive(tx, ty); // direct overlay write — wake the host's tile
+    this.set(x, y, EMPTY); // marks (x,y) itself
   }
 
   /**
@@ -771,6 +776,7 @@ export class SimContext {
       g.moved[t] = 1;
       g.overlay[i] = 0;
       g.overlayAux[i] = 0;
+      g.markActive(tx, ty); // fluid re-surfaced here — wake its tile
       return true;
     }
     if (this.canOverlapAt(tx, ty, targetId, fluidId) && g.overlay[g.idx(tx, ty)] === 0) {
@@ -780,6 +786,7 @@ export class SimContext {
       g.overlayMoved[t] = 1;
       g.overlay[i] = 0;
       g.overlayAux[i] = 0;
+      g.markActive(tx, ty); // overlay moved into this host — wake its tile
       return true;
     }
     return false;

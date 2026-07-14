@@ -58,6 +58,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
   profiler.enabled = params.has('perf');
   const benchParam = params.get('bench');
   const benchScenario = isBenchScenario(benchParam) ? benchParam : null;
+  // `?fullscan` forces the full CA scan (active tiles off) for on-vs-off A/B
+  // measurement of the active-tile optimization on the same machine.
+  const forceFullScan = params.has('fullscan');
 
   // Restore saved settings before anything subscribes to the atoms, so the
   // border-mode subscription below seeds the engine with the restored value.
@@ -82,6 +85,8 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const savedWorld = benchScenario ? null : loadWorld();
 
   const grid = new Grid(layout.gw, layout.gh);
+  if (forceFullScan) grid.dirty.enabled = false; // A/B: measure with the full scan
+
   if (savedWorld) {
     grid.resizeFrom(
       layout.gw,
