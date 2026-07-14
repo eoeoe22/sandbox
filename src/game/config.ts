@@ -167,6 +167,16 @@ export const HEAT_DIFFUSION_SUBSTEPS = 3;
 /** Conductivity (0..1) for a material that doesn't declare `thermal.conductivity`. */
 export const DEFAULT_CONDUCTIVITY = 0.3;
 
+/**
+ * Use the Rust/WASM heat-diffusion kernel instead of the JS one when it's
+ * available (see engine/heatWasm.ts, wasm/README.md). The WASM path is
+ * bit-identical to the JS reference (golden test), loads asynchronously, and
+ * auto-falls back to JS if it never loads or isn't supported — so flipping this
+ * off, or the module failing to load, only changes speed, never behavior. First
+ * "region A" numeric kernel moved off JS (docs/WASM-ENGINE-PORTING.md Phase 2).
+ */
+export const USE_WASM_HEAT = true;
+
 /** Brush radius bounds, in cells (shared by the store, painter, and UI slider/wheel). */
 export const BRUSH_MIN = 0;
 export const BRUSH_MAX = 12;
