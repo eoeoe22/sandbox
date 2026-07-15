@@ -29,13 +29,21 @@
     snapshots = listSnapshots();
   }
 
-  // Re-read every time the modal opens so a freshly-loaded page (or a snapshot
-  // saved in another tab) is reflected.
+  // This component lives inside Modal's `{#if open}`, so it mounts fresh each
+  // time the modal opens. Loading here is the reliable path: the parent's
+  // openSaveSlots() sets `saveSlotsOpen = true` and calls `open()` in the same
+  // tick, but the `bind:this` binding lags the open state by a tick, so that
+  // call can no-op on first open. Mounting is guaranteed whenever the modal is
+  // shown, so the list is always current (another tab's saves included).
+  $effect(() => {
+    refresh();
+  });
+
+  // Reset transient state (the list is reloaded by the mount effect above).
   export function open(): void {
     newName = '';
     renamingId = null;
     flash = null;
-    refresh();
   }
 
   function showFlash(msg: string): void {
