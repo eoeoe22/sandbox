@@ -82,13 +82,19 @@
 
   // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
   // click away; re-clicking it reopens the editor to fine-tune the ratios.
-  // Select a brush tool. Anything other than 'rect' is remembered as the "last
-  // active tool" so the rect marquee knows which brush to apply on confirm; 'rect'
-  // itself never becomes the last tool (it inherits the prior one). Centralizing
-  // this here keeps lastTool in sync across every tool button + pickBlend.
+  // Select a brush tool. If the current active tool is 'rect' (marquee mode),
+  // selecting a brush updates only $lastTool (changing the marquee's pending effect
+  // and overlay color) while keeping the marquee active. Otherwise, it updates
+  // both the active $tool and $lastTool.
   function setTool(t: Tool): void {
-    tool.set(t);
-    if (t !== 'rect') lastTool.set(t);
+    if (t === 'rect') {
+      tool.set('rect');
+    } else {
+      lastTool.set(t);
+      if ($tool !== 'rect') {
+        tool.set(t);
+      }
+    }
   }
 
   function pickBlend(): void {
@@ -625,94 +631,108 @@
         </button>
       </div>
 
-      <div class="group" role="group" aria-label="브러시 도구">
+      <div class="group" role="group" aria-label="작업 방식">
         <button
-          class="ctl material-btn"
-          class:active={$tool === 'material'}
-          onclick={() => setTool('material')}
-          aria-pressed={$tool === 'material'}
-          aria-label={`재료: ${selectedName}`}
-          title={`선택한 재료를 그립니다: ${selectedName}`}
+          class="ctl"
+          class:active={$tool !== 'rect'}
+          onclick={() => tool.set($lastTool.get())}
+          aria-pressed={$tool !== 'rect'}
+          aria-label="브러시 모드"
+          title="브러시 그리기 모드 — 마우스로 직접 화면에 그립니다"
         >
           <i class="bi bi-brush" aria-hidden="true"></i>
-          <span class="label material-name">{selectedName}</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'blend'}
-          onclick={pickBlend}
-          aria-pressed={$tool === 'blend'}
-          aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (클릭하면 비율 조절 창이 열립니다)"
-        >
-          <i class="bi bi-palette-fill" aria-hidden="true"></i>
-          <span class="label">혼합</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'heat'}
-          onclick={() => setTool('heat')}
-          aria-pressed={$tool === 'heat'}
-          aria-label="가열"
-          title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
-        >
-          <i class="bi bi-fire" aria-hidden="true"></i>
-          <span class="label">가열</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'cool'}
-          onclick={() => setTool('cool')}
-          aria-pressed={$tool === 'cool'}
-          aria-label="냉각"
-          title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
-        >
-          <i class="bi bi-snow" aria-hidden="true"></i>
-          <span class="label">냉각</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'mix'}
-          onclick={() => setTool('mix')}
-          aria-pressed={$tool === 'mix'}
-          aria-label="섞기"
-          title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
-        >
-          <i class="bi bi-tornado" aria-hidden="true"></i>
-          <span class="label">섞기</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'erase'}
-          onclick={() => setTool('erase')}
-          aria-pressed={$tool === 'erase'}
-          aria-label="지우개"
-          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
-        >
-          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
-          <span class="label">지우개</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'view'}
-          onclick={() => setTool('view')}
-          aria-pressed={$tool === 'view'}
-          aria-label="보기"
-          title="보기 모드 — 그리지 않습니다. 오브젝트(공·드럼통)를 끌어 옮길 수 있어요 (오른쪽 클릭 지우개는 사용 가능)"
-        >
-          <i class="bi bi-eye" aria-hidden="true"></i>
-          <span class="label">보기</span>
+          <span class="label">브러시</span>
         </button>
         <button
           class="ctl"
           class:active={$tool === 'rect'}
           onclick={() => setTool('rect')}
           aria-pressed={$tool === 'rect'}
-          aria-label="영역"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 직전 도구를 한 번에 적용합니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
+          aria-label="영역 모드"
+          title="영역 선택 모드 — 사각형으로 드래그해 영역을 지정하고 1회 적용합니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
+        </button>
+      </div>
+
+      <div class="group" role="group" aria-label="브러시 도구">
+        <button
+          class="ctl material-btn"
+          class:active={$lastTool === 'material'}
+          onclick={() => setTool('material')}
+          aria-pressed={$lastTool === 'material'}
+          aria-label={`재료: ${selectedName}`}
+          title={`선택한 재료를 적용합니다: ${selectedName}`}
+        >
+          <i class="bi bi-paint-bucket" aria-hidden="true"></i>
+          <span class="label material-name">{selectedName}</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'blend'}
+          onclick={pickBlend}
+          aria-pressed={$lastTool === 'blend'}
+          aria-label="혼합 브러시"
+          title="여러 물질을 비율대로 섞어서 적용합니다 (클릭하면 비율 조절 창이 열립니다)"
+        >
+          <i class="bi bi-palette-fill" aria-hidden="true"></i>
+          <span class="label">혼합</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'heat'}
+          onclick={() => setTool('heat')}
+          aria-pressed={$lastTool === 'heat'}
+          aria-label="가열"
+          title="온도를 올립니다 (빈칸 제외)"
+        >
+          <i class="bi bi-fire" aria-hidden="true"></i>
+          <span class="label">가열</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'cool'}
+          onclick={() => setTool('cool')}
+          aria-pressed={$lastTool === 'cool'}
+          aria-label="냉각"
+          title="온도를 내립니다 (빈칸 제외)"
+        >
+          <i class="bi bi-snow" aria-hidden="true"></i>
+          <span class="label">냉각</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'mix'}
+          onclick={() => setTool('mix')}
+          aria-pressed={$lastTool === 'mix'}
+          aria-label="섞기"
+          title="파티클을 섞습니다 (고체 제외)"
+        >
+          <i class="bi bi-tornado" aria-hidden="true"></i>
+          <span class="label">섞기</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'erase'}
+          onclick={() => setTool('erase')}
+          aria-pressed={$lastTool === 'erase'}
+          aria-label="지우개"
+          title="영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
+        >
+          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
+          <span class="label">지우개</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$lastTool === 'view'}
+          onclick={() => setTool('view')}
+          aria-pressed={$lastTool === 'view'}
+          aria-label="보기"
+          title="보기 모드 — 그리지 않고 오브젝트(공·드럼통)를 끌어 옮깁니다 (오른쪽 클릭 지우개는 사용 가능)"
+        >
+          <i class="bi bi-eye" aria-hidden="true"></i>
+          <span class="label">보기</span>
         </button>
       </div>
 
