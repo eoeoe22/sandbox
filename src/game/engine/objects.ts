@@ -1,6 +1,6 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
-import { AMBIENT_TEMP, TICK_HZ } from '../config';
+import { AMBIENT_TEMP, SIM_HZ_AT_1X } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST, detonate } from '../materials/blast';
@@ -352,13 +352,12 @@ export const DYNAMITE_RESTITUTION = 0.2;
 export const DYNAMITE_SPAWN_SPIN = 0.06;
 /** Fuse length bounds (ticks). Each stick rolls a random burn time in [MIN, MAX]
  *  at creation (기획: 폭발 시간 3~5초 랜덤). Sized in *seconds* at the default sim rate
- *  — SIM_SPEED ×1 runs at TICK_HZ/2 Hz (see config) — so a stick burns ~3–5 real
+ *  — SIM_SPEED ×1 runs at SIM_HZ_AT_1X Hz (see config) — so a stick burns ~3–5 real
  *  seconds at the default speed (a faster/slower sim scales wall-clock time, as it
  *  does for everything). The remaining fuse is *paused*, not reset, whenever the
  *  flame is snuffed, and resumes from where it left off if the fuse is re-lit. */
-const DEFAULT_SIM_HZ = TICK_HZ / 2;
-export const DYNAMITE_FUSE_MIN_TICKS = Math.round(3 * DEFAULT_SIM_HZ);
-export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * DEFAULT_SIM_HZ);
+export const DYNAMITE_FUSE_MIN_TICKS = Math.round(3 * SIM_HZ_AT_1X);
+export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * SIM_HZ_AT_1X);
 /** Tip temperature (°) at/above which a snuffed (dud) fuse catches again and the
  *  countdown resumes — a flame/ember/hot surface touched to the fuse re-lights it.
  *  Above ambient/boiling so warmth alone won't, but any real flame (Fire 1000°,

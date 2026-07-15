@@ -56,6 +56,14 @@ export const SIM_SPEEDS = [0.25, 0.5, 1, 2, 4] as const;
 export type SimSpeed = (typeof SIM_SPEEDS)[number];
 export const SIM_SPEED_DEFAULT: SimSpeed = 1;
 
+/** Simulation ticks per second at the default ×1 sim speed (`2000/(TICK_HZ*1)`
+ *  ms per step, inverted) — the single source of truth for "×1 baseline"
+ *  cadence, shared by anything that calibrates a real-time rate against it
+ *  (dynamite's fuse duration in objects.ts, the 가열/냉각 brush's per-tick rate
+ *  in PointerPainter.heatRatePerTick). Keeping one exported constant here means
+ *  a future change to the step-interval formula can't leave one of them stale. */
+export const SIM_HZ_AT_1X = TICK_HZ / 2;
+
 /**
  * Gravity direction — which way "down" points for every falling/rising material.
  * Movement in SimContext is expressed relative to this vector, so flipping it
@@ -233,16 +241,23 @@ export const HEAT_RATE_MODE_DEFAULT: HeatRateMode = 'absolute';
 
 /** Absolute-mode heat/cool rate: degrees per second at sim speed ×1. Default
  *  (360) reproduces the original fixed-delta brush feel (12°/stamp × 30
- *  stamps/sec at ×1). */
+ *  stamps/sec at ×1). Bounds sit on the UI slider's step (10) grid, like the
+ *  relative-mode bounds above. */
 export const HEAT_ABS_RATE_DEFAULT = 360;
 export const HEAT_ABS_RATE_MIN = 10;
 export const HEAT_ABS_RATE_MAX = 2000;
+export const HEAT_ABS_RATE_STEP = 10;
 
-/** Relative-mode heat/cool rate: percent of current temperature per second at
- *  sim speed ×1. */
+/** Relative-mode heat/cool rate: percent of the current temperature's
+ *  *magnitude* per second at sim speed ×1 (see PointerPainter/brushTools —
+ *  direction always follows heat vs cool, never the sign of the current
+ *  temperature, so a below-ambient cell still heats up and not down). Bounds
+ *  are chosen so the UI slider's step (5) divides evenly into the range and
+ *  the default sits on that grid (0, 5, 10, … 300) — HEAT_REL_RATE_STEP. */
 export const HEAT_REL_RATE_DEFAULT = 50;
-export const HEAT_REL_RATE_MIN = 1;
+export const HEAT_REL_RATE_MIN = 0;
 export const HEAT_REL_RATE_MAX = 300;
+export const HEAT_REL_RATE_STEP = 5;
 
 /**
  * Sentinel for the "auto" overwrite rule. When `$overwriteLevel` is this value,

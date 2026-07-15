@@ -25,13 +25,13 @@ import {
   AMBIENT_TEMP,
   OVERWRITE_AUTO,
   OVERWRITE_LEVEL_MAX,
-  TICK_HZ,
+  SIM_HZ_AT_1X,
 } from '../config';
 import type { HeatRateMode } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
+import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 import {
@@ -326,18 +326,18 @@ export class PointerPainter {
     this.eraseObjectsWhere((o) => distanceToBody(o, bx, by) <= rad);
   }
 
-  /** Nudge every matching free object's own heat reservoir (SimBody.temp) — by
-   *  a flat `rate` degrees ('absolute') or by `rate` times its own current temp
-   *  ('relative') — clamped to the same range as the cell heat brush, skipping a
-   *  held (dragged) body. Shared by the circular 가열/냉각 brush and the
-   *  rectangular 영역 heat/cool, each supplying its own geometry test. This is
-   *  how heat/cool reaches an object — especially one floating over empty air,
-   *  which the cell heat brush (zero-conductivity air) can't warm — letting it
-   *  melt a drum or burn a ball. */
+  /** Nudge every matching free object's own heat reservoir (SimBody.temp) —
+   *  see `heatDelta` (engine/brushTools) for the per-target formula — clamped
+   *  to the same range as the cell heat brush, skipping a held (dragged) body.
+   *  Shared by the circular 가열/냉각 brush and the rectangular 영역 heat/cool,
+   *  each supplying its own geometry test. This is how heat/cool reaches an
+   *  object — especially one floating over empty air, which the cell heat
+   *  brush (zero-conductivity air) can't warm — letting it melt a drum or burn
+   *  a ball. */
   private heatObjectsWhere(hit: (o: SimBody) => boolean, mode: HeatRateMode, rate: number): void {
     for (const o of this.grid.objects) {
       if (o.held || !hit(o)) continue; // a dragged body is shielded; don't cook it
-      const t = o.temp + (mode === 'absolute' ? rate : o.temp * rate);
+      const t = o.temp + heatDelta(mode, rate, o.temp);
       o.temp = t < HEAT_BRUSH_MIN ? HEAT_BRUSH_MIN : t > HEAT_BRUSH_MAX ? HEAT_BRUSH_MAX : t;
     }
   }
@@ -350,35 +350,42 @@ export class PointerPainter {
     this.heatObjectsWhere((o) => distanceToBody(o, bx, by) <= rad, mode, rate);
   }
 
+  /** The 가열/냉각 sensitivity dial's nominal rate for one 1-second-at-×1
+   *  application: `$heatAbsoluteRate` degrees (absolute mode) or
+   *  `$heatRelativeRate` percent — as a fraction — of the target's own
+   *  temperature (relative mode). `sign` is +1 for heat, -1 for cool; shared by
+   *  `heatRatePerTick` and `heatRateOneShot` below so the two can't drift apart
+   *  on how a mode/rate pair is resolved from the store. */
+  private heatRateBase(sign: 1 | -1): { mode: HeatRateMode; base: number } {
+    const mode = $heatRateMode.get();
+    const magnitude = mode === 'absolute' ? $heatAbsoluteRate.get() : $heatRelativeRate.get() / 100;
+    return { mode, base: sign * magnitude };
+  }
+
   /** Per-tick (continuous brush stroke) 가열/냉각 rate, calibrated so that
-   *  holding the brush at sim speed ×1 for a full second totals exactly
-   *  `$heatAbsoluteRate` degrees (absolute mode) or `$heatRelativeRate` percent
-   *  (relative mode) — see `heatRateOneShot` for the 영역 (one-shot) counterpart.
-   *  `stamp()` fires once per fixed sim tick (see `update`), and the tick
-   *  cadence at ×1 is `TICK_HZ/2` (Game.ts's step-interval formula), so dividing
-   *  the target rate by that baseline cadence makes each tick's contribution add
-   *  up to the target over 1 real second at ×1. At other speeds the tick rate
+   *  holding the brush at sim speed ×1 for a full second totals exactly the
+   *  dial's nominal rate (`heatRateBase`) — see `heatRateOneShot` for the 영역
+   *  (one-shot) counterpart. `stamp()` fires once per fixed sim tick (see
+   *  `update`), and the tick cadence at ×1 is `SIM_HZ_AT_1X`, so dividing the
+   *  target rate by that baseline cadence makes each tick's contribution add up
+   *  to the target over 1 real second at ×1. At other speeds the tick rate
    *  itself scales with `$simSpeed`, so more/fewer stamps fire per real second —
    *  heat/cool speeds up or slows down with the sandbox the same way every other
-   *  brush already does, deliberately unlike the 영역 one-shot below. `sign` is
-   *  +1 for heat, -1 for cool. */
+   *  brush already does, deliberately unlike the 영역 one-shot below. */
   private heatRatePerTick(sign: 1 | -1): { mode: HeatRateMode; rate: number } {
-    const mode = $heatRateMode.get();
-    const base = mode === 'absolute' ? $heatAbsoluteRate.get() : $heatRelativeRate.get() / 100;
-    const ticksPerSecAt1x = TICK_HZ / 2;
-    return { mode, rate: (sign * base) / ticksPerSecAt1x };
+    const { mode, base } = this.heatRateBase(sign);
+    return { mode, rate: base / SIM_HZ_AT_1X };
   }
 
   /** One-shot 영역 (rect) 가열/냉각 amount: the full "sim speed ×1, held 1
-   *  second" total, applied in a single confirm. Deliberately independent of
-   *  the sandbox's *current* speed — a marquee confirm has no duration of its
-   *  own to scale, so it always applies exactly the dial's nominal amount
-   *  rather than growing/shrinking with whatever `$simSpeed` happens to be set
-   *  to at confirm time. `sign` is +1 for heat, -1 for cool. */
+   *  second" total (`heatRateBase`), applied in a single confirm. Deliberately
+   *  independent of the sandbox's *current* speed — a marquee confirm has no
+   *  duration of its own to scale, so it always applies exactly the dial's
+   *  nominal amount rather than growing/shrinking with whatever `$simSpeed`
+   *  happens to be set to at confirm time. */
   private heatRateOneShot(sign: 1 | -1): { mode: HeatRateMode; rate: number } {
-    const mode = $heatRateMode.get();
-    const base = mode === 'absolute' ? $heatAbsoluteRate.get() : $heatRelativeRate.get() / 100;
-    return { mode, rate: sign * base };
+    const { mode, base } = this.heatRateBase(sign);
+    return { mode, rate: base };
   }
 
   /** Shove every matching free object — a random jostle with a slight outward

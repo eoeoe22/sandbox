@@ -120,8 +120,10 @@ export const $inspectData = atom<InspectStats | null>(null);
 
 /**
  * 가열/냉각 브러시 감도. `$heatRateMode` picks whether `$heatAbsoluteRate`
- * (degrees/sec) or `$heatRelativeRate` (percent/sec) governs the brush — both
- * rates are specified "at sim speed ×1, held for 1 second" (see config.ts and
+ * (degrees/sec) or `$heatRelativeRate` (percent/sec, of the target's own
+ * temperature *magnitude* — see engine/brushTools.heatDelta for why it's the
+ * magnitude and not the signed value) governs the brush — both rates are
+ * specified "at sim speed ×1, held for 1 second" (see config.ts and
  * PointerPainter.heatRatePerTick/heatRateOneShot). The 영역 (rect) one-shot
  * heat/cool applies this same 1-second total in a single confirm, regardless of
  * the sandbox's *current* speed. Configured via the 가열/냉각 브러시 설정 modal

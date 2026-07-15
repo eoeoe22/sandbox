@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import {
     $running as running,
     $simSpeed as simSpeed,
@@ -88,6 +88,24 @@
   function openSaveSlots(): void {
     saveSlotsOpen = true;
     saveSlotsPanel?.open();
+  }
+
+  // Entry points from inside 설정 into the 가열/냉각·혼합 dedicated modals
+  // ("브러시 세부 설정"). Closing 설정 and opening the target modal in the same
+  // synchronous handler would race Modal's open/close focus effects (both
+  // modals' `$effect`s run off the same batched update, so the one opening
+  // could capture `document.activeElement` before the one closing has restored
+  // it) — `await tick()` between the two lets 설정's close effect finish first,
+  // so the newly-opened modal reliably captures a settled focus target instead.
+  async function openHeatCoolFromSettings(): Promise<void> {
+    settingsOpen = false;
+    await tick();
+    heatCoolOpen = true;
+  }
+  async function openBlendFromSettings(): Promise<void> {
+    settingsOpen = false;
+    await tick();
+    blendOpen = true;
   }
 
   // 전체 지우기 is destructive, so it's a two-step confirm: the first click arms
@@ -474,10 +492,7 @@
     <div class="settings-links">
       <button
         class="ctl"
-        onclick={() => {
-          settingsOpen = false;
-          heatCoolOpen = true;
-        }}
+        onclick={openHeatCoolFromSettings}
         aria-label="가열/냉각 감도 설정 열기"
         title="가열/냉각 브러시의 감도(절대온도/상대온도)를 조절합니다"
       >
@@ -486,10 +501,7 @@
       </button>
       <button
         class="ctl"
-        onclick={() => {
-          settingsOpen = false;
-          blendOpen = true;
-        }}
+        onclick={openBlendFromSettings}
         aria-label="혼합 브러시 구성 열기"
         title="혼합 브러시가 섞을 물질과 비율을 조절합니다"
       >
