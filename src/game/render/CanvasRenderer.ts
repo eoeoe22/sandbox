@@ -352,6 +352,12 @@ export class CanvasRenderer implements Renderer {
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
+        const amp = vary[id];
+        if (amp !== 0) {
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
+          c = CanvasRenderer.tinted(c, d);
+        }
       } else if (temp[i] <= freezeTemp[id]) {
         // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
         // -Infinity for non-freeze materials, so this never fires for them.

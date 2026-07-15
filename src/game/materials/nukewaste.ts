@@ -1,6 +1,7 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
+import { POWDER_VARY } from '../tint';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 
@@ -36,6 +37,7 @@ export const NUKE_WASTE = register({
   name: 'Nuke Waste',
   phase: Phase.Powder,
   color: rgb(120, 150, 80),
+  colorVary: POWDER_VARY,
   density: 6,
   category: '방사성',
   explosionProof: true, // 방폭 — see uranium.ts
