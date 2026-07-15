@@ -37,22 +37,16 @@
   const isRectTool = $derived($tool === 'rect');
 </script>
 
-{#if $inspect && isRectTool && !data}
-  <div class="inspect" role="status" aria-live="polite">
-    <div class="ins-head">
-      <i class="bi bi-bounding-box" aria-hidden="true"></i>
-      <span>영역 정보</span>
-    </div>
-    <p class="empty">드래그해 영역을 선택하면 정보가 표시됩니다</p>
-  </div>
-{:else if $inspect && data}
+{#if $inspect && (data || isRectTool)}
   <div class="inspect" role="status" aria-live="polite">
     <div class="ins-head">
       <i class={`bi ${isRectTool ? 'bi-bounding-box' : 'bi-search'}`} aria-hidden="true"></i>
       <span>{isRectTool ? '영역 정보' : '브러시 정보'}</span>
     </div>
 
-    {#if occupied === 0}
+    {#if !data}
+      <p class="empty">드래그해 영역을 선택하면 정보가 표시됩니다</p>
+    {:else if occupied === 0}
       <p class="empty">빈 공간 · {data.footprint}칸</p>
     {:else}
       <div class="summary">

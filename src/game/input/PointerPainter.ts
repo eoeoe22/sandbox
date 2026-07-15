@@ -536,19 +536,31 @@ export class PointerPainter {
     }
   }
 
+  /** Clamped axis-aligned bounding box of the current 영역 marquee corners
+   *  (rectSX/SY/EX/EY), or `null` when the marquee doesn't overlap the grid at
+   *  all (e.g. dragged fully past an edge — pointer capture keeps delivering
+   *  coordinates outside the canvas). Shared by `paintRect()` (fill target)
+   *  and `rectFootprintCells()` (돋보기 survey target) so both agree on what
+   *  counts as "no selection" instead of drifting out of sync. */
+  private rectBounds(): { x0: number; y0: number; x1: number; y1: number } | null {
+    const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
+    const x1 = Math.min(this.grid.width - 1, Math.max(this.rectSX, this.rectEX));
+    const y0 = Math.max(0, Math.min(this.rectSY, this.rectEY));
+    const y1 = Math.min(this.grid.height - 1, Math.max(this.rectSY, this.rectEY));
+    return x1 < x0 || y1 < y0 ? null : { x0, y0, x1, y1 };
+  }
+
   /**
-   * Fill the axis-aligned bounding box of (sx,sy)–(ex,ey) with the selected
-   * material (or Empty when `erase` is set), honoring the same overwrite gate,
+   * Fill the current 영역 marquee's bounding box with the selected material
+   * (or Empty when `erase` is set), honoring the same overwrite gate,
    * particle-fill, init-temp, and aux-clear rules as `paint()`. This is the
    * 영역 (rect) tool's confirm action — a one-shot rectangular fill, not a
    * per-tick brush stamp.
    */
-  private paintRect(sx: number, sy: number, ex: number, ey: number, erase: boolean): void {
-    const x0 = Math.max(0, Math.min(sx, ex));
-    const x1 = Math.min(this.grid.width - 1, Math.max(sx, ex));
-    const y0 = Math.max(0, Math.min(sy, ey));
-    const y1 = Math.min(this.grid.height - 1, Math.max(sy, ey));
-    if (x1 < x0 || y1 < y0) return;
+  private paintRect(erase: boolean): void {
+    const bounds = this.rectBounds();
+    if (!bounds) return;
+    const { x0, y0, x1, y1 } = bounds;
     if (erase) {
       // Erase any free objects whose center falls inside the marquee, the same
       // way the brush eraser sweeps its footprint.
@@ -730,7 +742,11 @@ export class PointerPainter {
     this.cursorEl.style.display = 'none';
     // Restore the CSS fallback cursor now that our overlay is hidden again.
     this.canvas.style.cursor = 'crosshair';
-    // The pointer left the canvas — nothing under the brush to report.
+    // Re-sync 돋보기: for the pointer-following case there's nothing under the
+    // brush to report anymore, so this clears it (inspectFootprint() checks
+    // `hovering`). A pending/dragging 영역 marquee is unaffected — it doesn't
+    // depend on `hovering` — so it keeps reporting the selected area even once
+    // the pointer wanders off the canvas.
     this.refreshInspect();
   };
 
@@ -795,7 +811,7 @@ export class PointerPainter {
   /** Confirm a pending 영역 marquee: fill its bounding box and dismiss it. */
   private confirmRect(): void {
     if (!this.rectPending && !this.rectDragging) return;
-    this.paintRect(this.rectSX, this.rectSY, this.rectEX, this.rectEY, this.rectErase);
+    this.paintRect(this.rectErase);
     this.cancelRect();
   }
 
@@ -871,25 +887,20 @@ export class PointerPainter {
 
   /**
    * Recompute the 돋보기 inspect readout ($inspectData) from the cells under the
-   * brush at the pointer's current resting position. Publishes null (once) when
-   * inspect is off or the pointer isn't over the canvas, so the UI panel hides.
+   * brush at the pointer's current resting position (or, for the 영역 tool,
+   * the marquee — see `inspectFootprint()`). Publishes null (once) when inspect
+   * is off or there's nothing to survey, so the UI panel hides.
    *
    * Called once per animation frame from the game loop (see Game.ts) so the
    * numbers stay live as the world flows beneath a still cursor, without the
    * per-sim-tick over-recompute a call inside update() would cause. When inspect
    * is off this is a two-`.get()` early return; when on, it surveys at most a
-   * ~25×25 footprint and only writes the store when the result actually changed,
-   * so a paused, resting cursor doesn't re-render the panel every frame.
+   * ~25×25 footprint (or the marquee, for 영역) and only writes the store when
+   * the result actually changed, so a paused, resting cursor doesn't re-render
+   * the panel every frame.
    */
   refreshInspect(): void {
-    if (!$inspect.get() || !this.hovering) {
-      if (this.lastInspect !== null) {
-        this.lastInspect = null;
-        $inspectData.set(null);
-      }
-      return;
-    }
-    const cells = this.inspectFootprint();
+    const cells = $inspect.get() ? this.inspectFootprint() : null;
     if (cells === null) {
       if (this.lastInspect !== null) {
         this.lastInspect = null;
@@ -907,25 +918,33 @@ export class PointerPainter {
    *  (rect) tool doesn't paint from the pointer position at all — it fills the
    *  marquee's bounding box on confirm — so while it's active, 돋보기 follows the
    *  marquee instead of the cursor: the currently-dragged or pending selection's
-   *  bounding box, or `null` (nothing to show) before any marquee exists. Every
-   *  other tool keeps surveying the normal brush footprint under the pointer. */
+   *  bounding box, or `null` (nothing to show) before any marquee exists. This
+   *  ignores `hovering` on purpose — a *pending* marquee (mouse/pen released,
+   *  awaiting Enter) stays valid and its overlay stays visible even after the
+   *  pointer wanders off the canvas (e.g. to the sidebar to pick a fill
+   *  material), so 돋보기 should keep reporting it too rather than blanking out.
+   *  Every other tool keeps surveying the normal brush footprint under the
+   *  pointer, which does require the pointer to be over the canvas. */
   private inspectFootprint(): number[] | null {
     if ($tool.get() === 'rect') {
       if (!this.rectDragging && !this.rectPending) return null;
       return this.rectFootprintCells();
     }
+    if (!this.hovering) return null;
     const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
     return this.brushCells(cx, cy);
   }
 
   /** Flat [x0,y0,x1,y1,...] list of every in-bounds cell inside the current 영역
-   *  marquee's axis-aligned bounding box — the same bounds paintRect() would
-   *  fill, but read-only (no grid writes). */
-  private rectFootprintCells(): number[] {
-    const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
-    const x1 = Math.min(this.grid.width - 1, Math.max(this.rectSX, this.rectEX));
-    const y0 = Math.max(0, Math.min(this.rectSY, this.rectEY));
-    const y1 = Math.min(this.grid.height - 1, Math.max(this.rectSY, this.rectEY));
+   *  marquee's axis-aligned bounding box (via `rectBounds()`, shared with
+   *  `paintRect()`) — read-only (no grid writes). `null` when the marquee is
+   *  dragged fully off the grid (no overlap), the same case `paintRect()`
+   *  no-ops on, so 돋보기 shows "no selection" instead of a hollow zero-cell
+   *  survey. */
+  private rectFootprintCells(): number[] | null {
+    const bounds = this.rectBounds();
+    if (!bounds) return null;
+    const { x0, y0, x1, y1 } = bounds;
     const out: number[] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) out.push(x, y);
