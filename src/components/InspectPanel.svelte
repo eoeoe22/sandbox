@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { $inspect as inspect, $inspectData as inspectData, $tool as tool } from '../state/store';
+  import { $inspect as inspect, $inspectData as inspectData, $areaSelect as areaSelect } from '../state/store';
   import { toCss } from '../game/render/color';
 
   // The 돋보기 readout. Floats over the top of the sandbox (not tucked in the
@@ -31,17 +31,16 @@
   const rows = $derived((data?.entries ?? []).slice(0, MAX_ROWS));
   const hiddenKinds = $derived(Math.max(0, (data?.entries.length ?? 0) - MAX_ROWS));
 
-  // 영역(rect) 도구는 커서 위치가 아니라 드래그로 지정한 사각 선택 영역을 그리므로,
-  // 돋보기도 같은 영역을 관찰한다(PointerPainter.inspectFootprint). 아직 선택이
-  // 없으면 data가 null이라 안내 문구를 대신 보여준다.
-  const isRectTool = $derived($tool === 'rect');
+  // 영역 선택 모드가 켜져 있으면 커서 위치가 아니라 드래그로 지정한 사각 선택
+  // 영역을 그리므로, 돋보기도 같은 영역을 관찰한다(PointerPainter.inspectFootprint).
+  // 아직 선택이 없으면 data가 null이라 안내 문구를 대신 보여준다.
 </script>
 
-{#if $inspect && (data || isRectTool)}
+{#if $inspect && (data || $areaSelect)}
   <div class="inspect" role="status" aria-live="polite">
     <div class="ins-head">
-      <i class={`bi ${isRectTool ? 'bi-bounding-box' : 'bi-search'}`} aria-hidden="true"></i>
-      <span>{isRectTool ? '영역 정보' : '브러시 정보'}</span>
+      <i class={`bi ${$areaSelect ? 'bi-bounding-box' : 'bi-search'}`} aria-hidden="true"></i>
+      <span>{$areaSelect ? '영역 정보' : '브러시 정보'}</span>
     </div>
 
     {#if !data}

@@ -88,7 +88,7 @@ function writeString(key: string, value: string): boolean {
 
 const BRUSH_SHAPES: readonly BrushShape[] = ['circle', 'square'];
 const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
-const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object', 'view', 'rect'];
+const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object', 'view'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 

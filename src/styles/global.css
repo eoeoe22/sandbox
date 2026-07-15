@@ -131,10 +131,13 @@ body {
     0 0 10px 1px rgba(240, 200, 90, 0.35);
 }
 
-/* 영역 (rect) marquee — a Photoshop-style rectangular selection overlay. It
-   tracks the active drag (data-pending='false') or a released selection
-   awaiting Enter on PC (data-pending='true'). Fill mode is blue; erase is
-   white-dashed to echo the eraser brush cursor. */
+/* 영역 marquee — a Photoshop-style rectangular selection overlay. It tracks
+   the active drag (data-pending='false') or a released selection awaiting
+   Enter on PC (data-pending='true'). Tinted per active tool (data-mode) the
+   same way `.brush-cursor[data-tool]` tints the brush outline, so it's clear
+   what Enter will apply — the default (재료/혼합/etc. not called out below) is
+   blue; erase (right-drag or the 지우개 tool) is white-dashed to echo the
+   eraser brush cursor. */
 .rect-select {
   position: fixed;
   z-index: 9;
@@ -148,22 +151,45 @@ body {
   border-style: dashed;
   background: rgba(232, 232, 238, 0.08);
 }
+.rect-select[data-mode='heat'] {
+  border-color: rgba(255, 138, 60, 0.95);
+  background: rgba(255, 138, 60, 0.1);
+}
+.rect-select[data-mode='cool'] {
+  border-color: rgba(96, 176, 255, 0.95);
+  background: rgba(96, 176, 255, 0.1);
+}
+.rect-select[data-mode='mix'] {
+  border-color: rgba(198, 128, 255, 0.95);
+  background: rgba(198, 128, 255, 0.1);
+}
+.rect-select[data-mode='blend'] {
+  border-color: rgba(120, 220, 160, 0.95);
+  background: rgba(120, 220, 160, 0.1);
+}
+/* 'object'/'view' no-op on confirm (see PointerPainter.applyRect) — a dim,
+   dashed outline signals the marquee won't do anything, mirroring the 보기
+   brush cursor. */
+.rect-select[data-mode='object'],
+.rect-select[data-mode='view'] {
+  border-color: rgba(150, 150, 165, 0.7);
+  border-style: dashed;
+  background: rgba(150, 150, 165, 0.06);
+}
 /* A pending marquee (post-release, awaiting Enter) pulses gently to signal
-   "press Enter to apply, Escape to cancel". */
+   "press Enter to apply, Escape to cancel". Modulates brightness rather than a
+   hardcoded color so the pulse layers over whichever data-mode tint is
+   active instead of overriding it with a fixed blue. */
 .rect-select[data-pending='true'] {
   animation: rect-pulse 1.4s ease-in-out infinite;
 }
 @keyframes rect-pulse {
   0%,
   100% {
-    border-color: rgba(110, 168, 254, 0.95);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    filter: brightness(1);
   }
   50% {
-    border-color: rgba(160, 200, 255, 1);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.5),
-      0 0 12px 2px rgba(110, 168, 254, 0.4);
+    filter: brightness(1.4);
   }
 }
 

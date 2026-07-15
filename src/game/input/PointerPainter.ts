@@ -7,6 +7,7 @@ import {
   $brushMode,
   $overwriteLevel,
   $tool,
+  $areaSelect,
   $blendBrush,
   $inspect,
   $inspectData,
@@ -57,6 +58,15 @@ const DRAG_THROW_MAX = 8;
 const MIX_PUSH_SPEED = 1.1;
 const MIX_SPIN = 0.15;
 const MIX_MAX_SPEED = 4;
+
+/** Clamped axis-aligned bounding box of a 영역 marquee, in inclusive grid-cell
+ *  coordinates. See `PointerPainter.rectBounds`. */
+interface RectBounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
 
 /**
  * Whether the brush may paint over whatever currently occupies (x, y), given
@@ -165,7 +175,8 @@ export class PointerPainter {
    *  Touch pointers confirm immediately on release (no pending state). */
   private rectDragging = false;
   private rectPending = false;
-  /** Whether the current marquee will erase (right-drag) instead of fill. */
+  /** Whether the current marquee will erase (right-drag) instead of applying
+   *  the active tool. */
   private rectErase = false;
   /** Marquee corners in grid-cell coordinates (start = pointerdown, end = last
    *  move). The rectangle is the axis-aligned bounding box of the two. */
@@ -175,7 +186,7 @@ export class PointerPainter {
   private rectEY = 0;
   private cursorEl: HTMLDivElement;
   /** The rectangular marquee overlay (Photoshop-style 영역 선택). Hidden unless
-   *  the rect tool is actively dragging or holding a pending selection. */
+   *  영역 select mode is actively dragging or holding a pending selection. */
   private rectEl: HTMLDivElement;
 
   constructor(
@@ -208,9 +219,19 @@ export class PointerPainter {
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $tool.listen(() => {
       this.updateCursor(this.lastClientX, this.lastClientY);
-      // Leaving the rect tool cancels any pending marquee — the selection is
-      // only meaningful while the tool is active.
-      this.cancelRect();
+      // The tool is now independent of 영역 select mode (unlike the old 'rect'
+      // tool value), so switching tools no longer cancels a pending/dragging
+      // marquee — you can drag a rect, then pick which tool to apply to it
+      // before confirming. Just retint the marquee overlay to match.
+      this.updateRectOverlay();
+    });
+    // Toggling 영역 select mode: retint the cursor (crosshair vs brush outline)
+    // and cancel any marquee once it turns off — a selection is only
+    // meaningful while the mode is active.
+    $areaSelect.listen(() => {
+      this.updateCursor(this.lastClientX, this.lastClientY);
+      if (!$areaSelect.get()) this.cancelRect();
+      this.refreshInspect();
     });
     // Toggling the 돋보기 inspect overlay: retint the cursor and either populate
     // the readout right away (from where the pointer already rests) or clear it.
@@ -265,67 +286,92 @@ export class PointerPainter {
     return [gx, gy];
   }
 
+  /** Remove every free object matching `hit` (its center falls under the
+   *  current footprint) — deleted, no trace. Shared by the circular brush
+   *  eraser and the rectangular 영역 erase, each supplying its own geometry
+   *  test. If the erased object was the one being dragged, ends the drag
+   *  cleanly. */
+  private eraseObjectsWhere(hit: (o: SimBody) => boolean): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    let w = 0;
+    for (let i = 0; i < objs.length; i++) {
+      // Keep objects the footprint doesn't reach; drop the rest.
+      if (!hit(objs[i])) objs[w++] = objs[i];
+    }
+    objs.length = w;
+    if (this.dragBody && hit(this.dragBody)) this.dragBody = null;
+  }
+
   /** Remove any free object the eraser brush touches. The brush is a disc of
    *  radius `brushSize` centered on the cell; an object is deleted when that disc
    *  reaches its surface. Shared by the right-button erase and the 지우개 tool
-   *  (both go through paint(erase)). */
+   *  (both go through paintBrush(erase)). */
   private eraseObjectsUnderBrush(cx: number, cy: number): void {
-    const objs = this.grid.objects;
-    if (objs.length === 0) return;
     const rad = $brushSize.get();
     const bx = cx + 0.5;
     const by = cy + 0.5;
-    let w = 0;
-    for (let i = 0; i < objs.length; i++) {
-      // Keep objects the brush doesn't reach; drop the rest (deleted, no trace).
-      if (distanceToBody(objs[i], bx, by) > rad) objs[w++] = objs[i];
-    }
-    objs.length = w;
-    // If the erased object was the one being dragged, end the drag cleanly.
-    if (this.dragBody && distanceToBody(this.dragBody, bx, by) <= rad) this.dragBody = null;
+    this.eraseObjectsWhere((o) => distanceToBody(o, bx, by) <= rad);
   }
 
-  /** Apply the 가열/냉각 brush to any free object under it: nudge the body's own
-   *  heat reservoir (SimBody.temp) by `delta`, clamped to the same range as the
-   *  cell heat brush. This is how heat/cool reaches an object — especially one
-   *  floating over empty air, which the cell heat brush (zero-conductivity air)
-   *  can't warm — letting the brush melt a drum or burn a ball. */
-  private heatObjectsUnderBrush(cx: number, cy: number, delta: number): void {
-    const objs = this.grid.objects;
-    if (objs.length === 0) return;
-    const rad = $brushSize.get();
-    const bx = cx + 0.5;
-    const by = cy + 0.5;
-    for (const o of objs) {
-      if (o.held) continue; // a dragged body is shielded; don't cook it
-      if (distanceToBody(o, bx, by) > rad) continue;
+  /** Nudge every matching free object's own heat reservoir (SimBody.temp) by
+   *  `delta`, clamped to the same range as the cell heat brush, skipping a
+   *  held (dragged) body. Shared by the circular 가열/냉각 brush and the
+   *  rectangular 영역 heat/cool, each supplying its own geometry test. This is
+   *  how heat/cool reaches an object — especially one floating over empty air,
+   *  which the cell heat brush (zero-conductivity air) can't warm — letting it
+   *  melt a drum or burn a ball. */
+  private heatObjectsWhere(hit: (o: SimBody) => boolean, delta: number): void {
+    for (const o of this.grid.objects) {
+      if (o.held || !hit(o)) continue; // a dragged body is shielded; don't cook it
       const t = o.temp + delta;
       o.temp = t < HEAT_BRUSH_MIN ? HEAT_BRUSH_MIN : t > HEAT_BRUSH_MAX ? HEAT_BRUSH_MAX : t;
     }
   }
 
-  /** Shove any free object under the 섞기 brush — a random jostle with a slight
-   *  outward push, so stirring scatters/ejects bodies the way it disperses cells.
-   *  Drums also get a random spin. Skips a held body (the drag owns it) and any
-   *  body already moving fast, so repeated stamps don't accumulate to a rocket. */
-  private mixPushObjectsUnderBrush(cx: number, cy: number): void {
-    const objs = this.grid.objects;
-    if (objs.length === 0) return;
+  /** Apply the 가열/냉각 brush to any free object under it — see heatObjectsWhere. */
+  private heatObjectsUnderBrush(cx: number, cy: number, delta: number): void {
     const rad = $brushSize.get();
     const bx = cx + 0.5;
     const by = cy + 0.5;
-    for (const o of objs) {
-      if (o.held) continue;
-      if (distanceToBody(o, bx, by) > rad) continue;
+    this.heatObjectsWhere((o) => distanceToBody(o, bx, by) <= rad, delta);
+  }
+
+  /** Shove every matching free object — a random jostle with a slight outward
+   *  push from (cx,cy), so stirring scatters/ejects bodies the way it disperses
+   *  cells. Drums/dynamite also get a random spin. Skips a held body (the drag
+   *  owns it) and any body already moving fast, so repeated stamps don't
+   *  accumulate to a rocket. Shared by the circular 섞기 brush and the
+   *  rectangular 영역 mix, each supplying its own geometry test and push center. */
+  private mixPushObjectsWhere(hit: (o: SimBody) => boolean, cx: number, cy: number): void {
+    for (const o of this.grid.objects) {
+      if (o.held || !hit(o)) continue;
       if (Math.hypot(o.vx, o.vy) >= MIX_MAX_SPEED) continue; // already lively — don't pile on
-      const dx = o.x - bx;
-      const dy = o.y - by;
+      const dx = o.x - cx;
+      const dy = o.y - cy;
       const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
       o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       // Any capsule body (drum or dynamite) also gets a random spin; a ball doesn't rotate.
       if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
+  }
+
+  /** Shove any free object under the 섞기 brush — see mixPushObjectsWhere. */
+  private mixPushObjectsUnderBrush(cx: number, cy: number): void {
+    const rad = $brushSize.get();
+    const bx = cx + 0.5;
+    const by = cy + 0.5;
+    this.mixPushObjectsWhere((o) => distanceToBody(o, bx, by) <= rad, bx, by);
+  }
+
+  /** Whether object `o`'s center falls inside rect `bounds` — the object-layer
+   *  counterpart of a cell footprint (objects live in continuous grid
+   *  coordinates, so this can't reuse `cellsInBounds`). The `+1` matches the
+   *  fact that `x1`/`y1` are inclusive last cell indices, so an object resting
+   *  right at the rectangle's far edge still counts as inside it. */
+  private objectInRectBounds(o: SimBody, bounds: RectBounds): boolean {
+    return o.x >= bounds.x0 && o.x <= bounds.x1 + 1 && o.y >= bounds.y0 && o.y <= bounds.y1 + 1;
   }
 
   /** Reposition the dragged body to follow the pointer (keeping the grab offset),
@@ -351,7 +397,7 @@ export class PointerPainter {
    *  normal press paints the selected material, or — for a special brush —
    *  heats/cools or mixes the cells already there. */
   private stamp(cx: number, cy: number): void {
-    if (this.erasing) return this.paint(cx, cy, true);
+    if (this.erasing) return this.paintBrush(cx, cy, true);
     switch ($tool.get()) {
       case 'heat':
         heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
@@ -363,9 +409,9 @@ export class PointerPainter {
         mixCells(this.grid, this.brushCells(cx, cy));
         return this.mixPushObjectsUnderBrush(cx, cy);
       case 'erase':
-        return this.paint(cx, cy, true);
+        return this.paintBrush(cx, cy, true);
       case 'blend':
-        return this.paintBlend(cx, cy);
+        return this.paintBlend(this.brushCells(cx, cy));
       case 'object':
         // Objects are placed once per press in onDown, not stamped continuously
         // (a held/dragged brush must not spew a stream of balls).
@@ -376,7 +422,7 @@ export class PointerPainter {
         // as erasing, so the eraser still works.)
         return;
     }
-    this.paint(cx, cy);
+    this.paintBrush(cx, cy, false);
   }
 
   /** Spawn the selected free object centered on the clicked cell. A ball's radius
@@ -437,112 +483,110 @@ export class PointerPainter {
     return out;
   }
 
-  /** Paint the selected material over the brush footprint. When `erase` is set
-   *  (right-button press), Empty is stamped instead, ignoring the material and
-   *  active tool entirely. */
-  private paint(cx: number, cy: number, erase = false): void {
-    // The eraser also clears the free-object layer it passes over (오브젝트 삭제).
-    if (erase) this.eraseObjectsUnderBrush(cx, cy);
+  /** Paint the selected material (or Empty when `erase` is set) over `cells`,
+   *  honoring the overwrite gate, particle-fill (non-solid only, disabled for
+   *  erase — "always erases" means a clean, gap-free clear), per-material init
+   *  temperature, aux-clear (Conveyor direction aside), fresh tint, and dry
+   *  overlay. Shared by the brush stroke (`paintBrush`, circular/square
+   *  footprint) and the 영역 rect fill (`applyRect`, rectangular footprint) —
+   *  each builds its own `cells` list; object erasure needs the brush/rect
+   *  geometry a flat cell list doesn't carry, so callers handle that
+   *  separately (see `eraseObjectsWhere`). */
+  private paintCells(cells: readonly number[], erase: boolean): void {
     const id = erase ? 0 : $selectedMaterial.get();
-    const rad = $brushSize.get();
-    const shape = $brushShape.get();
     // Resolve the "자동" overwrite rule into a concrete level for this material.
     const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
     // The overwrite gate is about new material displacing existing particles;
     // the eraser (Empty) always erases regardless of the setting.
     const isEraser = id === 0;
-    // Solid materials always paint Full — a sparse pile of solid grains
-    // reads as a bug, not a feature, so Particle mode only applies to
-    // non-solid materials (sand, water, gases, ...). A right-button erase also
-    // ignores Particle mode: "always erases" means a clean, gap-free clear.
-    const particle =
-      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // Solid materials always paint Full — a sparse pile of solid grains reads
+    // as a bug, not a feature, so Particle mode only applies to non-solid
+    // materials (sand, water, gases, ...).
+    const particle = !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
     // (좌우 정렬); every other material clears aux to 0 like normal.
     const beltAux = id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
-    const r2 = rad * rad;
-    for (let dy = -rad; dy <= rad; dy++) {
-      for (let dx = -rad; dx <= rad; dx++) {
-        if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
-        if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
-        const x = cx + dx;
-        const y = cy + dy;
-        if (!this.grid.inBounds(x, y)) continue;
-        if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
-        this.grid.set(x, y, id);
-        this.grid.setTemp(x, y, initTemp);
-        // Freshly placed (or erased) material carries no prior per-cell state, so
-        // clear aux — otherwise a stale byte left by whatever occupied this cell
-        // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
-        // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
-        // only other create/clear paths; the raw grid.set here bypasses them. A
-        // Conveyor instead seeds its travel direction here (beltAux).
-        this.grid.setAux(x, y, beltAux);
-        // Seed a random per-particle tint so a freshly painted powder/liquid is
-        // grainy from the first frame instead of a flat block (see game/tint.ts).
-        this.grid.setTint(x, y, (Math.random() * 256) | 0);
-        // Painting (or erasing) replaces the whole cell, 겹침 overlap fluid
-        // included — the eraser really empties a wet cell, and fresh material
-        // starts dry.
-        this.grid.setOverlay(x, y, 0);
-      }
+    for (let k = 0; k < cells.length; k += 2) {
+      const x = cells[k];
+      const y = cells[k + 1];
+      if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
+      if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
+      this.grid.set(x, y, id);
+      this.grid.setTemp(x, y, initTemp);
+      // Freshly placed (or erased) material carries no prior per-cell state, so
+      // clear aux — otherwise a stale byte left by whatever occupied this cell
+      // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
+      // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
+      // only other create/clear paths; the raw grid.set here bypasses them. A
+      // Conveyor instead seeds its travel direction here (beltAux).
+      this.grid.setAux(x, y, beltAux);
+      // Seed a random per-particle tint so a freshly painted powder/liquid is
+      // grainy from the first frame instead of a flat block (see game/tint.ts).
+      this.grid.setTint(x, y, (Math.random() * 256) | 0);
+      // Painting (or erasing) replaces the whole cell, 겹침 overlap fluid
+      // included — the eraser really empties a wet cell, and fresh material
+      // starts dry.
+      this.grid.setOverlay(x, y, 0);
     }
   }
 
-  /** Paint a stochastic blend (the 혼합 tool): each cell in the footprint is
+  /** Brush-footprint wrapper around `paintCells()`: builds the circular/square
+   *  cell list for (cx,cy) and, for an erase press, also clears the free
+   *  objects under the same footprint. */
+  private paintBrush(cx: number, cy: number, erase: boolean): void {
+    if (erase) this.eraseObjectsUnderBrush(cx, cy);
+    this.paintCells(this.brushCells(cx, cy), erase);
+  }
+
+  /** Paint a stochastic blend (the 혼합 tool) over `cells`: each cell is
    *  independently assigned one of $blendBrush's materials, weighted by ratio.
-   *  Otherwise behaves like paint(): honors the overwrite gate, particle-mode
-   *  gaps (non-solids only), per-material init temperature, aux clear and tint. */
-  private paintBlend(cx: number, cy: number): void {
+   *  Otherwise behaves like `paintCells()`: honors the overwrite gate,
+   *  particle-mode gaps (non-solids only), per-material init temperature, aux
+   *  clear and tint. Shared by the brush stroke and the 영역 rect fill, each
+   *  building its own `cells` list. */
+  private paintBlend(cells: readonly number[]): void {
     const comps = $blendBrush.get();
     let total = 0;
     for (const c of comps) total += c.ratio;
     if (total <= 0) return;
-    const rad = $brushSize.get();
-    const shape = $brushShape.get();
     // "자동" resolves to whichever material the blend's *first* component is —
     // a sensible stand-in for "the mixture's dominant phase". The per-cell
     // weighted pick below keeps its own canOverwrite gate, so a heavier
     // component's level still admits cells a lighter one couldn't paint into.
     const level = effectiveOverwriteLevel($overwriteLevel.get(), comps[0].id);
     const particleMode = $brushMode.get() === 'particle';
-    const r2 = rad * rad;
-    for (let dy = -rad; dy <= rad; dy++) {
-      for (let dx = -rad; dx <= rad; dx++) {
-        if (shape === 'circle' && dx * dx + dy * dy > r2) continue;
-        const x = cx + dx;
-        const y = cy + dy;
-        if (!this.grid.inBounds(x, y)) continue;
-        // Weighted pick for THIS cell.
-        let r = Math.random() * total;
-        let id = comps[comps.length - 1].id;
-        for (const c of comps) {
-          r -= c.ratio;
-          if (r < 0) { id = c.id; break; }
-        }
-        const mat = getMaterial(id);
-        // Particle mode leaves random gaps for non-solids (matches paint()).
-        if (particleMode && mat.phase !== Phase.Solid && Math.random() > PARTICLE_FILL_RATE) continue;
-        if (!canOverwrite(this.grid.get(x, y), level)) continue;
-        this.grid.set(x, y, id);
-        this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
-        this.grid.setAux(x, y, 0);
-        this.grid.setTint(x, y, (Math.random() * 256) | 0);
-        this.grid.setOverlay(x, y, 0); // freshly painted material starts dry
+    for (let k = 0; k < cells.length; k += 2) {
+      const x = cells[k];
+      const y = cells[k + 1];
+      // Weighted pick for THIS cell.
+      let r = Math.random() * total;
+      let id = comps[comps.length - 1].id;
+      for (const c of comps) {
+        r -= c.ratio;
+        if (r < 0) { id = c.id; break; }
       }
+      const mat = getMaterial(id);
+      // Particle mode leaves random gaps for non-solids (matches paintCells()).
+      if (particleMode && mat.phase !== Phase.Solid && Math.random() > PARTICLE_FILL_RATE) continue;
+      if (!canOverwrite(this.grid.get(x, y), level)) continue;
+      this.grid.set(x, y, id);
+      this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
+      this.grid.setAux(x, y, 0);
+      this.grid.setTint(x, y, (Math.random() * 256) | 0);
+      this.grid.setOverlay(x, y, 0); // freshly painted material starts dry
     }
   }
 
   /** Clamped axis-aligned bounding box of the current 영역 marquee corners
    *  (rectSX/SY/EX/EY), or `null` when the marquee doesn't overlap the grid at
    *  all (e.g. dragged fully past an edge — pointer capture keeps delivering
-   *  coordinates outside the canvas). Shared by `paintRect()` (fill target)
-   *  and `rectFootprintCells()` (돋보기 survey target) so both agree on what
-   *  counts as "no selection" instead of drifting out of sync. */
-  private rectBounds(): { x0: number; y0: number; x1: number; y1: number } | null {
+   *  coordinates outside the canvas). Shared by every 영역 action (`applyRect`)
+   *  and `rectFootprintCells()` (돋보기 survey target) so all of them agree on
+   *  what counts as "no selection" instead of drifting out of sync. */
+  private rectBounds(): RectBounds | null {
     const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
     const x1 = Math.min(this.grid.width - 1, Math.max(this.rectSX, this.rectEX));
     const y0 = Math.max(0, Math.min(this.rectSY, this.rectEY));
@@ -550,49 +594,59 @@ export class PointerPainter {
     return x1 < x0 || y1 < y0 ? null : { x0, y0, x1, y1 };
   }
 
+  /** Flat [x0,y0,x1,y1,...] list of every cell inside `bounds` (inclusive). */
+  private cellsInBounds(bounds: RectBounds): number[] {
+    const out: number[] = [];
+    for (let y = bounds.y0; y <= bounds.y1; y++) {
+      for (let x = bounds.x0; x <= bounds.x1; x++) out.push(x, y);
+    }
+    return out;
+  }
+
   /**
-   * Fill the current 영역 marquee's bounding box with the selected material
-   * (or Empty when `erase` is set), honoring the same overwrite gate,
-   * particle-fill, init-temp, and aux-clear rules as `paint()`. This is the
-   * 영역 (rect) tool's confirm action — a one-shot rectangular fill, not a
-   * per-tick brush stamp.
+   * Commit the current 영역 marquee: apply whatever the active `$tool` (or a
+   * right-button erase) would do to a brush stroke, but over the marquee's
+   * rectangular footprint in one shot instead of a per-tick stamp — the 영역
+   * (rect) selection mode's confirm action. Every tool `stamp()` supports is
+   * supported here too (재료/혼합 fill, 가열/냉각, 섞기, 지우개/우클릭 clear),
+   * except 'object' (a spawn action, not area-shaped) and 'view' (inert by
+   * design), which no-op just like their brush-stroke counterparts.
    */
-  private paintRect(erase: boolean): void {
+  private applyRect(erase: boolean): void {
     const bounds = this.rectBounds();
     if (!bounds) return;
-    const { x0, y0, x1, y1 } = bounds;
-    if (erase) {
+    const tool = $tool.get();
+    if (erase || tool === 'erase') {
       // Erase any free objects whose center falls inside the marquee, the same
       // way the brush eraser sweeps its footprint.
-      const objs = this.grid.objects;
-      if (objs.length > 0) {
-        let w = 0;
-        for (let i = 0; i < objs.length; i++) {
-          const o = objs[i];
-          if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) objs[w++] = o;
-        }
-        objs.length = w;
-      }
+      this.eraseObjectsWhere((o) => this.objectInRectBounds(o, bounds));
+      return this.paintCells(this.cellsInBounds(bounds), true);
     }
-    const id = erase ? 0 : $selectedMaterial.get();
-    const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
-    const isEraser = id === 0;
-    const particle =
-      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
-    const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
-    const beltAux =
-      id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
-        if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
-        this.grid.set(x, y, id);
-        this.grid.setTemp(x, y, initTemp);
-        this.grid.setAux(x, y, beltAux);
-        this.grid.setTint(x, y, (Math.random() * 256) | 0);
-        this.grid.setOverlay(x, y, 0);
-      }
+    switch (tool) {
+      case 'heat':
+        heatCells(this.grid, this.cellsInBounds(bounds), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        return this.heatObjectsWhere((o) => this.objectInRectBounds(o, bounds), HEAT_BRUSH_DELTA);
+      case 'cool':
+        heatCells(this.grid, this.cellsInBounds(bounds), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+        return this.heatObjectsWhere((o) => this.objectInRectBounds(o, bounds), -HEAT_BRUSH_DELTA);
+      case 'mix':
+        mixCells(this.grid, this.cellsInBounds(bounds));
+        // Push outward from the rect's own center, mirroring how the circular
+        // brush pushes outward from the stamp's center.
+        return this.mixPushObjectsWhere(
+          (o) => this.objectInRectBounds(o, bounds),
+          (bounds.x0 + bounds.x1 + 1) / 2,
+          (bounds.y0 + bounds.y1 + 1) / 2,
+        );
+      case 'blend':
+        return this.paintBlend(this.cellsInBounds(bounds));
+      case 'object':
+      case 'view':
+        // Neither has an area-shaped action (spawn is a point action; 보기 is
+        // inert) — a marquee under either just no-ops on confirm.
+        return;
     }
+    this.paintCells(this.cellsInBounds(bounds), false);
   }
 
   /** Bresenham line so a quick drag paints a continuous stroke. */
@@ -631,10 +685,13 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     this.px = x;
     this.py = y;
-    // 영역 (rect) tool: start a rectangular marquee drag. Both left (fill) and
-    // right (erase) drags select a rectangle; the selection is confirmed by
-    // Enter on PC or on release for touch pointers.
-    if ($tool.get() === 'rect') {
+    // 영역 select mode: start a rectangular marquee drag instead of a brush
+    // stroke, regardless of the active tool (it takes priority over the
+    // object-spawn and 보기 object-drag presses below too). Both left (fill)
+    // and right (erase) drags select a rectangle; the selection is confirmed
+    // by Enter on PC or on release for touch pointers, then applies whichever
+    // tool is active (see `applyRect`).
+    if ($areaSelect.get()) {
       this.cancelRect(); // a new press supersedes any pending marquee
       this.rectDragging = true;
       this.rectErase = this.erasing;
@@ -767,9 +824,9 @@ export class PointerPainter {
     this.lastClientY = clientY;
     if (!this.hovering) return;
 
-    // The 영역 (rect) tool replaces the brush cursor with a marquee overlay, so
+    // 영역 select mode replaces the brush cursor with a marquee overlay, so
     // keep the native crosshair and skip the brush outline entirely.
-    if ($tool.get() === 'rect') {
+    if ($areaSelect.get()) {
       this.canvas.style.cursor = 'crosshair';
       this.cursorEl.style.display = 'none';
       return;
@@ -808,26 +865,28 @@ export class PointerPainter {
     this.updateRectOverlay();
   }
 
-  /** Confirm a pending 영역 marquee: fill its bounding box and dismiss it. */
+  /** Confirm a pending 영역 marquee: apply the active tool to its bounding box
+   *  (see `applyRect`) and dismiss it. */
   private confirmRect(): void {
     if (!this.rectPending && !this.rectDragging) return;
-    this.paintRect(this.rectErase);
+    this.applyRect(this.rectErase);
     this.cancelRect();
   }
 
-  /** Dismiss the 영역 marquee without filling (Escape, tool change, new press). */
+  /** Dismiss the 영역 marquee without applying anything (Escape, mode turned
+   *  off, new press). */
   private cancelRect(): void {
     this.rectDragging = false;
     this.rectPending = false;
     this.rectEl.style.display = 'none';
   }
 
-  /** Key handler for the 영역 tool: Enter confirms, Escape cancels. Skips
+  /** Key handler for 영역 select mode: Enter confirms, Escape cancels. Skips
    *  events originating from a text input / textarea / contenteditable so typing
    *  Enter in a modal field (the SaveSlots name, a blend ratio, …) doesn't
    *  accidentally commit a pending marquee. */
   private onKey = (e: KeyboardEvent): void => {
-    if ($tool.get() !== 'rect') return;
+    if (!$areaSelect.get()) return;
     const t = e.target as HTMLElement | null;
     if (
       t &&
@@ -879,9 +938,11 @@ export class PointerPainter {
     this.rectEl.style.top = `${top}px`;
     this.rectEl.style.width = `${width}px`;
     this.rectEl.style.height = `${height}px`;
-    // Distinguish the fill marquee from the erase marquee, and a pending
-    // selection (awaiting Enter) from an active drag.
-    this.rectEl.dataset.mode = this.rectErase ? 'erase' : 'fill';
+    // Tint the marquee like the brush cursor (heat = warm, cool = cold, mix =
+    // violet, ...) so it's obvious which action Enter will apply — a
+    // right-drag (or the 지우개 tool) always erases regardless of $tool, same
+    // as the brush. A pending selection (awaiting Enter) pulses (data-pending).
+    this.rectEl.dataset.mode = this.rectErase ? 'erase' : $tool.get();
     this.rectEl.dataset.pending = this.rectPending ? 'true' : 'false';
   }
 
@@ -914,42 +975,27 @@ export class PointerPainter {
     $inspectData.set(stats);
   }
 
-  /** The cell footprint the 돋보기 overlay should currently survey. The 영역
-   *  (rect) tool doesn't paint from the pointer position at all — it fills the
-   *  marquee's bounding box on confirm — so while it's active, 돋보기 follows the
-   *  marquee instead of the cursor: the currently-dragged or pending selection's
-   *  bounding box, or `null` (nothing to show) before any marquee exists. This
-   *  ignores `hovering` on purpose — a *pending* marquee (mouse/pen released,
-   *  awaiting Enter) stays valid and its overlay stays visible even after the
-   *  pointer wanders off the canvas (e.g. to the sidebar to pick a fill
-   *  material), so 돋보기 should keep reporting it too rather than blanking out.
-   *  Every other tool keeps surveying the normal brush footprint under the
-   *  pointer, which does require the pointer to be over the canvas. */
+  /** The cell footprint the 돋보기 overlay should currently survey. 영역 select
+   *  mode doesn't paint from the pointer position at all — it applies the
+   *  active tool to the marquee's bounding box on confirm — so while it's on,
+   *  돋보기 follows the marquee instead of the cursor: the currently-dragged or
+   *  pending selection's bounding box, or `null` (nothing to show) before any
+   *  marquee exists. This ignores `hovering` on purpose — a *pending* marquee
+   *  (mouse/pen released, awaiting Enter) stays valid and its overlay stays
+   *  visible even after the pointer wanders off the canvas (e.g. to the
+   *  sidebar to pick a different tool), so 돋보기 should keep reporting it too
+   *  rather than blanking out. With 영역 select off, this surveys the normal
+   *  brush footprint under the pointer, which does require the pointer to be
+   *  over the canvas. */
   private inspectFootprint(): number[] | null {
-    if ($tool.get() === 'rect') {
+    if ($areaSelect.get()) {
       if (!this.rectDragging && !this.rectPending) return null;
-      return this.rectFootprintCells();
+      const bounds = this.rectBounds();
+      return bounds ? this.cellsInBounds(bounds) : null;
     }
     if (!this.hovering) return null;
     const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
     return this.brushCells(cx, cy);
-  }
-
-  /** Flat [x0,y0,x1,y1,...] list of every in-bounds cell inside the current 영역
-   *  marquee's axis-aligned bounding box (via `rectBounds()`, shared with
-   *  `paintRect()`) — read-only (no grid writes). `null` when the marquee is
-   *  dragged fully off the grid (no overlap), the same case `paintRect()`
-   *  no-ops on, so 돋보기 shows "no selection" instead of a hollow zero-cell
-   *  survey. */
-  private rectFootprintCells(): number[] | null {
-    const bounds = this.rectBounds();
-    if (!bounds) return null;
-    const { x0, y0, x1, y1 } = bounds;
-    const out: number[] = [];
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) out.push(x, y);
-    }
-    return out;
   }
 
   /**

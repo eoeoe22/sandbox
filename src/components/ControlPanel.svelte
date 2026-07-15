@@ -8,6 +8,7 @@
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
     $tool as tool,
+    $areaSelect as areaSelect,
     $inspect as inspect,
     $selectedMaterial as selectedMaterial,
     $fps as fps,
@@ -546,11 +547,12 @@
         </button>
       </div>
 
-      <!-- 재료(일반 브러시)와 영역(사각 선택)은 같은 물질을 "어떻게 배치할지"만
-           다른 한 쌍이라, 자체 토글 그룹으로 묶어 서로 배타적으로 눌리는 관계를
-           시각적으로 드러낸다. 나머지 특수 브러시(혼합/가열/냉각/섞기/지우개/보기)는
-           별도 그룹에 남는다. 모두 하나의 $tool 스토어를 공유하므로 그룹을 나눠도
-           선택은 전체에서 배타적이다. -->
+      <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
+           $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
+           가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
+           스트로크 대신 사각형을 드래그해 선택하고, Enter(모바일은 드롭 즉시)로
+           확정할 때 그 시점에 고른 도구를 사각 영역 전체에 한 번에 적용한다
+           (PointerPainter.applyRect). .mode-group은 순전히 시각적 묶음이다. -->
       <div class="group mode-group" role="group" aria-label="그리기 방식">
         <button
           class="ctl material-btn"
@@ -565,11 +567,11 @@
         </button>
         <button
           class="ctl"
-          class:active={$tool === 'rect'}
-          onclick={() => tool.set('rect')}
-          aria-pressed={$tool === 'rect'}
-          aria-label="영역"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
+          class:active={$areaSelect}
+          onclick={() => areaSelect.set(!$areaSelect)}
+          aria-pressed={$areaSelect}
+          aria-label="영역 선택"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
@@ -858,9 +860,10 @@
     flex: 1 1 auto;
   }
 
-  /* 재료(일반 브러시)·영역(사각 선택) 토글 쌍: 얇은 테두리로 둘러싸 "이 둘은
-     하나를 고르는 관계"임을 시각적으로 드러낸다. 버튼 자체 스타일(.ctl/.active)은
-     그대로 공유한다. */
+  /* 재료 옆에 영역(사각 선택 모드) 토글을 붙여 얇은 테두리로 둘러싼 시각적
+     묶음. 영역은 $tool과 별개의 독립 토글이라 재료가 아닌 다른 도구와 함께도
+     켜질 수 있지만("서로 배타적" 관계는 아님), 그리기 방식을 고르는 첫 손동작
+     이라는 점에서 나란히 둔다. 버튼 자체 스타일(.ctl/.active)은 그대로 공유한다. */
   .mode-group {
     padding: 3px;
     border: 1px solid #2a2a33;
