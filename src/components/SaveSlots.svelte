@@ -14,13 +14,16 @@
 
   let snapshots = $state<SnapshotMeta[]>([]);
   let newName = $state('');
-  // The id of a snapshot currently being renamed; its row swaps to an input.
+  // The id of a snapshot currently being renamed; its row/card swaps to an input.
   let renamingId = $state<string | null>(null);
   let renameValue = $state('');
   // Flash the last action's outcome so the user gets feedback (saved / loaded /
   // failed) without a modal or toast.
   let flash = $state<string | null>(null);
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  // Gallery (big thumbnails, grid) vs list (compact rows with small thumbs).
+  // Gallery is the default — it shows off the captured previews best.
+  let viewMode = $state<'gallery' | 'list'>('gallery');
 
   function refresh(): void {
     snapshots = listSnapshots();
@@ -92,10 +95,6 @@
       return '';
     }
   }
-
-  // Material sample isn't directly available per-snapshot without decoding; we
-  // keep the row compact (name, dims, date, actions) instead. This avoids a
-  // decode pass on every render.
 </script>
 
 <div class="snapshots">
@@ -124,67 +123,168 @@
     <p class="flash">{flash}</p>
   {/if}
 
-  <div class="list">
+  {#if snapshots.length > 0}
+    <div class="view-toggle" role="group" aria-label="스냅샷 보기 방식">
+      <button
+        class="seg"
+        class:active={viewMode === 'gallery'}
+        onclick={() => (viewMode = 'gallery')}
+        aria-pressed={viewMode === 'gallery'}
+        title="갤러리 보기"
+      >
+        <i class="bi bi-grid" aria-hidden="true"></i>
+      </button>
+      <button
+        class="seg"
+        class:active={viewMode === 'list'}
+        onclick={() => (viewMode = 'list')}
+        aria-pressed={viewMode === 'list'}
+        title="목록 보기"
+      >
+        <i class="bi bi-list-ul" aria-hidden="true"></i>
+      </button>
+    </div>
+  {/if}
+
+  <div class="scroller">
     {#if snapshots.length === 0}
       <p class="empty">저장된 스냅샷이 없습니다. 현재 샌드박스 상태를 저장해 보세요.</p>
-    {:else}
-      {#each snapshots as s (s.id)}
-        <div class="row">
-          {#if renamingId === s.id}
-            <input
-              class="rename-input"
-              type="text"
-              value={renameValue}
-              maxlength={40}
-              oninput={(e) => (renameValue = e.currentTarget.value)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitRename(s.id);
-                } else if (e.key === 'Escape') {
-                  renamingId = null;
-                }
-              }}
-              onblur={() => commitRename(s.id)}
-            />
-          {:else}
-            <div class="row-info">
-              <span class="row-name" title={s.name} ondblclick={() => startRename(s)}>
-                {s.name}
-              </span>
-              <span class="row-meta">
-                {s.w}×{s.h} · {fmtDate(s.createdAt)}
-              </span>
+    {:else if viewMode === 'gallery'}
+      <div class="gallery">
+        {#each snapshots as s (s.id)}
+          <div class="card">
+            <div class="thumb-wrap">
+              {#if s.thumb}
+                <img class="thumb" src={s.thumb} alt={s.name} loading="lazy" />
+              {:else}
+                <div class="thumb-placeholder" aria-hidden="true">
+                  <i class="bi bi-image"></i>
+                </div>
+              {/if}
+              <div class="card-overlay">
+                <button
+                  class="mini"
+                  onclick={() => handleLoad(s.id)}
+                  aria-label={`"${s.name}" 불러오기`}
+                  title="불러오기"
+                >
+                  <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                </button>
+                <button
+                  class="mini"
+                  onclick={() => startRename(s)}
+                  aria-label={`"${s.name}" 이름 변경`}
+                  title="이름 변경"
+                >
+                  <i class="bi bi-pencil" aria-hidden="true"></i>
+                </button>
+                <button
+                  class="mini danger"
+                  onclick={() => handleDelete(s.id, s.name)}
+                  aria-label={`"${s.name}" 삭제`}
+                  title="삭제"
+                >
+                  <i class="bi bi-trash3" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
-          {/if}
-          <div class="row-actions">
-            <button
-              class="mini"
-              onclick={() => handleLoad(s.id)}
-              aria-label={`"${s.name}" 불러오기`}
-              title="불러오기"
-            >
-              <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
-            </button>
-            <button
-              class="mini"
-              onclick={() => startRename(s)}
-              aria-label={`"${s.name}" 이름 변경`}
-              title="이름 변경"
-            >
-              <i class="bi bi-pencil" aria-hidden="true"></i>
-            </button>
-            <button
-              class="mini danger"
-              onclick={() => handleDelete(s.id, s.name)}
-              aria-label={`"${s.name}" 삭제`}
-              title="삭제"
-            >
-              <i class="bi bi-trash3" aria-hidden="true"></i>
-            </button>
+            {#if renamingId === s.id}
+              <input
+                class="rename-input"
+                type="text"
+                value={renameValue}
+                maxlength={40}
+                oninput={(e) => (renameValue = e.currentTarget.value)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitRename(s.id);
+                  } else if (e.key === 'Escape') {
+                    renamingId = null;
+                  }
+                }}
+                onblur={() => commitRename(s.id)}
+              />
+            {:else}
+              <div class="card-info">
+                <span class="card-name" title={s.name} ondblclick={() => startRename(s)}>
+                  {s.name}
+                </span>
+                <span class="card-meta">{s.w}×{s.h} · {fmtDate(s.createdAt)}</span>
+              </div>
+            {/if}
           </div>
-        </div>
-      {/each}
+        {/each}
+      </div>
+    {:else}
+      <div class="list">
+        {#each snapshots as s (s.id)}
+          <div class="row">
+            {#if renamingId === s.id}
+              <input
+                class="rename-input"
+                type="text"
+                value={renameValue}
+                maxlength={40}
+                oninput={(e) => (renameValue = e.currentTarget.value)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitRename(s.id);
+                  } else if (e.key === 'Escape') {
+                    renamingId = null;
+                  }
+                }}
+                onblur={() => commitRename(s.id)}
+              />
+            {:else}
+              <div class="row-thumb">
+                {#if s.thumb}
+                  <img src={s.thumb} alt={s.name} loading="lazy" />
+                {:else}
+                  <div class="thumb-placeholder sm" aria-hidden="true">
+                    <i class="bi bi-image"></i>
+                  </div>
+                {/if}
+              </div>
+              <div class="row-info">
+                <span class="row-name" title={s.name} ondblclick={() => startRename(s)}>
+                  {s.name}
+                </span>
+                <span class="row-meta">
+                  {s.w}×{s.h} · {fmtDate(s.createdAt)}
+                </span>
+              </div>
+            {/if}
+            <div class="row-actions">
+              <button
+                class="mini"
+                onclick={() => handleLoad(s.id)}
+                aria-label={`"${s.name}" 불러오기`}
+                title="불러오기"
+              >
+                <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+              </button>
+              <button
+                class="mini"
+                onclick={() => startRename(s)}
+                aria-label={`"${s.name}" 이름 변경`}
+                title="이름 변경"
+              >
+                <i class="bi bi-pencil" aria-hidden="true"></i>
+              </button>
+              <button
+                class="mini danger"
+                onclick={() => handleDelete(s.id, s.name)}
+                aria-label={`"${s.name}" 삭제`}
+                title="삭제"
+              >
+                <i class="bi bi-trash3" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
   </div>
 
@@ -233,19 +333,49 @@
     font-size: 12px;
   }
 
-  .list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: 320px;
+  .view-toggle {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #14141a;
+    align-self: flex-start;
+  }
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #8a8a96;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .seg:hover {
+    color: #e8e8ee;
+  }
+  .seg.active {
+    background: #23324a;
+    border-color: #6ea8fe;
+    color: #6ea8fe;
+  }
+
+  /* Shared scroll container so gallery and list share one viewport. */
+  .scroller {
+    max-height: 360px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #3a3a46 transparent;
   }
-  .list::-webkit-scrollbar {
+  .scroller::-webkit-scrollbar {
     width: 6px;
   }
-  .list::-webkit-scrollbar-thumb {
+  .scroller::-webkit-scrollbar-thumb {
     background: #3a3a46;
     border-radius: 3px;
   }
@@ -257,14 +387,119 @@
     text-align: center;
   }
 
+  /* ---- Gallery view ---- */
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid #2a2a33;
+    border-radius: 6px;
+    background: #1b1b22;
+  }
+  .thumb-wrap {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #101014;
+  }
+  .thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    image-rendering: pixelated;
+    display: block;
+  }
+  .thumb-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #4a4a55;
+    font-size: 22px;
+  }
+  .thumb-placeholder.sm {
+    font-size: 14px;
+  }
+  /* Actions slide in over the thumbnail on hover/focus-within; on touch they
+     stay visible since there's no hover. */
+  .card-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 60%);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .thumb-wrap:hover .card-overlay,
+  .thumb-wrap:focus-within .card-overlay {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .card-overlay {
+      opacity: 1;
+    }
+  }
+  .card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .card-name {
+    color: #e8e8ee;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .card-meta {
+    color: #7a7a88;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- List view ---- */
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
   .row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     padding: 6px 8px;
     border: 1px solid #2a2a33;
     border-radius: 6px;
     background: #1b1b22;
+  }
+  .row-thumb {
+    flex: none;
+    width: 48px;
+    height: 36px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #101014;
+  }
+  .row-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    image-rendering: pixelated;
+    display: block;
   }
   .row-info {
     flex: 1 1 auto;

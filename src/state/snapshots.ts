@@ -18,6 +18,13 @@ const SNAPSHOT_KEY = 'particle-sandbox:snapshots:v1';
 const MAX_SNAPSHOTS = 50;
 /** Cap a single name's length so the stored index stays small. */
 const MAX_NAME_LEN = 40;
+/** Thumbnail target width in CSS px (aspect preserved). Small enough to keep a
+ *  stored JPEG data URL in the ~5–10KB range, so 50 snapshots add a bounded
+ *  cost on top of the world envelopes. */
+const THUMB_W = 160;
+/** JPEG quality for thumbnails — low-ish to keep each data URL compact while
+ *  still readable as a small preview. */
+const THUMB_QUALITY = 0.55;
 
 function storageAvailable(): boolean {
   return typeof localStorage !== 'undefined';
@@ -53,6 +60,10 @@ export interface SnapshotMeta {
   /** Grid dimensions at save time (for a quick "fits / will rescale" hint). */
   w: number;
   h: number;
+  /** Small JPEG data URL of the canvas at save time, for gallery/row previews.
+   *  Absent on snapshots saved before thumbnails existed (the UI shows a
+   *  placeholder). */
+  thumb?: string;
 }
 
 /** Internal record: metadata + the serialized world envelope in one JSON blob. */
@@ -109,11 +120,40 @@ function genId(): string {
 }
 
 /**
+ * Capture a small JPEG data URL of a canvas, downscaled to `maxW` wide
+ * (aspect preserved). Used to bank a snapshot preview without storing the
+ * full-resolution frame. Returns '' on any failure so the caller can keep
+ * saving the world envelope with a missing thumbnail rather than aborting.
+ */
+export function captureThumbnail(canvas: HTMLCanvasElement, maxW = THUMB_W): string {
+  try {
+    const srcW = canvas.width;
+    const srcH = canvas.height;
+    if (!srcW || !srcH) return '';
+    const scale = Math.min(1, maxW / srcW);
+    const tw = Math.max(1, Math.round(srcW * scale));
+    const th = Math.max(1, Math.round(srcH * scale));
+    const tc = document.createElement('canvas');
+    tc.width = tw;
+    tc.height = th;
+    const tctx = tc.getContext('2d');
+    if (!tctx) return '';
+    tctx.imageSmoothingEnabled = true;
+    tctx.drawImage(canvas, 0, 0, tw, th);
+    return tc.toDataURL('image/jpeg', THUMB_QUALITY);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Save the given grid as a new named snapshot. Returns the new meta on
  * success, or null if storage is unavailable, full, or the count cap was hit.
  * An empty name gets a default ("Save N"); a too-long name is truncated.
+ * `thumb` (a JPEG data URL from `captureThumbnail`) is stored for the gallery
+ * preview; pass ''/omit to save without one.
  */
-export function saveSnapshot(grid: Grid, name: string): SnapshotMeta | null {
+export function saveSnapshot(grid: Grid, name: string, thumb = ''): SnapshotMeta | null {
   if (!storageAvailable()) return null;
   const list = loadRecords();
   if (list.length >= MAX_SNAPSHOTS) return null;
@@ -126,6 +166,7 @@ export function saveSnapshot(grid: Grid, name: string): SnapshotMeta | null {
     w: grid.width,
     h: grid.height,
     world: serializeWorld(grid),
+    ...(thumb ? { thumb } : {}),
   };
   list.push(record);
   if (!saveRecords(list)) return null;
@@ -227,9 +268,15 @@ export function applySnapshot(id: string): boolean {
 
 /**
  * Save the live grid as a new named snapshot. Thin wrapper the UI calls so it
- * doesn't need the grid reference itself. Returns the new meta, or null.
+ * doesn't need the grid reference itself. Captures a thumbnail of the visible
+ * game canvas (`#game`) so the gallery/list views can show a preview; if the
+ * canvas can't be found or capture fails, the snapshot is still saved without
+ * one. Returns the new meta, or null.
  */
 export function saveLiveSnapshot(name: string): SnapshotMeta | null {
   if (!liveGrid) return null;
-  return saveSnapshot(liveGrid, name);
+  let thumb = '';
+  const canvas = document.getElementById('game');
+  if (canvas instanceof HTMLCanvasElement) thumb = captureThumbnail(canvas);
+  return saveSnapshot(liveGrid, name, thumb);
 }
