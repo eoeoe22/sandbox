@@ -25,7 +25,7 @@ const MAX_CELLS = 200;
 const AUTOIGNITE_TEMP = 240;
 const HEAT_BUMP = 250; // non-flammable cells are only scorched, never cratered
 const EMPTY_FIRE_CHANCE = 0.3; // open air catches a lick of flame this often
-const GEL_RIM_CHANCE = 0.22; // rim cells that fling a sticky gel blob
+const GEL_RIM_CHANCE = 1.0; // rim cells that fling a sticky gel blob
 
 /** Per-cell rule for a napalm flood — see DetonateOptions.onCell. Always claims
  *  the cell (no default crater flash is ever dropped). */

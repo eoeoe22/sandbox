@@ -106,6 +106,9 @@ export interface Combustible {
   burnChance: number;
   /** Self temperature at/above which it ignites with no flame contact. */
   autoIgniteTemp: number;
+  /** If true, water smothers this fuel without being consumed into steam.
+   *  Used for fuels that are easily doused, like Amber and Resin. */
+  easyDouse?: boolean;
 }
 
 export function isFlame(id: number): boolean {
@@ -146,9 +149,10 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     // Water/Saltwater/Sugar Water smothers it: the fuel survives (unlit, back to
-    // ambient) and the water it touched flashes to Steam — mirroring Fire's own
-    // "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule. All the water-based liquids
-    // douse (a burning petroleum slick still floats and keeps burning, below).
+    // ambient) and the water it touched flashes to Steam (unless easyDouse) —
+    // mirroring Fire's own "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule.
+    // All the water-based liquids douse (a burning petroleum slick still floats
+    // and keeps burning, below).
     if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
       if (isPetroleum) {
         onWater = true; // oil fire on water: not doused, water not steamed
@@ -158,7 +162,9 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
       // burning band and flash the water it touched to Steam. Not consumed, so
       // the caller still lets the now-unlit fuel fall/flow.
       sim.setTemp(x, y, AMBIENT_TEMP);
-      sim.spawn(nx, ny, STEAM.id);
+      if (!spec.easyDouse) {
+        sim.spawn(nx, ny, STEAM.id);
+      }
       return false;
     }
   }

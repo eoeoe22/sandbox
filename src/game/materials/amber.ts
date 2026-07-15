@@ -21,7 +21,7 @@ import { RESIN } from './resin';
 // that fresh Resin is already glowing and oozes/burns on. Left cold, molten Resin
 // re-cures to Amber, so the pair still loops — this just makes the melt an
 // occasional flourish of a fire rather than the whole block flashing to liquid.
-const SPEC: Combustible = { burnChance: 0.03, autoIgniteTemp: 400 };
+const SPEC: Combustible = { burnChance: 0.03, autoIgniteTemp: 400, easyDouse: true };
 
 // Only *burning* amber melts, and only sometimes:
 //   • MELT_TEMP sits well above Resin's cure/autoignition threshold (400°, see
