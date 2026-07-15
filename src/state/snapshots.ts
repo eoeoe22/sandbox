@@ -121,25 +121,34 @@ function genId(): string {
 
 /**
  * Capture a small JPEG data URL of a canvas, downscaled to `maxW` wide
- * (aspect preserved). Used to bank a snapshot preview without storing the
- * full-resolution frame. Returns '' on any failure so the caller can keep
- * saving the world envelope with a missing thumbnail rather than aborting.
+ * (aspect preserved). `src` (in device pixels) crops the canvas so only the
+ * sandbox rectangle is captured — the `#game` canvas is cleared to transparent
+ * around the centered sandbox and only the grid rect holds content, so without
+ * a crop the thumbnail would be mostly black padding (JPEG has no alpha).
+ * Returns '' on any failure so the caller can keep saving the world envelope
+ * with a missing thumbnail rather than aborting.
  */
-export function captureThumbnail(canvas: HTMLCanvasElement, maxW = THUMB_W): string {
+export function captureThumbnail(
+  canvas: HTMLCanvasElement,
+  maxW = THUMB_W,
+  src?: { x: number; y: number; w: number; h: number },
+): string {
   try {
-    const srcW = canvas.width;
-    const srcH = canvas.height;
-    if (!srcW || !srcH) return '';
-    const scale = Math.min(1, maxW / srcW);
-    const tw = Math.max(1, Math.round(srcW * scale));
-    const th = Math.max(1, Math.round(srcH * scale));
+    const sx = src?.x ?? 0;
+    const sy = src?.y ?? 0;
+    const sw = src?.w ?? canvas.width;
+    const sh = src?.h ?? canvas.height;
+    if (!sw || !sh) return '';
+    const scale = Math.min(1, maxW / sw);
+    const tw = Math.max(1, Math.round(sw * scale));
+    const th = Math.max(1, Math.round(sh * scale));
     const tc = document.createElement('canvas');
     tc.width = tw;
     tc.height = th;
     const tctx = tc.getContext('2d');
     if (!tctx) return '';
     tctx.imageSmoothingEnabled = true;
-    tctx.drawImage(canvas, 0, 0, tw, th);
+    tctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, tw, th);
     return tc.toDataURL('image/jpeg', THUMB_QUALITY);
   } catch {
     return '';
@@ -227,14 +236,25 @@ let liveGrid: Grid | null = null;
 /** Post-load callback: re-seed cosmetic tint (not persisted) and refresh the
  *  pointer overlay so the restored world reads right on the first frame. */
 let onApplied: (() => void) | null = null;
+/** Thumbnail capture callback registered by Game.ts. Returns a JPEG data URL
+ *  of the current sandbox rect (cropped from the device-pixel canvas), or '' on
+ *  failure. Keeping this as a callback lets the snapshot module stay free of
+ *  renderer/layout dependencies — Game.ts knows the sandbox rect. */
+let captureThumb: (() => string) | null = null;
 
 /**
  * Bind the snapshot module to the live engine. Called once from Game.ts after
- * the grid is constructed; passing null unbinds (used on teardown).
+ * the grid is constructed; passing null unbinds (used on teardown). `capture`
+ * produces a thumbnail of the visible sandbox (see `captureThumbnail`).
  */
-export function registerGridForSnapshots(grid: Grid | null, applied?: () => void): void {
+export function registerGridForSnapshots(
+  grid: Grid | null,
+  applied?: () => void,
+  capture?: () => string,
+): void {
   liveGrid = grid;
   onApplied = applied ?? null;
+  captureThumb = capture ?? null;
 }
 
 /**
@@ -269,14 +289,12 @@ export function applySnapshot(id: string): boolean {
 /**
  * Save the live grid as a new named snapshot. Thin wrapper the UI calls so it
  * doesn't need the grid reference itself. Captures a thumbnail of the visible
- * game canvas (`#game`) so the gallery/list views can show a preview; if the
- * canvas can't be found or capture fails, the snapshot is still saved without
- * one. Returns the new meta, or null.
+ * sandbox via the registered capture callback (which crops to the sandbox rect
+ * in device pixels); if no callback is registered or capture fails, the
+ * snapshot is still saved without one. Returns the new meta, or null.
  */
 export function saveLiveSnapshot(name: string): SnapshotMeta | null {
   if (!liveGrid) return null;
-  let thumb = '';
-  const canvas = document.getElementById('game');
-  if (canvas instanceof HTMLCanvasElement) thumb = captureThumbnail(canvas);
+  const thumb = captureThumb ? captureThumb() : '';
   return saveSnapshot(liveGrid, name, thumb);
 }

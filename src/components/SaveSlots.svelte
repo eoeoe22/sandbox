@@ -95,6 +95,13 @@
       return '';
     }
   }
+
+  // Focus + select the rename input as soon as it mounts, so the user can start
+  // typing without an extra click (the row/card swaps in the input on demand).
+  function autofocus(node: HTMLInputElement): void {
+    node.focus();
+    node.select();
+  }
 </script>
 
 <div class="snapshots">
@@ -124,21 +131,23 @@
   {/if}
 
   {#if snapshots.length > 0}
-    <div class="view-toggle" role="group" aria-label="스냅샷 보기 방식">
+    <div class="view-toggle" role="radiogroup" aria-label="스냅샷 보기 방식">
       <button
         class="seg"
+        role="radio"
+        aria-checked={viewMode === 'gallery'}
         class:active={viewMode === 'gallery'}
         onclick={() => (viewMode = 'gallery')}
-        aria-pressed={viewMode === 'gallery'}
         title="갤러리 보기"
       >
         <i class="bi bi-grid" aria-hidden="true"></i>
       </button>
       <button
         class="seg"
+        role="radio"
+        aria-checked={viewMode === 'list'}
         class:active={viewMode === 'list'}
         onclick={() => (viewMode = 'list')}
-        aria-pressed={viewMode === 'list'}
         title="목록 보기"
       >
         <i class="bi bi-list-ul" aria-hidden="true"></i>
@@ -194,6 +203,7 @@
                 type="text"
                 value={renameValue}
                 maxlength={40}
+                use:autofocus
                 oninput={(e) => (renameValue = e.currentTarget.value)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') {
@@ -226,6 +236,7 @@
                 type="text"
                 value={renameValue}
                 maxlength={40}
+                use:autofocus
                 oninput={(e) => (renameValue = e.currentTarget.value)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') {
@@ -413,7 +424,6 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    image-rendering: pixelated;
     display: block;
   }
   .thumb-placeholder {
@@ -498,7 +508,6 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    image-rendering: pixelated;
     display: block;
   }
   .row-info {
