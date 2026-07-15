@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import {
     $running as running,
     $simSpeed as simSpeed,
@@ -8,6 +8,7 @@
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
     $tool as tool,
+    $areaSelect as areaSelect,
     $inspect as inspect,
     $selectedMaterial as selectedMaterial,
     $fps as fps,
@@ -50,6 +51,7 @@
   import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
+  import HeatCoolSettings from './HeatCoolSettings.svelte';
   import InspectPanel from './InspectPanel.svelte';
   import Modal from './Modal.svelte';
   import SaveSlots from './SaveSlots.svelte';
@@ -58,28 +60,44 @@
   // button so the active material is always visible without opening the palette.
   const selectedName = $derived(getMaterial($selectedMaterial)?.name ?? '재료');
 
-  // Two modals, opened from the toolbar. The 설정 modal holds the settings that
+  // Modals, opened from the toolbar. The 설정 modal holds the settings that
   // are set once and left alone (plus, on mobile, the frequently-tweaked ones,
   // which live inline in the sidebar on desktop). The 혼합 브러시 modal holds the
-  // blend-ratio editor and pops up when the 혼합 tool is selected. The 저장
-  // modal manages named world snapshots (save/load/rename/delete).
+  // blend-ratio editor, opened only by double-clicking the 혼합 button (or from
+  // 설정) — a single click just selects the tool, like every other brush
+  // button, so picking 혼합 to paint with doesn't force the editor open every
+  // time. The 가열/냉각 감도 modal holds the heat/cool sensitivity editor, same
+  // double-click pattern. The 저장 modal manages named world snapshots
+  // (save/load/rename/delete).
   let settingsOpen = $state(false);
   let blendOpen = $state(false);
+  let heatCoolOpen = $state(false);
   let saveSlotsOpen = $state(false);
   let saveSlotsPanel: SaveSlots | null = null;
-
-  // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
-  // click away; re-clicking it reopens the editor to fine-tune the ratios.
-  function pickBlend(): void {
-    tool.set('blend');
-    blendOpen = true;
-  }
 
   // Open the snapshot (save/load) modal. Tell the panel to re-read its list so
   // a freshly-opened modal reflects the current localStorage state.
   function openSaveSlots(): void {
     saveSlotsOpen = true;
     saveSlotsPanel?.open();
+  }
+
+  // Entry points from inside 설정 into the 가열/냉각·혼합 dedicated modals
+  // ("브러시 세부 설정"). Closing 설정 and opening the target modal in the same
+  // synchronous handler would race Modal's open/close focus effects (both
+  // modals' `$effect`s run off the same batched update, so the one opening
+  // could capture `document.activeElement` before the one closing has restored
+  // it) — `await tick()` between the two lets 설정's close effect finish first,
+  // so the newly-opened modal reliably captures a settled focus target instead.
+  async function openHeatCoolFromSettings(): Promise<void> {
+    settingsOpen = false;
+    await tick();
+    heatCoolOpen = true;
+  }
+  async function openBlendFromSettings(): Promise<void> {
+    settingsOpen = false;
+    await tick();
+    blendOpen = true;
   }
 
   // 전체 지우기 is destructive, so it's a two-step confirm: the first click arms
@@ -460,6 +478,30 @@
       아래에 빈 공간을 확보합니다. (PC는 0 권장)
     </p>
   </label>
+
+  <div class="field">
+    <span class="field-label">브러시 세부 설정</span>
+    <div class="settings-links">
+      <button
+        class="ctl"
+        onclick={openHeatCoolFromSettings}
+        aria-label="가열/냉각 감도 설정 열기"
+        title="가열/냉각 브러시의 감도(절대온도/상대온도)를 조절합니다"
+      >
+        <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+        <span class="label">가열/냉각 감도</span>
+      </button>
+      <button
+        class="ctl"
+        onclick={openBlendFromSettings}
+        aria-label="혼합 브러시 구성 열기"
+        title="혼합 브러시가 섞을 물질과 비율을 조절합니다"
+      >
+        <i class="bi bi-palette-fill" aria-hidden="true"></i>
+        <span class="label">혼합 브러시 구성</span>
+      </button>
+    </div>
+  </div>
 {/snippet}
 
 <aside class="panel">
@@ -546,7 +588,13 @@
         </button>
       </div>
 
-      <div class="group" role="group" aria-label="브러시 도구">
+      <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
+           $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
+           가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
+           스트로크 대신 사각형을 드래그해 선택하고, Enter(모바일은 드롭 즉시)로
+           확정할 때 그 시점에 고른 도구를 사각 영역 전체에 한 번에 적용한다
+           (PointerPainter.applyRect). .mode-group은 순전히 시각적 묶음이다. -->
+      <div class="group mode-group" role="group" aria-label="그리기 방식">
         <button
           class="ctl material-btn"
           class:active={$tool === 'material'}
@@ -560,11 +608,26 @@
         </button>
         <button
           class="ctl"
+          class:active={$areaSelect}
+          onclick={() => areaSelect.set(!$areaSelect)}
+          aria-pressed={$areaSelect}
+          aria-label="영역 선택"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다"
+        >
+          <i class="bi bi-bounding-box" aria-hidden="true"></i>
+          <span class="label">영역</span>
+        </button>
+      </div>
+
+      <div class="group" role="group" aria-label="특수 브러시">
+        <button
+          class="ctl"
           class:active={$tool === 'blend'}
-          onclick={pickBlend}
+          onclick={() => tool.set('blend')}
+          ondblclick={() => (blendOpen = true)}
           aria-pressed={$tool === 'blend'}
           aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (클릭하면 비율 조절 창이 열립니다)"
+          title="여러 물질을 비율대로 섞어 그립니다 (더블클릭하면 비율 조절 창이 열립니다)"
         >
           <i class="bi bi-palette-fill" aria-hidden="true"></i>
           <span class="label">혼합</span>
@@ -573,9 +636,13 @@
           class="ctl"
           class:active={$tool === 'heat'}
           onclick={() => tool.set('heat')}
+          ondblclick={() => {
+            tool.set('heat');
+            heatCoolOpen = true;
+          }}
           aria-pressed={$tool === 'heat'}
           aria-label="가열"
-          title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
+          title="브러시 영역의 온도를 올립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
         >
           <i class="bi bi-fire" aria-hidden="true"></i>
           <span class="label">가열</span>
@@ -584,9 +651,13 @@
           class="ctl"
           class:active={$tool === 'cool'}
           onclick={() => tool.set('cool')}
+          ondblclick={() => {
+            tool.set('cool');
+            heatCoolOpen = true;
+          }}
           aria-pressed={$tool === 'cool'}
           aria-label="냉각"
-          title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
+          title="브러시 영역의 온도를 내립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
         >
           <i class="bi bi-snow" aria-hidden="true"></i>
           <span class="label">냉각</span>
@@ -623,17 +694,6 @@
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">보기</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'rect'}
-          onclick={() => tool.set('rect')}
-          aria-pressed={$tool === 'rect'}
-          aria-label="영역"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
-        >
-          <i class="bi bi-bounding-box" aria-hidden="true"></i>
-          <span class="label">영역</span>
         </button>
       </div>
 
@@ -724,13 +784,25 @@
   </p>
 </Modal>
 
-<!-- 혼합 브러시 ratio editor, opened when the 혼합 tool is selected. -->
+<!-- 혼합 브러시 ratio editor, opened by double-clicking the 혼합 button (a single
+     click just selects the tool), or from 설정 → 브러시 세부 설정. -->
 <Modal open={blendOpen} title="혼합 브러시 비율" icon="bi-palette-fill" onclose={() => (blendOpen = false)}>
   <p class="blend-hint">
     최대 3가지 물질을 골라 비율을 정하면, 혼합 브러시가 그 비율대로 섞어 칠합니다. 막대의
     경계를 드래그해 비율을 조절하세요.
   </p>
   <BlendBrush />
+</Modal>
+
+<!-- 가열/냉각 브러시 감도 설정, opened by double-clicking either button, or
+     from 설정 → 브러시 세부 설정. -->
+<Modal
+  open={heatCoolOpen}
+  title="가열/냉각 브러시 설정"
+  icon="bi-thermometer-half"
+  onclose={() => (heatCoolOpen = false)}
+>
+  <HeatCoolSettings />
 </Modal>
 
 <!-- 저장 / 불러오기 modal: named snapshot slots saved in localStorage. -->
@@ -848,6 +920,17 @@
   }
   .group .ctl {
     flex: 1 1 auto;
+  }
+
+  /* 재료 옆에 영역(사각 선택 모드) 토글을 붙여 얇은 테두리로 둘러싼 시각적
+     묶음. 영역은 $tool과 별개의 독립 토글이라 재료가 아닌 다른 도구와 함께도
+     켜질 수 있지만("서로 배타적" 관계는 아님), 그리기 방식을 고르는 첫 손동작
+     이라는 점에서 나란히 둔다. 버튼 자체 스타일(.ctl/.active)은 그대로 공유한다. */
+  .mode-group {
+    padding: 3px;
+    border: 1px solid #2a2a33;
+    border-radius: 8px;
+    background: #17171b;
   }
 
   /* Shared button. */
@@ -1023,6 +1106,16 @@
     justify-content: space-between;
     color: #8a8a99;
     font-size: 10px;
+  }
+
+  /* Entry points into the 가열/냉각·혼합 dedicated modals, from inside 설정. */
+  .settings-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .settings-links .ctl {
+    flex: 1 1 auto;
   }
 
   /* Restore-defaults button: full width, armed amber like 전체 지우기. */

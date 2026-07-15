@@ -13,6 +13,9 @@ import {
   GRID_DIVISION_DEFAULT,
   BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
+  HEAT_RATE_MODE_DEFAULT,
+  HEAT_ABS_RATE_DEFAULT,
+  HEAT_REL_RATE_DEFAULT,
 } from '../game/config';
 import type {
   SimSpeed,
@@ -20,6 +23,7 @@ import type {
   GravityDir,
   CellScale,
   GridDivision,
+  HeatRateMode,
 } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 import type { InspectStats } from '../game/engine/brushTools';
@@ -62,15 +66,26 @@ export const $brushMode = atom<BrushMode>('full');
  * left-click/drag places nothing, so you can move the pointer over the world
  * without disturbing it — a right-button drag still erases (the secondary
  * button always erases, see PointerPainter). Handy paired with the 돋보기
- * inspect overlay ($inspect) to survey the world without painting. 'rect'
- * (영역) is a Photoshop-style rectangular marquee: drag a rectangle, then
- * confirm with Enter on PC (or release on touch) to fill that rectangle with
- * the selected material in one shot — same overwrite rule as the brush. See
- * PointerPainter and config.ts. Selecting a material in the palette snaps this
+ * inspect overlay ($inspect) to survey the world without painting. Every tool
+ * here also works through the 영역 (rect) selection mode ($areaSelect) — see
+ * that atom's doc comment. Selecting a material in the palette snaps this
  * back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view' | 'rect';
+export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view';
 export const $tool = atom<Tool>('material');
+
+/**
+ * The 영역 (rect) selection mode toggle. Independent of `$tool` — like
+ * `$inspect`, it can be on alongside any tool — this switches how the active
+ * tool's action is applied: instead of a continuous per-tick brush stroke, a
+ * drag defines a rectangular marquee, confirmed with Enter on PC (or on
+ * release for touch) to apply the active tool's action to that whole
+ * rectangle in one shot (재료 fills it, 혼합 stochastically fills it, 가열/냉각
+ * nudge its temperature, 섞기 shuffles it, 지우개/우클릭 clears it). 'object' and
+ * 'view' don't have an area-shaped action, so a marquee under those two
+ * no-ops on confirm. See PointerPainter (`applyRect`, `rectBounds`).
+ */
+export const $areaSelect = atom<boolean>(false);
 
 /**
  * Which free object the 'object' tool spawns on a canvas click — the object
@@ -102,6 +117,21 @@ export const $inspect = atom<boolean>(false);
  * InspectPanel.svelte.
  */
 export const $inspectData = atom<InspectStats | null>(null);
+
+/**
+ * 가열/냉각 브러시 감도. `$heatRateMode` picks whether `$heatAbsoluteRate`
+ * (degrees/sec) or `$heatRelativeRate` (percent/sec, of the target's own
+ * temperature *magnitude* — see engine/brushTools.heatDelta for why it's the
+ * magnitude and not the signed value) governs the brush — both rates are
+ * specified "at sim speed ×1, held for 1 second" (see config.ts and
+ * PointerPainter.heatRatePerTick/heatRateOneShot). The 영역 (rect) one-shot
+ * heat/cool applies this same 1-second total in a single confirm, regardless of
+ * the sandbox's *current* speed. Configured via the 가열/냉각 브러시 설정 modal
+ * (double-click either toolbar button, or open it from 설정).
+ */
+export const $heatRateMode = atom<HeatRateMode>(HEAT_RATE_MODE_DEFAULT);
+export const $heatAbsoluteRate = atom<number>(HEAT_ABS_RATE_DEFAULT);
+export const $heatRelativeRate = atom<number>(HEAT_REL_RATE_DEFAULT);
 
 /**
  * One component of the blend (혼합) brush: a material id and the percentage
@@ -289,7 +319,11 @@ export const resetSettings = (): void => {
   $brushShape.set('circle');
   $brushMode.set('full');
   $tool.set('material');
+  $areaSelect.set(false);
   $inspect.set(false);
+  $heatRateMode.set(HEAT_RATE_MODE_DEFAULT);
+  $heatAbsoluteRate.set(HEAT_ABS_RATE_DEFAULT);
+  $heatRelativeRate.set(HEAT_REL_RATE_DEFAULT);
   $overwriteLevel.set(OVERWRITE_LEVEL_MAX);
   $borderMode.set('wall');
   $smokeLevel.set(SMOKE_LEVEL_DEFAULT);

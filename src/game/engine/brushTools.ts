@@ -16,16 +16,40 @@ import { getMaterial } from '../materials/registry';
  */
 
 /**
- * Heat (delta > 0) or cool (delta < 0) every non-empty cell in `cells`, clamped
- * to [min, max]. Empty air is skipped on purpose: it has zero conductivity, so
- * it can neither hold heat nor pass it on, and it's reset to ambient whenever
- * written — warming it would be a no-op. Temperature is what the heat system and
- * material rules already read, so this plugs straight into boiling/freezing.
+ * The 가열/냉각 brush's per-cell/per-object delta for one stamp: a flat `rate`
+ * degrees in 'absolute' mode, or `rate` percent of the target's own current
+ * temperature *magnitude* in 'relative' mode. Using `Math.abs(cur)` (not `cur`
+ * itself) as the relative-mode base is deliberate: this sim's temperature scale
+ * is Celsius-like and routinely goes negative (many materials freeze well below
+ * 0), and a formula of `cur * rate` would flip sign there — multiplying a
+ * negative temperature by a negative (cool) rate *raises* it, and by a positive
+ * (heat) rate *lowers* it, exactly backwards. Taking the magnitude keeps `rate`'s
+ * own sign (positive = heat, negative = cool) as the sole direction driver
+ * regardless of which side of zero the target currently sits on. A target
+ * sitting at exactly 0° still can't be moved in relative mode (0% of 0 is 0) —
+ * a narrow, self-resolving edge case (conduction/ambient drift nudges it off
+ * zero) rather than one worth a special case; absolute mode always works there.
+ * Shared by `heatCells` (grid cells) and PointerPainter.heatObjectsWhere (free
+ * objects) so the two layers can't drift apart on the formula.
+ */
+export function heatDelta(mode: 'absolute' | 'relative', rate: number, cur: number): number {
+  return mode === 'absolute' ? rate : Math.abs(cur) * rate;
+}
+
+/**
+ * Heat (mode 'absolute', rate > 0, or 'relative', rate > 0) or cool (rate < 0)
+ * every non-empty cell in `cells`, clamped to [min, max] — see `heatDelta` for
+ * the per-cell formula. Empty air is skipped on purpose: it has zero
+ * conductivity, so it can neither hold heat nor pass it on, and it's reset to
+ * ambient whenever written — warming it would be a no-op. Temperature is what
+ * the heat system and material rules already read, so this plugs straight into
+ * boiling/freezing.
  */
 export function heatCells(
   grid: Grid,
   cells: readonly number[],
-  delta: number,
+  mode: 'absolute' | 'relative',
+  rate: number,
   min: number,
   max: number,
 ): void {
@@ -36,7 +60,8 @@ export function heatCells(
     // Skip empty air (zero conductivity, resets to ambient anyway) and Wall,
     // which is deliberately outside the temperature system (see wall.ts).
     if (id === EMPTY || getMaterial(id).isWall) continue;
-    const t = grid.getTemp(x, y) + delta;
+    const cur = grid.getTemp(x, y);
+    const t = cur + heatDelta(mode, rate, cur);
     grid.setTemp(x, y, t < min ? min : t > max ? max : t);
   }
 }
