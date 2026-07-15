@@ -889,11 +889,48 @@ export class PointerPainter {
       }
       return;
     }
-    const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
-    const stats = inspectCells(this.grid, this.brushCells(cx, cy));
+    const cells = this.inspectFootprint();
+    if (cells === null) {
+      if (this.lastInspect !== null) {
+        this.lastInspect = null;
+        $inspectData.set(null);
+      }
+      return;
+    }
+    const stats = inspectCells(this.grid, cells);
     if (sameInspect(this.lastInspect, stats)) return;
     this.lastInspect = stats;
     $inspectData.set(stats);
+  }
+
+  /** The cell footprint the 돋보기 overlay should currently survey. The 영역
+   *  (rect) tool doesn't paint from the pointer position at all — it fills the
+   *  marquee's bounding box on confirm — so while it's active, 돋보기 follows the
+   *  marquee instead of the cursor: the currently-dragged or pending selection's
+   *  bounding box, or `null` (nothing to show) before any marquee exists. Every
+   *  other tool keeps surveying the normal brush footprint under the pointer. */
+  private inspectFootprint(): number[] | null {
+    if ($tool.get() === 'rect') {
+      if (!this.rectDragging && !this.rectPending) return null;
+      return this.rectFootprintCells();
+    }
+    const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
+    return this.brushCells(cx, cy);
+  }
+
+  /** Flat [x0,y0,x1,y1,...] list of every in-bounds cell inside the current 영역
+   *  marquee's axis-aligned bounding box — the same bounds paintRect() would
+   *  fill, but read-only (no grid writes). */
+  private rectFootprintCells(): number[] {
+    const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
+    const x1 = Math.min(this.grid.width - 1, Math.max(this.rectSX, this.rectEX));
+    const y0 = Math.max(0, Math.min(this.rectSY, this.rectEY));
+    const y1 = Math.min(this.grid.height - 1, Math.max(this.rectSY, this.rectEY));
+    const out: number[] = [];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) out.push(x, y);
+    }
+    return out;
   }
 
   /**

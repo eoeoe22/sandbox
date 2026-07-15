@@ -546,7 +546,12 @@
         </button>
       </div>
 
-      <div class="group" role="group" aria-label="브러시 도구">
+      <!-- 재료(일반 브러시)와 영역(사각 선택)은 같은 물질을 "어떻게 배치할지"만
+           다른 한 쌍이라, 자체 토글 그룹으로 묶어 서로 배타적으로 눌리는 관계를
+           시각적으로 드러낸다. 나머지 특수 브러시(혼합/가열/냉각/섞기/지우개/보기)는
+           별도 그룹에 남는다. 모두 하나의 $tool 스토어를 공유하므로 그룹을 나눠도
+           선택은 전체에서 배타적이다. -->
+      <div class="group mode-group" role="group" aria-label="그리기 방식">
         <button
           class="ctl material-btn"
           class:active={$tool === 'material'}
@@ -558,6 +563,20 @@
           <i class="bi bi-brush" aria-hidden="true"></i>
           <span class="label material-name">{selectedName}</span>
         </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'rect'}
+          onclick={() => tool.set('rect')}
+          aria-pressed={$tool === 'rect'}
+          aria-label="영역"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
+        >
+          <i class="bi bi-bounding-box" aria-hidden="true"></i>
+          <span class="label">영역</span>
+        </button>
+      </div>
+
+      <div class="group" role="group" aria-label="특수 브러시">
         <button
           class="ctl"
           class:active={$tool === 'blend'}
@@ -623,17 +642,6 @@
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">보기</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'rect'}
-          onclick={() => tool.set('rect')}
-          aria-pressed={$tool === 'rect'}
-          aria-label="영역"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
-        >
-          <i class="bi bi-bounding-box" aria-hidden="true"></i>
-          <span class="label">영역</span>
         </button>
       </div>
 
@@ -848,6 +856,16 @@
   }
   .group .ctl {
     flex: 1 1 auto;
+  }
+
+  /* 재료(일반 브러시)·영역(사각 선택) 토글 쌍: 얇은 테두리로 둘러싸 "이 둘은
+     하나를 고르는 관계"임을 시각적으로 드러낸다. 버튼 자체 스타일(.ctl/.active)은
+     그대로 공유한다. */
+  .mode-group {
+    padding: 3px;
+    border: 1px solid #2a2a33;
+    border-radius: 8px;
+    background: #17171b;
   }
 
   /* Shared button. */
