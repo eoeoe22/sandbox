@@ -635,7 +635,7 @@
         <button
           class="ctl"
           class:active={$tool !== 'rect'}
-          onclick={() => tool.set($lastTool.get())}
+          onclick={() => setTool($lastTool)}
           aria-pressed={$tool !== 'rect'}
           aria-label="브러시 모드"
           title="브러시 그리기 모드 — 마우스로 직접 화면에 그립니다"

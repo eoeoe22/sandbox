@@ -221,7 +221,9 @@
   function pick(id: number): void {
     clearTimeout(closeTimer);
     selected.set(id);
-    tool.set('material');
+    if ($tool !== 'rect') {
+      tool.set('material');
+    }
     lastTool.set('material');
     recordMaterialUse(id);
     pinned = null;
@@ -240,7 +242,9 @@
   function pickObject(kind: ObjectKind): void {
     clearTimeout(closeTimer);
     selectedObject.set(kind);
-    tool.set('object');
+    if ($tool !== 'rect') {
+      tool.set('object');
+    }
     lastTool.set('object');
     pinned = null;
     hovered = null;

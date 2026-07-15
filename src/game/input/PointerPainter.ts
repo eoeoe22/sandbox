@@ -1072,8 +1072,18 @@ export class PointerPainter {
       }
       return;
     }
-    const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
-    const stats = inspectCells(this.grid, this.brushCells(cx, cy));
+    let cells: number[];
+    if ($tool.get() === 'rect' && (this.rectDragging || this.rectPending)) {
+      const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
+      const x1 = Math.min(this.grid.width - 1, Math.max(this.rectSX, this.rectEX));
+      const y0 = Math.max(0, Math.min(this.rectSY, this.rectEY));
+      const y1 = Math.min(this.grid.height - 1, Math.max(this.rectSY, this.rectEY));
+      cells = x1 >= x0 && y1 >= y0 ? this.rectCells(x0, y0, x1, y1) : [];
+    } else {
+      const [cx, cy] = this.clientToCell(this.lastClientX, this.lastClientY);
+      cells = this.brushCells(cx, cy);
+    }
+    const stats = inspectCells(this.grid, cells);
     if (sameInspect(this.lastInspect, stats)) return;
     this.lastInspect = stats;
     $inspectData.set(stats);
