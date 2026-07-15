@@ -16,16 +16,21 @@ import { getMaterial } from '../materials/registry';
  */
 
 /**
- * Heat (delta > 0) or cool (delta < 0) every non-empty cell in `cells`, clamped
- * to [min, max]. Empty air is skipped on purpose: it has zero conductivity, so
- * it can neither hold heat nor pass it on, and it's reset to ambient whenever
- * written — warming it would be a no-op. Temperature is what the heat system and
- * material rules already read, so this plugs straight into boiling/freezing.
+ * Heat (mode 'absolute', rate > 0, or 'relative', rate > 0) or cool (rate < 0)
+ * every non-empty cell in `cells`, clamped to [min, max]. In 'absolute' mode
+ * every cell moves by the same flat `rate` degrees; in 'relative' mode each
+ * cell moves by `rate` times its *own current temperature*, so a hotter cell
+ * heats/cools faster in absolute terms. Empty air is skipped on purpose: it has
+ * zero conductivity, so it can neither hold heat nor pass it on, and it's reset
+ * to ambient whenever written — warming it would be a no-op. Temperature is
+ * what the heat system and material rules already read, so this plugs straight
+ * into boiling/freezing.
  */
 export function heatCells(
   grid: Grid,
   cells: readonly number[],
-  delta: number,
+  mode: 'absolute' | 'relative',
+  rate: number,
   min: number,
   max: number,
 ): void {
@@ -36,7 +41,8 @@ export function heatCells(
     // Skip empty air (zero conductivity, resets to ambient anyway) and Wall,
     // which is deliberately outside the temperature system (see wall.ts).
     if (id === EMPTY || getMaterial(id).isWall) continue;
-    const t = grid.getTemp(x, y) + delta;
+    const cur = grid.getTemp(x, y);
+    const t = cur + (mode === 'absolute' ? rate : cur * rate);
     grid.setTemp(x, y, t < min ? min : t > max ? max : t);
   }
 }

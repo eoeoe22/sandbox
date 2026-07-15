@@ -212,16 +212,37 @@ export const PARTICLE_FILL_RATE = 0.55;
  * under the brush: heat/cool nudge each cell's temperature, mix shuffles the
  * non-solid particles.
  */
-/** Temperature change applied per stamp by the heat (+) / cool (−) brush. Held
- *  presses re-stamp every frame (see PointerPainter.update), so this accumulates
- *  — sized so a brief hold noticeably warms/cools without instantly saturating. */
-export const HEAT_BRUSH_DELTA = 12;
 /** Upper clamp for the heat brush, comfortably above every material's own
  *  temperature (Lava ~1500, Fire ~1000) so superheating still has headroom. */
 export const HEAT_BRUSH_MAX = 2000;
 /** Lower clamp for the cool brush — a bit below ambient (20), enough to make a
  *  cold sink that pulls heat out of neighbors without a runaway to absolute cold. */
 export const HEAT_BRUSH_MIN = -50;
+
+/**
+ * How the 가열/냉각 brush's sensitivity dial (`$heatRateMode`) is interpreted.
+ * 'absolute' raises/lowers temperature by a fixed number of degrees; 'relative'
+ * scales by a percentage of the current temperature instead (so a hotter cell
+ * heats/cools faster in absolute terms — compounding growth rather than a flat
+ * add). Both are specified as a rate *at sim speed ×1, sustained for 1 second*
+ * (see PointerPainter.heatRatePerTick/heatRateOneShot for how that's turned
+ * into an actual per-tick or one-shot delta).
+ */
+export type HeatRateMode = 'absolute' | 'relative';
+export const HEAT_RATE_MODE_DEFAULT: HeatRateMode = 'absolute';
+
+/** Absolute-mode heat/cool rate: degrees per second at sim speed ×1. Default
+ *  (360) reproduces the original fixed-delta brush feel (12°/stamp × 30
+ *  stamps/sec at ×1). */
+export const HEAT_ABS_RATE_DEFAULT = 360;
+export const HEAT_ABS_RATE_MIN = 10;
+export const HEAT_ABS_RATE_MAX = 2000;
+
+/** Relative-mode heat/cool rate: percent of current temperature per second at
+ *  sim speed ×1. */
+export const HEAT_REL_RATE_DEFAULT = 50;
+export const HEAT_REL_RATE_MIN = 1;
+export const HEAT_REL_RATE_MAX = 300;
 
 /**
  * Sentinel for the "auto" overwrite rule. When `$overwriteLevel` is this value,

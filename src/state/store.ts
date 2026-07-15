@@ -13,6 +13,9 @@ import {
   GRID_DIVISION_DEFAULT,
   BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
+  HEAT_RATE_MODE_DEFAULT,
+  HEAT_ABS_RATE_DEFAULT,
+  HEAT_REL_RATE_DEFAULT,
 } from '../game/config';
 import type {
   SimSpeed,
@@ -20,6 +23,7 @@ import type {
   GravityDir,
   CellScale,
   GridDivision,
+  HeatRateMode,
 } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 import type { InspectStats } from '../game/engine/brushTools';
@@ -113,6 +117,19 @@ export const $inspect = atom<boolean>(false);
  * InspectPanel.svelte.
  */
 export const $inspectData = atom<InspectStats | null>(null);
+
+/**
+ * 가열/냉각 브러시 감도. `$heatRateMode` picks whether `$heatAbsoluteRate`
+ * (degrees/sec) or `$heatRelativeRate` (percent/sec) governs the brush — both
+ * rates are specified "at sim speed ×1, held for 1 second" (see config.ts and
+ * PointerPainter.heatRatePerTick/heatRateOneShot). The 영역 (rect) one-shot
+ * heat/cool applies this same 1-second total in a single confirm, regardless of
+ * the sandbox's *current* speed. Configured via the 가열/냉각 브러시 설정 modal
+ * (double-click either toolbar button, or open it from 설정).
+ */
+export const $heatRateMode = atom<HeatRateMode>(HEAT_RATE_MODE_DEFAULT);
+export const $heatAbsoluteRate = atom<number>(HEAT_ABS_RATE_DEFAULT);
+export const $heatRelativeRate = atom<number>(HEAT_REL_RATE_DEFAULT);
 
 /**
  * One component of the blend (혼합) brush: a material id and the percentage
@@ -302,6 +319,9 @@ export const resetSettings = (): void => {
   $tool.set('material');
   $areaSelect.set(false);
   $inspect.set(false);
+  $heatRateMode.set(HEAT_RATE_MODE_DEFAULT);
+  $heatAbsoluteRate.set(HEAT_ABS_RATE_DEFAULT);
+  $heatRelativeRate.set(HEAT_REL_RATE_DEFAULT);
   $overwriteLevel.set(OVERWRITE_LEVEL_MAX);
   $borderMode.set('wall');
   $smokeLevel.set(SMOKE_LEVEL_DEFAULT);

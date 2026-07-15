@@ -18,6 +18,9 @@ import {
   $bottomDeadzone,
   $favorites,
   $recentMaterials,
+  $heatRateMode,
+  $heatAbsoluteRate,
+  $heatRelativeRate,
   type BrushShape,
   type BrushMode,
   type Tool,
@@ -44,8 +47,12 @@ import {
   BOTTOM_DEADZONE_MAX,
   BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
+  HEAT_ABS_RATE_MIN,
+  HEAT_ABS_RATE_MAX,
+  HEAT_REL_RATE_MIN,
+  HEAT_REL_RATE_MAX,
 } from '../game/config';
-import type { SimSpeed, SmokeLevel } from '../game/config';
+import type { SimSpeed, SmokeLevel, HeatRateMode } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
 
@@ -91,6 +98,7 @@ const BRUSH_MODES: readonly BrushMode[] = ['full', 'particle'];
 const TOOLS: readonly Tool[] = ['material', 'heat', 'cool', 'mix', 'erase', 'blend', 'object', 'view'];
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
+const HEAT_RATE_MODES: readonly HeatRateMode[] = ['absolute', 'relative'];
 
 /** Palette-material ids the blend editor can actually offer, so a restored blend
  *  can't reference a material with no matching <option> (it validates to exactly
@@ -194,6 +202,9 @@ function hydrateSettings(): void {
   $brushShape.set(oneOf(s.brushShape, BRUSH_SHAPES, $brushShape.get()));
   $brushMode.set(oneOf(s.brushMode, BRUSH_MODES, $brushMode.get()));
   $tool.set(oneOf(s.tool, TOOLS, $tool.get()));
+  $heatRateMode.set(oneOf(s.heatRateMode, HEAT_RATE_MODES, $heatRateMode.get()));
+  $heatAbsoluteRate.set(clampFloat(s.heatAbsoluteRate, HEAT_ABS_RATE_MIN, HEAT_ABS_RATE_MAX, $heatAbsoluteRate.get()));
+  $heatRelativeRate.set(clampFloat(s.heatRelativeRate, HEAT_REL_RATE_MIN, HEAT_REL_RATE_MAX, $heatRelativeRate.get()));
   $overwriteLevel.set(
     clampOverwrite(s.overwriteLevel, $overwriteLevel.get()),
   );
@@ -240,6 +251,9 @@ function saveSettings(): void {
       brushShape: $brushShape.get(),
       brushMode: $brushMode.get(),
       tool: $tool.get(),
+      heatRateMode: $heatRateMode.get(),
+      heatAbsoluteRate: $heatAbsoluteRate.get(),
+      heatRelativeRate: $heatRelativeRate.get(),
       overwriteLevel: $overwriteLevel.get(),
       borderMode: $borderMode.get(),
       simSpeed: $simSpeed.get(),
@@ -297,6 +311,9 @@ export function initSettingsPersistence(): void {
   $brushShape.listen(schedule);
   $brushMode.listen(schedule);
   $tool.listen(schedule);
+  $heatRateMode.listen(schedule);
+  $heatAbsoluteRate.listen(schedule);
+  $heatRelativeRate.listen(schedule);
   $overwriteLevel.listen(schedule);
   $borderMode.listen(schedule);
   $simSpeed.listen(schedule);
