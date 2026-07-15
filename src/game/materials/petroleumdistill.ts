@@ -30,6 +30,8 @@ const SUPERHEAT = 60; // above boilTemp + this, boiling is certain (can't overhe
  * simmer just above `boilTemp`, becoming certain once superheated, so the cut
  * can never climb far past its boiling point toward autoignition.
  */
+const BURNING_TEMP = 600;
+
 export function refluxBoil(
   x: number,
   y: number,
@@ -39,9 +41,9 @@ export function refluxBoil(
 ): boolean {
   const t = sim.getTemp(x, y);
   if (t < boilTemp) return false;
-  // Direct flame contact wins over reflux: let an adjacent flame burn the cut
-  // instead of boiling it away (mirrors oil.ts).
-  if (flameAdjacent(x, y, sim)) return false;
+  // Actively burning fuel (pinned to ~800) must not evaporate/reflux, nor should
+  // fuel touching an adjacent flame (direct flame contact wins over reflux).
+  if (t >= BURNING_TEMP || flameAdjacent(x, y, sim)) return false;
   if (t >= boilTemp + SUPERHEAT || sim.chance(SIMMER_CHANCE)) {
     // In-place set keeps the (hot) temperature so the fresh vapour rises hot and
     // condenses on its own as it cools higher up (see petroleumvapor.ts).

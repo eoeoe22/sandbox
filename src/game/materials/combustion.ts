@@ -152,6 +152,9 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
       if (isPetroleum) {
         onWater = true; // oil fire on water: not doused, water not steamed
+        // Block heat conduction to the water below so it doesn't eventually boil
+        // and evaporate the base the fire is floating on.
+        sim.setTemp(nx, ny, Math.min(sim.getTemp(nx, ny), 95));
         continue;
       }
       // Cell stays fuel (its id is untouched); just cool it back out of the
