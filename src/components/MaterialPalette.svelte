@@ -5,6 +5,7 @@
   import {
     $selectedMaterial as selected,
     $tool as tool,
+    $lastTool as lastTool,
     $selectedObject as selectedObject,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
@@ -221,6 +222,7 @@
     clearTimeout(closeTimer);
     selected.set(id);
     tool.set('material');
+    lastTool.set('material');
     recordMaterialUse(id);
     pinned = null;
     hovered = null;
@@ -239,6 +241,7 @@
     clearTimeout(closeTimer);
     selectedObject.set(kind);
     tool.set('object');
+    lastTool.set('object');
     pinned = null;
     hovered = null;
   }

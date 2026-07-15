@@ -7,26 +7,32 @@ import {
   $brushMode,
   $overwriteLevel,
   $tool,
+  $lastTool,
   $blendBrush,
   $inspect,
   $inspectData,
   $selectedObject,
+  $heatMode,
+  $heatRate,
+  $heatPercent,
+  $simSpeed,
+  type Tool,
 } from '../../state/store';
 import {
   BRUSH_MIN,
   BRUSH_MAX,
   PARTICLE_FILL_RATE,
-  HEAT_BRUSH_DELTA,
   HEAT_BRUSH_MAX,
   HEAT_BRUSH_MIN,
   AMBIENT_TEMP,
   OVERWRITE_AUTO,
   OVERWRITE_LEVEL_MAX,
+  TICK_HZ,
 } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { heatCells, mixCells, inspectCells } from '../engine/brushTools';
+import { heatCells, heatCellsPercent, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 import {
@@ -167,6 +173,10 @@ export class PointerPainter {
   private rectPending = false;
   /** Whether the current marquee will erase (right-drag) instead of fill. */
   private rectErase = false;
+  /** Which non-rect tool the marquee will apply on confirm. Snapped from
+   *  `$lastTool` at pointerdown so changing the (hidden) tool mid-drag can't
+   *  swap the marquee's effect under the user. Erase (right-drag) overrides it. */
+  private rectTool: Tool = 'material';
   /** Marquee corners in grid-cell coordinates (start = pointerdown, end = last
    *  move). The rectangle is the axis-aligned bounding box of the two. */
   private rectSX = 0;
@@ -304,6 +314,49 @@ export class PointerPainter {
     }
   }
 
+  /** Percent-mode counterpart for free objects: nudge each body's temp by
+   *  `fraction` of its current temp, same clamp. Mirrors heatCellsPercent for
+   *  the object layer so the chosen mode applies consistently to bodies too. */
+  private heatObjectsUnderBrushPercent(cx: number, cy: number, fraction: number): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    const rad = $brushSize.get();
+    const bx = cx + 0.5;
+    const by = cy + 0.5;
+    for (const o of objs) {
+      if (o.held) continue;
+      if (distanceToBody(o, bx, by) > rad) continue;
+      const t = o.temp * (1 + fraction);
+      o.temp = t < HEAT_BRUSH_MIN ? HEAT_BRUSH_MIN : t > HEAT_BRUSH_MAX ? HEAT_BRUSH_MAX : t;
+    }
+  }
+
+  /** How many brush stamps land per wall-clock second. The held brush re-stamps
+   *  once per simulation tick (Game.ts), and the tick rate is TICK_HZ × simSpeed
+   *  / 2 (see Game.ts stepMs). Used to convert the user's per-second heat rate
+   *  into a per-stamp delta/fraction so heating stays consistent across sim
+   *  speeds and display refresh rates. */
+  private static stampsPerSecond(): number {
+    return (TICK_HZ * $simSpeed.get()) / 2;
+  }
+
+  /** Apply the heat/cool brush's per-stamp effect to the cells and objects under
+   *  (cx,cy), respecting the current heat mode and rate. `sign` is +1 for heat,
+   *  −1 for cool. */
+  private stampHeat(cx: number, cy: number, sign: number): void {
+    const cells = this.brushCells(cx, cy);
+    const sps = PointerPainter.stampsPerSecond() || 1;
+    if ($heatMode.get() === 'percent') {
+      const fraction = (sign * $heatPercent.get()) / 100 / sps;
+      heatCellsPercent(this.grid, cells, fraction, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      this.heatObjectsUnderBrushPercent(cx, cy, fraction);
+    } else {
+      const delta = (sign * $heatRate.get()) / sps;
+      heatCells(this.grid, cells, delta, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      this.heatObjectsUnderBrush(cx, cy, delta);
+    }
+  }
+
   /** Shove any free object under the 섞기 brush — a random jostle with a slight
    *  outward push, so stirring scatters/ejects bodies the way it disperses cells.
    *  Drums also get a random spin. Skips a held body (the drag owns it) and any
@@ -354,11 +407,9 @@ export class PointerPainter {
     if (this.erasing) return this.paint(cx, cy, true);
     switch ($tool.get()) {
       case 'heat':
-        heatCells(this.grid, this.brushCells(cx, cy), HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
-        return this.heatObjectsUnderBrush(cx, cy, HEAT_BRUSH_DELTA);
+        return this.stampHeat(cx, cy, 1);
       case 'cool':
-        heatCells(this.grid, this.brushCells(cx, cy), -HEAT_BRUSH_DELTA, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
-        return this.heatObjectsUnderBrush(cx, cy, -HEAT_BRUSH_DELTA);
+        return this.stampHeat(cx, cy, -1);
       case 'mix':
         mixCells(this.grid, this.brushCells(cx, cy));
         return this.mixPushObjectsUnderBrush(cx, cy);
@@ -540,8 +591,10 @@ export class PointerPainter {
    * Fill the axis-aligned bounding box of (sx,sy)–(ex,ey) with the selected
    * material (or Empty when `erase` is set), honoring the same overwrite gate,
    * particle-fill, init-temp, and aux-clear rules as `paint()`. This is the
-   * 영역 (rect) tool's confirm action — a one-shot rectangular fill, not a
-   * per-tick brush stamp.
+   * 영역 (rect) tool's confirm action — a one-shot rectangular application of
+   * the last active non-rect tool, not a per-tick brush stamp: material/blend
+   * fills the box, mix shuffles it once, heat/cool apply one second's worth of
+   * temperature change at once, and a right-drag erases.
    */
   private paintRect(sx: number, sy: number, ex: number, ey: number, erase: boolean): void {
     const x0 = Math.max(0, Math.min(sx, ex));
@@ -549,37 +602,165 @@ export class PointerPainter {
     const y0 = Math.max(0, Math.min(sy, ey));
     const y1 = Math.min(this.grid.height - 1, Math.max(sy, ey));
     if (x1 < x0 || y1 < y0) return;
-    if (erase) {
-      // Erase any free objects whose center falls inside the marquee, the same
-      // way the brush eraser sweeps its footprint.
-      const objs = this.grid.objects;
-      if (objs.length > 0) {
-        let w = 0;
-        for (let i = 0; i < objs.length; i++) {
-          const o = objs[i];
-          if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) objs[w++] = o;
-        }
-        objs.length = w;
+    // Right-drag always erases (the secondary button always erases). Otherwise
+    // dispatch to the snapshotted tool so the marquee does what the last active
+    // brush would do — but in one rectangular shot.
+    if (erase) return this.eraseRect(x0, y0, x1, y1);
+    switch (this.rectTool) {
+      case 'blend':
+        return this.blendRect(x0, y0, x1, y1);
+      case 'mix': {
+        const cells = this.rectCells(x0, y0, x1, y1);
+        mixCells(this.grid, cells);
+        // A rect stir also nudges objects inside the box, like the brush stir.
+        this.mixPushObjectsInRect(x0, y0, x1, y1);
+        return;
       }
+      case 'heat':
+        return this.heatRect(x0, y0, x1, y1, 1);
+      case 'cool':
+        return this.heatRect(x0, y0, x1, y1, -1);
     }
-    const id = erase ? 0 : $selectedMaterial.get();
+    this.fillRect(x0, y0, x1, y1);
+  }
+
+  /** Flat [x,y,...] list of every in-bounds cell in the AABB, the rect analogue
+   *  of `brushCells` — passed to the engine's heatCells/mixCells. */
+  private rectCells(x0: number, y0: number, x1: number, y1: number): number[] {
+    const out: number[] = [];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) out.push(x, y);
+    }
+    return out;
+  }
+
+  /** Fill the AABB with the selected material — the rect tool's original fill
+   *  action, honoring the same overwrite gate, particle-fill, init-temp, and
+   *  aux-clear rules as `paint()`. */
+  private fillRect(x0: number, y0: number, x1: number, y1: number): void {
+    const id = $selectedMaterial.get();
     const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
-    const isEraser = id === 0;
-    const particle =
-      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    const particle = $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
-    const beltAux =
-      id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
+    const beltAux = id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
-        if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
+        if (!canOverwrite(this.grid.get(x, y), level)) continue;
         this.grid.set(x, y, id);
         this.grid.setTemp(x, y, initTemp);
         this.grid.setAux(x, y, beltAux);
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
         this.grid.setOverlay(x, y, 0);
       }
+    }
+  }
+
+  /** Fill the AABB with the blend brush's stochastic mix, cell by cell — the
+   *  rect analogue of `paintBlend`, one shot. */
+  private blendRect(x0: number, y0: number, x1: number, y1: number): void {
+    const comps = $blendBrush.get();
+    let total = 0;
+    for (const c of comps) total += c.ratio;
+    if (total <= 0) return;
+    const level = effectiveOverwriteLevel($overwriteLevel.get(), comps[0].id);
+    const particleMode = $brushMode.get() === 'particle';
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        let r = Math.random() * total;
+        let id = comps[comps.length - 1].id;
+        for (const c of comps) {
+          r -= c.ratio;
+          if (r < 0) {
+            id = c.id;
+            break;
+          }
+        }
+        const mat = getMaterial(id);
+        if (particleMode && mat.phase !== Phase.Solid && Math.random() > PARTICLE_FILL_RATE) continue;
+        if (!canOverwrite(this.grid.get(x, y), level)) continue;
+        this.grid.set(x, y, id);
+        this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
+        this.grid.setAux(x, y, 0);
+        this.grid.setTint(x, y, (Math.random() * 256) | 0);
+        this.grid.setOverlay(x, y, 0);
+      }
+    }
+  }
+
+  /** Apply one full second's worth of heat/cool to the AABB at once (the rect
+   *  tool applies the per-second rate immediately, not per-tick). `sign` is +1
+   *  for heat, −1 for cool. Also warms/chills free objects inside the box. */
+  private heatRect(x0: number, y0: number, x1: number, y1: number, sign: number): void {
+    const cells = this.rectCells(x0, y0, x1, y1);
+    if ($heatMode.get() === 'percent') {
+      const fraction = (sign * $heatPercent.get()) / 100;
+      heatCellsPercent(this.grid, cells, fraction, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      this.heatObjectsInRect(x0, y0, x1, y1, (t) => t * (1 + fraction));
+    } else {
+      const delta = sign * $heatRate.get();
+      heatCells(this.grid, cells, delta, HEAT_BRUSH_MIN, HEAT_BRUSH_MAX);
+      this.heatObjectsInRect(x0, y0, x1, y1, (t) => t + delta);
+    }
+  }
+
+  /** Apply a heat transform to every free object whose center is inside the
+   *  rect, the rect analogue of `heatObjectsUnderBrush`. `apply` maps the old
+   *  temp to the new (pre-clamp) so the caller can express absolute or percent. */
+  private heatObjectsInRect(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    apply: (t: number) => number,
+  ): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    for (const o of objs) {
+      if (o.held) continue;
+      if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) continue;
+      const t = apply(o.temp);
+      o.temp = t < HEAT_BRUSH_MIN ? HEAT_BRUSH_MIN : t > HEAT_BRUSH_MAX ? HEAT_BRUSH_MAX : t;
+    }
+  }
+
+  /** Erase the AABB to Empty and remove free objects whose center is inside it,
+   *  the rect analogue of the brush eraser. */
+  private eraseRect(x0: number, y0: number, x1: number, y1: number): void {
+    const objs = this.grid.objects;
+    if (objs.length > 0) {
+      let w = 0;
+      for (let i = 0; i < objs.length; i++) {
+        const o = objs[i];
+        if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) objs[w++] = o;
+      }
+      objs.length = w;
+    }
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        this.grid.set(x, y, 0);
+        this.grid.setOverlay(x, y, 0);
+      }
+    }
+  }
+
+  /** Nudge free objects inside the rect outward — the rect analogue of
+   *  `mixPushObjectsUnderBrush`, for the rect-mix action. */
+  private mixPushObjectsInRect(x0: number, y0: number, x1: number, y1: number): void {
+    const objs = this.grid.objects;
+    if (objs.length === 0) return;
+    const cx = (x0 + x1 + 1) / 2;
+    const cy = (y0 + y1 + 1) / 2;
+    for (const o of objs) {
+      if (o.held) continue;
+      if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) continue;
+      if (Math.hypot(o.vx, o.vy) >= MIX_MAX_SPEED) continue;
+      const dx = o.x - cx;
+      const dy = o.y - cy;
+      const d = Math.hypot(dx, dy) || 1;
+      o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
+      o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
+      if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
   }
 
@@ -626,6 +807,7 @@ export class PointerPainter {
       this.cancelRect(); // a new press supersedes any pending marquee
       this.rectDragging = true;
       this.rectErase = this.erasing;
+      this.rectTool = $lastTool.get(); // snapshot which brush the marquee applies
       this.rectSX = x;
       this.rectSY = y;
       this.rectEX = x;
@@ -863,9 +1045,10 @@ export class PointerPainter {
     this.rectEl.style.top = `${top}px`;
     this.rectEl.style.width = `${width}px`;
     this.rectEl.style.height = `${height}px`;
-    // Distinguish the fill marquee from the erase marquee, and a pending
-    // selection (awaiting Enter) from an active drag.
-    this.rectEl.dataset.mode = this.rectErase ? 'erase' : 'fill';
+    // The marquee color reflects which tool the rect will apply: erase for a
+    // right-drag, otherwise the snapshotted tool (material→fill, heat, cool,
+    // mix, blend, …) so the user can read the pending effect at a glance.
+    this.rectEl.dataset.mode = this.rectErase ? 'erase' : this.rectTool;
     this.rectEl.dataset.pending = this.rectPending ? 'true' : 'false';
   }
 

@@ -212,16 +212,42 @@ export const PARTICLE_FILL_RATE = 0.55;
  * under the brush: heat/cool nudge each cell's temperature, mix shuffles the
  * non-solid particles.
  */
-/** Temperature change applied per stamp by the heat (+) / cool (−) brush. Held
- *  presses re-stamp every frame (see PointerPainter.update), so this accumulates
- *  — sized so a brief hold noticeably warms/cools without instantly saturating. */
-export const HEAT_BRUSH_DELTA = 12;
 /** Upper clamp for the heat brush, comfortably above every material's own
  *  temperature (Lava ~1500, Fire ~1000) so superheating still has headroom. */
 export const HEAT_BRUSH_MAX = 2000;
 /** Lower clamp for the cool brush — a bit below ambient (20), enough to make a
  *  cold sink that pulls heat out of neighbors without a runaway to absolute cold. */
 export const HEAT_BRUSH_MIN = -50;
+
+/**
+ * Heat/cool brush customization. The brush works in one of two modes, each
+ * with a user-tunable rate expressed *per second* (so it stays consistent
+ * across simulation speeds and display refresh rates):
+ *  - 'absolute': ±N degrees per second (a fixed amount, regardless of the
+ *    cell's current temperature).
+ *  - 'percent': ±N% of the cell's current temperature per second (hot things
+ *    heat faster, cold things slower — exponential approach toward the clamp).
+ *
+ * The held brush re-stamps once per simulation tick, so the per-stamp delta is
+ * the per-second rate divided by the stamps-per-second (which tracks the sim
+ * speed). The 영역 (rect) tool applies one full second's worth at once on
+ * confirm (see PointerPainter.paintRect).
+ */
+export type HeatMode = 'absolute' | 'percent';
+export const HEAT_MODES: readonly HeatMode[] = ['absolute', 'percent'];
+export const HEAT_MODE_DEFAULT: HeatMode = 'absolute';
+/** Absolute mode: degrees/sec. Default ~300 keeps the old feel (the former
+ *  fixed 12/stamp at ~30 stamps/sec ≈ 360/sec). */
+export const HEAT_RATE_DEFAULT = 300;
+export const HEAT_RATE_MIN = 10;
+export const HEAT_RATE_MAX = 2000;
+export const HEAT_RATE_STEP = 10;
+/** Percent mode: % of current temp/sec. 100 ≈ double/halve toward the clamp
+ *  over ~1s (exponential). */
+export const HEAT_PERCENT_DEFAULT = 100;
+export const HEAT_PERCENT_MIN = 1;
+export const HEAT_PERCENT_MAX = 500;
+export const HEAT_PERCENT_STEP = 1;
 
 /**
  * Sentinel for the "auto" overwrite rule. When `$overwriteLevel` is this value,

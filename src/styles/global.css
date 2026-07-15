@@ -148,6 +148,26 @@ body {
   border-style: dashed;
   background: rgba(232, 232, 238, 0.08);
 }
+/* Tool-tinted marquees mirror the brush-cursor tints (see data-tool above), so
+   the rect color reads as the tool it will apply: warm orange for heat, cool
+   blue for cool, purple for mix, green for blend. 'material' falls through to
+   the default blue fill. */
+.rect-select[data-mode='heat'] {
+  border-color: rgba(255, 138, 60, 0.95);
+  background: rgba(255, 138, 60, 0.12);
+}
+.rect-select[data-mode='cool'] {
+  border-color: rgba(96, 176, 255, 0.95);
+  background: rgba(96, 176, 255, 0.12);
+}
+.rect-select[data-mode='mix'] {
+  border-color: rgba(198, 128, 255, 0.95);
+  background: rgba(198, 128, 255, 0.12);
+}
+.rect-select[data-mode='blend'] {
+  border-color: rgba(120, 220, 160, 0.95);
+  background: rgba(120, 220, 160, 0.12);
+}
 /* A pending marquee (post-release, awaiting Enter) pulses gently to signal
    "press Enter to apply, Escape to cancel". */
 .rect-select[data-pending='true'] {

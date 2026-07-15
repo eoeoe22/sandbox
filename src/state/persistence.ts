@@ -14,6 +14,9 @@ import {
   $gravityStrength,
   $cellScale,
   $heatOverlay,
+  $heatMode,
+  $heatRate,
+  $heatPercent,
   $gridDivision,
   $bottomDeadzone,
   $favorites,
@@ -44,6 +47,14 @@ import {
   BOTTOM_DEADZONE_MAX,
   BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
+  HEAT_MODES,
+  HEAT_MODE_DEFAULT,
+  HEAT_RATE_MIN,
+  HEAT_RATE_MAX,
+  HEAT_RATE_DEFAULT,
+  HEAT_PERCENT_MIN,
+  HEAT_PERCENT_MAX,
+  HEAT_PERCENT_DEFAULT,
 } from '../game/config';
 import type { SimSpeed, SmokeLevel } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
@@ -219,6 +230,9 @@ function hydrateSettings(): void {
   );
   $cellScale.set(oneOf(s.cellScale, CELL_SCALES, $cellScale.get()));
   if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
+  $heatMode.set(oneOf(s.heatMode, HEAT_MODES, HEAT_MODE_DEFAULT));
+  $heatRate.set(clampFloat(s.heatRate, HEAT_RATE_MIN, HEAT_RATE_MAX, HEAT_RATE_DEFAULT));
+  $heatPercent.set(clampFloat(s.heatPercent, HEAT_PERCENT_MIN, HEAT_PERCENT_MAX, HEAT_PERCENT_DEFAULT));
   $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
   $bottomDeadzone.set(
     clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
@@ -250,6 +264,9 @@ function saveSettings(): void {
       gravityStrength: $gravityStrength.get(),
       cellScale: $cellScale.get(),
       heatOverlay: $heatOverlay.get(),
+      heatMode: $heatMode.get(),
+      heatRate: $heatRate.get(),
+      heatPercent: $heatPercent.get(),
       gridDivision: $gridDivision.get(),
       bottomDeadzone: $bottomDeadzone.get(),
       favorites: $favorites.get(),
@@ -307,6 +324,9 @@ export function initSettingsPersistence(): void {
   $gravityStrength.listen(schedule);
   $cellScale.listen(schedule);
   $heatOverlay.listen(schedule);
+  $heatMode.listen(schedule);
+  $heatRate.listen(schedule);
+  $heatPercent.listen(schedule);
   $gridDivision.listen(schedule);
   $bottomDeadzone.listen(schedule);
   $favorites.listen(schedule);

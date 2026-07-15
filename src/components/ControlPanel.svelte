@@ -8,6 +8,7 @@
     $brushMode as brushMode,
     $overwriteLevel as overwriteLevel,
     $tool as tool,
+    $lastTool as lastTool,
     $inspect as inspect,
     $selectedMaterial as selectedMaterial,
     $fps as fps,
@@ -19,6 +20,9 @@
     $gravityStrength as gravityStrength,
     $cellScale as cellScale,
     $heatOverlay as heatOverlay,
+    $heatMode as heatMode,
+    $heatRate as heatRate,
+    $heatPercent as heatPercent,
     $gridDivision as gridDivision,
     $bottomDeadzone as bottomDeadzone,
     $particleCount as particleCount,
@@ -27,6 +31,7 @@
     requestClear,
     requestStep,
     resetSettings,
+    type Tool,
   } from '../state/store';
   import {
     BRUSH_MIN,
@@ -45,8 +50,15 @@
     BOTTOM_DEADZONE_MIN,
     BOTTOM_DEADZONE_MAX,
     BOTTOM_DEADZONE_STEP,
+    HEAT_MODES,
+    HEAT_RATE_MIN,
+    HEAT_RATE_MAX,
+    HEAT_RATE_STEP,
+    HEAT_PERCENT_MIN,
+    HEAT_PERCENT_MAX,
+    HEAT_PERCENT_STEP,
   } from '../game/config';
-  import type { GravityDir } from '../game/config';
+  import type { GravityDir, HeatMode } from '../game/config';
   import { getMaterial } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
@@ -70,8 +82,17 @@
 
   // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
   // click away; re-clicking it reopens the editor to fine-tune the ratios.
+  // Select a brush tool. Anything other than 'rect' is remembered as the "last
+  // active tool" so the rect marquee knows which brush to apply on confirm; 'rect'
+  // itself never becomes the last tool (it inherits the prior one). Centralizing
+  // this here keeps lastTool in sync across every tool button + pickBlend.
+  function setTool(t: Tool): void {
+    tool.set(t);
+    if (t !== 'rect') lastTool.set(t);
+  }
+
   function pickBlend(): void {
-    tool.set('blend');
+    setTool('blend');
     blendOpen = true;
   }
 
@@ -374,6 +395,64 @@
       </button>
     </div>
   </div>
+
+  <!-- Heat/cool brush strength. The rate is expressed per second so it stays
+       consistent across sim speeds; the 영역 tool applies one full second at
+       once. Absolute = fixed degrees/sec, percent = % of current temp/sec. -->
+  <div class="field">
+    <span class="field-label">가열/냉각 강도</span>
+    <div class="seg" role="group" aria-label="가열/냉각 모드">
+      <button
+        class="ctl"
+        class:active={$heatMode === 'absolute'}
+        onclick={() => heatMode.set('absolute')}
+        aria-pressed={$heatMode === 'absolute'}
+        title="고정 온도(도/초)로 올리거나 내립니다"
+      >
+        <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+        <span class="label">절대</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$heatMode === 'percent'}
+        onclick={() => heatMode.set('percent')}
+        aria-pressed={$heatMode === 'percent'}
+        title="현재 온도의 비율(%/초)로 올리거나 내립니다"
+      >
+        <i class="bi bi-percent" aria-hidden="true"></i>
+        <span class="label">퍼센트</span>
+      </button>
+    </div>
+    {#if $heatMode === 'percent'}
+      <label class="field sub-field">
+        <span class="field-label">속도: {$heatPercent}%/초</span>
+        <input
+          type="range"
+          aria-label="가열/냉각 속도 (퍼센트/초)"
+          min={HEAT_PERCENT_MIN}
+          max={HEAT_PERCENT_MAX}
+          step={HEAT_PERCENT_STEP}
+          value={$heatPercent}
+          oninput={(e) => heatPercent.set(+e.currentTarget.value)}
+        />
+        <span class="range-ends"><span>1%</span><span>500%</span></span>
+      </label>
+    {:else}
+      <label class="field sub-field">
+        <span class="field-label">속도: {$heatRate}도/초</span>
+        <input
+          type="range"
+          aria-label="가열/냉각 속도 (도/초)"
+          min={HEAT_RATE_MIN}
+          max={HEAT_RATE_MAX}
+          step={HEAT_RATE_STEP}
+          value={$heatRate}
+          oninput={(e) => heatRate.set(+e.currentTarget.value)}
+        />
+        <span class="range-ends"><span>10도</span><span>2000도</span></span>
+      </label>
+    {/if}
+  </div>
 {/snippet}
 
 <!-- Set-once settings: tucked in the 설정 modal on every viewport so they don't
@@ -550,7 +629,7 @@
         <button
           class="ctl material-btn"
           class:active={$tool === 'material'}
-          onclick={() => tool.set('material')}
+          onclick={() => setTool('material')}
           aria-pressed={$tool === 'material'}
           aria-label={`재료: ${selectedName}`}
           title={`선택한 재료를 그립니다: ${selectedName}`}
@@ -572,7 +651,7 @@
         <button
           class="ctl"
           class:active={$tool === 'heat'}
-          onclick={() => tool.set('heat')}
+          onclick={() => setTool('heat')}
           aria-pressed={$tool === 'heat'}
           aria-label="가열"
           title="브러시 영역의 온도를 올립니다 (빈칸 제외)"
@@ -583,7 +662,7 @@
         <button
           class="ctl"
           class:active={$tool === 'cool'}
-          onclick={() => tool.set('cool')}
+          onclick={() => setTool('cool')}
           aria-pressed={$tool === 'cool'}
           aria-label="냉각"
           title="브러시 영역의 온도를 내립니다 (빈칸 제외)"
@@ -594,7 +673,7 @@
         <button
           class="ctl"
           class:active={$tool === 'mix'}
-          onclick={() => tool.set('mix')}
+          onclick={() => setTool('mix')}
           aria-pressed={$tool === 'mix'}
           aria-label="섞기"
           title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
@@ -605,7 +684,7 @@
         <button
           class="ctl"
           class:active={$tool === 'erase'}
-          onclick={() => tool.set('erase')}
+          onclick={() => setTool('erase')}
           aria-pressed={$tool === 'erase'}
           aria-label="지우개"
           title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
@@ -616,7 +695,7 @@
         <button
           class="ctl"
           class:active={$tool === 'view'}
-          onclick={() => tool.set('view')}
+          onclick={() => setTool('view')}
           aria-pressed={$tool === 'view'}
           aria-label="보기"
           title="보기 모드 — 그리지 않습니다. 오브젝트(공·드럼통)를 끌어 옮길 수 있어요 (오른쪽 클릭 지우개는 사용 가능)"
@@ -627,10 +706,10 @@
         <button
           class="ctl"
           class:active={$tool === 'rect'}
-          onclick={() => tool.set('rect')}
+          onclick={() => setTool('rect')}
           aria-pressed={$tool === 'rect'}
           aria-label="영역"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 직전 도구를 한 번에 적용합니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
@@ -918,6 +997,13 @@
   }
   .field input[type='range'] {
     width: 100%;
+  }
+  /* A nested slider under a segmented control (e.g. the heat mode + rate pair):
+     indented slightly so it reads as subordinate to the mode above it. */
+  .sub-field {
+    margin-top: 4px;
+    padding-left: 6px;
+    border-left: 2px solid #2a2a33;
   }
 
   .overwrite-steps {

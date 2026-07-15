@@ -21,6 +21,8 @@ import { getMaterial } from '../materials/registry';
  * it can neither hold heat nor pass it on, and it's reset to ambient whenever
  * written — warming it would be a no-op. Temperature is what the heat system and
  * material rules already read, so this plugs straight into boiling/freezing.
+ *
+ * This is the "absolute" mode: a fixed `delta` applied to every eligible cell.
  */
 export function heatCells(
   grid: Grid,
@@ -37,6 +39,33 @@ export function heatCells(
     // which is deliberately outside the temperature system (see wall.ts).
     if (id === EMPTY || getMaterial(id).isWall) continue;
     const t = grid.getTemp(x, y) + delta;
+    grid.setTemp(x, y, t < min ? min : t > max ? max : t);
+  }
+}
+
+/**
+ * "Percent" heat/cool mode: nudge each eligible cell's temperature by `fraction`
+ * of its *current* temperature (so hot cells change faster than cold ones — an
+ * exponential approach toward the clamp, not a fixed step). `fraction` is the
+ * signed fraction to apply this call (e.g. 0.5 = +50%, −0.25 = −25%); the
+ * caller derives it from the per-second percent rate and the call frequency.
+ * Empty air and Wall are skipped for the same reasons as `heatCells`. A cell at
+ * exactly 0° (rare — ambient is 20) sees no change under pure percent, which is
+ * correct: 0 × anything is 0.
+ */
+export function heatCellsPercent(
+  grid: Grid,
+  cells: readonly number[],
+  fraction: number,
+  min: number,
+  max: number,
+): void {
+  for (let k = 0; k < cells.length; k += 2) {
+    const x = cells[k];
+    const y = cells[k + 1];
+    const id = grid.get(x, y);
+    if (id === EMPTY || getMaterial(id).isWall) continue;
+    const t = grid.getTemp(x, y) * (1 + fraction);
     grid.setTemp(x, y, t < min ? min : t > max ? max : t);
   }
 }

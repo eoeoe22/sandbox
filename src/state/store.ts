@@ -13,6 +13,9 @@ import {
   GRID_DIVISION_DEFAULT,
   BOTTOM_DEADZONE_DEFAULT,
   RECENT_MATERIALS_MAX,
+  HEAT_MODE_DEFAULT,
+  HEAT_RATE_DEFAULT,
+  HEAT_PERCENT_DEFAULT,
 } from '../game/config';
 import type {
   SimSpeed,
@@ -20,6 +23,7 @@ import type {
   GravityDir,
   CellScale,
   GridDivision,
+  HeatMode,
 } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 import type { InspectStats } from '../game/engine/brushTools';
@@ -64,13 +68,23 @@ export const $brushMode = atom<BrushMode>('full');
  * button always erases, see PointerPainter). Handy paired with the 돋보기
  * inspect overlay ($inspect) to survey the world without painting. 'rect'
  * (영역) is a Photoshop-style rectangular marquee: drag a rectangle, then
- * confirm with Enter on PC (or release on touch) to fill that rectangle with
- * the selected material in one shot — same overwrite rule as the brush. See
+ * confirm with Enter on PC (or release on touch) to apply the *last active
+ * non-rect tool* to that rectangle in one shot — material/blend fill, mix
+ * shuffles, heat/cool warm/chill, or erase on a right-button drag. See
  * PointerPainter and config.ts. Selecting a material in the palette snaps this
  * back to 'material'.
  */
 export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view' | 'rect';
 export const $tool = atom<Tool>('material');
+
+/**
+ * The most recent non-'rect' tool the user selected. When `$tool` is 'rect',
+ * this remembers which brush the rect marquee should apply on confirm (material
+ * fill, blend, mix, heat, cool, …). Updated by the central `setTool` helper in
+ * ControlPanel whenever a non-rect tool is chosen; stays put when switching to
+ * 'rect' so the marquee inherits the prior tool.
+ */
+export const $lastTool = atom<Tool>('material');
 
 /**
  * Which free object the 'object' tool spawns on a canvas click — the object
@@ -170,6 +184,20 @@ export const $borderMode = atom<BorderMode>('wall');
  * `SmokeLevel` / `SMOKE_MEDIUM_KEEP` in config.ts.
  */
 export const $smokeLevel = atom<SmokeLevel>(SMOKE_LEVEL_DEFAULT);
+
+/**
+ * Heat/cool brush customization — how the temperature brushes change a cell's
+ * temperature. 'absolute' applies a fixed ±N degrees/sec (regardless of the
+ * cell's current temp); 'percent' applies ±N% of the cell's current temp/sec
+ * (exponential approach). The rate (`$heatRate` / `$heatPercent`) is expressed
+ * per second; the per-stamp delta divides by the sim's stamps-per-second, and
+ * the rect tool applies one full second at once. See config `HeatMode`.
+ */
+export const $heatMode = atom<HeatMode>(HEAT_MODE_DEFAULT);
+/** Absolute-mode rate: degrees/sec. */
+export const $heatRate = atom<number>(HEAT_RATE_DEFAULT);
+/** Percent-mode rate: % of current temp/sec. */
+export const $heatPercent = atom<number>(HEAT_PERCENT_DEFAULT);
 
 /**
  * Gravity direction — which way "down" points for all falling/rising material.
@@ -289,6 +317,7 @@ export const resetSettings = (): void => {
   $brushShape.set('circle');
   $brushMode.set('full');
   $tool.set('material');
+  $lastTool.set('material');
   $inspect.set(false);
   $overwriteLevel.set(OVERWRITE_LEVEL_MAX);
   $borderMode.set('wall');
@@ -298,6 +327,9 @@ export const resetSettings = (): void => {
   $gravityStrength.set(GRAVITY_STRENGTH_DEFAULT);
   $cellScale.set(CELL_SCALE_DEFAULT);
   $heatOverlay.set(false);
+  $heatMode.set(HEAT_MODE_DEFAULT);
+  $heatRate.set(HEAT_RATE_DEFAULT);
+  $heatPercent.set(HEAT_PERCENT_DEFAULT);
   $gridDivision.set(GRID_DIVISION_DEFAULT);
   $bottomDeadzone.set(BOTTOM_DEADZONE_DEFAULT);
 };
