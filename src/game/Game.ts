@@ -8,6 +8,7 @@ import { initHeatWasm } from './engine/heatWasm';
 import { profiler } from './engine/profiler';
 import { seedBenchScenario, isBenchScenario } from './engine/benchScenarios';
 import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
+import { registerGridForSnapshots, captureThumbnail } from '../state/snapshots';
 import {
   $running,
   $fps,
@@ -106,6 +107,31 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
   const painter = new PointerPainter(canvas, grid, layout);
+
+  // Hand the grid to the snapshot module so the SaveSlots UI can save/load
+  // named snapshots. Registering once here avoids passing the engine instance
+  // through the store; the UI calls saveSnapshot(name)/loadSnapshot(id) and the
+  // module routes through this reference. The apply callback re-derives tint
+  // (not persisted) so a restored world is grainy from the first frame. The
+  // capture callback crops the live canvas to the sandbox rect (device px) so a
+  // saved thumbnail shows just the scene, not the transparent padding around it.
+  registerGridForSnapshots(
+    grid,
+    () => {
+      grid.randomizeTints();
+      painter.refreshCursor();
+    },
+    () => {
+      const scale = canvas.width / Math.max(1, canvas.clientWidth);
+      const r = layout.deviceRect(scale);
+      return captureThumbnail(canvas, 160, {
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+      });
+    },
+  );
 
   // Reflect the layout onto the cursor overlay and HUD (cheap; runs after any
   // change).

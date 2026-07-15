@@ -34,6 +34,7 @@
     OVERWRITE_LEVELS,
     OVERWRITE_LEVEL_MIN,
     OVERWRITE_LEVEL_MAX,
+    OVERWRITE_AUTO,
     SIM_SPEEDS,
     TICK_HZ,
     GRAVITY_STRENGTH_MIN,
@@ -51,6 +52,7 @@
   import BlendBrush from './BlendBrush.svelte';
   import InspectPanel from './InspectPanel.svelte';
   import Modal from './Modal.svelte';
+  import SaveSlots from './SaveSlots.svelte';
 
   // Name of the currently selected paint material, shown on the 재료 (draw) brush
   // button so the active material is always visible without opening the palette.
@@ -59,15 +61,25 @@
   // Two modals, opened from the toolbar. The 설정 modal holds the settings that
   // are set once and left alone (plus, on mobile, the frequently-tweaked ones,
   // which live inline in the sidebar on desktop). The 혼합 브러시 modal holds the
-  // blend-ratio editor and pops up when the 혼합 tool is selected.
+  // blend-ratio editor and pops up when the 혼합 tool is selected. The 저장
+  // modal manages named world snapshots (save/load/rename/delete).
   let settingsOpen = $state(false);
   let blendOpen = $state(false);
+  let saveSlotsOpen = $state(false);
+  let saveSlotsPanel: SaveSlots | null = null;
 
   // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
   // click away; re-clicking it reopens the editor to fine-tune the ratios.
   function pickBlend(): void {
     tool.set('blend');
     blendOpen = true;
+  }
+
+  // Open the snapshot (save/load) modal. Tell the panel to re-read its list so
+  // a freshly-opened modal reflects the current localStorage state.
+  function openSaveSlots(): void {
+    saveSlotsOpen = true;
+    saveSlotsPanel?.open();
   }
 
   // 전체 지우기 is destructive, so it's a two-step confirm: the first click arms
@@ -123,6 +135,14 @@
     const scale = CELL_SCALES[Math.min(CELL_SCALES.length - 1, Math.max(0, i))];
     if (scale !== undefined) cellScale.set(scale);
   }
+
+  // 덮어쓰기 slider spans AUTO (-1) and the 0..MAX manual levels. AUTO derives
+  // its effective level from the selected material, so its label is annotated.
+  const overwriteLabel = $derived(
+    $overwriteLevel === OVERWRITE_AUTO
+      ? `자동 (${getMaterial($selectedMaterial)?.name ?? '?'})`
+      : OVERWRITE_LEVELS[$overwriteLevel],
+  );
 
   // Expanded HUD readouts.
   const fillPct = $derived.by(() => {
@@ -224,18 +244,19 @@
   </div>
 
   <label class="field">
-    <span class="field-label">덮어쓰기: {OVERWRITE_LEVELS[$overwriteLevel]}</span>
+    <span class="field-label">덮어쓰기: {overwriteLabel}</span>
     <input
       type="range"
-      min={OVERWRITE_LEVEL_MIN}
+      min={OVERWRITE_AUTO}
       max={OVERWRITE_LEVEL_MAX}
       step="1"
       value={$overwriteLevel}
       oninput={(e) => overwriteLevel.set(+e.currentTarget.value)}
     />
     <div class="overwrite-steps" aria-hidden="true">
+      <span class="step auto" class:filled={$overwriteLevel === OVERWRITE_AUTO} title="자동"></span>
       {#each OVERWRITE_LEVELS as _, i}
-        <span class="step" class:filled={i <= $overwriteLevel}></span>
+        <span class="step" class:filled={$overwriteLevel >= i}></span>
       {/each}
     </div>
   </label>
@@ -514,6 +535,15 @@
           <i class="bi bi-trash3" aria-hidden="true"></i>
           <span class="label">{clearArmed ? '계속하시겠습니까?' : '지우기'}</span>
         </button>
+        <button
+          class="ctl"
+          onclick={openSaveSlots}
+          aria-label="저장 / 불러오기"
+          title="현재 샌드박스를 저장하거나 불러옵니다"
+        >
+          <i class="bi bi-collection" aria-hidden="true"></i>
+          <span class="label">저장</span>
+        </button>
       </div>
 
       <div class="group" role="group" aria-label="브러시 도구">
@@ -593,6 +623,17 @@
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">보기</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'rect'}
+          onclick={() => tool.set('rect')}
+          aria-pressed={$tool === 'rect'}
+          aria-label="영역"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고 채웁니다 (PC: Enter로 확정, 모바일: 드롭시 즉시 적용)"
+        >
+          <i class="bi bi-bounding-box" aria-hidden="true"></i>
+          <span class="label">영역</span>
         </button>
       </div>
 
@@ -690,6 +731,11 @@
     경계를 드래그해 비율을 조절하세요.
   </p>
   <BlendBrush />
+</Modal>
+
+<!-- 저장 / 불러오기 modal: named snapshot slots saved in localStorage. -->
+<Modal open={saveSlotsOpen} title="저장 / 불러오기" icon="bi-collection" onclose={() => (saveSlotsOpen = false)}>
+  <SaveSlots bind:this={saveSlotsPanel} />
 </Modal>
 
 <!-- 돋보기 readout, floating over the top of the sandbox (shown only while the
@@ -886,6 +932,15 @@
   }
   .overwrite-steps .step.filled {
     background: #6ea8fe;
+  }
+  /* The "자동" notch is visually distinct (amber) so it reads as a mode toggle,
+     not just "loosest level". */
+  .overwrite-steps .step.auto {
+    flex: 1 1 0;
+    background: #3a3a1a;
+  }
+  .overwrite-steps .step.auto.filled {
+    background: #e0a030;
   }
 
   .hud {

@@ -20,6 +20,8 @@ import {
   HEAT_BRUSH_MAX,
   HEAT_BRUSH_MIN,
   AMBIENT_TEMP,
+  OVERWRITE_AUTO,
+  OVERWRITE_LEVEL_MAX,
 } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
@@ -70,6 +72,26 @@ function canOverwrite(existingId: number, level: number): boolean {
   const rank = OVERWRITE_PHASE_ORDER.indexOf(existing.phase);
   if (rank === -1) return true; // Empty-phase materials, if any: always paintable
   return level >= rank + 1;
+}
+
+/**
+ * Resolve the "자동" overwrite rule into a concrete numeric level based on the
+ * *selected* material's phase, mirroring the user-facing spec:
+ *   • Wall         → 전체 (level MAX, Wall 포함)
+ *   • Solid        → 고체까지 (level 4, Wall 제외)
+ *   • Powder       → 가루까지 (level 3)
+ *   • Liquid       → 액체·기체  (level 2)
+ *   • Gas          → 기체만    (level 1)
+ * A non-auto level (`>= 0`) is passed through unchanged.
+ */
+function effectiveOverwriteLevel(level: number, selectedId: number): number {
+  if (level !== OVERWRITE_AUTO) return level;
+  const m = getMaterial(selectedId);
+  if (m.isWall) return OVERWRITE_LEVEL_MAX;
+  // OVERWRITE_PHASE_ORDER = [Gas, Liquid, Powder, Solid], so phase rank + 1 is
+  // exactly the per-phase level (Gas → 1, Liquid → 2, Powder → 3, Solid → 4).
+  const rank = OVERWRITE_PHASE_ORDER.indexOf(m.phase);
+  return rank === -1 ? OVERWRITE_LEVEL_MAX : rank + 1;
 }
 
 /**
@@ -136,7 +158,25 @@ export class PointerPainter {
    *  can fling an object by flicking on release. */
   private dragVX = 0;
   private dragVY = 0;
+
+  /** 영역 (rect) marquee state. `rectDragging` is true while the pointer is
+   *  held down defining a rectangle; `rectPending` is true after release on
+   *  non-touch pointers, while the selection waits for Enter to confirm.
+   *  Touch pointers confirm immediately on release (no pending state). */
+  private rectDragging = false;
+  private rectPending = false;
+  /** Whether the current marquee will erase (right-drag) instead of fill. */
+  private rectErase = false;
+  /** Marquee corners in grid-cell coordinates (start = pointerdown, end = last
+   *  move). The rectangle is the axis-aligned bounding box of the two. */
+  private rectSX = 0;
+  private rectSY = 0;
+  private rectEX = 0;
+  private rectEY = 0;
   private cursorEl: HTMLDivElement;
+  /** The rectangular marquee overlay (Photoshop-style 영역 선택). Hidden unless
+   *  the rect tool is actively dragging or holding a pending selection. */
+  private rectEl: HTMLDivElement;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -158,12 +198,20 @@ export class PointerPainter {
     this.cursorEl = createFloatingOverlay('brush-cursor');
     this.cursorEl.style.display = 'none';
 
+    this.rectEl = createFloatingOverlay('rect-select');
+    this.rectEl.style.display = 'none';
+
     // Brush size/shape/tool can change from the control panel while the pointer
     // sits still over the canvas; keep the cursor (size, shape, tool tint) in
     // sync either way.
     $brushSize.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
     $brushShape.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
-    $tool.listen(() => this.updateCursor(this.lastClientX, this.lastClientY));
+    $tool.listen(() => {
+      this.updateCursor(this.lastClientX, this.lastClientY);
+      // Leaving the rect tool cancels any pending marquee — the selection is
+      // only meaningful while the tool is active.
+      this.cancelRect();
+    });
     // Toggling the 돋보기 inspect overlay: retint the cursor and either populate
     // the readout right away (from where the pointer already rests) or clear it.
     $inspect.listen(() => {
@@ -174,6 +222,11 @@ export class PointerPainter {
     // stationary pointer so the readout tracks the size change immediately.
     $brushSize.listen(() => this.refreshInspect());
     $brushShape.listen(() => this.refreshInspect());
+
+    // 영역 (rect) tool: Enter confirms a pending marquee, Escape cancels it.
+    // Bound on window so it works regardless of focus (the canvas isn't a
+    // keyboard element).
+    window.addEventListener('keydown', this.onKey);
   }
 
   private lastClientX = 0;
@@ -393,7 +446,8 @@ export class PointerPainter {
     const id = erase ? 0 : $selectedMaterial.get();
     const rad = $brushSize.get();
     const shape = $brushShape.get();
-    const level = $overwriteLevel.get();
+    // Resolve the "자동" overwrite rule into a concrete level for this material.
+    const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
     // The overwrite gate is about new material displacing existing particles;
     // the eraser (Empty) always erases regardless of the setting.
     const isEraser = id === 0;
@@ -449,7 +503,11 @@ export class PointerPainter {
     if (total <= 0) return;
     const rad = $brushSize.get();
     const shape = $brushShape.get();
-    const level = $overwriteLevel.get();
+    // "자동" resolves to whichever material the blend's *first* component is —
+    // a sensible stand-in for "the mixture's dominant phase". The per-cell
+    // weighted pick below keeps its own canOverwrite gate, so a heavier
+    // component's level still admits cells a lighter one couldn't paint into.
+    const level = effectiveOverwriteLevel($overwriteLevel.get(), comps[0].id);
     const particleMode = $brushMode.get() === 'particle';
     const r2 = rad * rad;
     for (let dy = -rad; dy <= rad; dy++) {
@@ -474,6 +532,53 @@ export class PointerPainter {
         this.grid.setAux(x, y, 0);
         this.grid.setTint(x, y, (Math.random() * 256) | 0);
         this.grid.setOverlay(x, y, 0); // freshly painted material starts dry
+      }
+    }
+  }
+
+  /**
+   * Fill the axis-aligned bounding box of (sx,sy)–(ex,ey) with the selected
+   * material (or Empty when `erase` is set), honoring the same overwrite gate,
+   * particle-fill, init-temp, and aux-clear rules as `paint()`. This is the
+   * 영역 (rect) tool's confirm action — a one-shot rectangular fill, not a
+   * per-tick brush stamp.
+   */
+  private paintRect(sx: number, sy: number, ex: number, ey: number, erase: boolean): void {
+    const x0 = Math.max(0, Math.min(sx, ex));
+    const x1 = Math.min(this.grid.width - 1, Math.max(sx, ex));
+    const y0 = Math.max(0, Math.min(sy, ey));
+    const y1 = Math.min(this.grid.height - 1, Math.max(sy, ey));
+    if (x1 < x0 || y1 < y0) return;
+    if (erase) {
+      // Erase any free objects whose center falls inside the marquee, the same
+      // way the brush eraser sweeps its footprint.
+      const objs = this.grid.objects;
+      if (objs.length > 0) {
+        let w = 0;
+        for (let i = 0; i < objs.length; i++) {
+          const o = objs[i];
+          if (o.x < x0 || o.x > x1 + 1 || o.y < y0 || o.y > y1 + 1) objs[w++] = o;
+        }
+        objs.length = w;
+      }
+    }
+    const id = erase ? 0 : $selectedMaterial.get();
+    const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
+    const isEraser = id === 0;
+    const particle =
+      !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
+    const beltAux =
+      id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
+        if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
+        this.grid.set(x, y, id);
+        this.grid.setTemp(x, y, initTemp);
+        this.grid.setAux(x, y, beltAux);
+        this.grid.setTint(x, y, (Math.random() * 256) | 0);
+        this.grid.setOverlay(x, y, 0);
       }
     }
   }
@@ -514,6 +619,21 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     this.px = x;
     this.py = y;
+    // 영역 (rect) tool: start a rectangular marquee drag. Both left (fill) and
+    // right (erase) drags select a rectangle; the selection is confirmed by
+    // Enter on PC or on release for touch pointers.
+    if ($tool.get() === 'rect') {
+      this.cancelRect(); // a new press supersedes any pending marquee
+      this.rectDragging = true;
+      this.rectErase = this.erasing;
+      this.rectSX = x;
+      this.rectSY = y;
+      this.rectEX = x;
+      this.rectEY = y;
+      this.down = false; // no continuous brush stamping
+      this.updateRectOverlay();
+      return;
+    }
     // Object tool: drop exactly one ball per press (no continuous stroke).
     if (!this.erasing && $tool.get() === 'object') {
       this.spawnObject(x, y);
@@ -546,6 +666,15 @@ export class PointerPainter {
       this.dragTo(e.clientX, e.clientY);
       return;
     }
+    // 영역 (rect) marquee drag: track the pointer and grow the selection.
+    if (this.rectDragging) {
+      const [x, y] = this.toCell(e);
+      this.rectEX = x;
+      this.rectEY = y;
+      if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      this.updateRectOverlay();
+      return;
+    }
     // The inspect readout tracks the pointer too, but it's refreshed once per
     // frame from the game loop (see refreshInspect) off `lastClientX/Y`, which
     // updateCursor just updated — so a hover survey needs nothing more here.
@@ -559,7 +688,7 @@ export class PointerPainter {
     this.py = y;
   };
 
-  private onUp = (): void => {
+  private onUp = (e: PointerEvent): void => {
     // Release a dragged object: hand it the smoothed drag velocity so a flick
     // flings it, clamped so a fast flick can't launch it across the world.
     if (this.dragBody) {
@@ -570,6 +699,23 @@ export class PointerPainter {
       body.vx = clamp(this.dragVX);
       body.vy = clamp(this.dragVY);
       this.dragBody = null;
+    }
+    // 영역 (rect) marquee release: touch pointers confirm the fill immediately
+    // (one gesture → one fill); mouse/pen pointers leave the marquee pending
+    // so the user can review it and press Enter to apply (or Escape to cancel).
+    // Note: confirmRect() reads rectDragging, so it must run before we clear it.
+    // A pointercancel (OS scroll interrupt, palm rejection) is NOT a deliberate
+    // release — cancel the marquee instead of committing a surprise fill.
+    if (this.rectDragging) {
+      if (e.type === 'pointercancel') {
+        this.cancelRect();
+      } else if (e.pointerType === 'touch') {
+        this.confirmRect(); // calls cancelRect() internally (clears dragging)
+      } else {
+        this.rectDragging = false;
+        this.rectPending = true;
+        this.updateRectOverlay();
+      }
     }
     this.down = false;
   };
@@ -605,6 +751,14 @@ export class PointerPainter {
     this.lastClientY = clientY;
     if (!this.hovering) return;
 
+    // The 영역 (rect) tool replaces the brush cursor with a marquee overlay, so
+    // keep the native crosshair and skip the brush outline entirely.
+    if ($tool.get() === 'rect') {
+      this.canvas.style.cursor = 'crosshair';
+      this.cursorEl.style.display = 'none';
+      return;
+    }
+
     const rad = $brushSize.get();
     const shape = $brushShape.get();
     const cell = this.layout.cell;
@@ -630,10 +784,89 @@ export class PointerPainter {
   /**
    * Re-syncs the cursor overlay after the sandbox layout changes (window
    * resize, drag-resize handle) — cell size may have changed even though the
-   * pointer didn't move. No-ops while not hovering.
+   * pointer didn't move. No-ops while not hovering. Also refreshes the 영역
+   * marquee overlay, whose screen position depends on the same layout.
    */
   refreshCursor(): void {
     this.updateCursor(this.lastClientX, this.lastClientY);
+    this.updateRectOverlay();
+  }
+
+  /** Confirm a pending 영역 marquee: fill its bounding box and dismiss it. */
+  private confirmRect(): void {
+    if (!this.rectPending && !this.rectDragging) return;
+    this.paintRect(this.rectSX, this.rectSY, this.rectEX, this.rectEY, this.rectErase);
+    this.cancelRect();
+  }
+
+  /** Dismiss the 영역 marquee without filling (Escape, tool change, new press). */
+  private cancelRect(): void {
+    this.rectDragging = false;
+    this.rectPending = false;
+    this.rectEl.style.display = 'none';
+  }
+
+  /** Key handler for the 영역 tool: Enter confirms, Escape cancels. Skips
+   *  events originating from a text input / textarea / contenteditable so typing
+   *  Enter in a modal field (the SaveSlots name, a blend ratio, …) doesn't
+   *  accidentally commit a pending marquee. */
+  private onKey = (e: KeyboardEvent): void => {
+    if ($tool.get() !== 'rect') return;
+    const t = e.target as HTMLElement | null;
+    if (
+      t &&
+      (t.tagName === 'INPUT' ||
+        t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' ||
+        t.isContentEditable)
+    ) {
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (this.rectDragging || this.rectPending) {
+        e.preventDefault();
+        this.cancelRect();
+      }
+      return;
+    }
+    if (e.key === 'Enter' && this.rectPending) {
+      e.preventDefault();
+      this.confirmRect();
+    }
+  };
+
+  /**
+   * Position and size the rectangular marquee overlay (screen-space CSS px) to
+   * match the current selection. The marquee is the axis-aligned bounding box
+   * of the start/end grid cells, snapped to cell boundaries so it reads clean.
+   * Hidden when no drag or pending selection is active.
+   */
+  private updateRectOverlay(): void {
+    if (!this.rectDragging && !this.rectPending) {
+      this.rectEl.style.display = 'none';
+      return;
+    }
+    const r = this.canvas.getBoundingClientRect();
+    const rect = this.layout.cssRect();
+    const cell = this.layout.cell;
+    const x0 = Math.min(this.rectSX, this.rectEX);
+    const x1 = Math.max(this.rectSX, this.rectEX);
+    const y0 = Math.min(this.rectSY, this.rectEY);
+    const y1 = Math.max(this.rectSY, this.rectEY);
+    // Grid y=0 is the top row; cell coords map linearly from there.
+    const left = r.left + rect.x + x0 * cell;
+    const top = r.top + rect.y + y0 * cell;
+    const width = (x1 - x0 + 1) * cell;
+    const height = (y1 - y0 + 1) * cell;
+    this.rectEl.style.display = 'block';
+    this.rectEl.style.left = `${left}px`;
+    this.rectEl.style.top = `${top}px`;
+    this.rectEl.style.width = `${width}px`;
+    this.rectEl.style.height = `${height}px`;
+    // Distinguish the fill marquee from the erase marquee, and a pending
+    // selection (awaiting Enter) from an active drag.
+    this.rectEl.dataset.mode = this.rectErase ? 'erase' : 'fill';
+    this.rectEl.dataset.pending = this.rectPending ? 'true' : 'false';
   }
 
   /**

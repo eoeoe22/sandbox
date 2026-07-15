@@ -131,6 +131,42 @@ body {
     0 0 10px 1px rgba(240, 200, 90, 0.35);
 }
 
+/* 영역 (rect) marquee — a Photoshop-style rectangular selection overlay. It
+   tracks the active drag (data-pending='false') or a released selection
+   awaiting Enter on PC (data-pending='true'). Fill mode is blue; erase is
+   white-dashed to echo the eraser brush cursor. */
+.rect-select {
+  position: fixed;
+  z-index: 9;
+  border: 1.5px solid rgba(110, 168, 254, 0.95);
+  background: rgba(110, 168, 254, 0.12);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.rect-select[data-mode='erase'] {
+  border-color: rgba(232, 232, 238, 0.95);
+  border-style: dashed;
+  background: rgba(232, 232, 238, 0.08);
+}
+/* A pending marquee (post-release, awaiting Enter) pulses gently to signal
+   "press Enter to apply, Escape to cancel". */
+.rect-select[data-pending='true'] {
+  animation: rect-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rect-pulse {
+  0%,
+  100% {
+    border-color: rgba(110, 168, 254, 0.95);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    border-color: rgba(160, 200, 255, 1);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 0 12px 2px rgba(110, 168, 254, 0.4);
+  }
+}
+
 .notfound {
   display: flex;
   flex-direction: column;
