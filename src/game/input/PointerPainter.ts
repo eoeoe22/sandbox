@@ -36,6 +36,7 @@ import {
   createDynamite,
   pickBody,
   distanceToBody,
+  bodyReach,
   RUBBER_BALL_SPAWN_SCATTER,
 } from '../engine/objects';
 import type { SimBody, DrumFill } from '../engine/objects';
@@ -222,7 +223,14 @@ export class PointerPainter {
       // The tool is now independent of 영역 select mode (unlike the old 'rect'
       // tool value), so switching tools no longer cancels a pending/dragging
       // marquee — you can drag a rect, then pick which tool to apply to it
-      // before confirming. Just retint the marquee overlay to match.
+      // before confirming. Just retint the marquee overlay to match. Note this
+      // also applies when $tool changes as a *side effect* of picking a
+      // material in the palette (MaterialPalette.pick() calls tool.set
+      // ('material') on every swatch click, by design — "picking a material is
+      // also a request to paint it") — so browsing the palette while a marquee
+      // is pending under e.g. 가열 retargets it to a material fill too. The
+      // marquee's live retint here is the signal: it visibly turns from the
+      // heat tint to the material tint before Enter is pressed.
       this.updateRectOverlay();
     });
     // Toggling 영역 select mode: retint the cursor (crosshair vs brush outline)
@@ -365,13 +373,22 @@ export class PointerPainter {
     this.mixPushObjectsWhere((o) => distanceToBody(o, bx, by) <= rad, bx, by);
   }
 
-  /** Whether object `o`'s center falls inside rect `bounds` — the object-layer
+  /** Whether object `o`'s body overlaps rect `bounds` — the object-layer
    *  counterpart of a cell footprint (objects live in continuous grid
-   *  coordinates, so this can't reuse `cellsInBounds`). The `+1` matches the
-   *  fact that `x1`/`y1` are inclusive last cell indices, so an object resting
-   *  right at the rectangle's far edge still counts as inside it. */
+   *  coordinates, so this can't reuse `cellsInBounds`). Rather than testing
+   *  just the object's center point, this clamps the center to the rect (the
+   *  closest point on it) and compares the distance to `bodyReach(o)` — the
+   *  object's own radius (or half-length+radius for a drum/dynamite capsule) —
+   *  so a large body whose surface pokes into the rect is caught even if its
+   *  center sits just outside, mirroring how the circular brush's equivalent
+   *  tests (`distanceToBody(...) <= rad`) already account for body size rather
+   *  than treating every object as a point. `x1+1`/`y1+1` account for `x1`/`y1`
+   *  being inclusive last cell indices (the rect spans the continuous range
+   *  [x0, x1+1) × [y0, y1+1)). */
   private objectInRectBounds(o: SimBody, bounds: RectBounds): boolean {
-    return o.x >= bounds.x0 && o.x <= bounds.x1 + 1 && o.y >= bounds.y0 && o.y <= bounds.y1 + 1;
+    const nx = Math.max(bounds.x0, Math.min(o.x, bounds.x1 + 1));
+    const ny = Math.max(bounds.y0, Math.min(o.y, bounds.y1 + 1));
+    return Math.hypot(o.x - nx, o.y - ny) <= bodyReach(o);
   }
 
   /** Reposition the dragged body to follow the pointer (keeping the grab offset),
@@ -463,9 +480,9 @@ export class PointerPainter {
 
   /** The in-bounds cells the brush covers at (cx,cy), packed flat as
    *  [x0,y0,x1,y1,...], masked to the same circle/square the cursor outline
-   *  shows. The special brushes (heat/cool/mix) operate over this footprint;
-   *  paint() keeps its own loop because it also applies the particle-fill and
-   *  overwrite gates per cell. */
+   *  shows. The special brushes (heat/cool/mix) operate over this footprint
+   *  directly; `paintCells()`/`paintBlend()` also take it (via `paintBrush()`)
+   *  and additionally apply the particle-fill and overwrite gates per cell. */
   private brushCells(cx: number, cy: number): number[] {
     const rad = $brushSize.get();
     const shape = $brushShape.get();
@@ -584,7 +601,7 @@ export class PointerPainter {
    *  (rectSX/SY/EX/EY), or `null` when the marquee doesn't overlap the grid at
    *  all (e.g. dragged fully past an edge — pointer capture keeps delivering
    *  coordinates outside the canvas). Shared by every 영역 action (`applyRect`)
-   *  and `rectFootprintCells()` (돋보기 survey target) so all of them agree on
+   *  and `inspectFootprint()` (돋보기 survey target) so all of them agree on
    *  what counts as "no selection" instead of drifting out of sync. */
   private rectBounds(): RectBounds | null {
     const x0 = Math.max(0, Math.min(this.rectSX, this.rectEX));
@@ -645,6 +662,11 @@ export class PointerPainter {
         // Neither has an area-shaped action (spawn is a point action; 보기 is
         // inert) — a marquee under either just no-ops on confirm.
         return;
+      // 'erase' isn't a case here — the `erase || tool === 'erase'` guard
+      // above already returns for it, and TypeScript narrows `tool`'s type
+      // past that guard to exclude 'erase', so a stray `case 'erase':` here
+      // would itself be a compile error — the type system, not a runtime
+      // check, is what keeps this switch and that guard from drifting apart.
     }
     this.paintCells(this.cellsInBounds(bounds), false);
   }
