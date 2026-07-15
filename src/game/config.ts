@@ -242,7 +242,7 @@ export const HEAT_RATE_MODE_DEFAULT: HeatRateMode = 'absolute';
 /** Absolute-mode heat/cool rate: degrees per second at sim speed ×1. Default
  *  (360) reproduces the original fixed-delta brush feel (12°/stamp × 30
  *  stamps/sec at ×1). Bounds sit on the UI slider's step (10) grid, like the
- *  relative-mode bounds above. */
+ *  relative-mode bounds below. */
 export const HEAT_ABS_RATE_DEFAULT = 360;
 export const HEAT_ABS_RATE_MIN = 10;
 export const HEAT_ABS_RATE_MAX = 2000;
