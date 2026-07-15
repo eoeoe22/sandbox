@@ -63,25 +63,17 @@
   // Modals, opened from the toolbar. The 설정 modal holds the settings that
   // are set once and left alone (plus, on mobile, the frequently-tweaked ones,
   // which live inline in the sidebar on desktop). The 혼합 브러시 modal holds the
-  // blend-ratio editor and pops up when the 혼합 tool is selected. The 가열/냉각
-  // 감도 modal holds the heat/cool sensitivity editor, opened by double-clicking
-  // either button. The 저장 modal manages named world snapshots
+  // blend-ratio editor, opened only by double-clicking the 혼합 button (or from
+  // 설정) — a single click just selects the tool, like every other brush
+  // button, so picking 혼합 to paint with doesn't force the editor open every
+  // time. The 가열/냉각 감도 modal holds the heat/cool sensitivity editor, same
+  // double-click pattern. The 저장 modal manages named world snapshots
   // (save/load/rename/delete).
   let settingsOpen = $state(false);
   let blendOpen = $state(false);
   let heatCoolOpen = $state(false);
   let saveSlotsOpen = $state(false);
   let saveSlotsPanel: SaveSlots | null = null;
-
-  // Selecting the 혼합 tool also opens its ratio editor so the mixture is one
-  // click away; re-clicking it reopens the editor to fine-tune the ratios.
-  // Double-clicking does the same (see the 혼합 button below) — kept as an
-  // explicit second path so it stays reachable even if the click behavior ever
-  // changes, mirroring 가열/냉각's double-click opener.
-  function pickBlend(): void {
-    tool.set('blend');
-    blendOpen = true;
-  }
 
   // Open the snapshot (save/load) modal. Tell the panel to re-read its list so
   // a freshly-opened modal reflects the current localStorage state.
@@ -631,11 +623,11 @@
         <button
           class="ctl"
           class:active={$tool === 'blend'}
-          onclick={pickBlend}
+          onclick={() => tool.set('blend')}
           ondblclick={() => (blendOpen = true)}
           aria-pressed={$tool === 'blend'}
           aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (클릭하면 비율 조절 창이 열립니다)"
+          title="여러 물질을 비율대로 섞어 그립니다 (더블클릭하면 비율 조절 창이 열립니다)"
         >
           <i class="bi bi-palette-fill" aria-hidden="true"></i>
           <span class="label">혼합</span>
@@ -792,8 +784,8 @@
   </p>
 </Modal>
 
-<!-- 혼합 브러시 ratio editor, opened when the 혼합 tool is selected (also via
-     double-click, or from 설정 → 브러시 세부 설정). -->
+<!-- 혼합 브러시 ratio editor, opened by double-clicking the 혼합 button (a single
+     click just selects the tool), or from 설정 → 브러시 세부 설정. -->
 <Modal open={blendOpen} title="혼합 브러시 비율" icon="bi-palette-fill" onclose={() => (blendOpen = false)}>
   <p class="blend-hint">
     최대 3가지 물질을 골라 비율을 정하면, 혼합 브러시가 그 비율대로 섞어 칠합니다. 막대의
