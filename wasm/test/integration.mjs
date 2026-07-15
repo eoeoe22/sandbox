@@ -15,6 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, '..', 'heat', 'target', 'wasm32-unknown-unknown', 'release', 'heat.wasm');
 
 const RATE = 0.2;
+const RADIANT_RATE = 0.05;
 const SUBSTEPS = 3;
 
 // --- JS reference (matches Simulation.diffuseHeat + step's substep loop),
@@ -31,10 +32,42 @@ function diffuseHeatJsInPlace(cells, cond, temp, scratch, w, h) {
         const ti = cur[i];
         if (ci === 0) { next[i] = ti; continue; }
         let acc = ti;
-        if (x > 0) { const cj = cond[cells[i - 1]]; acc += RATE * (ci < cj ? ci : cj) * (cur[i - 1] - ti); }
-        if (x < w - 1) { const cj = cond[cells[i + 1]]; acc += RATE * (ci < cj ? ci : cj) * (cur[i + 1] - ti); }
-        if (y > 0) { const cj = cond[cells[i - w]]; acc += RATE * (ci < cj ? ci : cj) * (cur[i - w] - ti); }
-        if (y < h - 1) { const cj = cond[cells[i + w]]; acc += RATE * (ci < cj ? ci : cj) * (cur[i + w] - ti); }
+        if (x > 0) {
+          const cj = cond[cells[i - 1]];
+          if (cj > 0) {
+            acc += RATE * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+          } else if (x > 1) {
+            const ck = cond[cells[i - 2]];
+            if (ck > 0) acc += RADIANT_RATE * (ci < ck ? ci : ck) * (cur[i - 2] - ti);
+          }
+        }
+        if (x < w - 1) {
+          const cj = cond[cells[i + 1]];
+          if (cj > 0) {
+            acc += RATE * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+          } else if (x < w - 2) {
+            const ck = cond[cells[i + 2]];
+            if (ck > 0) acc += RADIANT_RATE * (ci < ck ? ci : ck) * (cur[i + 2] - ti);
+          }
+        }
+        if (y > 0) {
+          const cj = cond[cells[i - w]];
+          if (cj > 0) {
+            acc += RATE * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+          } else if (y > 1) {
+            const ck = cond[cells[i - 2 * w]];
+            if (ck > 0) acc += RADIANT_RATE * (ci < ck ? ci : ck) * (cur[i - 2 * w] - ti);
+          }
+        }
+        if (y < h - 1) {
+          const cj = cond[cells[i + w]];
+          if (cj > 0) {
+            acc += RATE * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+          } else if (y < h - 2) {
+            const ck = cond[cells[i + 2 * w]];
+            if (ck > 0) acc += RADIANT_RATE * (ci < ck ? ci : ck) * (cur[i + 2 * w] - ti);
+          }
+        }
         next[i] = acc;
       }
     }
@@ -69,7 +102,7 @@ function diffuseHeatWasm(cells, cond, temp, w, h) {
   new Uint8Array(buf, cellsPtr, n).set(cells.subarray(0, n));
   new Float32Array(buf, condPtr, 256).set(cond.subarray(0, 256));
   new Float32Array(buf, tempPtr, n).set(temp.subarray(0, n));
-  ex.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, RATE, SUBSTEPS);
+  ex.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, RATE, RADIANT_RATE, SUBSTEPS);
   temp.set(new Float32Array(buf, tempPtr, n));
 }
 

@@ -73,6 +73,7 @@ unsafe fn diffuse_step(
     w: usize,
     h: usize,
     rate: f64,
+    radiant_rate: f64,
 ) {
     for y in 0..h {
         let row = y * w;
@@ -88,23 +89,55 @@ unsafe fn diffuse_step(
             let mut acc = ti;
             if x > 0 {
                 let cj = *cond.add(*cells.add(i - 1) as usize) as f64;
-                let mc = if ci < cj { ci } else { cj };
-                acc += rate * mc * (*cur.add(i - 1) as f64 - ti);
+                if cj > 0.0 {
+                    let mc = if ci < cj { ci } else { cj };
+                    acc += rate * mc * (*cur.add(i - 1) as f64 - ti);
+                } else if x > 1 {
+                    let ck = *cond.add(*cells.add(i - 2) as usize) as f64;
+                    if ck > 0.0 {
+                        let mc = if ci < ck { ci } else { ck };
+                        acc += radiant_rate * mc * (*cur.add(i - 2) as f64 - ti);
+                    }
+                }
             }
             if x < w - 1 {
                 let cj = *cond.add(*cells.add(i + 1) as usize) as f64;
-                let mc = if ci < cj { ci } else { cj };
-                acc += rate * mc * (*cur.add(i + 1) as f64 - ti);
+                if cj > 0.0 {
+                    let mc = if ci < cj { ci } else { cj };
+                    acc += rate * mc * (*cur.add(i + 1) as f64 - ti);
+                } else if x < w - 2 {
+                    let ck = *cond.add(*cells.add(i + 2) as usize) as f64;
+                    if ck > 0.0 {
+                        let mc = if ci < ck { ci } else { ck };
+                        acc += radiant_rate * mc * (*cur.add(i + 2) as f64 - ti);
+                    }
+                }
             }
             if y > 0 {
                 let cj = *cond.add(*cells.add(i - w) as usize) as f64;
-                let mc = if ci < cj { ci } else { cj };
-                acc += rate * mc * (*cur.add(i - w) as f64 - ti);
+                if cj > 0.0 {
+                    let mc = if ci < cj { ci } else { cj };
+                    acc += rate * mc * (*cur.add(i - w) as f64 - ti);
+                } else if y > 1 {
+                    let ck = *cond.add(*cells.add(i - 2 * w) as usize) as f64;
+                    if ck > 0.0 {
+                        let mc = if ci < ck { ci } else { ck };
+                        acc += radiant_rate * mc * (*cur.add(i - 2 * w) as f64 - ti);
+                    }
+                }
             }
             if y < h - 1 {
                 let cj = *cond.add(*cells.add(i + w) as usize) as f64;
-                let mc = if ci < cj { ci } else { cj };
-                acc += rate * mc * (*cur.add(i + w) as f64 - ti);
+                if cj > 0.0 {
+                    let mc = if ci < cj { ci } else { cj };
+                    acc += rate * mc * (*cur.add(i + w) as f64 - ti);
+                } else if y < h - 2 {
+                    let ck = *cond.add(*cells.add(i + 2 * w) as usize) as f64;
+                    if ck > 0.0 {
+                        let mc = if ci < ck { ci } else { ck };
+                        acc += radiant_rate * mc * (*cur.add(i + 2 * w) as f64 - ti);
+                    }
+                }
             }
             *next.add(i) = acc as f32;
         }
@@ -136,6 +169,7 @@ pub unsafe extern "C" fn diffuse_heat(
     w: usize,
     h: usize,
     rate: f64,
+    radiant_rate: f64,
     substeps: u32,
 ) {
     if w == 0 || h == 0 || substeps == 0 {
@@ -146,7 +180,7 @@ pub unsafe extern "C" fn diffuse_heat(
     let mut a = temp;
     let mut b = scratch;
     for _ in 0..substeps {
-        diffuse_step(cells, cond, a, b, w, h, rate);
+        diffuse_step(cells, cond, a, b, w, h, rate, radiant_rate);
         core::mem::swap(&mut a, &mut b);
     }
     // After an odd number of swaps the latest field sits in `scratch`; copy it

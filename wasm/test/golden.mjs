@@ -17,6 +17,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, '..', 'heat', 'target', 'wasm32-unknown-unknown', 'release', 'heat.wasm');
 
 const RATE = 0.2; // HEAT_DIFFUSION_RATE
+const RADIANT_RATE = 0.05; // HEAT_RADIANT_RATE
 // Cover both substep parities: odd counts (3 = production) end with the latest
 // field in `scratch` and hit the kernel's copy-back-to-temp branch; even counts
 // end in `temp` and take the no-copy branch. 1 is the single-pass degenerate.
@@ -25,7 +26,7 @@ const TOL = Number(process.env.TOL ?? 0); // 0 = require bit-identical
 
 // --- JS reference: a faithful copy of Simulation.diffuseHeat, called SUBSTEPS
 // times with buffer swapping, exactly like Simulation.step(). ---
-function diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate) {
+function diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate, radiantRate) {
   for (let y = 0; y < h; y++) {
     const row = y * w;
     for (let x = 0; x < w; x++) {
@@ -39,30 +40,50 @@ function diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate) {
       let acc = ti;
       if (x > 0) {
         const cj = cond[cells[i - 1]];
-        acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+        if (cj > 0) {
+          acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+        } else if (x > 1) {
+          const ck = cond[cells[i - 2]];
+          if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i - 2] - ti);
+        }
       }
       if (x < w - 1) {
         const cj = cond[cells[i + 1]];
-        acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+        if (cj > 0) {
+          acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+        } else if (x < w - 2) {
+          const ck = cond[cells[i + 2]];
+          if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i + 2] - ti);
+        }
       }
       if (y > 0) {
         const cj = cond[cells[i - w]];
-        acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+        if (cj > 0) {
+          acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+        } else if (y > 1) {
+          const ck = cond[cells[i - 2 * w]];
+          if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i - 2 * w] - ti);
+        }
       }
       if (y < h - 1) {
         const cj = cond[cells[i + w]];
-        acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+        if (cj > 0) {
+          acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+        } else if (y < h - 2) {
+          const ck = cond[cells[i + 2 * w]];
+          if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i + 2 * w] - ti);
+        }
       }
       next[i] = acc;
     }
   }
 }
 
-function diffuseHeatJs(cells, cond, temp, w, h, rate, substeps) {
+function diffuseHeatJs(cells, cond, temp, w, h, rate, radiantRate, substeps) {
   let cur = temp;
   let next = new Float32Array(w * h);
   for (let s = 0; s < substeps; s++) {
-    diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate);
+    diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate, radiantRate);
     const t = cur;
     cur = next;
     next = t;
@@ -102,7 +123,7 @@ function buildCase(rnd, w, h) {
 const wasm = await WebAssembly.instantiate(readFileSync(WASM_PATH), {});
 const { memory, diffuse_heat, heat_alloc } = wasm.instance.exports;
 
-function diffuseHeatWasm(cells, cond, temp, w, h, rate, substeps) {
+function diffuseHeatWasm(cells, cond, temp, w, h, rate, radiantRate, substeps) {
   const n = w * h;
   const cellsPtr = heat_alloc(n);
   const condPtr = heat_alloc(256 * 4);
@@ -112,7 +133,7 @@ function diffuseHeatWasm(cells, cond, temp, w, h, rate, substeps) {
   new Uint8Array(memory.buffer, cellsPtr, n).set(cells);
   new Float32Array(memory.buffer, condPtr, 256).set(cond);
   new Float32Array(memory.buffer, tempPtr, n).set(temp);
-  diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, substeps);
+  diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, radiantRate, substeps);
   return new Float32Array(memory.buffer, tempPtr, n).slice();
 }
 
@@ -127,8 +148,8 @@ for (let rep = 0; rep < 6; rep++) {
   for (const [w, h] of sizes) {
     for (const substeps of SUBSTEP_CASES) {
       const { cells, cond, temp } = buildCase(rnd, w, h);
-      const js = diffuseHeatJs(cells, cond, temp.slice(), w, h, RATE, substeps);
-      const rs = diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps);
+      const js = diffuseHeatJs(cells, cond, temp.slice(), w, h, RATE, RADIANT_RATE, substeps);
+      const rs = diffuseHeatWasm(cells, cond, temp, w, h, RATE, RADIANT_RATE, substeps);
       for (let i = 0; i < js.length; i++) {
         const d = Math.abs(js[i] - rs[i]);
         if (d > maxDiff) maxDiff = d;

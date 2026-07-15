@@ -27,6 +27,7 @@ interface HeatExports {
     w: number,
     h: number,
     rate: number,
+    radiantRate: number,
     substeps: number,
   ) => void;
 }
@@ -120,6 +121,7 @@ export function diffuseHeatWasm(
   w: number,
   h: number,
   rate: number,
+  radiantRate: number,
   substeps: number,
 ): boolean {
   const m = mod;
@@ -136,7 +138,7 @@ export function diffuseHeatWasm(
   new Float32Array(buf, condPtr, 256).set(cond.subarray(0, 256));
   new Float32Array(buf, tempPtr, n).set(temp.subarray(0, n));
 
-  m.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, substeps);
+  m.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, radiantRate, substeps);
 
   temp.set(new Float32Array(buf, tempPtr, n));
   return true;

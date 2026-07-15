@@ -163,6 +163,14 @@ export const AMBIENT_TEMP = 20;
 export const HEAT_DIFFUSION_RATE = 0.2;
 
 /**
+ * How much of the temperature difference is exchanged per substep across a 1-cell
+ * gap of perfect insulator (e.g., air). This models short-range radiant heat,
+ * allowing intense heat to jump a tiny gap and melt solids just above or beside
+ * it, preventing unnatural sharp cutoffs when materials shrink or settle.
+ */
+export const HEAT_RADIANT_RATE = 0.05;
+
+/**
  * How many conduction substeps run per simulation tick. Heat moves ≈ this many
  * times faster globally without touching HEAT_DIFFUSION_RATE, so numerical
  * stability is preserved (each substep is an independent stable diffusion step)

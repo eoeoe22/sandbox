@@ -6,6 +6,7 @@ import { EMPTY, type BorderMode } from './types';
 import {
   HEAT_DIFFUSION_RATE,
   HEAT_DIFFUSION_SUBSTEPS,
+  HEAT_RADIANT_RATE,
   DEFAULT_CONDUCTIVITY,
   USE_WASM_HEAT,
   type SmokeLevel,
@@ -95,7 +96,16 @@ export class Simulation {
     if (
       USE_WASM_HEAT &&
       heatWasmReady() &&
-      diffuseHeatWasm(g.cells, this.cond, g.temp, g.width, g.height, HEAT_DIFFUSION_RATE, HEAT_DIFFUSION_SUBSTEPS)
+      diffuseHeatWasm(
+        g.cells,
+        this.cond,
+        g.temp,
+        g.width,
+        g.height,
+        HEAT_DIFFUSION_RATE,
+        HEAT_RADIANT_RATE,
+        HEAT_DIFFUSION_SUBSTEPS,
+      )
     ) {
       // WASM wrote the diffused field back into g.temp in place.
     } else {
@@ -191,6 +201,7 @@ export class Simulation {
     const next = g.tempScratch;
     const cond = this.cond;
     const rate = HEAT_DIFFUSION_RATE;
+    const radiantRate = HEAT_RADIANT_RATE;
 
     for (let y = 0; y < h; y++) {
       const row = y * w;
@@ -207,19 +218,39 @@ export class Simulation {
         let acc = ti;
         if (x > 0) {
           const cj = cond[cells[i - 1]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+          if (cj > 0) {
+            acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+          } else if (x > 1) {
+            const ck = cond[cells[i - 2]];
+            if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i - 2] - ti);
+          }
         }
         if (x < w - 1) {
           const cj = cond[cells[i + 1]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+          if (cj > 0) {
+            acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+          } else if (x < w - 2) {
+            const ck = cond[cells[i + 2]];
+            if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i + 2] - ti);
+          }
         }
         if (y > 0) {
           const cj = cond[cells[i - w]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+          if (cj > 0) {
+            acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+          } else if (y > 1) {
+            const ck = cond[cells[i - 2 * w]];
+            if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i - 2 * w] - ti);
+          }
         }
         if (y < h - 1) {
           const cj = cond[cells[i + w]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+          if (cj > 0) {
+            acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+          } else if (y < h - 2) {
+            const ck = cond[cells[i + 2 * w]];
+            if (ck > 0) acc += radiantRate * (ci < ck ? ci : ck) * (cur[i + 2 * w] - ti);
+          }
         }
         next[i] = acc;
       }
