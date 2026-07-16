@@ -26,7 +26,12 @@ function updateNitro(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === FIRE.id || nid === LAVA.id || nid === BLAST.id) {
-      detonate(sim, x, y);
+      // No rim embers: a wide, thin nitro pool is prone to splashing off
+      // isolated droplets that sit just past the crater's reach, and an ember
+      // reaching one chain-detonates it — a scatter of small "residual"
+      // explosions around the real blast. Nitro stays a single clean crater
+      // (일반 폭발), not a firecracker string.
+      detonate(sim, x, y, 0, { rimEmberChance: 0 });
       return;
     }
   }
