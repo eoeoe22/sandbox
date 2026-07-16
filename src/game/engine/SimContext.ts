@@ -153,6 +153,20 @@ export class SimContext {
   turbineFloodTick = -1;
   turbineFlooded: Set<number> = new Set();
 
+  /**
+   * Per-tick memo for the Woofer's body-flood (materials/woofer.ts) — the
+   * mirror image of `turbineFlooded` above (Turbine floods outward, Woofer
+   * floods inward). When an external pulse (a direct Battery contact or a
+   * relayed Spark) reaches any face of a connected Woofer body, the whole
+   * body fires its shockwave at once; this memo keeps a body touched from
+   * several directions/sources in the same tick from re-flooding (and
+   * re-firing) once per entry point. Cleared whenever `wooferFloodTick`
+   * falls behind the current `tick`. Sim-local, same reasoning as
+   * `turbineFlooded`.
+   */
+  wooferFloodTick = -1;
+  wooferFlooded: Set<number> = new Set();
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a

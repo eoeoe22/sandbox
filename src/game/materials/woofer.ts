@@ -1,18 +1,26 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
+import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { detonate } from './blast';
 
-// Woofer (우퍼) — an electric appliance, not a charge: wire a Spark into it
-// (Battery/LFP Battery/Turbine) and every pulse that reaches it thumps out a
-// shockwave, like a speaker cone shoving air. It reuses the blast subsystem's
-// own destructive-power/durability axis (see blast.ts, introduced for
-// Gunpowder's weak "shove, don't crater" concussion) pinned to POWER 0 — a
-// blast too weak to beat even the flimsiest solid's durability, so every
-// solid within reach blocks/shadows it completely untouched (완전한 비파괴성)
-// while every loose grain of powder or puddle of liquid is flung outward as
-// Debris (mass-conserving — it arcs out and rains back).
+// Woofer (우퍼) — an electric appliance, not a charge: plug a Battery/LFP
+// Battery straight into it, or wire one up through ordinary conductors, and
+// every pulse that reaches it thumps out an INVISIBLE shockwave, like a
+// speaker cone shoving air with no flash of light. It reuses the blast
+// subsystem's own destructive-power/durability axis (see blast.ts,
+// introduced for Gunpowder's weak "shove, don't crater" concussion) pinned to
+// POWER 0 — a blast too weak to beat even the flimsiest solid's durability,
+// so every solid within reach blocks/shadows it completely untouched
+// (완전한 비파괴성) while every loose grain of powder or puddle of liquid is
+// flung outward as Debris (mass-conserving — it arcs out and rains back).
+// Unlike an ordinary detonation it never paints a Blast flash over the empty
+// air it reaches either (see `onCell` in wooferPulse below) — a real
+// shockwave doesn't glow, and a lit flash cell has a chance to decay into
+// stray Fire (see blast.ts's SHELL_FIRE_CHANCE), which used to cook a nearby
+// Lithium Battery into thermal runaway. Only the *physics* (the push) is
+// inherited, not the crater/flash/ember dressing.
 //
 // Deliberately NOT `explosive`: that keeps it out of detonate()'s connected-
 // mass survey (so neighboring Woofers each fire their own independent pulse
@@ -22,25 +30,102 @@ import { detonate } from './blast';
 // Woofer's own solid body also fails the "power beats durability" check, so
 // it's left completely untouched — the speaker survives its own shockwave and
 // can thump again on the next pulse, unlike a one-shot charge.
-//
-// Triggering is wired directly into spark.ts's own arc phase (see
-// wooferPulse, called from updateSpark exactly like nichromeJouleHeat) rather
-// than a self-check in Woofer's own per-tick update: a Spark only exists for
-// the one tick it's handed off, and self-scanning from the *target* cell's
-// update is scan-order dependent (whether the Spark cell reverts to its
-// conductor before or after the Woofer's own turn runs that same tick, which
-// flips with the engine's alternating horizontal scan direction). Driving the
-// pulse from the Spark's own update — the same fix C4's `electricDetonate`
-// applies to the fire hand-off problem — makes it deterministic regardless of
-// scan order.
 const REACH = 12; // × the global 2/3 blast-scale ⇒ ~8-cell non-destructive shove
 const POWER = 0; // can't break anything, however tough — see blast.ts durability
 
-/** Fire one non-destructive shockwave pulse from a Woofer cell energized by an
- *  adjacent Spark (called by spark.ts's arc phase). */
-export function wooferPulse(sim: SimContext, x: number, y: number): void {
-  
-  detonate(sim, x, y, 0, { power: POWER, reach: REACH });
+/** Fire one invisible, non-destructive shockwave pulse from a single Woofer
+ *  cell: only the blast subsystem's physics is reused (loose matter shoved
+ *  via the power/durability axis, solids shadowed untouched) — the visual
+ *  crater dressing is switched off with a custom `onCell` that claims every
+ *  reached EMPTY cell and does nothing to it (no Blast flash, so no chance of
+ *  the flash decaying into stray Fire). Non-empty cells fall through
+ *  (`onCell` returns false/undefined) to the ordinary default handling, so
+ *  loose matter still gets shoved and solids are still shadowed exactly as
+ *  before. */
+function wooferPulse(sim: SimContext, x: number, y: number): void {
+  detonate(sim, x, y, 0, {
+    power: POWER,
+    reach: REACH,
+    onCell: (_s, _cx, _cy, prevId) => (prevId === EMPTY ? true : false),
+  });
+}
+
+// ── Reusable pattern: a one-way "outside → inside" electric sink ───────────
+// Woofer is the mirror image of Turbine's own body-flood (see turbine.ts):
+// Turbine floods *outward* (steam inside the body → power emitted at every
+// external face); Woofer floods *inward* only (a pulse reaching any face
+// cell from outside → every connected Woofer cell reacts at once, "전기가
+// 즉시 전역 확산"). Two choices make this a clean template to copy for a
+// future device material that should react to power without becoming a wire:
+//
+//   1. It is NOT `Material.conductive`. That tag drives a fully generic,
+//      *symmetric* hand-off (any two conductive neighbors pass a Spark back
+//      and forth — see spark.ts) and requires registering a fixed-width
+//      conductor "class" (CONDUCTOR_IDS/CLASS_BITS in spark.ts) that's
+//      already at capacity (7 of 7 — an 8th conductor would need to steal
+//      packing bits from every conductor's strength range). A one-way sink
+//      doesn't need any of that machinery: it never *reverts* from a Spark
+//      because it never *becomes* one, so it needs no class at all.
+//   2. Acceptance is wired directly at every *source* of a pulse instead of
+//      through the generic conductive path: battery.ts's `injectPulses`
+//      (direct contact — 배터리 직접 연결) and spark.ts's own arc phase
+//      (reached via a relay through ordinary conductors) both special-case
+//      `WOOFER.id` by id and call `wooferBodyPulse` straight away — the same
+//      shape as C4's `electricDetonate` / Nichrome's Joule-heat special
+//      cases. Neither path ever calls `sim.spawn(..., SPARK.id)` on a Woofer
+//      cell: the pulse is consumed on arrival, so **no Spark is ever
+//      rendered inside/on the body**, and nothing propagates onward to any
+//      *other* conductor the body happens to touch — the one-way
+//      "outside → inside" property falls out for free, with no extra guard
+//      needed.
+//
+// A future device that wants this same shape (external trigger → whole
+// connected body reacts as one, never conducts further) can copy points 1–2
+// verbatim: skip `conductive`, add an id-check + flood call at each pulse
+// source (battery/turbine/spark.ts), and memoize the flood per tick via a
+// dedicated SimContext field (see `wooferFlooded`/`wooferFloodTick` there,
+// modeled directly on Turbine's own `turbineFlooded`/`turbineFloodTick`) so a
+// body touched from several directions/sources in one tick still fires
+// exactly once instead of re-flooding per entry point.
+
+/** Backstop on how far one flood walks the connected Woofer body in a single
+ *  pass (mirrors Turbine's own MAX_BODY) — a giant cabinet can't make one
+ *  pulse unbounded. */
+const MAX_BODY = 256;
+
+/** Flood the connected Woofer body (4-connected, like Turbine's own body
+ *  walk) starting at (sx,sy) and fire every cell's pulse in the same event —
+ *  "전기가 즉시 전역 확산" (the whole cabinet thumps together). Memoized per
+ *  tick via `SimContext.wooferFlooded` so a body reached from several
+ *  directions/sources this tick still fires exactly once. */
+export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
+  if (sim.tick !== sim.wooferFloodTick) {
+    sim.wooferFloodTick = sim.tick;
+    sim.wooferFlooded.clear();
+  }
+  const w = sim.width;
+  const startIdx = sy * w + sx;
+  if (sim.wooferFlooded.has(startIdx)) return;
+
+  const seen = new Set<number>([startIdx]);
+  const stack: number[] = [sx, sy];
+  let count = 0;
+  while (stack.length > 0 && count < MAX_BODY) {
+    const y = stack.pop()!;
+    const x = stack.pop()!;
+    count++;
+    sim.wooferFlooded.add(y * w + x);
+    wooferPulse(sim, x, y);
+    for (const [dx, dy] of DIR4) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== WOOFER.id) continue;
+      const k = ny * w + nx;
+      if (seen.has(k) || sim.wooferFlooded.has(k)) continue;
+      seen.add(k);
+      stack.push(nx, ny);
+    }
+  }
 }
 
 export const WOOFER = register({
