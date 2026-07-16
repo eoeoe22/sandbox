@@ -10,6 +10,7 @@ import { SALTWATER } from './saltwater';
 import { SUGAR_WATER } from './sugarwater';
 import { STEAM } from './steam';
 import { OXYGEN } from './oxygen';
+import { ASH } from './ash';
 import { AMBIENT_TEMP } from '../config';
 
 // Shared burning behavior for the simple fuels — Crude Oil, Gasoline, Alcohol,
@@ -109,6 +110,10 @@ export interface Combustible {
   /** If true, water smothers this fuel without being consumed into steam.
    *  Used for fuels that are easily doused, like Amber and Resin. */
   easyDouse?: boolean;
+  /** Chance that a consumed cell leaves a fleck of Ash behind instead of the
+   *  usual rising Fire puff — a solid fuel's spent remains (Wood, Sawdust). A
+   *  liquid fuel that burns clean away (oil, alcohol, …) omits this. */
+  ashChance?: number;
 }
 
 export function isFlame(id: number): boolean {
@@ -224,6 +229,13 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
   // Fire (which would then steam the water it's floating on), so the oil-water
   // interface stays oil and keeps shielding the water — a persistent oil fire.
   if (!(isPetroleum && onWater) && sim.chance(spec.burnChance * CONSUME_RATIO)) {
+    if (spec.ashChance !== undefined && sim.chance(spec.ashChance)) {
+      // Spent remains instead of a flame puff — a solid fuel's cell burns down
+      // to ash rather than vanishing into rising Fire.
+      sim.set(x, y, ASH.id);
+      sim.setTemp(x, y, BURN_TEMP);
+      return true;
+    }
     sim.set(x, y, FIRE.id);
     sim.setTemp(x, y, BURN_TEMP);
     return true;

@@ -10,9 +10,10 @@ import { tryBurn, type Combustible } from './combustion';
 // Gasoline, ahead of Wood — because loose, airy shavings catch far more readily
 // than the solid timber they were milled from: a higher ignite chance than the
 // solids and a modest autoignition point, though it still burns as a creeping
-// front rather than a flash. Just burns; never detonates. See combustion.ts for
-// the shared model.
-const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 450 };
+// front rather than a flash. A consumed cell has a chance to leave a fleck of
+// Ash behind (see combustion.ts) instead of just puffing into Fire. Just burns;
+// never detonates. See combustion.ts for the shared model.
+const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 450, ashChance: 0.15 };
 
 function updateSawdust(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;

@@ -1,5 +1,5 @@
 import type { SimContext } from './SimContext';
-import { Phase } from './types';
+import { EMPTY, Phase } from './types';
 import { DIR4, DIR8 } from './directions';
 import { getMaterial } from '../materials/registry';
 
@@ -69,6 +69,51 @@ export function updateFloatyPowder(x: number, y: number, sim: SimContext): void 
   if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
   if (sim.moveDown(x, y)) return;
   sim.moveDiagonalDown(x, y);
+}
+
+/** True if the cell directly against gravity ("above" x,y) holds a liquid
+ *  denser than this cell's own material — i.e. this powder is pinned *under*
+ *  a liquid it's too light to have sunk into on its own (water poured on top
+ *  of it, or a pool closing back over it), as opposed to merely resting on a
+ *  surface with open air overhead. */
+function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): boolean {
+  const ux = x - sim.gravityX;
+  const uy = y - sim.gravityY;
+  if (!sim.inBounds(ux, uy)) return false;
+  const aboveId = sim.get(ux, uy);
+  if (aboveId === EMPTY) return false;
+  const above = getMaterial(aboveId);
+  if (above.phase !== Phase.Liquid) return false;
+  return above.density > getMaterial(sim.get(x, y)).density;
+}
+
+const BUOY_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
+const BUOY_SWAY_CHANCE = 0.35; // occasional sideways drift while rising, so it doesn't bore a perfectly straight shaft
+
+/**
+ * Light/buoyant powder (currently Ash): once submerged under a denser liquid,
+ * actively floats back up through it — rather than sitting pinned in place
+ * like an inert solid the way an ordinary powder would (Powder cells aren't
+ * displaceable, so a liquid can't push *into* one; see SimContext.tryMove).
+ * The rise itself reuses tryMove's existing density-sorted displacement (a
+ * lighter cell may swap up through a denser fluid) — this just gives the
+ * powder the will to *attempt* that move each tick while it's covered, the
+ * rising mirror of updateFloatyPowder's falling drift. Each successful rise
+ * swaps the powder up one cell and the liquid down one cell in the same move,
+ * so water poured over a pile doesn't pool on top of it like solid ground —
+ * the powder bubbles up through the incoming water instead. Once it clears
+ * the surface (nothing denser directly above), it falls back to the ordinary
+ * floaty-powder drift/pile behavior.
+ */
+export function updateBuoyantPowder(x: number, y: number, sim: SimContext): void {
+  if (submergedUnderDenserLiquid(x, y, sim)) {
+    if (sim.chance(BUOY_STALL_CHANCE)) return;
+    if (sim.chance(BUOY_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return;
+    if (sim.moveUp(x, y)) return;
+    sim.moveDiagonalUp(x, y);
+    return;
+  }
+  updateFloatyPowder(x, y, sim);
 }
 
 /** Fraction of the gas diffusion rate that liquids get: like a gas, a liquid
