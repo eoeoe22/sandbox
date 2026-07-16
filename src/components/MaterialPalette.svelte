@@ -112,6 +112,12 @@
 
   function openOnHover(key: string): void {
     clearTimeout(closeTimer);
+    // A pending pick()-triggered close (see PICK_CLOSE_DELAY below) was scheduled
+    // for whatever flyout was open *before* this hover — without canceling it
+    // here, that stale timer could fire up to 400ms later and null out `hovered`
+    // out from under a flyout the user has since opened (e.g. pick a material,
+    // then immediately hover a different category within the delay window).
+    clearTimeout(pickCloseTimer);
     hovered = key;
   }
 
@@ -305,6 +311,9 @@
 
   function toggleCategory(key: string): void {
     clearTimeout(closeTimer);
+    // Same stale-timer hazard as openOnHover above — cancel any pending
+    // pick()-triggered close before (re)pinning a category.
+    clearTimeout(pickCloseTimer);
     pinned = pinned === key ? null : key;
     hovered = null;
   }

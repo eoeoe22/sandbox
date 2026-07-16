@@ -42,7 +42,7 @@ export const $selectedMaterial = atom<number>(SAND.id);
  * The material a double-clicked palette chip pre-latches a Clone onto — set
  * alongside `$selectedMaterial` (to Clone's id) by MaterialPalette's 더블클릭
  * shortcut, so painting immediately emits that material instead of waiting to
- * touch it first (see engine/materials/clone.ts). `null` when Clone was picked
+ * touch it first (see game/materials/clone.ts). `null` when Clone was picked
  * normally (a single click), leaving it to latch onto whatever it touches
  * in-world, as usual. Only meaningful while `$selectedMaterial === CLONE.id`;
  * PointerPainter reads it to seed the freshly-painted cell's `aux` byte, and
