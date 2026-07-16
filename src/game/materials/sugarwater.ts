@@ -6,7 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
 import { SUGAR, SUGAR_WATER_RATIO } from './sugar';
-import { WATER_BOIL_TEMP } from './water';
+import { WATER_BOIL_TEMP, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 import { YEAST } from './yeast';
 import { ALCOHOL } from './alcohol';
 import { CO2 } from './co2';
@@ -76,23 +76,29 @@ function updateSugarWater(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
-    for (const [dx, dy] of DIR4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
-        sim.spawn(nx, ny, STEAM.id);
-        sim.sugarDebt += 1 / SUGAR_WATER_RATIO;
-        if (sim.sugarDebt >= 1) {
-          sim.sugarDebt -= 1;
-          sim.set(x, y, SUGAR.id);
-        } else {
-          sim.set(x, y, EMPTY);
+    if (burningPetroleumAdjacent(x, y, sim)) {
+      // A burning oil layer floats on top: hold below boiling instead of
+      // flashing to Steam (see burningPetroleumAdjacent in water.ts).
+      sim.setTemp(x, y, WATER_SURFACE_CAP);
+    } else {
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
+          sim.spawn(nx, ny, STEAM.id);
+          sim.sugarDebt += 1 / SUGAR_WATER_RATIO;
+          if (sim.sugarDebt >= 1) {
+            sim.sugarDebt -= 1;
+            sim.set(x, y, SUGAR.id);
+          } else {
+            sim.set(x, y, EMPTY);
+          }
+          return;
         }
-        return;
       }
+      updateLiquid(x, y, sim);
+      return;
     }
-    updateLiquid(x, y, sim);
-    return;
   }
   updateLiquid(x, y, sim);
 }

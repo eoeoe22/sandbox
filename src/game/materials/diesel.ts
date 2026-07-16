@@ -15,7 +15,7 @@ import { refluxBoil, REFLUX_DIESEL } from './petroleumdistill';
 // and re-boils (refluxes) at the highest cut boiling point — its boil point
 // (320) plus the reflux superheat cap (60) sits below autoignition, so a
 // flameless still refluxes it away rather than igniting it (petroleumdistill.ts).
-const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 450 };
+const SPEC: Combustible = { burnChance: 0.10, autoIgniteTemp: 450 };
 const BOIL_TEMP = 320;
 
 function updateDiesel(x: number, y: number, sim: SimContext): void {

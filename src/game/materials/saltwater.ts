@@ -7,7 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { EMPTY } from '../engine/types';
 import { STEAM } from './steam';
 import { SALT, SALT_WATER_RATIO } from './salt';
-import { WATER_BOIL_TEMP } from './water';
+import { WATER_BOIL_TEMP, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 
 // Liquid: denser than fresh water (3) so it sinks below it, still lighter than
 // the powders (Salt/Sand at 5), so undissolved Salt grains sink through it and
@@ -32,23 +32,29 @@ function updateSaltwater(x: number, y: number, sim: SimContext): void {
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
-    for (const [dx, dy] of DIR4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
-        sim.spawn(nx, ny, STEAM.id);
-        sim.saltDebt += 1 / SALT_WATER_RATIO;
-        if (sim.saltDebt >= 1) {
-          sim.saltDebt -= 1;
-          sim.set(x, y, SALT.id);
-        } else {
-          sim.set(x, y, EMPTY);
+    if (burningPetroleumAdjacent(x, y, sim)) {
+      // A burning oil layer floats on top: hold below boiling instead of
+      // flashing to Steam (see burningPetroleumAdjacent in water.ts).
+      sim.setTemp(x, y, WATER_SURFACE_CAP);
+    } else {
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
+          sim.spawn(nx, ny, STEAM.id);
+          sim.saltDebt += 1 / SALT_WATER_RATIO;
+          if (sim.saltDebt >= 1) {
+            sim.saltDebt -= 1;
+            sim.set(x, y, SALT.id);
+          } else {
+            sim.set(x, y, EMPTY);
+          }
+          return;
         }
-        return;
       }
+      updateLiquid(x, y, sim);
+      return;
     }
-    updateLiquid(x, y, sim);
-    return;
   }
   updateLiquid(x, y, sim);
 }

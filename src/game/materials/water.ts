@@ -33,25 +33,68 @@ export const WATER_DEEP_FREEZE_TEMP = -12;
 export const FROST_MELT_TEMP = 2;
 
 // A petroleum neighbour at/above this temperature is a *burning* oil layer (a
-// lit fuel is pinned near 800°, far above its 150–380° distillation range), so
-// the water beneath an oil fire spots it and refuses to boil — an oil fire
-// floating on water doesn't flash the water below to Steam (see the comment on
-// suppressBoil). Below this it's just warm/distilling petroleum and water boils
-// normally.
+// lit fuel is pinned near 800°, far above its ~400–450° autoignition points and
+// far above the 150–380° range it merely distills in while unlit), so water
+// touching an oil fire can tell it apart from water just sitting under warm,
+// unlit crude — see Material.petroleum / combustion.ts.
 const PETROLEUM_BURN_TEMP = 500;
 
+// How low a water cell touching a burning oil layer is held instead of
+// flashing to Steam. Just suppressing the boil isn't enough on its own: left
+// free to keep climbing, the interface cell would itself become an
+// ever-hotter secondary heat source that conducts the fire's heat on down into
+// the water beneath it, eventually boiling that away too even though it never
+// touches the flame. Capping the interface here keeps the whole body below
+// boiling instead, which is what makes an oil fire on water self-sustaining
+// rather than slowly steaming away its own base (유류화재 재현). combustion.ts's
+// burnStep applies the same cap from the fuel's side as a second line of
+// defense against the same runaway.
+export const WATER_SURFACE_CAP = 95;
+
+// How far a water column looks "up" (against gravity, toward the surface a
+// slick would float on) for a burning petroleum layer above it. Just checking
+// the immediate interface cell isn't enough: heat diffusion runs once for the
+// *whole* grid before any material update this tick, so the interface — reset
+// to WATER_SURFACE_CAP at the *end* of the previous tick — still gets diffused
+// against the fuel's 800° this tick same as any other neighbor pair, and can
+// overshoot well past boiling *before* its own turn clamps it back down. The
+// next cell down samples that transient overshoot during the same diffusion
+// pass, so a little extra heat leaks past the interface every single tick —
+// too little to boil the interface itself (which self-corrects every turn) but
+// enough to slowly ratchet the water beneath it toward boiling over time.
+// Shielding the whole column instead of only the top cell means every cell in
+// the path — not just the one actually touching the fuel — refuses to boil,
+// so that creeping leak can never accumulate into an evaporating pool. Set
+// past the tallest sandbox grid (config.GRID_H) so a realistic pool is always
+// shielded end to end; the scan only ever runs on a cell that's actually about
+// to boil, so the depth costs nothing on the (overwhelming) common case.
+const SHIELD_SCAN_DEPTH = 256;
+
 /** True if a *burning* petroleum layer (Crude Oil / Gasoline / Kerosene /
- *  Diesel) is touching this cell — used to suppress the water's boiling so an
- *  oil fire on water keeps burning on the surface instead of steaming away the
- *  water that's holding it up (유류화재 재현). */
-function burningPetroleumAdjacent(x: number, y: number, sim: SimContext): boolean {
+ *  Diesel) is touching this cell, or floats somewhere above it in the same
+ *  liquid column — used by Water/Saltwater/Sugar Water to suppress boiling so
+ *  an oil fire on water keeps burning on the surface instead of steaming away
+ *  the water that's holding it up (see SHIELD_SCAN_DEPTH for why the column
+ *  scan is needed on top of the immediate-neighbor check). */
+export function burningPetroleumAdjacent(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === 0) continue;
-    if (getMaterial(nid).petroleum && sim.getTemp(nx, ny) >= PETROLEUM_BURN_TEMP) return true;
+    if (getMaterial(nid).petroleum === true && sim.getTemp(nx, ny) >= PETROLEUM_BURN_TEMP) return true;
+  }
+  let cx = x - sim.gravityX;
+  let cy = y - sim.gravityY;
+  for (let i = 0; i < SHIELD_SCAN_DEPTH && sim.inBounds(cx, cy); i++) {
+    const cid = sim.get(cx, cy);
+    if (cid === 0) break;
+    const mat = getMaterial(cid);
+    if (mat.petroleum === true && sim.getTemp(cx, cy) >= PETROLEUM_BURN_TEMP) return true;
+    if (mat.phase !== Phase.Liquid) break; // hit a solid/gas — the slick's chain stops here
+    cx -= sim.gravityX;
+    cy -= sim.gravityY;
   }
   return false;
 }
@@ -63,13 +106,15 @@ function updateWater(x: number, y: number, sim: SimContext): void {
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
   const t = sim.getTemp(x, y);
-  if (t >= WATER_BOIL_TEMP && !burningPetroleumAdjacent(x, y, sim)) {
-    // Boil in place: the resulting Steam keeps the (hot) temperature, then
-    // rises and cools/condenses on its own (see steam.ts). Suppressed while a
-    // burning oil slick floats on top, so an oil fire on water doesn't rapidly
-    // boil off the water beneath it.
-    sim.set(x, y, STEAM.id);
-    return;
+  if (t >= WATER_BOIL_TEMP) {
+    if (burningPetroleumAdjacent(x, y, sim)) {
+      sim.setTemp(x, y, WATER_SURFACE_CAP);
+    } else {
+      // Boil in place: the resulting Steam keeps the (hot) temperature, then
+      // rises and cools/condenses on its own (see steam.ts).
+      sim.set(x, y, STEAM.id);
+      return;
+    }
   }
   if (t <= WATER_DEEP_FREEZE_TEMP) {
     // Deeply chilled → solid Ice. In-place `set` keeps the (very cold)

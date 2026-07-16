@@ -5,7 +5,7 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { WATER } from './water';
+import { WATER, WATER_SURFACE_CAP } from './water';
 import { SALTWATER } from './saltwater';
 import { SUGAR_WATER } from './sugarwater';
 import { STEAM } from './steam';
@@ -152,6 +152,14 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
       if (isPetroleum) {
         onWater = true; // oil fire on water: not doused, water not steamed
+        // Second line of defense against the water below cooking off: Water/
+        // Saltwater/Sugar Water already refuse to boil next to a burning
+        // petroleum neighbor and cap themselves here on their own turn (see
+        // burningPetroleumAdjacent in water.ts), but that check only runs once
+        // per tick on the water cell's own turn. Applying the same cap from the
+        // fuel's side too means the water is never left sitting above the cap
+        // for a whole extra tick between diffusion passes.
+        sim.setTemp(nx, ny, Math.min(sim.getTemp(nx, ny), WATER_SURFACE_CAP));
         continue;
       }
       // Cell stays fuel (its id is untouched); just cool it back out of the

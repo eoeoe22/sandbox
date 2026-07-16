@@ -20,7 +20,7 @@ import { ASPHALT } from './asphalt';
 // lets a sealed still (crude in a Stone/Iron vessel heated from outside) be
 // driven through the distillation range by conduction without catching fire:
 // dump Fire *on* the crude and it burns; heat it *through a wall* and it distils.
-const SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 420 };
+const SPEC: Combustible = { burnChance: 0.20, autoIgniteTemp: 420 };
 
 // --- Fractional distillation --------------------------------------------------
 // Gently heated (not set alight), crude oil boils apart into its cuts the way a
