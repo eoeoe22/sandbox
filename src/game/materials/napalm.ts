@@ -24,15 +24,21 @@ const REACH = 6;
 const MAX_CELLS = 200; // per-source flood budget (own R6 disc; see soloSource below)
 // A fused pile of napalm should go up as ONE simultaneous cluster burst, not
 // dribble outward over many ticks — but every member still needs its own full,
-// uniform R6 flourish (see CLUSTER_CAP's caller, igniteCluster). Fixed cap on
-// how many connected napalm cells join one simultaneous burst, trimmed to 2/3
-// of the already-reduced 120 so a big pile's instant gel/flame volley stays
-// readable instead of flooding the screen at once (기획: 클러스터 규모 3분의 2 축소).
-const CLUSTER_CAP = 80;
+// uniform R6 flourish (see CLUSTER_CAP's caller, igniteCluster). Like TNT, the
+// WHOLE connected mass detonates together in the same tick rather than being
+// trimmed to a small readable batch (기획: TNT처럼 연결부 전역 동시폭발). Unlike TNT,
+// napalm's reach never grows with how much is piled up — NAPALM_OPTS below
+// keeps every member's blast fixed at REACH via soloSource, so this cap is
+// purely a safety ceiling on a pathologically huge connected mass, mirroring
+// blast.ts's own MAX_SURVEY_CELLS.
+const CLUSTER_CAP = 60_000;
 const AUTOIGNITE_TEMP = 240;
 const HEAT_BUMP = 250; // non-flammable cells are only scorched, never cratered
 const EMPTY_FIRE_CHANCE = 0.3; // open air catches a lick of flame this often
-const GEL_RIM_CHANCE = 1.0; // rim cells that fling a sticky gel blob
+// Rim cells that fling a sticky gel blob — halved from 1.0 so an all-at-once
+// whole-pile burst doesn't flood the screen with gel ejecta (기획: 폭발시 튀는
+// 불꽃(젤) 양 절반 감소).
+const GEL_RIM_CHANCE = 0.5;
 
 /** Per-cell rule for a napalm flood — see DetonateOptions.onCell. Always claims
  *  the cell (no default crater flash is ever dropped). */
@@ -74,11 +80,11 @@ const NAPALM_OPTS: DetonateOptions = {
 };
 
 /** Collect up to CLUSTER_CAP connected (8-way) Napalm cells starting at
- *  (x0,y0) — the pile that should go off together as one instantaneous
- *  cluster burst. Capped so a screen-filling pile doesn't light wall-to-wall
- *  in a single tick; a pile larger than the cap still burns in full, just
- *  over a couple of ticks as the unclaimed remainder re-triggers off the
- *  fire this burst leaves behind. */
+ *  (x0,y0) — the whole pile that should go off together as one instantaneous
+ *  cluster burst, same as TNT detonating its whole connected mass in one go.
+ *  CLUSTER_CAP is just a safety ceiling, not a design batch size: a pile
+ *  larger than it still burns in full, just over a couple of ticks as the
+ *  unclaimed remainder re-triggers off the fire this burst leaves behind. */
 function collectCluster(sim: SimContext, x0: number, y0: number): Array<[number, number]> {
   const cells: Array<[number, number]> = [[x0, y0]];
   const seen = new Set<number>([y0 * sim.width + x0]);
