@@ -14,6 +14,7 @@ import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
+import { WOOFER, wooferPulse } from './woofer';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -215,6 +216,14 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       } else {
         arced = arcFireBeside(sim, nx, ny);
       }
+    } else if (nid === WOOFER.id) {
+      // Electric appliance, not a charge: fire a non-destructive shockwave
+      // pulse (see woofer.ts) directly off the Spark's own arc phase, the
+      // same scan-order-independent trick electricDetonate uses for C4 —
+      // Woofer's own per-tick update can't reliably self-check for an
+      // adjacent Spark since the Spark may already have reverted to its
+      // conductor by the time Woofer's turn comes up this same tick.
+      wooferPulse(sim, nx, ny);
     }
   }
 

@@ -106,6 +106,7 @@ import { CONVEYOR } from './conveyor';
 import { SOAPY_WATER } from './soapywater';
 import { BUBBLE } from './bubble';
 import { SOAP } from './soap';
+import { WOOFER } from './woofer';
 
 export {
   EMPTY_MAT,
@@ -211,6 +212,7 @@ export {
   SOAPY_WATER,
   BUBBLE,
   SOAP,
+  WOOFER,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -279,6 +281,7 @@ export const MATERIALS = [
   BATTERY,
   LFP_BATTERY,
   NICHROME,
+  WOOFER,
   MERCURY,
   HONEY,
   ALCOHOL,
