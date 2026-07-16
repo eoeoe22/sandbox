@@ -56,6 +56,16 @@ const NAPALM_OPTS: DetonateOptions = {
   maxCells: MAX_CELLS,
   onCell: napalmCell,
   rimHandler: napalmRim,
+  // A fused blob of napalm is `explosive`, so without this every ignited cell
+  // would sweep its whole connected pile into one shared mass survey — and
+  // with maxCells this tight, that mass alone eats the budget near the
+  // ignition point, leaving no room for the fire-flood/gel flourish until a
+  // later tick's re-trigger finally works through to the far side (see
+  // DetonateOptions.soloSource). Each napalm cell instead detonates as its
+  // own self-contained R6 fireball and chains to neighbors via the ordinary
+  // fire-touch trigger, so the whole cluster burns evenly outward instead of
+  // blooming only on the side opposite where it was lit.
+  soloSource: true,
 };
 
 function updateNapalm(x: number, y: number, sim: SimContext): void {
