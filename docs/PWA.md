@@ -15,6 +15,11 @@
 해시가 붙으면 안 된다).
 
 - `public/manifest.webmanifest` — 앱 이름·아이콘·`display: standalone`·테마 색.
+  **`orientation` 필드는 의도적으로 넣지 않는다** — standalone 설치 앱에서
+  `orientation`을 명시하면(`"any"` 포함) 브라우저가 Screen Orientation Lock
+  API로 그 값을 강제해, 안드로이드 OS의 화면 방향 고정 설정을 무시하고 항상
+  센서 회전을 따라가는 버그가 있었다(실기기 테스트로 확인). 필드를 아예 생략하면
+  설치된 앱도 일반 탭처럼 OS의 현재 회전 상태/고정 설정을 그대로 따른다.
 - `public/icons/*.png` — 설치 아이콘(192/512/512-maskable/apple-touch-icon).
   `scripts/generate-icons.mjs`가 `src/assets/favicon.svg`와 같은 도형을 좌표
   그대로 코드로 래스터화해서 생성한다(외부 이미지 툴 의존성 없음, Node 내장
