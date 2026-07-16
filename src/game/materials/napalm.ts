@@ -21,7 +21,14 @@ import { launchGel } from './napalmgel';
 // low cell cap so it can't run the whole screen, an igniting `onCell`, and a gel
 // rimHandler.
 const REACH = 6;
-const MAX_CELLS = 200;
+const MAX_CELLS = 200; // per-source flood budget (own R6 disc; see soloSource below)
+// A fused pile of napalm should go up as ONE simultaneous cluster burst, not
+// dribble outward over many ticks — but every member still needs its own full,
+// uniform R6 flourish (see CLUSTER_CAP's caller, igniteCluster). Fixed cap on
+// how many connected napalm cells join one simultaneous burst, trimmed a bit
+// below the old de-facto ~200 so a big pile's instant gel/flame volley stays
+// readable instead of flooding the screen at once (기획: 클러스터 규모 소폭 축소).
+const CLUSTER_CAP = 120;
 const AUTOIGNITE_TEMP = 240;
 const HEAT_BUMP = 250; // non-flammable cells are only scorched, never cratered
 const EMPTY_FIRE_CHANCE = 0.3; // open air catches a lick of flame this often
@@ -56,17 +63,52 @@ const NAPALM_OPTS: DetonateOptions = {
   maxCells: MAX_CELLS,
   onCell: napalmCell,
   rimHandler: napalmRim,
-  // A fused blob of napalm is `explosive`, so without this every ignited cell
-  // would sweep its whole connected pile into one shared mass survey — and
-  // with maxCells this tight, that mass alone eats the budget near the
-  // ignition point, leaving no room for the fire-flood/gel flourish until a
-  // later tick's re-trigger finally works through to the far side (see
-  // DetonateOptions.soloSource). Each napalm cell instead detonates as its
-  // own self-contained R6 fireball and chains to neighbors via the ordinary
-  // fire-touch trigger, so the whole cluster burns evenly outward instead of
-  // blooming only on the side opposite where it was lit.
+  // A fused blob of napalm is `explosive`, so without this a single detonate()
+  // call would sweep the whole connected pile into one shared mass survey —
+  // and with maxCells this tight, that mass alone eats the budget near
+  // whichever cell it started from, starving every other member's R6
+  // flourish (see DetonateOptions.soloSource). igniteCluster below instead
+  // calls detonate() once per member with soloSource, so every cell in the
+  // simultaneous burst gets its own complete, uniform fireball.
   soloSource: true,
 };
+
+/** Collect up to CLUSTER_CAP connected (8-way) Napalm cells starting at
+ *  (x0,y0) — the pile that should go off together as one instantaneous
+ *  cluster burst. Capped so a screen-filling pile doesn't light wall-to-wall
+ *  in a single tick; a pile larger than the cap still burns in full, just
+ *  over a couple of ticks as the unclaimed remainder re-triggers off the
+ *  fire this burst leaves behind. */
+function collectCluster(sim: SimContext, x0: number, y0: number): Array<[number, number]> {
+  const cells: Array<[number, number]> = [[x0, y0]];
+  const seen = new Set<number>([y0 * sim.width + x0]);
+  let head = 0;
+  while (head < cells.length && cells.length < CLUSTER_CAP) {
+    const [x, y] = cells[head++];
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!sim.inBounds(nx, ny)) continue;
+      const key = ny * sim.width + nx;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (sim.get(nx, ny) === NAPALM.id) cells.push([nx, ny]);
+    }
+  }
+  return cells;
+}
+
+/** Detonate a whole connected napalm pile at once: every member (up to
+ *  CLUSTER_CAP) gets its own soloSource blast in the SAME tick, so the
+ *  cluster reads as one simultaneous burst rather than a fire creeping across
+ *  it tick by tick. Neighboring members' discs overlap heavily, so most cells
+ *  are already Fire by the time their own turn comes — skip those rather than
+ *  re-flooding ground this same burst already claimed. */
+function igniteCluster(sim: SimContext, x0: number, y0: number): void {
+  for (const [cx, cy] of collectCluster(sim, x0, y0)) {
+    if (sim.get(cx, cy) === NAPALM.id) detonate(sim, cx, cy, 0, NAPALM_OPTS);
+  }
+}
 
 function updateNapalm(x: number, y: number, sim: SimContext): void {
   let trigger = sim.getTemp(x, y) >= AUTOIGNITE_TEMP;
@@ -90,7 +132,7 @@ function updateNapalm(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  if (trigger) detonate(sim, x, y, 0, NAPALM_OPTS);
+  if (trigger) igniteCluster(sim, x, y);
   // Otherwise it just sits there — a Solid has no phase-default movement.
 }
 
