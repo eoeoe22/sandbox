@@ -8,9 +8,11 @@ import { tryBurn, type Combustible } from './combustion';
 // no phase-default movement) that you build structures from and watch burn
 // down. Its burn speed sits in the middle of the pack — slower than the loose
 // Sawdust it's milled into, faster than a dense Coal lump or Crude Oil pool —
-// so a lit beam is eaten along by a visible, creeping flame front. Just burns;
-// never detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 500 };
+// so a lit beam is eaten along by a visible, creeping flame front. A consumed
+// cell has a chance to leave a fleck of Ash behind (see combustion.ts) instead
+// of just puffing into Fire, so a burnt-down beam leaves real ash residue. Just
+// burns; never detonates. See combustion.ts for the shared model.
+const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 500, ashChance: 0.15 };
 
 function updateWood(x: number, y: number, sim: SimContext): void {
   // Solid: no fall/flow, so combustion is the only behavior — if it doesn't
