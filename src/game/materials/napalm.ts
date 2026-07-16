@@ -25,10 +25,10 @@ const MAX_CELLS = 200; // per-source flood budget (own R6 disc; see soloSource b
 // A fused pile of napalm should go up as ONE simultaneous cluster burst, not
 // dribble outward over many ticks — but every member still needs its own full,
 // uniform R6 flourish (see CLUSTER_CAP's caller, igniteCluster). Fixed cap on
-// how many connected napalm cells join one simultaneous burst, trimmed a bit
-// below the old de-facto ~200 so a big pile's instant gel/flame volley stays
-// readable instead of flooding the screen at once (기획: 클러스터 규모 소폭 축소).
-const CLUSTER_CAP = 120;
+// how many connected napalm cells join one simultaneous burst, trimmed to 2/3
+// of the already-reduced 120 so a big pile's instant gel/flame volley stays
+// readable instead of flooding the screen at once (기획: 클러스터 규모 3분의 2 축소).
+const CLUSTER_CAP = 80;
 const AUTOIGNITE_TEMP = 240;
 const HEAT_BUMP = 250; // non-flammable cells are only scorched, never cratered
 const EMPTY_FIRE_CHANCE = 0.3; // open air catches a lick of flame this often
