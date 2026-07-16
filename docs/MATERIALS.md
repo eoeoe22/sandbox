@@ -73,7 +73,7 @@
 | Molten Metal | Iron 이 녹은 것. 식으면 Iron. 밀도 8 액체(제련 3상 중 가장 무거워 노 바닥에 고인다). |
 | Molten Glass | Sand 가 녹은 것. 식으면 Glass. |
 | Molten Salt | Salt 가 녹은 것(800°↑). 식으면 Salt. |
-| Coal / Wood / Sawdust | 고체 연료(느림→빠름 순: Coal < Wood < Sawdust). 액체 연료(원유·휘발유 등)는 아래 **석유** 탭 참고. Wood·Sawdust는 소모될 때 일부 셀이 Fire로 사라지는 대신 소량 확률로 **Ash**를 남긴다(15%). |
+| Coal / Wood / Sawdust | 고체 연료(느림→빠름 순: Coal < Wood < Sawdust). 액체 연료(원유·휘발유 등)는 아래 **석유** 탭 참고. Wood·Sawdust는 소모될 때 일부 셀이 Fire로 사라지는 대신 소량 확률로 **Ash**를 남긴다(15%). Sawdust는 물보다 가벼운 **가벼운 가루**라 물에 파묻혀도 고체처럼 눌려 있지 않고 스스로 수면 위로 떠오른다(Ash와 동일 메커니즘). |
 | White Phosphorus | 백린(가루). **공기 중 자연발화** — 노출되면 백색 화염+짙은 백연(연막)을 뿜고 주변 가연물을 점화하며 계속 낙하·연소. **물속에선 안전**(잠기면 불활성, 담그면 소화). |
 
 > **산소 송풍(forced draught):** 모든 연료는 연소 중 인접한 **Oxygen** 1칸당 화염 온도가
