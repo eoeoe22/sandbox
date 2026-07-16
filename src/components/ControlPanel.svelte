@@ -11,6 +11,9 @@
     $areaSelect as areaSelect,
     $inspect as inspect,
     $selectedMaterial as selectedMaterial,
+    $selectedObject as selectedObject,
+    $cloneTarget as cloneTarget,
+    OBJECT_LABELS,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $gridDims as gridDims,
@@ -48,7 +51,7 @@
     BOTTOM_DEADZONE_STEP,
   } from '../game/config';
   import type { GravityDir } from '../game/config';
-  import { getMaterial } from '../game/materials';
+  import { getMaterial, CLONE } from '../game/materials';
   import MaterialPalette from './MaterialPalette.svelte';
   import BlendBrush from './BlendBrush.svelte';
   import HeatCoolSettings from './HeatCoolSettings.svelte';
@@ -56,9 +59,23 @@
   import Modal from './Modal.svelte';
   import SaveSlots from './SaveSlots.svelte';
 
-  // Name of the currently selected paint material, shown on the 재료 (draw) brush
-  // button so the active material is always visible without opening the palette.
-  const selectedName = $derived(getMaterial($selectedMaterial)?.name ?? '재료');
+  // Name shown on the 재료 (draw) brush button, so the active brush target is
+  // always visible without opening the palette. While the 'object' tool is
+  // active this is the selected free object's name (오브젝트 선택 시 오브젝트
+  // 이름 표시), not a material — the object layer has no material id of its own.
+  // A Clone pre-latched via the palette's 더블클릭 shortcut ($cloneTarget) shows
+  // "물질이름(Clone)" instead of plain "Clone", so the button still reads as
+  // "what will this paint" rather than just naming the carrier material.
+  const selectedName = $derived.by(() => {
+    if ($tool === 'object') return OBJECT_LABELS[$selectedObject];
+    const mat = getMaterial($selectedMaterial);
+    if (!mat) return '재료';
+    if (mat.id === CLONE.id && $cloneTarget !== null) {
+      const target = getMaterial($cloneTarget);
+      if (target) return `${target.name}(Clone)`;
+    }
+    return mat.name;
+  });
 
   // Modals, opened from the toolbar. The 설정 modal holds the settings that
   // are set once and left alone (plus, on mobile, the frequently-tweaked ones,
@@ -189,7 +206,48 @@
   onDestroy(() => {
     clearTimeout(clearTimer);
     clearTimeout(resetTimer);
+    clearTimeout(areaPopoverTimer);
   });
+
+  // 영역 선택 is a per-cell/rect action with no meaning for the object layer (a
+  // spawn is a point action — see PointerPainter.applyRect's 'object' no-op), so
+  // attempting to turn it on while the 'object' tool is active is refused with a
+  // brief popover instead of silently doing nothing. Turning 영역 select back
+  // *off* is always allowed, regardless of tool.
+  let areaPopoverOpen = $state(false);
+  let areaBtn: HTMLButtonElement | null = null;
+  let areaPopoverPos = $state<{ top: number; left: number } | null>(null);
+  let areaPopoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
+  function showAreaBlockedPopover(): void {
+    clearTimeout(areaPopoverTimer);
+    if (areaBtn) {
+      const r = areaBtn.getBoundingClientRect();
+      areaPopoverPos = { top: r.top, left: r.left + r.width / 2 };
+    }
+    areaPopoverOpen = true;
+    areaPopoverTimer = setTimeout(() => {
+      areaPopoverOpen = false;
+    }, 2600);
+  }
+
+  function handleAreaSelectClick(): void {
+    if (!areaSelect.get() && tool.get() === 'object') {
+      showAreaBlockedPopover();
+      return;
+    }
+    areaPopoverOpen = false;
+    areaSelect.set(!areaSelect.get());
+  }
 </script>
 
 <!-- Frequently-tweaked settings. Shown inline in the sidebar on desktop and
@@ -609,10 +667,11 @@
         <button
           class="ctl"
           class:active={$areaSelect}
-          onclick={() => areaSelect.set(!$areaSelect)}
+          onclick={handleAreaSelectClick}
+          bind:this={areaBtn}
           aria-pressed={$areaSelect}
           aria-label="영역 선택"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
@@ -813,6 +872,22 @@
 <!-- 돋보기 readout, floating over the top of the sandbox (shown only while the
      inspect overlay is on and the pointer is over the canvas). -->
 <InspectPanel />
+
+<!-- 영역 선택이 오브젝트 도구에서 거부됐을 때 뜨는 부트스트랩 스타일 팝오버.
+     영역 버튼 위에 짧게 떠 있다가 스스로 사라진다 (portal to <body> so it escapes
+     the sidebar's backdrop-filter containing block, same reason the palette
+     flyouts portal out — see MaterialPalette). -->
+{#if areaPopoverOpen && areaPopoverPos}
+  <div
+    class="area-popover"
+    use:portal
+    role="tooltip"
+    style={`top:${areaPopoverPos.top}px; left:${areaPopoverPos.left}px`}
+  >
+    <div class="area-popover-body">오브젝트는 영역 선택을 사용할 수 없습니다.</div>
+    <div class="area-popover-arrow"></div>
+  </div>
+{/if}
 
 <style>
   /* --------------------------------------------------------------------- */
@@ -1122,6 +1197,42 @@
   .reset-btn {
     width: 100%;
     justify-content: center;
+  }
+
+  /* 영역 선택이 오브젝트 도구에서 거부됐을 때 뜨는 팝오버: 트리거(영역 버튼) 위에
+     뜨는 작은 말풍선, 아래쪽 화살표가 버튼을 가리킨다. Bootstrap의 popover와 같은
+     생김새를 손으로 재현한 것 — 전체 bootstrap.min.css는 싣지 않는다는 기존 방침
+     (docs/FEATURES.md 참고)을 지키면서, Modal/MaterialPalette 플라이아웃과 같은
+     패턴(고정 위치 + portal + 다크 테마)으로 만들었다. */
+  .area-popover {
+    position: fixed;
+    z-index: 50;
+    transform: translate(-50%, calc(-100% - 10px));
+    pointer-events: none;
+    max-width: 220px;
+  }
+  .area-popover-body {
+    padding: 8px 10px;
+    background: rgba(24, 24, 30, 0.98);
+    border: 1px solid #3a3a46;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    color: #ffd0d0;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .area-popover-arrow {
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    background: rgba(24, 24, 30, 0.98);
+    border-right: 1px solid #3a3a46;
+    border-bottom: 1px solid #3a3a46;
+    transform: translateX(-50%) rotate(45deg);
   }
 
   /* The frequently-tweaked settings render both inline (desktop) and inside the

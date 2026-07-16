@@ -38,6 +38,19 @@ import type { InspectStats } from '../game/engine/brushTools';
 /** Currently selected material id (defaults to Sand). */
 export const $selectedMaterial = atom<number>(SAND.id);
 
+/**
+ * The material a double-clicked palette chip pre-latches a Clone onto — set
+ * alongside `$selectedMaterial` (to Clone's id) by MaterialPalette's 더블클릭
+ * shortcut, so painting immediately emits that material instead of waiting to
+ * touch it first (see game/materials/clone.ts). `null` when Clone was picked
+ * normally (a single click), leaving it to latch onto whatever it touches
+ * in-world, as usual. Only meaningful while `$selectedMaterial === CLONE.id`;
+ * PointerPainter reads it to seed the freshly-painted cell's `aux` byte, and
+ * ControlPanel reads it to show "물질이름(Clone)" instead of plain "Clone" on
+ * the brush button.
+ */
+export const $cloneTarget = atom<number | null>(null);
+
 /** Brush radius in cells. */
 export const $brushSize = atom<number>(BRUSH_SIZE_DEFAULT);
 
@@ -98,6 +111,20 @@ export const $areaSelect = atom<boolean>(false);
  */
 export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum' | 'dynamite';
 export const $selectedObject = atom<ObjectKind>('ball');
+
+/**
+ * Display name for each object kind — the single source of truth shared by the
+ * 독립 오브젝트 palette tab (MaterialPalette) and the control panel's brush-name
+ * readout, which shows the selected object's name while `$tool === 'object'`
+ * (see ControlPanel.svelte's `selectedName`).
+ */
+export const OBJECT_LABELS: Record<ObjectKind, string> = {
+  ball: 'Rubber Ball',
+  drum: 'Empty Drum',
+  oildrum: 'Crude Oil Drum',
+  aciddrum: 'Acid Drum',
+  dynamite: 'Dynamite',
+};
 
 /**
  * The 돋보기 (inspect) overlay toggle. Independent of `$tool` — it can be on

@@ -6,13 +6,16 @@
     $selectedMaterial as selected,
     $tool as tool,
     $selectedObject as selectedObject,
+    $cloneTarget as cloneTarget,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
+    OBJECT_LABELS,
     recordMaterialUse,
     toggleFavorite,
   } from '../state/store';
   import type { ObjectKind } from '../state/store';
-  import { MATERIALS, getMaterial } from '../game/materials';
+  import { MATERIALS, getMaterial, CLONE } from '../game/materials';
+  import { canAdopt } from '../game/materials/clone';
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
@@ -36,13 +39,10 @@
   const OBJECT_ITEMS: {
     key: ObjectKind;
     label: string;
-  }[] = [
-    { key: 'ball', label: 'Rubber Ball' },
-    { key: 'drum', label: 'Empty Drum' },
-    { key: 'oildrum', label: 'Crude Oil Drum' },
-    { key: 'aciddrum', label: 'Acid Drum' },
-    { key: 'dynamite', label: 'Dynamite' },
-  ];
+  }[] = (['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]).map((key) => ({
+    key,
+    label: OBJECT_LABELS[key],
+  }));
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
@@ -112,6 +112,12 @@
 
   function openOnHover(key: string): void {
     clearTimeout(closeTimer);
+    // A pending pick()-triggered close (see PICK_CLOSE_DELAY below) was scheduled
+    // for whatever flyout was open *before* this hover — without canceling it
+    // here, that stale timer could fire up to 400ms later and null out `hovered`
+    // out from under a flyout the user has since opened (e.g. pick a material,
+    // then immediately hover a different category within the delay window).
+    clearTimeout(pickCloseTimer);
     hovered = key;
   }
 
@@ -122,7 +128,38 @@
     }, 150);
   }
 
-  onDestroy(() => clearTimeout(closeTimer));
+  // A category flyout's chips are unmounted (portaled node removed) the instant
+  // pick() closes the flyout, which would swallow a genuine double-click: the
+  // browser fires click→click→dblclick on the *same* element, but if the first
+  // click's handler tore that element out of the DOM right away, the second
+  // click/dblclick would land on whatever's now underneath instead — 물질
+  // 더블클릭 (pickClone) would never fire. So a plain pick() defers the flyout
+  // close by PICK_CLOSE_DELAY (long enough to outlast the browser's own
+  // click/dblclick disambiguation window) instead of closing synchronously;
+  // pickClone() cancels that pending close and finishes it immediately once a
+  // dblclick actually arrives. Selection itself (`selected.set`) still happens
+  // the instant a click lands — only the flyout's dismissal is delayed.
+  const PICK_CLOSE_DELAY = 400;
+  let pickCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function closeFlyoutSoon(): void {
+    clearTimeout(pickCloseTimer);
+    pickCloseTimer = setTimeout(() => {
+      pinned = null;
+      hovered = null;
+    }, PICK_CLOSE_DELAY);
+  }
+
+  function closeFlyoutNow(): void {
+    clearTimeout(pickCloseTimer);
+    pinned = null;
+    hovered = null;
+  }
+
+  onDestroy(() => {
+    clearTimeout(closeTimer);
+    clearTimeout(pickCloseTimer);
+  });
 
   // The sidebar (`ASIDE.panel`) sets `backdrop-filter`, which per spec makes
   // it the containing block for `position: fixed` descendants — so a
@@ -216,14 +253,43 @@
 
   // Picking a material is also a request to paint it, so snap out of any
   // special brush (heat/cool/mix) back to material mode, and record it in the
-  // recent-materials list that feeds the quick-access bar.
+  // recent-materials list that feeds the quick-access bar. The flyout's close
+  // is deferred (see closeFlyoutSoon) rather than immediate, so a chip that's
+  // about to be double-clicked stays mounted long enough for pickClone() below
+  // to catch it.
   function pick(id: number): void {
     clearTimeout(closeTimer);
     selected.set(id);
+    // A plain pick leaves any earlier 더블클릭 Clone target behind — picking Clone
+    // this way latches onto whatever it touches in-world, the normal way.
+    cloneTarget.set(null);
     tool.set('material');
     recordMaterialUse(id);
-    pinned = null;
-    hovered = null;
+    closeFlyoutSoon();
+  }
+
+  // Double-clicking a material chip is a shortcut for "give me a Clone that's
+  // already latched onto this" — selects Clone but pre-seeds $cloneTarget so
+  // PointerPainter can seed the painted cell's aux with it directly (see
+  // PointerPainter.paintCells), skipping the in-world touch Clone normally
+  // needs before it starts emitting copies. Only materials Clone could ever
+  // organically latch onto (canAdopt) qualify — Wall/Void/Blast/Clone itself
+  // fall back to a normal pick() instead of a target that would never adopt.
+  // The browser's own click→click→dblclick sequence already ran pick(id) twice
+  // before this fires (each call re-arming closeFlyoutSoon), so this only needs
+  // to override that pending close and finish the job as a Clone selection.
+  function pickClone(id: number): void {
+    if (!canAdopt(id)) {
+      pick(id);
+      closeFlyoutNow();
+      return;
+    }
+    clearTimeout(closeTimer);
+    selected.set(CLONE.id);
+    cloneTarget.set(id);
+    tool.set('material');
+    recordMaterialUse(CLONE.id);
+    closeFlyoutNow();
   }
 
   // Star / unstar a material without selecting it (the star sits on top of the
@@ -245,6 +311,9 @@
 
   function toggleCategory(key: string): void {
     clearTimeout(closeTimer);
+    // Same stale-timer hazard as openOnHover above — cancel any pending
+    // pick()-triggered close before (re)pinning a category.
+    clearTimeout(pickCloseTimer);
     pinned = pinned === key ? null : key;
     hovered = null;
   }
@@ -432,7 +501,8 @@
             role="menuitem"
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
-            title={m.name}
+            ondblclick={() => pickClone(m.id)}
+            title={`${m.name} (더블클릭: 이 물질의 Clone)`}
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
             <span class="label">{m.name}</span>
@@ -452,7 +522,8 @@
       class="chip"
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
-      title={m.name}
+      ondblclick={() => pickClone(m.id)}
+      title={`${m.name} (더블클릭: 이 물질의 Clone)`}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>
       <span class="label">{m.name}</span>

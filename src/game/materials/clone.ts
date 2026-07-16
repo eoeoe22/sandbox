@@ -24,7 +24,10 @@ import { VOID } from './void';
 // The adopted id lives in `aux` (0 = "hasn't latched yet"). It won't latch onto
 // things that aren't meaningful to duplicate: Empty, the Wall, another Clone, a
 // Void, or the transient effect particles (Blast/Ember/Spark).
-function canAdopt(id: number): boolean {
+/** Exported so the UI's 더블클릭 Clone shortcut (MaterialPalette.svelte) can
+ *  check up front whether a material is a valid latch target, instead of
+ *  pre-seeding `aux` with an id Clone itself would never adopt. */
+export function canAdopt(id: number): boolean {
   if (id === EMPTY || id === CLONE.id || id === VOID.id) return false;
   if (id === BLAST.id || id === EMBER.id || id === SPARK.id) return false;
   return !getMaterial(id).isWall;
