@@ -68,6 +68,11 @@ const REFLECT_SPREAD = 2;
 // source) without weakening the open-field sweep. Tuned so a handful of
 // legitimate wall bounces over a long flight is still cheap.
 const BOUNCE_LIFE_COST = 10;
+// The heat-overlay thermal camera's white-hot ceiling (CanvasRenderer's
+// HEAT_MAX) — pinning the ray's overlayTemp here (rather than duplicating the
+// exact constant) just needs to land at/above that ceiling so it always reads
+// fully white-hot, the correct look for the single hottest thing on screen.
+const OVERLAY_TEMP = 1600;
 
 // The 8 compass directions in clockwise ring order, so a reflection can be
 // rotated by a whole number of 45° steps to randomize its angle.
@@ -338,5 +343,10 @@ export const HEAT_RAY = register({
   // decodes to a dead ray, so one placed by hand dies quietly on its first turn.
   thermal: { init: 0, conductivity: 0 },
   packedTemp: true,
+  // The beam's `temp` holds packed flight state, not a real reading (see
+  // Material.packedTemp) — without this the heat-overlay thermal camera would
+  // draw it as invisible background, hiding the single hottest thing on
+  // screen. Pin it to the overlay's white-hot ceiling instead.
+  overlayTemp: OVERLAY_TEMP,
   update: updateHeatRay,
 });

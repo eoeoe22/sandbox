@@ -105,6 +105,9 @@ export class CanvasRenderer implements Renderer {
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
   private packed: Uint8Array;
+  /** id → fixed apparent temperature for the heat overlay (see Material.overlayTemp),
+   *  or NaN when unset — a packed-temp cell then falls back to background. */
+  private overlayTemp: Float32Array;
   /** Current edge mode — only affects how the boundary outline is drawn. */
   private borderMode: BorderMode = 'wall';
   /** When true, occupied cells are drawn by temperature (thermal camera) instead
@@ -151,6 +154,7 @@ export class CanvasRenderer implements Renderer {
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
     this.packed = new Uint8Array(256);
+    this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
@@ -160,6 +164,7 @@ export class CanvasRenderer implements Renderer {
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
         if (m.packedTemp) this.packed[i] = 1;
+        if (m.overlayTemp !== undefined) this.overlayTemp[i] = m.overlayTemp;
         if (m.lattice !== undefined) {
           this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
@@ -309,6 +314,7 @@ export class CanvasRenderer implements Renderer {
     const latCol = this.lattice;
     const arrow = this.arrow;
     const packed = this.packed;
+    const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
     const w = grid.width;
     const heat = this.heatOverlay;
@@ -318,10 +324,19 @@ export class CanvasRenderer implements Renderer {
       // it. Bypasses all the material-color machinery below. A packedTemp cell (a
       // flying Ember/Debris/Blast fragment) keeps the background too: its `temp`
       // holds packed flight/life state, not a real reading, so colouring it would
-      // flash it spuriously white-hot (see Material.packedTemp).
+      // flash it spuriously garbage-hot (see Material.packedTemp) — UNLESS the
+      // material opts into a fixed apparent reading via `overlayTemp` (Heat Ray),
+      // which paints it at that reading instead so it still reads on the camera.
       if (heat) {
         const hid = cells[i];
-        buf[i] = hid === EMPTY || packed[hid] ? pal[EMPTY] : this.heatColor(temp[i]);
+        if (hid === EMPTY) {
+          buf[i] = pal[EMPTY];
+        } else if (packed[hid]) {
+          const ot = overlayTemp[hid];
+          buf[i] = ot === ot ? this.heatColor(ot) : pal[EMPTY]; // ot===ot: not NaN
+        } else {
+          buf[i] = this.heatColor(temp[i]);
+        }
         continue;
       }
       let id = cells[i];

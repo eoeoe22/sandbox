@@ -202,6 +202,16 @@ export interface Material {
    */
   packedTemp?: boolean;
   /**
+   * For a `packedTemp` material only: the fixed apparent temperature (°) the
+   * heat-overlay thermal camera should paint the cell at, since its real `temp`
+   * is unusable there (see `packedTemp`). Default (unset) keeps the overlay's
+   * old behavior of drawing the cell as background — invisible — which is right
+   * for a fragment whose own color already reads fine (Ember, Debris) but hides
+   * a Heat Ray beam whose entire point is to look ultra-hot. Ignored for any
+   * material that isn't `packedTemp`.
+   */
+  overlayTemp?: number;
+  /**
    * Optional temperature → color ramp for the renderer. The cell is drawn
    * interpolated from `cool` (at temperature `min`) up to the material's base
    * `color` (at `max` and above), so a hot material like Lava visibly darkens
