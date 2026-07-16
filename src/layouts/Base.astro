@@ -17,6 +17,15 @@ const { title = 'Particle Sandbox' } = Astro.props;
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
     <link rel="icon" href={faviconUrl} type="image/svg+xml" />
+    <!-- manifest.webmanifest, /icons/*, /sw.js는 public/에서 해시 없이 그대로
+         배포된다(PWA 설치·서비스 워커는 고정 URL이 필요 — docs/PWA.md 참고). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#101014" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sandbox" />
     <!-- Only the Bootstrap Icons webfont is used (bi-* glyphs in the control
          panel). The full Bootstrap CSS isn't loaded — the app uses no Bootstrap
          component classes and global.css owns the reset/base styles. -->
@@ -29,5 +38,15 @@ const { title = 'Particle Sandbox' } = Astro.props;
   </head>
   <body>
     <slot />
+    <script>
+      // 프로덕션 빌드에서만 등록 — `astro dev`에서는 SW 캐시가 개발 중 파일
+      // 변경을 가리는 걸 막기 위해 건너뛴다. sw.js는 public/에서 해시 없이
+      // 고정 경로로 나가므로 등록 URL도 고정 문자열이어야 한다(docs/PWA.md).
+      if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js');
+        });
+      }
+    </script>
   </body>
 </html>
