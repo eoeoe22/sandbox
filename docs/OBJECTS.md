@@ -97,3 +97,13 @@
 
 - **속도가 아니라 위치 오프셋**: 시작 속도를 주면 공은 **마찰 없는 바닥**(고무공은 구름 저항이 없음)에서 영원히 미끄러진다 — 낱개로 놓은 공까지 흘러가 버림. 대신 위치만 살짝 어긋내면 낱개 공은 **커서 바로 아래에 그대로 안착**하고, 더미에 쌓일 때만 굴러 퍼진다. 굴러 떨어지는 속도는 경사에서 중력이 자연히 만들어 낸다.
 - **반지름 비례·상호작용 스폰 한정**: 오프셋을 반지름에 비례시켜(`RUBBER_BALL_SPAWN_SCATTER`=0.5, 즉 ±0.5r) 브러시 크기와 무관하게 균형이 깨지되, 낱개 배치는 여전히 클릭한 곳에 놓인 것처럼 보인다(편의성). 팩토리 `createRubberBall(x,y)`의 위치 계약은 건드리지 않고 **상호작용 스폰(`PointerPainter.spawnObject`)에서만** 적용해, 프로그램적 생성은 정확한 좌표를 그대로 유지한다.
+
+## Woofer 충격파 — 오브젝트 넉백 (BLAST 셀 없는 밀침)
+
+전기 물질 **Woofer**(비파괴 충격파 가전, MATERIAL-SYSTEMS.md 참조)가 근처 공·드럼통·다이너마이트도 밀어내도록 확장했다. 기존 폭발 넉백(`applyBlastKnockback`)은 그리드에 남은 **BLAST 셀을 스캔**해 오브젝트를 미는데, Woofer는 의도적으로 BLAST 셀을 전혀 남기지 않는다(투명한 충격파 — 남기면 근처 리튬 배터리가 잔불로 폭주하던 버그, 그리고 화약·TNT·니트로 등 "인접 BLAST 셀"을 기폭 신호로 쓰는 물질들이 오작동할 위험이 있었다). 그래서 오브젝트 층에는 **별도 이벤트 큐**로 알린다:
+
+- **`SimContext.wooferPulseX/Y`**: Woofer 몸체가 한 틱에 발동한 모든 칸 좌표를 담는 틱당 큐(`materials/woofer.ts`의 `wooferBodyPulse`가 채움). `stepObjects`가 CA 스캔 이후 이 큐를 읽어 `applyWooferKnockback`으로 근처 오브젝트를 민다 — 폭발 넉백과 같은 역제곱 가중 방향 + 바깥쪽 속도 바닥값 로직이지만, 그리드를 스캔하는 대신 이 큐를 순회한다는 점만 다르다.
+- **직접 함수 호출 대신 이벤트 큐인 이유**: `objects.ts`는 이미 Spark 물질을 위해 `materials/spark.ts`를 import하고, `spark.ts`는 Woofer 발동을 위해 `materials/woofer.ts`를 import한다 — 만약 `woofer.ts`가 `objects.ts`의 넉백 함수를 직접 import하면 순환 참조가 닫힌다. `SimContext`(양쪽이 이미 의존하는 중립 지대)를 경유한 평범한 데이터 큐로 우회했다.
+- **파괴는 절대 없음**: `applyWooferKnockback`은 `applyBlastKnockback`과 달리 오브젝트를 **절대 파괴하지 않는다** — Woofer는 BLAST 셀이 없으므로 직격 파괴 판정(`footprintHazards`)에 애초에 걸리지 않는다. 아무리 가까워도 밀리기만 한다(완전한 비파괴성이 오브젝트에도 그대로 적용).
+
+검증: 헤드리스로 (1) 배터리에 직접 연결한 Woofer 근처 고무공이 강하게 밀려나면서도 오브젝트 목록에서 사라지지 않음(비파괴), (2) Woofer 사거리 안에 놓인 TNT가 40틱 동안 기폭되지 않음(BLAST 셀 부재로 연쇄 기폭 없음)을 확인. `astro check` 0에러, active-tile 결정성 테스트 전건 통과.

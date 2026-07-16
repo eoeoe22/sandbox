@@ -7,6 +7,7 @@ import { AMBIENT_TEMP } from '../config';
 import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
+import { WOOFER, wooferBodyPulse } from './woofer';
 
 // Lithium Battery — the power source that makes the electricity subsystem
 // self-running (the volatile chemistry; see lfpbattery.ts for the safe one).
@@ -107,6 +108,14 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
       sim.spawn(nx, ny, SPARK.id);
       sim.setTemp(nx, ny, heat);
       sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
+    } else if (nid === WOOFER.id) {
+      // Direct contact (배터리 직접 연결), no wire needed: a Woofer isn't a
+      // `conductive` material (see woofer.ts's design note — it's a one-way
+      // sink, not a wire), so it never reaches the branch above. Special-cased
+      // here exactly like the same id-check in spark.ts's arc phase, for the
+      // case where the appliance is plugged straight into the battery instead
+      // of reached through a relay of ordinary conductors.
+      wooferBodyPulse(sim, nx, ny);
     }
   }
 }

@@ -10,7 +10,7 @@ import type { SimContext } from '../engine/SimContext';
 // glance (see CanvasRenderer). A moving floor that never itself moves.
 //
 // Two things beyond the basic "push one grain sideways":
-//   • It carries a stack up to LIFT_HEIGHT cells tall off its surface (위쪽 4픽셀),
+//   • It carries a stack up to LIFT_HEIGHT cells tall off its surface (위쪽 10픽셀),
 //     not just the single grain directly on top — so it grabs a whole slab of
 //     poured material and slides it along.
 //   • It climbs: when the straight-ahead cell is blocked but the cell one step
@@ -22,7 +22,7 @@ import type { SimContext } from '../engine/SimContext';
 export const CONVEYOR_RIGHT = 1;
 export const CONVEYOR_LEFT = 2;
 
-const LIFT_HEIGHT = 4; // how many cells above the surface are carried (위쪽 4픽셀)
+const LIFT_HEIGHT = 10; // how many cells above the surface are carried (위쪽 10픽셀)
 
 /** True if `id` is loose matter the belt carries (powder or liquid). */
 function isLoose(id: number): boolean {

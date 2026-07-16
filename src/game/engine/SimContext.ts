@@ -153,6 +153,40 @@ export class SimContext {
   turbineFloodTick = -1;
   turbineFlooded: Set<number> = new Set();
 
+  /**
+   * Per-tick memo for the Woofer's body-flood (materials/woofer.ts) — the
+   * mirror image of `turbineFlooded` above (Turbine floods outward, Woofer
+   * floods inward). When an external pulse (a direct Battery contact or a
+   * relayed Spark) reaches any face of a connected Woofer body, the whole
+   * body fires its shockwave at once; this memo keeps a body touched from
+   * several directions/sources in the same tick from re-flooding (and
+   * re-firing) once per entry point. Cleared whenever `wooferFloodTick`
+   * falls behind the current `tick`. Sim-local, same reasoning as
+   * `turbineFlooded`.
+   */
+  wooferFloodTick = -1;
+  wooferFlooded: Set<number> = new Set();
+
+  /**
+   * Per-tick queue of every cell a Woofer's shockwave fired from this tick
+   * (populated by `wooferBodyPulse`, materials/woofer.ts; shares the same
+   * `wooferFloodTick` lazy-reset guard above since both are cleared together
+   * at the start of the same flood). Consumed once by `stepObjects`
+   * (engine/objects.ts) after the CA scan to shove nearby free rigid bodies
+   * — see `applyWooferKnockback` there.
+   *
+   * This is a plain event queue rather than woofer.ts importing objects.ts
+   * and calling its push helper directly, specifically to avoid a real
+   * (value, not just type) import cycle: objects.ts already imports
+   * materials/spark.ts (for the Spark material), and spark.ts imports
+   * materials/woofer.ts (to trigger a Woofer's pulse) — so woofer.ts
+   * importing back into objects.ts would close the loop. Routing the event
+   * through SimContext, neutral ground both sides already depend on, breaks
+   * it. Never destroys a body — see applyWooferKnockback's own doc comment.
+   */
+  wooferPulseX: number[] = [];
+  wooferPulseY: number[] = [];
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a
