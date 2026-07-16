@@ -45,10 +45,10 @@ const GEL_LAUNCH: LaunchSpec = {
 };
 
 /** How long a landed blob burns (ticks). Stored in aux, so it must fit a byte. */
-const GEL_BURN_TICKS = 90;
+const GEL_BURN_TICKS = 255;
 /** On hitting water, the blob sticks and burns on the surface this often;
  *  otherwise it's washed out. Water is a *poor* extinguisher, not a perfect one. */
-const GEL_WATER_PERSIST = 0.6;
+const GEL_WATER_PERSIST = 1.0;
 /** Per open-neighbor per-tick chance a burning blob wreaths a lick of Fire. */
 const GEL_WREATH_CHANCE = 0.3;
 /** Per fuel-neighbor per-tick chance it pins that fuel hot enough to catch, so
@@ -142,7 +142,12 @@ function updateBurning(x: number, y: number, sim: SimContext, timer: number): vo
     else sim.set(x, y, EMPTY);
     return;
   }
-  sim.setAux(x, y, timer - 1);
+
+  // Decrease timer randomly to greatly extend burning time (Amber/Resin level)
+  // 0.5 chance to decrease means it lives ~2x longer, combined with 255 ticks = ~510 ticks
+  if (sim.chance(0.5)) {
+    sim.setAux(x, y, timer - 1);
+  }
   // Sticky and floaty: it drips straight down through open air but rides on
   // water (density below water's), so a blob on a pool keeps burning there.
   sim.moveDown(x, y);

@@ -544,6 +544,21 @@ export interface DetonateOptions {
    *  large `reach` — so a single seed can throw a wide, non-cratering shockwave.
    *  See defaultCell / blocksBlast for how power meets each cell's durability. */
   power?: number;
+  /**
+   * Skip the phase-1 connected-mass survey and detonate the trigger cell alone,
+   * even though the material itself is `explosive` (so same-material neighbors
+   * would normally be swept into one shared mass). Without this, a big fused
+   * blob of the material becomes hundreds of simultaneous "sources" that must
+   * *all* be dequeued (FIFO, in survey order outward from the trigger) before
+   * any of them gets to flood its own `reach` — so a `maxCells`-capped call
+   * spends its whole budget just converting cells nearest the trigger, leaving
+   * none for the radius flourish there, while only the last (farthest) sliver
+   * of the mass — whichever tick's re-trigger finally shrinks the remaining
+   * connected mass under the cap — ever gets the full flood. `soloSource`
+   * keeps every trigger a self-contained, uniformly-sized blast (like napalm's
+   * fixed fireball) that chains to neighbors one at a time instead of pooling
+   * into one lopsided mass survey. */
+  soloSource?: boolean;
 }
 
 /**
@@ -588,7 +603,21 @@ export function detonate(
   const id_s = stampId;
   const srcX: number[] = [];
   const srcY: number[] = [];
-  const { Y, maxYield, power: surveyedPower } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY);
+  // soloSource skips the connected-mass flood entirely — the trigger cell is
+  // the mass's only source, exactly like a non-explosive seed (see surveyMass's
+  // own fallback for a brush-painted Blast). See DetonateOptions.soloSource.
+  let Y: number;
+  let maxYield: number;
+  let surveyedPower: number;
+  if (opts.soloSource) {
+    srcX.push(cx);
+    srcY.push(cy);
+    Y = seedYield;
+    maxYield = seedYield;
+    surveyedPower = DEFAULT_DESTRUCTIVE_POWER;
+  } else {
+    ({ Y, maxYield, power: surveyedPower } = surveyMass(sim, cx, cy, seedYield, stamp, id_s, srcX, srcY));
+  }
   // Destructive power (파괴력) — the surveyed mass's, unless the caller overrides it
   // (opts.power) to force a deliberately weak/strong blast regardless of the source
   // (e.g. dynamite's wide, non-cratering shockwave from a single seed).

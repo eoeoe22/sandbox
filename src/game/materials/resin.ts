@@ -20,7 +20,7 @@ import { AMBER } from './amber';
 // (see amber.ts's MELT_TEMP/MELT_CHANCE) — not the whole block at once, just an
 // occasional droplet weeping out of the fire — so the pair loops: cold sets to
 // solid, and a fraction of burning solid un-cures to sap.
-const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 400 };
+const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 400, easyDouse: true };
 const FLOW_CHANCE = 0.18; // sticky and viscous, like Honey
 const HARDEN_CHANCE = 0.004; // slow cure into Amber
 
