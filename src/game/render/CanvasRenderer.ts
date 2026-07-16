@@ -397,10 +397,13 @@ export class CanvasRenderer implements Renderer {
     // Free-object overlay: rasterized at OBJECT_SCALE× the grid into its own
     // buffer, then drawn over the scaled-up grid into the same rect (smoothing
     // off) so objects render at higher resolution than the cells while staying
-    // crisp pixel art. Skipped in the heat overlay (objects aren't thermal) and
-    // when there are no objects, so it costs nothing in the common case.
-    if (!heat && grid.objects.length > 0) {
-      this.rasterizeObjects(grid);
+    // crisp pixel art. In the heat overlay each body's own silhouette is kept but
+    // recolored solid by its temperature (SimBody.temp — see rasterizeObjects),
+    // so a hot drum or ball still reads on the thermal camera instead of vanishing
+    // into it. Skipped only when there are no objects, so it costs nothing in the
+    // common case.
+    if (grid.objects.length > 0) {
+      this.rasterizeObjects(grid, heat);
       this.objCtx.putImageData(this.objImage, 0, 0);
       this.ctx.drawImage(this.objOff, rect.x, rect.y, rect.width, rect.height);
     }
@@ -417,29 +420,40 @@ export class CanvasRenderer implements Renderer {
    * show. Sampling is nearest-neighbor at sub-pixel centers (no anti-aliasing), so
    * objects stay crisp pixel art — just finer than the cell grain. Writes only the
    * render image; the simulation's cell buffer is never touched.
+   *
+   * `heat` mirrors the cell layer's thermal-camera mode: when on, every body is
+   * still rasterized in its own silhouette (ball disc / drum or dynamite sprite
+   * shape) but recolored flat by `heatColor(o.temp)` instead of its normal sprite
+   * colors, exactly like an occupied cell is recolored by `temp[i]` — so a body's
+   * own heat reservoir (SimObject/SimCapsule/SimDynamite.temp) reads on the
+   * overlay the same way a cell's does.
    */
-  private rasterizeObjects(grid: Grid): void {
+  private rasterizeObjects(grid: Grid, heat: boolean): void {
     const buf = this.objBuf32;
     buf.fill(0); // transparent overlay — only object pixels are written below
     const s = OBJECT_SCALE;
     const w = grid.width * s;
     const h = grid.height * s;
     for (const o of grid.objects) {
-      if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o);
-      else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o);
-      else this.rasterizeDrum(buf, w, h, s, o);
+      const heatColor = heat ? this.heatColor(o.temp) : null;
+      if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor);
+      else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
+      else this.rasterizeDrum(buf, w, h, s, o, heatColor);
     }
   }
 
   /** Rasterize one rubber ball into the overlay: fill each sub-pixel whose center
    *  (in grid coordinates) falls inside the disc. `w`/`h` are the overlay's
-   *  sub-pixel dimensions, `s` the sub-pixels per cell. */
+   *  sub-pixel dimensions, `s` the sub-pixels per cell. `heatColor`, when given
+   *  (heat overlay on), replaces both the fill and border with one flat color —
+   *  the disc reads as a solid thermal blob rather than a rubber ball. */
   private rasterizeBall(
     buf: Uint32Array,
     w: number,
     h: number,
     s: number,
     o: { x: number; y: number; r: number },
+    heatColor: number | null = null,
   ): void {
     const r = o.r;
     const r2 = r * r;
@@ -449,6 +463,8 @@ export class CanvasRenderer implements Renderer {
     const border = Math.max(1 / s, r * 0.12);
     const rin = r - border;
     const rin2 = rin > 0 ? rin * rin : 0;
+    const fillColor = heatColor ?? BALL_COLOR;
+    const borderColor = heatColor ?? BALL_BORDER_COLOR;
     let x0 = Math.floor((o.x - r) * s);
     let x1 = Math.ceil((o.x + r) * s);
     let y0 = Math.floor((o.y - r) * s);
@@ -463,7 +479,7 @@ export class CanvasRenderer implements Renderer {
       for (let sx = x0; sx < x1; sx++) {
         const dx = (sx + 0.5) / s - o.x;
         const d2 = dx * dx + dy * dy;
-        if (d2 <= r2) buf[row + sx] = d2 >= rin2 ? BALL_BORDER_COLOR : BALL_COLOR;
+        if (d2 <= r2) buf[row + sx] = d2 >= rin2 ? borderColor : fillColor;
       }
     }
   }
@@ -477,7 +493,9 @@ export class CanvasRenderer implements Renderer {
    * anti-aliasing. The sprite's 24×32 box maps onto the physics capsule's box
    * (2·radius wide × 2·(halfLength+radius) tall), so display and collision agree;
    * at OBJECT_SCALE = 2 the 12×16-cell drum samples the sprite near its native
-   * 24×32 resolution.
+   * 24×32 resolution. `heatColor`, when given (heat overlay on), replaces every
+   * opaque sprite pixel with that one flat color, keeping the drum's silhouette
+   * (and rotation) but recoloring it by temperature instead of its fill tint.
    */
   private rasterizeDrum(
     buf: Uint32Array,
@@ -492,6 +510,7 @@ export class CanvasRenderer implements Renderer {
       radius: number;
       fill: DrumFill;
     },
+    heatColor: number | null = null,
   ): void {
     const sprite = drumSpriteFor(o.fill); // body tint varies by fill; shape shared
     const halfW = o.radius; // half the drum's short (width) extent, in cells
@@ -526,7 +545,7 @@ export class CanvasRenderer implements Renderer {
         const spy = DRUM_SPRITE_H * 0.5 + ly * syScale;
         if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
         const color = sprite[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
-        if (color !== 0) buf[row + sx] = color; // 0 = transparent sprite pixel
+        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent sprite pixel
       }
     }
   }
@@ -537,7 +556,10 @@ export class CanvasRenderer implements Renderer {
    * stick's long axis so it tracks the fuse end as the stick tumbles — a short dark
    * fuse-cord nub. The *flame* is NOT drawn here: the lit fuse emits real Fire
    * particles into the grid (see objects.ts), which the cell layer renders.
-   * Nearest-neighbor, no anti-aliasing.
+   * Nearest-neighbor, no anti-aliasing. `heatColor`, when given (heat overlay
+   * on), replaces the body sprite and the fuse-cord nub with one flat color, so
+   * the stick reads as a solid thermal blob (still shaped/rotated correctly)
+   * instead of its normal red-body-plus-dark-fuse look.
    */
   private rasterizeDynamite(
     buf: Uint32Array,
@@ -551,6 +573,7 @@ export class CanvasRenderer implements Renderer {
       halfLength: number;
       radius: number;
     },
+    heatColor: number | null = null,
   ): void {
     const halfW = o.radius; // half the stick's short (width) extent, in cells
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
@@ -578,7 +601,7 @@ export class CanvasRenderer implements Renderer {
         const spy = DYN_SPRITE_H * 0.5 + ly * syScale;
         if (spx < 0 || spx >= DYN_SPRITE_W || spy < 0 || spy >= DYN_SPRITE_H) continue;
         const color = DYN_SPRITE[(spy | 0) * DYN_SPRITE_W + (spx | 0)];
-        if (color !== 0) buf[row + sx] = color;
+        if (color !== 0) buf[row + sx] = heatColor ?? color;
       }
     }
     // A short dark fuse-cord nub past the top cap, along the stick's (rotated) long
@@ -588,7 +611,7 @@ export class CanvasRenderer implements Renderer {
     const ay = Math.cos(o.angle);
     const capX = o.x - ax * halfL;
     const capY = o.y - ay * halfL;
-    this.fillDisc(buf, w, h, s, capX - ax * 0.7, capY - ay * 0.7, 0.55, FUSE_CORD_COLOR);
+    this.fillDisc(buf, w, h, s, capX - ax * 0.7, capY - ay * 0.7, 0.55, heatColor ?? FUSE_CORD_COLOR);
   }
 
   /** Fill overlay sub-pixels whose center (in grid coords) lies within `r` cells of

@@ -12,6 +12,7 @@ import {
   $inspect,
   $inspectData,
   $selectedObject,
+  $cloneTarget,
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
@@ -34,6 +35,7 @@ import { Phase } from '../engine/types';
 import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
+import { CLONE } from '../materials/clone';
 import {
   createRubberBall,
   createDrum,
@@ -571,8 +573,19 @@ export class PointerPainter {
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
-    // (좌우 정렬); every other material clears aux to 0 like normal.
-    const beltAux = id === CONVEYOR.id ? (this.beltDirX < 0 ? CONVEYOR_LEFT : CONVEYOR_RIGHT) : 0;
+    // (좌우 정렬); a Clone painted via the palette's 더블클릭 shortcut records the
+    // pre-latched target material's id so it starts emitting immediately instead
+    // of waiting to touch it first (see $cloneTarget, MaterialPalette.pickClone,
+    // and Clone's own updateClone, which treats a non-zero aux as "already
+    // latched"); every other material clears aux to 0 like normal.
+    const initAux =
+      id === CONVEYOR.id
+        ? this.beltDirX < 0
+          ? CONVEYOR_LEFT
+          : CONVEYOR_RIGHT
+        : id === CLONE.id
+          ? ($cloneTarget.get() ?? 0)
+          : 0;
     for (let k = 0; k < cells.length; k += 2) {
       const x = cells[k];
       const y = cells[k + 1];
@@ -585,8 +598,8 @@ export class PointerPainter {
       // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
       // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
       // only other create/clear paths; the raw grid.set here bypasses them. A
-      // Conveyor instead seeds its travel direction here (beltAux).
-      this.grid.setAux(x, y, beltAux);
+      // Conveyor/pre-latched Clone instead seed their own state here (initAux).
+      this.grid.setAux(x, y, initAux);
       // Seed a random per-particle tint so a freshly painted powder/liquid is
       // grainy from the first frame instead of a flat block (see game/tint.ts).
       this.grid.setTint(x, y, (Math.random() * 256) | 0);
