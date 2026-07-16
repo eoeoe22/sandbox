@@ -63,6 +63,10 @@ Cloudflare Workers Builds가 GitHub 저장소에 연결되어 있다.
   `import faviconUrl from '../assets/favicon.svg?url'`로 불러온다. `public/`
   폴더의 파일은 Vite 처리 없이 그대로 복사되어 해시가 붙지 않기 때문
   (`heat.wasm`이 이미 `?url` 임포트로 해시되는 것과 동일한 패턴).
+  반대로 PWA 매니페스트/아이콘/서비스 워커(`public/manifest.webmanifest`,
+  `public/icons/`, `public/sw.js`)는 브라우저가 고정 URL로 참조해야 해서
+  오히려 해시가 붙으면 안 되는 케이스라 `public/`에 둔다 — 자세한 캐싱 전략은
+  [PWA.md](./PWA.md).
 - `build.minify: 'terser'`로 esbuild 기본 minify 대신 Terser를 사용해 변수명을
   더 짧게 뭉개고(`mangle.toplevel`), `console`/`debugger` 호출을 제거하고
   (`compress.drop_console`/`drop_debugger`), 주석을 모두 제거한다
