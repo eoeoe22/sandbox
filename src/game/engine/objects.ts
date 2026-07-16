@@ -1539,8 +1539,11 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
 // The object layer is fully interactive: bodies collide with one another (an
 // impulse solve over the shared segment+radius representation, torque included so
 // a thrown ball can spin a drum), a blast that doesn't consume a body shoves it
-// hard, and a body entombed in solid is crushed. The pair solve is pure
-// object↔object; the knockback and crush read the grid but never write it.
+// hard, a Woofer's shockwave shoves one too but never consumes it (see
+// applyWooferKnockback — it has no grid cell to scan for, so it rides in on
+// its own per-tick event queue instead), and a body entombed in solid is
+// crushed. The pair solve is pure object↔object; the knockback and crush read
+// the grid but never write it.
 
 /** Coulomb friction coefficient for object-object contacts — enough grip that a
  *  rolling drum drags a ball along and a stack doesn't instantly slide apart. */
@@ -1563,6 +1566,15 @@ const BLAST_KNOCK_SPEED = 7;
 /** Spin (rad/tick) a blast kicks into a drum as it's flung, so it tumbles away
  *  in the direction it's shoved (see stepCapsule's y-down rolling convention). */
 const BLAST_KNOCK_SPIN = 0.12;
+
+/** Cells beyond a body's own footprint a queued Woofer pulse can still reach to
+ *  shove it (mirrors BLAST_KNOCK_RADIUS above, its own separate knob). */
+const WOOFER_KNOCK_RADIUS = 12;
+/** Peak outward speed a Woofer's shockwave imparts — gentler than a real
+ *  blast's BLAST_KNOCK_SPEED, since it's a gadget's thump, never a warhead. */
+const WOOFER_KNOCK_SPEED = 6;
+/** Spin a Woofer's pulse kicks into a drum as it's shoved (mirrors BLAST_KNOCK_SPIN). */
+const WOOFER_KNOCK_SPIN = 0.1;
 
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
@@ -1701,6 +1713,56 @@ function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
   // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
   // Any capsule body (drum or dynamite) spins; a ball has no rotation.
   if (o.kind !== 'ball') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
+}
+
+/**
+ * Push a body away from every Woofer pulse queued this tick (see
+ * `SimContext.wooferPulseX/Y`, populated by materials/woofer.ts's
+ * `wooferBodyPulse`) — the same inverse-square-weighted-direction +
+ * speed-floor shape as `applyBlastKnockback` above, but sourced from an
+ * explicit event queue instead of scanning the grid for BLAST cells. Woofer's
+ * shockwave never leaves a BLAST cell behind at all (see woofer.ts): reusing
+ * that material's id here would make every OTHER material that treats "an
+ * adjacent BLAST cell" as a detonation trigger (Gunpowder, TNT, Nitro, C4, …)
+ * misfire next to what's supposed to be a completely non-destructive gadget.
+ *
+ * Unlike `applyBlastKnockback`, this never destroys a body — Woofer's whole
+ * identity is 완전한 비파괴성 (completely non-destructive), so however close a
+ * body sits to the source it can only ever be shoved, never popped/melted/
+ * shattered by this. (A body can still end its life the ordinary way via
+ * `evaluateTriggers`'s heat/crush checks — those are unrelated to this push.)
+ */
+function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
+  const xs = ctx.wooferPulseX;
+  if (xs.length === 0) return;
+  const ys = ctx.wooferPulseY;
+  const reach = bodyReach(o) + WOOFER_KNOCK_RADIUS;
+  const reach2 = reach * reach;
+  let px = 0;
+  let py = 0;
+  let found = false;
+  for (let i = 0; i < xs.length; i++) {
+    const dx = o.x - (xs[i] + 0.5);
+    const dy = o.y - (ys[i] + 0.5);
+    const d2 = dx * dx + dy * dy;
+    if (d2 > reach2 || d2 < 1e-6) continue;
+    const inv2 = 1 / d2;
+    px += dx * inv2;
+    py += dy * inv2;
+    found = true;
+  }
+  if (!found) return;
+  const plen = Math.hypot(px, py);
+  if (plen < 1e-6) return;
+  const nx = px / plen;
+  const ny = py / plen;
+  const outward = o.vx * nx + o.vy * ny;
+  if (outward < WOOFER_KNOCK_SPEED) {
+    const add = WOOFER_KNOCK_SPEED - outward;
+    o.vx += nx * add;
+    o.vy += ny * add;
+  }
+  if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -2015,8 +2077,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
 
 /**
  * Advance every free object one tick in three phases: (A) each body's own physics
- * — a near-miss blast shoves it, then gravity/buoyancy/grid-collision integration
- * — skipped while the pointer holds it; (B) resolve collisions *between* bodies so
+ * — a near-miss blast (or a Woofer's shockwave — see applyWooferKnockback) shoves
+ * it, then gravity/buoyancy/grid-collision integration — skipped while the
+ * pointer holds it; (B) resolve collisions *between* bodies so
  * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
  * crush) and compact out anything destroyed this tick. Run at the end of
  * Simulation.step(), fully separate from the CA cell scan. Gravity follows the
@@ -2046,6 +2109,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       continue;
     }
     applyBlastKnockback(o, ctx);
+    applyWooferKnockback(o, ctx);
     if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
     else stepCapsule(o, ctx, ax, ay, s);
   }

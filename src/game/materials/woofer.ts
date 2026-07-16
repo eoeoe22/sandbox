@@ -87,6 +87,23 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
 // modeled directly on Turbine's own `turbineFlooded`/`turbineFloodTick`) so a
 // body touched from several directions/sources in one tick still fires
 // exactly once instead of re-flooding per entry point.
+//
+// ── Reaching the free-object layer (독립 오브젝트) without a BLAST cell ──────
+// Ordinary explosives push a rubber ball/drum/dynamite by leaving BLAST flash
+// cells in the grid for engine/objects.ts to scan for on its own later pass
+// (see applyBlastKnockback there) — but Woofer deliberately never creates one
+// (see wooferPulse above), and reusing BLAST's id just for this would make
+// every OTHER material that treats "an adjacent BLAST cell" as a detonation
+// trigger (Gunpowder, TNT, Nitro, C4, …) misfire next to a completely
+// non-destructive gadget. So each fired cell is instead queued into
+// `SimContext.wooferPulseX/Y` — a plain per-tick event list, not a function
+// call into objects.ts, specifically because objects.ts already imports
+// spark.ts (for the Spark material) and spark.ts imports this file, so
+// importing objects.ts here would close that loop. `stepObjects` reads the
+// queue once after the CA scan and shoves nearby bodies (never destroys one —
+// see `applyWooferKnockback` in objects.ts), the same event-channel trick a
+// future device can reuse for any object-layer effect that shouldn't ride on
+// a real (and semantically loaded) material id.
 
 /** Backstop on how far one flood walks the connected Woofer body in a single
  *  pass (mirrors Turbine's own MAX_BODY) — a giant cabinet can't make one
@@ -102,6 +119,8 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
   if (sim.tick !== sim.wooferFloodTick) {
     sim.wooferFloodTick = sim.tick;
     sim.wooferFlooded.clear();
+    sim.wooferPulseX.length = 0;
+    sim.wooferPulseY.length = 0;
   }
   const w = sim.width;
   const startIdx = sy * w + sx;
@@ -116,6 +135,8 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
     count++;
     sim.wooferFlooded.add(y * w + x);
     wooferPulse(sim, x, y);
+    sim.wooferPulseX.push(x);
+    sim.wooferPulseY.push(y);
     for (const [dx, dy] of DIR4) {
       const nx = x + dx;
       const ny = y + dy;
