@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import faviconUrl from '../assets/favicon.svg?url';
 
 interface Props {
   title?: string;
@@ -15,7 +16,7 @@ const { title = 'Particle Sandbox' } = Astro.props;
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href={faviconUrl} type="image/svg+xml" />
     <!-- Only the Bootstrap Icons webfont is used (bi-* glyphs in the control
          panel). The full Bootstrap CSS isn't loaded — the app uses no Bootstrap
          component classes and global.css owns the reset/base styles. -->

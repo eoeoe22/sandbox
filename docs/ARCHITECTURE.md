@@ -45,3 +45,27 @@ Cloudflare Workers Builds가 GitHub 저장소에 연결되어 있다.
 - **PR 브랜치(non-production)**: PR에 push할 때마다 빌드가 트리거되며, `npx wrangler versions upload`로 프로덕션을 건드리지 않고 버전만 업로드해 프리뷰 URL을 생성한다.
 - `wrangler.toml`의 `preview_urls = true`는 `[assets]` 테이블보다 위(루트 레벨)에 있어야 인식된다.
 - PR 코멘트에 Commit Preview URL과 Branch Preview URL(브랜치 최신 커밋을 항상 가리키는 고정 링크)이 함께 게시된다.
+
+## 정적 파일 해시 & 빌드 난독화
+
+`astro.config.mjs`의 `vite` 설정에서 배포되는 모든 정적 파일(JS/CSS/WASM/이미지)이
+`원래이름-해시.확장자` 형식으로 나온다. Astro 7 + Vite 8은 내부적으로 Rollup 대신
+**Rolldown**을 쓰기 때문에, 파일명 패턴은 `build.rollupOptions`가 아니라
+`build.rolldownOptions.output` / `environments.client.build.rolldownOptions.output`
+쪽에서 지정해야 적용된다(클라이언트 번들과 SSR/프리렌더 번들이 서로 다른 environment라
+양쪽 다 필요).
+
+- `assetsInlineLimit: 0` — 작은 파일(예: `favicon.svg`)도 base64 data URI로 인라인되지
+  않고 항상 별도의 해시 파일로 나오도록 강제. 인라인되면 파일이 바뀌어도 HTML을
+  다시 받기 전엔 캐시가 갱신되지 않는 경우가 생길 수 있어서, 파일명 해시 방식으로
+  일관되게 캐시 무효화가 되도록 통일했다.
+- 정적 아이콘(`favicon.svg`)은 `public/`이 아니라 `src/assets/`에 두고
+  `import faviconUrl from '../assets/favicon.svg?url'`로 불러온다. `public/`
+  폴더의 파일은 Vite 처리 없이 그대로 복사되어 해시가 붙지 않기 때문
+  (`heat.wasm`이 이미 `?url` 임포트로 해시되는 것과 동일한 패턴).
+- `build.minify: 'terser'`로 esbuild 기본 minify 대신 Terser를 사용해 변수명을
+  더 짧게 뭉개고(`mangle.toplevel`), `console`/`debugger` 호출을 제거하고
+  (`compress.drop_console`/`drop_debugger`), 주석을 모두 제거한다
+  (`format.comments: false`). 코드 흐름 난독화(control-flow flattening,
+  문자열 암호화 등)는 하지 않았다 — 시뮬레이션 루프 성능에 영향을 줄 수 있는
+  별도 obfuscator 플러그인 없이, 표준 minifier 선에서 가독성만 낮추는 선택.
