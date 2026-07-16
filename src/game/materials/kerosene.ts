@@ -15,7 +15,7 @@ import { refluxBoil, REFLUX_KEROSENE } from './petroleumdistill';
 // re-boils (refluxes) at its own mid boiling point — its boil point (260) plus
 // the reflux superheat cap (60) sits below autoignition, so a flameless still
 // refluxes it away rather than igniting it (see petroleumdistill.ts / oil.ts).
-const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 420 };
+const SPEC: Combustible = { burnChance: 0.15, autoIgniteTemp: 420 };
 const BOIL_TEMP = 260;
 
 function updateKerosene(x: number, y: number, sim: SimContext): void {

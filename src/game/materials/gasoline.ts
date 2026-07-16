@@ -20,7 +20,7 @@ import { refluxBoil, REFLUX_GASOLINE } from './petroleumdistill';
 // skipped while a flame is adjacent). Its boiling point (200) plus the reflux
 // superheat cap (60) stays below this autoignition, so in a *flameless* still
 // it boils/refluxes away before it could ever get hot enough to self-ignite.
-const SPEC: Combustible = { burnChance: 0.12, autoIgniteTemp: 400 };
+const SPEC: Combustible = { burnChance: 0.25, autoIgniteTemp: 400 };
 const BOIL_TEMP = 200;
 
 function updateGasoline(x: number, y: number, sim: SimContext): void {
