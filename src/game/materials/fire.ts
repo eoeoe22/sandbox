@@ -5,7 +5,7 @@ import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP, FIRE_SMOKE_CHANCE } from '../config';
-import { WATER } from './water';
+import { WATER, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 import { SALTWATER } from './saltwater';
 import { SUGAR_WATER } from './sugarwater';
 import { STEAM } from './steam';
@@ -32,6 +32,22 @@ function updateFire(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
+      // A wisp of flame wreathing off a burning oil slick (burnStep's
+      // WREATH_CHANCE, combustion.ts) sits right at the oil/water interface;
+      // without this it would douse itself and flash-steam the very water the
+      // slick floats on the instant it drifted there, undoing burnStep's
+      // "burning petroleum doesn't steam the water below it" protection. Skip
+      // dousing against water that's already shielded by adjacent burning
+      // petroleum (see burningPetroleumAdjacent) — every other water contact
+      // still extinguishes normally.
+      if (burningPetroleumAdjacent(nx, ny, sim)) {
+        // Also re-cap it, the same as burnStep does from the fuel's own side —
+        // this Fire cell is just as hot (1000° vs the fuel's 800°) and touches
+        // the water directly too, so leaving it unclamped would let it conduct
+        // the water past boiling on its own.
+        sim.setTemp(nx, ny, Math.min(sim.getTemp(nx, ny), WATER_SURFACE_CAP));
+        continue;
+      }
       sim.spawn(nx, ny, STEAM.id);
       extinguished = true;
     }
