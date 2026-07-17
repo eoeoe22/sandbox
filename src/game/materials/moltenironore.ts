@@ -32,10 +32,15 @@ import { SMOKE } from './smoke';
 //    useless Slag — so "heat alone makes slag, heat + carbon makes iron" survives
 //    the rework, just melt-first now.
 //
-// Density 7: Coal Powder (5) floats on the pool so you can dust carbon over its
-// surface, the reduced Molten Metal (8) sinks below it to pool on the floor, and
-// Slag (6) floats up above — the furnace's vertical layers emerge on their own,
-// with the heavy iron settling under the light slag as in a real hearth.
+// Density 6.5: Coal Powder (7.5) is now *denser* than the pool, so dusted carbon
+// sinks straight into it on its own (touching, and reducing, ore cells along the
+// way down) rather than needing to be skimmed off the surface; the reduced
+// Molten Metal (8) sinks below everything to pool on the floor, and Slag (5.5)
+// floats up above — the furnace's vertical layers still emerge on their own,
+// with the heavy iron settling under the light slag as in a real hearth, just
+// with carbon now plunging through the melt instead of riding on top of it (a
+// deliberate gameplay call, not a real-world coal density — see
+// docs/MATERIAL-SYSTEMS.md's 제련 밀도 재서열 section).
 // Kept above Molten Metal's own freeze point (moltenmetal.ts) on purpose: a
 // reduction pulls a cell out of *this* pool into that one while both are still
 // liquid, so the fresh metal needs to be able to outlive this cell's own
@@ -57,26 +62,35 @@ function isCarbon(id: number): boolean {
 }
 
 // Shared with Limestone and Coal Powder: either can end up submerged inside
-// the smelting liquids (dusted on top and pulled under, or stirred down for
-// reduction — see Coal Powder's mixIntoMelt), and both are lighter than every
-// one of the three smelting liquids — so the generic density-based buoyancy
-// every powder gets now (updatePowder's tryBuoyantRise — see
-// engine/behaviors.ts) would float them clear of all three. That's wrong for
-// two of them: Molten Iron Ore (still actively reducing; carbon/flux
-// submerged in it should stay put and keep reacting with its ore neighbours
-// rather than skim straight back to the surface) and Slag (waste, but flux
-// dusted onto it should settle and mix in rather than pop back through it).
-// This function intercepts exactly those two by material identity and holds
-// the grain there — *without* freezing it solid: it still needs to be free
-// to settle further down if there's room (an ordinary powder never just
-// stops falling because something denser sits above it), so the hold calls
-// the plain sink-only fallback (updatePowderSink — fall/pile, no rise
-// attempt) instead of doing nothing. It returns false for every other liquid
-// — including the finished Molten Metal layer — so the caller's ordinary
-// `updatePowder` fallback takes over there; Molten Metal needs no special
-// case of its own because both powders are lighter than it too, so the
-// generic buoyancy already floats them clear of it on its own (same rise
-// mechanics every other powder gets, not a separately-tuned duplicate).
+// the smelting liquids (dusted on top and pulled under, or stirred/sunk down
+// for reduction — see Coal Powder's mixIntoMelt). Originally both were lighter
+// than every one of the three smelting liquids, so the generic density-based
+// buoyancy every powder gets (updatePowder's tryBuoyantRise — see
+// engine/behaviors.ts) would float them clear of all three, which was wrong for
+// Molten Iron Ore (still actively reducing; carbon/flux submerged in it should
+// stay put and keep reacting with its ore neighbours) and Slag (waste, but flux
+// dusted onto it should settle and mix in). This function intercepts exactly
+// those two liquids by material identity and holds the grain there — *without*
+// freezing it solid: it still needs to be free to settle further down if
+// there's room (an ordinary powder never just stops falling because something
+// denser sits above it), so the hold calls the plain sink-only fallback
+// (updatePowderSink — fall/pile, no rise attempt) instead of doing nothing.
+//
+// After the 제련 밀도 재서열 (Coal Powder 5→7.5, now denser than both Molten
+// Iron Ore 6.5 and Slag 5.5), this is a load-bearing exception only for
+// Limestone (still the lightest thing in the furnace). For Coal Powder it's a
+// harmless no-op: tryBuoyantRise would already refuse to rise there on density
+// alone, so calling updatePowderSink instead of updatePowder produces the exact
+// same outcome. Left shared rather than split out, since the shared call is
+// still correct and Coal Powder needs no separate code path.
+//
+// This returns false for every other liquid — including the finished Molten
+// Metal layer — so the caller's ordinary `updatePowder` fallback takes over
+// there; Molten Metal needs no special case of its own because Limestone (and
+// Coal Powder, though it gets there by sinking through Ore/Slag first now
+// rather than starting out on top of everything) is lighter than it, so the
+// generic buoyancy already floats each clear on its own (same rise mechanics
+// every other powder gets, not a separately-tuned duplicate).
 export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
@@ -150,7 +164,7 @@ export const MOLTEN_IRON_ORE = register({
   // Base colour is the hot end of the glow ramp (bright molten orange); darkens
   // toward `cool` as it sets.
   color: rgb(255, 140, 60),
-  density: 7,
+  density: 6.5,
   category: '제련',
   // Placed hot; conducts a little worse than stone.
   thermal: { init: 1000, conductivity: 0.35 },
