@@ -15,7 +15,7 @@ import { MOLTEN_METAL } from './moltenmetal';
 // (Blue Flame / Lava / Thermite grade — 1400°, held deliberately high so a
 // battery is *tougher* than plain Iron (which now melts at 1200°) and won't
 // slump in an ordinary oxygen-blown coal fire; it also sits well above Molten
-// Metal's 1100° freeze so the melt stays molten instead of instantly setting
+// Metal's 650° freeze so the melt stays molten instead of instantly setting
 // back to Iron). In between, it just
 // keeps ticking — the right power source to bury next to a Nichrome heater or
 // run through a burning building.
