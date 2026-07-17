@@ -50,7 +50,7 @@ const FLUX_YIELD = 0.95; // …raised when a Limestone flux grain is adjacent
 const FLUX_CONSUME = 0.5; // chance that flux grain is spent
 const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Metal)
 const REDUCE_HEAT = 1450; // exothermic: fresh iron is forced this hot so it stays
-// molten (well above Molten Metal's 1100° freeze) and sinks clear instead of crusting.
+// molten (well above Molten Metal's 650° freeze) and sinks clear instead of crusting.
 
 function isCarbon(id: number): boolean {
   return id === COAL.id || id === COAL_POWDER.id;
