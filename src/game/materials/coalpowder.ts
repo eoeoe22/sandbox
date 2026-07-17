@@ -6,7 +6,7 @@ import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn, type Combustible } from './combustion';
 import { IRON_ORE } from './ironore';
-import { MOLTEN_IRON_ORE } from './moltenironore';
+import { MOLTEN_IRON_ORE, tryRiseThroughFlux } from './moltenironore';
 import { MOLTEN_METAL } from './moltenmetal';
 
 // Powdered coal — the pourable form of Coal. Solid Coal (id 25) is a rigid lump
@@ -78,8 +78,14 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // bed heaped around a crucible still smoulders and heats it.
   if (!touchingMelt(x, y, sim) && tryBurn(x, y, sim, SPEC)) return;
   // Dusted onto a molten pool, stir down into it so the whole depth reduces, not
-  // just the crust-prone surface. Then fall/pile like a powder (mirrors Sawdust).
+  // just the crust-prone surface (mixIntoMelt wins the tie so stirring isn't
+  // fought every time it rolls). Once a grain has stirred past the ore layer —
+  // or never finds ore to stir into at all — it's spent leftover carbon sitting
+  // in the melt with nothing left to react; let it float back to the surface
+  // like Limestone (tryRiseThroughFlux, shared in moltenironore.ts) instead of
+  // staying stranded at the bottom of the pool forever.
   if (mixIntoMelt(x, y, sim)) return;
+  if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
