@@ -253,5 +253,12 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(`tryRis
   달라지지 않았고, `updatePowder` 안에서 먼저 호출되도록 옮긴 것도 각 가루의 매 틱
   1회 업데이트 안에서 일어나는 순서 변경일 뿐이라 활성-타일 스캔 결정성엔 영향이 없다
   (헤드리스 active-tile 동등성 테스트 10 시나리오·1140틱 전건 통과로 확인).
+## 니트로가 Blue Flame에 반응하지 않던 버그 수정 (`nitro.ts`)
+
+니트로의 자체 트리거 스캔(`updateNitro`)이 `FIRE`/`LAVA`/`BLAST`만 검사하고 `BLUE_FLAME`을
+빠뜨리고 있었다 — Blue Flame이 나중에 추가되면서 TNT·암모늄나이트레이트·메탄 등 다른 폭발물/
+가연물의 트리거 목록에는 반영됐지만 니트로는 갱신되지 않아, 니트로 옆에 Blue Flame이 닿아도
+기폭하지 않는 비일관성이 있었다. `nitro.ts`의 트리거 조건에 `BLUE_FLAME.id`를 추가해 다른
+물질들과 동일하게 반응하도록 맞췄다.
 
 향후 추가 아이디어·팔레트 확장안은 [docs/PROPOSALS.md](https://github.com/eoeoe22/sandbox/blob/main/docs/PROPOSALS.md) 참조.
