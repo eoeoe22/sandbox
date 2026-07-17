@@ -62,10 +62,11 @@ import { AMBIENT_TEMP } from '../config';
 // detecting the flame itself — the same id-based, scan-order-independent
 // approach the explosives use.
 
-// Temperature a burning fuel cell holds, and the temperature the Fire it
-// finally collapses into starts at. Sits above every fuel's autoignition point
-// (the highest, Coal, is 580), so pinning a catching cell here always reads as
-// "burning" on its next turn regardless of which fuel it is.
+// Temperature a burning fuel cell holds by default, and the temperature the
+// Fire it finally collapses into starts at. Sits above every fuel's
+// autoignition point (the highest, Coal, is 580), so pinning a catching cell
+// here always reads as "burning" on its next turn regardless of which fuel it
+// is. A fuel can run hotter than this via `Combustible.burnTemp` (see Coal).
 const BURN_TEMP = 800;
 
 // Per-tick chance a burning cell is spent and collapses to Fire, expressed as a
@@ -84,19 +85,20 @@ const CONSUME_RATIO = 0.3;
 // it (which would also choke the sim with Fire/Smoke).
 const WREATH_CHANCE = 0.25;
 
-// Oxygen forced draught. A burning fuel cell normally pins at BURN_TEMP (800°);
-// Oxygen (id 36) blown against it makes the fire run hotter — each adjacent
-// Oxygen cell adds OXY_BOOST to the pinned temperature up to OXY_MAX_PIN, and
-// the drawn-in oxygen is consumed with probability OXY_CONSUME per tick. The
-// pin steps are chosen around the world's melt points: 0 oxygen = 800°
-// (unchanged bare burn — reduces iron ore but can't melt iron, and stays under
-// Stone's 1100° so furnace walls are safe), 1 = 1050° (a safe low blast, still
-// below stone), 2 = 1300° (the recommended smelting blast — past Iron's 1200°
-// melt so a coal fire now runs molten iron, but also past Stone's 1100° so a
-// stone crucible slumps, which is what makes a Diamond/Heatpipe hearth the
-// container of choice), 3+ = 1550° (a fierce blast furnace). Being common to
-// every fuel, Oxygen + any fuel also becomes a hotter cutting torch as a free
-// side effect.
+// Oxygen forced draught. A burning fuel cell normally pins at its own
+// `burnTemp` (BURN_TEMP, 800°, for most fuels); Oxygen (id 36) blown against
+// it makes the fire run hotter — each adjacent Oxygen cell adds OXY_BOOST to
+// the pinned temperature up to OXY_MAX_PIN, and the drawn-in oxygen is
+// consumed with probability OXY_CONSUME per tick. For a default 800°-base
+// fuel the pin steps land on the world's melt points: 0 oxygen = 800°
+// (reduces iron ore but can't melt iron, and stays under Stone's 1100° so
+// furnace walls are safe), 1 = 1050° (a safe low blast, still below stone),
+// 2 = 1300° (past Iron's 1200° melt, but also past Stone's 1100° so a stone
+// crucible slumps), 3+ = 1550° (a fierce blast furnace). Coal instead runs its
+// bare fire at 1300° via `burnTemp` (see coal.ts) — no oxygen needed to melt
+// iron — so a single Oxygen cell already saturates it at OXY_MAX_PIN.
+// Being common to every fuel, Oxygen + any fuel also becomes a hotter cutting
+// torch as a free side effect.
 const OXY_BOOST = 250;
 const OXY_MAX_PIN = 1550;
 const OXY_CONSUME = 0.5;
@@ -107,6 +109,12 @@ export interface Combustible {
   burnChance: number;
   /** Self temperature at/above which it ignites with no flame contact. */
   autoIgniteTemp: number;
+  /** Temperature this fuel's burning cells pin at (and collapse-to-Fire at),
+   *  overriding the shared `BURN_TEMP` (800°). Oxygen's forced-draught boost
+   *  still stacks on top, capped at `OXY_MAX_PIN`. Coal uses this to run its
+   *  bare, unoxygenated fire hot enough to melt iron (1200°) while staying
+   *  under Blue Flame (1800°). */
+  burnTemp?: number;
   /** If true, water smothers this fuel without being consumed into steam.
    *  Used for fuels that are easily doused, like Amber and Resin. */
   easyDouse?: boolean;
@@ -142,6 +150,9 @@ export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
  * falling/flowing.
  */
 function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
+  // This fuel's own running temperature — BURN_TEMP (800°) unless it overrides
+  // via `burnTemp` (Coal runs hotter; see Combustible.burnTemp).
+  const myBurnTemp = spec.burnTemp ?? BURN_TEMP;
   // Petroleum fuels (Crude Oil, Gasoline, …) float on water and keep burning as
   // a surface fire: water below them neither douses the flame nor flashes to
   // Steam, so a lit slick on a pool reproduces an oil fire instead of snuffing
@@ -188,7 +199,7 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
   // temperatures that melt iron with a mere coal fire. Consumed oxygen is
   // written to EMPTY, which is always a safe neighbor write (no same-tick
   // reprocessing); the self setTemp is unchanged bookkeeping.
-  let pin = BURN_TEMP;
+  let pin = myBurnTemp;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -208,9 +219,10 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     if (nid === EMPTY) {
       // A lick of visible flame in the open air around the body.
       if (sim.chance(WREATH_CHANCE)) sim.spawn(nx, ny, FIRE.id);
-    } else if (getMaterial(nid).combustible && sim.getTemp(nx, ny) < BURN_TEMP) {
-      // Light the neighbor: pin it to BURN_TEMP so its own turn sees it as
-      // burning. Gated by burnChance per neighbor, so a just-lit unscanned
+    } else if (getMaterial(nid).combustible && sim.getTemp(nx, ny) < myBurnTemp) {
+      // Light the neighbor: pin it to this fuel's burn temp so its own turn
+      // sees it as burning (its own next burnStep re-pins to its own spec
+      // regardless). Gated by burnChance per neighbor, so a just-lit unscanned
       // neighbor can chain-light within the same tick — but each burning cell
       // reaches only its ~4 not-yet-scanned neighbors, so the same-tick
       // branching factor is ~4·burnChance (≈0.6 at the fastest fuel, Alcohol
@@ -218,7 +230,7 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
       // cell, not the deterministic one-frame runaway a raw material `set` on
       // an unscanned cell would cause. Criticality is 4·burnChance = 1 at
       // burnChance 0.25, so a fuel much above that would need rethinking this.
-      if (sim.chance(spec.burnChance)) sim.setTemp(nx, ny, BURN_TEMP);
+      if (sim.chance(spec.burnChance)) sim.setTemp(nx, ny, myBurnTemp);
     }
   }
 
@@ -233,11 +245,11 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
       // Spent remains instead of a flame puff — a solid fuel's cell burns down
       // to ash rather than vanishing into rising Fire.
       sim.set(x, y, ASH.id);
-      sim.setTemp(x, y, BURN_TEMP);
+      sim.setTemp(x, y, myBurnTemp);
       return true;
     }
     sim.set(x, y, FIRE.id);
-    sim.setTemp(x, y, BURN_TEMP);
+    sim.setTemp(x, y, myBurnTemp);
     return true;
   }
   // Still burning fuel: the caller runs its normal fall/flow so it keeps moving.
@@ -270,7 +282,7 @@ export function tryBurn(x: number, y: number, sim: SimContext, spec: Combustible
       // so it keeps falling/flowing this tick — return false and let the caller
       // move it (its pinned heat rides along on the swap).
       if (sim.chance(spec.burnChance)) {
-        sim.setTemp(x, y, BURN_TEMP);
+        sim.setTemp(x, y, spec.burnTemp ?? BURN_TEMP);
       }
       return false;
     }

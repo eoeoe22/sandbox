@@ -13,10 +13,12 @@ import { MOLTEN_METAL } from './moltenmetal';
 // that holds its shape (Solid has no default movement), so a heap of it can't be
 // mixed into an ore charge; Coal Powder falls and piles like Sand, so it can be
 // poured into (or dusted onto) iron ore. It burns with the *exact same* spec as
-// solid Coal — the slowest, longest-smouldering fuel — so the general fuel
-// economy is unchanged: this is just Coal you can pour. Just burns; never
-// detonates. See combustion.ts for the shared surface-front model.
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580 };
+// solid Coal — the slowest, longest-smouldering fuel, and (via `burnTemp`) the
+// same 1300° running heat, past Iron's 1200° melt but under Blue Flame's 1800°
+// — so the general fuel economy is unchanged: this is just Coal you can pour.
+// Just burns; never detonates. See combustion.ts for the shared surface-front
+// model.
+const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 };
 
 // Carbon in contact with the smelting hearth — iron ore (solid or molten) or the
 // molten iron just reduced out of it — sits in a reducing pocket, so it acts as

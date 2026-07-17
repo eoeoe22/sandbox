@@ -11,7 +11,15 @@ import { tryBurn, type Combustible } from './combustion';
 // from the surface a cell at a time rather than flashing over, and a high
 // autoignition point resists catching from stray heat. Just burns; never
 // detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580 };
+//
+// Runs far hotter than every other fuel (`burnTemp` overrides the shared 800°
+// default): a coal fire pins at 1300°, past Iron's 1200° melt, so a bare
+// smouldering bed — no oxygen blast needed — carries a smelt straight through
+// to molten iron. Still well under Blue Flame's 1800°, keeping Coal the
+// everyday smelting fire rather than a cutting torch. Oxygen blown against it
+// still pushes higher (see combustion.ts), just with less headroom left before
+// OXY_MAX_PIN than a fuel starting from the 800° baseline.
+const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 };
 
 function updateCoal(x: number, y: number, sim: SimContext): void {
   // Solid: no fall/flow, so combustion is the only behavior — if it doesn't
