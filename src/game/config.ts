@@ -201,11 +201,15 @@ export const RADIANT_HEAT_MIN_TEMP = 500;
 export const RADIANT_HEAT_RANGE = 3;
 /**
  * Base per-ray exchange coefficient, scaled by the lower of the two cells'
- * conductivities and attenuated by 1/distance². Kept small — this is a
- * gentle warming, not a teleported conduction — so even the closest gap
- * (distance 2, 1/4 falloff) exchanges only a few percent of the temperature
- * gap per tick, and stays stable (see HEAT_DIFFUSION_RATE's stability note)
- * even with all 8 rays landing on cold targets at once.
+ * conductivities and attenuated by 1/distance² (true Euclidean distance —
+ * a diagonal step counts double, see `radiateHeat`). Kept small — this is a
+ * gentle warming, not a teleported conduction — so even the closest
+ * *exchanging* case (a diagonal neighbor at distance 1, 1/2 falloff)
+ * transfers only a few percent of the temperature gap per tick, and stays
+ * stable (see HEAT_DIFFUSION_RATE's stability note) even with all 8 rays
+ * landing on cold targets at once (worst case ≈0.15 of the gap at the
+ * highest real conductivity, Heatpipe's 1.0 — well under the ≤1 bound that
+ * would risk overshoot).
  */
 export const RADIANT_HEAT_RATE = 0.05;
 
