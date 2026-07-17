@@ -18,11 +18,12 @@ import { SMOKE } from './smoke';
 // boils away as a puff of Smoke. So the way to deal with a spreading slime is to
 // burn it back.
 //
-// Electricity is its other undoing, and it works EXACTLY like an H₂O₂ splash
-// eating a Virus (virus.ts). A Spark reaching the blob (from an electrified
-// conductor, or the very Water it's drinking) seeds a single *electric-dissolve
-// front* on one touched cell, carrying a small "reach" budget in aux
-// (SLIME_DISSOLVE_BUDGET; spark.ts stamps exactly one cell per pulse). On its turn
+// Electricity is its other undoing, and it works the same way an H₂O₂ splash
+// eats a Virus (virus.ts), just with a bigger bite. A Spark reaching the blob
+// (from an electrified conductor, or the very Water it's drinking) seeds a
+// single *electric-dissolve front* on one touched cell, carrying a "reach"
+// budget in aux (SLIME_DISSOLVE_BUDGET, twice the Virus front's; spark.ts
+// stamps exactly one cell per pulse). On its turn
 // a front cell reverts itself to Water and, if any reach is left, hands budget-1 to
 // ONE randomly-chosen still-healthy slime neighbour. That one random step per tick
 // makes the eaten edge ragged and organic, and the decrementing budget hard-caps
@@ -35,9 +36,11 @@ const MELT_TEMP = 130; // …or enough ambient heat does the same
 
 // Reach budget a Spark stamps on the one slime cell it seeds (see spark.ts), and
 // the whole aux state slime uses: a healthy cell reads 0, a front cell holds its
-// remaining reach (1..BUDGET). Matches the Virus corrosion front's CURE_SEED_BUDGET
-// so a single spark dissolves at most about this many cells — never the whole blob.
-export const SLIME_DISSOLVE_BUDGET = 10;
+// remaining reach (1..BUDGET). Twice the Virus corrosion front's CURE_SEED_BUDGET
+// (10) — slime's electric weakness bites harder per shock than the virus's H₂O₂
+// counter does, so a single spark still dissolves at most about this many cells
+// (never the whole blob), but the bite is bigger.
+export const SLIME_DISSOLVE_BUDGET = 20;
 
 // The catch with "slime → Water" (vs the Virus front's "→ Empty"): slime *drinks*
 // water, so it would just re-absorb its own dissolved puddle and heal — the electric
@@ -140,11 +143,12 @@ export const SLIME = register({
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
   // (high coefficient of restitution) before it settles (see debris.ts 탄성).
   elasticity: 0.92,
-  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): a thick, non-ionic goo,
-  // the poorest conductor in the roster, so a pulse creeps only a cell or two in
-  // before dying — but current that actually passes through it is what seeds the
-  // blob's own electric-dissolve front (전기전도성 추가; the goo's established
-  // weakness to electricity, now a genuine side effect of conducting it).
+  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): still the poorest
+  // conductor in the roster in spirit, but current now carries a good stretch
+  // into a blob (on par with fresh Water, ~10 cells) instead of dying within a
+  // cell or two — and current that actually passes through it is what seeds the
+  // blob's own electric-dissolve front, now with a bigger bite per shock
+  // (SLIME_DISSOLVE_BUDGET) too (전기전도성 및 제거 범위 상향).
   conductive: true,
   thermal: { conductivity: 0.2 },
   update: updateSlime,

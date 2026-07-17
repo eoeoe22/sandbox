@@ -37,9 +37,11 @@ import { WOOFER, wooferBodyPulse } from './woofer';
 //   • Water — bleeds strength faster than the electrolytes, but a pulse now still
 //     runs a good stretch through it (roughly a third of a full wire) instead of
 //     dying after a couple of cells.
-//   • Slime — a thick, non-ionic goo: the worst conductor in the roster, so a
-//     pulse only creeps a cell or two into a blob before dying, but it genuinely
-//     carries on through (see below) rather than just reacting on contact.
+//   • Slime — a thick, non-ionic goo: still the worst conductor in the roster,
+//     but no longer a dead end — a pulse now carries a good stretch into a blob
+//     (roughly a third of a wire, on par with fresh Water) instead of dying
+//     within a cell or two, and it genuinely carries on through (see below)
+//     rather than just reacting on contact.
 //
 // State packed into the spark cell's single `aux` byte:
 //   • the conductor CLASS (low 3 bits) — which conductor to revert back into
@@ -81,18 +83,18 @@ const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id,
 // resistance, and the lever for "how far does current reach". At FULL_STRENGTH 31:
 // metal keeps it (0 → runs the whole wire), brine and acid barely bleed
 // (1 → ~31 cells, essentially across a tank), nichrome is a mild resistor
-// (1 → ~31 cells, but also Joule-heats), fresh water bleeds fastest of the
-// electrolytes yet still carries a good stretch (3 → ~10 cells), and Slime — a
-// thick non-ionic goo, the poorest conductor here — bleeds hardest of all (6 →
-// only ~5 cells), so a pulse creeps just a little way into a blob rather than
-// racing clear through it. These were raised across the board from the old
-// [8,2,1,2] water/brine/nichrome/acid, where a pulse died after only a few cells
-// of water — the whole-subsystem conductivity uplift, done here in the engine
-// rather than by editing any material's `conductive` flag. Nichrome's resistance
-// also shows up as heat: each passing pulse deposits a fixed dose of Joule heat
-// into the wire on revert (see nichromeJouleHeat), separate from this per-cell
-// strength loss.
-const CONDUCTOR_LOSS = [0, 0, 3, 1, 1, 1, 6];
+// (1 → ~31 cells, but also Joule-heats), and fresh water and Slime both bleed
+// at the same middling rate (3 → ~10 cells) — Slime is still the poorest
+// conductor in spirit (a thick, non-ionic goo has no business carrying current
+// well) but no longer dies within a cell or two, so sustained current has room
+// to actually punch into a blob before a pulse gives out. These were raised
+// across the board from the old [8,2,1,2] water/brine/nichrome/acid, where a
+// pulse died after only a few cells of water — the whole-subsystem conductivity
+// uplift, done here in the engine rather than by editing any material's
+// `conductive` flag. Nichrome's resistance also shows up as heat: each passing
+// pulse deposits a fixed dose of Joule heat into the wire on revert (see
+// nichromeJouleHeat), separate from this per-cell strength loss.
+const CONDUCTOR_LOSS = [0, 0, 3, 1, 1, 1, 3];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // byte, with class 0 reserved for "no conductor"; adding Slime brings the count
