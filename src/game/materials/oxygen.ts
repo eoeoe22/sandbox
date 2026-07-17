@@ -15,9 +15,11 @@ import { STEAM } from './steam';
 
 // Oxygen — a nearly-invisible light gas that turns any fire into a firestorm.
 // It rises and drifts like other gases, but a cell touching a flame, anything
-// molten, or a blast wave flashes over: normally it becomes Fire itself, so a
-// spark in an oxygen pocket rips through the whole cloud in a bright
-// deflagration front (each cell ignites once, so the flash is self-limiting).
+// molten, or a blast wave flashes over: it becomes Blue Flame rather than
+// ordinary Fire (a self-oxygenated burn runs at torch heat, same as the forced
+// draught in combustion.ts), so a spark in an oxygen pocket rips through the
+// whole cloud in a bright, hot deflagration front (each cell ignites once, so
+// the flash is self-limiting).
 //
 // But if Hydrogen is mixed in, the two burn together into *water* instead: the
 // flashing oxygen cell becomes Steam (hot water vapor, 2H₂+O₂→2H₂O), which then
@@ -25,9 +27,10 @@ import { STEAM } from './steam';
 // than an explosive (see hydrogen.ts), so igniting an H₂/O₂ mix doesn't blast —
 // it burns and leaves a steam cloud that rains back down as water.
 const FLASH_CHANCE = 0.6;
-// The flashed-over cell becomes genuinely hot Fire (spawn/set alone would leave
-// it at ambient), so it radiates heat and drives the front onward.
-const FLASH_TEMP = 900;
+// The flashed-over cell becomes genuinely hot Blue Flame (spawn/set alone
+// would leave it at ambient) — matching Blue Flame's own init temp, so it
+// radiates heat and drives the front onward at full torch heat.
+const FLASH_TEMP = 1800;
 
 function isIgniter(id: number): boolean {
   return (
@@ -58,7 +61,7 @@ function updateOxygen(x: number, y: number, sim: SimContext): void {
       if (hasHydrogenNeighbor(x, y, sim)) {
         sim.set(x, y, STEAM.id); // burns with the hydrogen into water vapor
       } else {
-        sim.set(x, y, FIRE.id);
+        sim.set(x, y, BLUE_FLAME.id);
         sim.setTemp(x, y, FLASH_TEMP);
       }
       return;
