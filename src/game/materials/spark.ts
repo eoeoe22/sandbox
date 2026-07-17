@@ -199,8 +199,9 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // Hand the pulse on, losing strength for the medium it's entering. If the
       // pulse would arrive dead (or the conductor isn't one we can revert to),
       // it simply stops here — that decay is what makes current fade out in
-      // water while running full-length through metal. (Slime included: it
-      // conducts poorly and dies within a cell or two — see CONDUCTOR_LOSS.)
+      // water while running full-length through metal. (Slime included: it's
+      // still the poorest conductor here, but now reaches about as far as
+      // fresh water — see CONDUCTOR_LOSS.)
       const cls = conductorClass(nid);
       if (cls !== 0) {
         const next = strength - classLoss(cls);
