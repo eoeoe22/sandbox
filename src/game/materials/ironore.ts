@@ -8,10 +8,13 @@ import { MOLTEN_IRON_ORE } from './moltenironore';
 // Iron Ore — a red-brown powder smelted in two steps: first MELT it with heat,
 // then feed carbon to the molten pool it becomes (see moltenironore.ts). The
 // melt point sits low enough that an *ordinary Fire* melts it (Fire cells run
-// ~1000°) — you don't need Lava or Blue Flame, though those (and an oxygen-blown
-// coal fire, or the heat brush) melt it too. A bare smouldering fuel bed pins at
-// only 800° and so won't quite melt it, which keeps "melt with flame" a distinct
-// first step from "add coal to reduce".
+// ~1000°) — you don't need Lava or Blue Flame, though those (and a coal fire,
+// or the heat brush) melt it too. Coal now runs hot enough (1300°, see coal.ts)
+// to melt ore it merely conducts heat into. Coal *Powder* touching ore directly
+// is shielded from combustion and acts purely as a reductant instead (see
+// touchingMelt in coalpowder.ts); solid Coal has no such shield, so a lump
+// resting straight against ore just burns and melts it like any other heat
+// source.
 //
 // Melting alone yields no iron: heat only turns the ore into a molten pool, and
 // that pool left without carbon cools back into useless Slag. Iron comes only
