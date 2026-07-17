@@ -176,6 +176,35 @@ export const HEAT_DIFFUSION_SUBSTEPS = 3;
 export const DEFAULT_CONDUCTIVITY = 0.3;
 
 /**
+ * Near-field radiative heat transfer (근거리 간접 복사 열전도) — a small
+ * secondary effect layered on top of direct conduction. `diffuseHeat` only
+ * ever reaches a literal orthogonal neighbor, and Empty conducts nothing at
+ * all, so a solid sitting a cell or two above a scorching pool but not
+ * *touching* it (e.g. a splash of Iron that set mid-air just above a Molten
+ * Metal pool) sits at ambient forever — it visibly ignores the heat right
+ * next to it. Once per tick (not per conduction substep — this is meant to
+ * be gentle, not a primary heat path), every cell hot enough to glow
+ * (`RADIANT_HEAT_MIN_TEMP`) casts a short ray along each of the 8 directions;
+ * a ray that crosses only Empty cells warms the first solid it hits within
+ * `RADIANT_HEAT_RANGE`, and is symmetrically cooled by the same amount
+ * (energy is conserved, same as diffuseHeat). A target found at distance 1 —
+ * an actual neighbor — is left alone since diffuseHeat already handles it;
+ * the ray still stops there (radiation doesn't pass through a solid).
+ */
+export const RADIANT_HEAT_MIN_TEMP = 500;
+/** Max cell distance (inclusive) a radiative ray reaches before giving up. */
+export const RADIANT_HEAT_RANGE = 3;
+/**
+ * Base per-ray exchange coefficient, scaled by the lower of the two cells'
+ * conductivities and attenuated by 1/distance². Kept small — this is a
+ * gentle warming, not a teleported conduction — so even the closest gap
+ * (distance 2, 1/4 falloff) exchanges only a few percent of the temperature
+ * gap per tick, and stays stable (see HEAT_DIFFUSION_RATE's stability note)
+ * even with all 8 rays landing on cold targets at once.
+ */
+export const RADIANT_HEAT_RATE = 0.05;
+
+/**
  * Use the Rust/WASM heat-diffusion kernel instead of the JS one when it's
  * available (see engine/heatWasm.ts, wasm/README.md). The WASM path is
  * bit-identical to the JS reference (golden test), loads asynchronously, and

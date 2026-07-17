@@ -8,9 +8,13 @@ import {
   HEAT_DIFFUSION_SUBSTEPS,
   DEFAULT_CONDUCTIVITY,
   USE_WASM_HEAT,
+  RADIANT_HEAT_MIN_TEMP,
+  RADIANT_HEAT_RANGE,
+  RADIANT_HEAT_RATE,
   type SmokeLevel,
   type GravityDir,
 } from '../config';
+import { DIR8 } from './directions';
 import { TILE, TILE_BITS } from './dirtyTiles';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 import { stepObjects } from './objects';
@@ -101,6 +105,9 @@ export class Simulation {
     } else {
       for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
     }
+    // Once per tick (not per substep): the short-range radiative nudge that
+    // bridges a small air gap, on top of the direct-conduction substeps above.
+    this.radiateHeat();
     if (prof) {
       const n = performance.now();
       profiler.add('heat', n - t);
@@ -227,6 +234,66 @@ export class Simulation {
 
     g.temp = next;
     g.tempScratch = cur;
+  }
+
+  /**
+   * Near-field radiative heat transfer (근거리 간접 복사 열전도) — see the
+   * config.ts doc comment for the motivating bug (isolated solidified metal
+   * floating just above a molten pool, never touching it, staying cold
+   * forever). Mutates `temp` directly in place rather than double-buffering:
+   * this is a small secondary effect layered on top of the conduction
+   * substeps above, not the primary diffusion model, so a little order
+   * dependence within one tick is an acceptable trade for the simplicity (the
+   * same trade every material's own `update` already makes when it calls
+   * `SimContext.setTemp`).
+   */
+  private radiateHeat(): void {
+    const g = this.grid;
+    const w = g.width;
+    const h = g.height;
+    const cells = g.cells;
+    const temp = g.temp;
+    const cond = this.cond;
+    const range = RADIANT_HEAT_RANGE;
+    const minTemp = RADIANT_HEAT_MIN_TEMP;
+
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        const i = row + x;
+        const ci = cond[cells[i]];
+        // Empty (cond 0) never radiates, and neither does anything colder
+        // than the glow threshold — cheap rejects that skip almost every
+        // cell in a typical scene before the ray-cast below ever runs.
+        if (ci === 0) continue;
+        const ti = temp[i];
+        if (ti < minTemp) continue;
+
+        for (const [dx, dy] of DIR8) {
+          let nx = x;
+          let ny = y;
+          for (let dist = 1; dist <= range; dist++) {
+            nx += dx;
+            ny += dy;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) break; // ran off the grid
+            const j = ny * w + nx;
+            if (cells[j] === EMPTY) continue; // keep looking further along the ray
+            // Hit a solid. A distance-1 hit is an actual neighbor — diffuseHeat
+            // already conducts it directly, so skip the exchange here — but the
+            // ray still stops: radiation doesn't pass through a solid either way.
+            if (dist >= 2) {
+              const cj = cond[cells[j]];
+              if (cj > 0) {
+                const flux = (RADIANT_HEAT_RATE * (ci < cj ? ci : cj) * (ti - temp[j])) / (dist * dist);
+                temp[i] -= flux;
+                temp[j] += flux;
+              }
+            }
+            break;
+          }
+        }
+      }
+    }
   }
 
   /**
