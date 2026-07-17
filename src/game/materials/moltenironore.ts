@@ -56,6 +56,32 @@ function isCarbon(id: number): boolean {
   return id === COAL.id || id === COAL_POWDER.id;
 }
 
+// Shared with Limestone and Coal Powder: either can end up submerged inside
+// the smelting liquids (dusted on top and pulled under, or stirred down for
+// reduction — see Coal Powder's mixIntoMelt) and should work back up once
+// there's no more reduction left to do, the same "가벼운 가루" float Ash/
+// Sawdust get in water. Deliberately *only* Molten Metal, the one finished
+// layer — both Molten Iron Ore (still actively reducing; carbon/flux
+// submerged in it should stay put and keep reacting with its ore neighbours
+// rather than skim straight back to the surface) and Slag (waste, but flux
+// dusted onto it should settle and mix in rather than pop back through it)
+// hold it down. Gated on material identity rather than the generic density
+// check (tryBuoyantRise) because *every* ordinary liquid is denser than
+// these powders too — only Molten Metal is meant to float them clear.
+const FLUX_RISE_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
+const FLUX_RISE_SWAY_CHANCE = 0.35; // occasional sideways drift while rising
+
+export function tryRiseThroughFlux(x: number, y: number, sim: SimContext): boolean {
+  const ux = x - sim.gravityX;
+  const uy = y - sim.gravityY;
+  if (!sim.inBounds(ux, uy) || sim.get(ux, uy) !== MOLTEN_METAL.id) return false;
+  if (sim.chance(FLUX_RISE_STALL_CHANCE)) return true;
+  if (sim.chance(FLUX_RISE_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
+  if (sim.moveUp(x, y)) return true;
+  sim.moveDiagonalUp(x, y);
+  return true;
+}
+
 function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
   const t = sim.getTemp(x, y);
   if (t < SOLIDIFY_TEMP) {
