@@ -54,7 +54,11 @@ export const GUNPOWDER = register({
   name: 'Gunpowder',
   phase: Phase.Powder,
   color: rgb(60, 60, 65),
-  density: 5,
+  // Real black powder (charcoal/sulfur/saltpeter granules, ~1.7-2 g/cm³) is
+  // notably lighter than mineral powders like Sand/Salt (~2.2-2.65) — still
+  // dense enough to sink through Water (so a dunked charge stays wet and
+  // misfires reliably instead of drifting back to the surface dry).
+  density: 3.8,
   explosive: true,
   blastRadius: BLAST_RADIUS,
   destructivePower: DESTRUCTIVE_POWER, // weak: shoves loose matter, can't crater solids

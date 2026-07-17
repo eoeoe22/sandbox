@@ -88,6 +88,11 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // sinking/reacting instead of skimming out early) instead of staying
   // stranded at the bottom forever.
   if (mixIntoMelt(x, y, sim)) return;
+  // tryRiseThroughFlux handles all three smelting liquids by identity (rise
+  // through Molten Metal, hold in Molten Iron Ore/Slag); the generic
+  // updatePowder fallback only ever runs for every *other* liquid, where
+  // Coal Powder's own density decides whether it floats or sinks like any
+  // other powder.
   if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);
 }

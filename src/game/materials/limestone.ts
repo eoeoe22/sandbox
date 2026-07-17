@@ -13,19 +13,20 @@ import { tryRiseThroughFlux } from './moltenironore';
 // slag; add a pinch of limestone and the bloom comes out cleaner. See
 // moltenironore.ts for the flux branch.
 //
-// "가벼운 가루" (light powder), the same mechanism Ash/Sawdust use: it falls
-// and piles like an ordinary powder everywhere (density 5 sinks through every
-// ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but
-// against the smelting liquids it's split by role instead of just density —
-// Molten Iron Ore is where it's actually being read by a reducing neighbour
-// (see moltenironore.ts's flux branch) and Slag is where it settles as waste,
-// so a grain submerged in *either* stays put instead of skimming straight
-// back to the surface; only once it's below both, in the finished Molten
-// Metal (nothing left for it to flux), does it bubble back up
-// (tryRiseThroughFlux, shared with Coal Powder — see moltenironore.ts —
-// gated on material identity instead of the generic density comparison,
-// since all three happen to be denser than Limestone anyway). Every other
-// liquid sinks it as before.
+// "가벼운 가루" (light powder), the same mechanism every powder gets
+// (updatePowder's generic density-based buoyancy — see engine/behaviors.ts):
+// against ordinary liquids (water, oil, Mercury, Molten Uranium, …) it just
+// floats or sinks by density like any other powder. The three smelting
+// liquids are the deliberate exception, handled first by material identity
+// instead of density (tryRiseThroughFlux, shared with Coal Powder — see
+// moltenironore.ts) — Molten Iron Ore is where it's actually being read by a
+// reducing neighbour (see moltenironore.ts's flux branch) and Slag is where
+// it settles as waste, so a grain submerged in *either* stays put instead of
+// skimming straight back to the surface (which the generic density rule
+// would otherwise do, since both are denser than Limestone); only once it's
+// below both, in the finished Molten Metal (nothing left for it to flux),
+// does it bubble back up. tryRiseThroughFlux returns false for every other
+// liquid, so updatePowder's generic buoyancy takes over there.
 function updateLimestone(x: number, y: number, sim: SimContext): void {
   if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);

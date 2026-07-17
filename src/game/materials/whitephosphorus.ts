@@ -85,7 +85,11 @@ export const WHITE_PHOSPHORUS = register({
   name: 'White Phosphorus',
   phase: Phase.Powder,
   color: rgb(255, 250, 235),
-  density: 5,
+  // Real white phosphorus (~1.8 g/cm³) is a light solid, well under mineral
+  // powders like Sand/Salt — but still denser than Water, so a grain sinks
+  // and stays fully submerged (the "물속에선 안전" storage trick) instead of
+  // bobbing back to open air where it would reignite.
+  density: 3.2,
   category: '불·열',
   thermal: { init: 20, conductivity: 0.3 },
   // Waxy pale yellow when cold, glaring white-hot while it burns.

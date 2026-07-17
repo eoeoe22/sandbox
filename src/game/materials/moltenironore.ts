@@ -59,22 +59,33 @@ function isCarbon(id: number): boolean {
 // Shared with Limestone and Coal Powder: either can end up submerged inside
 // the smelting liquids (dusted on top and pulled under, or stirred down for
 // reduction — see Coal Powder's mixIntoMelt) and should work back up once
-// there's no more reduction left to do, the same "가벼운 가루" float Ash/
-// Sawdust get in water. Deliberately *only* Molten Metal, the one finished
-// layer — both Molten Iron Ore (still actively reducing; carbon/flux
-// submerged in it should stay put and keep reacting with its ore neighbours
-// rather than skim straight back to the surface) and Slag (waste, but flux
-// dusted onto it should settle and mix in rather than pop back through it)
-// hold it down. Gated on material identity rather than the generic density
-// check (tryBuoyantRise) because *every* ordinary liquid is denser than
-// these powders too — only Molten Metal is meant to float them clear.
+// there's no more reduction left to do, the same "가벼운 가루" float every
+// powder gets generically now (updatePowder's tryBuoyantRise — see
+// engine/behaviors.ts). Both are lighter than every one of the three
+// smelting liquids, so the *generic* density check alone would float them
+// clear of all three — wrong for two of them: Molten Iron Ore (still
+// actively reducing; carbon/flux submerged in it should stay put and keep
+// reacting with its ore neighbours rather than skim straight back to the
+// surface) and Slag (waste, but flux dusted onto it should settle and mix in
+// rather than pop back through it) need to hold the grain down instead.
+// So this function takes over *all three* smelting liquids by material
+// identity instead of the generic density check — rising through Molten
+// Metal (the one finished layer), pinning in place (consuming the tick,
+// same as the generic buoyancy stall) against Molten Iron Ore/Slag — and
+// returns false only when the grain isn't touching any of the three, so the
+// caller's ordinary `updatePowder` fallback (generic density-based
+// buoyancy) takes over for every other liquid (Mercury, Molten Uranium,
+// Honey, etc.) exactly like any other powder.
 const FLUX_RISE_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
 const FLUX_RISE_SWAY_CHANCE = 0.35; // occasional sideways drift while rising
 
 export function tryRiseThroughFlux(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
-  if (!sim.inBounds(ux, uy) || sim.get(ux, uy) !== MOLTEN_METAL.id) return false;
+  if (!sim.inBounds(ux, uy)) return false;
+  const aboveId = sim.get(ux, uy);
+  if (aboveId === MOLTEN_IRON_ORE.id || aboveId === SLAG.id) return true; // hold — stay submerged
+  if (aboveId !== MOLTEN_METAL.id) return false;
   if (sim.chance(FLUX_RISE_STALL_CHANCE)) return true;
   if (sim.chance(FLUX_RISE_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
   if (sim.moveUp(x, y)) return true;

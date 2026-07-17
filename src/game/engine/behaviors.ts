@@ -38,39 +38,6 @@ export function diffuseWith(
   return false;
 }
 
-/** Powder: fall straight down, else tumble diagonally (forms piles). A material's
- *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
- *  grips the slope and stays put more often, so the pile stands steeper — while
- *  the straight-down fall is never blocked (grains still settle). */
-export function updatePowder(x: number, y: number, sim: SimContext): void {
-  if (sim.moveDown(x, y)) return;
-  const friction = getMaterial(sim.get(x, y)).friction;
-  if (friction !== undefined && friction > 0 && sim.chance(friction)) return;
-  sim.moveDiagonalDown(x, y);
-}
-
-// A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways
-// instead of climbing a rigid column. A light, fluffy powder — Snow, Ash —
-// *falls* the same imperfect way. These knobs are the falling mirror of the gas
-// wobble, giving flakes a slow, scattering flutter instead of a sand-like drop.
-const DRIFT_STALL_CHANCE = 0.4; // skip the tick → hangs in the air, flutters down
-const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before dropping
-
-/** Floaty powder (Snow, Ash): drifts down like a gas drifts up — a chance to
- *  stall mid-air (slow flutter) and, while there's still open air below, a
- *  chance to wander a step sideways before continuing to fall, so flakes
- *  scatter and wander down instead of dropping in a dead-straight column. The
- *  sideways drift is gated on "air below" so only airborne flakes wander; once
- *  one has a surface under it, it settles and piles like an ordinary powder
- *  (no endless sideways creep along the ground). */
-export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
-  if (sim.chance(DRIFT_STALL_CHANCE)) return;
-  const airBelow = sim.inBounds(x, y + 1) && sim.isEmpty(x, y + 1);
-  if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
-  if (sim.moveDown(x, y)) return;
-  sim.moveDiagonalDown(x, y);
-}
-
 /** True if the cell directly against gravity ("above" x,y) holds a liquid
  *  denser than this cell's own material — i.e. this powder is pinned *under*
  *  a liquid it's too light to have sunk into on its own (water poured on top
@@ -105,6 +72,11 @@ const BUOY_SWAY_CHANCE = 0.35; // occasional sideways drift while rising, so it 
  * not the attempted move actually succeeded that tick) so the caller skips
  * its normal fall/pile behavior only while covered; false once it clears the
  * surface, letting the caller fall through to its own ordinary movement.
+ *
+ * Every powder is density-rated (see Material.density), so this is purely a
+ * density comparison — no per-material float list. A powder floats clear of
+ * whichever liquids it's lighter than and stays sunk in whichever it's
+ * heavier than, the same rule in both directions.
  */
 export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
   if (!submergedUnderDenserLiquid(x, y, sim)) return false;
@@ -115,14 +87,54 @@ export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
   return true;
 }
 
-/** Floaty powder (Ash) with buoyant rise: falls with the floaty-powder
- *  drift/wobble (updateFloatyPowder) when clear, and floats back up
- *  (tryBuoyantRise) when submerged under a denser liquid. See tryBuoyantRise
- *  for the rise itself; Sawdust reuses that helper directly to add the same
- *  rise to its ordinary grainy fall (updatePowder) instead of this wobble. */
-export function updateBuoyantPowder(x: number, y: number, sim: SimContext): void {
+/** Fall straight down, else tumble diagonally (forms piles). A material's
+ *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
+ *  grips the slope and stays put more often, so the pile stands steeper — while
+ *  the straight-down fall is never blocked (grains still settle). */
+function fallAndPile(x: number, y: number, sim: SimContext): void {
+  if (sim.moveDown(x, y)) return;
+  const friction = getMaterial(sim.get(x, y)).friction;
+  if (friction !== undefined && friction > 0 && sim.chance(friction)) return;
+  sim.moveDiagonalDown(x, y);
+}
+
+/** Powder: falls and piles (fallAndPile), but first tries to float clear if
+ *  it's submerged under a denser liquid (tryBuoyantRise) — every powder sinks
+ *  or floats by its own density against whatever liquid it ends up under, not
+ *  just the handful that used to have this wired in specially. The shared
+ *  default for Phase.Powder (see registry.ts's defaultUpdate) and the
+ *  fallback nearly every material-specific powder update calls once its own
+ *  reactions don't fire, so this one change gives buoyancy to the whole
+ *  roster for free. A powder with its own material-specific float rule
+ *  instead of the bare density comparison (Coal Powder, Limestone — see
+ *  moltenironore.ts's tryRiseThroughFlux) intercepts before this ever runs. */
+export function updatePowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
-  updateFloatyPowder(x, y, sim);
+  fallAndPile(x, y, sim);
+}
+
+// A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways
+// instead of climbing a rigid column. A light, fluffy powder — Snow, Ash —
+// *falls* the same imperfect way. These knobs are the falling mirror of the gas
+// wobble, giving flakes a slow, scattering flutter instead of a sand-like drop.
+const DRIFT_STALL_CHANCE = 0.4; // skip the tick → hangs in the air, flutters down
+const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before dropping
+
+/** Floaty powder (Snow, Ash): drifts down like a gas drifts up — a chance to
+ *  stall mid-air (slow flutter) and, while there's still open air below, a
+ *  chance to wander a step sideways before continuing to fall, so flakes
+ *  scatter and wander down instead of dropping in a dead-straight column. The
+ *  sideways drift is gated on "air below" so only airborne flakes wander; once
+ *  one has a surface under it, it settles and piles like an ordinary powder
+ *  (no endless sideways creep along the ground). Also floats clear
+ *  (tryBuoyantRise) if submerged under a denser liquid, same as updatePowder. */
+export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
+  if (tryBuoyantRise(x, y, sim)) return;
+  if (sim.chance(DRIFT_STALL_CHANCE)) return;
+  const airBelow = sim.inBounds(x, y + 1) && sim.isEmpty(x, y + 1);
+  if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
+  if (sim.moveDown(x, y)) return;
+  sim.moveDiagonalDown(x, y);
 }
 
 /** Fraction of the gas diffusion rate that liquids get: like a gas, a liquid

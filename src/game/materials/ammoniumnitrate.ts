@@ -68,7 +68,11 @@ export const AMMONIUM_NITRATE = register({
   phase: Phase.Powder,
   // Pale off-white crystalline prills.
   color: rgb(228, 224, 206),
-  density: 5,
+  // Real ammonium nitrate prills (~1.72 g/cm³) are notably lighter than
+  // mineral powders like Sand/Salt (~2.2-2.65) — still dense enough to sink
+  // through Water so a dry charge poured into a pool gets fully wetted (and
+  // the cold-pack reaction can't be dodged by floating on the surface).
+  density: 3.7,
   explosive: true,
   blastRadius: BLAST_RADIUS,
   destructivePower: DESTRUCTIVE_POWER,

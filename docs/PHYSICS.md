@@ -15,7 +15,7 @@
 - **측면 밀어내기(push-aside)**: 변위 스왑 전에 밀려날 유체를 옆 빈칸으로 흘려보낸다 — 유체 자신의 좌우를 먼저, 다음 진입 파티클의 좌우(수면에서 물이 파티클 옆으로 차오르는 splash 연출)를 좌우 랜덤 우선으로 시도하고, 사방이 막힌 심층부(균질 유체 내부라 시각적으로 보이지 않음)에서만 기존 위치 교환으로 폴백한다. 기존 `swap()`을 재사용하므로 온도·`aux`·틴트 동반 이동과 `moved` 마킹이 그대로 유지된다.
 - **밀도차 드래그 게이트**: 변위는 `p = min(1, BASE + |밀도차|×SCALE)` 확률로만 통과해, 유체 속 침강·기포 상승이 자유낙하보다 눈에 띄게 느리다(Sand(5)→Water(3) 틱당 50%). 게이트 실패 시 이동을 소모(true 반환)해 파우더가 수면에서 대각으로 미끄러져 겉돌지 않고 제자리에서 저항하는 것처럼 보인다.
 
-둘 다 `config.ts` 상수로 독립적으로 튜닝·비활성화할 수 있다(`DISPLACE_DRAG_BASE` — 1이면 드래그 완전 오프, `DISPLACE_DRAG_SCALE`, `DISPLACE_SIDE_PUSH` — false면 기존 즉시 스왑). 동일밀도 수평 이동, Acid↔Water 확산(`diffuseWith`), Snow 부유(늘 물보다 가벼워 가라앉는 변위 자체가 성립하지 않음), Ember/Blast/Heat Ray 탄도는 이 경로를 타지 않아 영향이 없다. 예외는 Ash: 물에 파묻히면 `updateBuoyantPowder`가 매 틱 `moveUp`/`moveDiagonalUp`으로 실제 밀도 변위(위 방향, 가벼운 셀이 무거운 액체를 뚫고 상승)를 시도하므로 이 드래그·측면 밀어내기 경로를 그대로 탄다 — 물을 뚫고 부글부글 올라오는 속도감이 여기서 나온다. EMPTY 빠른 경로에는 추가 비용이 없고, 실제 변위가 일어나는 계면 셀에서만 산술·RNG가 소량 추가된다.
+둘 다 `config.ts` 상수로 독립적으로 튜닝·비활성화할 수 있다(`DISPLACE_DRAG_BASE` — 1이면 드래그 완전 오프, `DISPLACE_DRAG_SCALE`, `DISPLACE_SIDE_PUSH` — false면 기존 즉시 스왑). 동일밀도 수평 이동, Acid↔Water 확산(`diffuseWith`), Ember/Blast/Heat Ray 탄도는 이 경로를 타지 않아 영향이 없다. 가루가 자신보다 무거운 액체에 파묻히면 `tryBuoyantRise`(모든 가루의 기본 동작, `updatePowder`에 내장 — docs/MATERIAL-SYSTEMS.md의 "가루 밀도 부력 일반화" 참고)가 매 틱 `moveUp`/`moveDiagonalUp`으로 실제 밀도 변위(위 방향, 가벼운 셀이 무거운 액체를 뚫고 상승)를 시도하므로 이 드래그·측면 밀어내기 경로를 그대로 탄다 — 물을 뚫고 부글부글 올라오는 속도감이 여기서 나온다. EMPTY 빠른 경로에는 추가 비용이 없고, 실제 변위가 일어나는 계면 셀에서만 산술·RNG가 소량 추가된다.
 
 ## 파티클 색상 변화 (가루·액체 그래픽)
 
