@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryRiseThroughFlux } from './moltenironore';
+import { tryHoldInActiveMelt } from './moltenironore';
 
 // Limestone — the optional flux of the smelting kit. Its main role is to be
 // *read* by an adjacent reducing iron-ore cell, which lifts that cell's iron
@@ -16,19 +16,20 @@ import { tryRiseThroughFlux } from './moltenironore';
 // "가벼운 가루" (light powder), the same mechanism every powder gets
 // (updatePowder's generic density-based buoyancy — see engine/behaviors.ts):
 // against ordinary liquids (water, oil, Mercury, Molten Uranium, …) it just
-// floats or sinks by density like any other powder. The three smelting
-// liquids are the deliberate exception, handled first by material identity
-// instead of density (tryRiseThroughFlux, shared with Coal Powder — see
-// moltenironore.ts) — Molten Iron Ore is where it's actually being read by a
-// reducing neighbour (see moltenironore.ts's flux branch) and Slag is where
-// it settles as waste, so a grain submerged in *either* stays put instead of
-// skimming straight back to the surface (which the generic density rule
-// would otherwise do, since both are denser than Limestone); only once it's
-// below both, in the finished Molten Metal (nothing left for it to flux),
-// does it bubble back up. tryRiseThroughFlux returns false for every other
-// liquid, so updatePowder's generic buoyancy takes over there.
+// floats or sinks by density like any other powder. Molten Iron Ore and Slag
+// are the deliberate exception, held by material identity instead of density
+// (tryHoldInActiveMelt, shared with Coal Powder — see moltenironore.ts) —
+// Molten Iron Ore is where it's actually being read by a reducing neighbour
+// (see moltenironore.ts's flux branch) and Slag is where it settles as waste,
+// so a grain submerged in *either* stays put (though still free to sink
+// further if there's room below) instead of skimming straight back to the
+// surface, which the generic density rule would otherwise do since both are
+// denser than Limestone. Molten Metal needs no such override: once the grain
+// is below both Ore and Slag, in the finished layer (nothing left for it to
+// flux), tryHoldInActiveMelt returns false and updatePowder's ordinary
+// generic buoyancy floats it clear on its own, the same as any other liquid.
 function updateLimestone(x: number, y: number, sim: SimContext): void {
-  if (tryRiseThroughFlux(x, y, sim)) return;
+  if (tryHoldInActiveMelt(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 

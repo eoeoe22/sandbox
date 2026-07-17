@@ -2,7 +2,7 @@ import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
-import { updateLiquid } from '../engine/behaviors';
+import { updateLiquid, updatePowderSink } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { COAL } from './coal';
 import { COAL_POWDER } from './coalpowder';
@@ -58,38 +58,32 @@ function isCarbon(id: number): boolean {
 
 // Shared with Limestone and Coal Powder: either can end up submerged inside
 // the smelting liquids (dusted on top and pulled under, or stirred down for
-// reduction — see Coal Powder's mixIntoMelt) and should work back up once
-// there's no more reduction left to do, the same "가벼운 가루" float every
-// powder gets generically now (updatePowder's tryBuoyantRise — see
-// engine/behaviors.ts). Both are lighter than every one of the three
-// smelting liquids, so the *generic* density check alone would float them
-// clear of all three — wrong for two of them: Molten Iron Ore (still
-// actively reducing; carbon/flux submerged in it should stay put and keep
-// reacting with its ore neighbours rather than skim straight back to the
-// surface) and Slag (waste, but flux dusted onto it should settle and mix in
-// rather than pop back through it) need to hold the grain down instead.
-// So this function takes over *all three* smelting liquids by material
-// identity instead of the generic density check — rising through Molten
-// Metal (the one finished layer), pinning in place (consuming the tick,
-// same as the generic buoyancy stall) against Molten Iron Ore/Slag — and
-// returns false only when the grain isn't touching any of the three, so the
-// caller's ordinary `updatePowder` fallback (generic density-based
-// buoyancy) takes over for every other liquid (Mercury, Molten Uranium,
-// Honey, etc.) exactly like any other powder.
-const FLUX_RISE_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
-const FLUX_RISE_SWAY_CHANCE = 0.35; // occasional sideways drift while rising
-
-export function tryRiseThroughFlux(x: number, y: number, sim: SimContext): boolean {
+// reduction — see Coal Powder's mixIntoMelt), and both are lighter than every
+// one of the three smelting liquids — so the generic density-based buoyancy
+// every powder gets now (updatePowder's tryBuoyantRise — see
+// engine/behaviors.ts) would float them clear of all three. That's wrong for
+// two of them: Molten Iron Ore (still actively reducing; carbon/flux
+// submerged in it should stay put and keep reacting with its ore neighbours
+// rather than skim straight back to the surface) and Slag (waste, but flux
+// dusted onto it should settle and mix in rather than pop back through it).
+// This function intercepts exactly those two by material identity and holds
+// the grain there — *without* freezing it solid: it still needs to be free
+// to settle further down if there's room (an ordinary powder never just
+// stops falling because something denser sits above it), so the hold calls
+// the plain sink-only fallback (updatePowderSink — fall/pile, no rise
+// attempt) instead of doing nothing. It returns false for every other liquid
+// — including the finished Molten Metal layer — so the caller's ordinary
+// `updatePowder` fallback takes over there; Molten Metal needs no special
+// case of its own because both powders are lighter than it too, so the
+// generic buoyancy already floats them clear of it on its own (same rise
+// mechanics every other powder gets, not a separately-tuned duplicate).
+export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
   if (!sim.inBounds(ux, uy)) return false;
   const aboveId = sim.get(ux, uy);
-  if (aboveId === MOLTEN_IRON_ORE.id || aboveId === SLAG.id) return true; // hold — stay submerged
-  if (aboveId !== MOLTEN_METAL.id) return false;
-  if (sim.chance(FLUX_RISE_STALL_CHANCE)) return true;
-  if (sim.chance(FLUX_RISE_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
-  if (sim.moveUp(x, y)) return true;
-  sim.moveDiagonalUp(x, y);
+  if (aboveId !== MOLTEN_IRON_ORE.id && aboveId !== SLAG.id) return false;
+  updatePowderSink(x, y, sim);
   return true;
 }
 

@@ -204,8 +204,8 @@ Blue Flame으로 바뀐다.
 ## 가루 밀도 부력 일반화
 
 기존엔 "가벼운 가루" 부력(`tryBuoyantRise`)이 Ash·Sawdust 전용 옵트인이었고, Coal
-Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(`tryRiseThroughFlux`)을 가졌다
-— 그 밖의 팔레트 가루 19종은 자기 밀도가 무엇이든 액체에 파묻히면 그냥 고체 바닥처럼
+Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 `tryRiseThroughFlux`)을
+가졌다 — 그 밖의 팔레트 가루 19종은 자기 밀도가 무엇이든 액체에 파묻히면 그냥 고체 바닥처럼
 눌려 있었다(밀도 필드가 액체끼리의 층 분리에만 쓰이고, 가루엔 사실상 적용되지 않았다).
 "모든 가루가 자기 밀도로 뜨고 가라앉아야 한다"는 요청에 따라 부력을 전 가루 공통 기본
 동작으로 승격했다.
@@ -222,16 +222,26 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(`tryRis
   Ash 전용이던 `updateBuoyantPowder` 래퍼는 더 이상 필요 없어 삭제(Ash는
   `updateFloatyPowder`를 직접 쓰고, Sawdust는 `updatePowder`를 직접 쓴다 — 둘 다
   자체적으로 `tryBuoyantRise`를 다시 호출할 필요가 없어졌다).
-- **제련 예외의 재구성(`moltenironore.ts`의 `tryRiseThroughFlux`)**: Coal Powder·
-  Limestone은 제련액 3종(Molten Iron Ore·Slag·Molten Metal) 전부보다 가벼워서, 아무
-  손도 안 대면 일반 밀도 부력이 셋 다에서 뜨게 만들어 버린다 — Molten Iron Ore·Slag는
-  "계속 반응 중이라 눌러앉아야 하는" 층이라 이러면 제련 메커니즘이 깨진다. 그래서
-  `tryRiseThroughFlux`가 세 액체 **전부**를 재질 식별로 가로채도록 넓혔다: 위 칸이
-  Molten Iron Ore/Slag면 그 자리에서 정지(붙잡아 두는 `true` 반환, 이동 없음), Molten
-  Metal이면 기존처럼 떠오르고, 셋 중 아무것도 아니면 `false`를 반환해 호출자의
-  `updatePowder` 폴백으로 넘긴다. 그 결과 Coal Powder·Limestone은 제련액 3종에서만
-  재질별 규칙을 따르고, **그 밖의 모든 액체(물·기름·용암·Mercury·Molten Uranium 등)에서는
-  다른 가루와 똑같이 밀도(둘 다 5)로 뜨고 가라앉는다** — 예전엔 제련액 밖에서도 그냥
+- **제련 예외의 재구성(`moltenironore.ts`의 `tryHoldInActiveMelt`, 옛 이름
+  `tryRiseThroughFlux`)**: Coal Powder·Limestone은 제련액 3종(Molten Iron Ore·Slag·
+  Molten Metal) 전부보다 가벼워서, 아무 손도 안 대면 일반 밀도 부력이 셋 다에서 뜨게
+  만들어 버린다 — Molten Iron Ore·Slag는 "계속 반응 중이라 눌러앉아야 하는" 층이라
+  이러면 제련 메커니즘이 깨진다. 그래서 이 함수가 그 **두** 액체만 재질 식별로 가로채
+  붙잡아 둔다: 위 칸이 Molten Iron Ore/Slag면 **일반 밀도 부력(위로 뜨려는 시도)만
+  막고, 가라앉는 것은 그대로 허용**한다(`updatePowderSink` — 순수 낙하·퇴적, 부력
+  없음 — 를 호출) — 첫 구현은 이 경우 아무 이동도 없이 `true`만 반환해 그 자리에
+  완전히 얼어붙게 만드는 버그가 있었는데(리뷰에서 발견: 위가 Ore/Slag여도 대각선
+  아래가 빈 공간이면 원래는 계속 굴러떨어질 수 있어야 하고, 옛 코드는 실제로 그렇게
+  동작했다), `updatePowderSink`로 고쳐 "뜨는 것만 금지, 가라앉는 건 여느 가루와 동일"로
+  바로잡았다. 위 칸이 Molten Iron Ore/Slag가 아니면(Molten Metal 포함, 그 무엇도
+  아니어도) `false`를 반환해 호출자의 `updatePowder` 폴백으로 넘긴다 — **Molten
+  Metal은 더 이상 이 함수 안에서 따로 처리하지 않는다**: 두 가루 다 Molten Metal(8)
+  보다 가벼우므로, `updatePowder`의 일반 밀도 부력이 어차피 똑같은 방식(같은 확률
+  상수)으로 떠오르게 하기 때문에 예전처럼 이 함수 안에 거의 동일한 부상 로직을 따로
+  복제해 둘 필요가 없었다(리뷰에서 지적된 중복 제거). 그 결과 Coal Powder·Limestone은
+  Molten Iron Ore·Slag에서만 재질별 예외(뜨지 않고 가라앉기만)를 따르고, **그 밖의
+  모든 액체(Molten Metal 포함 — 물·기름·용암·Mercury·Molten Uranium 등)에서는 다른
+  가루와 똑같이 밀도(둘 다 5)로 뜨고 가라앉는다** — 예전엔 제련액 밖에서도 그냥
   가라앉기만 했던 것과 달리, Mercury·Molten Uranium(9·10)에 파묻히면 이제 떠오른다.
 - **밀도 재조정 (Haiku 서브에이전트로 실제 물질별 비중 조사 후 반영)**: 기존엔 가루
   15종이 전부 플레이스홀더 값 밀도 5를 공유해, 부력이 생겨도 서로 구분이 안 됐다. 실제

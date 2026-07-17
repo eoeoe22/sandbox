@@ -6,7 +6,7 @@ import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn, type Combustible } from './combustion';
 import { IRON_ORE } from './ironore';
-import { MOLTEN_IRON_ORE, tryRiseThroughFlux } from './moltenironore';
+import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
 import { MOLTEN_METAL } from './moltenmetal';
 
 // Powdered coal — the pourable form of Coal. Solid Coal (id 25) is a rigid lump
@@ -83,17 +83,17 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // Ore, though — once a grain has stirred all the way past the ore *and* the
   // settled Slag below it into the finished Molten Metal (nothing left there
   // to reduce), let it float back up out of *that* layer like Limestone
-  // (tryRiseThroughFlux, shared in moltenironore.ts — it deliberately holds a
-  // grain in Ore or Slag, only releasing it from Molten Metal, so it keeps
-  // sinking/reacting instead of skimming out early) instead of staying
-  // stranded at the bottom forever.
+  // (tryHoldInActiveMelt, shared in moltenironore.ts — it deliberately holds a
+  // grain in Ore or Slag, only releasing it — via the generic buoyancy fallback
+  // below — from Molten Metal, so it keeps sinking/reacting instead of
+  // skimming out early) instead of staying stranded at the bottom forever.
   if (mixIntoMelt(x, y, sim)) return;
-  // tryRiseThroughFlux handles all three smelting liquids by identity (rise
-  // through Molten Metal, hold in Molten Iron Ore/Slag); the generic
-  // updatePowder fallback only ever runs for every *other* liquid, where
-  // Coal Powder's own density decides whether it floats or sinks like any
-  // other powder.
-  if (tryRiseThroughFlux(x, y, sim)) return;
+  // tryHoldInActiveMelt holds the grain by identity while it's under Molten
+  // Iron Ore/Slag (still letting it sink further if there's room — see its
+  // doc comment); the generic updatePowder fallback only ever runs for every
+  // *other* liquid, including Molten Metal, where Coal Powder's own density
+  // floats or sinks it like any other powder.
+  if (tryHoldInActiveMelt(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 

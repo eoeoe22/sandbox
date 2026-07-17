@@ -98,6 +98,17 @@ function fallAndPile(x: number, y: number, sim: SimContext): void {
   sim.moveDiagonalDown(x, y);
 }
 
+/** Sink-only powder: falls and piles like updatePowder, but never attempts the
+ *  generic density-based rise. For the rare powder (Coal Powder, Limestone)
+ *  that has its own material-specific rule for *which* liquid it's allowed to
+ *  float clear of (see moltenironore.ts's `tryHoldInActiveMelt`) — while
+ *  pinned against Molten Iron Ore/Slag it must still be free to settle
+ *  *downward* if there's room (an ordinary powder never stops falling just
+ *  because something denser is above it), it just must not try to rise. */
+export function updatePowderSink(x: number, y: number, sim: SimContext): void {
+  fallAndPile(x, y, sim);
+}
+
 /** Powder: falls and piles (fallAndPile), but first tries to float clear if
  *  it's submerged under a denser liquid (tryBuoyantRise) — every powder sinks
  *  or floats by its own density against whatever liquid it ends up under, not
@@ -107,7 +118,7 @@ function fallAndPile(x: number, y: number, sim: SimContext): void {
  *  reactions don't fire, so this one change gives buoyancy to the whole
  *  roster for free. A powder with its own material-specific float rule
  *  instead of the bare density comparison (Coal Powder, Limestone — see
- *  moltenironore.ts's tryRiseThroughFlux) intercepts before this ever runs. */
+ *  moltenironore.ts's tryHoldInActiveMelt) intercepts before this ever runs. */
 export function updatePowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
   fallAndPile(x, y, sim);
