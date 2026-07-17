@@ -89,18 +89,19 @@ const WREATH_CHANCE = 0.25;
 // `burnTemp` (BURN_TEMP, 800°, for most fuels); Oxygen (id 36) blown against
 // it makes the fire run hotter — each adjacent Oxygen cell adds OXY_BOOST to
 // the pinned temperature up to OXY_MAX_PIN, and the drawn-in oxygen is
-// consumed with probability OXY_CONSUME per tick. For a default 800°-base
-// fuel the pin steps land on the world's melt points: 0 oxygen = 800°
-// (reduces iron ore but can't melt iron, and stays under Stone's 1100° so
-// furnace walls are safe), 1 = 1050° (a safe low blast, still below stone),
-// 2 = 1300° (past Iron's 1200° melt, but also past Stone's 1100° so a stone
-// crucible slumps), 3+ = 1550° (a fierce blast furnace). Coal instead runs its
-// bare fire at 1300° via `burnTemp` (see coal.ts) — no oxygen needed to melt
-// iron — so a single Oxygen cell already saturates it at OXY_MAX_PIN.
-// Being common to every fuel, Oxygen + any fuel also becomes a hotter cutting
-// torch as a free side effect.
+// consumed with probability OXY_CONSUME per tick. OXY_MAX_PIN is set to Blue
+// Flame's own temperature (1800°): a fully oxygenated fire — any fuel, not
+// just Coal — becomes a cutting torch as hot as Blue Flame itself. For a
+// default 800°-base fuel the pin steps land on the world's melt points:
+// 0 oxygen = 800° (reduces iron ore but can't melt iron, and stays under
+// Stone's 1100° so furnace walls are safe), 1 = 1050° (a safe low blast,
+// still below stone), 2 = 1300° (past Iron's 1200° melt, but also past
+// Stone's 1100° so a stone crucible slumps), 3 = 1550°, 4+ = 1800° (Blue
+// Flame parity). Coal instead runs its bare fire at 1300° via `burnTemp`
+// (see coal.ts) — no oxygen needed to melt iron — so it only takes 2 Oxygen
+// cells to reach the same 1800° ceiling.
 const OXY_BOOST = 250;
-const OXY_MAX_PIN = 1550;
+const OXY_MAX_PIN = 1800;
 const OXY_CONSUME = 0.5;
 
 export interface Combustible {
