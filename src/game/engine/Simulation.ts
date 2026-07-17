@@ -240,12 +240,14 @@ export class Simulation {
    * Near-field radiative heat transfer (근거리 간접 복사 열전도) — see the
    * config.ts doc comment for the motivating bug (isolated solidified metal
    * floating just above a molten pool, never touching it, staying cold
-   * forever). Mutates `temp` directly in place rather than double-buffering:
-   * this is a small secondary effect layered on top of the conduction
-   * substeps above, not the primary diffusion model, so a little order
-   * dependence within one tick is an acceptable trade for the simplicity (the
-   * same trade every material's own `update` already makes when it calls
-   * `SimContext.setTemp`).
+   * forever). A ray stops at (and only exchanges heat with) the first
+   * non-Empty cell it hits — usually a solid, but a gas (Smoke/Steam/Fire)
+   * blocks and receives it too, same as it would block line of sight. Mutates
+   * `temp` directly in place rather than double-buffering: this is a small
+   * secondary effect layered on top of the conduction substeps above, not the
+   * primary diffusion model, so a little order dependence within one tick is
+   * an acceptable trade for the simplicity (the same trade every material's
+   * own `update` already makes when it calls `SimContext.setTemp`).
    */
   private radiateHeat(): void {
     const g = this.grid;
@@ -270,6 +272,14 @@ export class Simulation {
         if (ti < minTemp) continue;
 
         for (const [dx, dy] of DIR8) {
+          // diffuseHeat only exchanges with the 4 *orthogonal* neighbors — a
+          // diagonal neighbor (dx and dy both non-zero) never gets a direct
+          // conduction exchange at all, even at distance 1. So the "already
+          // handled by diffuseHeat, skip it here" exemption below applies
+          // only to orthogonal rays; a diagonal ray still radiates at
+          // distance 1, or a corner-touching solid would get heat from
+          // neither pass — the exact bug this feature exists to fix.
+          const orthogonal = dx === 0 || dy === 0;
           let nx = x;
           let ny = y;
           for (let dist = 1; dist <= range; dist++) {
@@ -278,13 +288,18 @@ export class Simulation {
             if (nx < 0 || nx >= w || ny < 0 || ny >= h) break; // ran off the grid
             const j = ny * w + nx;
             if (cells[j] === EMPTY) continue; // keep looking further along the ray
-            // Hit a solid. A distance-1 hit is an actual neighbor — diffuseHeat
-            // already conducts it directly, so skip the exchange here — but the
-            // ray still stops: radiation doesn't pass through a solid either way.
-            if (dist >= 2) {
+            // Hit a non-Empty cell — the ray stops here either way (radiation
+            // doesn't pass through matter), but only exchanges heat with it
+            // when that isn't already diffuseHeat's job (see `orthogonal` above).
+            if (dist >= 2 || !orthogonal) {
               const cj = cond[cells[j]];
               if (cj > 0) {
-                const flux = (RADIANT_HEAT_RATE * (ci < cj ? ci : cj) * (ti - temp[j])) / (dist * dist);
+                // True squared distance, not squared step count: a diagonal
+                // step covers √2 cells, so its inverse-square falloff divisor
+                // is 2×dist² (dx²+dy²=2), not dist² (which would double-count
+                // diagonal reach as if it were orthogonal).
+                const dist2 = dist * dist * (dx * dx + dy * dy);
+                const flux = (RADIANT_HEAT_RATE * (ci < cj ? ci : cj) * (ti - temp[j])) / dist2;
                 temp[i] -= flux;
                 temp[j] += flux;
               }

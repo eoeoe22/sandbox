@@ -185,22 +185,31 @@ export const DEFAULT_CONDUCTIVITY = 0.3;
  * next to it. Once per tick (not per conduction substep — this is meant to
  * be gentle, not a primary heat path), every cell hot enough to glow
  * (`RADIANT_HEAT_MIN_TEMP`) casts a short ray along each of the 8 directions;
- * a ray that crosses only Empty cells warms the first solid it hits within
- * `RADIANT_HEAT_RANGE`, and is symmetrically cooled by the same amount
- * (energy is conserved, same as diffuseHeat). A target found at distance 1 —
- * an actual neighbor — is left alone since diffuseHeat already handles it;
- * the ray still stops there (radiation doesn't pass through a solid).
+ * a ray that crosses only Empty cells warms the first non-Empty cell it hits
+ * within `RADIANT_HEAT_RANGE` (usually a solid, but a gas blocks and receives
+ * it too), and is symmetrically cooled by the same amount (energy is
+ * conserved, same as diffuseHeat). A target found at distance 1 along an
+ * *orthogonal* ray is left alone since diffuseHeat already conducts that
+ * neighbor directly — but diffuseHeat never touches a diagonal neighbor at
+ * any distance, so a diagonal ray still exchanges heat even at distance 1
+ * (otherwise a corner-touching solid would get heat from neither pass). The
+ * ray always stops at the first non-Empty cell either way, exchanged or not
+ * (radiation doesn't pass through matter).
  */
 export const RADIANT_HEAT_MIN_TEMP = 500;
 /** Max cell distance (inclusive) a radiative ray reaches before giving up. */
 export const RADIANT_HEAT_RANGE = 3;
 /**
  * Base per-ray exchange coefficient, scaled by the lower of the two cells'
- * conductivities and attenuated by 1/distance². Kept small — this is a
- * gentle warming, not a teleported conduction — so even the closest gap
- * (distance 2, 1/4 falloff) exchanges only a few percent of the temperature
- * gap per tick, and stays stable (see HEAT_DIFFUSION_RATE's stability note)
- * even with all 8 rays landing on cold targets at once.
+ * conductivities and attenuated by 1/distance² (true Euclidean distance —
+ * a diagonal step counts double, see `radiateHeat`). Kept small — this is a
+ * gentle warming, not a teleported conduction — so even the closest
+ * *exchanging* case (a diagonal neighbor at distance 1, 1/2 falloff)
+ * transfers only a few percent of the temperature gap per tick, and stays
+ * stable (see HEAT_DIFFUSION_RATE's stability note) even with all 8 rays
+ * landing on cold targets at once (worst case ≈0.15 of the gap at the
+ * highest real conductivity, Heatpipe's 1.0 — well under the ≤1 bound that
+ * would risk overshoot).
  */
 export const RADIANT_HEAT_RATE = 0.05;
 
