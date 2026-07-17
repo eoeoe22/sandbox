@@ -10,10 +10,11 @@ import { MOLTEN_IRON_ORE } from './moltenironore';
 // melt point sits low enough that an *ordinary Fire* melts it (Fire cells run
 // ~1000°) — you don't need Lava or Blue Flame, though those (and a coal fire,
 // or the heat brush) melt it too. Coal now runs hot enough (1300°, see coal.ts)
-// to melt ore it merely conducts heat into; ore it directly touches stays
-// shielded as a reductant instead (see touchingMelt in coalpowder.ts), so
-// "melt with flame/coal from a distance" and "reduce with coal in contact"
-// stay two distinct roles for the same material.
+// to melt ore it merely conducts heat into. Coal *Powder* touching ore directly
+// is shielded from combustion and acts purely as a reductant instead (see
+// touchingMelt in coalpowder.ts); solid Coal has no such shield, so a lump
+// resting straight against ore just burns and melts it like any other heat
+// source.
 //
 // Melting alone yields no iron: heat only turns the ore into a molten pool, and
 // that pool left without carbon cools back into useless Slag. Iron comes only
