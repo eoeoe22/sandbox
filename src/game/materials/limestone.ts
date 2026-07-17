@@ -11,14 +11,14 @@ import { tryRiseThroughFlux } from './moltenironore';
 // real calcining that carries impurities off into the slag). Charge ore +
 // coal alone and you still smelt iron, just a dirtier bloom shot through with
 // slag; add a pinch of limestone and the bloom comes out cleaner. See
-// ironore.ts for the flux branch.
+// moltenironore.ts for the flux branch.
 //
 // "가벼운 가루" (light powder), the same mechanism Ash/Sawdust use: it falls
 // and piles like an ordinary powder everywhere (density 5 sinks through every
 // ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but
 // against the smelting liquids it's split by role instead of just density —
 // Molten Iron Ore is where it's actually being read by a reducing neighbour
-// (see ironore.ts's flux branch), so a grain submerged *in the ore* stays put
+// (see moltenironore.ts's flux branch), so a grain submerged *in the ore* stays put
 // and keeps doing its job instead of skimming straight back to the surface;
 // only once it's below the ore, in the settled Slag or finished Molten Metal
 // (nothing left for it to flux), does it bubble back up (tryRiseThroughFlux,
