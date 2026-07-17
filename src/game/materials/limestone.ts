@@ -18,13 +18,14 @@ import { tryRiseThroughFlux } from './moltenironore';
 // ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but
 // against the smelting liquids it's split by role instead of just density —
 // Molten Iron Ore is where it's actually being read by a reducing neighbour
-// (see moltenironore.ts's flux branch), so a grain submerged *in the ore* stays put
-// and keeps doing its job instead of skimming straight back to the surface;
-// only once it's below the ore, in the settled Slag or finished Molten Metal
-// (nothing left for it to flux), does it bubble back up (tryRiseThroughFlux,
-// shared with Coal Powder — see moltenironore.ts — gated on material identity
-// instead of the generic density comparison, since all three happen to be
-// denser than Limestone anyway). Every other liquid sinks it as before.
+// (see moltenironore.ts's flux branch) and Slag is where it settles as waste,
+// so a grain submerged in *either* stays put instead of skimming straight
+// back to the surface; only once it's below both, in the finished Molten
+// Metal (nothing left for it to flux), does it bubble back up
+// (tryRiseThroughFlux, shared with Coal Powder — see moltenironore.ts —
+// gated on material identity instead of the generic density comparison,
+// since all three happen to be denser than Limestone anyway). Every other
+// liquid sinks it as before.
 function updateLimestone(x: number, y: number, sim: SimContext): void {
   if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);
@@ -35,7 +36,8 @@ export const LIMESTONE = register({
   name: 'Limestone',
   phase: Phase.Powder,
   color: rgb(216, 210, 196),
-  // Lighter than liquid Slag (6): a scatter of flux floats on a molten slag pool.
+  // Lighter than every smelting liquid, but only actually floats clear of
+  // Molten Metal (see updateLimestone) — Slag and Molten Iron Ore hold it in.
   density: 5,
   category: '제련',
   thermal: { conductivity: 0.35 },
