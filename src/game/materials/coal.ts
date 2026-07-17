@@ -17,9 +17,10 @@ import { tryBurn, type Combustible } from './combustion';
 // smouldering bed — no oxygen blast needed — carries a smelt straight through
 // to molten iron. Still under Blue Flame's 1800°, keeping Coal the everyday
 // smelting fire rather than a cutting torch — until Oxygen is blown against
-// it: at OXY_MAX_PIN (1800°, see combustion.ts) it reaches full Blue Flame
-// parity, and Coal's high 1300° base means it only takes 2 Oxygen cells to
-// get there (a default 800°-base fuel needs 4).
+// it: the flame it throws off then literally becomes Blue Flame, not just
+// Fire running hot (see combustion.ts's `oxygenated` branch), reaching full
+// 1800° parity at OXY_MAX_PIN. Coal's high 1300° base means it only takes 2
+// Oxygen cells to get there (a default 800°-base fuel needs 4).
 const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 };
 
 function updateCoal(x: number, y: number, sim: SimContext): void {

@@ -61,6 +61,11 @@ import { AMBIENT_TEMP } from '../config';
 // per-fuel speed differences. Instead each fuel drives its own rate here by
 // detecting the flame itself — the same id-based, scan-order-independent
 // approach the explosives use.
+//
+// "Ordinary Fire" above is the unoxygenated case. Once Oxygen is blown against
+// a burning cell (forced draught, below), the flame it wreaths itself in and
+// finally collapses into is Blue Flame instead of Fire — an oxygen torch
+// isn't just hotter, it's a genuinely different, hotter-burning flame.
 
 // Temperature a burning fuel cell holds by default, and the temperature the
 // Fire it finally collapses into starts at. Sits above every fuel's
@@ -211,6 +216,17 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     }
   }
   sim.setTemp(x, y, pin);
+  // An oxygen-fed cell isn't just ordinary Fire running hot — the flame it
+  // throws off is Blue Flame itself, so it inherits Blue Flame's own rock-
+  // melting/slower-burnout behavior instead of Fire's (see blueflame.ts). One
+  // consequence: CO2/Soda's "snuff any adjacent Fire cell outright" step
+  // (co2.ts/soda.ts) checks the literal FIRE id, so it no longer displaces
+  // these licks directly — same as Blue Flame always being immune to a casual
+  // snuff. Their separate "smother the burning fuel" cooling pass still works
+  // regardless (it targets the fuel cell's own temperature, not the flame's
+  // material id), so CO2/Soda still put an oxygen-fed fire out; only the loose
+  // flame gas is tougher, matching Blue Flame's established toughness.
+  const oxygenated = pin > myBurnTemp;
 
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -219,7 +235,7 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     const nid = sim.get(nx, ny);
     if (nid === EMPTY) {
       // A lick of visible flame in the open air around the body.
-      if (sim.chance(WREATH_CHANCE)) sim.spawn(nx, ny, FIRE.id);
+      if (sim.chance(WREATH_CHANCE)) sim.spawn(nx, ny, oxygenated ? BLUE_FLAME.id : FIRE.id);
     } else if (getMaterial(nid).combustible && sim.getTemp(nx, ny) < myBurnTemp) {
       // Light the neighbor: pin it to this fuel's burn temp so its own turn
       // sees it as burning (its own next burnStep re-pins to its own spec
@@ -235,12 +251,13 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     }
   }
 
-  // Spent: collapse into rising Fire, which flickers up and burns out on its
-  // own (see fire.ts) — carrying the flame off the consumed surface. Signal the
-  // caller to stop: this cell is Fire now, not fuel to fall/flow. A burning
-  // petroleum cell resting *on water* is the exception: it never collapses to
-  // Fire (which would then steam the water it's floating on), so the oil-water
-  // interface stays oil and keeps shielding the water — a persistent oil fire.
+  // Spent: collapse into rising Fire (or, if oxygen-fed, Blue Flame), which
+  // flickers up and burns out on its own (see fire.ts/blueflame.ts) — carrying
+  // the flame off the consumed surface. Signal the caller to stop: this cell
+  // is a flame now, not fuel to fall/flow. A burning petroleum cell resting
+  // *on water* is the exception: it never collapses to a flame (which would
+  // then steam the water it's floating on), so the oil-water interface stays
+  // oil and keeps shielding the water — a persistent oil fire.
   if (!(isPetroleum && onWater) && sim.chance(spec.burnChance * CONSUME_RATIO)) {
     if (spec.ashChance !== undefined && sim.chance(spec.ashChance)) {
       // Spent remains instead of a flame puff — a solid fuel's cell burns down
@@ -249,8 +266,11 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
       sim.setTemp(x, y, myBurnTemp);
       return true;
     }
-    sim.set(x, y, FIRE.id);
-    sim.setTemp(x, y, myBurnTemp);
+    sim.set(x, y, oxygenated ? BLUE_FLAME.id : FIRE.id);
+    // Carry the actual (possibly oxygen-boosted) pin forward instead of
+    // collapsing back to the fuel's unboosted base — otherwise a spawned Blue
+    // Flame would misleadingly sit at only the fuel's base temperature.
+    sim.setTemp(x, y, pin);
     return true;
   }
   // Still burning fuel: the caller runs its normal fall/flow so it keeps moving.
