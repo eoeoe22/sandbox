@@ -6,6 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
+import { BLUE_FLAME } from './blueflame';
 import { BLAST, detonate } from './blast';
 
 // Liquid: flows/pools like water, but denser than every other liquid (even
@@ -25,7 +26,7 @@ function updateNitro(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === FIRE.id || nid === LAVA.id || nid === BLAST.id) {
+    if (nid === FIRE.id || nid === LAVA.id || nid === BLUE_FLAME.id || nid === BLAST.id) {
       // No rim embers: a wide, thin nitro pool is prone to splashing off
       // isolated droplets that sit just past the crater's reach, and an ember
       // reaching one chain-detonates it — a scatter of small "residual"
