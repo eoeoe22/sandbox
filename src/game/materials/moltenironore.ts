@@ -36,6 +36,11 @@ import { SMOKE } from './smoke';
 // surface, the reduced Molten Metal (8) sinks below it to pool on the floor, and
 // Slag (6) floats up above — the furnace's vertical layers emerge on their own,
 // with the heavy iron settling under the light slag as in a real hearth.
+// Kept above Molten Metal's own freeze point (moltenmetal.ts) on purpose: a
+// reduction pulls a cell out of *this* pool into that one while both are still
+// liquid, so the fresh metal needs to be able to outlive this cell's own
+// remaining liquid life, or it freezes into a stray Iron fleck mid-transit
+// before it can sink clear (see the comment on Molten Metal's freeze temp).
 const SOLIDIFY_TEMP = 750; // cools below this without reduction → Slag
 const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (fast,
 // 1:1 — one carbon grain spent per ore cell, ~4 ticks: contact keeps up so a
