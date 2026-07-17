@@ -19,7 +19,10 @@ import { FIRE } from './fire';
 // Because Empty (air) conducts no heat, a lava blob with nothing cold touching
 // it never cools below the freeze point, so isolated lava stays molten forever
 // (matching its original behavior) — it's specifically a cold sink like water
-// that lets it set.
+// that lets it set. (A cold solid within a couple of cells, even without
+// touching, does draw a little heat away via the near-field radiative pass —
+// see RADIANT_HEAT_RANGE in config.ts — but a truly isolated blob with nothing
+// in range stays molten exactly as before.)
 const IGNITE_CHANCE = 0.15;
 const FLOW_CHANCE = 0.15;
 

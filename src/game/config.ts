@@ -185,11 +185,16 @@ export const DEFAULT_CONDUCTIVITY = 0.3;
  * next to it. Once per tick (not per conduction substep — this is meant to
  * be gentle, not a primary heat path), every cell hot enough to glow
  * (`RADIANT_HEAT_MIN_TEMP`) casts a short ray along each of the 8 directions;
- * a ray that crosses only Empty cells warms the first solid it hits within
- * `RADIANT_HEAT_RANGE`, and is symmetrically cooled by the same amount
- * (energy is conserved, same as diffuseHeat). A target found at distance 1 —
- * an actual neighbor — is left alone since diffuseHeat already handles it;
- * the ray still stops there (radiation doesn't pass through a solid).
+ * a ray that crosses only Empty cells warms the first non-Empty cell it hits
+ * within `RADIANT_HEAT_RANGE` (usually a solid, but a gas blocks and receives
+ * it too), and is symmetrically cooled by the same amount (energy is
+ * conserved, same as diffuseHeat). A target found at distance 1 along an
+ * *orthogonal* ray is left alone since diffuseHeat already conducts that
+ * neighbor directly — but diffuseHeat never touches a diagonal neighbor at
+ * any distance, so a diagonal ray still exchanges heat even at distance 1
+ * (otherwise a corner-touching solid would get heat from neither pass). The
+ * ray always stops at the first non-Empty cell either way, exchanged or not
+ * (radiation doesn't pass through matter).
  */
 export const RADIANT_HEAT_MIN_TEMP = 500;
 /** Max cell distance (inclusive) a radiative ray reaches before giving up. */

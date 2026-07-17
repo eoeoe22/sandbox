@@ -19,7 +19,10 @@ import { FIRE } from './fire';
 // once conduction has pulled it below the freeze point. As with Lava, nothing
 // cold touching it means it never cools (air conducts no heat), so an isolated
 // molten pool stays liquid forever; water or metal bridging the heat away is
-// what lets it set.
+// what lets it set. (A cold solid a cell or two away, across the air, does
+// draw a little heat via the near-field radiative pass — see
+// RADIANT_HEAT_RANGE in config.ts — but with nothing at all in range the pool
+// stays molten forever exactly as before.)
 // Iron's melt point sits low enough that a bare coal fire reaches it: Coal
 // pins its own burn at 1300° (see coal.ts's `burnTemp` override in
 // combustion.ts), comfortably past this with no oxygen blast needed, so an
