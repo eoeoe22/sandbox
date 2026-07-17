@@ -57,15 +57,20 @@ function isCarbon(id: number): boolean {
 }
 
 // Shared with Limestone and Coal Powder: either can end up submerged inside
-// one of the three smelting liquids (dusted on top and pulled under, or
-// stirred down for reduction — see Coal Powder's mixIntoMelt), and any that's
-// left over once its job is done should work back up to the surface, the same
-// "가벼운 가루" float Ash/Sawdust get in water. It's gated on material identity
+// the smelting liquids (dusted on top and pulled under, or stirred down for
+// reduction — see Coal Powder's mixIntoMelt) and should work back up once
+// there's no more reduction left to do, the same "가벼운 가루" float Ash/
+// Sawdust get in water. Deliberately *excludes* Molten Iron Ore itself,
+// though: that's the one layer where reduction is still actively happening,
+// so carbon/flux submerged in *it* should stay put and keep reacting with
+// its ore neighbours rather than skim straight back to the surface — only
+// once it's below the ore, in the settled Slag or finished Molten Metal
+// (nothing left to reduce), does it float clear. Gated on material identity
 // rather than the generic density check (tryBuoyantRise) because *every*
-// ordinary liquid is denser than these powders too — Slag/Molten Iron
-// Ore/Molten Metal are meant to float them, nothing else is.
-export function isMoltenFlux(id: number): boolean {
-  return id === SLAG.id || id === MOLTEN_IRON_ORE.id || id === MOLTEN_METAL.id;
+// ordinary liquid is denser than these powders too — only these two are
+// meant to float them, nothing else is.
+export function isSpentMelt(id: number): boolean {
+  return id === SLAG.id || id === MOLTEN_METAL.id;
 }
 
 const FLUX_RISE_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
@@ -74,7 +79,7 @@ const FLUX_RISE_SWAY_CHANCE = 0.35; // occasional sideways drift while rising
 export function tryRiseThroughFlux(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
-  if (!sim.inBounds(ux, uy) || !isMoltenFlux(sim.get(ux, uy))) return false;
+  if (!sim.inBounds(ux, uy) || !isSpentMelt(sim.get(ux, uy))) return false;
   if (sim.chance(FLUX_RISE_STALL_CHANCE)) return true;
   if (sim.chance(FLUX_RISE_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
   if (sim.moveUp(x, y)) return true;

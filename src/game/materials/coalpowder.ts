@@ -79,11 +79,13 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   if (!touchingMelt(x, y, sim) && tryBurn(x, y, sim, SPEC)) return;
   // Dusted onto a molten pool, stir down into it so the whole depth reduces, not
   // just the crust-prone surface (mixIntoMelt wins the tie so stirring isn't
-  // fought every time it rolls). Once a grain has stirred past the ore layer —
-  // or never finds ore to stir into at all — it's spent leftover carbon sitting
-  // in the melt with nothing left to react; let it float back to the surface
-  // like Limestone (tryRiseThroughFlux, shared in moltenironore.ts) instead of
-  // staying stranded at the bottom of the pool forever.
+  // fought every time it rolls). mixIntoMelt only sinks it through Molten Iron
+  // Ore, though — once a grain has stirred past the ore into the settled Slag
+  // or the finished Molten Metal below (nothing left there to reduce), let it
+  // float back up out of *that* layer like Limestone (tryRiseThroughFlux,
+  // shared in moltenironore.ts — it deliberately excludes the ore itself, so a
+  // grain still embedded *in* the ore keeps sinking/reacting instead of
+  // skimming out early) instead of staying stranded at the bottom forever.
   if (mixIntoMelt(x, y, sim)) return;
   if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);

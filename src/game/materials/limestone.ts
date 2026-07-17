@@ -15,14 +15,16 @@ import { tryRiseThroughFlux } from './moltenironore';
 //
 // "가벼운 가루" (light powder), the same mechanism Ash/Sawdust use: it falls
 // and piles like an ordinary powder everywhere (density 5 sinks through every
-// ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but a
-// scatter of flux is meant to skim the melt rather than disappear into the
-// bloom, so specifically against the three molten smelting liquids — Slag,
-// Molten Iron Ore, Molten Metal — it actively bubbles back up if one of them
-// closes back over it (tryRiseThroughFlux, shared with Coal Powder — see
-// moltenironore.ts — gated on material identity instead of the generic
-// density comparison, since all three happen to be denser than Limestone
-// anyway). Every other liquid sinks it as before.
+// ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but
+// against the smelting liquids it's split by role instead of just density —
+// Molten Iron Ore is where it's actually being read by a reducing neighbour
+// (see ironore.ts's flux branch), so a grain submerged *in the ore* stays put
+// and keeps doing its job instead of skimming straight back to the surface;
+// only once it's below the ore, in the settled Slag or finished Molten Metal
+// (nothing left for it to flux), does it bubble back up (tryRiseThroughFlux,
+// shared with Coal Powder — see moltenironore.ts — gated on material identity
+// instead of the generic density comparison, since all three happen to be
+// denser than Limestone anyway). Every other liquid sinks it as before.
 function updateLimestone(x: number, y: number, sim: SimContext): void {
   if (tryRiseThroughFlux(x, y, sim)) return;
   updatePowder(x, y, sim);
