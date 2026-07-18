@@ -95,22 +95,32 @@ function isCarbon(id: number): boolean {
 // generic buoyancy already floats each clear on its own (same rise mechanics
 // every other powder gets, not a separately-tuned duplicate).
 //
-// The id list passed to updatePowderSink is deliberately just these two, not
-// "any Liquid": it's forwarded to SimContext.moveSidewaysContained as the
-// only cells a pinned grain may swap sideways into. Since this function only
-// ever confirms what's directly *above* the grain, an unrestricted swap could
-// hop it sideways into an unrelated liquid a player placed next to the
-// furnace (or into Molten Metal, which this function deliberately does NOT
-// pin against) — defeating the containment this hold exists for. Restricting
-// to exactly the two liquids the pin check itself looks for keeps the grain
-// inside the same body it was already confirmed to be inside.
+// The `pinIds` list below is what updatePowderSink is forwarded as
+// SimContext.moveSidewaysContained's `containerIds` — see swapOntoLiquid's own
+// doc comment (SimContext.ts) for why that restriction exists at all (the
+// short version: an unrestricted swap could leak a pinned grain sideways into
+// an unrelated liquid, defeating the containment this hold exists for). The
+// set passed here is `[...pinIds, MOLTEN_METAL.id]`, one liquid wider than the
+// pin check itself: Molten Metal is this furnace's own product layer (made by
+// reduction, always structurally connected to the Ore/Slag body sitting on
+// top of it), not a foreign liquid a player placed nearby, so it's safe to
+// spread into even though it doesn't trigger the pin. It has to be included —
+// Molten Metal is the densest phase and settles beneath Ore/Slag as the
+// routine end state of any smelt, so a grain pinned above by Ore/Slag but
+// flanked on both sides by Molten Metal at that boundary is common, not a
+// contrived edge case. Without Molten Metal in the spread set, such a grain
+// could sink no further (too light for Metal), rise no further (the pin
+// blocks it while Ore/Slag stays above), and spread no further either —
+// reproducing the exact frozen-comb bug this fix exists to prevent, just
+// relocated to the Ore/Slag-Metal interface instead of mid-charge.
 export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
   if (!sim.inBounds(ux, uy)) return false;
   const aboveId = sim.get(ux, uy);
-  if (aboveId !== MOLTEN_IRON_ORE.id && aboveId !== SLAG.id) return false;
-  updatePowderSink(x, y, sim, [MOLTEN_IRON_ORE.id, SLAG.id]);
+  const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
+  if (!pinIds.includes(aboveId)) return false;
+  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id]);
   return true;
 }
 

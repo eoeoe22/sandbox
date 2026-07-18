@@ -234,24 +234,15 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *
  *  Once fallAndPile finds nothing to do, this still spreads sideways under the
  *  same shouldFlatten condition flattenIfFloating uses — via
- *  SimContext.moveSidewaysContained, not moveSidewaysBuoyant — so a raft of
- *  flux pinned inside an ore/slag charge (e.g. trapped under cells that just
- *  melted in place above it) settles flat instead of freezing into the same
- *  jagged comb of straight columns moveSidewaysBuoyant fixes for ordinary
- *  floating powder (see docs/MATERIAL-SYSTEMS.md). moveSidewaysBuoyant isn't
- *  safe here: shouldFlatten only checks what's *below*, so a grain pinned by
- *  melt above it can still register as "floating" on whatever's below (e.g.
- *  once a neighbouring ore cell reduces into Molten Metal right underneath
- *  it), and moveSidewaysBuoyant treats an empty neighbor (or an unrelated
- *  liquid) as a valid target — stepping straight out of the melt the instant
- *  one's exposed beside it, defeating the very pinning tryHoldInActiveMelt
- *  exists for. moveSidewaysContained's `containerIds` keeps the swap scoped to
- *  the same liquids tryHoldInActiveMelt is pinning against (its caller passes
- *  exactly that list), so the grain redistributes within the melt but can't
- *  escape it — not even sideways into some unrelated liquid a player placed
- *  next to the furnace. Also gating on shouldFlatten (rather than trying the
- *  swap unconditionally whenever fallAndPile fails) matters for Coal Powder:
- *  it's denser than every liquid tryHoldInActiveMelt pins against, so
+ *  SimContext.moveSidewaysContained (not moveSidewaysBuoyant, which isn't safe
+ *  for a pinned grain — see SimContext.ts's swapOntoLiquid doc comment for
+ *  why `containerIds` matters here), so a raft of flux pinned inside an
+ *  ore/slag charge (e.g. trapped under cells that just melted in place above
+ *  it) settles flat instead of freezing into the same jagged comb of straight
+ *  columns moveSidewaysBuoyant fixes for ordinary floating powder (see
+ *  docs/MATERIAL-SYSTEMS.md). Gating on shouldFlatten, rather than trying the
+ *  swap unconditionally whenever fallAndPile fails, also matters for Coal
+ *  Powder: it's denser than every liquid tryHoldInActiveMelt pins against, so
  *  shouldFlatten is always false for it and this step is skipped entirely,
  *  same as it always was for Coal Powder before this method existed (see
  *  moltenironore.ts's tryHoldInActiveMelt doc comment). */

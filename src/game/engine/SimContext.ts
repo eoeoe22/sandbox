@@ -705,13 +705,10 @@ export class SimContext {
   /**
    * Sideways move for a cell pinned in place by melt above it (see
    * behaviors.ts's updatePowderSink / moltenironore.ts's tryHoldInActiveMelt):
-   * swaps unconditionally with a `containerIds`-listed neighbor via
-   * swapOntoLiquid, skipping the density-sorted tryMove attempt
-   * moveSidewaysBuoyant tries first (tryMove treats an EMPTY neighbor as
-   * always enterable, which would let a pinned grain step out through open
-   * air the instant one's exposed at that row — see swapOntoLiquid's own
-   * comment for why `containerIds` matters here specifically, unlike
-   * moveSidewaysBuoyant's unrestricted "any Liquid").
+   * swaps with a `containerIds`-listed neighbor via swapOntoLiquid, skipping
+   * the density-sorted tryMove attempt moveSidewaysBuoyant tries first — see
+   * swapOntoLiquid's own doc comment for why that matters and why
+   * `containerIds` is required here but not there.
    */
   moveSidewaysContained(x: number, y: number, containerIds: readonly number[]): boolean {
     if (!this.gravityPass()) return false;
@@ -739,20 +736,22 @@ export class SimContext {
    * tryBuoyantRise use everywhere else.
    *
    * moveSidewaysContained has no such prior tryMove attempt, and its caller
-   * (updatePowderSink, via tryHoldInActiveMelt) passes a specific
-   * `containerIds` list (the melt's own liquids, e.g. Molten Iron Ore/Slag) —
-   * "any Liquid" would be wrong here: tryHoldInActiveMelt only guarantees
-   * what's directly *above* the grain is one of those liquids, not what's
-   * beside it, so an unrestricted swap could hop the grain sideways into some
-   * unrelated liquid a player placed next to the furnace (or into Molten
-   * Metal, which isn't part of what tryHoldInActiveMelt considers "the melt"
-   * for its own pin check), defeating the very containment the hold exists
-   * for. Restricting to `containerIds` keeps the grain inside the same body
-   * the pin check already established it's inside. Neither caller wants a
-   * drag gate — gating this on density gap the way vertical displacement is
-   * would just reintroduce the stuck-column problem moveSidewaysBuoyant
-   * exists to fix, and would throttle moveSidewaysContained's redistribution
-   * for no reason (it isn't sorting by density in the first place).
+   * (updatePowderSink, via tryHoldInActiveMelt) always passes a specific
+   * `containerIds` list — "any Liquid" would be wrong here: the caller only
+   * guarantees what's directly *above* the grain is a liquid it pins against,
+   * not what's beside it, so an unrestricted swap could hop the grain
+   * sideways into some unrelated liquid a player placed next to the furnace,
+   * defeating the very containment the hold exists for. `containerIds` can
+   * still be wider than the pin check itself (see tryHoldInActiveMelt's own
+   * comment for why it includes Molten Metal, which doesn't trigger the pin
+   * but is safe to spread into) — the requirement is just that every id in it
+   * is a liquid the caller has already established is part of the same body
+   * the grain is confirmed to be inside, not "any Liquid" indiscriminately.
+   * Neither caller wants a drag gate — gating this on density gap the way
+   * vertical displacement is would just reintroduce the stuck-column problem
+   * moveSidewaysBuoyant exists to fix, and would throttle
+   * moveSidewaysContained's redistribution for no reason (it isn't sorting by
+   * density in the first place).
    */
   private swapOntoLiquid(
     x: number,

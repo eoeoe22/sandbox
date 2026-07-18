@@ -636,7 +636,43 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   `flattenIfFloating`이 쓰는 것과 같은 `shouldFlatten` 조건으로 게이팅해
   해결 — Coal Powder는 두 액체보다 항상 무거워 `shouldFlatten`이 항상
   거짓이라 옆 이동 자체가 아예 시도되지 않는다.
-- **검증**: 저장소 루트 임시 헤드리스 스크립트 두 개로 확인 (1) 30×30 그리드를
+- **2차 리뷰에서 발견된 후속 문제 — Molten Metal 경계에서 재발**: Altitude
+  앵글이 지적 — `containerIds`를 `tryHoldInActiveMelt`가 확인하는 바로 그 두
+  재질(Ore/Slag)로만 좁힌 결과, **Molten Metal은 의도적으로 빠졌다**(pin
+  자체가 위 칸이 Ore/Slag일 때만 걸리므로). 그런데 Molten Metal은 밀도가 가장
+  높아 Ore/Slag 아래로 가라앉아 쌓이는, 모든 제련의 자연스러운 최종 층 —
+  드물게 놓이는 상황이 아니라 매 제련마다 생기는 흔한 경계다. 이 경계
+  바로 위쪽, 위로는 Ore/Slag에 덮여 붙잡려 있으면서 양옆이 전부 Molten
+  Metal인 Limestone 알갱이는: 아래로는 못 가라앉고(Molten Metal이 너무
+  무거움), 위로도 못 뜨고(pin이 막음), 옆으로도 못 퍼진다(`containerIds`에
+  Molten Metal이 없어 거부됨) — 이 PR 시리즈 전체가 고치려던 바로 그
+  "일자로 얼어붙는" 증상이 장소만 바뀌어 재발하는 것. **수정**:
+  `tryHoldInActiveMelt`가 `updatePowderSink`에 넘기는 목록을
+  `[...pinIds, MOLTEN_METAL.id]`로 한 칸 넓혔다 — pin을 거는 기준(위 칸이
+  Ore/Slag인가)은 그대로 두고, 옆으로 퍼질 수 있는 대상만 넓힌 것. Molten
+  Metal은 플레이어가 우연히 근처에 놓은 무관한 액체가 아니라 바로 이 제련
+  과정 자체가 만들어내는, 항상 그 Ore/Slag 덩어리 바로 아래 구조적으로 붙어
+  있는 산출물이라 이 재질을 옆 이동 대상에 포함해도 1라운드가 막은 "무관한
+  액체로 새어나감" 문제는 재발하지 않는다. 헤드리스 스크립트로 확인: 위는
+  Ore, 양옆·아래는 전부 Molten Metal인 고립된 Limestone 알갱이들이 300틱 뒤
+  전부(6/6) 원래 자리를 벗어나 재배치됨을 확인(수정 전 이 목록에 Molten
+  Metal이 없었다면 전부 그대로 얼어붙어 있었을 자리).
+- **2차 리뷰의 나머지 지적**: Reuse/Simplification 앵글이 독립적으로 같은
+  중복 두 가지를 지적 — (1) `moltenironore.ts`에서
+  `[MOLTEN_IRON_ORE.id, SLAG.id]`가 pin 검사용 체인과 배열 리터럴 두 곳에
+  따로 적혀 있어 한쪽만 고치면 어긋날 위험 → `tryHoldInActiveMelt` 안에
+  지역 변수 `pinIds`로 한 곳에 모으고 스프레드로 재사용하도록 정리. (2)
+  "왜 `containerIds`가 필요한가"·"왜 Coal Powder는 no-op인가" 설명이
+  `SimContext.ts`/`behaviors.ts`/`moltenironore.ts`/`coalpowder.ts` 네
+  군데에 거의 그대로 반복돼 있었음 → 각각 한 곳(전자는
+  `SimContext.ts`의 `swapOntoLiquid`, 후자는 `moltenironore.ts`의
+  `tryHoldInActiveMelt`)에만 전체 설명을 남기고 나머지는 짧은 포인터로
+  줄임. `test/active-tiles.ts`의 `makeMeltPinnedFlux` 시나리오도 Angle B가
+  지적한 커버리지 공백(Slag·Molten Metal·무관한 액체 중 무엇도 실제로
+  등장하지 않아 `containerIds` 제한 자체는 사실상 검증하지 못하고 있었음)을
+  메우도록 Ore/Slag/Molten Metal 3단 층 + 가장자리의 무관한 Water 띠로
+  재구성.
+- **검증**: 저장소 루트 임시 헤드리스 스크립트로 확인 (1) 30×30 그리드를
   1000° Molten Iron Ore로 완전히 채우고 3칸 간격으로 고립된 Limestone 알갱이
   64개를 심어(각 알갱이의 위/아래/양옆이 전부 제련액) 800틱 실행 — 수정 후엔
   매 틱 거의 전부(64/64)가 인접 제련액과 자리를 바꿔 활발히 재배치되는 반면,
@@ -649,8 +685,10 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   2~7칸 제각각인 Limestone 빗살을 제련액 속에 완전히 봉인한 뒤 3000틱 실행 —
   수정 전엔 t=50 이후 특정 열들이 계속 같은 깊이 근방에 머물며 사실상 굳은
   모양을 유지한 반면, 수정 후엔 전 구간에 걸쳐 계속 재배치가 일어나 깊이
-  분포가 지속적으로 바뀜을 확인했다. `npm run check`·
-  `npm run test:active-tiles`(11 시나리오 전건) 재통과.
+  분포가 지속적으로 바뀜을 확인했다. (3) 위는 Ore, 양옆·아래는 Molten Metal인
+  고립 알갱이가 Molten Metal 경계에서도 얼어붙지 않고 재배치되는지, 같은 열에
+  놓인 무관한 Water 쪽으로는 절대 넘어가지 않는지 재확인. `npm run check`·
+  `npm run test:active-tiles`(12 시나리오 전건) 재통과.
 - **리뷰가 지적했지만 이번엔 안 고친 것**: (1) `SimContext.swap`은 교환된 두
   칸 모두를 이번 틱 "이미 처리됨"으로 표시해 그 틱의 자기 업데이트를
   건너뛰게 한다 — 플럭스가 옆의 제련액 칸과 자리를 바꿀 때마다 그 제련액

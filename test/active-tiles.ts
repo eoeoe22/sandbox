@@ -113,25 +113,50 @@ function makeFloatingRaft(w: number, h: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
-/** A jagged Limestone comb sealed inside a hot Molten Iron Ore melt (no open
- *  air anywhere, no carbon so nothing reduces) — the melt-pinned sibling of
- *  makeFloatingRaft's ordinary-liquid case. Exercises
- *  moveSidewaysContained/the containerIds-scoped swapOntoLiquid path
- *  (SimContext.ts) reached via moltenironore.ts's tryHoldInActiveMelt (see
- *  docs/MATERIAL-SYSTEMS.md's "제련 중 갇힌 플럭스가 못 퍼지던 문제").
- *  Deterministic (no RNG) so it drops straight into the equivalence harness
- *  like makeFloatingRaft. */
+/** A jagged Limestone comb sealed inside a hot, layered Molten Iron
+ *  Ore/Slag/Molten Metal melt (no open air, no carbon so nothing reduces) —
+ *  the melt-pinned sibling of makeFloatingRaft's ordinary-liquid case.
+ *  Exercises moveSidewaysContained/the containerIds-scoped swapOntoLiquid
+ *  path (SimContext.ts) reached via moltenironore.ts's tryHoldInActiveMelt
+ *  (see docs/MATERIAL-SYSTEMS.md's "제련 중 갇힌 플럭스가 못 퍼지던 문제").
+ *  The comb's depth varies enough per column to reach past the Slag/Molten
+ *  Metal boundary on some columns, so some Limestone cells end up flanked by
+ *  Molten Metal at that boundary — the case containerIds was widened to cover
+ *  ([...pinIds, MOLTEN_METAL.id], see tryHoldInActiveMelt's doc comment), not
+ *  just Slag. A narrow strip of unrelated Water along one edge (never
+ *  touched by the comb) also exercises swapOntoLiquid's containerIds
+ *  rejection path for a genuinely foreign liquid. Deterministic (no RNG) so
+ *  it drops straight into the equivalence harness like makeFloatingRaft. */
 function makeMeltPinnedFlux(w: number, h: number): Snapshot {
   const LIMESTONE = 69;
   const MOLTEN_IRON_ORE = 71;
+  const SLAG = 68;
+  const MOLTEN_METAL = 29;
+  const WATER = 3;
   const n = w * h;
-  const cells = new Uint8Array(n).fill(MOLTEN_IRON_ORE);
-  const temp = new Float32Array(n).fill(1000); // well above Ore's 750° solidify point
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(1000); // well above Ore/Slag's solidify points
   const tint = new Uint8Array(n);
-  const roof = (h / 3) | 0;
-  for (let x = 2; x < w - 2; x++) {
-    const depth = 2 + ((x * 7) % 6); // deterministic jagged depth, no RNG
-    for (let i = 0; i < depth; i++) cells[(roof + 1 + i) * w + x] = LIMESTONE;
+  const r1 = (h / 3) | 0; // Ore/Slag boundary
+  const r2 = ((h * 2) / 3) | 0; // Slag/Molten Metal boundary
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      cells[y * w + x] = y < r1 ? MOLTEN_IRON_ORE : y < r2 ? SLAG : MOLTEN_METAL;
+    }
+  }
+  const waterCols = 3;
+  for (let y = r1; y < r2; y++) {
+    for (let x = w - waterCols; x < w; x++) {
+      cells[y * w + x] = WATER;
+      temp[y * w + x] = 20;
+    }
+  }
+  for (let x = 2; x < w - waterCols - 2; x++) {
+    const depth = 3 + ((x * 7) % (r2 - r1 + 6)); // deterministic jagged depth, no RNG
+    for (let i = 0; i < depth; i++) {
+      const y = r1 + i;
+      if (y < h) cells[y * w + x] = LIMESTONE;
+    }
   }
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
@@ -260,7 +285,7 @@ const CASES: Case[] = [
   // moveSidewaysContained's only path to being exercised, since the flux is
   // covered by melt on every side, not open air a plain moveSideways or the
   // unrestricted moveSidewaysBuoyant could already handle.
-  { seed: 0xb3, w: 48, h: 30, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, meltFlux: true },
+  { seed: 0xb3, w: 54, h: 60, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, meltFlux: true },
 ];
 
 const SIM_SEED = 0xc0ffee;
