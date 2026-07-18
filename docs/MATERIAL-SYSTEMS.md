@@ -605,21 +605,37 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   가라앉지도 옆으로 퍼지지도 못하고 처음 낀 자리에 그대로 얼어붙어, 실제
   충전물처럼 광석·플럭스가 뒤섞여 있던 곳마다 이 증상이 나 제련로 특유의
   일자 기둥으로 드러났다.
-- **수정**: `SimContext`에 `moveSidewaysContained`를 추가했다. 인접한
-  **액체** 칸과 무조건(밀도 무관) 자리를 바꾸는 `swapOntoLiquid`만 쓰고,
-  `moveSidewaysBuoyant`가 먼저 시도하는 밀도 정렬 `tryMove`는 아예 생략한다
-  — `tryMove`는 빈 칸을 항상 진입 가능으로 취급하므로, 그 시도를 그대로
-  가져다 쓰면 빈 칸이 옆에 노출되는 순간 갇힌 알갱이가 제련로 밖 공기로
-  튀어나가 버린다. `moveSidewaysContained`는 액체가 아니면(빈 칸 포함)
-  절대 목표로 삼지 않으므로 제련액 안에서만 재배치되고 절대 새어나가지
-  않는다. `updatePowderSink`를 `fallAndPile`이 실패한 뒤 이걸 시도하도록
-  바꿨다.
-- **왜 안전한가**: `updatePowderSink`의 유일한 호출부인 `tryHoldInActiveMelt`
-  는 이미 "바로 위 칸이 Molten Iron Ore/Slag"임을 확인한 뒤에만 부른다 —
-  즉 이 칸이 지금 이 순간 실제로 제련액 안에 파묻혀 있다는 게 호출 시점에
-  이미 보장돼 있다. 그 보장이 있는 채로 옆의 액체 이웃과만 무조건 자리를
-  바꾸는 건 액체 반대편으로 이동하는 것과 동일 — 제련액이라는 "그릇" 밖으로
-  나가는 경로가 아예 없다.
+- **수정**: `SimContext`에 `moveSidewaysContained(x, y, containerIds)`를
+  추가했다. `containerIds`에 든 재질만 인접 교환 대상으로 인정하는
+  `swapOntoLiquid`만 쓰고, `moveSidewaysBuoyant`가 먼저 시도하는 밀도 정렬
+  `tryMove`는 아예 생략한다 — `tryMove`는 빈 칸을 항상 진입 가능으로
+  취급하므로, 그 시도를 그대로 가져다 쓰면 빈 칸이 옆에 노출되는 순간 갇힌
+  알갱이가 제련로 밖 공기로 튀어나가 버린다. `updatePowderSink`도
+  `containerIds`를 받아 그대로 넘기도록 시그니처를 바꾸고, `tryHoldInActiveMelt`
+  (`moltenironore.ts`)가 `[MOLTEN_IRON_ORE.id, SLAG.id]`를 넘겨준다.
+  `fallAndPile`이 실패한 뒤, 이번에도 `flattenIfFloating`과 같은 "진짜로 뜬
+  상태인가"(`shouldFlatten` — `floatingOnLiquid`/`restingOnStackedFloat`
+  공용 헬퍼로 추출) 조건을 만족할 때만 이걸 시도한다.
+- **왜 "액체이면 뭐든 통과"가 아니라 재질 목록인가**: 코드리뷰 1라운드에서
+  세 앵글(A/B/C)이 독립적으로 같은 지적을 했다 — 처음 구현은
+  `swapOntoLiquid`를 그대로 재사용해 **아무 액체나** 인정했는데,
+  `tryHoldInActiveMelt`가 확인하는 건 "바로 위 칸이 제련액"뿐이지 "옆 칸도
+  같은 제련액"이 아니다. 그래서 플레이어가 제련로 바로 옆에 다른 액체(물,
+  수은 등)를 놓아뒀거나, 아직 `tryHoldInActiveMelt`가 안 붙잡는 Molten
+  Metal 층과 옆으로 이어져 있으면, 붙잡린 플럭스가 그 액체 쪽으로 옆으로
+  새어나갈 수 있었다 — "제련액이라는 그릇 밖으로 나가는 경로가 아예 없다"는
+  최초 주석의 주장이 사실은 틀렸다는 지적. `containerIds`로
+  `tryHoldInActiveMelt`가 확인한 바로 그 두 재질(Molten Iron Ore/Slag)만
+  허용하도록 좁혀 실제로 그 주장이 성립하게 고쳤다.
+- **왜 Coal Powder는 여전히 사실상 no-op인가**: 같은 라운드에서 Efficiency/
+  Simplification 앵글이 지적한 두 번째 문제 — 처음 구현은 `fallAndPile`
+  실패 시 무조건 옆 이동을 시도해, Limestone보다 무거워(7.5 > 6.5/5.75)
+  뜰 필요가 없는 Coal Powder도 매 틱 의미 없는 액체 교환을 반복했다(제련로
+  전체에서 실제 그리드 스왑이 계속 일어나는 낭비이자, `coalpowder.ts`의
+  "이 경로는 Coal Powder에 아무 효과 없다"는 기존 주석을 거짓으로 만듦).
+  `flattenIfFloating`이 쓰는 것과 같은 `shouldFlatten` 조건으로 게이팅해
+  해결 — Coal Powder는 두 액체보다 항상 무거워 `shouldFlatten`이 항상
+  거짓이라 옆 이동 자체가 아예 시도되지 않는다.
 - **검증**: 저장소 루트 임시 헤드리스 스크립트 두 개로 확인 (1) 30×30 그리드를
   1000° Molten Iron Ore로 완전히 채우고 3칸 간격으로 고립된 Limestone 알갱이
   64개를 심어(각 알갱이의 위/아래/양옆이 전부 제련액) 800틱 실행 — 수정 후엔
@@ -635,6 +651,21 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   모양을 유지한 반면, 수정 후엔 전 구간에 걸쳐 계속 재배치가 일어나 깊이
   분포가 지속적으로 바뀜을 확인했다. `npm run check`·
   `npm run test:active-tiles`(11 시나리오 전건) 재통과.
+- **리뷰가 지적했지만 이번엔 안 고친 것**: (1) `SimContext.swap`은 교환된 두
+  칸 모두를 이번 틱 "이미 처리됨"으로 표시해 그 틱의 자기 업데이트를
+  건너뛰게 한다 — 플럭스가 옆의 제련액 칸과 자리를 바꿀 때마다 그 제련액
+  칸은 이번 틱의 환원 판정(`REDUCE_CHANCE`)·냉각 판정을 하나 놓친다. 이
+  자체는 `fallAndPile`의 세로 스왑에도 이미 있던 기존 엔진 특성이고, 이번
+  수정으로 옆 이동이 잦아진 만큼 그 빈도만 늘었다 — `shouldFlatten` 게이팅
+  으로 실제로는 "진짜로 뜬" 알갱이에만 해당돼 크게 늘지는 않지만, 완전히
+  없애려면 `moved` 플래그 자체의 동작 방식을 바꿔야 해서 이번 범위 밖으로
+  남겼다. (2) 플럭스 알갱이가 이제 특정 광석 칸 옆에 여러 틱 동안 붙어있지
+  않고 매 틱 인접 제련액 칸과 재배치되므로, `FLUX_YIELD` 보너스가 어느 광석
+  칸에 걸리는지의 통계적 분포가 수정 전(한두 광석 칸 근처에 몰림)과 달라질
+  수 있다 — 하지만 이는 애초에 이번 수정이 의도한 "가만히 얼어붙지 않고
+  재배치된다"는 동작 자체의 자연스러운 결과이지 별도의 버그가 아니며,
+  CLAUDE.md의 재미 > 과학적 고증 우선순위상 정확한 제련 수율 통계보다 "안
+  이상해 보이는 것"이 우선이라 별도 조치하지 않았다.
 
 ## 니트로가 Blue Flame에 반응하지 않던 버그 수정 (`nitro.ts`)
 

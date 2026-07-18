@@ -189,9 +189,20 @@ function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
   return denserLiquidBelow(x, y, sim, FLOAT_STACK_SCAN);
 }
 
-/** A sideways step if this grain is floating on a liquid it's too light to
- *  sink into (directly, via floatingOnLiquid, or buried in a stack of its own
- *  kind, via the FLOAT_STACK_SCAN_CHANCE-gated restingOnStackedFloat) — called
+/** True if this grain should try a sideways step: floating directly on a
+ *  liquid it's too light to sink into (floatingOnLiquid), or buried in a
+ *  stack of its own kind that bottoms out on one within FLOAT_STACK_SCAN
+ *  levels (the FLOAT_STACK_SCAN_CHANCE-gated restingOnStackedFloat). Shared by
+ *  flattenIfFloating (ordinary powder, spreads via moveSidewaysBuoyant) and
+ *  updatePowderSink (melt-pinned powder, spreads via moveSidewaysContained) —
+ *  both only want the sideways step under the same "actually floating"
+ *  condition, they just differ in which primitive is safe to spread with. */
+function shouldFlatten(x: number, y: number, sim: SimContext): boolean {
+  if (floatingOnLiquid(x, y, sim)) return true;
+  return sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim);
+}
+
+/** A sideways step if this grain is floating (see shouldFlatten) — called
  *  once a caller's own fall/pile or fall/drift attempt already found nothing
  *  to do. This settles an unevenly-stacked raft of floating powder flat along
  *  the surface instead of letting it stand in a sand-pile-style heap, and lets
@@ -210,13 +221,7 @@ function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
  *  would stay stuck, which is exactly the "doesn't flatten in the middle of
  *  the pool, only piles into narrow columns" failure this exists to fix. */
 function flattenIfFloating(x: number, y: number, sim: SimContext): void {
-  if (floatingOnLiquid(x, y, sim)) {
-    sim.moveSidewaysBuoyant(x, y);
-    return;
-  }
-  if (sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim)) {
-    sim.moveSidewaysBuoyant(x, y);
-  }
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysBuoyant(x, y);
 }
 
 /** Sink-only powder: falls and piles (fallAndPile), but never attempts the
@@ -227,24 +232,37 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  *downward* if there's room (an ordinary powder never stops falling just
  *  because something denser is above it), it just must not try to rise.
  *
- *  Once fallAndPile finds nothing to do, this still spreads sideways — via
- *  SimContext.moveSidewaysContained, not flattenIfFloating — so a raft of
+ *  Once fallAndPile finds nothing to do, this still spreads sideways under the
+ *  same shouldFlatten condition flattenIfFloating uses — via
+ *  SimContext.moveSidewaysContained, not moveSidewaysBuoyant — so a raft of
  *  flux pinned inside an ore/slag charge (e.g. trapped under cells that just
  *  melted in place above it) settles flat instead of freezing into the same
  *  jagged comb of straight columns moveSidewaysBuoyant fixes for ordinary
- *  floating powder (see docs/MATERIAL-SYSTEMS.md). flattenIfFloating itself
- *  isn't safe here: it only checks what's *below*, so a grain pinned by melt
- *  above it can still register as "floating" on whatever's below (e.g. once a
- *  neighbouring ore cell reduces into Molten Metal right underneath it), and
- *  its fallback (moveSidewaysBuoyant) treats an empty neighbor as always
- *  enterable — stepping straight out of the melt through any open cell beside
- *  it the instant one's exposed at that row, defeating the very pinning
- *  tryHoldInActiveMelt exists for. moveSidewaysContained never enters empty
- *  space at all — it only swaps with a Liquid neighbor — so the grain
- *  redistributes within the melt but can't escape it. */
-export function updatePowderSink(x: number, y: number, sim: SimContext): void {
+ *  floating powder (see docs/MATERIAL-SYSTEMS.md). moveSidewaysBuoyant isn't
+ *  safe here: shouldFlatten only checks what's *below*, so a grain pinned by
+ *  melt above it can still register as "floating" on whatever's below (e.g.
+ *  once a neighbouring ore cell reduces into Molten Metal right underneath
+ *  it), and moveSidewaysBuoyant treats an empty neighbor (or an unrelated
+ *  liquid) as a valid target — stepping straight out of the melt the instant
+ *  one's exposed beside it, defeating the very pinning tryHoldInActiveMelt
+ *  exists for. moveSidewaysContained's `containerIds` keeps the swap scoped to
+ *  the same liquids tryHoldInActiveMelt is pinning against (its caller passes
+ *  exactly that list), so the grain redistributes within the melt but can't
+ *  escape it — not even sideways into some unrelated liquid a player placed
+ *  next to the furnace. Also gating on shouldFlatten (rather than trying the
+ *  swap unconditionally whenever fallAndPile fails) matters for Coal Powder:
+ *  it's denser than every liquid tryHoldInActiveMelt pins against, so
+ *  shouldFlatten is always false for it and this step is skipped entirely,
+ *  same as it always was for Coal Powder before this method existed (see
+ *  moltenironore.ts's tryHoldInActiveMelt doc comment). */
+export function updatePowderSink(
+  x: number,
+  y: number,
+  sim: SimContext,
+  containerIds: readonly number[],
+): void {
   if (fallAndPile(x, y, sim)) return;
-  sim.moveSidewaysContained(x, y);
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds);
 }
 
 /** Powder: falls and piles (fallAndPile), then flattens/unclogs

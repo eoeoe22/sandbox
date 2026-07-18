@@ -97,14 +97,18 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // forever.
   if (mixIntoMelt(x, y, sim)) return;
   // tryHoldInActiveMelt (shared with Limestone, see moltenironore.ts) checks
-  // Molten Iron Ore/Slag by identity, but for Coal Powder it's a no-op now: at
-  // density 7.5 it's already denser than both (6.5/5.75), so the generic
-  // buoyancy check it would otherwise suppress was never going to fire here
-  // anyway — see its doc comment in moltenironore.ts for the full reasoning.
-  // Left in place because the shared call is still correct and costs nothing;
-  // the real work happens for Limestone. The generic updatePowder fallback
-  // runs for every other liquid, including Molten Metal, where Coal Powder's
-  // own density floats or sinks it like any other powder.
+  // Molten Iron Ore/Slag by identity, but for Coal Powder it's effectively a
+  // no-op: at density 7.5 it's already denser than both (6.5/5.75), so neither
+  // the generic buoyancy rise it would otherwise suppress, nor the sideways
+  // spread updatePowderSink now also does for a genuinely floating grain, was
+  // ever going to fire here anyway (shouldFlatten in behaviors.ts requires
+  // resting on a *denser* liquid, never true for Coal Powder against these
+  // two) — see its doc comment in moltenironore.ts for the full reasoning.
+  // Left in place because the shared call is still correct and cheap (one
+  // extra density comparison, no extra movement); the real work happens for
+  // Limestone. The generic updatePowder fallback runs for every other liquid,
+  // including Molten Metal, where Coal Powder's own density floats or sinks
+  // it like any other powder.
   if (tryHoldInActiveMelt(x, y, sim)) return;
   updatePowder(x, y, sim);
 }

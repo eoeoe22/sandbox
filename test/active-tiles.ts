@@ -113,6 +113,29 @@ function makeFloatingRaft(w: number, h: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
+/** A jagged Limestone comb sealed inside a hot Molten Iron Ore melt (no open
+ *  air anywhere, no carbon so nothing reduces) — the melt-pinned sibling of
+ *  makeFloatingRaft's ordinary-liquid case. Exercises
+ *  moveSidewaysContained/the containerIds-scoped swapOntoLiquid path
+ *  (SimContext.ts) reached via moltenironore.ts's tryHoldInActiveMelt (see
+ *  docs/MATERIAL-SYSTEMS.md's "제련 중 갇힌 플럭스가 못 퍼지던 문제").
+ *  Deterministic (no RNG) so it drops straight into the equivalence harness
+ *  like makeFloatingRaft. */
+function makeMeltPinnedFlux(w: number, h: number): Snapshot {
+  const LIMESTONE = 69;
+  const MOLTEN_IRON_ORE = 71;
+  const n = w * h;
+  const cells = new Uint8Array(n).fill(MOLTEN_IRON_ORE);
+  const temp = new Float32Array(n).fill(1000); // well above Ore's 750° solidify point
+  const tint = new Uint8Array(n);
+  const roof = (h / 3) | 0;
+  for (let x = 2; x < w - 2; x++) {
+    const depth = 2 + ((x * 7) % 6); // deterministic jagged depth, no RNG
+    for (let i = 0; i < depth; i++) cells[(roof + 1 + i) * w + x] = LIMESTONE;
+  }
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -207,6 +230,7 @@ interface Case {
   mixEvery: number; // stir the brush every N ticks (0 = never)
   slabRows?: number; // if set, use a settled sand slab instead of random fill
   raft?: boolean; // if set, use a jagged sealed Ash-in-Water raft instead of random fill
+  meltFlux?: boolean; // if set, use a jagged Limestone comb pinned inside a Molten Iron Ore melt
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -232,6 +256,11 @@ const CASES: Case[] = [
   // flanks are Water the whole way down, not empty air a plain moveSideways
   // could already handle.
   { seed: 0xb2, w: 48, h: 40, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, raft: true },
+  // Targeted: jagged Limestone comb pinned inside a Molten Iron Ore melt —
+  // moveSidewaysContained's only path to being exercised, since the flux is
+  // covered by melt on every side, not open air a plain moveSideways or the
+  // unrestricted moveSidewaysBuoyant could already handle.
+  { seed: 0xb3, w: 48, h: 30, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, meltFlux: true },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -243,7 +272,9 @@ for (const c of CASES) {
     ? makeSlab(c.w, c.h, c.slabRows)
     : c.raft
       ? makeFloatingRaft(c.w, c.h)
-      : makeScene(c.seed, c.w, c.h, c.fill);
+      : c.meltFlux
+        ? makeMeltPinnedFlux(c.w, c.h)
+        : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism

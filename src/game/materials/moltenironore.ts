@@ -80,9 +80,12 @@ function isCarbon(id: number): boolean {
 // Iron Ore 6.5 and Slag 5.75), this is a load-bearing exception only for
 // Limestone (still the lightest thing in the furnace). For Coal Powder it's a
 // harmless no-op: tryBuoyantRise would already refuse to rise there on density
-// alone, so calling updatePowderSink instead of updatePowder produces the exact
-// same outcome. Left shared rather than split out, since the shared call is
-// still correct and Coal Powder needs no separate code path.
+// alone, and updatePowderSink's own sideways step is gated on the same
+// "actually floating" check updatePower's flattenIfFloating uses — false for
+// Coal Powder either way, since it's denser than both liquids listed below —
+// so calling updatePowderSink instead of updatePowder produces the exact same
+// outcome. Left shared rather than split out, since the shared call is still
+// correct and Coal Powder needs no separate code path.
 //
 // This returns false for every other liquid — including the finished Molten
 // Metal layer — so the caller's ordinary `updatePowder` fallback takes over
@@ -91,13 +94,23 @@ function isCarbon(id: number): boolean {
 // rather than starting out on top of everything) is lighter than it, so the
 // generic buoyancy already floats each clear on its own (same rise mechanics
 // every other powder gets, not a separately-tuned duplicate).
+//
+// The id list passed to updatePowderSink is deliberately just these two, not
+// "any Liquid": it's forwarded to SimContext.moveSidewaysContained as the
+// only cells a pinned grain may swap sideways into. Since this function only
+// ever confirms what's directly *above* the grain, an unrestricted swap could
+// hop it sideways into an unrelated liquid a player placed next to the
+// furnace (or into Molten Metal, which this function deliberately does NOT
+// pin against) — defeating the containment this hold exists for. Restricting
+// to exactly the two liquids the pin check itself looks for keeps the grain
+// inside the same body it was already confirmed to be inside.
 export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
   if (!sim.inBounds(ux, uy)) return false;
   const aboveId = sim.get(ux, uy);
   if (aboveId !== MOLTEN_IRON_ORE.id && aboveId !== SLAG.id) return false;
-  updatePowderSink(x, y, sim);
+  updatePowderSink(x, y, sim, [MOLTEN_IRON_ORE.id, SLAG.id]);
   return true;
 }
 
