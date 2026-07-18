@@ -636,14 +636,20 @@ export class SimContext {
     return this.tryMove(x, y, x + this.gravityX, y + this.gravityY);
   }
 
+  /** A random perpendicular-to-gravity step, ±(perpX,perpY) with the sign
+   *  picked 50/50 — the shared "which side to try first" roll behind every
+   *  sideways/diagonal primitive below. */
+  private randomPerp(): [number, number] {
+    const s = Math.random() < 0.5 ? -1 : 1;
+    return [this.perpX * s, this.perpY * s];
+  }
+
   /** Move one step diagonally along gravity (down + either perpendicular side). */
   moveDiagonalDown(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
+    const [px, py] = this.randomPerp();
     const dgx = this.gravityX;
     const dgy = this.gravityY;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
     return (
       this.tryMove(x, y, x + dgx + px, y + dgy + py) ||
       this.tryMove(x, y, x + dgx - px, y + dgy - py)
@@ -659,9 +665,7 @@ export class SimContext {
   /** Move one step diagonally against gravity (up + either perpendicular side). */
   moveDiagonalUp(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     return (
       this.tryMove(x, y, x - this.gravityX + px, y - this.gravityY + py) ||
       this.tryMove(x, y, x - this.gravityX - px, y - this.gravityY - py)
@@ -671,36 +675,27 @@ export class SimContext {
   /** Move one step perpendicular to gravity (sideways leveling / spreading). */
   moveSideways(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     return this.tryMove(x, y, x + px, y + py) || this.tryMove(x, y, x - px, y - py);
   }
 
   /**
-   * Sideways move for a cell a caller has already established is buoyantly
-   * floating (resting on a denser Liquid below it — see behaviors.ts's
-   * flattenIfFloating): tries the normal density-sorted tryMove first, same as
-   * moveSideways (covers an open flank, or a same-row neighbor this cell
-   * genuinely outweighs), then — if both flanks are blocked — swaps
-   * unconditionally with an adjacent Liquid cell that isn't frozen solid. That
-   * fallback is the whole point of this method: tryMove's sideways rule
-   * (along = 0) requires the
-   * *mover* be denser to displace a neighbor, which is backwards for a raft
-   * floating on the very liquid it's too light to sink into — by that rule it
-   * could never slide across its own supporting surface, only escape through
-   * an incidental empty gap or a lighter neighbor. A floating cell sliding
-   * sideways along the liquid holding it up isn't sinking or rising (no
-   * along-gravity component), so the density-sort that keeps *vertical*
-   * displacement physically ordered doesn't apply — it's already known to be
-   * resting on top, and moveSidewaysBuoyant's whole job is to let it glide
-   * along that support instead of blocking on it. Returns true if it moved.
+   * Sideways move for a cell already established to be buoyantly floating
+   * (resting on a denser Liquid — see behaviors.ts's flattenIfFloating): tries
+   * the same density-sorted attempt as moveSideways first (inlined here, not
+   * delegated, so gravityPass is only rolled once), then — if both flanks are
+   * blocked — swaps unconditionally with an adjacent Liquid cell
+   * (swapOntoLiquid). The fallback exists because tryMove's sideways rule
+   * requires the *mover* be denser to displace a neighbor — right for two
+   * different-density liquids leveling out, backwards for a raft that's
+   * already lighter than the liquid holding it up and just needs to glide
+   * across it. Without this, a floating raft in a pool's interior (liquid on
+   * both flanks, not open air) could never spread — only escape through an
+   * incidental gap at the pool's edge.
    */
   moveSidewaysBuoyant(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     return (
       this.tryMove(x, y, x + px, y + py) ||
       this.tryMove(x, y, x - px, y - py) ||
@@ -709,8 +704,18 @@ export class SimContext {
     );
   }
 
-  /** Unconditional swap with an adjacent Liquid cell, skipping tryMove's
-   *  density-sort — see moveSidewaysBuoyant, its only caller. */
+  /** Unconditional swap with an adjacent Liquid cell, skipping both tryMove's
+   *  density-sort and its DISPLACE_DRAG throttle — see moveSidewaysBuoyant,
+   *  its only caller. No drag here is deliberate: by the time this runs, the
+   *  caller has already confirmed the mover is floating (lighter than
+   *  *something* denser it's resting on), and every liquid in the game is
+   *  denser than the lightest floaters — so gating this on density gap the
+   *  way vertical displacement is would just reintroduce the stuck-column
+   *  problem this method exists to fix. It doesn't require the neighbor be
+   *  the *same* liquid the mover is floating on — any Liquid it isn't denser
+   *  than counts, matching the density-only rule floatingOnLiquid/
+   *  tryBuoyantRise already use everywhere else (a powder floats clear of
+   *  whichever liquid it's lighter than, not just one it's "assigned" to). */
   private swapOntoLiquid(x: number, y: number, tx: number, ty: number): boolean {
     if (!this.inBounds(tx, ty) || this.isFrozen(tx, ty)) return false;
     const id = this.get(tx, ty);
