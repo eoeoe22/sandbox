@@ -469,6 +469,10 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   드러나는 잠재 버그, 이번 리뷰에서 같이 발견). Reuse·Simplification
   두 앵글이 잡아낸 `restingOnStackedFloat`가 `floatingOnLiquid`의 로직을
   그대로 다시 구현한다는 지적은 위 `denserLiquidBelow`로 합쳐 해소했다.
+  `updatePowderSink`가 평탄화를 안 타게 되면서 `fallAndPile`→평탄화를
+  묶어 두던 `pileOrFlatten`이 호출부가 `updatePowder` 하나만 남았다는
+  Simplification 앵글 지적도, 그 두 줄을 `updatePowder` 안으로 인라인
+  하고 래퍼를 지워 해소했다.
 - **리뷰 제안 중 채택하지 않은 것**: (1) 이 파일의 wobble 패턴
   (`RISE_WOBBLE_CHANCE`)이 `updateGas`·`updateHeavyGas`의 기존 wobble과
   구조가 같으니 셋을 공유 헬퍼로 묶자는 제안 — 이번 변경이 손대지 않은
@@ -489,7 +493,18 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   않고 계속 넓게 퍼지며 개선되는 방향이라 "뜨는 가루의 상승" 요청
   자체는 달성했다고 판단했다. 브러시로 붓는 일반적인 뭉치(원형에
   가까운 퍼짐)에서는 이런 병적인 세로 한 칸 기둥이 나오지 않아 체감상
-  문제가 되지 않을 것으로 본다.
+  문제가 되지 않을 것으로 본다. `updatePowderSink`(제련로에 붙잡힌
+  경우)는 평탄화 자체를 안 타므로 이 한계도 안 걸리지만, 대신 그
+  안에서는 여러 알갱이가 쌓여도 전혀 평탄화되지 않는다 — 붙잡힘 계약을
+  지키는 쪽을 우선한 의도적 트레이드오프(위 "리뷰가 잡은 회귀" 참고).
+  또 `tryHoldInActiveMelt`는 바로 **위**가 Ore/Slag인 경우만 붙잡으므로,
+  위는 열려 있지만 Molten Metal 위에 얹힌 채 옆으로만 Ore/Slag와
+  닿아 있는 드문 경계 배치에서는 (Coal Powder·Limestone 둘 다) 일반
+  `updatePowder` 경로를 타 옆으로 흔들릴 수 있다 — 다만 이 조합은 이번
+  라운드 이전부터 이미 "제련액 3종 중 Molten Metal만은 전용 처리 없이
+  일반 부력을 그대로 쓴다"는 기존 설계(`moltenironore.ts`)이고, 인접
+  기반 반응(환원·플럭스)은 원래도 매 틱 새로 스캔하는 확률적 상호작용이라
+  못 박아 둔 계약이 없어 이번 라운드에서 손대지 않았다.
 - **성능**: `FLOAT_STACK_SCAN_CHANCE` 게이팅 없이 매 틱 16칸까지 훑게
   했더니 액체 없이 지면에 쌓인 대형 가루 더미(200×200, 바닥만 Rock)
   기준 헤드리스 300틱 실행 시간이 약 1.9배로 늘었다 — 게이팅을 넣은

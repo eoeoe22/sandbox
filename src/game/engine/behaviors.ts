@@ -210,13 +210,6 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
   }
 }
 
-/** fallAndPile, then flattenIfFloating if that had nothing to do — see
- *  flattenIfFloating for what that adds. */
-function pileOrFlatten(x: number, y: number, sim: SimContext): void {
-  if (fallAndPile(x, y, sim)) return;
-  flattenIfFloating(x, y, sim);
-}
-
 /** Sink-only powder: falls and piles (fallAndPile), but never attempts the
  *  generic density-based rise, and — unlike updatePowder — never flattens
  *  sideways either. For the rare powder (Coal Powder, Limestone) that has its
@@ -237,20 +230,22 @@ export function updatePowderSink(x: number, y: number, sim: SimContext): void {
   fallAndPile(x, y, sim);
 }
 
-/** Powder: falls, piles, and flattens/unclogs (pileOrFlatten), but first
- *  tries to float clear if it's submerged under a denser liquid
- *  (tryBuoyantRise) — every powder sinks or floats by its own density against
- *  whatever liquid it ends up under, not just the handful that used to have
- *  this wired in specially. The shared default for Phase.Powder (see
- *  registry.ts's defaultUpdate) and the fallback nearly every
- *  material-specific powder update calls once its own reactions don't fire,
- *  so this one change gives buoyancy to the whole roster for free. A powder
- *  with its own material-specific float rule instead of the bare density
- *  comparison (Coal Powder, Limestone — see moltenironore.ts's
- *  tryHoldInActiveMelt) intercepts before this ever runs. */
+/** Powder: falls and piles (fallAndPile), then flattens/unclogs
+ *  (flattenIfFloating) if that had nothing to do, but first tries to float
+ *  clear if it's submerged under a denser liquid (tryBuoyantRise) — every
+ *  powder sinks or floats by its own density against whatever liquid it ends
+ *  up under, not just the handful that used to have this wired in specially.
+ *  The shared default for Phase.Powder (see registry.ts's defaultUpdate) and
+ *  the fallback nearly every material-specific powder update calls once its
+ *  own reactions don't fire, so this one change gives buoyancy to the whole
+ *  roster for free. A powder with its own material-specific float rule
+ *  instead of the bare density comparison (Coal Powder, Limestone — see
+ *  moltenironore.ts's tryHoldInActiveMelt) intercepts before this ever
+ *  runs. */
 export function updatePowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
-  pileOrFlatten(x, y, sim);
+  if (fallAndPile(x, y, sim)) return;
+  flattenIfFloating(x, y, sim);
 }
 
 // A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways
