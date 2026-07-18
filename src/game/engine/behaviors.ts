@@ -67,16 +67,19 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
  * doesn't pool on top of it like solid ground — the powder bubbles up through
  * the incoming water instead.
  *
- * Mirrors fallAndPile's structure exactly, just against gravity: straight
- * move first, diagonal fallback gated by the material's own `friction`. No
- * fixed per-tick stall chance — a powder blocked from going straight up is a
- * Powder-phase obstacle the liquid can never displace on its own (see
+ * No fixed per-tick stall chance — a powder blocked from going straight up
+ * is a Powder-phase obstacle the liquid can never displace on its own (see
  * SimContext.isDisplaceable), so sitting idle while covered would plug the
- * liquid's own flow around it every tick it stalled. Trying a move every
- * tick, and spreading diagonally the moment the straight path is blocked,
- * keeps a rising cloud thin and porous — mounding upward the same way a
- * falling pile mounds downward — instead of packing into a solid column that
- * dams the liquid it's rising through.
+ * liquid's own flow around it every tick it stalled. `moveUp`'s target is
+ * exactly the cell submergedUnderDenserLiquid just confirmed is a denser
+ * liquid, so tryMove's density-sort passes by construction — `moveUp` fails
+ * here only when that liquid is frozen solid (SimContext.isFrozen blocks
+ * displacement) or a reduced gravityStrength gates the attempt out; the
+ * diagonal-up fallback exists for exactly those cases, tried unconditionally
+ * (no `friction` gate — that field's per-tick "grip" chance is tuned for a
+ * grain resting on a slope under gravity, a scenario with no equivalent
+ * here, and gating on it would just reintroduce a stall by another name for
+ * any material with a high resting friction).
  *
  * Returns true if it acted (submerged, whether or not the attempted move
  * actually succeeded that tick) so the caller skips its normal fall/pile
@@ -91,8 +94,6 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
 export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
   if (!submergedUnderDenserLiquid(x, y, sim)) return false;
   if (sim.moveUp(x, y)) return true;
-  const friction = getMaterial(sim.get(x, y)).friction;
-  if (friction !== undefined && friction > 0 && sim.chance(friction)) return true;
   sim.moveDiagonalUp(x, y);
   return true;
 }
@@ -100,9 +101,10 @@ export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
 /** Fall straight down, else tumble diagonally (forms piles). A material's
  *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
  *  grips the slope and stays put more often, so the pile stands steeper — while
- *  the straight-down fall is never blocked (grains still settle). Mirrored by
- *  tryBuoyantRise above for the submerged/rising case (same structure, against
- *  gravity). */
+ *  the straight-down fall is never blocked (grains still settle). Shaped like
+ *  tryBuoyantRise above (straight move, diagonal fallback) for the
+ *  submerged/rising case, minus the friction gate — see its own comment for
+ *  why. */
 function fallAndPile(x: number, y: number, sim: SimContext): void {
   if (sim.moveDown(x, y)) return;
   const friction = getMaterial(sim.get(x, y)).friction;
