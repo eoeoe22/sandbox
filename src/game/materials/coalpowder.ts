@@ -2,10 +2,11 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
-import { updatePowder } from '../engine/behaviors';
+import { updatePowderMix } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn, type Combustible } from './combustion';
 import { IRON_ORE } from './ironore';
+import { LIMESTONE } from './limestone';
 import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
 import { MOLTEN_METAL } from './moltenmetal';
 
@@ -102,11 +103,14 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // tryHoldInActiveMelt for the full reasoning (why neither the rise nor the
   // sideways spread it gates ever fires for Coal Powder specifically). Left
   // in place because the shared call is still correct and cheap; the real
-  // work happens for Limestone. The generic updatePowder fallback runs for
-  // every other liquid, including Molten Metal, where Coal Powder's own
-  // density floats or sinks it like any other powder.
+  // work happens for Limestone. updatePowderMix runs for every other liquid,
+  // including Molten Metal, where Coal Powder's own density floats or sinks
+  // it like any other powder — with Limestone in its mixIds so the two, once
+  // both floating clear of the ore/slag body onto the same Molten Metal
+  // surface, can still swap past each other when neither has open liquid
+  // beside it (see SimContext.moveSidewaysMix).
   if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowder(x, y, sim);
+  updatePowderMix(x, y, sim, [LIMESTONE.id]);
 }
 
 export const COAL_POWDER = register({

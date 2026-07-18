@@ -705,6 +705,72 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   CLAUDE.md의 재미 > 과학적 고증 우선순위상 정확한 제련 수율 통계보다 "안
   이상해 보이는 것"이 우선이라 별도 조치하지 않았다.
 
+## 두 종류의 뜨는 가루가 서로를 막던 문제 — `swapOntoPowder`/`moveSidewaysMix` 추가
+
+앞 절 배포·`call_user` 통보 후 사용자가 브라우저 스크린샷과 함께 재보고 —
+"대부분 molten metal이고, 쌓인건 coal powder, limestone": 제련로 대부분이 이미
+Molten Metal로 바뀐 상태에서, 그 위에 뜬 Coal Powder·Limestone이 여전히 좁은
+세로 줄무늬(빗살) 모양으로 얼어붙어 있었다. 앞 절 수정은 "제련액(Ore/Slag)에
+덮여 붙잡힌 채 옆으로 못 퍼지는" 경로를 고쳤지만, 이건 이미 그 단계를 지나
+Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 안 붙잡는
+구간, 그냥 `updatePower`류의 일반 부력 경로)에서 벌어지고 있어 다른 원인이었다.
+
+- **원인**: `SimContext.isDisplaceable`는 Liquid/Gas만 변위 가능하다고 보고
+  Powder는 절대 포함하지 않는다 — 즉 `tryMove`도, `moveSidewaysBuoyant`가
+  마지막에 기대는 `swapOntoLiquid`도 **Powder 칸을 다른 Powder 칸으로 절대
+  옆 이동시키지 못한다**. Coal Powder(밀도 7.5)와 Limestone(밀도 5)은 둘 다
+  Molten Metal(8)보다 가벼워 뜨는 두 재질인데, 흩어 부으면 서로 다른 재질의
+  알갱이가 같은 높이에서 옆으로 맞닿는 경우가 생긴다 — 이때 그 알갱이의 양옆이
+  전부 "떠 있는 다른 가루"이고 노출된 액체가 하나도 없으면, `shouldFlatten`은
+  참(제 밑을 타고 내려가면 결국 Molten Metal이 나오므로)이어도
+  `moveSidewaysBuoyant`가 시도할 수 있는 이동이 **단 하나도 없다** —
+  `tryMove`도 실패(Powder 대상은 변위 불가), `swapOntoLiquid`도 실패(옆 칸이
+  액체가 아님), `fallAndPile`의 아래/대각선 아래도 실패(그 자리도 다른
+  가루)다. 단일 재질이 뜬 경우엔 옆 칸이 결국 액체 웅덩이 표면 어딘가로
+  이어지지만, 서로 다른 두 재질이 표면을 빈틈없이 덮으면 이 "탈출용 액체"가
+  근처에 전혀 없는 자리가 생겨 그 자리에서 그대로, 영구히 얼어붙는다 —
+  헤드리스 스크립트로 재현: 두꺼운 Coal Powder 층에 완전히 둘러싸인(위/아래/
+  양옆 전부 Coal Powder, Molten Metal 침투 방지용으로 충분히 두껍게) Limestone
+  알갱이 하나가 2000틱 내내 단 한 번도 못 움직임을 확인(수정 전).
+- **수정**: `SimContext`에 `swapOntoPowder(x, y, tx, ty, ids)`(밀도 비교나
+  `isFrozen` 검사 없이 옆 칸 재질 id가 `ids`에 있으면 무조건 교환 — Powder는
+  `freeze`를 정의하지 않으므로 그 검사는 애초에 해당 사항 없음)를 추가하고,
+  `moveSidewaysBuoyant`의 몸통을 새 공용 메서드 `moveSidewaysMix(x, y, mixIds)`로
+  옮겨 기존 시도(밀도 정렬 `tryMove` → `swapOntoLiquid`) 뒤에 `swapOntoPowder`
+  시도를 추가했다 — `mixIds`가 빈 배열이면 `swapOntoPowder`가 항상 실패해
+  기존 `moveSidewaysBuoyant` 동작과 완전히 같으므로(엄격한 상위 집합),
+  `moveSidewaysBuoyant`는 그냥 `moveSidewaysMix(x, y, [])`를 부르는 얇은
+  래퍼가 됐다. `moveSidewaysContained`도 같은 이유로 `mixIds` 인자를 추가로
+  받아 갇힌 상태에서도 같은 안전장치를 쓴다(제련액 안에 Coal Powder·Limestone이
+  동시에 낀 충전물도 같은 문제를 겪을 수 있으므로). `behaviors.ts`에
+  `updatePowder`의 변형 `updatePowderMix(x, y, sim, mixIds)`를 추가하고,
+  `coalpowder.ts`/`limestone.ts`가 (제련액에서 벗어난 뒤의) 마지막 fallback을
+  `updatePowder` 대신 이걸로 바꿔 서로의 id를 `mixIds`로 넘긴다(Coal
+  Powder→`[LIMESTONE.id]`, Limestone→`[COAL_POWDER.id]`). `tryHoldInActiveMelt`
+  (`moltenironore.ts`)가 `updatePowderSink`에 넘기는 `mixIds`는
+  `[COAL_POWDER.id, LIMESTONE.id]`(둘 다) — 이 함수는 두 재질이 공유해서
+  부르므로 어느 쪽이 호출 중인지 몰라도 되게, 같은 재질끼리의 교환은 그냥
+  무해한 무동작으로 남겨뒀다.
+- **이 교환이 "펴주지"는 않고 "풀어주기"만 하는 이유**: 같은 높이의 두 Powder
+  칸을 맞바꾸는 것 자체는 두 칸의 재질만 뒤바뀔 뿐 지형(어느 열이 얼마나
+  깊은지)은 전혀 안 바뀐다 — 실제로 웅덩이 표면이 평평해지는 건 여전히
+  `swapOntoLiquid`(노출된 액체 자리로 내려앉기) 몫이다. `swapOntoPowder`가
+  주는 건 "막다른 자리에서도 최소 하나의 합법적인 수가 존재한다"는 것 — 다른
+  재질 칸과 자리를 바꿔가며 무작위로 옆으로 흘러가다 보면 언젠가 노출된 액체
+  경계에 닿아 `swapOntoLiquid`로 진짜 내려앉을 기회를 얻는다. 즉 "완전히,
+  영원히 못 움직임" → "느리더라도 결국 빠져나감"으로 바꾸는 것이지, 매 틱
+  즉시 평탄해진다는 보장은 아니다 — 하지만 사용자가 보고한 증상이 정확히
+  "633 틱이 지나도 그대로"이므로, 이걸로 충분하다.
+- **검증**: 저장소 루트 임시 헤드리스 스크립트로 Molten Metal 침투를 막을
+  만큼 두꺼운 Coal Powder 슬랩 한가운데(가장자리에서 20칸 이상 떨어진 곳)에
+  고립시킨 단일 Limestone 알갱이로 확인 — 수정 전엔 2000틱 내내 단 한 번도
+  이동하지 않음(완전 고정), 수정 후엔 즉시(0번째 틱) 옆 Coal Powder와 자리를
+  바꾸며 풀려남. `npm run check`(0 errors), `npm run test:active-tiles`
+  (13 시나리오 전건, 새 시나리오 `makeMixedFloat` — Coal Powder/Limestone이
+  한 칸씩 번갈아 나열된 선반을 Molten Metal 위 두꺼운 Coal Powder 슬랩에
+  얹어 `swapOntoPowder`/`moveSidewaysMix` 경로를 강제로 타게 함 — 포함)
+  재통과.
+
 ## 니트로가 Blue Flame에 반응하지 않던 버그 수정 (`nitro.ts`)
 
 니트로의 자체 트리거 스캔(`updateNitro`)이 `FIRE`/`LAVA`/`BLAST`만 검사하고 `BLUE_FLAME`을

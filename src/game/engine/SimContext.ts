@@ -25,6 +25,10 @@ const GRAVITY_VECTORS: Record<GravityDir, readonly [number, number]> = {
   right: [1, 0],
 };
 
+/** Shared empty `mixIds` — moveSidewaysBuoyant's "no other floating powder to
+ *  swap with" case, reused so it doesn't allocate a fresh array every call. */
+const NO_MIX_IDS: readonly number[] = [];
+
 /**
  * 겹침 (overlap) hosting rule: which fluids may share a cell with which primary
  * occupants (see Grid.overlay). A porous solid (Mesh, Turbine) hosts any liquid
@@ -692,13 +696,34 @@ export class SimContext {
    * incidental gap at the pool's edge.
    */
   moveSidewaysBuoyant(x: number, y: number): boolean {
+    return this.moveSidewaysMix(x, y, NO_MIX_IDS);
+  }
+
+  /**
+   * Like moveSidewaysBuoyant, but with one more fallback: an unconditional
+   * swap with an adjacent Powder cell whose id is in `mixIds` — a
+   * caller-supplied list of *other* floating powders known to share this
+   * same liquid (see behaviors.ts's updatePowderMix/updatePowderSink).
+   * tryMove and swapOntoLiquid only ever move a Powder cell past a Liquid
+   * one, never past another Powder (see isDisplaceable), so two different
+   * floating powders that together fully tile a liquid's surface — no
+   * exposed liquid gap left for either to glide into — would otherwise
+   * freeze mid-raft with neither able to budge: the same frozen-comb shape
+   * moveSidewaysBuoyant exists to fix for a single species, just triggered
+   * by a powder neighbor instead of a liquid one. `mixIds` empty (the plain
+   * moveSidewaysBuoyant case) makes swapOntoPowder a guaranteed no-op, so
+   * this is a strict superset of the old behavior, not a separate rule.
+   */
+  moveSidewaysMix(x: number, y: number, mixIds: readonly number[]): boolean {
     if (!this.gravityPass()) return false;
     const [px, py] = this.randomPerp();
     return (
       this.tryMove(x, y, x + px, y + py) ||
       this.tryMove(x, y, x - px, y - py) ||
       this.swapOntoLiquid(x, y, x + px, y + py) ||
-      this.swapOntoLiquid(x, y, x - px, y - py)
+      this.swapOntoLiquid(x, y, x - px, y - py) ||
+      this.swapOntoPowder(x, y, x + px, y + py, mixIds) ||
+      this.swapOntoPowder(x, y, x - px, y - py, mixIds)
     );
   }
 
@@ -708,14 +733,25 @@ export class SimContext {
    * swaps with a `containerIds`-listed neighbor via swapOntoLiquid, skipping
    * the density-sorted tryMove attempt moveSidewaysBuoyant tries first — see
    * swapOntoLiquid's own doc comment for why that matters and why
-   * `containerIds` is required here but not there.
+   * `containerIds` is required here but not there. `mixIds` is
+   * moveSidewaysMix's same "other floating powder" fallback, for a pinned
+   * charge that mixes more than one flux/reductant powder (Coal Powder +
+   * Limestone) densely enough that neither has an exposed containerIds
+   * liquid beside it either.
    */
-  moveSidewaysContained(x: number, y: number, containerIds: readonly number[]): boolean {
+  moveSidewaysContained(
+    x: number,
+    y: number,
+    containerIds: readonly number[],
+    mixIds: readonly number[],
+  ): boolean {
     if (!this.gravityPass()) return false;
     const [px, py] = this.randomPerp();
     return (
       this.swapOntoLiquid(x, y, x + px, y + py, containerIds) ||
-      this.swapOntoLiquid(x, y, x - px, y - py, containerIds)
+      this.swapOntoLiquid(x, y, x - px, y - py, containerIds) ||
+      this.swapOntoPowder(x, y, x + px, y + py, mixIds) ||
+      this.swapOntoPowder(x, y, x - px, y - py, mixIds)
     );
   }
 
@@ -764,6 +800,25 @@ export class SimContext {
     const id = this.get(tx, ty);
     if (id === EMPTY || getMaterial(id).phase !== Phase.Liquid) return false;
     if (containerIds && !containerIds.includes(id)) return false;
+    this.swap(x, y, tx, ty);
+    return true;
+  }
+
+  /**
+   * Unconditional swap with an adjacent Powder cell whose id is in `ids` —
+   * moveSidewaysMix/moveSidewaysContained's fallback for two different
+   * floating powders that can fully tile a liquid's surface (see
+   * moveSidewaysMix's doc comment). No density comparison and no `isFrozen`
+   * check: Powder materials never define `freeze` (it's a Liquid-only
+   * concept — see Material.freeze), and either grain being unable to budge
+   * past the other is exactly the frozen state this exists to break, not a
+   * condition worth sorting by. An empty `ids` (moveSidewaysBuoyant's case)
+   * makes this a guaranteed no-op.
+   */
+  private swapOntoPowder(x: number, y: number, tx: number, ty: number, ids: readonly number[]): boolean {
+    if (!this.inBounds(tx, ty)) return false;
+    const id = this.get(tx, ty);
+    if (id === EMPTY || !ids.includes(id)) return false;
     this.swap(x, y, tx, ty);
     return true;
   }

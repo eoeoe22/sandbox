@@ -1,8 +1,9 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { updatePowder } from '../engine/behaviors';
+import { updatePowderMix } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
+import { COAL_POWDER } from './coalpowder';
 import { tryHoldInActiveMelt } from './moltenironore';
 
 // Limestone — the optional flux of the smelting kit. Its main role is to be
@@ -30,11 +31,14 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // surface, which the generic density rule would otherwise do since both are
 // denser than Limestone. Molten Metal needs no such override: once the grain
 // is below both Ore and Slag, in the finished layer (nothing left for it to
-// flux), tryHoldInActiveMelt returns false and updatePowder's ordinary
-// generic buoyancy floats it clear on its own, the same as any other liquid.
+// flux), tryHoldInActiveMelt returns false and updatePowderMix's ordinary
+// generic buoyancy floats it clear on its own, the same as any other liquid
+// — Coal Powder is in its mixIds so the two can still swap past each other
+// there if they've floated clear together with no open liquid between them
+// (see SimContext.moveSidewaysMix).
 function updateLimestone(x: number, y: number, sim: SimContext): void {
   if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowder(x, y, sim);
+  updatePowderMix(x, y, sim, [COAL_POWDER.id]);
 }
 
 export const LIMESTONE = register({

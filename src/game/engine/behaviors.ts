@@ -245,15 +245,40 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  Powder: it's denser than every liquid tryHoldInActiveMelt pins against, so
  *  shouldFlatten is always false for it and this step is skipped entirely,
  *  same as it always was for Coal Powder before this method existed (see
- *  moltenironore.ts's tryHoldInActiveMelt doc comment). */
+ *  moltenironore.ts's tryHoldInActiveMelt doc comment). `mixIds` is forwarded
+ *  to moveSidewaysContained unchanged — see its own comment and
+ *  updatePowderMix below for why a pinned charge needs this too, not just the
+ *  free-floating case. */
 export function updatePowderSink(
   x: number,
   y: number,
   sim: SimContext,
   containerIds: readonly number[],
+  mixIds: readonly number[],
 ): void {
   if (fallAndPile(x, y, sim)) return;
-  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds);
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds, mixIds);
+}
+
+/** Like updatePowder, but the flatten step also lets the sideways move swap
+ *  places with a specific *other* floating powder listed in `mixIds` (see
+ *  SimContext.moveSidewaysMix), instead of only an adjacent Liquid. For a
+ *  powder that can end up floating side by side with one particular other
+ *  kind of powder on the same liquid — Coal Powder and Limestone on a
+ *  smelting furnace's Molten Metal, once tryHoldInActiveMelt no longer holds
+ *  them — where the two together can fully tile the surface with no exposed
+ *  liquid gap left for the ordinary moveSidewaysBuoyant fallback to use,
+ *  freezing into the same comb shape flattenIfFloating exists to prevent,
+ *  just triggered by a powder neighbor instead of a liquid one. */
+export function updatePowderMix(
+  x: number,
+  y: number,
+  sim: SimContext,
+  mixIds: readonly number[],
+): void {
+  if (tryBuoyantRise(x, y, sim)) return;
+  if (fallAndPile(x, y, sim)) return;
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysMix(x, y, mixIds);
 }
 
 /** Powder: falls and piles (fallAndPile), then flattens/unclogs

@@ -120,7 +120,21 @@ export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): bool
   const aboveId = sim.get(ux, uy);
   const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
   if (!pinIds.includes(aboveId)) return false;
-  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id]);
+  // Coal Powder and Limestone can both be pinned in the same charge at once
+  // (a mixed pour), dense enough between them to leave neither an exposed
+  // containerIds liquid to spread sideways into — the same "no gap to glide
+  // through" comb SimContext.moveSidewaysMix fixes for the free-floating
+  // case, just reached here via moveSidewaysContained instead. Passing both
+  // ids (rather than just "the other one") keeps this shared call simple —
+  // tryHoldInActiveMelt doesn't need to know which of the two is actually
+  // calling it, and a same-material swap is harmless either way.
+  updatePowderSink(
+    x,
+    y,
+    sim,
+    [...pinIds, MOLTEN_METAL.id],
+    [COAL_POWDER.id, LIMESTONE.id],
+  );
   return true;
 }
 

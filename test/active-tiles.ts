@@ -161,6 +161,46 @@ function makeMeltPinnedFlux(w: number, h: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
+/** A shelf of alternating Coal Powder / Limestone cells over a thick Coal
+ *  Powder slab over Molten Metal — every shelf cell's own-row lateral
+ *  neighbor is the *other* floating powder, never Liquid, and the slab is
+ *  thick enough to keep Molten Metal's soak-into-a-powder-bed seepage from
+ *  reaching the shelf within this scene's tick budget. Exercises
+ *  SimContext.swapOntoPowder/moveSidewaysMix, the free-floating counterpart
+ *  to makeMeltPinnedFlux's moveSidewaysContained coverage (see
+ *  docs/MATERIAL-SYSTEMS.md's "두 종류의 뜨는 가루가 서로를 막던 문제") — without
+ *  it, a shelf cell here has no adjacent Liquid to glide into (tryMove and
+ *  swapOntoLiquid only ever move a Powder cell past a Liquid one, never past
+ *  another Powder) and no valid fall/pile target either (straight/diagonal
+ *  down both land on more of the slab), so it's stuck with zero legal moves
+ *  regardless of how many ticks pass. Cool throughout (well under Coal
+ *  Powder's 580° autoignite) so this is purely a movement scene, not a
+ *  combustion one. Deterministic (no RNG) so it drops straight into the
+ *  equivalence harness like makeFloatingRaft/makeMeltPinnedFlux. */
+function makeMixedFloat(w: number, h: number): Snapshot {
+  const COAL_POWDER = 70;
+  const LIMESTONE = 69;
+  const MOLTEN_METAL = 29;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(200);
+  const tint = new Uint8Array(n);
+  const floorTop = (h * 0.6) | 0;
+  for (let y = floorTop; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      cells[y * w + x] = MOLTEN_METAL;
+      temp[y * w + x] = 900; // above its 650 freeze point
+    }
+  }
+  const slabTop = floorTop - 6;
+  for (let y = slabTop; y < floorTop; y++) {
+    for (let x = 0; x < w; x++) cells[y * w + x] = COAL_POWDER;
+  }
+  const shelfY = slabTop - 1;
+  for (let x = 0; x < w; x++) cells[shelfY * w + x] = x % 2 === 0 ? COAL_POWDER : LIMESTONE;
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -256,6 +296,7 @@ interface Case {
   slabRows?: number; // if set, use a settled sand slab instead of random fill
   raft?: boolean; // if set, use a jagged sealed Ash-in-Water raft instead of random fill
   meltFlux?: boolean; // if set, use a jagged Limestone comb pinned inside a Molten Iron Ore melt
+  mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -286,6 +327,12 @@ const CASES: Case[] = [
   // covered by melt on every side, not open air a plain moveSideways or the
   // unrestricted moveSidewaysBuoyant could already handle.
   { seed: 0xb3, w: 54, h: 60, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, meltFlux: true },
+  // Targeted: alternating Coal Powder/Limestone shelf over Molten Metal —
+  // swapOntoPowder/moveSidewaysMix's only path to being exercised, since
+  // every shelf cell's own-row neighbor is the other floating powder, not
+  // open air or Liquid a plain moveSideways/moveSidewaysBuoyant could
+  // already handle.
+  { seed: 0xb4, w: 50, h: 24, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, mixedFloat: true },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -299,7 +346,9 @@ for (const c of CASES) {
       ? makeFloatingRaft(c.w, c.h)
       : c.meltFlux
         ? makeMeltPinnedFlux(c.w, c.h)
-        : makeScene(c.seed, c.w, c.h, c.fill);
+        : c.mixedFloat
+          ? makeMixedFloat(c.w, c.h)
+          : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
