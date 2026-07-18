@@ -702,20 +702,47 @@ export class SimContext {
     );
   }
 
+  /**
+   * Sideways move for a cell pinned in place by melt above it (see
+   * behaviors.ts's updatePowderSink / moltenironore.ts's tryHoldInActiveMelt):
+   * swaps unconditionally with an adjacent Liquid neighbor via swapOntoLiquid,
+   * the same fallback moveSidewaysBuoyant uses — but skips the density-sorted
+   * tryMove attempt that method tries first, since tryMove treats an EMPTY
+   * neighbor as always enterable. A grain still covered above must stay
+   * contained within the melt (that's the whole point of the hold), so
+   * stepping into open air the instant one happens to be exposed at that row
+   * would defeat it; only a Liquid neighbor is ever a valid target here.
+   */
+  moveSidewaysContained(x: number, y: number): boolean {
+    if (!this.gravityPass()) return false;
+    const [px, py] = this.randomPerp();
+    return (
+      this.swapOntoLiquid(x, y, x + px, y + py) || this.swapOntoLiquid(x, y, x - px, y - py)
+    );
+  }
+
   /** Unconditional swap with an adjacent Liquid cell, skipping both tryMove's
-   *  density-sort and its DISPLACE_DRAG throttle — see moveSidewaysBuoyant, its
-   *  only caller, which always tries the normal density-sorted tryMove on this
-   *  same (tx,ty) first. That prior attempt is what makes skipping the density
-   *  check here safe, not an assumption about material densities: tryMove's
-   *  sideways rule only fails when the mover *isn't* denser than the target, so
-   *  by the time this runs the target is already guaranteed to be at least as
-   *  dense as the mover. No drag gate either — gating this on density gap the
-   *  way vertical displacement is would just reintroduce the stuck-column
-   *  problem this method exists to fix. It doesn't require the neighbor be the
-   *  *same* liquid the mover is floating on — any Liquid it isn't denser than
-   *  counts, matching the density-only rule floatingOnLiquid/tryBuoyantRise
-   *  already use everywhere else (a powder floats clear of whichever liquid
-   *  it's lighter than, not just one it's "assigned" to). */
+   *  density-sort and its DISPLACE_DRAG throttle. Two callers rely on this for
+   *  different reasons. moveSidewaysBuoyant always tries the normal
+   *  density-sorted tryMove on this same (tx,ty) first — that prior attempt is
+   *  what makes skipping the density check safe there, not an assumption about
+   *  material densities: tryMove's sideways rule only fails when the mover
+   *  *isn't* denser than the target, so by the time this runs the target is
+   *  already guaranteed to be at least as dense as the mover. moveSidewaysContained
+   *  has no such prior attempt and doesn't need one: its caller (updatePowderSink,
+   *  via tryHoldInActiveMelt) is itself a deliberate override of the density rule
+   *  — the grain is being held in the melt *against* what its own density would
+   *  otherwise do — so redistributing it among Liquid neighbors regardless of
+   *  their relative density is exactly the intended behavior, not a hazard to
+   *  guard against. Neither caller wants a drag gate either — gating this on
+   *  density gap the way vertical displacement is would just reintroduce the
+   *  stuck-column problem moveSidewaysBuoyant exists to fix, and would throttle
+   *  moveSidewaysContained's redistribution for no reason (it isn't sorting by
+   *  density in the first place). Doesn't require the neighbor be the *same*
+   *  liquid the mover is floating on/pinned in — any Liquid counts, matching the
+   *  density-only rule floatingOnLiquid/tryBuoyantRise already use everywhere
+   *  else (a powder floats clear of whichever liquid it's lighter than, not
+   *  just one it's "assigned" to). */
   private swapOntoLiquid(x: number, y: number, tx: number, ty: number): boolean {
     if (!this.inBounds(tx, ty) || this.isFrozen(tx, ty)) return false;
     const id = this.get(tx, ty);
