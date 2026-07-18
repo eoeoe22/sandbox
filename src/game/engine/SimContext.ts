@@ -733,25 +733,28 @@ export class SimContext {
    * swaps with a `containerIds`-listed neighbor via swapOntoLiquid, skipping
    * the density-sorted tryMove attempt moveSidewaysBuoyant tries first — see
    * swapOntoLiquid's own doc comment for why that matters and why
-   * `containerIds` is required here but not there. `mixIds` is
-   * moveSidewaysMix's same "other floating powder" fallback, for a pinned
-   * charge that mixes more than one flux/reductant powder (Coal Powder +
-   * Limestone) densely enough that neither has an exposed containerIds
-   * liquid beside it either.
+   * `containerIds` is required here but not there.
+   *
+   * Deliberately does NOT get moveSidewaysMix's swapOntoPowder fallback:
+   * unlike `containerIds` (restricted to liquids the caller has confirmed are
+   * part of THIS melt), `swapOntoPowder`'s `ids` allowlist only checks a
+   * neighbor's material id, not whether it's actually part of the same pinned
+   * charge — a Coal Powder pile a player left touching the outside of the
+   * furnace is the same id as Coal Powder pinned inside it. Adding that
+   * fallback here would let a pinned grain swap past the furnace wall into an
+   * unrelated pile outside, exactly the containment leak `containerIds` was
+   * introduced to prevent (see swapOntoLiquid's doc comment). The
+   * powder-vs-powder comb this fixes for the free-floating case
+   * (moveSidewaysMix, used once a grain has cleared Ore/Slag onto the
+   * furnace's own Molten Metal) doesn't have this hazard: nothing there is
+   * "pinned" to begin with, so there's no containment to leak out of.
    */
-  moveSidewaysContained(
-    x: number,
-    y: number,
-    containerIds: readonly number[],
-    mixIds: readonly number[],
-  ): boolean {
+  moveSidewaysContained(x: number, y: number, containerIds: readonly number[]): boolean {
     if (!this.gravityPass()) return false;
     const [px, py] = this.randomPerp();
     return (
       this.swapOntoLiquid(x, y, x + px, y + py, containerIds) ||
-      this.swapOntoLiquid(x, y, x - px, y - py, containerIds) ||
-      this.swapOntoPowder(x, y, x + px, y + py, mixIds) ||
-      this.swapOntoPowder(x, y, x - px, y - py, mixIds)
+      this.swapOntoLiquid(x, y, x - px, y - py, containerIds)
     );
   }
 
@@ -806,14 +809,18 @@ export class SimContext {
 
   /**
    * Unconditional swap with an adjacent Powder cell whose id is in `ids` —
-   * moveSidewaysMix/moveSidewaysContained's fallback for two different
-   * floating powders that can fully tile a liquid's surface (see
-   * moveSidewaysMix's doc comment). No density comparison and no `isFrozen`
-   * check: Powder materials never define `freeze` (it's a Liquid-only
-   * concept — see Material.freeze), and either grain being unable to budge
-   * past the other is exactly the frozen state this exists to break, not a
-   * condition worth sorting by. An empty `ids` (moveSidewaysBuoyant's case)
-   * makes this a guaranteed no-op.
+   * moveSidewaysMix's fallback for two different floating powders that can
+   * fully tile a liquid's surface (see moveSidewaysMix's doc comment). No
+   * density comparison and no `isFrozen` check: Powder materials never define
+   * `freeze` (it's a Liquid-only concept — see Material.freeze), and either
+   * grain being unable to budge past the other is exactly the frozen state
+   * this exists to break, not a condition worth sorting by. An empty `ids`
+   * (moveSidewaysBuoyant's case) makes this a guaranteed no-op.
+   *
+   * NOT used by moveSidewaysContained: `ids` only checks a neighbor's
+   * material identity, not whether it's actually part of the same pinned
+   * body a `containerIds` liquid is — see moveSidewaysContained's own doc
+   * comment for the containment leak that would reopen.
    */
   private swapOntoPowder(x: number, y: number, tx: number, ty: number, ids: readonly number[]): boolean {
     if (!this.inBounds(tx, ty)) return false;

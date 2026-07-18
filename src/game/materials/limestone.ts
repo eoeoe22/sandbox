@@ -17,7 +17,7 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // "가벼운 가루" (light powder) — the lightest thing in the whole smelting stack
 // (Limestone 5 < Slag 5.75 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
 // Metal 8, see moltenironore.ts/coalpowder.ts/slag.ts/moltenmetal.ts), the same
-// mechanism every powder gets (updatePowder's generic density-based buoyancy —
+// generic density-based buoyancy every powder gets (updatePowderMix/updatePowder —
 // see engine/behaviors.ts): against ordinary liquids (water, oil, Mercury,
 // Molten Uranium, …) it just floats or sinks by density like any other powder.
 // Molten Iron Ore and Slag are the deliberate exception, held by material
@@ -36,9 +36,18 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // — Coal Powder is in its mixIds so the two can still swap past each other
 // there if they've floated clear together with no open liquid between them
 // (see SimContext.moveSidewaysMix).
+// Lazily built (not a plain module-level literal): COAL_POWDER comes from
+// coalpowder.ts, which imports back from this file, so a top-level
+// `[COAL_POWDER.id]` would read COAL_POWDER before that circular import
+// finishes resolving and crash (confirmed by trying it — reads `.id` off
+// `undefined`). Deferring construction to updateLimestone's first actual
+// call — long after both modules have finished loading — avoids that while
+// still only allocating the array once.
+let mixIds: readonly number[] | undefined;
+
 function updateLimestone(x: number, y: number, sim: SimContext): void {
   if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowderMix(x, y, sim, [COAL_POWDER.id]);
+  updatePowderMix(x, y, sim, mixIds ?? (mixIds = [COAL_POWDER.id]));
 }
 
 export const LIMESTONE = register({

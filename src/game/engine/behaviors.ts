@@ -245,20 +245,29 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  Powder: it's denser than every liquid tryHoldInActiveMelt pins against, so
  *  shouldFlatten is always false for it and this step is skipped entirely,
  *  same as it always was for Coal Powder before this method existed (see
- *  moltenironore.ts's tryHoldInActiveMelt doc comment). `mixIds` is forwarded
- *  to moveSidewaysContained unchanged — see its own comment and
- *  updatePowderMix below for why a pinned charge needs this too, not just the
- *  free-floating case. */
+ *  moltenironore.ts's tryHoldInActiveMelt doc comment).
+ *
+ *  Deliberately does NOT get updatePowderMix's mixIds fallback: unlike
+ *  `containerIds`, a `mixIds` match is by material id alone, with no check
+ *  that the neighbor is actually part of *this* pinned charge — see
+ *  SimContext.moveSidewaysContained's doc comment for why adding that
+ *  fallback here would leak a pinned grain into an unrelated pile of the same
+ *  material sitting outside the furnace. */
 export function updatePowderSink(
   x: number,
   y: number,
   sim: SimContext,
   containerIds: readonly number[],
-  mixIds: readonly number[],
 ): void {
   if (fallAndPile(x, y, sim)) return;
-  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds, mixIds);
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds);
 }
+
+/** Empty `mixIds` — updatePowder's "no other floating powder to swap with"
+ *  case, reused so it doesn't allocate a fresh array every call (mirrors
+ *  SimContext.ts's own NO_MIX_IDS, kept as a separate constant here rather
+ *  than exported/shared since it's a trivial, module-local value). */
+const NO_MIX_IDS: readonly number[] = [];
 
 /** Like updatePowder, but the flatten step also lets the sideways move swap
  *  places with a specific *other* floating powder listed in `mixIds` (see
@@ -269,7 +278,9 @@ export function updatePowderSink(
  *  them — where the two together can fully tile the surface with no exposed
  *  liquid gap left for the ordinary moveSidewaysBuoyant fallback to use,
  *  freezing into the same comb shape flattenIfFloating exists to prevent,
- *  just triggered by a powder neighbor instead of a liquid one. */
+ *  just triggered by a powder neighbor instead of a liquid one. `updatePowder`
+ *  below is just this with `mixIds` empty, so there's one flatten path to
+ *  maintain instead of two near-identical copies. */
 export function updatePowderMix(
   x: number,
   y: number,
@@ -281,22 +292,21 @@ export function updatePowderMix(
   if (shouldFlatten(x, y, sim)) sim.moveSidewaysMix(x, y, mixIds);
 }
 
-/** Powder: falls and piles (fallAndPile), then flattens/unclogs
- *  (flattenIfFloating) if that had nothing to do, but first tries to float
- *  clear if it's submerged under a denser liquid (tryBuoyantRise) — every
- *  powder sinks or floats by its own density against whatever liquid it ends
- *  up under, not just the handful that used to have this wired in specially.
- *  The shared default for Phase.Powder (see registry.ts's defaultUpdate) and
- *  the fallback nearly every material-specific powder update calls once its
- *  own reactions don't fire, so this one change gives buoyancy to the whole
- *  roster for free. A powder with its own material-specific float rule
- *  instead of the bare density comparison (Coal Powder, Limestone — see
- *  moltenironore.ts's tryHoldInActiveMelt) intercepts before this ever
- *  runs. */
+/** Powder: falls and piles (fallAndPile), then flattens/unclogs if that had
+ *  nothing to do, but first tries to float clear if it's submerged under a
+ *  denser liquid (tryBuoyantRise) — every powder sinks or floats by its own
+ *  density against whatever liquid it ends up under, not just the handful
+ *  that used to have this wired in specially. The shared default for
+ *  Phase.Powder (see registry.ts's defaultUpdate) and the fallback nearly
+ *  every material-specific powder update calls once its own reactions don't
+ *  fire, so this one change gives buoyancy to the whole roster for free. A
+ *  powder with its own material-specific float rule instead of the bare
+ *  density comparison (Coal Powder, Limestone — see moltenironore.ts's
+ *  tryHoldInActiveMelt) intercepts before this ever runs. Just
+ *  updatePowderMix with no other floating powder to swap with — see its own
+ *  comment. */
 export function updatePowder(x: number, y: number, sim: SimContext): void {
-  if (tryBuoyantRise(x, y, sim)) return;
-  if (fallAndPile(x, y, sim)) return;
-  flattenIfFloating(x, y, sim);
+  updatePowderMix(x, y, sim, NO_MIX_IDS);
 }
 
 // A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways

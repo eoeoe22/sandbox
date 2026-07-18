@@ -79,6 +79,15 @@ function mixIntoMelt(x: number, y: number, sim: SimContext): boolean {
   return false;
 }
 
+// Lazily built (not a plain module-level literal): LIMESTONE comes from
+// limestone.ts, which imports back from this file, so a top-level
+// `[LIMESTONE.id]` would read LIMESTONE before that circular import finishes
+// resolving and crash (confirmed by trying it — reads `.id` off `undefined`).
+// Deferring construction to updateCoalPowder's first actual call — long
+// after both modules have finished loading — avoids that while still only
+// allocating the array once.
+let mixIds: readonly number[] | undefined;
+
 function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // Reductant against the hearth (ore/molten iron): don't burn — it's spent by
   // the ore's reduction (see moltenironore.ts), so mixed-in coal survives being
@@ -110,7 +119,7 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // surface, can still swap past each other when neither has open liquid
   // beside it (see SimContext.moveSidewaysMix).
   if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowderMix(x, y, sim, [LIMESTONE.id]);
+  updatePowderMix(x, y, sim, mixIds ?? (mixIds = [LIMESTONE.id]));
 }
 
 export const COAL_POWDER = register({

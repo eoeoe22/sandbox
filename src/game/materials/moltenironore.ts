@@ -88,7 +88,7 @@ function isCarbon(id: number): boolean {
 // correct and Coal Powder needs no separate code path.
 //
 // This returns false for every other liquid — including the finished Molten
-// Metal layer — so the caller's ordinary `updatePowder` fallback takes over
+// Metal layer — so the caller's ordinary `updatePowderMix` fallback takes over
 // there; Molten Metal needs no special case of its own because Limestone (and
 // Coal Powder, though it gets there by sinking through Ore/Slag first now
 // rather than starting out on top of everything) is lighter than it, so the
@@ -120,21 +120,7 @@ export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): bool
   const aboveId = sim.get(ux, uy);
   const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
   if (!pinIds.includes(aboveId)) return false;
-  // Coal Powder and Limestone can both be pinned in the same charge at once
-  // (a mixed pour), dense enough between them to leave neither an exposed
-  // containerIds liquid to spread sideways into — the same "no gap to glide
-  // through" comb SimContext.moveSidewaysMix fixes for the free-floating
-  // case, just reached here via moveSidewaysContained instead. Passing both
-  // ids (rather than just "the other one") keeps this shared call simple —
-  // tryHoldInActiveMelt doesn't need to know which of the two is actually
-  // calling it, and a same-material swap is harmless either way.
-  updatePowderSink(
-    x,
-    y,
-    sim,
-    [...pinIds, MOLTEN_METAL.id],
-    [COAL_POWDER.id, LIMESTONE.id],
-  );
+  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id]);
   return true;
 }
 
