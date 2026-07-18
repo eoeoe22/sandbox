@@ -54,6 +54,16 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
   return above.density > getMaterial(sim.get(x, y)).density;
 }
 
+// A submerged grain's moveUp target is exactly the cell submergedUnderDenserLiquid
+// just confirmed is a denser liquid, so tryMove's density-sort passes almost every
+// tick by construction — left unchecked, a whole stack of submerged grains (liquid
+// backfilling below each one the instant it rises, see tryBuoyantRise's comment)
+// would ride straight up in lockstep, staying a rigid vertical column the entire way
+// instead of spreading out. Mirrors updateGas's wobble: a chance to prefer the
+// diagonal step over going straight up, so a rising cluster drifts apart instead of
+// preserving whatever column shape it started in.
+const RISE_WOBBLE_CHANCE = 0.4;
+
 /**
  * "가벼운 가루" (light powder): if this cell is submerged under a denser
  * liquid, actively try to float back up through it — rather than sitting
@@ -70,27 +80,24 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
  * No fixed per-tick stall chance — a powder blocked from going straight up
  * is a Powder-phase obstacle the liquid can never displace on its own (see
  * SimContext.isDisplaceable), so sitting idle while covered would plug the
- * liquid's own flow around it every tick it stalled. `moveUp`'s target is
- * exactly the cell submergedUnderDenserLiquid just confirmed is a denser
- * liquid, so tryMove's density-sort passes by construction; `moveUp` still
- * commonly reports no real movement two other ways though — tryMove's own
+ * liquid's own flow around it every tick it stalled. `moveUp`/`moveDiagonalUp`
+ * still commonly report no real movement two ways though — tryMove's own
  * density-gap drag gate can consume the tick without swapping (same
- * resistance every displacement gets, see tryMove), and `moveUp`/
- * `moveDiagonalUp` each roll gravityStrength independently, so a reduced
- * strength can skip either or both on a given tick. `moveUp` only returns
- * *false* (rather than a no-op `true`) when the liquid above is frozen solid
- * (SimContext.isFrozen blocks displacement) or its own gravityStrength roll
- * misses; the diagonal-up fallback is tried unconditionally on that `false`
- * — no `friction` gate — since that field's per-tick "grip" chance is tuned
- * for a grain resting on a slope under gravity, a scenario with no
- * equivalent here, and gating on it would just reintroduce a stall by
- * another name — several materials' resting friction (e.g. Cement's 0.52)
- * is higher than any fixed stall chance this file has ever used.
+ * resistance every displacement gets, see tryMove), and each move rolls
+ * gravityStrength independently, so a reduced strength can skip either or
+ * both on a given tick. Whichever of the two (straight/diagonal, order set by
+ * RISE_WOBBLE_CHANCE) is tried first, the other is tried as a fallback if it
+ * fails — no `friction` gate on the diagonal, since that field's per-tick
+ * "grip" chance is tuned for a grain resting on a slope under gravity, a
+ * scenario with no equivalent here, and gating on it would just reintroduce a
+ * stall by another name — several materials' resting friction (e.g. Cement's
+ * 0.52) is higher than any fixed stall chance this file has ever used.
  *
  * Returns true if it acted (submerged, whether or not the attempted move
  * actually succeeded that tick) so the caller skips its normal fall/pile
  * behavior only while covered; false once it clears the surface, letting the
- * caller fall through to its own ordinary movement.
+ * caller fall through to its own ordinary movement (see pileOrFlatten, which
+ * handles a surfaced grain capping others still queued below it).
  *
  * Every powder is density-rated (see Material.density), so this is purely a
  * density comparison — no per-material float list. A powder floats clear of
@@ -99,49 +106,138 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
  */
 export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
   if (!submergedUnderDenserLiquid(x, y, sim)) return false;
-  if (sim.moveUp(x, y)) return true;
-  sim.moveDiagonalUp(x, y);
+  if (sim.chance(RISE_WOBBLE_CHANCE)) {
+    if (sim.moveDiagonalUp(x, y)) return true;
+    sim.moveUp(x, y);
+  } else {
+    if (sim.moveUp(x, y)) return true;
+    sim.moveDiagonalUp(x, y);
+  }
   return true;
 }
 
-/** Fall straight down, else tumble diagonally (forms piles). A material's
- *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
- *  grips the slope and stays put more often, so the pile stands steeper — while
- *  the straight-down fall is never blocked (grains still settle). tryBuoyantRise
- *  above has the same straight-move/diagonal-fallback shape for the
- *  submerged/rising case, but *without* this friction gate — see its own
- *  comment for why gating the rise the same way doesn't work. */
-function fallAndPile(x: number, y: number, sim: SimContext): void {
-  if (sim.moveDown(x, y)) return;
+/** Fall straight down, else tumble diagonally (forms piles); returns whether
+ *  either actually moved the cell. A material's `friction` (안식각) throttles
+ *  only the diagonal tumble — a high-friction grain grips the slope and stays
+ *  put more often, so the pile stands steeper — while the straight-down fall
+ *  is never blocked (grains still settle). tryBuoyantRise above has the same
+ *  straight-move/diagonal-fallback shape for the submerged/rising case, but
+ *  *without* this friction gate — see its own comment for why gating the rise
+ *  the same way doesn't work. */
+function fallAndPile(x: number, y: number, sim: SimContext): boolean {
+  if (sim.moveDown(x, y)) return true;
   const friction = getMaterial(sim.get(x, y)).friction;
-  if (friction !== undefined && friction > 0 && sim.chance(friction)) return;
-  sim.moveDiagonalDown(x, y);
+  if (friction !== undefined && friction > 0 && sim.chance(friction)) return false;
+  return sim.moveDiagonalDown(x, y);
 }
 
-/** Sink-only powder: falls and piles like updatePowder, but never attempts the
- *  generic density-based rise. For the rare powder (Coal Powder, Limestone)
- *  that has its own material-specific rule for *which* liquid it's allowed to
- *  float clear of (see moltenironore.ts's `tryHoldInActiveMelt`) — while
- *  pinned against Molten Iron Ore/Slag it must still be free to settle
- *  *downward* if there's room (an ordinary powder never stops falling just
- *  because something denser is above it), it just must not try to rise. */
+/** True if the cell along gravity ("below" x,y) holds a liquid denser than
+ *  this cell's own material — i.e. this powder is floating directly on a pool
+ *  it's too light to sink into, as opposed to resting on solid ground or
+ *  another powder. Mirror of submergedUnderDenserLiquid, which checks the
+ *  same relationship on the opposite side. */
+function floatingOnLiquid(x: number, y: number, sim: SimContext): boolean {
+  const dx = x + sim.gravityX;
+  const dy = y + sim.gravityY;
+  if (!sim.inBounds(dx, dy)) return false;
+  const belowId = sim.get(dx, dy);
+  if (belowId === EMPTY) return false;
+  const below = getMaterial(belowId);
+  if (below.phase !== Phase.Liquid) return false;
+  return below.density > getMaterial(sim.get(x, y)).density;
+}
+
+// How far restingOnStackedFloat looks down through a run of Powder cells before
+// giving up. A grain that just surfaced from a rise often still has more of the
+// same queued directly beneath it — moveUp swaps the liquid that used to separate
+// them away as each follower arrives (see tryBuoyantRise), so by the time a grain
+// is capped there's no liquid left between it and its queue, only more Powder;
+// floatingOnLiquid alone (checking just the immediate neighbor) would never catch
+// that. Bounded so the look-down can't walk the full height of an ordinary
+// grounded pile.
+const FLOAT_STACK_SCAN = 16;
+// Looking that far down is comparatively expensive, so pileOrFlatten only rolls
+// it this often per idle tick rather than every tick — a capped column still
+// clears in a handful of ticks on average (imperceptible at sim speed), while an
+// ordinary grounded pile — whose interior cells all fail this same look-down
+// every idle tick — pays the cost far less often.
+const FLOAT_STACK_SCAN_CHANCE = 0.2;
+
+/** True if this cell is stacked on other Powder cells that themselves bottom
+ *  out on a denser liquid within FLOAT_STACK_SCAN levels — the deep-buried
+ *  version of floatingOnLiquid, for a grain that's floating but has more of
+ *  its own kind between it and the liquid (see FLOAT_STACK_SCAN). */
+function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
+  const myDensity = getMaterial(sim.get(x, y)).density;
+  let cx = x;
+  let cy = y;
+  for (let i = 0; i < FLOAT_STACK_SCAN; i++) {
+    cx += sim.gravityX;
+    cy += sim.gravityY;
+    if (!sim.inBounds(cx, cy)) return false;
+    const belowId = sim.get(cx, cy);
+    if (belowId === EMPTY) return false;
+    const below = getMaterial(belowId);
+    if (below.phase === Phase.Powder) continue; // keep looking down through the stack
+    return below.phase === Phase.Liquid && below.density > myDensity;
+  }
+  return false;
+}
+
+/** A sideways step if this grain is floating on a liquid it's too light to
+ *  sink into (directly, via floatingOnLiquid, or buried in a stack of its own
+ *  kind, via the FLOAT_STACK_SCAN_CHANCE-gated restingOnStackedFloat) — called
+ *  once a caller's own fall/pile or fall/drift attempt already found nothing
+ *  to do. This settles an unevenly-stacked raft of floating powder flat along
+ *  the surface instead of letting it stand in a sand-pile-style heap, and lets
+ *  a surfaced grain capping the column rising beneath it (see tryBuoyantRise)
+ *  clear out of the way instead of forcing the whole queue into a straight
+ *  line. A grain resting on solid ground, or buried deeper than a
+ *  stacked-float check can see, gets no such step and keeps its ordinary
+ *  angle-of-repose pile shape. */
+function flattenIfFloating(x: number, y: number, sim: SimContext): void {
+  if (floatingOnLiquid(x, y, sim)) {
+    sim.moveSideways(x, y);
+    return;
+  }
+  if (sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim)) {
+    sim.moveSideways(x, y);
+  }
+}
+
+/** fallAndPile, then flattenIfFloating if that had nothing to do — see
+ *  flattenIfFloating for what that adds. */
+function pileOrFlatten(x: number, y: number, sim: SimContext): void {
+  if (fallAndPile(x, y, sim)) return;
+  flattenIfFloating(x, y, sim);
+}
+
+/** Sink-only powder: falls, piles, and flattens/unclogs like updatePowder
+ *  (pileOrFlatten), but never attempts the generic density-based rise. For
+ *  the rare powder (Coal Powder, Limestone) that has its own
+ *  material-specific rule for *which* liquid it's allowed to float clear of
+ *  (see moltenironore.ts's `tryHoldInActiveMelt`) — while pinned against
+ *  Molten Iron Ore/Slag it must still be free to settle *downward* if there's
+ *  room (an ordinary powder never stops falling just because something
+ *  denser is above it), it just must not try to rise. */
 export function updatePowderSink(x: number, y: number, sim: SimContext): void {
-  fallAndPile(x, y, sim);
+  pileOrFlatten(x, y, sim);
 }
 
-/** Powder: falls and piles (fallAndPile), but first tries to float clear if
- *  it's submerged under a denser liquid (tryBuoyantRise) — every powder sinks
- *  or floats by its own density against whatever liquid it ends up under, not
- *  just the handful that used to have this wired in specially. The shared
- *  default for Phase.Powder (see registry.ts's defaultUpdate) and the
- *  fallback nearly every material-specific powder update calls once its own
- *  reactions don't fire, so this one change gives buoyancy to the whole
- *  roster for free. A powder with its own material-specific float rule
- *  instead of the bare density comparison (Coal Powder, Limestone — see
- *  moltenironore.ts's tryHoldInActiveMelt) intercepts before this ever runs. */
+/** Powder: falls, piles, and flattens/unclogs (pileOrFlatten), but first
+ *  tries to float clear if it's submerged under a denser liquid
+ *  (tryBuoyantRise) — every powder sinks or floats by its own density against
+ *  whatever liquid it ends up under, not just the handful that used to have
+ *  this wired in specially. The shared default for Phase.Powder (see
+ *  registry.ts's defaultUpdate) and the fallback nearly every
+ *  material-specific powder update calls once its own reactions don't fire,
+ *  so this one change gives buoyancy to the whole roster for free. A powder
+ *  with its own material-specific float rule instead of the bare density
+ *  comparison (Coal Powder, Limestone — see moltenironore.ts's
+ *  tryHoldInActiveMelt) intercepts before this ever runs. */
 export function updatePowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
-  fallAndPile(x, y, sim);
+  pileOrFlatten(x, y, sim);
 }
 
 // A gas rises imperfectly (updateGas): it stalls for a beat and sways sideways
@@ -158,14 +254,17 @@ const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before d
  *  sideways drift is gated on "air below" so only airborne flakes wander; once
  *  one has a surface under it, it settles and piles like an ordinary powder
  *  (no endless sideways creep along the ground). Also floats clear
- *  (tryBuoyantRise) if submerged under a denser liquid, same as updatePowder. */
+ *  (tryBuoyantRise) if submerged under a denser liquid, same as updatePowder,
+ *  and flattens/unclogs the same way once it can't fall or drift any further
+ *  (flattenIfFloating). */
 export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
   if (sim.chance(DRIFT_STALL_CHANCE)) return;
   const airBelow = sim.inBounds(x, y + 1) && sim.isEmpty(x, y + 1);
   if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
   if (sim.moveDown(x, y)) return;
-  sim.moveDiagonalDown(x, y);
+  if (sim.moveDiagonalDown(x, y)) return;
+  flattenIfFloating(x, y, sim);
 }
 
 /** Fraction of the gas diffusion rate that liquids get: like a gas, a liquid
