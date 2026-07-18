@@ -54,9 +54,6 @@ function submergedUnderDenserLiquid(x: number, y: number, sim: SimContext): bool
   return above.density > getMaterial(sim.get(x, y)).density;
 }
 
-const BUOY_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
-const BUOY_SWAY_CHANCE = 0.35; // occasional sideways drift while rising, so it doesn't bore a perfectly straight shaft
-
 /**
  * "가벼운 가루" (light powder): if this cell is submerged under a denser
  * liquid, actively try to float back up through it — rather than sitting
@@ -68,10 +65,23 @@ const BUOY_SWAY_CHANCE = 0.35; // occasional sideways drift while rising, so it 
  * tick while it's covered. Each successful rise swaps the powder up one cell
  * and the liquid down one cell in the same move, so water poured over a pile
  * doesn't pool on top of it like solid ground — the powder bubbles up through
- * the incoming water instead. Returns true if it acted (submerged, whether or
- * not the attempted move actually succeeded that tick) so the caller skips
- * its normal fall/pile behavior only while covered; false once it clears the
- * surface, letting the caller fall through to its own ordinary movement.
+ * the incoming water instead.
+ *
+ * Mirrors fallAndPile's structure exactly, just against gravity: straight
+ * move first, diagonal fallback gated by the material's own `friction`. No
+ * fixed per-tick stall chance — a powder blocked from going straight up is a
+ * Powder-phase obstacle the liquid can never displace on its own (see
+ * SimContext.isDisplaceable), so sitting idle while covered would plug the
+ * liquid's own flow around it every tick it stalled. Trying a move every
+ * tick, and spreading diagonally the moment the straight path is blocked,
+ * keeps a rising cloud thin and porous — mounding upward the same way a
+ * falling pile mounds downward — instead of packing into a solid column that
+ * dams the liquid it's rising through.
+ *
+ * Returns true if it acted (submerged, whether or not the attempted move
+ * actually succeeded that tick) so the caller skips its normal fall/pile
+ * behavior only while covered; false once it clears the surface, letting the
+ * caller fall through to its own ordinary movement.
  *
  * Every powder is density-rated (see Material.density), so this is purely a
  * density comparison — no per-material float list. A powder floats clear of
@@ -80,9 +90,9 @@ const BUOY_SWAY_CHANCE = 0.35; // occasional sideways drift while rising, so it 
  */
 export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
   if (!submergedUnderDenserLiquid(x, y, sim)) return false;
-  if (sim.chance(BUOY_STALL_CHANCE)) return true;
-  if (sim.chance(BUOY_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
   if (sim.moveUp(x, y)) return true;
+  const friction = getMaterial(sim.get(x, y)).friction;
+  if (friction !== undefined && friction > 0 && sim.chance(friction)) return true;
   sim.moveDiagonalUp(x, y);
   return true;
 }
@@ -90,7 +100,9 @@ export function tryBuoyantRise(x: number, y: number, sim: SimContext): boolean {
 /** Fall straight down, else tumble diagonally (forms piles). A material's
  *  `friction` (안식각) throttles only the diagonal tumble — a high-friction grain
  *  grips the slope and stays put more often, so the pile stands steeper — while
- *  the straight-down fall is never blocked (grains still settle). */
+ *  the straight-down fall is never blocked (grains still settle). Mirrored by
+ *  tryBuoyantRise above for the submerged/rising case (same structure, against
+ *  gravity). */
 function fallAndPile(x: number, y: number, sim: SimContext): void {
   if (sim.moveDown(x, y)) return;
   const friction = getMaterial(sim.get(x, y)).friction;
