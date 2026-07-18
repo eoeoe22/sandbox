@@ -437,10 +437,48 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   (0.2)로 확률 게이팅해 빈도를 낮췄다 — 막힌 대열은 평균 몇 틱 안에
   풀리고, 액체 없는 일반 무더기는 대부분의 틱에서 이 훑기 자체를
   건너뛴다.
-- **왜 두 함수로 나눴나**: 즉시 판정 가능한 `floatingOnLiquid`(바로 아래
-  한 칸만 확인)를 매 틱 걸어 두고, 비용이 큰 `restingOnStackedFloat`만
-  확률 게이팅했다 — 표면에 이미 떠 있는 층은 게이팅 없이 바로바로
-  반응하고, 대열 안에 파묻힌 층만 드물게 확인한다.
+- **왜 두 함수로 나눴나**: 즉시 판정 가능한 `floatingOnLiquid`(깊이 1)를
+  매 틱 걸어 두고, 비용이 큰 `restingOnStackedFloat`(깊이
+  `FLOAT_STACK_SCAN`)만 확률 게이팅했다 — 표면에 이미 떠 있는 층은
+  게이팅 없이 바로바로 반응하고, 대열 안에 파묻힌 층만 드물게 확인한다.
+  둘 다 내부적으로는 깊이만 다른 같은 아래쪽 훑기(`denserLiquidBelow`)를
+  공유해 로직이 두 곳에서 따로 갈라지지 않게 했다.
+- **리뷰가 잡은 회귀 — 제련로 고정 그루터기가 옆으로 이탈**: 1차 구현은
+  `updatePowderSink`(제련로에서 `tryHoldInActiveMelt`가 Limestone·Coal
+  Powder를 붙잡아 둘 때 쓰는 가라앉기 전용 경로)도 이 평탄화 단계를
+  타도록 만들었었다. 문제는 `flattenIfFloating`이 오직 **아래쪽**만
+  보는 것 — `tryHoldInActiveMelt`는 **위쪽**이 Molten Iron Ore/Slag인
+  동안만 붙잡아 두는데, 붙잡힌 채로도 바로 아래가 자신보다 무거운
+  액체(예: 인접 광석 칸이 마침 그 자리에서 환원돼 쇳물이 된 경우)가
+  되면 `floatingOnLiquid`가 참이 되어 옆으로 밀려난다 — 옆 칸이 열린
+  칸이면 그대로 제련로 밖으로까지 빠져나가 "인접 광석과 계속 반응하며
+  붙어 있어야 한다"는 `tryHoldInActiveMelt`의 존재 이유 자체를 깨뜨린다.
+  line-by-line·removed-behavior·cross-file-tracer 세 리뷰 앵글이 독립적으로
+  같은 문제를 잡아냈다. `updatePowderSink`를 다시 순수 `fallAndPile`
+  (가라앉기·쌓이기만, 옆 이동 없음)로 되돌려 고쳤다 — 평탄화는
+  `updatePowder`(자유롭게 뜨는 일반 가루)에서만 일어난다.
+- **리뷰 이후 추가로 정리한 것**: `floatingOnLiquid`가 확인하는 "바로
+  아래" 액체가 언 상태(`SimContext.isFrozen`)면 평탄화 대상에서 빼도록
+  고쳤다 — 얼음처럼 굳은 액체는 사실상 고체 바닥인데, 이 옆 이동은
+  그 칸 자체로 들어가는 게 아니라 그 칸을 딛고 *옆*으로 비켜서는
+  것이라 `tryMove`의 자체 `isFrozen` 검사로는 걸러지지 않는다(반대편의
+  `submergedUnderDenserLiquid`는 그대로 뒀다 — 거기는 이동 대상이 바로
+  그 언 칸이라 `tryMove`가 이미 막아 준다). `updateFloatyPowder`의
+  "아래가 비었는지" 판정도 화면 기준 `y+1`로 고정돼 있던 것을
+  `sim.gravityX`/`gravityY` 기준으로 고쳤다(중력 방향이 위·좌·우일 때만
+  드러나는 잠재 버그, 이번 리뷰에서 같이 발견). Reuse·Simplification
+  두 앵글이 잡아낸 `restingOnStackedFloat`가 `floatingOnLiquid`의 로직을
+  그대로 다시 구현한다는 지적은 위 `denserLiquidBelow`로 합쳐 해소했다.
+- **리뷰 제안 중 채택하지 않은 것**: (1) 이 파일의 wobble 패턴
+  (`RISE_WOBBLE_CHANCE`)이 `updateGas`·`updateHeavyGas`의 기존 wobble과
+  구조가 같으니 셋을 공유 헬퍼로 묶자는 제안 — 이번 변경이 손대지 않은
+  기체 코드까지 건드리게 돼 범위 밖으로 남겼다. (2) 훑기 깊이·확률
+  게이팅 두 겹 튜닝 자체가 "떠 있는지" 여부를 매 틱 다시 계산하는 대신
+  칸마다 상태를 증분 갱신해 두자는 제안 — 훨씬 큰 구조 변경이라 이번
+  범위를 넘는다고 판단했다(성능은 실측 기준 이미 허용 범위). (3)
+  `Simulation.updateCell`이 디스패치 직전에 이미 구해 둔 `Material`
+  객체를 `update()` 시그니처로 그대로 넘겨 재조회를 줄이자는 제안 — 전
+  물질의 `update` 시그니처를 바꿔야 해서 이번 범위 밖으로 남겼다.
 - **한계**: 무거운 바닥짐부터 얇게 편 뗏목 하나로 완전히 평탄화되는 건
   보장하지 않는다 — 이미 빈틈없이 이어진 뗏목의 안쪽 셀은 양옆이 모두
   같은 가루로 막혀 있어 가장자리가 트일 때까지 기다려야 하고,
@@ -465,8 +503,11 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   높이 1칸짜리 뗏목으로 완전히 평탄화됨을 확인했다. 회귀 확인으로
   액체 없이 Rock 바닥에 15칸짜리 Sand 기둥을 떨어뜨린 경우, 수정
   전후 동일하게(무더기 형태로) 정착함을 확인했다(안식각 무더기 모양은
-  안 바뀜). `npm run check`·`npm run test:active-tiles`(10 시나리오
-  전건)도 재통과.
+  안 바뀜). 리뷰가 잡은 제련로 회귀는 별도 시나리오로 — Molten Iron
+  Ore 아래·Molten Metal 바로 위에 Limestone 한 칸을 두고
+  `tryHoldInActiveMelt`로 붙잡힌 상태에서 500틱을 돌려, 수정 전 옆
+  칸으로 이탈 vs 수정 후 가로 이동 0칸(제자리 유지)을 확인했다.
+  `npm run check`·`npm run test:active-tiles`(10 시나리오 전건)도 재통과.
 
 ## 니트로가 Blue Flame에 반응하지 않던 버그 수정 (`nitro.ts`)
 

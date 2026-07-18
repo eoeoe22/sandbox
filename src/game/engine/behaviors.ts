@@ -96,8 +96,8 @@ const RISE_WOBBLE_CHANCE = 0.4;
  * Returns true if it acted (submerged, whether or not the attempted move
  * actually succeeded that tick) so the caller skips its normal fall/pile
  * behavior only while covered; false once it clears the surface, letting the
- * caller fall through to its own ordinary movement (see pileOrFlatten, which
- * handles a surfaced grain capping others still queued below it).
+ * caller fall through to its own ordinary movement (see flattenIfFloating,
+ * which handles a surfaced grain capping others still queued below it).
  *
  * Every powder is density-rated (see Material.density), so this is purely a
  * density comparison — no per-material float list. A powder floats clear of
@@ -131,47 +131,38 @@ function fallAndPile(x: number, y: number, sim: SimContext): boolean {
   return sim.moveDiagonalDown(x, y);
 }
 
-/** True if the cell along gravity ("below" x,y) holds a liquid denser than
- *  this cell's own material — i.e. this powder is floating directly on a pool
- *  it's too light to sink into, as opposed to resting on solid ground or
- *  another powder. Mirror of submergedUnderDenserLiquid, which checks the
- *  same relationship on the opposite side. */
-function floatingOnLiquid(x: number, y: number, sim: SimContext): boolean {
-  const dx = x + sim.gravityX;
-  const dy = y + sim.gravityY;
-  if (!sim.inBounds(dx, dy)) return false;
-  const belowId = sim.get(dx, dy);
-  if (belowId === EMPTY) return false;
-  const below = getMaterial(belowId);
-  if (below.phase !== Phase.Liquid) return false;
-  return below.density > getMaterial(sim.get(x, y)).density;
-}
-
-// How far restingOnStackedFloat looks down through a run of Powder cells before
+// How far denserLiquidBelow looks down through a run of Powder cells before
 // giving up. A grain that just surfaced from a rise often still has more of the
 // same queued directly beneath it — moveUp swaps the liquid that used to separate
 // them away as each follower arrives (see tryBuoyantRise), so by the time a grain
 // is capped there's no liquid left between it and its queue, only more Powder;
-// floatingOnLiquid alone (checking just the immediate neighbor) would never catch
-// that. Bounded so the look-down can't walk the full height of an ordinary
-// grounded pile.
+// checking just the immediate neighbor would never catch that. Bounded so the
+// look-down can't walk the full height of an ordinary grounded pile.
 const FLOAT_STACK_SCAN = 16;
-// Looking that far down is comparatively expensive, so pileOrFlatten only rolls
-// it this often per idle tick rather than every tick — a capped column still
-// clears in a handful of ticks on average (imperceptible at sim speed), while an
-// ordinary grounded pile — whose interior cells all fail this same look-down
-// every idle tick — pays the cost far less often.
+// Looking that far down is comparatively expensive, so restingOnStackedFloat
+// (below) only rolls it this often per idle tick rather than every tick — a
+// capped column still clears in a handful of ticks on average (imperceptible at
+// sim speed), while an ordinary grounded pile — whose interior cells all fail
+// this same look-down every idle tick — pays the cost far less often.
 const FLOAT_STACK_SCAN_CHANCE = 0.2;
 
-/** True if this cell is stacked on other Powder cells that themselves bottom
- *  out on a denser liquid within FLOAT_STACK_SCAN levels — the deep-buried
- *  version of floatingOnLiquid, for a grain that's floating but has more of
- *  its own kind between it and the liquid (see FLOAT_STACK_SCAN). */
-function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
+/** True if the cell `maxDepth` steps down from (x,y) — through any run of
+ *  intervening Powder cells — holds a liquid denser than this cell's own
+ *  material and not frozen solid (a frozen liquid acts as solid ground, see
+ *  SimContext.isFrozen, so it's not something to float/flatten onto). Backs
+ *  both floatingOnLiquid (maxDepth 1, checked every tick — the grain is
+ *  resting directly on the liquid) and restingOnStackedFloat (maxDepth
+ *  FLOAT_STACK_SCAN, gated — the liquid is somewhere further down a stack of
+ *  the grain's own kind). Not shared with submergedUnderDenserLiquid above:
+ *  that one checks the opposite (against-gravity) side, where the frozen
+ *  liquid being checked *is* the move's own target (tryMove's isFrozen check
+ *  already covers it there) — here the move is sideways, past the liquid
+ *  being checked, so nothing else catches a frozen "floor". */
+function denserLiquidBelow(x: number, y: number, sim: SimContext, maxDepth: number): boolean {
   const myDensity = getMaterial(sim.get(x, y)).density;
   let cx = x;
   let cy = y;
-  for (let i = 0; i < FLOAT_STACK_SCAN; i++) {
+  for (let i = 0; i < maxDepth; i++) {
     cx += sim.gravityX;
     cy += sim.gravityY;
     if (!sim.inBounds(cx, cy)) return false;
@@ -179,9 +170,23 @@ function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
     if (belowId === EMPTY) return false;
     const below = getMaterial(belowId);
     if (below.phase === Phase.Powder) continue; // keep looking down through the stack
-    return below.phase === Phase.Liquid && below.density > myDensity;
+    return below.phase === Phase.Liquid && below.density > myDensity && !sim.isFrozen(cx, cy);
   }
   return false;
+}
+
+/** True if this cell is floating directly on a liquid it's too light to sink
+ *  into, as opposed to resting on solid ground or another powder. */
+function floatingOnLiquid(x: number, y: number, sim: SimContext): boolean {
+  return denserLiquidBelow(x, y, sim, 1);
+}
+
+/** True if this cell is stacked on other Powder cells that themselves bottom
+ *  out on a denser liquid within FLOAT_STACK_SCAN levels — the deep-buried
+ *  version of floatingOnLiquid, for a grain that's floating but has more of
+ *  its own kind between it and the liquid. */
+function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
+  return denserLiquidBelow(x, y, sim, FLOAT_STACK_SCAN);
 }
 
 /** A sideways step if this grain is floating on a liquid it's too light to
@@ -212,16 +217,24 @@ function pileOrFlatten(x: number, y: number, sim: SimContext): void {
   flattenIfFloating(x, y, sim);
 }
 
-/** Sink-only powder: falls, piles, and flattens/unclogs like updatePowder
- *  (pileOrFlatten), but never attempts the generic density-based rise. For
- *  the rare powder (Coal Powder, Limestone) that has its own
- *  material-specific rule for *which* liquid it's allowed to float clear of
- *  (see moltenironore.ts's `tryHoldInActiveMelt`) — while pinned against
+/** Sink-only powder: falls and piles (fallAndPile), but never attempts the
+ *  generic density-based rise, and — unlike updatePowder — never flattens
+ *  sideways either. For the rare powder (Coal Powder, Limestone) that has its
+ *  own material-specific rule for *which* liquid it's allowed to float clear
+ *  of (see moltenironore.ts's `tryHoldInActiveMelt`) — while pinned against
  *  Molten Iron Ore/Slag it must still be free to settle *downward* if there's
  *  room (an ordinary powder never stops falling just because something
- *  denser is above it), it just must not try to rise. */
+ *  denser is above it), it just must not try to rise. Deliberately skipping
+ *  flattenIfFloating here too: tryHoldInActiveMelt's whole point is to hold a
+ *  submerged flux grain in place against its ore neighbours, but
+ *  flattenIfFloating only checks what's *below* — a grain pinned by liquid
+ *  above it can still register as "floating" on whatever's below (e.g. once a
+ *  neighbouring ore cell reduces into Molten Metal right underneath it) and
+ *  get shoved sideways, straight out of the melt through any open cell beside
+ *  it. That would defeat the very pinning tryHoldInActiveMelt exists for, so
+ *  this path stays sink-only. */
 export function updatePowderSink(x: number, y: number, sim: SimContext): void {
-  pileOrFlatten(x, y, sim);
+  fallAndPile(x, y, sim);
 }
 
 /** Powder: falls, piles, and flattens/unclogs (pileOrFlatten), but first
@@ -260,7 +273,9 @@ const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before d
 export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
   if (tryBuoyantRise(x, y, sim)) return;
   if (sim.chance(DRIFT_STALL_CHANCE)) return;
-  const airBelow = sim.inBounds(x, y + 1) && sim.isEmpty(x, y + 1);
+  const bx = x + sim.gravityX;
+  const by = y + sim.gravityY;
+  const airBelow = sim.inBounds(bx, by) && sim.isEmpty(bx, by);
   if (airBelow && sim.chance(DRIFT_SWAY_CHANCE) && sim.moveSideways(x, y)) return;
   if (sim.moveDown(x, y)) return;
   if (sim.moveDiagonalDown(x, y)) return;
