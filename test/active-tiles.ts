@@ -89,6 +89,30 @@ function makeSlab(w: number, h: number, rows: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
+/** A jagged Ash raft sealed mid-pool — Water above, below, and beside it at
+ *  every column's depth, no open air anywhere near it. Exercises
+ *  moveSidewaysBuoyant/swapOntoLiquid (SimContext.ts), the pool-interior
+ *  "comb" flattening path plain moveSideways can never reach (see
+ *  docs/MATERIAL-SYSTEMS.md's "뜨는 가루 평탄화 후속 수정"). Deterministic (no
+ *  RNG) so it drops straight into the equivalence harness like makeSlab. */
+function makeFloatingRaft(w: number, h: number): Snapshot {
+  const ASH = 55;
+  const WATER = 3;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(20);
+  const tint = new Uint8Array(n);
+  const surface = (h / 2) | 0;
+  for (let y = surface; y < h; y++) {
+    for (let x = 0; x < w; x++) cells[y * w + x] = WATER;
+  }
+  for (let x = 2; x < w - 2; x++) {
+    const depth = (x * 7) % 12; // deterministic jagged depth, no RNG
+    for (let y = surface - 4; y < surface + depth; y++) cells[y * w + x] = ASH;
+  }
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -182,6 +206,7 @@ interface Case {
   ticks: number;
   mixEvery: number; // stir the brush every N ticks (0 = never)
   slabRows?: number; // if set, use a settled sand slab instead of random fill
+  raft?: boolean; // if set, use a jagged sealed Ash-in-Water raft instead of random fill
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -202,6 +227,11 @@ const CASES: Case[] = [
   // stir fixed at the surface (y=32, the boundary into asleep air tile-row 1).
   // Without the mixCells tile-mark this strands grains the tile scan skips.
   { seed: 0xa1, w: 48, h: 48, fill: 0, gravity: 'down', ticks: 80, mixEvery: 4, slabRows: 16, mixAt: [24, 32] },
+  // Targeted: jagged Ash raft sealed mid-pool (no open air near it) — the
+  // swapOntoLiquid fallback's only path to being exercised, since the raft's
+  // flanks are Water the whole way down, not empty air a plain moveSideways
+  // could already handle.
+  { seed: 0xb2, w: 48, h: 40, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, raft: true },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -209,7 +239,11 @@ let failed = false;
 let totalTicks = 0;
 
 for (const c of CASES) {
-  const scene = c.slabRows ? makeSlab(c.w, c.h, c.slabRows) : makeScene(c.seed, c.w, c.h, c.fill);
+  const scene = c.slabRows
+    ? makeSlab(c.w, c.h, c.slabRows)
+    : c.raft
+      ? makeFloatingRaft(c.w, c.h)
+      : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism

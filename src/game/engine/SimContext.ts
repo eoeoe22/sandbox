@@ -492,9 +492,7 @@ export class SimContext {
     // Shove along the axis perpendicular to gravity (horizontal under normal
     // down-gravity, vertical under sideways gravity), randomizing which flank
     // is tried first.
-    const s = this.chance(0.5) ? 1 : -1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     if (this.canPushTo(tx + px, ty + py)) {
       this.swap(tx, ty, tx + px, ty + py);
       return true;
@@ -705,17 +703,19 @@ export class SimContext {
   }
 
   /** Unconditional swap with an adjacent Liquid cell, skipping both tryMove's
-   *  density-sort and its DISPLACE_DRAG throttle — see moveSidewaysBuoyant,
-   *  its only caller. No drag here is deliberate: by the time this runs, the
-   *  caller has already confirmed the mover is floating (lighter than
-   *  *something* denser it's resting on), and every liquid in the game is
-   *  denser than the lightest floaters — so gating this on density gap the
+   *  density-sort and its DISPLACE_DRAG throttle — see moveSidewaysBuoyant, its
+   *  only caller, which always tries the normal density-sorted tryMove on this
+   *  same (tx,ty) first. That prior attempt is what makes skipping the density
+   *  check here safe, not an assumption about material densities: tryMove's
+   *  sideways rule only fails when the mover *isn't* denser than the target, so
+   *  by the time this runs the target is already guaranteed to be at least as
+   *  dense as the mover. No drag gate either — gating this on density gap the
    *  way vertical displacement is would just reintroduce the stuck-column
-   *  problem this method exists to fix. It doesn't require the neighbor be
-   *  the *same* liquid the mover is floating on — any Liquid it isn't denser
-   *  than counts, matching the density-only rule floatingOnLiquid/
-   *  tryBuoyantRise already use everywhere else (a powder floats clear of
-   *  whichever liquid it's lighter than, not just one it's "assigned" to). */
+   *  problem this method exists to fix. It doesn't require the neighbor be the
+   *  *same* liquid the mover is floating on — any Liquid it isn't denser than
+   *  counts, matching the density-only rule floatingOnLiquid/tryBuoyantRise
+   *  already use everywhere else (a powder floats clear of whichever liquid
+   *  it's lighter than, not just one it's "assigned" to). */
   private swapOntoLiquid(x: number, y: number, tx: number, ty: number): boolean {
     if (!this.inBounds(tx, ty) || this.isFrozen(tx, ty)) return false;
     const id = this.get(tx, ty);

@@ -355,6 +355,15 @@ function surfaceTensionMove(x: number, y: number, sim: SimContext, st: number): 
  *  still falls under gravity but holds a slumping mound instead of racing flat. A
  *  liquid chilled to/below its freezing point (see Material.freeze) is frozen
  *  solid — it stays put until it warms up. */
+// Known, deliberately-unfixed sibling of the Powder comb bug moveSidewaysBuoyant
+// fixes (see docs/MATERIAL-SYSTEMS.md's "뜨는 가루 평탄화 후속 수정"): the plain
+// moveSideways below has the identical density-sort problem for a liquid
+// lighter than its neighbors (e.g. Gasoline/Kerosene/Diesel under Water), so it
+// can form the same permanent jagged layering mid-pool. Left as-is because a
+// liquid-vs-liquid fix needs an actual density comparison between the two
+// liquids (unlike swapOntoLiquid's blanket "any Liquid" allowance, which relies
+// on Powder floaters always being lighter), and no player-visible case has
+// surfaced yet to justify the broader change.
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.isFrozen(x, y)) return;
   const m = getMaterial(sim.get(x, y));
