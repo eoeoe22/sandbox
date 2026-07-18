@@ -52,8 +52,9 @@ function touchingMelt(x: number, y: number, sim: SimContext): boolean {
 // on its own — this no longer *forces* something that wouldn't otherwise
 // happen. What it still buys over the generic path is a reliable, drag-free
 // sink: tryMove's DISPLACE_DRAG gate resists a sinking cell in proportion to
-// the density gap, so left to that alone a grain can stall skating along the
-// surface for a while before it commits to going under. Rolling this first
+// the density gap, so left to that alone a grain can sit stalled in place for
+// a tick or more (a failed drag roll consumes the move rather than falling
+// back to a sideways slide) before it commits to going under. Rolling this first
 // disperses carbon through the pool quickly and predictably every tick it
 // fires, so the whole body reduces at once (before any solid iron can wall it
 // off) instead of pacing purely on the drag roll, modelling stirring the charge
@@ -97,12 +98,13 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   if (mixIntoMelt(x, y, sim)) return;
   // tryHoldInActiveMelt (shared with Limestone, see moltenironore.ts) checks
   // Molten Iron Ore/Slag by identity, but for Coal Powder it's a no-op now: at
-  // density 7.5 it's already denser than both (6.5/5.5), so the generic
+  // density 7.5 it's already denser than both (6.5/5.75), so the generic
   // buoyancy check it would otherwise suppress was never going to fire here
-  // anyway. Left in place because the shared call is still correct and costs
-  // nothing — the real work happens for Limestone. The generic updatePowder
-  // fallback runs for every other liquid, including Molten Metal, where Coal
-  // Powder's own density floats or sinks it like any other powder.
+  // anyway — see its doc comment in moltenironore.ts for the full reasoning.
+  // Left in place because the shared call is still correct and costs nothing;
+  // the real work happens for Limestone. The generic updatePowder fallback
+  // runs for every other liquid, including Molten Metal, where Coal Powder's
+  // own density floats or sinks it like any other powder.
   if (tryHoldInActiveMelt(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
@@ -115,7 +117,7 @@ export const COAL_POWDER = register({
   // dust rather than a solid block.
   color: rgb(40, 36, 46),
   // Second-heaviest of the smelting stack (Molten Metal 8 > Coal Powder 7.5 >
-  // Molten Iron Ore 6.5 > Slag 5.5 > Limestone 5, see moltenironore.ts) — a
+  // Molten Iron Ore 6.5 > Slag 5.75 > Limestone 5, see moltenironore.ts) — a
   // deliberate gameplay ordering, not real-world coal density, so a charge of
   // carbon plunges through the ore/slag it's reducing instead of skimming the
   // surface, and only floats clear once the pool below it has finished into

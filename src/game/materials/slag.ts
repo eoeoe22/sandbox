@@ -14,11 +14,14 @@ import type { SimContext } from '../engine/SimContext';
 // There's no separate cold material — it stays id 68 and just darkens via its
 // glow ramp, so reheating a cold crust past SOFTEN_TEMP makes it flow again
 // (build a furnace out of slag and it slumps when the furnace gets hot). It's the
-// lightest of the three molten smelting liquids (Slag 5.5 < Molten Iron Ore 6.5 <
+// lightest of the three molten smelting liquids (Slag 5.75 < Molten Iron Ore 6.5 <
 // Molten Metal 8 — Coal Powder at 7.5 sits between the ore and the finished metal,
 // see coalpowder.ts/moltenironore.ts), so — as in a real hearth — the waste slag
 // floats up and skims the top while the denser reduced iron sinks below it: a
-// readable dark band riding over the bright pooled metal on the floor.
+// readable dark band riding over the bright pooled metal on the floor. Deliberately
+// kept above Mud (5.5) and Thermite (5.6, thermite.ts) rather than reusing 5.5 —
+// Thermite was already tuned to sink through Mud but float clear of Slag-and-up,
+// and colliding Slag's new value with Mud's would have silently flipped that.
 const SLAG_SOFTEN_TEMP = 600;
 const SLAG_FLOW_CHANCE = 0.1;
 
@@ -38,7 +41,7 @@ export const SLAG = register({
   // Base colour is the fully-molten shade — a glow material darkens from `color`
   // (at `max`) down to `cool` (at `min`), so this is the hot end of the ramp.
   color: rgb(225, 95, 45),
-  density: 5.5,
+  density: 5.75,
   category: '제련',
   // Cold crust below the softening point: stops flowing and acts solid.
   freeze: { temp: SLAG_SOFTEN_TEMP },

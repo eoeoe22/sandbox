@@ -254,10 +254,14 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   구간으로 낮춰 갈라냈다(광물 가루 급 5는 그대로 유지). Thermite(산화철+알루미늄 분말,
   실측 ~4.5)는 반대로 미네랄 가루보다 살짝 무겁게 5.6으로 올려 진흙(5.5)까지는 가라앉고
   당시 Slag(6) 이상에서만 뜨도록 갈랐다(Slag는 이후 "## 제련 밀도 재서열" 절에서
-  5.5로 내려갔지만, Thermite 5.6 > Slag 5.5 관계 자체는 여전히 유지된다). 이 결과
-  물↔Mercury/Molten Uranium 사이에 놓인 액체
+  5.75로 재조정됐다 — 처음엔 실수로 진흙과 같은 5.5로 내렸다가, 그러면 Thermite(5.6)가
+  진흙과 슬래그 둘 다 뚫고 가라앉아 버려 이 문단이 설명하는 캘리브레이션이 깨진다는 걸
+  리뷰에서 잡아내 5.75로 고쳤다 — Thermite는 여전히 진흙엔 가라앉고 슬래그부턴 뜬다). 이
+  결과 물↔Mercury/Molten Uranium 사이에 놓인 액체
   사다리(Alcohol 1.9 ~ Molten U235/U238 10) 전 구간에서 가루마다 어느 액체엔 뜨고 어느
-  액체엔 가라앉는지가 갈리는 그러데이션이 생겼다(Ash 1.5 ~ Metal Powder/Iron Ore 7).
+  액체엔 가라앉는지가 갈리는 그러데이션이 생겼다(이 라운드 기준 Ash 1.5 ~ Metal
+  Powder/Iron Ore 7 — 이후 "## 제련 밀도 재서열"에서 Coal Powder가 7.5로 올라가며
+  실제 천장이 됐다).
   제련·우라늄 스택에 걸린 값(Iron Ore·Coal Powder·Limestone·Metal Powder·Nuke Waste)과
   이미 의도적으로 조정돼 있던 값(Sodium 2.5, Ash 1.5, Sawdust 2, Snow 2, Salt 5 — 후자는
   Saltwater(4)보다 반드시 무거워야 하는 용해 메커니즘 제약)은 손대지 않았고, 액체 쪽
@@ -277,7 +281,7 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
 잠긴 값"으로 보고 손대지 않았다. 이 라운드는 그 잠긴 값을 사용자가 명시한 새
 순서로 명시적으로 재서열한다:
 
-**Molten Metal(8) > Coal Powder(7.5) > Molten Iron Ore(6.5) > Slag(5.5) >
+**Molten Metal(8) > Coal Powder(7.5) > Molten Iron Ore(6.5) > Slag(5.75) >
 Limestone(5)** — 기존(Coal Powder=Limestone=5 < Slag=6 < Molten Iron Ore=7 <
 Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 5종 중 가장
 가벼운 쪽이 아니라 Molten Metal 다음으로 무거워진다**는 것. 실제 석탄 비중은
@@ -296,7 +300,7 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
 - **`tryHoldInActiveMelt`(moltenironore.ts)는 이제 사실상 Limestone 전용**: 이
   함수는 위 칸이 Molten Iron Ore/Slag면 재질 식별로 붙잡아 뜨려는 시도만 막는다.
   Limestone에는 여전히 필요(끝까지 제련 5종 중 가장 가벼움)하지만, Coal Powder는
-  이제 자기 밀도(7.5)가 이미 Ore(6.5)·Slag(5.5)보다 무거워 `tryBuoyantRise`가
+  이제 자기 밀도(7.5)가 이미 Ore(6.5)·Slag(5.75)보다 무거워 `tryBuoyantRise`가
   애초에 뜨려는 시도 자체를 안 한다 — 그래서 이 함수를 호출하나 안 하나 Coal
   Powder 입장에선 결과가 같은 무해한 no-op이 됐다. Coal Powder를 이 경로에서
   빼는 리팩터링까지는 하지 않았다: 공유 호출이 여전히 정확하고, 굳이 뺄 필요가
@@ -314,8 +318,24 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   아님)의 "자기 용융물(Molten Iron Ore)과 같은 밀도라 뜨지도 가라앉지도 않는다"는
   주석이 Molten Iron Ore=6.5로 내려가며 거짓이 됨 — 이제 Iron Ore가 자기 용융물보다
   무거워져 녹기 전에도 웅덩이 속으로 가라앉을 수 있다는 쪽으로 정정. Metal Powder(밀도
-  7 유지)의 "물·Slag(6)를 뚫고 가라앉는다" 문구도 숫자만 5.5로 정정. 둘 다 값 자체는
-  안 건드림.
+  7 유지)의 "물·Slag(6)를 뚫고 가라앉는다" 문구도 숫자만 5.75로 정정(값 자체는 안
+  건드림). `docs/OBJECTS.md`의 드럼통-파편 절이 인용하던 "Metal Powder(7)가
+  Coal Powder(5)·Slag(6)보다 무겁다"는 문구도 갱신 — Coal Powder가 이제 7.5로
+  올라가며 그 비교가 뒤집혔다(Metal Powder가 더 이상 안 무겁고 오히려 더 가벼움).
+- **리뷰에서 잡아낸 버그: Slag를 5.5로 내리면서 진흙(Mud)과 밀도가 겹쳐 Thermite
+  캘리브레이션이 깨짐**: 최초 구현은 Slag를 Limestone(5)과 0.5 간격을 두고 5.5로
+  잡았는데, 이 값이 기존 Mud의 밀도(5.5, 이번 라운드가 건드리지 않는 값)와 정확히
+  겹친다는 걸 놓쳤다. Thermite(밀도 5.6, **폭발** 탭)는 1차 밀도 재조정 라운드에서
+  "진흙까지는 가라앉고 Slag 이상에서만 뜬다"로 이미 캘리브레이션돼 있었는데(당시
+  Slag=6이라 5.6 &lt; 6로 성립), Slag가 진흙과 같은 5.5가 되자 Thermite(5.6)가 그
+  5.5보다 무거워져 진흙뿐 아니라 슬래그도 뚫고 가라앉아 버리는 회귀가 생겼다 —
+  게다가 최초 커밋은 이 문서에 "Thermite 5.6 &gt; Slag 5.5 관계 자체는 여전히
+  유지된다"는 **틀린 안심 문구**까지 남겼다(관계가 안 바뀐 게 아니라 정반대로
+  뒤집혔는데 숫자 부등호 방향만 보고 잘못 판단한 것). 코드리뷰 cross-file-tracer
+  앵글과 line-by-line 앵글이 독립적으로 동시에 잡아냈다. Slag를 Mud·Thermite와
+  겹치지 않는 **5.75**로 재조정해 고쳤다 — Limestone(5) &lt; Slag(5.75) &lt; Molten
+  Iron Ore(6.5) 순서는 그대로 유지되면서, Thermite는 다시 원래대로 진흙엔 가라앉고
+  Slag부턴 뜬다.
 - **검증**: 저장소 루트 임시 헤드리스 스크립트(1차 라운드와 동일한 esbuild+wasm
   스텁 패턴, 실행 후 삭제)로 5개 시나리오 확인 — Coal Powder가 Molten Iron
   Ore/Slag를 뚫고 가라앉음, Coal Powder가 Molten Metal에서는 여전히 뜸(회귀 없음),

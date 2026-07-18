@@ -14,7 +14,7 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // moltenironore.ts for the flux branch.
 //
 // "가벼운 가루" (light powder) — the lightest thing in the whole smelting stack
-// (Limestone 5 < Slag 5.5 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
+// (Limestone 5 < Slag 5.75 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
 // Metal 8, see moltenironore.ts/coalpowder.ts/slag.ts/moltenmetal.ts), the same
 // mechanism every powder gets (updatePowder's generic density-based buoyancy —
 // see engine/behaviors.ts): against ordinary liquids (water, oil, Mercury,

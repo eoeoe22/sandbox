@@ -35,7 +35,7 @@ import { SMOKE } from './smoke';
 // Density 6.5: Coal Powder (7.5) is now *denser* than the pool, so dusted carbon
 // sinks straight into it on its own (touching, and reducing, ore cells along the
 // way down) rather than needing to be skimmed off the surface; the reduced
-// Molten Metal (8) sinks below everything to pool on the floor, and Slag (5.5)
+// Molten Metal (8) sinks below everything to pool on the floor, and Slag (5.75)
 // floats up above — the furnace's vertical layers still emerge on their own,
 // with the heavy iron settling under the light slag as in a real hearth, just
 // with carbon now plunging through the melt instead of riding on top of it (a
@@ -77,7 +77,7 @@ function isCarbon(id: number): boolean {
 // (updatePowderSink — fall/pile, no rise attempt) instead of doing nothing.
 //
 // After the 제련 밀도 재서열 (Coal Powder 5→7.5, now denser than both Molten
-// Iron Ore 6.5 and Slag 5.5), this is a load-bearing exception only for
+// Iron Ore 6.5 and Slag 5.75), this is a load-bearing exception only for
 // Limestone (still the lightest thing in the furnace). For Coal Powder it's a
 // harmless no-op: tryBuoyantRise would already refuse to rise there on density
 // alone, so calling updatePowderSink instead of updatePowder produces the exact

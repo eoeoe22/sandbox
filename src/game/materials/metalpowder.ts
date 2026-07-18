@@ -13,7 +13,7 @@ import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
 // Molten Metal exactly as solid Iron does, so a pile of drum shrapnel dropped in
 // Lava pools back into liquid metal. Denser than the lighter mineral powders
 // (sand ~5) so a metal-dust heap settles beneath them and sinks through
-// water and liquid Slag (5.5) alike — heavy metal grains settling under the
+// water and liquid Slag (5.75) alike — heavy metal grains settling under the
 // light waste slag — yet nowhere near solid Iron's block density.
 function updateMetalPowder(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
