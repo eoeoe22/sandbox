@@ -678,6 +678,48 @@ export class SimContext {
   }
 
   /**
+   * Sideways move for a cell a caller has already established is buoyantly
+   * floating (resting on a denser Liquid below it — see behaviors.ts's
+   * flattenIfFloating): tries the normal density-sorted tryMove first, same as
+   * moveSideways (covers an open flank, or a same-row neighbor this cell
+   * genuinely outweighs), then — if both flanks are blocked — swaps
+   * unconditionally with an adjacent Liquid cell that isn't frozen solid. That
+   * fallback is the whole point of this method: tryMove's sideways rule
+   * (along = 0) requires the
+   * *mover* be denser to displace a neighbor, which is backwards for a raft
+   * floating on the very liquid it's too light to sink into — by that rule it
+   * could never slide across its own supporting surface, only escape through
+   * an incidental empty gap or a lighter neighbor. A floating cell sliding
+   * sideways along the liquid holding it up isn't sinking or rising (no
+   * along-gravity component), so the density-sort that keeps *vertical*
+   * displacement physically ordered doesn't apply — it's already known to be
+   * resting on top, and moveSidewaysBuoyant's whole job is to let it glide
+   * along that support instead of blocking on it. Returns true if it moved.
+   */
+  moveSidewaysBuoyant(x: number, y: number): boolean {
+    if (!this.gravityPass()) return false;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const px = this.perpX * s;
+    const py = this.perpY * s;
+    return (
+      this.tryMove(x, y, x + px, y + py) ||
+      this.tryMove(x, y, x - px, y - py) ||
+      this.swapOntoLiquid(x, y, x + px, y + py) ||
+      this.swapOntoLiquid(x, y, x - px, y - py)
+    );
+  }
+
+  /** Unconditional swap with an adjacent Liquid cell, skipping tryMove's
+   *  density-sort — see moveSidewaysBuoyant, its only caller. */
+  private swapOntoLiquid(x: number, y: number, tx: number, ty: number): boolean {
+    if (!this.inBounds(tx, ty) || this.isFrozen(tx, ty)) return false;
+    const id = this.get(tx, ty);
+    if (id === EMPTY || getMaterial(id).phase !== Phase.Liquid) return false;
+    this.swap(x, y, tx, ty);
+    return true;
+  }
+
+  /**
    * Single isotropic step into a random empty neighbor (8-directional). Unlike
    * the primitives above this is NOT gated by gravity strength — it models
    * gravity-independent thermal diffusion, so a gas keeps spreading (rather than

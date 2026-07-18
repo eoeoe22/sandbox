@@ -199,14 +199,23 @@ function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
  *  clear out of the way instead of forcing the whole queue into a straight
  *  line. A grain resting on solid ground, or buried deeper than a
  *  stacked-float check can see, gets no such step and keeps its ordinary
- *  angle-of-repose pile shape. */
+ *  angle-of-repose pile shape.
+ *
+ *  Uses moveSidewaysBuoyant, not the plain moveSideways: a raft floating in
+ *  the middle of a pool has more of the same liquid it's floating on at both
+ *  flanks, not open air — ordinary moveSideways's density-sort would demand
+ *  this (lighter) grain outweigh that liquid to take its spot, which is
+ *  exactly backwards for a floater, so it would only ever resolve at a pool's
+ *  edge where air happens to be exposed. Every interior cell of the raft
+ *  would stay stuck, which is exactly the "doesn't flatten in the middle of
+ *  the pool, only piles into narrow columns" failure this exists to fix. */
 function flattenIfFloating(x: number, y: number, sim: SimContext): void {
   if (floatingOnLiquid(x, y, sim)) {
-    sim.moveSideways(x, y);
+    sim.moveSidewaysBuoyant(x, y);
     return;
   }
   if (sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim)) {
-    sim.moveSideways(x, y);
+    sim.moveSidewaysBuoyant(x, y);
   }
 }
 
