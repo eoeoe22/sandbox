@@ -394,6 +394,10 @@ export class SimContext {
     if (!canHostOverlap(hostId, fluidId)) return false;
     const host = getMaterial(hostId);
     if (host.phase === Phase.Powder) {
+      const fluid = getMaterial(fluidId);
+      if (fluid.phase === Phase.Liquid && host.density < fluid.density) {
+        return true;
+      }
       const coeff = host.liquidOverlap ?? POWDER_LIQUID_OVERLAP_DEFAULT;
       if (coeff >= 1) return true;
       if (coeff <= 0) return false;
@@ -552,9 +556,15 @@ export class SimContext {
     // blocks like any solid until its fluid moves on. Powders are NOT entered
     // here — soaking into a bed is a deliberate last resort (soakDown), not a
     // movement path, or water would dive into sand instead of pooling on it.
+    const tgt = getMaterial(targetId);
+    const isPorous = tgt.porous === true || (
+      tgt.phase === Phase.Powder &&
+      src.phase === Phase.Liquid &&
+      tgt.density < src.density
+    );
     if (
       (src.phase === Phase.Liquid || src.phase === Phase.Gas) &&
-      getMaterial(targetId).porous === true &&
+      isPorous &&
       this.canOverlapAt(tx, ty, targetId, srcId) &&
       this.grid.getOverlay(tx, ty) === EMPTY &&
       !this.isFrozen(x, y)
