@@ -299,7 +299,10 @@ export interface Material {
    * higher value piles steeper (a taller angle of repose). It never blocks
    * straight-down fall, only the diagonal slide, so grains still settle but hold
    * a sharper cone. 0 (or omitted) ⇒ the loosest pile (grains always slide).
-   * Read by updatePowder; ignored for non-powders.
+   * Read by fallAndPile (engine/behaviors.ts), the shared fall/pile step under
+   * both updatePowder and updatePowderSink; ignored for non-powders and
+   * unrelated to buoyant rise (tryBuoyantRise deliberately doesn't gate on it
+   * — see its own comment for why).
    */
   friction?: number;
   /**

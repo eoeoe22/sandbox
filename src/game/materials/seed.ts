@@ -66,7 +66,11 @@ export const SEED = register({
   name: 'Seed',
   phase: Phase.Powder,
   color: rgb(122, 94, 52),
-  density: 5,
+  // A real seed kernel (~1.2-1.4 g/cm³) is a light organic powder, well under
+  // mineral powders like Sand/Salt — but still denser than Water, so it sinks
+  // to reach the soil bed at the bottom of a flooded plot instead of floating
+  // on the surface out of germinating reach.
+  density: 3.45,
   category: '생명',
   thermal: { conductivity: 0.3 },
   update: updateSeed,

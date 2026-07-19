@@ -25,6 +25,10 @@ const GRAVITY_VECTORS: Record<GravityDir, readonly [number, number]> = {
   right: [1, 0],
 };
 
+/** Shared empty `mixIds` — moveSidewaysBuoyant's "no other floating powder to
+ *  swap with" case, reused so it doesn't allocate a fresh array every call. */
+const NO_MIX_IDS: readonly number[] = [];
+
 /**
  * 겹침 (overlap) hosting rule: which fluids may share a cell with which primary
  * occupants (see Grid.overlay). A porous solid (Mesh, Turbine) hosts any liquid
@@ -492,9 +496,7 @@ export class SimContext {
     // Shove along the axis perpendicular to gravity (horizontal under normal
     // down-gravity, vertical under sideways gravity), randomizing which flank
     // is tried first.
-    const s = this.chance(0.5) ? 1 : -1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     if (this.canPushTo(tx + px, ty + py)) {
       this.swap(tx, ty, tx + px, ty + py);
       return true;
@@ -636,14 +638,20 @@ export class SimContext {
     return this.tryMove(x, y, x + this.gravityX, y + this.gravityY);
   }
 
+  /** A random perpendicular-to-gravity step, ±(perpX,perpY) with the sign
+   *  picked 50/50 — the shared "which side to try first" roll behind every
+   *  sideways/diagonal primitive below. */
+  private randomPerp(): [number, number] {
+    const s = Math.random() < 0.5 ? -1 : 1;
+    return [this.perpX * s, this.perpY * s];
+  }
+
   /** Move one step diagonally along gravity (down + either perpendicular side). */
   moveDiagonalDown(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
+    const [px, py] = this.randomPerp();
     const dgx = this.gravityX;
     const dgy = this.gravityY;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
     return (
       this.tryMove(x, y, x + dgx + px, y + dgy + py) ||
       this.tryMove(x, y, x + dgx - px, y + dgy - py)
@@ -659,9 +667,7 @@ export class SimContext {
   /** Move one step diagonally against gravity (up + either perpendicular side). */
   moveDiagonalUp(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     return (
       this.tryMove(x, y, x - this.gravityX + px, y - this.gravityY + py) ||
       this.tryMove(x, y, x - this.gravityX - px, y - this.gravityY - py)
@@ -671,10 +677,205 @@ export class SimContext {
   /** Move one step perpendicular to gravity (sideways leveling / spreading). */
   moveSideways(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    const s = Math.random() < 0.5 ? -1 : 1;
-    const px = this.perpX * s;
-    const py = this.perpY * s;
+    const [px, py] = this.randomPerp();
     return this.tryMove(x, y, x + px, y + py) || this.tryMove(x, y, x - px, y - py);
+  }
+
+  /**
+   * Sideways move for a cell already established to be buoyantly floating
+   * (resting on a denser Liquid — see behaviors.ts's flattenIfFloating): tries
+   * the same density-sorted attempt as moveSideways first (inlined here, not
+   * delegated, so gravityPass is only rolled once), then — if both flanks are
+   * blocked — swaps unconditionally with an adjacent Liquid cell
+   * (swapOntoLiquid). The fallback exists because tryMove's sideways rule
+   * requires the *mover* be denser to displace a neighbor — right for two
+   * different-density liquids leveling out, backwards for a raft that's
+   * already lighter than the liquid holding it up and just needs to glide
+   * across it. Without this, a floating raft in a pool's interior (liquid on
+   * both flanks, not open air) could never spread — only escape through an
+   * incidental gap at the pool's edge.
+   */
+  moveSidewaysBuoyant(x: number, y: number): boolean {
+    return this.moveSidewaysMix(x, y, NO_MIX_IDS);
+  }
+
+  /**
+   * Like moveSidewaysBuoyant, but with one more fallback: an unconditional
+   * swap with an adjacent Powder cell whose id is in `mixIds` — a
+   * caller-supplied list of *other* floating powders known to share this
+   * same liquid (see behaviors.ts's updatePowderMix/updatePowderSink).
+   * tryMove and swapOntoLiquid only ever move a Powder cell past a Liquid
+   * one, never past another Powder (see isDisplaceable), so two different
+   * floating powders that together fully tile a liquid's surface — no
+   * exposed liquid gap left for either to glide into — would otherwise
+   * freeze mid-raft with neither able to budge: the same frozen-comb shape
+   * moveSidewaysBuoyant exists to fix for a single species, just triggered
+   * by a powder neighbor instead of a liquid one. `mixIds` empty (the plain
+   * moveSidewaysBuoyant case) makes swapOntoPowder a guaranteed no-op, so
+   * this is a strict superset of the old behavior, not a separate rule.
+   */
+  moveSidewaysMix(x: number, y: number, mixIds: readonly number[]): boolean {
+    if (!this.gravityPass()) return false;
+    const [px, py] = this.randomPerp();
+    return (
+      this.tryMove(x, y, x + px, y + py) ||
+      this.tryMove(x, y, x - px, y - py) ||
+      this.swapOntoLiquid(x, y, x + px, y + py) ||
+      this.swapOntoLiquid(x, y, x - px, y - py) ||
+      this.swapOntoPowder(x, y, x + px, y + py, mixIds) ||
+      this.swapOntoPowder(x, y, x - px, y - py, mixIds)
+    );
+  }
+
+  /**
+   * Sideways move for a cell pinned in place by melt above it (see
+   * behaviors.ts's updatePowderSink / moltenironore.ts's tryHoldInActiveMelt):
+   * swaps with a `containerIds`-listed neighbor via swapOntoLiquid, skipping
+   * the density-sorted tryMove attempt moveSidewaysBuoyant tries first — see
+   * swapOntoLiquid's own doc comment for why that matters and why
+   * `containerIds` is required here but not there. Falls back to
+   * swapOntoPinnedPowder for a `mixIds`-listed powder neighbor that is *itself*
+   * still touching the melt (see that method's own comment for why the extra
+   * touch check is what makes this safe, unlike the plain identity-only
+   * swapOntoPowder moveSidewaysMix uses for the already-cleared case).
+   *
+   * A prior version of this method took no `mixIds` at all — a code review
+   * caught that an earlier, less careful attempt at this same fallback (using
+   * plain swapOntoPowder, identity-only) let a pinned grain swap past the
+   * furnace wall into an unrelated pile of the same material a player left
+   * touching the outside — see docs/MATERIAL-SYSTEMS.md. That version was
+   * reverted rather than patched in place. swapOntoPinnedPowder is the
+   * corrected replacement: same fallback, but gated on the neighbor also
+   * touching a `containerIds` liquid, which an outside stockpile never does.
+   */
+  moveSidewaysContained(
+    x: number,
+    y: number,
+    containerIds: readonly number[],
+    mixIds: readonly number[],
+  ): boolean {
+    if (!this.gravityPass()) return false;
+    const [px, py] = this.randomPerp();
+    return (
+      this.swapOntoLiquid(x, y, x + px, y + py, containerIds) ||
+      this.swapOntoLiquid(x, y, x - px, y - py, containerIds) ||
+      this.swapOntoPinnedPowder(x, y, x + px, y + py, mixIds, containerIds) ||
+      this.swapOntoPinnedPowder(x, y, x - px, y - py, mixIds, containerIds)
+    );
+  }
+
+  /**
+   * Unconditional swap with an adjacent Liquid cell, skipping both tryMove's
+   * density-sort and its DISPLACE_DRAG throttle. Two callers rely on this for
+   * different reasons and pass `containerIds` differently.
+   *
+   * moveSidewaysBuoyant always tries the normal density-sorted tryMove on
+   * this same (tx,ty) first and omits `containerIds` (any Liquid counts) —
+   * that prior tryMove attempt is what makes skipping the density check safe
+   * there, not an assumption about material densities: tryMove's sideways
+   * rule only fails when the mover *isn't* denser than the target, so by the
+   * time this runs the target is already guaranteed to be at least as dense
+   * as the mover. "Any Liquid" is also the right scope for it: a floating
+   * raft glides across whichever liquid it's lighter than, not just one it's
+   * "assigned" to, matching the density-only rule floatingOnLiquid/
+   * tryBuoyantRise use everywhere else.
+   *
+   * moveSidewaysContained has no such prior tryMove attempt, and its caller
+   * (updatePowderSink, via tryHoldInActiveMelt) always passes a specific
+   * `containerIds` list — "any Liquid" would be wrong here: the caller only
+   * guarantees what's directly *above* the grain is a liquid it pins against,
+   * not what's beside it, so an unrestricted swap could hop the grain
+   * sideways into some unrelated liquid a player placed next to the furnace,
+   * defeating the very containment the hold exists for. `containerIds` can
+   * still be wider than the pin check itself (see tryHoldInActiveMelt's own
+   * comment for why it includes Molten Metal, which doesn't trigger the pin
+   * but is safe to spread into) — the requirement is just that every id in it
+   * is a liquid the caller has already established is part of the same body
+   * the grain is confirmed to be inside, not "any Liquid" indiscriminately.
+   * Neither caller wants a drag gate — gating this on density gap the way
+   * vertical displacement is would just reintroduce the stuck-column problem
+   * moveSidewaysBuoyant exists to fix, and would throttle
+   * moveSidewaysContained's redistribution for no reason (it isn't sorting by
+   * density in the first place).
+   */
+  private swapOntoLiquid(
+    x: number,
+    y: number,
+    tx: number,
+    ty: number,
+    containerIds?: readonly number[],
+  ): boolean {
+    if (!this.inBounds(tx, ty) || this.isFrozen(tx, ty)) return false;
+    const id = this.get(tx, ty);
+    if (id === EMPTY || getMaterial(id).phase !== Phase.Liquid) return false;
+    if (containerIds && !containerIds.includes(id)) return false;
+    this.swap(x, y, tx, ty);
+    return true;
+  }
+
+  /**
+   * Unconditional swap with an adjacent Powder cell whose id is in `ids` —
+   * moveSidewaysMix's fallback for two different floating powders that can
+   * fully tile a liquid's surface (see moveSidewaysMix's doc comment). No
+   * density comparison and no `isFrozen` check: Powder materials never define
+   * `freeze` (it's a Liquid-only concept — see Material.freeze), and either
+   * grain being unable to budge past the other is exactly the frozen state
+   * this exists to break, not a condition worth sorting by. An empty `ids`
+   * (moveSidewaysBuoyant's case) makes this a guaranteed no-op.
+   *
+   * Also reused by swapOntoPinnedPowder below for its own id/bounds check
+   * and the actual swap, once that method's own touch-check has separately
+   * confirmed the neighbor is safe to swap into — `ids` alone (what this
+   * method checks) only establishes material identity, not whether the
+   * neighbor is part of the same pinned body a `containerIds` liquid is,
+   * which is why moveSidewaysContained never calls this method directly.
+   */
+  private swapOntoPowder(x: number, y: number, tx: number, ty: number, ids: readonly number[]): boolean {
+    if (!this.inBounds(tx, ty)) return false;
+    const id = this.get(tx, ty);
+    if (id === EMPTY || !ids.includes(id)) return false;
+    this.swap(x, y, tx, ty);
+    return true;
+  }
+
+  /**
+   * moveSidewaysContained's containment-safe counterpart to swapOntoPowder:
+   * an unconditional swap with an adjacent Powder cell whose id is in `ids`,
+   * but *only* if that neighbor is independently pinned the same way the
+   * mover is — its own against-gravity cell is also a `containerIds` liquid
+   * (mirroring tryHoldInActiveMelt's own pin check, just evaluated at
+   * (tx,ty) instead of (x,y)) — i.e. it's embedded in the same active melt,
+   * not a disconnected pile of the same material a player left resting
+   * against the furnace's outer wall (which has open air or solid ground
+   * above it, not the furnace's own Ore/Slag/Molten Metal).
+   *
+   * This checks *one specific* neighbor of (tx,ty), not "any of its 8
+   * neighbors": a full 8-neighbor scan was tried first and is wrong here —
+   * for *any* axis-aligned gravity, the mover's own against-gravity cell
+   * (already confirmed to be a `containerIds` liquid, that's why the mover
+   * is pinned at all) is *always* exactly one diagonal step from (tx,ty)
+   * (tx,ty is one perpendicular step from (x,y), and "perpendicular step" +
+   * "against gravity" is a unit diagonal by construction). An 8-neighbor
+   * scan at (tx,ty) would therefore always find that same cell and return
+   * true unconditionally on every call this method actually receives —
+   * silently reopening the exact leak this method exists to close, since it
+   * would then accept *any* adjacent same-id Powder cell regardless of
+   * whether it's part of the same melt. Checking only (tx,ty)'s own
+   * against-gravity cell avoids that: it's a cell the mover's own pin check
+   * says nothing about, so it actually tests the neighbor's own status.
+   */
+  private swapOntoPinnedPowder(
+    x: number,
+    y: number,
+    tx: number,
+    ty: number,
+    ids: readonly number[],
+    containerIds: readonly number[],
+  ): boolean {
+    const ux = tx - this.gravityX;
+    const uy = ty - this.gravityY;
+    if (!this.inBounds(ux, uy) || !containerIds.includes(this.get(ux, uy))) return false;
+    return this.swapOntoPowder(x, y, tx, ty, ids);
   }
 
   /**

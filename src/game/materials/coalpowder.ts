@@ -2,11 +2,12 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
-import { updatePowder } from '../engine/behaviors';
+import { updatePowderMix } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn, type Combustible } from './combustion';
 import { IRON_ORE } from './ironore';
-import { MOLTEN_IRON_ORE, tryRiseThroughFlux } from './moltenironore';
+import { LIMESTONE } from './limestone';
+import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
 import { MOLTEN_METAL } from './moltenmetal';
 
 // Powdered coal — the pourable form of Coal. Solid Coal (id 25) is a rigid lump
@@ -46,12 +47,20 @@ function touchingMelt(x: number, y: number, sim: SimContext): boolean {
 }
 
 // Chance per tick that carbon dusted on a molten pool stirs one cell deeper into
-// it. Light coal (density 5) floats on the denser melt (7), so on its own it only
-// ever reduces the thin top surface — and the iron reduced there cools and
-// freezes into a solid plug that traps the ore beneath. Forcing the carbon to
-// sink disperses it through the pool so the whole body reduces at once (before
-// any solid iron can wall it off), modelling stirring the charge into the melt.
-// It's spent by the reduction as it descends, so it doesn't just pile on the floor.
+// it. Coal Powder (density 7.5) is now denser than the melt (Molten Iron Ore
+// 6.5), so ordinary density-sorted sinking (SimContext.tryMove, via the
+// fallAndPile fallback every powder gets) already pulls it down through the pool
+// on its own — this no longer *forces* something that wouldn't otherwise
+// happen. What it still buys over the generic path is a reliable, drag-free
+// sink: tryMove's DISPLACE_DRAG gate resists a sinking cell in proportion to
+// the density gap, so left to that alone a grain can sit stalled in place for
+// a tick or more (a failed drag roll consumes the move rather than falling
+// back to a sideways slide) before it commits to going under. Rolling this first
+// disperses carbon through the pool quickly and predictably every tick it
+// fires, so the whole body reduces at once (before any solid iron can wall it
+// off) instead of pacing purely on the drag roll, modelling stirring the charge
+// into the melt. It's spent by the reduction as it descends, so it doesn't just
+// pile on the floor.
 const MIX_CHANCE = 0.5;
 
 function mixIntoMelt(x: number, y: number, sim: SimContext): boolean {
@@ -70,6 +79,15 @@ function mixIntoMelt(x: number, y: number, sim: SimContext): boolean {
   return false;
 }
 
+// Lazily built (not a plain module-level literal): LIMESTONE comes from
+// limestone.ts, which imports back from this file, so a top-level
+// `[LIMESTONE.id]` would read LIMESTONE before that circular import finishes
+// resolving and crash (confirmed by trying it — reads `.id` off `undefined`).
+// Deferring construction to updateCoalPowder's first actual call — long
+// after both modules have finished loading — avoids that while still only
+// allocating the array once.
+let mixIds: readonly number[] | undefined;
+
 function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // Reductant against the hearth (ore/molten iron): don't burn — it's spent by
   // the ore's reduction (see moltenironore.ts), so mixed-in coal survives being
@@ -77,19 +95,34 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // burning away. Coal a cell or more from the hearth still burns, so a charcoal
   // bed heaped around a crucible still smoulders and heats it.
   if (!touchingMelt(x, y, sim) && tryBurn(x, y, sim, SPEC)) return;
-  // Dusted onto a molten pool, stir down into it so the whole depth reduces, not
-  // just the crust-prone surface (mixIntoMelt wins the tie so stirring isn't
-  // fought every time it rolls). mixIntoMelt only sinks it through Molten Iron
-  // Ore, though — once a grain has stirred all the way past the ore *and* the
-  // settled Slag below it into the finished Molten Metal (nothing left there
-  // to reduce), let it float back up out of *that* layer like Limestone
-  // (tryRiseThroughFlux, shared in moltenironore.ts — it deliberately holds a
-  // grain in Ore or Slag, only releasing it from Molten Metal, so it keeps
-  // sinking/reacting instead of skimming out early) instead of staying
-  // stranded at the bottom forever.
+  // Dusted onto a molten pool, stir down into it so the whole depth reduces
+  // quickly and predictably, not just the crust-prone surface (mixIntoMelt wins
+  // the tie so stirring isn't fought every time it rolls — see its doc comment
+  // for why this still matters even though Coal Powder now outweighs the melt
+  // on density alone). mixIntoMelt only sinks it through Molten Iron Ore,
+  // though — once a grain has sunk all the way past the ore *and* the settled
+  // Slag below it into the finished Molten Metal (nothing left there to
+  // reduce), it floats back up out of *that* layer via plain density (Coal
+  // Powder 7.5 < Molten Metal 8) instead of staying stranded at the bottom
+  // forever.
   if (mixIntoMelt(x, y, sim)) return;
-  if (tryRiseThroughFlux(x, y, sim)) return;
-  updatePowder(x, y, sim);
+  // tryHoldInActiveMelt (shared with Limestone, see moltenironore.ts) checks
+  // Molten Iron Ore/Slag by identity; its rise-blocking half is a no-op for
+  // Coal Powder at density 7.5, but its sideways-spread half is NOT always a
+  // no-op — see moltenironore.ts's doc comment on tryHoldInActiveMelt for why
+  // (a Coal Powder cell resting on Molten Metal while still nominally pinned
+  // by Ore/Slag above does attempt the spread). The same mixIds (Limestone's
+  // id) is passed here too, so a Coal Powder grain in that situation can swap
+  // sideways past a pinned Limestone neighbor right there (see
+  // SimContext.swapOntoPinnedPowder) — without this a mixed charge could
+  // freeze into the same comb shape one step before either grain clears onto
+  // Molten Metal. updatePowderMix runs for every other liquid, including
+  // Molten Metal once fully clear of the ore/slag body, where Coal Powder's
+  // own density floats or sinks it like any other powder — with Limestone
+  // still in its mixIds so the two can keep swapping past each other there
+  // when neither has open liquid beside it (see SimContext.moveSidewaysMix).
+  if (tryHoldInActiveMelt(x, y, sim, mixIds ?? (mixIds = [LIMESTONE.id]))) return;
+  updatePowderMix(x, y, sim, mixIds);
 }
 
 export const COAL_POWDER = register({
@@ -99,7 +132,13 @@ export const COAL_POWDER = register({
   // A touch lighter than solid Coal's near-black so a loose pile reads as grainy
   // dust rather than a solid block.
   color: rgb(40, 36, 46),
-  density: 5,
+  // Second-heaviest of the smelting stack (Molten Metal 8 > Coal Powder 7.5 >
+  // Molten Iron Ore 6.5 > Slag 5.75 > Limestone 5, see moltenironore.ts) — a
+  // deliberate gameplay ordering, not real-world coal density, so a charge of
+  // carbon plunges through the ore/slag it's reducing instead of skimming the
+  // surface, and only floats clear once the pool below it has finished into
+  // Molten Metal.
+  density: 7.5,
   combustible: true,
   category: '제련',
   // Angular, dusty grains grip hard — a coal-dust heap piles steeply (마찰).

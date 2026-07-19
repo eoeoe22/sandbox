@@ -73,7 +73,11 @@ export const YEAST = register({
   name: 'Yeast',
   phase: Phase.Powder,
   color: rgb(214, 198, 150),
-  density: 5,
+  // Dried yeast granules (~1.2 g/cm³) are a light organic powder, well under
+  // mineral powders like Sand/Salt — but still denser than Water, so a grain
+  // sinks to stay in contact with the sugar/water it ferments instead of
+  // floating away from the mash.
+  density: 3.3,
   category: '생명',
   thermal: { conductivity: 0.3 },
   update: updateYeast,

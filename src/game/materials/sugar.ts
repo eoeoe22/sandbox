@@ -113,7 +113,11 @@ export const SUGAR = register({
   name: 'Sugar',
   phase: Phase.Powder,
   color: rgb(242, 240, 233),
-  density: 5,
+  // Real sucrose crystal (~1.59 g/cm³) is notably lighter than mineral salt
+  // (~2.16), so it gets its own, lighter tier — still dense enough to sink
+  // through fresh Water (so it dissolves from within a pool, mirroring Salt),
+  // but floats clear of denser liquids salt sinks straight through.
+  density: 3.65,
   combustible: true,
   category: '가루',
   thermal: { conductivity: 0.3 },

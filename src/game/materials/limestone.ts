@@ -1,9 +1,10 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { updatePowder } from '../engine/behaviors';
+import { updatePowderMix } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryRiseThroughFlux } from './moltenironore';
+import { COAL_POWDER } from './coalpowder';
+import { tryHoldInActiveMelt } from './moltenironore';
 
 // Limestone — the optional flux of the smelting kit. Its main role is to be
 // *read* by an adjacent reducing iron-ore cell, which lifts that cell's iron
@@ -13,22 +14,44 @@ import { tryRiseThroughFlux } from './moltenironore';
 // slag; add a pinch of limestone and the bloom comes out cleaner. See
 // moltenironore.ts for the flux branch.
 //
-// "가벼운 가루" (light powder), the same mechanism Ash/Sawdust use: it falls
-// and piles like an ordinary powder everywhere (density 5 sinks through every
-// ordinary liquid — water, oil, lava, even Mercury or Molten Uranium), but
-// against the smelting liquids it's split by role instead of just density —
-// Molten Iron Ore is where it's actually being read by a reducing neighbour
-// (see moltenironore.ts's flux branch) and Slag is where it settles as waste,
-// so a grain submerged in *either* stays put instead of skimming straight
-// back to the surface; only once it's below both, in the finished Molten
-// Metal (nothing left for it to flux), does it bubble back up
-// (tryRiseThroughFlux, shared with Coal Powder — see moltenironore.ts —
-// gated on material identity instead of the generic density comparison,
-// since all three happen to be denser than Limestone anyway). Every other
-// liquid sinks it as before.
+// "가벼운 가루" (light powder) — the lightest thing in the whole smelting stack
+// (Limestone 5 < Slag 5.75 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
+// Metal 8, see moltenironore.ts/coalpowder.ts/slag.ts/moltenmetal.ts), the same
+// generic density-based buoyancy every powder gets (updatePowderMix/updatePowder —
+// see engine/behaviors.ts): against ordinary liquids (water, oil, Mercury,
+// Molten Uranium, …) it just floats or sinks by density like any other powder.
+// Molten Iron Ore and Slag are the deliberate exception, held by material
+// identity instead of density (tryHoldInActiveMelt, shared with Coal Powder —
+// see moltenironore.ts, though the 제련 밀도 재서열 round made that sharing a
+// no-op for Coal Powder specifically, which is now denser than both liquids
+// anyway) — Molten Iron Ore is where it's actually being read by a reducing
+// neighbour (see moltenironore.ts's flux branch) and Slag is where it settles
+// as waste, so a grain submerged in *either* stays put (though still free to
+// sink further if there's room below) instead of skimming straight back to the
+// surface, which the generic density rule would otherwise do since both are
+// denser than Limestone. While still pinned this way, Coal Powder is in its
+// mixIds too, so a Limestone grain boxed in by a pinned Coal Powder neighbor
+// can still swap past it right there (see SimContext.swapOntoPinnedPowder) —
+// otherwise a mixed charge could freeze into the same comb shape one step
+// before either grain clears onto Molten Metal. Molten Metal needs no such
+// override: once the grain is below both Ore and Slag, in the finished layer
+// (nothing left for it to flux), tryHoldInActiveMelt returns false and
+// updatePowderMix's ordinary generic buoyancy floats it clear on its own, the
+// same as any other liquid — Coal Powder is still in its mixIds so the two
+// can keep swapping past each other there if they've floated clear together
+// with no open liquid between them (see SimContext.moveSidewaysMix).
+// Lazily built (not a plain module-level literal): COAL_POWDER comes from
+// coalpowder.ts, which imports back from this file, so a top-level
+// `[COAL_POWDER.id]` would read COAL_POWDER before that circular import
+// finishes resolving and crash (confirmed by trying it — reads `.id` off
+// `undefined`). Deferring construction to updateLimestone's first actual
+// call — long after both modules have finished loading — avoids that while
+// still only allocating the array once.
+let mixIds: readonly number[] | undefined;
+
 function updateLimestone(x: number, y: number, sim: SimContext): void {
-  if (tryRiseThroughFlux(x, y, sim)) return;
-  updatePowder(x, y, sim);
+  if (tryHoldInActiveMelt(x, y, sim, mixIds ?? (mixIds = [COAL_POWDER.id]))) return;
+  updatePowderMix(x, y, sim, mixIds);
 }
 
 export const LIMESTONE = register({

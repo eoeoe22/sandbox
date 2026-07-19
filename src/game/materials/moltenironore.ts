@@ -2,7 +2,7 @@ import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
-import { updateLiquid } from '../engine/behaviors';
+import { updateLiquid, updatePowderSink } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { COAL } from './coal';
 import { COAL_POWDER } from './coalpowder';
@@ -32,10 +32,15 @@ import { SMOKE } from './smoke';
 //    useless Slag — so "heat alone makes slag, heat + carbon makes iron" survives
 //    the rework, just melt-first now.
 //
-// Density 7: Coal Powder (5) floats on the pool so you can dust carbon over its
-// surface, the reduced Molten Metal (8) sinks below it to pool on the floor, and
-// Slag (6) floats up above — the furnace's vertical layers emerge on their own,
-// with the heavy iron settling under the light slag as in a real hearth.
+// Density 6.5: Coal Powder (7.5) is now *denser* than the pool, so dusted carbon
+// sinks straight into it on its own (touching, and reducing, ore cells along the
+// way down) rather than needing to be skimmed off the surface; the reduced
+// Molten Metal (8) sinks below everything to pool on the floor, and Slag (5.75)
+// floats up above — the furnace's vertical layers still emerge on their own,
+// with the heavy iron settling under the light slag as in a real hearth, just
+// with carbon now plunging through the melt instead of riding on top of it (a
+// deliberate gameplay call, not a real-world coal density — see
+// docs/MATERIAL-SYSTEMS.md's 제련 밀도 재서열 section).
 // Kept above Molten Metal's own freeze point (moltenmetal.ts) on purpose: a
 // reduction pulls a cell out of *this* pool into that one while both are still
 // liquid, so the fresh metal needs to be able to outlive this cell's own
@@ -57,28 +62,80 @@ function isCarbon(id: number): boolean {
 }
 
 // Shared with Limestone and Coal Powder: either can end up submerged inside
-// the smelting liquids (dusted on top and pulled under, or stirred down for
-// reduction — see Coal Powder's mixIntoMelt) and should work back up once
-// there's no more reduction left to do, the same "가벼운 가루" float Ash/
-// Sawdust get in water. Deliberately *only* Molten Metal, the one finished
-// layer — both Molten Iron Ore (still actively reducing; carbon/flux
-// submerged in it should stay put and keep reacting with its ore neighbours
-// rather than skim straight back to the surface) and Slag (waste, but flux
-// dusted onto it should settle and mix in rather than pop back through it)
-// hold it down. Gated on material identity rather than the generic density
-// check (tryBuoyantRise) because *every* ordinary liquid is denser than
-// these powders too — only Molten Metal is meant to float them clear.
-const FLUX_RISE_STALL_CHANCE = 0.3; // rises in a bobbing flutter, not a dead-straight snap
-const FLUX_RISE_SWAY_CHANCE = 0.35; // occasional sideways drift while rising
-
-export function tryRiseThroughFlux(x: number, y: number, sim: SimContext): boolean {
+// the smelting liquids (dusted on top and pulled under, or stirred/sunk down
+// for reduction — see Coal Powder's mixIntoMelt). Originally both were lighter
+// than every one of the three smelting liquids, so the generic density-based
+// buoyancy every powder gets (updatePowder's tryBuoyantRise — see
+// engine/behaviors.ts) would float them clear of all three, which was wrong for
+// Molten Iron Ore (still actively reducing; carbon/flux submerged in it should
+// stay put and keep reacting with its ore neighbours) and Slag (waste, but flux
+// dusted onto it should settle and mix in). This function intercepts exactly
+// those two liquids by material identity and holds the grain there — *without*
+// freezing it solid: it still needs to be free to settle further down if
+// there's room (an ordinary powder never just stops falling because something
+// denser sits above it), so the hold calls the plain sink-only fallback
+// (updatePowderSink — fall/pile, no rise attempt) instead of doing nothing.
+//
+// After the 제련 밀도 재서열 (Coal Powder 5→7.5, now denser than both Molten
+// Iron Ore 6.5 and Slag 5.75), the *rise* half of this hold is a harmless
+// no-op for Coal Powder: tryBuoyantRise already refuses to rise against Ore
+// or Slag on density alone, so blocking it again here changes nothing. The
+// *sideways* half isn't always a no-op, though — updatePowderSink's own
+// shouldFlatten check looks at what's directly below, not above, so a Coal
+// Powder cell that's sunk through Ore/Slag to rest on Molten Metal (8, still
+// denser than Coal Powder) reads as floating and does attempt the sideways
+// step, even while its own above-cell still pins it via this function (see
+// the Molten Metal boundary case a few paragraphs below). Left shared rather
+// than split out either way, since the shared call is correct for both.
+//
+// This returns false for every other liquid — including the finished Molten
+// Metal layer — so the caller's ordinary `updatePowderMix` fallback takes over
+// there; Molten Metal needs no special case of its own because Limestone (and
+// Coal Powder, though it gets there by sinking through Ore/Slag first now
+// rather than starting out on top of everything) is lighter than it, so the
+// generic buoyancy already floats each clear on its own (same rise mechanics
+// every other powder gets, not a separately-tuned duplicate).
+//
+// The `pinIds` list below is what updatePowderSink is forwarded as
+// SimContext.moveSidewaysContained's `containerIds` — see swapOntoLiquid's own
+// doc comment (SimContext.ts) for why that restriction exists at all (the
+// short version: an unrestricted swap could leak a pinned grain sideways into
+// an unrelated liquid, defeating the containment this hold exists for). The
+// set passed here is `[...pinIds, MOLTEN_METAL.id]`, one liquid wider than the
+// pin check itself: Molten Metal is this furnace's own product layer (made by
+// reduction, always structurally connected to the Ore/Slag body sitting on
+// top of it), not a foreign liquid a player placed nearby, so it's safe to
+// spread into even though it doesn't trigger the pin. It has to be included —
+// Molten Metal is the densest phase and settles beneath Ore/Slag as the
+// routine end state of any smelt, so a grain pinned above by Ore/Slag but
+// flanked on both sides by Molten Metal at that boundary is common, not a
+// contrived edge case. Without Molten Metal in the spread set, such a grain
+// could sink no further (too light for Metal), rise no further (the pin
+// blocks it while Ore/Slag stays above), and spread no further either —
+// reproducing the exact frozen-comb bug this fix exists to prevent, just
+// relocated to the Ore/Slag-Metal interface instead of mid-charge.
+//
+// `mixIds` is the caller's list of *other* melt-pinned powders this grain can
+// swap past (Coal Powder passes Limestone's id and vice versa — see
+// coalpowder.ts/limestone.ts). Forwarded straight through to updatePowderSink,
+// which gates the actual swap on the neighbor also touching one of
+// `containerIds` (see SimContext.swapOntoPinnedPowder) — reported after the
+// free-floating comb fix shipped: two melt-pinned powders sitting side by
+// side, still mixed in with Molten Iron Ore, could freeze the same way one
+// step earlier in the smelt, before either had cleared onto Molten Metal.
+export function tryHoldInActiveMelt(
+  x: number,
+  y: number,
+  sim: SimContext,
+  mixIds: readonly number[],
+): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
-  if (!sim.inBounds(ux, uy) || sim.get(ux, uy) !== MOLTEN_METAL.id) return false;
-  if (sim.chance(FLUX_RISE_STALL_CHANCE)) return true;
-  if (sim.chance(FLUX_RISE_SWAY_CHANCE) && sim.moveDiagonalUp(x, y)) return true;
-  if (sim.moveUp(x, y)) return true;
-  sim.moveDiagonalUp(x, y);
+  if (!sim.inBounds(ux, uy)) return false;
+  const aboveId = sim.get(ux, uy);
+  const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
+  if (!pinIds.includes(aboveId)) return false;
+  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id], mixIds);
   return true;
 }
 
@@ -145,7 +202,7 @@ export const MOLTEN_IRON_ORE = register({
   // Base colour is the hot end of the glow ramp (bright molten orange); darkens
   // toward `cool` as it sets.
   color: rgb(255, 140, 60),
-  density: 7,
+  density: 6.5,
   category: '제련',
   // Placed hot; conducts a little worse than stone.
   thermal: { init: 1000, conductivity: 0.35 },

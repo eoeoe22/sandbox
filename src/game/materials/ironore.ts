@@ -38,9 +38,13 @@ export const IRON_ORE = register({
   name: 'Iron Ore',
   phase: Phase.Powder,
   color: rgb(148, 90, 62),
-  // Sinks through water (3) and the lighter liquid Slag (6); rides level with its
-  // own melt (7) and sinks under Molten Metal (8), so a fresh ore charge settles
-  // beneath the light waste slag while the heavy reduced iron pools on the floor.
+  // Sinks through water (3) and the lighter liquid Slag (5.75); since the 제련
+  // 밀도 재서열 round it's also denser than its own melt (Molten Iron Ore, 6.5 —
+  // was an intentional tie at 7 before), so an unmelted charge can settle down
+  // into the pool it's about to become rather than merely riding level with it;
+  // still sinks under Molten Metal (8). A fresh ore charge still ends up
+  // beneath the light waste slag while the heavy reduced iron pools on the
+  // floor — this just changes how it gets there before it melts.
   density: 7,
   category: '제련',
   // High conductivity so heat drives deep into a pile quickly and it melts
