@@ -242,25 +242,28 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  columns moveSidewaysBuoyant fixes for ordinary floating powder (see
  *  docs/MATERIAL-SYSTEMS.md). Gating on shouldFlatten, rather than trying the
  *  swap unconditionally whenever fallAndPile fails, also matters for Coal
- *  Powder: it's denser than every liquid tryHoldInActiveMelt pins against, so
- *  shouldFlatten is always false for it and this step is skipped entirely,
- *  same as it always was for Coal Powder before this method existed (see
- *  moltenironore.ts's tryHoldInActiveMelt doc comment).
+ *  Powder: it's denser than Molten Iron Ore/Slag, so shouldFlatten stays
+ *  false for it while pinned above those two — but *not* once it has sunk
+ *  through them to rest directly on Molten Metal (8), still denser than Coal
+ *  Powder (7.5), so this step does fire there (see moltenironore.ts's
+ *  tryHoldInActiveMelt doc comment for the full density ordering).
  *
- *  Deliberately does NOT get updatePowderMix's mixIds fallback: unlike
- *  `containerIds`, a `mixIds` match is by material id alone, with no check
- *  that the neighbor is actually part of *this* pinned charge — see
- *  SimContext.moveSidewaysContained's doc comment for why adding that
- *  fallback here would leak a pinned grain into an unrelated pile of the same
- *  material sitting outside the furnace. */
+ *  `mixIds` is forwarded to moveSidewaysContained's swapOntoPinnedPowder
+ *  fallback (see SimContext.ts) — the same two-melt-pinned-powders-side-by-side
+ *  comb that updatePowderMix's mixIds fixes for the free-floating case can
+ *  recur one step earlier, while both grains are still pinned against Molten
+ *  Iron Ore/Slag rather than having cleared onto Molten Metal (reported
+ *  after the free-floating fix: the frozen columns still contained Molten
+ *  Iron Ore). */
 export function updatePowderSink(
   x: number,
   y: number,
   sim: SimContext,
   containerIds: readonly number[],
+  mixIds: readonly number[],
 ): void {
   if (fallAndPile(x, y, sim)) return;
-  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds);
+  if (shouldFlatten(x, y, sim)) sim.moveSidewaysContained(x, y, containerIds, mixIds);
 }
 
 /** Empty `mixIds` — updatePowder's "no other floating powder to swap with"

@@ -107,19 +107,22 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // forever.
   if (mixIntoMelt(x, y, sim)) return;
   // tryHoldInActiveMelt (shared with Limestone, see moltenironore.ts) checks
-  // Molten Iron Ore/Slag by identity, but for Coal Powder it's effectively a
-  // no-op at density 7.5 — see moltenironore.ts's doc comment on
-  // tryHoldInActiveMelt for the full reasoning (why neither the rise nor the
-  // sideways spread it gates ever fires for Coal Powder specifically). Left
-  // in place because the shared call is still correct and cheap; the real
-  // work happens for Limestone. updatePowderMix runs for every other liquid,
-  // including Molten Metal, where Coal Powder's own density floats or sinks
-  // it like any other powder — with Limestone in its mixIds so the two, once
-  // both floating clear of the ore/slag body onto the same Molten Metal
-  // surface, can still swap past each other when neither has open liquid
-  // beside it (see SimContext.moveSidewaysMix).
-  if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowderMix(x, y, sim, mixIds ?? (mixIds = [LIMESTONE.id]));
+  // Molten Iron Ore/Slag by identity; its rise-blocking half is a no-op for
+  // Coal Powder at density 7.5, but its sideways-spread half is NOT always a
+  // no-op — see moltenironore.ts's doc comment on tryHoldInActiveMelt for why
+  // (a Coal Powder cell resting on Molten Metal while still nominally pinned
+  // by Ore/Slag above does attempt the spread). The same mixIds (Limestone's
+  // id) is passed here too, so a Coal Powder grain in that situation can swap
+  // sideways past a pinned Limestone neighbor right there (see
+  // SimContext.swapOntoPinnedPowder) — without this a mixed charge could
+  // freeze into the same comb shape one step before either grain clears onto
+  // Molten Metal. updatePowderMix runs for every other liquid, including
+  // Molten Metal once fully clear of the ore/slag body, where Coal Powder's
+  // own density floats or sinks it like any other powder — with Limestone
+  // still in its mixIds so the two can keep swapping past each other there
+  // when neither has open liquid beside it (see SimContext.moveSidewaysMix).
+  if (tryHoldInActiveMelt(x, y, sim, mixIds ?? (mixIds = [LIMESTONE.id]))) return;
+  updatePowderMix(x, y, sim, mixIds);
 }
 
 export const COAL_POWDER = register({

@@ -77,15 +77,16 @@ function isCarbon(id: number): boolean {
 // (updatePowderSink — fall/pile, no rise attempt) instead of doing nothing.
 //
 // After the 제련 밀도 재서열 (Coal Powder 5→7.5, now denser than both Molten
-// Iron Ore 6.5 and Slag 5.75), this is a load-bearing exception only for
-// Limestone (still the lightest thing in the furnace). For Coal Powder it's a
-// harmless no-op: tryBuoyantRise would already refuse to rise there on density
-// alone, and updatePowderSink's own sideways step is gated on the same
-// "actually floating" check updatePower's flattenIfFloating uses — false for
-// Coal Powder either way, since it's denser than both liquids listed below —
-// so calling updatePowderSink instead of updatePowder produces the exact same
-// outcome. Left shared rather than split out, since the shared call is still
-// correct and Coal Powder needs no separate code path.
+// Iron Ore 6.5 and Slag 5.75), the *rise* half of this hold is a harmless
+// no-op for Coal Powder: tryBuoyantRise already refuses to rise against Ore
+// or Slag on density alone, so blocking it again here changes nothing. The
+// *sideways* half isn't always a no-op, though — updatePowderSink's own
+// shouldFlatten check looks at what's directly below, not above, so a Coal
+// Powder cell that's sunk through Ore/Slag to rest on Molten Metal (8, still
+// denser than Coal Powder) reads as floating and does attempt the sideways
+// step, even while its own above-cell still pins it via this function (see
+// the Molten Metal boundary case a few paragraphs below). Left shared rather
+// than split out either way, since the shared call is correct for both.
 //
 // This returns false for every other liquid — including the finished Molten
 // Metal layer — so the caller's ordinary `updatePowderMix` fallback takes over
@@ -113,14 +114,28 @@ function isCarbon(id: number): boolean {
 // blocks it while Ore/Slag stays above), and spread no further either —
 // reproducing the exact frozen-comb bug this fix exists to prevent, just
 // relocated to the Ore/Slag-Metal interface instead of mid-charge.
-export function tryHoldInActiveMelt(x: number, y: number, sim: SimContext): boolean {
+//
+// `mixIds` is the caller's list of *other* melt-pinned powders this grain can
+// swap past (Coal Powder passes Limestone's id and vice versa — see
+// coalpowder.ts/limestone.ts). Forwarded straight through to updatePowderSink,
+// which gates the actual swap on the neighbor also touching one of
+// `containerIds` (see SimContext.swapOntoPinnedPowder) — reported after the
+// free-floating comb fix shipped: two melt-pinned powders sitting side by
+// side, still mixed in with Molten Iron Ore, could freeze the same way one
+// step earlier in the smelt, before either had cleared onto Molten Metal.
+export function tryHoldInActiveMelt(
+  x: number,
+  y: number,
+  sim: SimContext,
+  mixIds: readonly number[],
+): boolean {
   const ux = x - sim.gravityX;
   const uy = y - sim.gravityY;
   if (!sim.inBounds(ux, uy)) return false;
   const aboveId = sim.get(ux, uy);
   const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
   if (!pinIds.includes(aboveId)) return false;
-  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id]);
+  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id], mixIds);
   return true;
 }
 

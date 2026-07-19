@@ -201,6 +201,106 @@ function makeMixedFloat(w: number, h: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
+/** A single row of alternating Coal Powder/Limestone sandwiched between a
+ *  Slag ceiling and a Molten Metal floor (mirrors makeMixedFloat's flat
+ *  shelf, not makeMeltPinnedFlux's multi-row comb) — every interior cell's
+ *  own-row lateral neighbor is the *other* melt-pinned powder, and every
+ *  cell's against-gravity neighbor is Slag, so every cell is genuinely
+ *  pinned by tryHoldInActiveMelt (not just the topmost row of a deeper comb
+ *  — an earlier, multi-row version of this scene had that flaw: only its
+ *  top row was ever actually pinned, since a lower comb row's own
+ *  above-neighbor was more comb of the *same* column's material, not
+ *  Ore/Slag, so tryHoldInActiveMelt returned false there and those rows were
+ *  silently exercising the already-fixed free-floating path instead — a
+ *  regression test that disabled swapOntoPinnedPowder entirely still passed
+ *  as a result).
+ *
+ *  Molten Metal (not Slag/Molten Iron Ore) as the floor specifically because
+ *  Coal Powder (7.5) is *lighter* than it (8): the shelf's Coal Powder cells
+ *  can't displace down (or diagonally) into it via the ordinary
+ *  fallAndPile/tryMove path either, unlike Slag or Molten Iron Ore (which
+ *  it's denser than and would sink into every tick regardless of the fix
+ *  under test — an earlier version of this scene used Slag as the floor and
+ *  a disabled-fix regression test still passed for exactly this reason). Slag
+ *  (not Molten Iron Ore) as the ceiling specifically because Molten Iron Ore
+ *  actively reduces adjacent carbon/flux (see moltenironore.ts) and would
+ *  consume the shelf's own Coal Powder/Limestone cells over the run,
+ *  contaminating "did this cell change" with an unrelated reaction; Slag has
+ *  no such reaction (see slag.ts) and coalpowder.ts's touchingMelt shields
+ *  the shelf from auto-ignition via the Molten Metal floor regardless of the
+ *  Slag ceiling. Exercises SimContext.swapOntoPinnedPowder/
+ *  moveSidewaysContained's mixIds fallback, the melt-pinned counterpart to
+ *  makeMixedFloat's free-floating coverage — reported after that
+ *  free-floating fix shipped: two melt-pinned powders side by side, still
+ *  mixed in with Molten Iron Ore, can freeze the same way one step earlier
+ *  in the smelt (see docs/MATERIAL-SYSTEMS.md). Deterministic (no RNG) so it
+ *  drops straight into the equivalence harness like the other targeted
+ *  scenes.
+ *
+ *  tint 255 throughout: SimContext.canOverlapAt's per-grain 겹침 admission
+ *  check (`tint < liquidOverlap*256`, default coefficient 0.6) always passes
+ *  at tint 0 (Grid's default), which would let the Slag above the shelf soak
+ *  into it (soakDown) and clear itself to EMPTY — silently unpinning a shelf
+ *  cell through a route that has nothing to do with the fix under test;
+ *  tint 255 fails that roll outright. Explicit per-material temperatures
+ *  (not a single uniform fill): Slag/Molten Metal need to stay well above
+ *  their own softening/freeze points for the run's duration, while the shelf
+ *  itself is kept far below Coal Powder's 580 autoignite threshold (moot
+ *  given the touchingMelt shield above, but keeps the scene's intent
+ *  unambiguous even if that shield ever changes). */
+function makeMeltPinnedMix(w: number, h: number): Snapshot {
+  const LIMESTONE = 69;
+  const COAL_POWDER = 70;
+  const SLAG = 68;
+  const MOLTEN_METAL = 29;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n);
+  const tint = new Uint8Array(n).fill(255);
+  const shelfY = (h / 2) | 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const id = y < shelfY ? SLAG : y > shelfY ? MOLTEN_METAL : x % 2 === 0 ? COAL_POWDER : LIMESTONE;
+      cells[y * w + x] = id;
+      temp[y * w + x] = id === SLAG ? 700 : id === MOLTEN_METAL ? 900 : 25;
+    }
+  }
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
+/** Fails the meltPinnedMix case if not one *interior* shelf cell is ever seen
+ *  to differ from its starting material at *any* tick of the run — the
+ *  equivalence/determinism checks above only prove the two scan orders agree
+ *  with *each other*, not that swapOntoPinnedPowder actually fired.
+ *
+ *  Checks every tick, not just the final one: this scene's every shelf cell
+ *  is symmetric (same shouldFlatten condition, same mixIds, same seeded RNG),
+ *  so a synchronized run swaps every adjacent pair in lockstep and can flip
+ *  the whole row back to its exact starting pattern on alternating ticks —
+ *  comparing only tick 0 against a coincidentally-even final tick count found
+ *  zero difference despite a swap firing on *every single tick* (confirmed by
+ *  instrumenting swapOntoPinnedPowder directly). Scanning the whole run
+ *  catches that regardless of parity.
+ *
+ *  Deliberately excludes the shelf's outermost 3 columns on each side: those
+ *  have plain background Molten Iron Ore/Slag exposed on their *outer*
+ *  flank, so they can shuffle via the pre-existing containerIds-only
+ *  swapOntoLiquid fallback alone — checking the whole grid would let that
+ *  edge movement mask a regression in the interior, where every column's
+ *  *both* flanks are the other pinned powder and swapOntoPinnedPowder is the
+ *  only path that can ever unstick it. */
+function verifyMeltPinnedMixMoved(initial: Snapshot, frames: Snapshot[]): string | null {
+  const { w, h } = initial;
+  const shelfY = (h / 2) | 0;
+  for (const frame of frames) {
+    for (let x = 5; x < w - 5; x++) {
+      const i = shelfY * w + x;
+      if (initial.cells[i] !== frame.cells[i]) return null;
+    }
+  }
+  return 'meltPinnedMix shelf interior never changed at any tick — swapOntoPinnedPowder appears to be a no-op';
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -296,6 +396,8 @@ interface Case {
   slabRows?: number; // if set, use a settled sand slab instead of random fill
   raft?: boolean; // if set, use a jagged sealed Ash-in-Water raft instead of random fill
   meltFlux?: boolean; // if set, use a jagged Limestone comb pinned inside a Molten Iron Ore melt
+  meltPinnedMix?: boolean; // if set, use a uniform-depth Coal Powder/Limestone comb pinned inside a Molten Iron Ore melt
+  verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
   mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
@@ -333,6 +435,22 @@ const CASES: Case[] = [
   // open air or Liquid a plain moveSideways/moveSidewaysBuoyant could
   // already handle.
   { seed: 0xb4, w: 50, h: 24, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, mixedFloat: true },
+  // Targeted: jagged Coal Powder/Limestone comb pinned inside a Molten Iron
+  // Ore melt — swapOntoPinnedPowder/moveSidewaysContained's mixIds fallback's
+  // only path to being exercised, since adjacent comb columns here are each
+  // other (not Ore/Slag/Molten Metal), which the plain containerIds-only
+  // swapOntoLiquid fallback could already handle.
+  {
+    seed: 0xb5,
+    w: 54,
+    h: 60,
+    fill: 0,
+    gravity: 'down',
+    ticks: 120,
+    mixEvery: 0,
+    meltPinnedMix: true,
+    verifyMove: verifyMeltPinnedMixMoved,
+  },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -346,9 +464,11 @@ for (const c of CASES) {
       ? makeFloatingRaft(c.w, c.h)
       : c.meltFlux
         ? makeMeltPinnedFlux(c.w, c.h)
-        : c.mixedFloat
-          ? makeMixedFloat(c.w, c.h)
-          : makeScene(c.seed, c.w, c.h, c.fill);
+        : c.meltPinnedMix
+          ? makeMeltPinnedMix(c.w, c.h)
+          : c.mixedFloat
+            ? makeMixedFloat(c.w, c.h)
+            : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
@@ -373,6 +493,13 @@ for (const c of CASES) {
       );
       caseOk = false;
       break;
+    }
+  }
+  if (caseOk && c.verifyMove) {
+    const err = c.verifyMove(scene, full);
+    if (err) {
+      console.error(`VERIFY FAIL seed=0x${c.seed.toString(16)}: ${err}`);
+      caseOk = false;
     }
   }
   totalTicks += c.ticks;

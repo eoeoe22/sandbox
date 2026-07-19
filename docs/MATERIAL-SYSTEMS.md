@@ -810,6 +810,91 @@ Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 
   래퍼가 되도록 정리해 중복을 없앴다(추가 비용 없음 — 빈 배열 하나 더
   넘기는 것뿐).
 
+## 붙잡힌 상태에서도 같은 빗살 문제 재발 — `swapOntoPinnedPowder` 추가
+
+앞 절 배포 후 사용자가 다시 재보고: "줄어들긴 했으나 여전히 일자 기둥이
+남음. 남은 기둥은 molten iron ore가 섞여있음." 앞 절 수정은 제련액을 완전히
+벗어나 Molten Metal 위에 자유롭게 뜬 경우만 커버했는데, 아직 Molten Iron
+Ore/Slag에 붙잡힌(pinned) 상태에서도 Coal Powder·Limestone 두 재질이 옆으로
+맞닿으면 정확히 같은 이유(`isDisplaceable`이 Powder 대 Powder 변위를 절대
+허용하지 않음)로 얼어붙을 수 있었다 — 앞 절이 자유 상태만 고치고 붙잡힌
+상태는 "이번 라운드에서 고치지 않고 남겨뒀다"고 명시했던 바로 그 경우다.
+
+- **원인**: `tryHoldInActiveMelt`로 붙잡힌 가루가 옆으로 퍼지는
+  경로(`SimContext.moveSidewaysContained`)는 `containerIds`에 있는 액체
+  칸으로만 교환할 수 있고, 다른 재질의 붙잡힌 가루로는 절대 교환할 수
+  없었다 — 앞 절의 `swapOntoPowder`/`moveSidewaysMix`는 자유롭게 뜬 경로
+  (`updatePowderMix`)에만 연결돼 있었기 때문. 그래서 Coal Powder·Limestone이
+  둘 다 아직 Ore/Slag에 덮인 채(Molten Metal 경계로 다 가라앉기 전) 서로
+  옆에 맞닿으면, 노출된 액체가 없는 자리에서 똑같이 영구 고정됐다.
+- **1차 시도와 그 결함(자체 발견, 커밋 전에 되돌림)**: `moveSidewaysContained`/
+  `updatePowderSink`에 `mixIds`를 다시 넣고, 앞 절의 `swapOntoPowder`를 그대로
+  가져다 쓰는 안을 먼저 시도했다 — 하지만 이건 앞 절 자체가 코드리뷰로 걸러낸
+  바로 그 격리 누출(재질 id만 보고 진짜 같은 충전물인지 확인 안 함)을 그대로
+  재현하는 안이었으므로, 애초에 커밋하지 않고 아래의 터치-체크 버전으로
+  대체했다.
+- **수정**: `SimContext`에 `swapOntoPinnedPowder(x, y, tx, ty, ids,
+  containerIds)`를 추가 — 옆 칸 재질이 `ids`에 있고, **그 옆 칸 자신의
+  중력 반대 방향 칸도 `containerIds` 액체**일 때만(= `tryHoldInActiveMelt`가
+  이동을 시도하는 쪽 알갱이에게 하는 것과 똑같은 붙잡힘 검사를, 옆 칸에도
+  독립적으로 적용) 무조건 교환을 허용한다. 이 특정 칸 하나만 확인하는 이유
+  — 처음엔 옆 칸의 8방향 이웃 전체를 스캔해 `containerIds`가 하나라도
+  있으면 통과시키는 안을 썼는데, **어떤 축 정렬 중력에서도 이동을 시도하는
+  알갱이 자신의 중력 반대 칸(이미 `containerIds` 액체임이 확인된, 그래서
+  애초에 붙잡혀 있는 바로 그 칸)은 항상 옆 칸의 대각선 이웃이 된다**는
+  기하학적 사실 때문에, 8방향 스캔은 **이 메서드가 실제로 호출되는 모든
+  경우에 무조건 참**이 되어 아무 안전장치도 못 됨을 코드리뷰(Efficiency
+  각도)가 지적 — 재질 id만 보던 원래 결함을 겉모습만 다르게 그대로
+  재현하고 있었다. 옆 칸 "자신의" 중력 반대 칸 하나만 보는 지금 방식은
+  이동하는 알갱이 쪽 검사와 무관한 별개의 칸을 확인하므로 실제로 옆 칸의
+  상태를 검증한다. `moveSidewaysContained`/`updatePowderSink`/
+  `tryHoldInActiveMelt`에 `mixIds`를 다시 스레딩하고,
+  `coalpowder.ts`/`limestone.ts`가 이미 갖고 있던 지연 초기화 `mixIds`를
+  `tryHoldInActiveMelt` 호출에도 같이 넘긴다.
+- **`swapOntoPinnedPowder`가 `swapOntoPowder`를 재사용하도록 정리
+  (Simplification 지적)**: 처음엔 `swapOntoPinnedPowder`가 경계/id 검사를
+  `swapOntoPowder`와 거의 똑같이 복제해서 갖고 있었다 — 터치-체크만 먼저
+  하고 나머지(경계/id 검사 + 실제 교환)는 `swapOntoPowder`를 그대로
+  호출하도록 정리해 중복을 없앴다.
+- **아직 남은, 의도적으로 안 고친 한계 — 제련로 인스턴스 구분 없음(Angle A
+  지적)**: 이 엔진에는 "이 액체 칸이 어느 제련로에 속하는지" 같은 개념이
+  전혀 없다 — `containerIds`/터치-체크 둘 다 재질 id와 인접 여부만 보고,
+  같은 액체를 쓰는 서로 다른 두 제련로를 구분하지 못한다. 플레이어가 활성
+  제련로 두 개를 바로 붙여 지으면, A 제련로에 붙잡힌 가루가 B 제련로에
+  붙잡힌(그러나 A와는 무관한) 같은 재질 가루와 옆으로 자리를 바꿀 수
+  있다 — 이건 `touchingMelt`/`swapOntoLiquid`의 `containerIds` 등 이 엔진
+  전체의 "붙잡힘 = 재질 id 인접"이라는 기존 설계 자체에 내재한 한계이지 이번
+  수정이 새로 만든 문제는 아니다(기존 `swapOntoLiquid`의 `containerIds`도
+  마찬가지로 "제련로 인스턴스"가 아니라 "그 액체 재질"만 확인한다). 알려진
+  한계로 남겨둔다 — 인접한 두 제련로가 흔한 시나리오가 되면 그때 "같은
+  충전물" 개념(예: 연결-성분 태그) 자체를 엔진에 추가하는 걸 고려한다.
+- **검증**: 저장소 루트 임시 헤드리스 스크립트로 확인 — Slag 천장·Molten
+  Metal 바닥 사이에 낀 Coal Powder/Limestone 한 칸짜리 선반(모든 칸이
+  진짜로 붙잡힌 상태: 위가 Slag라 `tryHoldInActiveMelt`가 붙잡고, 아래가
+  Molten Metal이라 Limestone은 뜬 상태로 읽힘) 중 가운데 알갱이 하나로
+  고립 테스트 — 수정 전엔 2000틱 내내 단 한 번도 이동하지 않음, 수정
+  후엔 즉시(0번째 틱) 옆 자리와 교환되며 풀려남. 터치-체크를 일부러 항상
+  거짓을 반환하도록 되돌려 봐도(회귀 시뮬레이션) 여전히 안 움직임을 재확인
+  — 즉 이 수정이 실제로 필요하다는 것과, 터치-체크가 진짜로 게이팅 역할을
+  한다는 것 둘 다 직접 확인했다. `npm run check`(0 errors),
+  `npm run test:active-tiles`(14 시나리오 전건 — 새 시나리오
+  `makeMeltPinnedMix`: Slag 천장/Molten Metal 바닥 사이에 Coal
+  Powder/Limestone이 한 칸씩 번갈아 나열된 선반을 얹어
+  `swapOntoPinnedPowder`/`moveSidewaysContained`의 `mixIds` 경로를 강제로
+  타게 함) 재통과.
+- **테스트가 실제로 그 경로를 타는지까지 확인 — Cross-file 각도 지적**:
+  기존 동등성/결정성 검사(전체 스캔 vs 타일 스캔 일치 여부)는 두 스캔
+  방식이 서로 일치하는지만 볼 뿐, `swapOntoPinnedPowder`가 실제로 뭔가를
+  했는지는 전혀 증명하지 못한다 — 실제로 그 메서드를 통째로 죽은 코드로
+  만들어도 동등성 검사 자체는 그대로 통과함을 직접 확인했다. `verifyMove`라는
+  케이스별 선택 검사를 새로 추가해, `makeMeltPinnedMix` 시나리오에서 실행
+  전 구간(매 틱, 마지막 틱만이 아니라) 선반 안쪽 칸들이 단 한 번도 원래
+  재질에서 안 바뀌면 실패하도록 했다 — 처음엔 시작/끝 두 틱만 비교했는데,
+  이 시나리오의 모든 선반 칸이 완전히 대칭이라(동일한 `shouldFlatten` 조건,
+  동일한 시드 RNG) 매 틱 전체 줄이 통째로 자리를 맞바꾸는 동기화된 패턴이
+  나타나, 짝수 틱(120)에서는 우연히 시작 상태로 정확히 되돌아와 있어서
+  "안 바뀜"으로 오판했다 — 매 틱을 다 확인하도록 고쳐서 해결했다.
+
 ## 니트로가 Blue Flame에 반응하지 않던 버그 수정 (`nitro.ts`)
 
 니트로의 자체 트리거 스캔(`updateNitro`)이 `FIRE`/`LAVA`/`BLAST`만 검사하고 `BLUE_FLAME`을

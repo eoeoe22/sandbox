@@ -29,13 +29,17 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // as waste, so a grain submerged in *either* stays put (though still free to
 // sink further if there's room below) instead of skimming straight back to the
 // surface, which the generic density rule would otherwise do since both are
-// denser than Limestone. Molten Metal needs no such override: once the grain
-// is below both Ore and Slag, in the finished layer (nothing left for it to
-// flux), tryHoldInActiveMelt returns false and updatePowderMix's ordinary
-// generic buoyancy floats it clear on its own, the same as any other liquid
-// — Coal Powder is in its mixIds so the two can still swap past each other
-// there if they've floated clear together with no open liquid between them
-// (see SimContext.moveSidewaysMix).
+// denser than Limestone. While still pinned this way, Coal Powder is in its
+// mixIds too, so a Limestone grain boxed in by a pinned Coal Powder neighbor
+// can still swap past it right there (see SimContext.swapOntoPinnedPowder) —
+// otherwise a mixed charge could freeze into the same comb shape one step
+// before either grain clears onto Molten Metal. Molten Metal needs no such
+// override: once the grain is below both Ore and Slag, in the finished layer
+// (nothing left for it to flux), tryHoldInActiveMelt returns false and
+// updatePowderMix's ordinary generic buoyancy floats it clear on its own, the
+// same as any other liquid — Coal Powder is still in its mixIds so the two
+// can keep swapping past each other there if they've floated clear together
+// with no open liquid between them (see SimContext.moveSidewaysMix).
 // Lazily built (not a plain module-level literal): COAL_POWDER comes from
 // coalpowder.ts, which imports back from this file, so a top-level
 // `[COAL_POWDER.id]` would read COAL_POWDER before that circular import
@@ -46,8 +50,8 @@ import { tryHoldInActiveMelt } from './moltenironore';
 let mixIds: readonly number[] | undefined;
 
 function updateLimestone(x: number, y: number, sim: SimContext): void {
-  if (tryHoldInActiveMelt(x, y, sim)) return;
-  updatePowderMix(x, y, sim, mixIds ?? (mixIds = [COAL_POWDER.id]));
+  if (tryHoldInActiveMelt(x, y, sim, mixIds ?? (mixIds = [COAL_POWDER.id]))) return;
+  updatePowderMix(x, y, sim, mixIds);
 }
 
 export const LIMESTONE = register({

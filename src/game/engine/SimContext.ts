@@ -733,28 +733,34 @@ export class SimContext {
    * swaps with a `containerIds`-listed neighbor via swapOntoLiquid, skipping
    * the density-sorted tryMove attempt moveSidewaysBuoyant tries first — see
    * swapOntoLiquid's own doc comment for why that matters and why
-   * `containerIds` is required here but not there.
+   * `containerIds` is required here but not there. Falls back to
+   * swapOntoPinnedPowder for a `mixIds`-listed powder neighbor that is *itself*
+   * still touching the melt (see that method's own comment for why the extra
+   * touch check is what makes this safe, unlike the plain identity-only
+   * swapOntoPowder moveSidewaysMix uses for the already-cleared case).
    *
-   * Deliberately does NOT get moveSidewaysMix's swapOntoPowder fallback:
-   * unlike `containerIds` (restricted to liquids the caller has confirmed are
-   * part of THIS melt), `swapOntoPowder`'s `ids` allowlist only checks a
-   * neighbor's material id, not whether it's actually part of the same pinned
-   * charge — a Coal Powder pile a player left touching the outside of the
-   * furnace is the same id as Coal Powder pinned inside it. Adding that
-   * fallback here would let a pinned grain swap past the furnace wall into an
-   * unrelated pile outside, exactly the containment leak `containerIds` was
-   * introduced to prevent (see swapOntoLiquid's doc comment). The
-   * powder-vs-powder comb this fixes for the free-floating case
-   * (moveSidewaysMix, used once a grain has cleared Ore/Slag onto the
-   * furnace's own Molten Metal) doesn't have this hazard: nothing there is
-   * "pinned" to begin with, so there's no containment to leak out of.
+   * A prior version of this method took no `mixIds` at all — a code review
+   * caught that an earlier, less careful attempt at this same fallback (using
+   * plain swapOntoPowder, identity-only) let a pinned grain swap past the
+   * furnace wall into an unrelated pile of the same material a player left
+   * touching the outside — see docs/MATERIAL-SYSTEMS.md. That version was
+   * reverted rather than patched in place. swapOntoPinnedPowder is the
+   * corrected replacement: same fallback, but gated on the neighbor also
+   * touching a `containerIds` liquid, which an outside stockpile never does.
    */
-  moveSidewaysContained(x: number, y: number, containerIds: readonly number[]): boolean {
+  moveSidewaysContained(
+    x: number,
+    y: number,
+    containerIds: readonly number[],
+    mixIds: readonly number[],
+  ): boolean {
     if (!this.gravityPass()) return false;
     const [px, py] = this.randomPerp();
     return (
       this.swapOntoLiquid(x, y, x + px, y + py, containerIds) ||
-      this.swapOntoLiquid(x, y, x - px, y - py, containerIds)
+      this.swapOntoLiquid(x, y, x - px, y - py, containerIds) ||
+      this.swapOntoPinnedPowder(x, y, x + px, y + py, mixIds, containerIds) ||
+      this.swapOntoPinnedPowder(x, y, x - px, y - py, mixIds, containerIds)
     );
   }
 
@@ -817,10 +823,12 @@ export class SimContext {
    * this exists to break, not a condition worth sorting by. An empty `ids`
    * (moveSidewaysBuoyant's case) makes this a guaranteed no-op.
    *
-   * NOT used by moveSidewaysContained: `ids` only checks a neighbor's
-   * material identity, not whether it's actually part of the same pinned
-   * body a `containerIds` liquid is — see moveSidewaysContained's own doc
-   * comment for the containment leak that would reopen.
+   * Also reused by swapOntoPinnedPowder below for its own id/bounds check
+   * and the actual swap, once that method's own touch-check has separately
+   * confirmed the neighbor is safe to swap into — `ids` alone (what this
+   * method checks) only establishes material identity, not whether the
+   * neighbor is part of the same pinned body a `containerIds` liquid is,
+   * which is why moveSidewaysContained never calls this method directly.
    */
   private swapOntoPowder(x: number, y: number, tx: number, ty: number, ids: readonly number[]): boolean {
     if (!this.inBounds(tx, ty)) return false;
@@ -828,6 +836,46 @@ export class SimContext {
     if (id === EMPTY || !ids.includes(id)) return false;
     this.swap(x, y, tx, ty);
     return true;
+  }
+
+  /**
+   * moveSidewaysContained's containment-safe counterpart to swapOntoPowder:
+   * an unconditional swap with an adjacent Powder cell whose id is in `ids`,
+   * but *only* if that neighbor is independently pinned the same way the
+   * mover is — its own against-gravity cell is also a `containerIds` liquid
+   * (mirroring tryHoldInActiveMelt's own pin check, just evaluated at
+   * (tx,ty) instead of (x,y)) — i.e. it's embedded in the same active melt,
+   * not a disconnected pile of the same material a player left resting
+   * against the furnace's outer wall (which has open air or solid ground
+   * above it, not the furnace's own Ore/Slag/Molten Metal).
+   *
+   * This checks *one specific* neighbor of (tx,ty), not "any of its 8
+   * neighbors": a full 8-neighbor scan was tried first and is wrong here —
+   * for *any* axis-aligned gravity, the mover's own against-gravity cell
+   * (already confirmed to be a `containerIds` liquid, that's why the mover
+   * is pinned at all) is *always* exactly one diagonal step from (tx,ty)
+   * (tx,ty is one perpendicular step from (x,y), and "perpendicular step" +
+   * "against gravity" is a unit diagonal by construction). An 8-neighbor
+   * scan at (tx,ty) would therefore always find that same cell and return
+   * true unconditionally on every call this method actually receives —
+   * silently reopening the exact leak this method exists to close, since it
+   * would then accept *any* adjacent same-id Powder cell regardless of
+   * whether it's part of the same melt. Checking only (tx,ty)'s own
+   * against-gravity cell avoids that: it's a cell the mover's own pin check
+   * says nothing about, so it actually tests the neighbor's own status.
+   */
+  private swapOntoPinnedPowder(
+    x: number,
+    y: number,
+    tx: number,
+    ty: number,
+    ids: readonly number[],
+    containerIds: readonly number[],
+  ): boolean {
+    const ux = tx - this.gravityX;
+    const uy = ty - this.gravityY;
+    if (!this.inBounds(ux, uy) || !containerIds.includes(this.get(ux, uy))) return false;
+    return this.swapOntoPowder(x, y, tx, ty, ids);
   }
 
   /**
