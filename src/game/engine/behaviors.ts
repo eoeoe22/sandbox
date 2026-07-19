@@ -78,9 +78,9 @@ const RISE_WOBBLE_CHANCE = 0.4;
  * the incoming water instead.
  *
  * No fixed per-tick stall chance — a powder blocked from going straight up
- * is a Powder-phase obstacle the liquid can never displace on its own (see
- * SimContext.isDisplaceable), so sitting idle while covered would plug the
- * liquid's own flow around it every tick it stalled. `moveUp`/`moveDiagonalUp`
+ * is a Powder-phase obstacle (unless the liquid is denser, in which case
+ * the liquid displaces it). Sitting idle while covered could still obstruct
+ * other fluid flows. `moveUp`/`moveDiagonalUp`
  * still commonly report no real movement two ways though — tryMove's own
  * density-gap drag gate can consume the tick without swapping (same
  * resistance every displacement gets, see tryMove), and each move rolls

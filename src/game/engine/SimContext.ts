@@ -468,11 +468,21 @@ export class SimContext {
     g.markActive(x2, y2);
   }
 
-  /** Fluids and gases can be displaced by denser materials; solids and powders block. */
-  private isDisplaceable(id: number): boolean {
-    if (id === EMPTY) return true;
-    const p = getMaterial(id).phase;
-    return p === Phase.Liquid || p === Phase.Gas;
+  /**
+   * Fluids and gases can be displaced by denser materials.
+   * Solids block. Light powders can be displaced by denser liquids.
+   */
+  private isDisplaceable(srcId: number, targetId: number): boolean {
+    if (targetId === EMPTY) return true;
+    const targetPhase = getMaterial(targetId).phase;
+    if (targetPhase === Phase.Liquid || targetPhase === Phase.Gas) return true;
+    if (targetPhase === Phase.Powder) {
+      const src = getMaterial(srcId);
+      if (src.phase === Phase.Liquid && src.density > getMaterial(targetId).density) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** True if (px,py) is an in-bounds EMPTY cell a displaced fluid can be shoved
@@ -562,7 +572,7 @@ export class SimContext {
       this.enterOverlay(x, y, tx, ty, srcId);
       return true;
     }
-    if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
+    if (this.isDisplaceable(srcId, targetId) && !this.isFrozen(tx, ty)) {
       const tgt = getMaterial(targetId);
       // Displacement is sorted along gravity, not the screen: the move's
       // component along the down vector decides which cell should end up lower.
