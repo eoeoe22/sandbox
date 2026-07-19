@@ -394,6 +394,11 @@ export class SimContext {
     if (!canHostOverlap(hostId, fluidId)) return false;
     const host = getMaterial(hostId);
     if (host.phase === Phase.Powder) {
+      const fluid = getMaterial(fluidId);
+      // 액체보다 가벼운 가루는 겹침 / 겹침불가 파티클시스템과 별개로 액체가 가루를 겹침으로 통과하게 만들기.
+      if (fluid.phase === Phase.Liquid && host.density < fluid.density) {
+        return true;
+      }
       const coeff = host.liquidOverlap ?? POWDER_LIQUID_OVERLAP_DEFAULT;
       if (coeff >= 1) return true;
       if (coeff <= 0) return false;
@@ -403,6 +408,171 @@ export class SimContext {
     // Mesh's dark checkerboard cells ((x^y) odd, drawn in `lattice`) block; the
     // light cells admit. Plain porous solids have no lattice → always admit.
     if (host.lattice !== undefined) return ((x ^ y) & 1) === 0;
+    return true;
+  }
+
+  /**
+   * Shifts a contiguous column of powder along the anti-gravity vector (UP).
+   * @param topX The x-coordinate of the top of the column.
+   * @param topY The y-coordinate of the top of the column.
+   * @param height The number of powder cells in the column.
+   * @returns true if successful.
+   */
+  shiftPowderColumnUp(topX: number, topY: number, height: number): boolean {
+    const gx = this.gravityX;
+    const gy = this.gravityY;
+    const targetX = topX - gx;
+    const targetY = topY - gy;
+
+    if (!this.inBounds(targetX, targetY)) return false;
+
+    const topId = this.get(topX, topY);
+    const targetId = this.get(targetX, targetY);
+
+    if (targetId !== EMPTY) {
+      if (this.canOverlapAt(targetX, targetY, topId, targetId)) {
+        // Can absorb
+      } else if (this.isDisplaceable(targetId) && DISPLACE_SIDE_PUSH) {
+        if (!this.pushAside(topX, topY, targetX, targetY)) return false;
+      } else {
+        return false;
+      }
+    }
+
+    const g = this.grid;
+    const targetIdx = g.idx(targetX, targetY);
+    let newTopOverlay = 0;
+    let newTopOverlayAux = 0;
+
+    if (this.get(targetX, targetY) !== EMPTY) {
+      newTopOverlay = g.cells[targetIdx];
+      newTopOverlayAux = g.aux[targetIdx];
+    }
+
+    for (let i = 0; i < height; i++) {
+      const cx = topX + gx * i;
+      const cy = topY + gy * i;
+      const nx = cx - gx;
+      const ny = cy - gy;
+
+      const ci = g.idx(cx, cy);
+      const ni = g.idx(nx, ny);
+
+      g.cells[ni] = g.cells[ci];
+      g.temp[ni] = g.temp[ci];
+      g.aux[ni] = g.aux[ci];
+      g.tint[ni] = g.tint[ci];
+      g.moved[ni] = 1;
+      g.markActive(nx, ny);
+    }
+
+    if (newTopOverlay !== 0) {
+      g.overlay[targetIdx] = newTopOverlay;
+      g.overlayAux[targetIdx] = newTopOverlayAux;
+      g.overlayMoved[targetIdx] = 1;
+    }
+
+    const bottomX = topX + gx * (height - 1);
+    const bottomY = topY + gy * (height - 1);
+    const bottomIdx = g.idx(bottomX, bottomY);
+
+    if (g.overlay[bottomIdx] !== 0) {
+      g.cells[bottomIdx] = g.overlay[bottomIdx];
+      g.aux[bottomIdx] = g.overlayAux[bottomIdx];
+      g.tint[bottomIdx] = (Math.random() * 256) | 0;
+      g.moved[bottomIdx] = 1;
+      g.overlay[bottomIdx] = 0;
+      g.overlayAux[bottomIdx] = 0;
+    } else {
+      g.cells[bottomIdx] = EMPTY;
+      g.aux[bottomIdx] = 0;
+      g.setTemp(bottomX, bottomY, AMBIENT_TEMP);
+    }
+    g.markActive(bottomX, bottomY);
+
+    return true;
+  }
+
+  /**
+   * Shifts a contiguous column of powder along the gravity vector (DOWN).
+   * @param topX The x-coordinate of the top of the column.
+   * @param topY The y-coordinate of the top of the column.
+   * @param height The number of powder cells in the column.
+   * @returns true if successful.
+   */
+  shiftPowderColumnDown(topX: number, topY: number, height: number): boolean {
+    const gx = this.gravityX;
+    const gy = this.gravityY;
+
+    const bottomX = topX + gx * (height - 1);
+    const bottomY = topY + gy * (height - 1);
+
+    const targetX = bottomX + gx;
+    const targetY = bottomY + gy;
+
+    if (!this.inBounds(targetX, targetY)) return false;
+
+    const bottomId = this.get(bottomX, bottomY);
+    const targetId = this.get(targetX, targetY);
+
+    if (targetId !== EMPTY) {
+      if (this.canOverlapAt(targetX, targetY, bottomId, targetId)) {
+        // Can absorb
+      } else if (this.isDisplaceable(targetId) && DISPLACE_SIDE_PUSH) {
+        if (!this.pushAside(bottomX, bottomY, targetX, targetY)) return false;
+      } else {
+        return false;
+      }
+    }
+
+    const g = this.grid;
+    const targetIdx = g.idx(targetX, targetY);
+    let newBottomOverlay = 0;
+    let newBottomOverlayAux = 0;
+
+    if (this.get(targetX, targetY) !== EMPTY) {
+      newBottomOverlay = g.cells[targetIdx];
+      newBottomOverlayAux = g.aux[targetIdx];
+    }
+
+    for (let i = height - 1; i >= 0; i--) {
+      const cx = topX + gx * i;
+      const cy = topY + gy * i;
+      const nx = cx + gx;
+      const ny = cy + gy;
+
+      const ci = g.idx(cx, cy);
+      const ni = g.idx(nx, ny);
+
+      g.cells[ni] = g.cells[ci];
+      g.temp[ni] = g.temp[ci];
+      g.aux[ni] = g.aux[ci];
+      g.tint[ni] = g.tint[ci];
+      g.moved[ni] = 1;
+      g.markActive(nx, ny);
+    }
+
+    if (newBottomOverlay !== 0) {
+      g.overlay[targetIdx] = newBottomOverlay;
+      g.overlayAux[targetIdx] = newBottomOverlayAux;
+      g.overlayMoved[targetIdx] = 1;
+    }
+
+    const topIdx = g.idx(topX, topY);
+    if (g.overlay[topIdx] !== 0) {
+      g.cells[topIdx] = g.overlay[topIdx];
+      g.aux[topIdx] = g.overlayAux[topIdx];
+      g.tint[topIdx] = (Math.random() * 256) | 0;
+      g.moved[topIdx] = 1;
+      g.overlay[topIdx] = 0;
+      g.overlayAux[topIdx] = 0;
+    } else {
+      g.cells[topIdx] = EMPTY;
+      g.aux[topIdx] = 0;
+      g.setTemp(topX, topY, AMBIENT_TEMP);
+    }
+    g.markActive(topX, topY);
+
     return true;
   }
 

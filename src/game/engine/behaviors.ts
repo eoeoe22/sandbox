@@ -272,6 +272,68 @@ export function updatePowderSink(
  *  than exported/shared since it's a trivial, module-local value). */
 const NO_MIX_IDS: readonly number[] = [];
 
+/**
+ * Checks if a light powder is in a contiguous column and if so, evaluates its
+ * submerged depth vs its ideal buoyant depth based on density ratios, and
+ * shifts the column up or down if it's out of equilibrium.
+ */
+function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolean {
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+
+  const id = sim.get(x, y);
+  const myDensity = getMaterial(id).density;
+
+  // Only process if we are the top of the stack (no same-material powder above us, against gravity)
+  const ux = x - gx;
+  const uy = y - gy;
+  if (sim.inBounds(ux, uy) && sim.get(ux, uy) === id) return false;
+
+  // Scan down to find the height of the column and its submerged depth
+  let h = 1;
+  let submergedCount = 0;
+  let liquidDensity = 0;
+
+  if (sim.getOverlay(x, y) !== EMPTY) {
+    submergedCount++;
+    const oId = sim.getOverlay(x, y);
+    if (oId !== EMPTY && getMaterial(oId).phase === Phase.Liquid) {
+      liquidDensity = Math.max(liquidDensity, getMaterial(oId).density);
+    }
+  }
+
+  for (let i = 1; i < 256; i++) { // arbitrary limit to prevent infinite loops, though grid is capped
+    const cx = x + gx * i;
+    const cy = y + gy * i;
+    if (!sim.inBounds(cx, cy)) break;
+
+    if (sim.get(cx, cy) === id) {
+      h++;
+      const oId = sim.getOverlay(cx, cy);
+      if (oId !== EMPTY) {
+        submergedCount++;
+        if (getMaterial(oId).phase === Phase.Liquid) {
+          liquidDensity = Math.max(liquidDensity, getMaterial(oId).density);
+        }
+      }
+    } else {
+      break;
+    }
+  }
+
+  if (liquidDensity === 0 || myDensity >= liquidDensity) return false;
+
+  const idealSubmerged = Math.round(h * (myDensity / liquidDensity));
+
+  if (submergedCount > idealSubmerged) {
+    if (sim.shiftPowderColumnUp(x, y, h)) return true;
+  } else if (submergedCount < idealSubmerged) {
+    if (sim.shiftPowderColumnDown(x, y, h)) return true;
+  }
+
+  return false;
+}
+
 /** Like updatePowder, but the flatten step also lets the sideways move swap
  *  places with a specific *other* floating powder listed in `mixIds` (see
  *  SimContext.moveSidewaysMix), instead of only an adjacent Liquid. For a
@@ -290,6 +352,7 @@ export function updatePowderMix(
   sim: SimContext,
   mixIds: readonly number[],
 ): void {
+  if (tryFloatLightPowderStack(x, y, sim)) return;
   if (tryBuoyantRise(x, y, sim)) return;
   if (fallAndPile(x, y, sim)) return;
   if (shouldFlatten(x, y, sim)) sim.moveSidewaysMix(x, y, mixIds);
@@ -330,6 +393,7 @@ const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before d
  *  and flattens/unclogs the same way once it can't fall or drift any further
  *  (flattenIfFloating). */
 export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
+  if (tryFloatLightPowderStack(x, y, sim)) return;
   if (tryBuoyantRise(x, y, sim)) return;
   if (sim.chance(DRIFT_STALL_CHANCE)) return;
   const bx = x + sim.gravityX;
