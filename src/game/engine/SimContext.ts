@@ -468,11 +468,19 @@ export class SimContext {
     g.markActive(x2, y2);
   }
 
-  /** Fluids and gases can be displaced by denser materials; solids and powders block. */
-  private isDisplaceable(id: number): boolean {
+  /** Fluids and gases can always be displaced by denser materials; solids
+   *  always block. Powder is displaceable only by a Liquid mover — a denser
+   *  liquid may push down/sideways past a lighter resting powder (the liquid
+   *  side of the same density rule tryBuoyantRise already gives the powder:
+   *  see behaviors.ts), but Powder-vs-Powder and Gas-vs-Powder stay blocked,
+   *  so an ordinary pile still holds its shape against anything but a denser
+   *  liquid. `moverPhase` is the phase of the cell attempting the move, not
+   *  `id`'s own phase. */
+  private isDisplaceable(id: number, moverPhase: Phase): boolean {
     if (id === EMPTY) return true;
     const p = getMaterial(id).phase;
-    return p === Phase.Liquid || p === Phase.Gas;
+    if (p === Phase.Liquid || p === Phase.Gas) return true;
+    return p === Phase.Powder && moverPhase === Phase.Liquid;
   }
 
   /** True if (px,py) is an in-bounds EMPTY cell a displaced fluid can be shoved
@@ -521,7 +529,10 @@ export class SimContext {
    * displaces a fluid/gas cell when doing so sorts the pair by density: a
    * denser cell sinks through a lighter one below it (ty > y), and a lighter
    * cell rises through a denser one above it (ty < y) — e.g. gas bubbling up
-   * through a liquid. Returns true if it moved.
+   * through a liquid. A moving Liquid may also displace a Powder this way —
+   * denser liquid pushes past a lighter resting powder instead of treating
+   * it as solid ground — but nothing else displaces Powder (see
+   * isDisplaceable). Returns true if it moved.
    */
   tryMove(x: number, y: number, tx: number, ty: number): boolean {
     if (!this.inBounds(tx, ty)) {
@@ -562,7 +573,7 @@ export class SimContext {
       this.enterOverlay(x, y, tx, ty, srcId);
       return true;
     }
-    if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
+    if (this.isDisplaceable(targetId, src.phase) && !this.isFrozen(tx, ty)) {
       const tgt = getMaterial(targetId);
       // Displacement is sorted along gravity, not the screen: the move's
       // component along the down vector decides which cell should end up lower.

@@ -17,6 +17,8 @@
 
 둘 다 `config.ts` 상수로 독립적으로 튜닝·비활성화할 수 있다(`DISPLACE_DRAG_BASE` — 1이면 드래그 완전 오프, `DISPLACE_DRAG_SCALE`, `DISPLACE_SIDE_PUSH` — false면 기존 즉시 스왑). 동일밀도 수평 이동, Acid↔Water 확산(`diffuseWith`), Ember/Blast/Heat Ray 탄도는 이 경로를 타지 않아 영향이 없다. 가루가 자신보다 무거운 액체에 파묻히면 `tryBuoyantRise`(모든 가루의 기본 동작, `updatePowder`에 내장 — docs/MATERIAL-SYSTEMS.md의 "가루 밀도 부력 일반화" 참고)가 매 틱 `moveUp`/`moveDiagonalUp`으로 실제 밀도 변위(위 방향, 가벼운 셀이 무거운 액체를 뚫고 상승)를 시도하므로 이 드래그·측면 밀어내기 경로를 그대로 탄다 — 물을 뚫고 부글부글 올라오는 속도감이 여기서 나온다. EMPTY 빠른 경로에는 추가 비용이 없고, 실제 변위가 일어나는 계면 셀에서만 산술·RNG가 소량 추가된다.
 
+**Liquid → Powder 방향도 같은 변위 분기를 탄다**: `SimContext.isDisplaceable`은 원래 Liquid/Gas만 변위 가능하다고 보고 Powder는 무버가 누구든 항상 제외했다 — 가벼운 가루가 스스로 뜨는 쪽(`tryBuoyantRise`)만 있고, 액체가 반대로 그 가루를 밀어내는 경로는 없었다. 이제 `isDisplaceable`이 무버의 phase를 받아, 대상이 Powder라도 **무버가 Liquid**면 변위 가능 목록에 넣는다 — 이후 밀도 비교(`along`부호별 대소)·드래그 게이트·측면 밀어내기는 전부 위와 동일한 코드를 그대로 탄다. 결과: 자신보다 가벼운 가루 옆에서 멈춰 있던 액체가 이제 그 가루를 밀어내며(또는 서서히 스며들며) 지나갈 수 있다. 밀도가 반대(액체가 더 가벼움)인 조합은 `displaces` 판정 자체가 그대로 거짓이라 여전히 완전히 막힌다 — 무거운 가루가 가벼운 액체를 막는 기존 동작은 손대지 않았다. Powder-vs-Powder·Gas-vs-Powder는 이번에도 제외(자세한 배경과 겹침 시스템과의 상호작용은 docs/MATERIAL-SYSTEMS.md의 "액체가 멈춰 있는 가벼운 가루를 밀어내며 통과" 참고).
+
 ## 파티클 색상 변화 (가루·액체 그래픽)
 
 가루·액체를 균일한 색 덩어리가 아니라 **알갱이/일렁임이 느껴지는 질감**으로 보이게, 물질별로 서로 다른 방식의 랜덤 틴트를 적용한다. 틴트 바이트는 렌더러가 물질 base color 대비 채널별 밝기 오프셋 `[-amp, +amp]`로 매핑한다(정수 비트연산, `>> 7`로 128 나눗셈). 규칙(진폭·틴트 소스)은 `src/game/tint.ts`에 모아 렌더러와 시뮬레이션이 공유해 서로 어긋나지 않게 한다. 두 가지 질감을 phase로 구분한다.

@@ -301,6 +301,59 @@ function verifyMeltPinnedMixMoved(initial: Snapshot, frames: Snapshot[]): string
   return 'meltPinnedMix shelf interior never changed at any tick — swapOntoPinnedPowder appears to be a no-op';
 }
 
+/** A vertical wall between a Powder region (left half) and a Liquid region
+ *  (right half), both filling the full grid height with no open air anywhere
+ *  — the only path from one side to the other is straight through the shared
+ *  boundary. Isolates SimContext.tryMove's Liquid-vs-Powder density-sorted
+ *  displacement (see docs/MATERIAL-SYSTEMS.md's "액체가 멈춰 있는 가벼운 가루를
+ *  밀어내며 지나가게") from the buoyancy/flatten paths the other targeted
+ *  scenes exercise — there's no floating raft here, just a liquid pressing
+ *  sideways against a resting powder bed it either can or can't push past.
+ *  Deterministic (no RNG) so it drops straight into the equivalence harness
+ *  like the other targeted scenes. */
+function makeDensityWall(w: number, h: number, powderId: number, liquidId: number): Snapshot {
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(20);
+  const tint = new Uint8Array(n);
+  const mid = (w / 2) | 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      cells[y * w + x] = x < mid ? powderId : liquidId;
+    }
+  }
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
+/** Checks the final frame of a makeDensityWall run: `shouldCross` true expects
+ *  at least one `liquidId` cell to have crossed left of the wall's starting
+ *  boundary (a denser liquid displacing a lighter powder — the fix under
+ *  test); false expects none (a lighter liquid must still be fully blocked by
+ *  a denser powder, the pre-existing behavior this round leaves unchanged). */
+function verifyDensityWallCrossing(
+  w: number,
+  liquidId: number,
+  shouldCross: boolean,
+): (initial: Snapshot, frames: Snapshot[]) => string | null {
+  return (_initial, frames) => {
+    const mid = (w / 2) | 0;
+    const last = frames[frames.length - 1];
+    let crossed = 0;
+    for (let y = 0; y < last.h; y++) {
+      for (let x = 0; x < mid; x++) {
+        if (last.cells[y * last.w + x] === liquidId) crossed++;
+      }
+    }
+    if (shouldCross && crossed === 0) {
+      return 'denser liquid never displaced any of the lighter powder wall — Liquid-vs-Powder displacement appears broken';
+    }
+    if (!shouldCross && crossed > 0) {
+      return `lighter liquid crossed into the denser powder wall (${crossed} cells) — denser powder should still fully block it`;
+    }
+    return null;
+  };
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -400,6 +453,7 @@ interface Case {
   verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
   mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
+  densityWall?: { powderId: number; liquidId: number }; // if set, use a Powder-left/Liquid-right density wall
 }
 
 const CASES: Case[] = [
@@ -451,6 +505,35 @@ const CASES: Case[] = [
     meltPinnedMix: true,
     verifyMove: verifyMeltPinnedMixMoved,
   },
+  // Targeted: Mercury (density 9) walled against Ash (density 1.5), both full
+  // grid height — the only way Mercury reaches the left half is displacing
+  // straight through the Ash wall sideways (SimContext.tryMove's new
+  // Liquid-vs-Powder branch), since there's no open air to flow around.
+  {
+    seed: 0xb6,
+    w: 48,
+    h: 40,
+    fill: 0,
+    gravity: 'down',
+    ticks: 100,
+    mixEvery: 0,
+    densityWall: { powderId: 55 /* Ash */, liquidId: 40 /* Mercury */ },
+    verifyMove: verifyDensityWallCrossing(48, 40, true),
+  },
+  // Regression guard: Water (density 3) walled against Sand (density 5) — the
+  // reverse density gap, so Water must stay fully blocked exactly as before
+  // this round (a denser powder still obstructs a lighter liquid).
+  {
+    seed: 0xb7,
+    w: 48,
+    h: 40,
+    fill: 0,
+    gravity: 'down',
+    ticks: 100,
+    mixEvery: 0,
+    densityWall: { powderId: 2 /* Sand */, liquidId: 3 /* Water */ },
+    verifyMove: verifyDensityWallCrossing(48, 3, false),
+  },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -468,7 +551,9 @@ for (const c of CASES) {
           ? makeMeltPinnedMix(c.w, c.h)
           : c.mixedFloat
             ? makeMixedFloat(c.w, c.h)
-            : makeScene(c.seed, c.w, c.h, c.fill);
+            : c.densityWall
+              ? makeDensityWall(c.w, c.h, c.densityWall.powderId, c.densityWall.liquidId)
+              : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
