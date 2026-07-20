@@ -26,7 +26,7 @@ import { ICE } from './ice';
 import { SNOW } from './snow';
 import { OIL } from './oil';
 import { GASOLINE } from './gasoline';
-import { PETROLEUM_GAS } from './petroleumgas';
+import { LPG } from './lpg';
 import { PETROLEUM_VAPOR } from './petroleumvapor';
 import { KEROSENE } from './kerosene';
 import { DIESEL } from './diesel';
@@ -68,7 +68,6 @@ import { U238 } from './u238';
 import { MOLTEN_U238 } from './moltenu238';
 import { NUKE_WASTE } from './nukewaste';
 import { HEAT_RAY } from './heatray';
-import { LPG } from './lpg';
 import { COAL_POWDER } from './coalpowder';
 import { METAL_POWDER } from './metalpowder';
 import { SLAG } from './slag';
@@ -132,7 +131,7 @@ export {
   SNOW,
   OIL,
   GASOLINE,
-  PETROLEUM_GAS,
+  LPG,
   PETROLEUM_VAPOR,
   KEROSENE,
   DIESEL,
@@ -174,7 +173,6 @@ export {
   MOLTEN_U238,
   NUKE_WASTE,
   HEAT_RAY,
-  LPG,
   COAL_POWDER,
   METAL_POWDER,
   SLAG,
@@ -261,7 +259,7 @@ export const MATERIALS = [
   SNOW,
   OIL,
   GASOLINE,
-  PETROLEUM_GAS,
+  LPG,
   PETROLEUM_VAPOR,
   KEROSENE,
   DIESEL,
@@ -310,7 +308,6 @@ export const MATERIALS = [
   MOLTEN_SALT,
   DIAMOND,
   ASH,
-  LPG,
   IRON_ORE,
   MOLTEN_IRON_ORE,
   COAL_POWDER,

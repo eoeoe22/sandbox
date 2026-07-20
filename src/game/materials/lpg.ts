@@ -11,13 +11,19 @@ import { BLAST } from './blast';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
 
-// LPG — a flammable petroleum gas that *deflagrates* rather than detonates.
-// Unlike Methane or Hydrogen (fuel-air explosives that call `detonate` and
-// level a filled disc instantly), LPG simply catches fire: a cell touched by a
-// flame, molten material, or blast wave — or heated past its autoignition
-// point — converts itself to Fire in place. The fire then spreads cell-to-cell
-// through the cloud as each ignited neighbor becomes fire, producing a visible
-// flame front that rips through the gas without carving a crater.
+// LPG — the lightest cut of crude, the petroleum gas that boils off first when
+// oil is gently heated (see oil.ts's distillation). It's a *product*, not a
+// process fume: unlike Petroleum Vapor it never condenses back to a liquid, it
+// just rises and disperses. Lighter than every other gas so it races to the
+// top and pools under a lid.
+//
+// It *deflagrates* rather than detonates. Unlike Methane or Hydrogen (fuel-air
+// explosives that call `detonate` and level a filled disc instantly), LPG
+// simply catches fire: a cell touched by a flame, molten material, or blast
+// wave — or heated past its autoignition point — converts itself to Fire in
+// place. The fire then spreads cell-to-cell through the cloud as each ignited
+// neighbor becomes fire, producing a visible flame front that rips through
+// the gas without carving a crater.
 //
 // Trigger detection is by id (like Methane/Gunpowder), not the generic
 // `flammable` tag. A `flammable` tag would let Fire's own slow ignite pass
@@ -62,12 +68,12 @@ function updateLPG(x: number, y: number, sim: SimContext): void {
 }
 
 export const LPG = register({
-  id: 64,
+  id: 58,
   name: 'LPG',
   phase: Phase.Gas,
-  color: rgb(210, 200, 175),
-  density: 1,
-  category: '불·열',
-  thermal: { conductivity: 0.08 },
+  color: rgb(210, 215, 170),
+  density: 0.8,
+  category: '석유',
+  thermal: { init: 60, conductivity: 0.08 },
   update: updateLPG,
 });
