@@ -189,17 +189,54 @@ function restingOnStackedFloat(x: number, y: number, sim: SimContext): boolean {
   return denserLiquidBelow(x, y, sim, FLOAT_STACK_SCAN);
 }
 
+/** True if there's a neighbor at least 2 cells shorter in either
+ *  perpendicular-to-gravity direction — the bar for "worth flattening into,"
+ *  as opposed to a mere 1-cell difference. A pile split across two columns
+ *  with an odd total grain count can never land on equal heights — one side
+ *  always sits exactly 1 taller — so gating only on "is a neighbor shorter
+ *  at all" (no margin) means shouldFlatten stays true forever on both
+ *  sides and each tick's coin-flip swap direction just undoes the last one:
+ *  a single grain ping-ponging between the two columns indefinitely, visible
+ *  as jitter between adjacent stacks of the same floating powder even though
+ *  the pile is already as level as an integer grid allows. Requiring a
+ *  genuine 2-deep gap (checked past the immediate neighbor cell, not just
+ *  whether it's occupied) still lets an actually lopsided pile (say 8 cells
+ *  next to 2) level out normally — only the "already about as flat as it
+ *  gets" case is suppressed. */
+function hasFlattenableGap(x: number, y: number, sim: SimContext): boolean {
+  const id = sim.get(x, y);
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  const px = -gy;
+  const py = gx;
+  for (const s of [1, -1]) {
+    const tx = x + px * s;
+    const ty = y + py * s;
+    if (!sim.inBounds(tx, ty)) continue;
+    if (sim.get(tx, ty) === id) continue; // same material right beside -- no gap here
+    const bx = tx + gx;
+    const by = ty + gy;
+    if (!sim.inBounds(bx, by) || sim.get(bx, by) !== id) return true; // >=2-deep gap
+  }
+  return false;
+}
+
 /** True if this grain should try a sideways step: floating directly on a
  *  liquid it's too light to sink into (floatingOnLiquid), or buried in a
  *  stack of its own kind that bottoms out on one within FLOAT_STACK_SCAN
- *  levels (the FLOAT_STACK_SCAN_CHANCE-gated restingOnStackedFloat). Shared by
- *  flattenIfFloating (ordinary powder, spreads via moveSidewaysBuoyant) and
- *  updatePowderSink (melt-pinned powder, spreads via moveSidewaysContained) —
- *  both only want the sideways step under the same "actually floating"
+ *  levels (the FLOAT_STACK_SCAN_CHANCE-gated restingOnStackedFloat) — and
+ *  only once hasFlattenableGap confirms the step would actually reduce a
+ *  real height difference, not just re-shuffle a natural 1-cell terrace back
+ *  and forth (see that function's own comment). Shared by flattenIfFloating
+ *  (ordinary powder, spreads via moveSidewaysBuoyant) and updatePowderSink
+ *  (melt-pinned powder, spreads via moveSidewaysContained) — both only want
+ *  the sideways step under the same "actually floating, and actually uneven"
  *  condition, they just differ in which primitive is safe to spread with. */
 function shouldFlatten(x: number, y: number, sim: SimContext): boolean {
-  if (floatingOnLiquid(x, y, sim)) return true;
-  return sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim);
+  const floating = floatingOnLiquid(x, y, sim)
+    ? true
+    : sim.chance(FLOAT_STACK_SCAN_CHANCE) && restingOnStackedFloat(x, y, sim);
+  return floating && hasFlattenableGap(x, y, sim);
 }
 
 /** A sideways step if this grain is floating (see shouldFlatten) — called
