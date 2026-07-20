@@ -272,10 +272,42 @@ export function updatePowderSink(
  *  than exported/shared since it's a trivial, module-local value). */
 const NO_MIX_IDS: readonly number[] = [];
 
+// How far tryFloatLightPowderStack looks past its own column's top for
+// unrelated Powder resting on it (a heavier grain, or pile of them, placed on
+// a raft) when tallying `loadWeight` below — the same look-distance rationale
+// as FLOAT_STACK_SCAN, just aimed the opposite direction (past the top instead
+// of past the bottom), so a tall stockpile dropped on a raft doesn't pay for
+// scanning its full height every tick.
+const LOAD_SCAN_LIMIT = 64;
+
 /**
  * Checks if a light powder is in a contiguous column and if so, evaluates its
  * submerged depth vs its ideal buoyant depth based on density ratios, and
  * shifts the column up or down if it's out of equilibrium.
+ *
+ * Also carries the powder-on-powder weight interaction: `loadWeight` tallies
+ * whatever *other* (denser) Powder is resting on top of the column, and folds
+ * it into the same equilibrium as extra cargo the column has to support — a
+ * raft sits lower the more weight is piled on it, on top of (not instead of)
+ * its own unloaded density-ratio depth. When even fully submerging the whole
+ * column still isn't enough buoyancy to carry that cargo, the excess doesn't
+ * just vanish: the load cell touching the column's top swaps into it instead
+ * (see the `idealRaw > h` branch below), sinking one cell into the raft each
+ * tick it's re-evaluated. Every load-bearing cell handles this identically —
+ * there's no separate "digging" step — so a tall pile that outruns what the
+ * column beneath it can support keeps sinking, one cell and one tick at a
+ * time, into whatever fresh top-of-stack cell it now rests on, while the
+ * lighter grains it displaces surface and (once shouldFlatten notices them
+ * floating — see flattenIfFloating) spread out of the way instead of piling
+ * back on top of the very load pressing them down. A column loaded exactly at
+ * (not beyond) its full-submersion capacity just sits fully submerged, no
+ * digging — only genuine excess weight breaches through, and a taller, denser
+ * pile reaches that excess sooner than a lighter one, which is what makes
+ * digging start earliest whichever spot is loaded the most.
+ *
+ * `loadWeight` zero (nothing resting on top) is the overwhelmingly common
+ * case, and takes the exact original code path — computed to bit-identical
+ * `idealSubmerged` — so an unloaded raft's behavior is untouched.
  */
 function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolean {
   const gx = sim.gravityX;
@@ -321,9 +353,76 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
     }
   }
 
+  // Weight of any *other* Powder stacked on the column's own top (ux,uy) and
+  // beyond — a different material, since a same-id run above would have made
+  // (x,y) fail the "top of the stack" check above instead of reaching here.
+  // Each cell contributes its own density, matching how the column's own
+  // weight is expressed as h * myDensity below (one unit of density per
+  // cell). Stops at the first non-Powder cell (open air, solid ground, a
+  // liquid) — only Powder-on-Powder weight counts here.
+  let loadWeight = 0;
+  for (let i = 0; i < LOAD_SCAN_LIMIT; i++) {
+    const lx = ux - gx * i;
+    const ly = uy - gy * i;
+    if (!sim.inBounds(lx, ly)) break;
+    const lid = sim.get(lx, ly);
+    if (lid === EMPTY) break;
+    const lm = getMaterial(lid);
+    if (lm.phase !== Phase.Powder) break;
+    loadWeight += lm.density;
+  }
+
+  // A raft carrying no load only ever equilibrates using liquid it has
+  // already actually absorbed (submergedCount above) — an entirely dry column
+  // merely *resting* on a liquid surface it hasn't yet started to sink into
+  // never bootstraps a nonzero liquidDensity here, so it correctly does
+  // nothing (liquidDensity stays 0 below). A *loaded* column can't wait for
+  // that: the whole point is to press a dry raft down under fresh weight, so
+  // it also checks the liquid immediately past the column's own bottom —
+  // what it's actually resting on — to learn that liquid's density even
+  // before any of it has been absorbed.
+  if (loadWeight > 0) {
+    const belowBottomX = x + gx * h;
+    const belowBottomY = y + gy * h;
+    if (sim.inBounds(belowBottomX, belowBottomY)) {
+      const belowId = sim.get(belowBottomX, belowBottomY);
+      if (belowId !== EMPTY) {
+        const belowMat = getMaterial(belowId);
+        if (belowMat.phase === Phase.Liquid) {
+          liquidDensity = Math.max(liquidDensity, belowMat.density);
+        }
+      }
+    }
+  }
+
   if (liquidDensity === 0 || myDensity >= liquidDensity) return false;
 
-  const idealSubmerged = Math.round(h * (myDensity / liquidDensity));
+  // Written as h*(myDensity/liquidDensity) + loadWeight/liquidDensity, not the
+  // single division (h*myDensity+loadWeight)/liquidDensity, so the unloaded
+  // case (loadWeight 0) computes bit-identically to the original
+  // h*(myDensity/liquidDensity) — no floating-point drift changes behavior
+  // when there's nothing riding on top.
+  const idealRaw = h * (myDensity / liquidDensity) + loadWeight / liquidDensity;
+
+  // idealRaw exceeding h means even fully submerging this column can't carry
+  // everything resting on it — excess weight the shift below can't absorb.
+  // Once the column has actually reached full submersion (nothing left for a
+  // shift to do), that excess instead sinks the load cell straight into the
+  // raft: swap (x,y) — the column's current top, already wet since submersion
+  // fills a column from the bottom up (see shiftPowderColumnUp/Down) — with
+  // (ux,uy), the load cell touching it. The heavier grain takes the wet cell
+  // (its overlay travels along, same as any swap — SimContext.swap's "wet
+  // sand carries its water as it falls"); the lighter grain rises to the dry
+  // cell just vacated, becoming the new top of a one-shorter column that's
+  // re-evaluated on its own next tick — against whatever is now stacked above
+  // it, which is how a tall load keeps sinking cell by cell instead of
+  // stopping after one swap.
+  if (idealRaw > h && submergedCount >= h) {
+    sim.swap(x, y, ux, uy);
+    return true;
+  }
+
+  const idealSubmerged = Math.min(h, Math.round(idealRaw));
 
   if (submergedCount > idealSubmerged) {
     if (sim.shiftPowderColumnUp(x, y, h)) return true;
@@ -391,7 +490,9 @@ const DRIFT_SWAY_CHANCE = 0.5; // while airborne, drift a step sideways before d
  *  (no endless sideways creep along the ground). Also floats clear
  *  (tryBuoyantRise) if submerged under a denser liquid, same as updatePowder,
  *  and flattens/unclogs the same way once it can't fall or drift any further
- *  (flattenIfFloating). */
+ *  (flattenIfFloating). Also carries the powder-on-powder weight interaction
+ *  the same way updatePowder does (tryFloatLightPowderStack's `loadWeight`) —
+ *  Snow and Ash float raft-style too. */
 export function updateFloatyPowder(x: number, y: number, sim: SimContext): void {
   if (tryFloatLightPowderStack(x, y, sim)) return;
   if (tryBuoyantRise(x, y, sim)) return;
