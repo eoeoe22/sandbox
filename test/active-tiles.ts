@@ -201,6 +201,101 @@ function makeMixedFloat(w: number, h: number): Snapshot {
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
 
+/** A mixed-species light-powder raft (alternating Ash/Sawdust columns) loaded
+ *  by a Sand pile stacked on top, all floating on Water — the brush-mix-tool
+ *  scenario the two jitter fixes in this change target (see
+ *  docs/MATERIAL-SYSTEMS.md's "가루 섞임 수직 지터" section). Every column is
+ *  identical (uniform depth, uniform Sand load) so the scene is fully
+ *  deterministic with no RNG, and the Sand is dense enough (5) to register as
+ *  real load on the raft while both Ash (1.5) and Sawdust (2) stay buoyant on
+ *  Water (3) — exactly the density ordering that used to trip
+ *  tryFloatLightPowderStack's digging-swap into ping-ponging Ash ↔ Sawdust
+ *  vertically (load reached past the buoyant layer to the Sand, but the swap
+ *  target was the buoyant cell right above the column, not the Sand itself).
+ *  Exercises both fixes together: hasFlattenableGap's interior-notch guard
+ *  (so adjacent same-height raft cells don't shuttle sideways) and
+ *  tryFloatLightPowderStack's load-target guard (so the digging swap only
+ *  fires when the cell directly atop the column is itself the heavy load). */
+function makeLoadedMixedRaft(w: number, h: number): Snapshot {
+  const ASH = 55;
+  const SAWDUST = 27;
+  const SAND = 2;
+  const WATER = 3;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(20);
+  const tint = new Uint8Array(n);
+  const surface = (h / 2) | 0;
+  for (let y = surface; y < h; y++) {
+    for (let x = 0; x < w; x++) cells[y * w + x] = WATER;
+  }
+  // Two-cell-tall raft, alternating species per column. Sand on top of every
+  // third column — enough to load the raft, not so much it overwhelms buoyancy
+  // instantly (we want the system to *settle*, not to dig through).
+  for (let x = 2; x < w - 2; x++) {
+    const id = x % 2 === 0 ? ASH : SAWDUST;
+    cells[(surface - 1) * w + x] = id;
+    cells[(surface - 2) * w + x] = id;
+    if (x % 3 === 0) {
+      cells[(surface - 3) * w + x] = SAND;
+      cells[(surface - 4) * w + x] = SAND;
+    }
+  }
+  return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
+/** Vertical-jitter guard for makeLoadedMixedRaft: fails if any two
+ *  vertically-adjacent interior cells trade values back and forth on a
+ *  majority of ticks within any 20-tick window across the whole run — the
+ *  signature of the Ash↔Sawdust ping-pong the fix in tryFloatLightPowderStack
+ *  targets (two light powders at a column's top, driven by a heavier load
+ *  above, swapping every tick with no net effect).
+ *
+ *  Scans a sliding 20-tick window across every frame rather than just the
+ *  run's tail, because in this scene the ping-pong is concentrated in the
+ *  early settling phase (the Sand load drives rapid vertical exchanges while
+ *  the raft finds its equilibrium), which a tail-only check would miss once
+ *  the scene eventually calms down on its own. The fix eliminates the
+ *  ping-pong throughout, so a clean run has no high-swap window anywhere.
+ *
+ *  Checks vertical pairs, not individual cells: the ping-pong is
+ *  fundamentally a *pair* phenomenon (each cell flips because its neighbor
+ *  just flipped into it), and a per-cell "changed often" test would
+ *  false-positive on a grain merely transiting sideways through the water
+ *  row (which visits many cells briefly without being stuck). "Vertical"
+ *  specifically because that's the orientation of the load-driven swap this
+ *  fix guards — a sideways shuffle of a stray grain trapped under the raft
+ *  is a separate issue this test deliberately does not cover. "Interior"
+ *  excludes the outermost 3 columns/rows on each side (edge effects there,
+ *  including the deliberately uneven Sand load that starts and stops
+ *  mid-raft, would mask a real regression — same reasoning as
+ *  verifyMeltPinnedMixMoved's edge exclusion). */
+function verifyNoVerticalJitter(initial: Snapshot, frames: Snapshot[]): string | null {
+  const { w, h } = initial;
+  const WINDOW = 20;
+  for (let x = 3; x < w - 3; x++) {
+    for (let y = 3; y < h - 4; y++) {
+      const ia = y * w + x;
+      const ib = (y + 1) * w + x;
+      // For each starting tick, count swap-signatures in the next WINDOW frames.
+      for (let t0 = 0; t0 + WINDOW < frames.length; t0++) {
+        let swaps = 0;
+        for (let t = t0 + 1; t <= t0 + WINDOW; t++) {
+          const aPrev = frames[t - 1].cells[ia];
+          const bPrev = frames[t - 1].cells[ib];
+          const aCur = frames[t].cells[ia];
+          const bCur = frames[t].cells[ib];
+          if (aCur === bPrev && bCur === aPrev && aCur !== bCur) swaps++;
+        }
+        if (swaps > WINDOW * 0.4) {
+          return `vertical pair (${x},${y})↔(${x},${y + 1}) swapped values ${swaps}/${WINDOW} in window starting tick ${t0} — ping-pong`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** A single row of alternating Coal Powder/Limestone sandwiched between a
  *  Slag ceiling and a Molten Metal floor (mirrors makeMixedFloat's flat
  *  shelf, not makeMeltPinnedFlux's multi-row comb) — every interior cell's
@@ -399,6 +494,7 @@ interface Case {
   meltPinnedMix?: boolean; // if set, use a uniform-depth Coal Powder/Limestone comb pinned inside a Molten Iron Ore melt
   verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
   mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
+  loadedMixedRaft?: boolean; // if set, use a mixed Ash/Sawdust raft loaded by Sand on Water (jitter repro)
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -451,6 +547,24 @@ const CASES: Case[] = [
     meltPinnedMix: true,
     verifyMove: verifyMeltPinnedMixMoved,
   },
+  // Targeted: mixed Ash/Sawdust raft loaded by Sand on Water — the only path
+  // to exercising the tryFloatLightPowderStack load-target guard. Without it,
+  // Ash↔Sawdust cells at a loaded column's top swap every tick (the load scan
+  // reaches past the buoyant layer to the Sand, but the swap target is the
+  // buoyant cell right above the column, not the Sand itself, so next tick
+  // the same condition fires on the flipped pair and the swap reverses).
+  // verifyNoVerticalJitter catches that pair-swap signature directly.
+  {
+    seed: 0xb6,
+    w: 40,
+    h: 30,
+    fill: 0,
+    gravity: 'down',
+    ticks: 400,
+    mixEvery: 0,
+    loadedMixedRaft: true,
+    verifyMove: verifyNoVerticalJitter,
+  },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -468,7 +582,9 @@ for (const c of CASES) {
           ? makeMeltPinnedMix(c.w, c.h)
           : c.mixedFloat
             ? makeMixedFloat(c.w, c.h)
-            : makeScene(c.seed, c.w, c.h, c.fill);
+            : c.loadedMixedRaft
+              ? makeLoadedMixedRaft(c.w, c.h)
+              : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
