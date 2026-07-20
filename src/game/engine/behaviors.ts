@@ -274,10 +274,16 @@ const NO_MIX_IDS: readonly number[] = [];
 
 // How far tryFloatLightPowderStack looks past its own column's top for
 // unrelated Powder resting on it (a heavier grain, or pile of them, placed on
-// a raft) when tallying `loadWeight` below — the same look-distance rationale
-// as FLOAT_STACK_SCAN, just aimed the opposite direction (past the top instead
-// of past the bottom), so a tall stockpile dropped on a raft doesn't pay for
-// scanning its full height every tick.
+// a raft) when tallying `loadWeight` below — bounded for the same reason
+// FLOAT_STACK_SCAN is (so a tall stockpile dropped on a raft doesn't pay for
+// scanning its full height every tick), just aimed the opposite direction
+// (past the top instead of past the bottom). Set independently of, not tied
+// to, FLOAT_STACK_SCAN's value: this only runs on a column's single
+// top-of-stack cell (not every cell in a deep stack, gated by
+// FLOAT_STACK_SCAN_CHANCE, the way restingOnStackedFloat is), so it can afford
+// a taller look without the same per-tick cost multiplying across a whole
+// pile. A load stacked past this limit simply undercounts — `loadWeight` stops
+// growing — rather than erroring; unlikely to matter at ordinary pile heights.
 const LOAD_SCAN_LIMIT = 64;
 
 /**
@@ -410,10 +416,17 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
   // shift to do), that excess instead sinks the load cell straight into the
   // raft: swap (x,y) — the column's current top, already wet since submersion
   // fills a column from the bottom up (see shiftPowderColumnUp/Down) — with
-  // (ux,uy), the load cell touching it. The heavier grain takes the wet cell
-  // (its overlay travels along, same as any swap — SimContext.swap's "wet
-  // sand carries its water as it falls"); the lighter grain rises to the dry
-  // cell just vacated, becoming the new top of a one-shorter column that's
+  // (ux,uy), the load cell touching it. SimContext.swap moves each side's
+  // whole (material, overlay, …) tuple to the other position, so overlay
+  // travels with whichever cell already had it, not with the destination
+  // coordinate: the lighter grain rises into (ux,uy) *carrying its wet
+  // overlay with it*, while the heavier grain that sinks into (x,y) arrives
+  // dry (matching (ux,uy)'s prior state) — the same rule "wet sand carries
+  // its water as it falls" describes for every other swap, just easy to
+  // misread here since the wet/dry cells also swap which position looks
+  // submerged. The sunk grain only actually gets wet once it either digs
+  // through to real liquid or picks up an overlay via the ordinary soak path.
+  // Either way (x,y) becomes the new top of a one-shorter column that's
   // re-evaluated on its own next tick — against whatever is now stacked above
   // it, which is how a tall load keeps sinking cell by cell instead of
   // stopping after one swap.
