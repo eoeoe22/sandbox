@@ -293,10 +293,10 @@ const LOAD_SCAN_LIMIT = 64;
  *
  * Also carries the powder-on-powder weight interaction: `loadWeight` tallies
  * whatever *other* Powder resting on top of the column is too dense to float
- * on this same liquid itself (see the load scan's own comment for why a
- * foreign powder that *would* float here doesn't count as dead weight), and
- * folds that tally into the same equilibrium as extra cargo the column has
- * to support — a
+ * on this same liquid itself — scanning past (without counting) any buoyant
+ * powder in between, since real weight piled above one still presses down
+ * through it (see the load scan's own comment) — and folds that tally into
+ * the same equilibrium as extra cargo the column has to support: a
  * raft sits lower the more weight is piled on it, on top of (not instead of)
  * its own unloaded density-ratio depth. When even fully submerging the whole
  * column still isn't enough buoyancy to carry that cargo, the excess doesn't
@@ -362,23 +362,30 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
     }
   }
 
-  // What liquid this column is actually resting on — reuses the overlay-based
-  // `liquidDensity` above when it's already known (the column has absorbed
-  // some), else peeks at the liquid immediately past the column's bottom (what
-  // it's physically sitting on, whether or not any of it has been absorbed
-  // yet). Needed *before* the load scan below, not just to bootstrap a loaded
+  // What liquid this column is actually resting on — the denser of the
+  // overlay-based `liquidDensity` above (already known if the column has
+  // absorbed some) and whatever liquid sits immediately past the column's
+  // bottom (what it's physically resting on right now, whether or not any of
+  // it has been absorbed yet — matters for a column that's recently settled
+  // onto a denser liquid layer than the one it partly absorbed earlier).
+  // Needed *before* the load scan below, not just to bootstrap a loaded
   // column's own equilibrium (the `loadWeight > 0` assignment at the bottom of
   // this block) but to tell that scan genuine dead weight apart from another
-  // buoyant powder resting on the same liquid.
+  // buoyant powder resting on the same liquid. Always peeked (not only when
+  // `liquidDensity` is still 0) so it stays the true max even when the column
+  // already has some overlay — see the load scan's own comment for why an
+  // understated threshold there would let a buoyant intruder slip back in.
   let restLiquidDensity = liquidDensity;
-  if (restLiquidDensity === 0) {
+  {
     const belowBottomX = x + gx * h;
     const belowBottomY = y + gy * h;
     if (sim.inBounds(belowBottomX, belowBottomY)) {
       const belowId = sim.get(belowBottomX, belowBottomY);
       if (belowId !== EMPTY) {
         const belowMat = getMaterial(belowId);
-        if (belowMat.phase === Phase.Liquid) restLiquidDensity = belowMat.density;
+        if (belowMat.phase === Phase.Liquid) {
+          restLiquidDensity = Math.max(restLiquidDensity, belowMat.density);
+        }
       }
     }
   }
@@ -388,20 +395,25 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
   // (x,y) fail the "top of the stack" check above instead of reaching here.
   // Each cell contributes its own density, matching how the column's own
   // weight is expressed as h * myDensity below (one unit of density per
-  // cell). Stops at the first non-Powder cell (open air, solid ground, a
-  // liquid) — only Powder-on-Powder weight counts here — and also stops (does
-  // NOT count) at a foreign powder that's itself buoyant on this same liquid
-  // (its own density less than `restLiquidDensity`): that cell isn't dead
-  // weight crushing the raft, it's another raft of its own that wants to
-  // float rather than sit and press down. Counting it as load would fight its
-  // own tryFloatLightPowderStack call every tick — this column sinks a little
+  // cell). Stops the scan entirely at the first non-Powder cell (open air,
+  // solid ground, a liquid) — only Powder-on-Powder weight counts here — but
+  // a foreign powder that's itself buoyant on this same liquid (its own
+  // density less than `restLiquidDensity`) is *skipped* (not counted, but NOT
+  // a stopping point either): that cell isn't dead weight crushing the raft,
+  // it's another raft of its own that wants to float rather than sit and
+  // press down — counting its own weight would fight its own
+  // tryFloatLightPowderStack call every tick (this column sinks a little
   // under the "load", which lifts the buoyant intruder back toward the
   // surface, which removes the "load", which lets this column rise again — an
-  // endless jitter between two different light powders resting on each other
-  // (reported after the brush's mix tool commonly stacks different
-  // low-density powders on the same liquid). A genuinely denser-than-liquid
-  // powder is unaffected by this check and still counts as load exactly as
-  // before.
+  // endless jitter between two different light powders resting on each
+  // other, reported after the brush's mix tool commonly stacks different
+  // low-density powders on the same liquid). Scanning must still continue
+  // *past* it, though, not stop there: something genuinely denser could be
+  // piled on top of that buoyant layer (e.g. Sand on Ash on a Sawdust raft),
+  // and its weight is real and still presses down through the buoyant grain
+  // in between — stopping at the first buoyant cell would silently drop that
+  // weight instead of transmitting it, undoing the load-bearing half of this
+  // whole feature for any stack with a buoyant layer in the middle.
   let loadWeight = 0;
   for (let i = 0; i < LOAD_SCAN_LIMIT; i++) {
     const lx = ux - gx * i;
@@ -411,7 +423,7 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
     if (lid === EMPTY) break;
     const lm = getMaterial(lid);
     if (lm.phase !== Phase.Powder) break;
-    if (restLiquidDensity > 0 && lm.density < restLiquidDensity) break;
+    if (restLiquidDensity > 0 && lm.density < restLiquidDensity) continue;
     loadWeight += lm.density;
   }
 
