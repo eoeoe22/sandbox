@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn, flameAdjacent, type Combustible } from './combustion';
-import { PETROLEUM_GAS } from './petroleumgas';
+import { LPG } from './lpg';
 import { PETROLEUM_VAPOR } from './petroleumvapor';
 import { ASPHALT } from './asphalt';
 
@@ -81,7 +81,7 @@ function boilOff(x: number, y: number, sim: SimContext, t: number): void {
     // lower (GAS_BOIL_CHANCE), so a slowly heated cell rarely flashes here and
     // the bulk of the charge carries on into the condensable liquid cuts below
     // (gasoline is the widest, as in a real column).
-    sim.set(x, y, PETROLEUM_GAS.id);
+    sim.set(x, y, LPG.id);
     return;
   }
   sim.set(x, y, PETROLEUM_VAPOR.id);
