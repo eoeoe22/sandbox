@@ -56,7 +56,7 @@ body {
 #game {
   position: fixed;
   top: 0;
-  left: var(--sidebar-w);
+  left: 0;
   width: calc(100vw - var(--sidebar-w));
   /* Subtract the bottom dead zone so the canvas ends above any browser chrome
      the user has dialed clearance for (0px by default → unchanged). */

@@ -570,9 +570,9 @@
   .search {
     width: 100%;
     padding: 6px 26px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #14141a;
+    border: 1px solid #3a4a43;
+    border-radius: 8px;
+    background: #1c1b1d;
     color: #e8e8ee;
     font: inherit;
     font-size: 12px;
@@ -582,7 +582,7 @@
   }
   .search:focus {
     outline: none;
-    border-color: #6ea8fe;
+    border-color: #00ffc2;
   }
   /* Hide the native search "×" (we render our own clear button). */
   .search::-webkit-search-cancel-button {
@@ -690,8 +690,9 @@
     width: 100%;
     padding: 6px 8px;
     border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
+    border-radius: 8px;
+    background: #1c1b1d;
+    border-color: #3a4a43;
     color: #e8e8ee;
     cursor: pointer;
     font: inherit;
@@ -750,9 +751,10 @@
     gap: 4px;
     width: 56px;
     padding: 6px 4px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
+    border: 1px solid #3a4a43;
+    border-radius: 8px;
+    background: #1c1b1d;
+    border-color: #3a4a43;
     color: #e8e8ee;
     cursor: pointer;
     font: inherit;
@@ -761,8 +763,9 @@
     border-color: #3a3a46;
   }
   .chip.active {
-    border-color: #6ea8fe;
-    background: #232b3a;
+    border-color: #00ffc2;
+    box-shadow: 0 0 8px rgba(0, 255, 194, 0.3);
+    background: #003828;
   }
   .chip .swatch {
     width: 18px;

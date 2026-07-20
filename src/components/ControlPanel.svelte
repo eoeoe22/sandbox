@@ -604,6 +604,10 @@
 
   <!-- Primary controls (bottom-bar row 1 on mobile) + material palette (row 2). -->
   <div class="bar">
+        <div class="bar-row palette-row">
+      <MaterialPalette />
+    </div>
+
     <div class="bar-row primary">
       <div class="group" role="group" aria-label="재생 제어">
         <button
@@ -784,9 +788,6 @@
       </button>
     </div>
 
-    <div class="bar-row palette-row">
-      <MaterialPalette />
-    </div>
   </div>
 
   <!-- Desktop: frequently-tweaked settings inline under the palette (hidden on
@@ -898,7 +899,7 @@
   .panel {
     position: fixed;
     top: 0;
-    left: 0;
+    right: 0;
     z-index: 10;
     width: var(--sidebar-w);
     height: 100vh;
@@ -906,9 +907,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    background: rgba(20, 20, 26, 0.92);
+    background: rgba(19, 19, 21, 0.95);
     backdrop-filter: blur(8px);
-    border-right: 1px solid #2a2a33;
+    border-left: 1px solid #3a4a43;
     color: #e8e8ee;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
@@ -962,19 +963,19 @@
     width: 30px;
     height: 30px;
     padding: 0;
-    border: 1px solid #2a2a33;
+    border: 1px solid #3a4a43;
     border-radius: 6px;
-    background: #1b1b22;
+    background: #1c1b1d;
     color: #e8e8ee;
     cursor: pointer;
     font-size: 15px;
   }
   .head-btn:hover {
-    border-color: #3a3a46;
+    border-color: #83958c;
   }
   .head-btn.active {
-    border-color: #6ea8fe;
-    background: #23324a;
+    border-color: #00ffc2;
+    background: #003828;
   }
 
   .bar,
@@ -1003,7 +1004,7 @@
      이라는 점에서 나란히 둔다. 버튼 자체 스타일(.ctl/.active)은 그대로 공유한다. */
   .mode-group {
     padding: 3px;
-    border: 1px solid #2a2a33;
+    border: 1px solid #3a4a43;
     border-radius: 8px;
     background: #17171b;
   }
@@ -1015,9 +1016,9 @@
     justify-content: center;
     gap: 6px;
     padding: 6px 8px;
-    border: 1px solid #2a2a33;
+    border: 1px solid #3a4a43;
     border-radius: 6px;
-    background: #1b1b22;
+    background: #1c1b1d;
     color: #e8e8ee;
     cursor: pointer;
     font: inherit;
@@ -1028,15 +1029,15 @@
     line-height: 1;
   }
   .ctl:hover {
-    border-color: #3a3a46;
+    border-color: #83958c;
   }
   .ctl:disabled {
     opacity: 0.45;
     cursor: default;
   }
   .ctl.active {
-    border-color: #6ea8fe;
-    background: #23324a;
+    border-color: #00ffc2;
+    background: #003828;
   }
   /* Armed 전체 지우기 button: an amber "are you sure?" state before it wipes. */
   .ctl.armed {
