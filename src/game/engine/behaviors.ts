@@ -506,6 +506,22 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
   // it, which is how a tall load keeps sinking cell by cell instead of
   // stopping after one swap.
   if (idealRaw > h && submergedCount >= h) {
+    // The swap target (ux,uy) must be a genuine heavy load — a Powder denser
+    // than the supporting liquid (the kind the load scan above counts), not
+    // another buoyant powder that scan skipped (lighter than the liquid).
+    // Swapping with a skipped cell just trades two equally-light grains: the
+    // column's aggregate buoyancy is unchanged, so the same idealRaw > h
+    // condition is still true next tick at the now-flipped pair and the swap
+    // reverses — a permanent vertical ping-pong between two light powders
+    // (e.g. Ash and Sawdust in a mixed-species raft) driven by a heavier
+    // load stacked further up the same column the scan reached past the
+    // buoyant layer to find. Refusing the swap here leaves the heavy load to
+    // sink in only once it has actually reached the column top — the only
+    // configuration a single-cell swap can ever genuinely discharge load into.
+    // restLiquidDensity is known > 0 here (liquidDensity was checked nonzero
+    // above), so the buoyant-powder test is the plain density compare.
+    const loadMat = getMaterial(sim.get(ux, uy));
+    if (loadMat.density < restLiquidDensity) return false;
     sim.swap(x, y, ux, uy);
     return true;
   }
