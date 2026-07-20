@@ -25,6 +25,7 @@
     $heatOverlay as heatOverlay,
     $gridDivision as gridDivision,
     $bottomDeadzone as bottomDeadzone,
+    $sidebarPosition as sidebarPosition,
     $particleCount as particleCount,
     $frameMs as frameMs,
     $perfPasses as perfPasses,
@@ -247,6 +248,40 @@
     }
     areaPopoverOpen = false;
     areaSelect.set(!areaSelect.get());
+  }
+
+  // Synchronize sidebarPosition with body class at runtime
+  $effect(() => {
+    const pos = $sidebarPosition;
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('sidebar-left', 'sidebar-right');
+      document.body.classList.add(`sidebar-${pos}`);
+    }
+  });
+
+  // PC Sidebar accordion section states
+  let showToolSection = $state(true);
+  let showSimSection = $state(true);
+  let showSettingSection = $state(false);
+
+  // Mobile popup menu toggle
+  let mobileToolsOpen = $state(false);
+
+  // Special brushes definitions
+  const SPECIAL_TOOLS = [
+    { id: 'blend', name: '혼합', icon: 'bi-palette-fill', title: '혼합 브러시 (더블클릭 비율 설정)', dblClick: () => (blendOpen = true) },
+    { id: 'heat', name: '가열', icon: 'bi-fire', title: '가열 브러시 (더블클릭 감도 설정)', dblClick: () => { tool.set('heat'); heatCoolOpen = true; } },
+    { id: 'cool', name: '냉각', icon: 'bi-snow', title: '냉각 브러시 (더블클릭 감도 설정)', dblClick: () => { tool.set('cool'); heatCoolOpen = true; } },
+    { id: 'mix', name: '섞기', icon: 'bi-tornado', title: '섞기 브러시' },
+    { id: 'erase', name: '지우개', icon: 'bi-eraser-fill', title: '지우개 브러시' },
+    { id: 'view', name: '보기', icon: 'bi-eye', title: '보기 모드' },
+  ] as const;
+
+  const activeSpecialTool = $derived(SPECIAL_TOOLS.find(t => t.id === $tool));
+
+  function selectSpecialTool(id: typeof SPECIAL_TOOLS[number]['id']) {
+    tool.set(id);
+    mobileToolsOpen = false;
   }
 </script>
 
@@ -563,238 +598,351 @@
 {/snippet}
 
 <aside class="panel">
-  <div class="head">
-    <i class="bi bi-boxes" aria-hidden="true"></i>
-    <h1>Particle Sandbox</h1>
+  <!-- ============================================== -->
+  <!-- PC 전용 레이아웃 (데스크톱 화면용) -->
+  <!-- ============================================== -->
+  <div class="pc-layout">
+    <div class="head">
+      <i class="bi bi-boxes" aria-hidden="true"></i>
+      <h1>Particle Sandbox</h1>
 
-    <!-- Desktop top-left quick toggles: switch the render mode between normal
-         material color (eye) and the温도 heat-map (thermometer), plus the 설정
-         modal opener. The header is desktop-only (hidden on mobile). -->
-    <div class="head-actions">
-      <button
-        class="head-btn"
-        class:active={!$heatOverlay}
-        onclick={() => heatOverlay.set(false)}
-        aria-pressed={!$heatOverlay}
-        aria-label="일반 렌더링"
-        title="일반 렌더링 — 물질 색으로 표시"
-      >
-        <i class="bi bi-eye" aria-hidden="true"></i>
+      <div class="head-actions">
+        <button
+          class="head-btn"
+          class:active={!$heatOverlay}
+          onclick={() => heatOverlay.set(false)}
+          aria-pressed={!$heatOverlay}
+          aria-label="일반 렌더링"
+          title="일반 렌더링 — 물질 색으로 표시"
+        >
+          <i class="bi bi-eye" aria-hidden="true"></i>
+        </button>
+        <button
+          class="head-btn"
+          class:active={$heatOverlay}
+          onclick={() => heatOverlay.set(true)}
+          aria-pressed={$heatOverlay}
+          aria-label="열지도 렌더링"
+          title="열지도 렌더링 — 온도에 따라 열화상처럼 표시"
+        >
+          <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+        </button>
+        <button
+          class="head-btn"
+          onclick={() => sidebarPosition.set($sidebarPosition === 'left' ? 'right' : 'left')}
+          aria-label="사이드바 위치 전환"
+          title={$sidebarPosition === 'left' ? '오른쪽에 도킹 (오른손잡이 마우스 동선 단축)' : '왼쪽에 도킹'}
+        >
+          <i class={`bi ${$sidebarPosition === 'left' ? 'bi-layout-sidebar-reverse' : 'bi-layout-sidebar'}`} aria-hidden="true"></i>
+        </button>
+        <button
+          class="head-btn"
+          onclick={() => (settingsOpen = true)}
+          aria-label="설정"
+          title="설정"
+        >
+          <i class="bi bi-sliders2" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- PC 아코디언 1: 도구 및 팔레트 -->
+    <div class="accordion-section">
+      <button class="accordion-trigger" onclick={() => showToolSection = !showToolSection} aria-expanded={showToolSection}>
+        <span class="trigger-title"><i class="bi bi-tools"></i> 도구 및 팔레트</span>
+        <i class={`bi ${showToolSection ? 'bi-chevron-up' : 'bi-chevron-down'}`}></i>
       </button>
-      <button
-        class="head-btn"
-        class:active={$heatOverlay}
-        onclick={() => heatOverlay.set(true)}
-        aria-pressed={$heatOverlay}
-        aria-label="열지도 렌더링"
-        title="열지도 렌더링 — 온도에 따라 열화상처럼 표시"
-      >
-        <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+      
+      {#if showToolSection}
+        <div class="accordion-content">
+          <div class="bar">
+            <div class="bar-row primary">
+              <div class="group mode-group" role="group" aria-label="그리기 방식">
+                <button
+                  class="ctl material-btn"
+                  class:active={$tool === 'material'}
+                  onclick={() => tool.set('material')}
+                  aria-pressed={$tool === 'material'}
+                  aria-label={`재료: ${selectedName}`}
+                  title={`선택한 재료를 그립니다: ${selectedName}`}
+                >
+                  <i class="bi bi-brush" aria-hidden="true"></i>
+                  <span class="label material-name">{selectedName}</span>
+                </button>
+                <button
+                  class="ctl"
+                  class:active={$areaSelect}
+                  onclick={handleAreaSelectClick}
+                  bind:this={areaBtn}
+                  aria-pressed={$areaSelect}
+                  aria-label="영역 선택"
+                  title="영역 선택 — 사각형으로 드래그해 영역 지정 후 그 시점에 고른 도구를 한 번에 적용합니다 (PC: Enter로 확정, Escape로 취소)."
+                >
+                  <i class="bi bi-bounding-box" aria-hidden="true"></i>
+                  <span class="label">영역</span>
+                </button>
+              </div>
+
+              <div class="group" role="group" aria-label="특수 브러시">
+                {#each SPECIAL_TOOLS as t}
+                  <button
+                    class="ctl"
+                    class:active={$tool === t.id}
+                    onclick={() => tool.set(t.id)}
+                    ondblclick={t.dblClick}
+                    aria-pressed={$tool === t.id}
+                    title={t.title}
+                  >
+                    <i class={`bi ${t.icon}`} aria-hidden="true"></i>
+                    <span class="label">{t.name}</span>
+                  </button>
+                {/each}
+              </div>
+
+              <div class="group" role="group" aria-label="관찰 도구">
+                <button
+                  class="ctl"
+                  class:active={$inspect}
+                  onclick={() => inspect.set(!$inspect)}
+                  aria-pressed={$inspect}
+                  aria-label="돋보기"
+                  title="돋보기 — 브러시 영역의 파티클 종류·개수·비율·평균온도를 표시합니다 (그리기와 별도로 동작)"
+                >
+                  <i class="bi bi-search" aria-hidden="true"></i>
+                  <span class="label">돋보기</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="bar-row palette-row">
+              <MaterialPalette />
+            </div>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- PC 아코디언 2: 시뮬레이션 제어 -->
+    <div class="accordion-section">
+      <button class="accordion-trigger" onclick={() => showSimSection = !showSimSection} aria-expanded={showSimSection}>
+        <span class="trigger-title"><i class="bi bi-play-circle"></i> 시뮬레이션 제어</span>
+        <i class={`bi ${showSimSection ? 'bi-chevron-up' : 'bi-chevron-down'}`}></i>
       </button>
-      <button
-        class="head-btn"
-        onclick={() => (settingsOpen = true)}
-        aria-label="설정"
-        title="설정"
-      >
-        <i class="bi bi-sliders2" aria-hidden="true"></i>
+
+      {#if showSimSection}
+        <div class="accordion-content">
+          <div class="group" role="group" aria-label="재생 제어">
+            <button
+              class="ctl"
+              onclick={() => running.set(!$running)}
+              aria-label={$running ? '일시정지' : '재생'}
+              title={$running ? '일시정지' : '재생'}
+            >
+              <i class={`bi ${$running ? 'bi-pause-fill' : 'bi-play-fill'}`} aria-hidden="true"></i>
+              <span class="label">{$running ? '일시정지' : '재생'}</span>
+            </button>
+            <button
+              class="ctl"
+              onclick={requestStep}
+              disabled={$running}
+              aria-label="한 스텝 진행"
+              title="한 스텝 진행 (일시정지 중)"
+            >
+              <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
+              <span class="label">스텝</span>
+            </button>
+            <button
+              class="ctl clear-btn"
+              class:armed={clearArmed}
+              onclick={handleClear}
+              aria-label={clearArmed ? '전체 지우기 확인' : '전체 지우기'}
+              title="전체 지우기"
+            >
+              <i class="bi bi-trash3" aria-hidden="true"></i>
+              <span class="label">{clearArmed ? '계속하시겠습니까?' : '지우기'}</span>
+            </button>
+            <button
+              class="ctl"
+              onclick={openSaveSlots}
+              aria-label="저장 / 불러오기"
+              title="현재 샌드박스를 저장하거나 불러옵니다"
+            >
+              <i class="bi bi-collection" aria-hidden="true"></i>
+              <span class="label">저장</span>
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- PC 아코디언 3: 환경 설정 -->
+    <div class="accordion-section">
+      <button class="accordion-trigger" onclick={() => showSettingSection = !showSettingSection} aria-expanded={showSettingSection}>
+        <span class="trigger-title"><i class="bi bi-sliders"></i> 빠른 환경 설정</span>
+        <i class={`bi ${showSettingSection ? 'bi-chevron-up' : 'bi-chevron-down'}`}></i>
       </button>
+
+      {#if showSettingSection}
+        <div class="accordion-content">
+          <div class="inline-settings">
+            {@render frequentSettings()}
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
 
-  <!-- Primary controls (bottom-bar row 1 on mobile) + material palette (row 2). -->
-  <div class="bar">
-    <div class="bar-row primary">
-      <div class="group" role="group" aria-label="재생 제어">
+  <!-- ============================================== -->
+  <!-- 모바일 전용 레이아웃 (하단바) -->
+  <!-- ============================================== -->
+  <div class="mobile-layout">
+    <div class="bar">
+      <!-- Row 1: 주요 컨트롤 단축 뷰 (가로 스크롤 완전 해결) -->
+      <div class="bar-row primary mobile-primary-row">
+        <!-- 재생/정지 -->
         <button
-          class="ctl"
+          class="ctl mobile-ctl"
           onclick={() => running.set(!$running)}
           aria-label={$running ? '일시정지' : '재생'}
           title={$running ? '일시정지' : '재생'}
         >
           <i class={`bi ${$running ? 'bi-pause-fill' : 'bi-play-fill'}`} aria-hidden="true"></i>
-          <span class="label">{$running ? '일시정지' : '재생'}</span>
         </button>
+
+        <!-- 1스텝 -->
         <button
-          class="ctl"
+          class="ctl mobile-ctl"
           onclick={requestStep}
           disabled={$running}
           aria-label="한 스텝 진행"
-          title="한 스텝 진행 (일시정지 중)"
+          title="한 스텝 진행"
         >
           <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
-          <span class="label">스텝</span>
         </button>
+
+        <!-- 지우기 -->
         <button
-          class="ctl clear-btn"
+          class="ctl mobile-ctl clear-btn"
           class:armed={clearArmed}
           onclick={handleClear}
           aria-label={clearArmed ? '전체 지우기 확인' : '전체 지우기'}
           title="전체 지우기"
         >
           <i class="bi bi-trash3" aria-hidden="true"></i>
-          <span class="label">{clearArmed ? '계속하시겠습니까?' : '지우기'}</span>
+          {#if clearArmed}
+            <span class="label font-compact">확인?</span>
+          {/if}
         </button>
+
+        <!-- 저장 -->
         <button
-          class="ctl"
+          class="ctl mobile-ctl"
           onclick={openSaveSlots}
           aria-label="저장 / 불러오기"
-          title="현재 샌드박스를 저장하거나 불러옵니다"
+          title="저장"
         >
           <i class="bi bi-collection" aria-hidden="true"></i>
-          <span class="label">저장</span>
         </button>
-      </div>
 
-      <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
-           $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
-           가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
-           스트로크 대신 사각형을 드래그해 선택하고, Enter(모바일은 드롭 즉시)로
-           확정할 때 그 시점에 고른 도구를 사각 영역 전체에 한 번에 적용한다
-           (PointerPainter.applyRect). .mode-group은 순전히 시각적 묶음이다. -->
-      <div class="group mode-group" role="group" aria-label="그리기 방식">
+        <div class="mobile-divider"></div>
+
+        <!-- 재료 브러시 -->
         <button
-          class="ctl material-btn"
+          class="ctl mobile-ctl material-btn"
           class:active={$tool === 'material'}
-          onclick={() => tool.set('material')}
+          onclick={() => { tool.set('material'); mobileToolsOpen = false; }}
           aria-pressed={$tool === 'material'}
-          aria-label={`재료: ${selectedName}`}
-          title={`선택한 재료를 그립니다: ${selectedName}`}
+          title={`재료 그리기: ${selectedName}`}
         >
           <i class="bi bi-brush" aria-hidden="true"></i>
-          <span class="label material-name">{selectedName}</span>
+          <span class="label material-name font-compact">{selectedName}</span>
         </button>
+
+        <!-- 영역 선택 -->
         <button
-          class="ctl"
+          class="ctl mobile-ctl"
           class:active={$areaSelect}
           onclick={handleAreaSelectClick}
-          bind:this={areaBtn}
           aria-pressed={$areaSelect}
-          aria-label="영역 선택"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
+          title="영역 선택"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
-          <span class="label">영역</span>
         </button>
-      </div>
 
-      <div class="group" role="group" aria-label="특수 브러시">
+        <!-- 특수 도구 팝업 트리거 -->
         <button
-          class="ctl"
-          class:active={$tool === 'blend'}
-          onclick={() => tool.set('blend')}
-          ondblclick={() => (blendOpen = true)}
-          aria-pressed={$tool === 'blend'}
-          aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (더블클릭하면 비율 조절 창이 열립니다)"
+          class="ctl mobile-ctl special-popup-trigger"
+          class:active={activeSpecialTool !== undefined}
+          onclick={() => (mobileToolsOpen = !mobileToolsOpen)}
+          aria-pressed={mobileToolsOpen}
+          title="특수 도구 선택"
         >
-          <i class="bi bi-palette-fill" aria-hidden="true"></i>
-          <span class="label">혼합</span>
+          <i class={`bi ${activeSpecialTool?.icon ?? 'bi-grid-fill'}`} aria-hidden="true"></i>
+          <span class="label font-compact">{activeSpecialTool?.name ?? '특수도구'}</span>
+          <i class="bi bi-caret-up-fill popup-indicator" aria-hidden="true"></i>
         </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'heat'}
-          onclick={() => tool.set('heat')}
-          ondblclick={() => {
-            tool.set('heat');
-            heatCoolOpen = true;
-          }}
-          aria-pressed={$tool === 'heat'}
-          aria-label="가열"
-          title="브러시 영역의 온도를 올립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
-        >
-          <i class="bi bi-fire" aria-hidden="true"></i>
-          <span class="label">가열</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'cool'}
-          onclick={() => tool.set('cool')}
-          ondblclick={() => {
-            tool.set('cool');
-            heatCoolOpen = true;
-          }}
-          aria-pressed={$tool === 'cool'}
-          aria-label="냉각"
-          title="브러시 영역의 온도를 내립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
-        >
-          <i class="bi bi-snow" aria-hidden="true"></i>
-          <span class="label">냉각</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'mix'}
-          onclick={() => tool.set('mix')}
-          aria-pressed={$tool === 'mix'}
-          aria-label="섞기"
-          title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
-        >
-          <i class="bi bi-tornado" aria-hidden="true"></i>
-          <span class="label">섞기</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'erase'}
-          onclick={() => tool.set('erase')}
-          aria-pressed={$tool === 'erase'}
-          aria-label="지우개"
-          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
-        >
-          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
-          <span class="label">지우개</span>
-        </button>
-        <button
-          class="ctl"
-          class:active={$tool === 'view'}
-          onclick={() => tool.set('view')}
-          aria-pressed={$tool === 'view'}
-          aria-label="보기"
-          title="보기 모드 — 그리지 않습니다. 오브젝트(공·드럼통)를 끌어 옮길 수 있어요 (오른쪽 클릭 지우개는 사용 가능)"
-        >
-          <i class="bi bi-eye" aria-hidden="true"></i>
-          <span class="label">보기</span>
-        </button>
-      </div>
 
-      <!-- 돋보기 inspect overlay: an independent toggle (not one of the brush
-           tools) that surveys what's under the brush while on. -->
-      <div class="group" role="group" aria-label="관찰 도구">
+        <!-- 돋보기 -->
         <button
-          class="ctl"
+          class="ctl mobile-ctl"
           class:active={$inspect}
           onclick={() => inspect.set(!$inspect)}
           aria-pressed={$inspect}
-          aria-label="돋보기"
-          title="돋보기 — 브러시 영역의 파티클 종류·개수·비율·평균온도를 표시합니다 (그리기와 별도로 켜짐)"
+          title="돋보기 관찰"
         >
           <i class="bi bi-search" aria-hidden="true"></i>
-          <span class="label">돋보기</span>
+        </button>
+
+        <!-- 설정 모달 -->
+        <button
+          class="ctl mobile-ctl settings-toggle"
+          onclick={() => (settingsOpen = true)}
+          aria-label="설정"
+          title="설정"
+        >
+          <i class="bi bi-sliders2" aria-hidden="true"></i>
         </button>
       </div>
 
-      <!-- Mobile only: open the settings modal (the desktop opener lives in the
-           header, which is hidden on mobile). -->
-      <button
-        class="ctl settings-toggle"
-        onclick={() => (settingsOpen = true)}
-        aria-label="설정"
-        title="설정"
-      >
-        <i class="bi bi-sliders2" aria-hidden="true"></i>
-      </button>
+      <!-- Row 2: 물질 팔레트 (가로 스크롤 가능) -->
+      <div class="bar-row palette-row">
+        <MaterialPalette />
+      </div>
     </div>
-
-    <div class="bar-row palette-row">
-      <MaterialPalette />
-    </div>
-  </div>
-
-  <!-- Desktop: frequently-tweaked settings inline under the palette (hidden on
-       mobile, where they move into the 설정 modal instead). -->
-  <div class="inline-settings">
-    {@render frequentSettings()}
   </div>
 </aside>
+
+<!-- 모바일 특수도구 팝업 오버레이 -->
+{#if mobileToolsOpen}
+  <div class="mobile-special-popup-overlay" use:portal>
+    <div class="popup-backdrop" onclick={() => mobileToolsOpen = false} role="none"></div>
+    <div class="popup-card">
+      <div class="popup-header">
+        <span class="popup-title"><i class="bi bi-grid-fill"></i> 특수 브러시 도구</span>
+        <button class="popup-close-btn" onclick={() => mobileToolsOpen = false} aria-label="닫기">
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="popup-grid">
+        {#each SPECIAL_TOOLS as t}
+          <button
+            class="popup-item"
+            class:active={$tool === t.id}
+            onclick={() => selectSpecialTool(t.id)}
+            ondblclick={t.dblClick}
+            title={t.title}
+          >
+            <i class={`bi ${t.icon}`}></i>
+            <span class="popup-item-name">{t.name}</span>
+            {#if t.dblClick}
+              <span class="popup-item-badge">더블클릭 설정</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- 설정 modal. On mobile it also carries the frequently-tweaked settings (there
      is no room for them inline in the bottom bar); on desktop those show inline
@@ -891,45 +1039,73 @@
 
 <style>
   /* --------------------------------------------------------------------- */
-  /* Desktop (default): the panel is a fixed sidebar docked to the left, the
-     full height of the viewport. Its width matches the --sidebar-w the canvas
-     carves out, so the sandbox never sits underneath it.                   */
+  /* Common UI Elements & Premium Enhancements                            */
   /* --------------------------------------------------------------------- */
   .panel {
     position: fixed;
-    top: 0;
-    left: 0;
     z-index: 10;
-    width: var(--sidebar-w);
-    height: 100vh;
-    padding: 12px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    background: rgba(20, 20, 26, 0.92);
-    backdrop-filter: blur(8px);
-    border-right: 1px solid #2a2a33;
+    /* Glassmorphism theme */
+    background: rgba(16, 16, 22, 0.85);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
     color: #e8e8ee;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
     user-select: none;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: #3a3a46 transparent;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    transition: left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), right 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
+
+  /* PC Docking position controls via body class */
+  @media (min-width: 769px) {
+    .panel {
+      top: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+      gap: 12px;
+    }
+    body.sidebar-left .panel {
+      left: 0;
+      right: auto;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      border-left: none;
+    }
+    body.sidebar-right .panel {
+      right: 0;
+      left: auto;
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      border-right: none;
+    }
+
+    .pc-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .mobile-layout {
+      display: none;
+    }
+  }
+
   .panel::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
   }
   .panel::-webkit-scrollbar-track {
     background: transparent;
   }
   .panel::-webkit-scrollbar-thumb {
-    background: #3a3a46;
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
   }
   .panel::-webkit-scrollbar-thumb:hover {
-    background: #4a4a58;
+    background: rgba(255, 255, 255, 0.24);
   }
 
   .head {
@@ -937,10 +1113,12 @@
     align-items: center;
     gap: 8px;
     color: #e8e8ee;
+    padding-bottom: 4px;
   }
   .head > i {
     font-size: 18px;
     color: #6ea8fe;
+    filter: drop-shadow(0 0 6px rgba(110, 168, 254, 0.4));
   }
   h1 {
     margin: 0;
@@ -948,37 +1126,86 @@
     font-weight: 600;
     letter-spacing: 0.02em;
   }
-  /* Header quick actions: render-mode toggles (eye/thermometer) + 설정 opener,
-     pushed to the right edge of the header. */
   .head-actions {
     display: flex;
-    gap: 4px;
+    gap: 5px;
     margin-left: auto;
   }
   .head-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    border: 1px solid #2a2a33;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
-    background: #1b1b22;
+    background: rgba(27, 27, 34, 0.6);
     color: #e8e8ee;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .head-btn:hover {
-    border-color: #3a3a46;
+    border-color: rgba(110, 168, 254, 0.4);
+    background: rgba(35, 50, 74, 0.4);
+    transform: translateY(-1px);
   }
   .head-btn.active {
     border-color: #6ea8fe;
-    background: #23324a;
+    background: rgba(35, 50, 74, 0.8);
+    box-shadow: 0 0 8px rgba(110, 168, 254, 0.3);
   }
 
-  .bar,
-  .inline-settings {
+  /* --------------------------------------------------------------------- */
+  /* Accordion Layout (PC only)                                            */
+  /* --------------------------------------------------------------------- */
+  .accordion-section {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
+  }
+  .accordion-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    color: #cfcfd8;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 12px;
+    text-align: left;
+    transition: background 0.2s;
+  }
+  .accordion-trigger:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8e8ee;
+  }
+  .trigger-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .trigger-title i {
+    color: #6ea8fe;
+  }
+  .accordion-content {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* Button Styles & Overrides                                             */
+  /* --------------------------------------------------------------------- */
+  .bar {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -997,67 +1224,63 @@
     flex: 1 1 auto;
   }
 
-  /* 재료 옆에 영역(사각 선택 모드) 토글을 붙여 얇은 테두리로 둘러싼 시각적
-     묶음. 영역은 $tool과 별개의 독립 토글이라 재료가 아닌 다른 도구와 함께도
-     켜질 수 있지만("서로 배타적" 관계는 아님), 그리기 방식을 고르는 첫 손동작
-     이라는 점에서 나란히 둔다. 버튼 자체 스타일(.ctl/.active)은 그대로 공유한다. */
   .mode-group {
     padding: 3px;
-    border: 1px solid #2a2a33;
+    border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 8px;
-    background: #17171b;
+    background: rgba(0, 0, 0, 0.25);
   }
 
-  /* Shared button. */
   .ctl {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 6px 8px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #1b1b22;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    background: rgba(27, 27, 34, 0.6);
     color: #e8e8ee;
     cursor: pointer;
     font: inherit;
     white-space: nowrap;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .ctl i {
     font-size: 15px;
     line-height: 1;
   }
-  .ctl:hover {
-    border-color: #3a3a46;
+  .ctl:hover:not(:disabled) {
+    border-color: rgba(110, 168, 254, 0.4);
+    background: rgba(35, 50, 74, 0.4);
+    transform: translateY(-1px);
   }
   .ctl:disabled {
-    opacity: 0.45;
+    opacity: 0.35;
     cursor: default;
   }
   .ctl.active {
     border-color: #6ea8fe;
-    background: #23324a;
+    background: rgba(35, 50, 74, 0.85);
+    box-shadow: 0 0 10px rgba(110, 168, 254, 0.25);
   }
-  /* Armed 전체 지우기 button: an amber "are you sure?" state before it wipes. */
   .ctl.armed {
     border-color: #e0a030;
-    background: #4a3a1a;
+    background: rgba(74, 58, 26, 0.8);
     color: #ffd98a;
+    box-shadow: 0 0 10px rgba(224, 160, 48, 0.2);
   }
   .ctl.armed:hover {
     border-color: #f0b040;
+    background: rgba(90, 70, 30, 0.9);
   }
 
-  /* The 재료 brush button shows the selected material's name in full — never
-     truncated with an ellipsis. The button sizes to fit the name (the control
-     group wraps around it on desktop; the bar scrolls sideways on mobile). */
   .material-name {
     overflow: visible;
     text-overflow: clip;
     white-space: nowrap;
   }
 
-  /* Two-option segmented control (speed, shape, mode, border). */
   .seg {
     display: flex;
     gap: 6px;
@@ -1069,13 +1292,16 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
   }
   .field-label {
     color: #cfcfd8;
+    font-weight: 500;
   }
   .field input[type='range'] {
     width: 100%;
+    accent-color: #6ea8fe;
+    cursor: pointer;
   }
 
   .overwrite-steps {
@@ -1086,16 +1312,14 @@
     flex: 1 1 0;
     height: 4px;
     border-radius: 2px;
-    background: #2a2a33;
+    background: rgba(255, 255, 255, 0.08);
   }
   .overwrite-steps .step.filled {
     background: #6ea8fe;
   }
-  /* The "자동" notch is visually distinct (amber) so it reads as a mode toggle,
-     not just "loosest level". */
   .overwrite-steps .step.auto {
     flex: 1 1 0;
-    background: #3a3a1a;
+    background: rgba(224, 160, 48, 0.15);
   }
   .overwrite-steps .step.auto.filled {
     background: #e0a030;
@@ -1105,9 +1329,13 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 4px 10px;
+    gap: 6px 10px;
     font-variant-numeric: tabular-nums;
     color: #8a8a99;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
   }
   .fps {
     cursor: help;
@@ -1118,21 +1346,13 @@
     color: #6f9f7f;
     font-size: 11px;
   }
-  .hint {
+  .hint, .blend-hint {
     margin: 0;
-    color: #6a6a78;
+    color: #8a8a99;
     font-size: 11px;
     line-height: 1.4;
   }
-  .blend-hint {
-    margin: 0;
-    color: #8a8a99;
-    font-size: 12px;
-    line-height: 1.5;
-  }
 
-  /* Speed (5 steps) and grid (5 steps) segmented controls pack more buttons into
-     the same width, so tighten the padding and shrink the numeric labels. */
   .speed-seg .ctl,
   .grid-seg .ctl {
     padding: 6px 2px;
@@ -1140,8 +1360,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Gravity direction as a D-pad: up on top, left/right flanking an empty
-     center, down on the bottom — so the layout itself reads as a direction. */
   .gravity-pad {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1154,28 +1372,17 @@
   .gravity-pad .ctl {
     padding: 6px 0;
   }
-  .grav-up {
-    grid-area: up;
-  }
-  .grav-left {
-    grid-area: left;
-  }
-  .grav-right {
-    grid-area: right;
-  }
-  .grav-down {
-    grid-area: down;
-  }
+  .grav-up { grid-area: up; }
+  .grav-left { grid-area: left; }
+  .grav-right { grid-area: right; }
+  .grav-down { grid-area: down; }
 
-  /* Small explanatory note under a control (e.g. the bottom dead-zone slider). */
   .field-note {
     margin: 2px 0 0;
     color: #7a7a88;
     font-size: 10px;
     line-height: 1.4;
   }
-
-  /* Min/max captions under a range slider. */
   .range-ends {
     display: flex;
     justify-content: space-between;
@@ -1183,7 +1390,6 @@
     font-size: 10px;
   }
 
-  /* Entry points into the 가열/냉각·혼합 dedicated modals, from inside 설정. */
   .settings-links {
     display: flex;
     flex-wrap: wrap;
@@ -1192,18 +1398,12 @@
   .settings-links .ctl {
     flex: 1 1 auto;
   }
-
-  /* Restore-defaults button: full width, armed amber like 전체 지우기. */
   .reset-btn {
     width: 100%;
     justify-content: center;
+    margin-top: 10px;
   }
 
-  /* 영역 선택이 오브젝트 도구에서 거부됐을 때 뜨는 팝오버: 트리거(영역 버튼) 위에
-     뜨는 작은 말풍선, 아래쪽 화살표가 버튼을 가리킨다. Bootstrap의 popover와 같은
-     생김새를 손으로 재현한 것 — 전체 bootstrap.min.css는 싣지 않는다는 기존 방침
-     (docs/FEATURES.md 참고)을 지키면서, Modal/MaterialPalette 플라이아웃과 같은
-     패턴(고정 위치 + portal + 다크 테마)으로 만들었다. */
   .area-popover {
     position: fixed;
     z-index: 50;
@@ -1214,7 +1414,7 @@
   .area-popover-body {
     padding: 8px 10px;
     background: rgba(24, 24, 30, 0.98);
-    border: 1px solid #3a3a46;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
     color: #ffd0d0;
@@ -1230,133 +1430,315 @@
     width: 10px;
     height: 10px;
     background: rgba(24, 24, 30, 0.98);
-    border-right: 1px solid #3a3a46;
-    border-bottom: 1px solid #3a3a46;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
     transform: translateX(-50%) rotate(45deg);
   }
 
-  /* The frequently-tweaked settings render both inline (desktop) and inside the
-     settings modal (mobile). Each viewport shows exactly one copy. */
   .modal-frequent {
     display: none;
   }
-  /* On desktop the heat-map mode is driven by the header eye/thermometer icons,
-     so hide the redundant inline segmented control there (it still shows in the
-     mobile settings modal, whose .modal-frequent copy this rule doesn't match). */
   .inline-settings .heat-field {
     display: none;
   }
-
-  /* Mobile-only settings opener in the bar. */
   .settings-toggle {
     display: none;
   }
 
   /* --------------------------------------------------------------------- */
-  /* Mobile: the panel becomes a two-row bar docked along the bottom. Row 1 is
-     the primary controls, row 2 the material palette; both scroll sideways if
-     they overflow. All secondary settings live in the 설정 modal.
-
-     Anchored with `top` (not `bottom:0`) so it lands at the toolbar/canvas
-     boundary measured from the dynamic viewport. `bottom:0` on a fixed element
-     is relative to the *layout* viewport (100vh — the large height with the
-     address bar collapsed), which hides the bar behind the address bar on
-     mobile. `top: calc(100dvh - h)` is measured from the top using dvh (the
-     *visible* viewport), so it always sits just under the canvas regardless of
-     address-bar state.                                       */
+  /* Mobile Layout & Bottom Bar Revamp                                     */
   /* --------------------------------------------------------------------- */
   @media (max-width: 768px) {
     .panel {
-      /* vh fallback for browsers without dvh support. The bottom dead zone is
-         reserved below the bar, so lift the bar by it too (0px by default). */
       top: calc(100vh - var(--bottombar-h) - var(--bottom-deadzone));
       top: calc(100dvh - var(--bottombar-h) - var(--bottom-deadzone));
       bottom: auto;
       left: 0;
       width: 100vw;
       height: var(--bottombar-h);
-      padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
-      gap: 6px;
+      padding: 8px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+      gap: 0;
       border-right: none;
-      border-top: 1px solid #2a2a33;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-left: none;
+      border-bottom: none;
       overflow: visible;
+      background: rgba(16, 16, 22, 0.92);
+      border-radius: 16px 16px 0 0;
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
     }
 
-    .head {
+    .pc-layout {
       display: none;
+    }
+    .mobile-layout {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
     }
 
     .bar {
       flex: 1;
       min-width: 0;
       gap: 6px;
+      height: 100%;
+      justify-content: space-between;
     }
     .bar-row {
       display: flex;
       align-items: center;
-      gap: 8px;
       min-height: 0;
+    }
+    .bar-row.primary {
+      flex-direction: row;
+      gap: 4px;
+      justify-content: space-between;
+      width: 100%;
+    }
+    .bar-row.palette-row {
       overflow-x: auto;
       overflow-y: hidden;
       scrollbar-width: none;
     }
-    .bar-row::-webkit-scrollbar {
+    .bar-row.palette-row::-webkit-scrollbar {
       display: none;
     }
-    .bar-row.primary {
-      flex-direction: row;
+
+    /* Mobile Buttons */
+    .mobile-ctl {
+      flex: 1 1 auto;
+      min-width: 32px;
+      height: 38px;
+      padding: 0 4px !important;
+      border-radius: 8px;
+      font-size: 15px;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
-    .group {
-      flex: none;
-      flex-wrap: nowrap;
+    .mobile-ctl i {
+      font-size: 16px;
     }
-    .group .ctl {
-      flex: none;
+    .mobile-ctl:hover:not(:disabled) {
+      transform: none;
+      box-shadow: none;
     }
-    /* Icon-only buttons in the bar: hide the text labels, square them up. */
-    .bar .label {
-      display: none;
+    .mobile-ctl.active {
+      background: rgba(110, 168, 254, 0.15);
+      border-color: rgba(110, 168, 254, 0.5);
+      color: #6ea8fe;
     }
-    /* …except the 재료 button, which keeps showing the selected material name
-       (the bar scrolls sideways, so a wider button is fine). */
+
+    /* 재료 버튼: 텍스트 보여줌, 가로 비율 늘림 */
+    .bar .material-btn {
+      flex: 3 1 auto;
+      max-width: 110px;
+      font-size: 11px;
+      font-weight: 600;
+      gap: 4px;
+    }
+    .bar .material-btn i {
+      font-size: 12px;
+    }
     .bar .material-btn .material-name {
       display: inline;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    /* …and the armed 지우기 button, so the "계속하시겠습니까?" confirm prompt is
-       visible on mobile too (the bar scrolls to fit the wider button). */
-    .bar .ctl.armed .label {
-      display: inline;
+
+    /* 특수도구 버튼: 아이콘 + 라벨 + 화살표 */
+    .special-popup-trigger {
+      flex: 3 1 auto;
+      max-width: 100px;
+      font-size: 11px;
+      font-weight: 600;
+      gap: 3px;
     }
-    .bar .ctl {
-      padding: 8px 10px;
+    .special-popup-trigger i {
+      font-size: 12px;
     }
-    .bar .ctl i {
-      font-size: 17px;
+    .special-popup-trigger .popup-indicator {
+      font-size: 8px;
+      opacity: 0.6;
+    }
+
+    /* 지우개 armed 상태 */
+    .bar .ctl.armed {
+      background: rgba(224, 160, 48, 0.2);
+      border-color: #e0a030;
+      color: #ffd98a;
+      flex: 2 1 auto;
+    }
+
+    .font-compact {
+      font-size: 10px;
+      letter-spacing: -0.03em;
+    }
+
+    .mobile-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.08);
+      margin: 0 2px;
+      flex: none;
     }
 
     .settings-toggle {
       display: inline-flex;
-      flex: none;
-      margin-left: auto;
     }
-
-    /* Inline settings are desktop-only; on mobile they move into the modal. */
     .inline-settings {
       display: none;
     }
-    /* Inside the modal, show the frequently-tweaked settings on mobile. */
     .modal-frequent {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
-    /* The mobile modal copy keeps the heat-map control (no header icons on
-       mobile), overriding the desktop .inline-settings .heat-field hide. */
     .modal-frequent .heat-field {
       display: flex;
     }
     .wheel-hint {
       display: none;
     }
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* Mobile Special Tools Popover (Portal Overlay)                         */
+  /* --------------------------------------------------------------------- */
+  .mobile-special-popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    pointer-events: none;
+  }
+  .popup-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  .popup-card {
+    position: relative;
+    width: 100%;
+    max-width: 380px;
+    background: rgba(20, 20, 26, 0.95);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    padding: 16px;
+    pointer-events: auto;
+    animation: popup-slide-up 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+  @keyframes popup-slide-up {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  .popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 8px;
+  }
+  .popup-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e8e8ee;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .popup-title i {
+    color: #6ea8fe;
+  }
+  .popup-close-btn {
+    background: transparent;
+    border: none;
+    color: #8a8a99;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .popup-close-btn:hover {
+    color: #e8e8ee;
+  }
+
+  .popup-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .popup-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 72px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    color: #cfcfd8;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 4px;
+  }
+  .popup-item i {
+    font-size: 20px;
+    color: #cfcfd8;
+    transition: color 0.2s;
+  }
+  .popup-item-name {
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .popup-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8e8ee;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .popup-item.active {
+    background: rgba(110, 168, 254, 0.12);
+    border-color: #6ea8fe;
+    color: #6ea8fe;
+    box-shadow: 0 0 10px rgba(110, 168, 254, 0.15);
+  }
+  .popup-item.active i {
+    color: #6ea8fe;
+  }
+  .popup-item-badge {
+    position: absolute;
+    bottom: 2px;
+    font-size: 8px;
+    color: #8a8a99;
+    transform: scale(0.9);
+    white-space: nowrap;
+    opacity: 0.8;
   }
 </style>

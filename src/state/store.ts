@@ -275,6 +275,14 @@ export const $gridDivision = atom<GridDivision>(GRID_DIVISION_DEFAULT);
 export const $bottomDeadzone = atom<number>(BOTTOM_DEADZONE_DEFAULT);
 
 /**
+ * Sidebar dock position on desktop: 'left' or 'right' (default).
+ * Right position minimizes mouse travel time for right-handed users painting on the canvas.
+ */
+export type SidebarPosition = 'left' | 'right';
+export const $sidebarPosition = atom<SidebarPosition>('right');
+
+
+/**
  * Favorited material ids (starred in the palette's quick-access bar). Persisted,
  * ordered by when they were starred. User data, not a "setting" — untouched by
  * restore-defaults.
@@ -361,4 +369,5 @@ export const resetSettings = (): void => {
   $heatOverlay.set(false);
   $gridDivision.set(GRID_DIVISION_DEFAULT);
   $bottomDeadzone.set(BOTTOM_DEADZONE_DEFAULT);
+  $sidebarPosition.set('right');
 };

@@ -56,7 +56,6 @@ body {
 #game {
   position: fixed;
   top: 0;
-  left: var(--sidebar-w);
   width: calc(100vw - var(--sidebar-w));
   /* Subtract the bottom dead zone so the canvas ends above any browser chrome
      the user has dialed clearance for (0px by default → unchanged). */
@@ -70,6 +69,12 @@ body {
      'none' once the overlay is actually visible, so there's never a gap with
      no cursor shown at all. */
   cursor: crosshair;
+}
+body.sidebar-left #game {
+  left: var(--sidebar-w);
+}
+body.sidebar-right #game {
+  left: 0;
 }
 
 /* Mobile: the control bar moves to the bottom, so the canvas gives up height at

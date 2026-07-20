@@ -16,6 +16,7 @@ import {
   $heatOverlay,
   $gridDivision,
   $bottomDeadzone,
+  $sidebarPosition,
   $favorites,
   $recentMaterials,
   $heatRateMode,
@@ -25,6 +26,7 @@ import {
   type BrushMode,
   type Tool,
   type BlendComponent,
+  type SidebarPosition,
 } from './store';
 import { getMaterial, MATERIALS } from '../game/materials';
 import {
@@ -234,6 +236,7 @@ function hydrateSettings(): void {
   $bottomDeadzone.set(
     clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
   );
+  $sidebarPosition.set(oneOf(s.sidebarPosition, ['left', 'right'], $sidebarPosition.get()));
 
   // Favorites/recents are validated against the curated palette (ids not in
   // PALETTE_IDS — hidden/unknown — are dropped). Favorites can hold at most one
@@ -266,6 +269,7 @@ function saveSettings(): void {
       heatOverlay: $heatOverlay.get(),
       gridDivision: $gridDivision.get(),
       bottomDeadzone: $bottomDeadzone.get(),
+      sidebarPosition: $sidebarPosition.get(),
       favorites: $favorites.get(),
       recentMaterials: $recentMaterials.get(),
     }),
