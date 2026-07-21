@@ -347,16 +347,28 @@ export class CanvasRenderer implements Renderer {
         if (carried !== 0) id = carried;
       }
       let c: number;
-      // A directional-arrow material (Conveyor) draws a chevron pointing the way
-      // its aux byte says it runs, so the belt's travel direction is visible. The
-      // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
-      // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
+      // A directional-arrow material (Conveyor, Fan) draws a chevron pointing
+      // the way its aux byte says it runs/blows (see materials/direction4.ts),
+      // so the travel/wind direction is visible. The chevron is a period-4
+      // tent: over four rows the lit column steps 0,1,1,0 (a '>' whose tip is
+      // the middle rows) — mirrored for LEFT, and transposed (tent across
+      // columns instead of rows) for UP/DOWN.
       if (arrow[id]) {
         const x = i % w;
         const y = (i / w) | 0;
-        const fold = y & 2 ? 3 - (y & 3) : y & 3; // y%4 → 0,1,1,0
-        const phase = x & 3; // x % 4
-        const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
+        const av = auxArr[i];
+        let on: boolean;
+        if (av === 3 || av === 4) {
+          // UP (3) / DOWN (4): tent across x, chevron travels along y.
+          const fold = x & 2 ? 3 - (x & 3) : x & 3;
+          const phase = y & 3;
+          on = av === 3 ? phase === 3 - fold : phase === fold;
+        } else {
+          // RIGHT (0/1, the default) / LEFT (2): tent across y, chevron along x.
+          const fold = y & 2 ? 3 - (y & 3) : y & 3;
+          const phase = x & 3;
+          on = av === 2 ? phase === 3 - fold : phase === fold;
+        }
         c = on ? latCol[id] : pal[id];
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a

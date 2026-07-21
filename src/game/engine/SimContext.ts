@@ -191,6 +191,34 @@ export class SimContext {
   wooferPulseX: number[] = [];
   wooferPulseY: number[] = [];
 
+  /**
+   * Per-tick memo for the Fan's body-flood (materials/fan.ts) — structurally
+   * identical to `wooferFloodTick`/`wooferFlooded` above (Fan is another
+   * one-way "outside → inside" sink, see fan.ts's own design note), kept as
+   * its own pair rather than reused so an unrelated Woofer body pulsing the
+   * same tick can't make a Fan body skip its own flood (and vice versa).
+   */
+  fanFloodTick = -1;
+  fanFlooded: Set<number> = new Set();
+
+  /**
+   * Per-tick queue of every Fan cell that fired this tick, and the (dx,dy)
+   * gust direction each one fired in (populated by `fanBodyPulse`,
+   * materials/fan.ts). Parallel arrays, one entry per firing cell — a body
+   * can mix directions cell-by-cell (each Fan cell keeps its own drawn
+   * direction), so the direction can't be hoisted to one value for the whole
+   * flood the way the position could. Consumed once by `stepObjects`
+   * (engine/objects.ts) after the CA scan to nudge nearby free rigid bodies
+   * along the gust — see `applyFanKnockback` there. Routed through SimContext
+   * for the same import-cycle reason as `wooferPulseX/Y` above (objects.ts →
+   * spark.ts → fan.ts would close a loop if fan.ts called back into
+   * objects.ts directly).
+   */
+  fanPulseX: number[] = [];
+  fanPulseY: number[] = [];
+  fanPulseDirX: number[] = [];
+  fanPulseDirY: number[] = [];
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a

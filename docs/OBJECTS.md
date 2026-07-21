@@ -108,3 +108,11 @@
 - **파괴는 절대 없음**: `applyWooferKnockback`은 `applyBlastKnockback`과 달리 오브젝트를 **절대 파괴하지 않는다** — Woofer는 BLAST 셀이 없으므로 직격 파괴 판정(`footprintHazards`)에 애초에 걸리지 않는다. 아무리 가까워도 밀리기만 한다(완전한 비파괴성이 오브젝트에도 그대로 적용).
 
 검증: 헤드리스로 (1) 배터리에 직접 연결한 Woofer 근처 고무공이 강하게 밀려나면서도 오브젝트 목록에서 사라지지 않음(비파괴), (2) Woofer 사거리 안에 놓인 TNT가 40틱 동안 기폭되지 않음(BLAST 셀 부재로 연쇄 기폭 없음)을 확인. `astro check` 0에러, active-tile 결정성 테스트 전건 통과.
+
+## Fan 바람 — 오브젝트 넉백 (원형이 아닌 빔 형태)
+
+전기 물질 **Fan**(방향성 바람 가전, MATERIAL-SYSTEMS.md 참조)도 Woofer와 같은 "BLAST 셀 없는 이벤트 큐" 패턴을 쓰지만, 넉백의 **모양이 다르다** — Woofer/Blast는 발생원을 중심으로 사방으로 퍼지는 **원형**이고, Fan은 팬이 바라보는 한쪽으로만 뻗는 **직사각형 빔**이다.
+
+- **`SimContext.fanPulseX/Y/DirX/DirY`**: 한 틱에 발동한 Fan 칸의 좌표뿐 아니라 **그 칸이 부는 방향**까지 담는 병렬 큐(`materials/fan.ts`의 `fanBodyPulse`가 채움) — 팬 몸체는 칸마다 자기 배치 방향을 따로 가지므로(컨베이어처럼) 좌표 하나로 방향까지 대표할 수 없다. `stepObjects`가 CA 스캔 이후 이 큐를 읽어 `applyFanKnockback`으로 근처 오브젝트를 민다.
+- **빔 판정**: 오브젝트 위치를 바람 발생 칸 기준 상대좌표로 놓고 바람 방향 축에 투영한 거리(`along`)와 그 축에서 벗어난 수직 거리(`perp`)를 계산 — `0 ≤ along ≤ FAN_KNOCK_REACH`이고 `|perp| ≤ FAN_KNOCK_HALF_WIDTH(+ 오브젝트 반지름)`일 때만 밀린다. Woofer의 역제곱 가중 방향 대신, 빔 안에서는 방향이 고정(팬이 바라보는 쪽)이라 훨씬 단순하다.
+- **파괴는 절대 없음**: Woofer와 마찬가지로 `applyFanKnockback`은 오브젝트를 파괴하지 않는다 — 그리드의 가루·액체를 미는 힘과 마찬가지로 순한 정속 바람일 뿐.

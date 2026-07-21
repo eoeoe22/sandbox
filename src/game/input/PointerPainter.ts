@@ -35,6 +35,7 @@ import { Phase } from '../engine/types';
 import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
+import { FAN, FAN_RIGHT, FAN_LEFT, FAN_UP, FAN_DOWN } from '../materials/fan';
 import { CLONE } from '../materials/clone';
 import {
   createRubberBall,
@@ -161,6 +162,11 @@ export class PointerPainter {
    *  between events; a pure click (no drag) uses the last direction, defaulting
    *  right. */
   private beltDirX = 1;
+  /** Latched 4-cardinal drag direction for a Fan, updated from whichever axis
+   *  moved more on the latest step of the stroke (see onMove/rectDragging
+   *  below). Kept separate from beltDirX since a Fan can face up/down too;
+   *  defaults to facing right, same as a fresh Conveyor. */
+  private fanDirAux = FAN_RIGHT;
   private px = 0;
   private py = 0;
   /** The object currently being dragged in 보기(view) mode, or null. While set,
@@ -573,19 +579,23 @@ export class PointerPainter {
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
-    // (좌우 정렬); a Clone painted via the palette's 더블클릭 shortcut records the
-    // pre-latched target material's id so it starts emitting immediately instead
-    // of waiting to touch it first (see $cloneTarget, MaterialPalette.pickClone,
-    // and Clone's own updateClone, which treats a non-zero aux as "already
-    // latched"); every other material clears aux to 0 like normal.
+    // (좌우 정렬); a Fan does the same but over all 4 cardinals (fanDirAux, see
+    // updateFanDrag below); a Clone painted via the palette's 더블클릭 shortcut
+    // records the pre-latched target material's id so it starts emitting
+    // immediately instead of waiting to touch it first (see $cloneTarget,
+    // MaterialPalette.pickClone, and Clone's own updateClone, which treats a
+    // non-zero aux as "already latched"); every other material clears aux to 0
+    // like normal.
     const initAux =
       id === CONVEYOR.id
         ? this.beltDirX < 0
           ? CONVEYOR_LEFT
           : CONVEYOR_RIGHT
-        : id === CLONE.id
-          ? ($cloneTarget.get() ?? 0)
-          : 0;
+        : id === FAN.id
+          ? this.fanDirAux
+          : id === CLONE.id
+            ? ($cloneTarget.get() ?? 0)
+            : 0;
     for (let k = 0; k < cells.length; k += 2) {
       const x = cells[k];
       const y = cells[k + 1];
@@ -827,6 +837,7 @@ export class PointerPainter {
       this.rectEX = x;
       this.rectEY = y;
       if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      this.updateFanDrag(x - this.rectSX, y - this.rectSY);
       this.updateRectOverlay();
       return;
     }
@@ -838,10 +849,25 @@ export class PointerPainter {
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
     // runs the way the brush moved.
     if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
+    this.updateFanDrag(x - this.px, y - this.py);
     this.stroke(this.px, this.py, x, y);
     this.px = x;
     this.py = y;
   };
+
+  /** Latch `fanDirAux` to whichever axis moved more since the last sampled
+   *  point (ties favor horizontal), so a Fan stamped mid-stroke faces the way
+   *  the brush most recently moved — the 4-cardinal counterpart of
+   *  `beltDirX`'s left/right latch above. A no-op when the pointer hasn't
+   *  moved to a new cell (dx and dy both 0). */
+  private updateFanDrag(dx: number, dy: number): void {
+    if (dx === 0 && dy === 0) return;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      this.fanDirAux = dx < 0 ? FAN_LEFT : FAN_RIGHT;
+    } else {
+      this.fanDirAux = dy < 0 ? FAN_UP : FAN_DOWN;
+    }
+  }
 
   private onUp = (e: PointerEvent): void => {
     // Release a dragged object: hand it the smoothed drag velocity so a flick

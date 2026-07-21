@@ -15,6 +15,7 @@ import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { WOOFER, wooferBodyPulse } from './woofer';
+import { FAN, fanBodyPulse } from './fan';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -231,6 +232,12 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // this same tick. Never spawns a Spark on the Woofer cell itself, so
       // nothing is rendered traveling inside/on the body.
       wooferBodyPulse(sim, nx, ny);
+    } else if (nid === FAN.id) {
+      // Another one-way "outside → inside" sink (see fan.ts's design note):
+      // relayed current reaching any face of the connected Fan body floods
+      // the whole body and fires every cell's own gust at once, the same
+      // arc-phase hand-off Woofer uses just above.
+      fanBodyPulse(sim, nx, ny);
     }
   }
 

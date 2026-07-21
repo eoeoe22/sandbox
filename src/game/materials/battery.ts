@@ -8,6 +8,7 @@ import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
 import { WOOFER, wooferBodyPulse } from './woofer';
+import { FAN, fanBodyPulse } from './fan';
 
 // Lithium Battery — the power source that makes the electricity subsystem
 // self-running (the volatile chemistry; see lfpbattery.ts for the safe one).
@@ -116,6 +117,10 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
       // case where the appliance is plugged straight into the battery instead
       // of reached through a relay of ordinary conductors.
       wooferBodyPulse(sim, nx, ny);
+    } else if (nid === FAN.id) {
+      // Direct contact, no wire needed — same shape as the Woofer branch
+      // above (see fan.ts's design note).
+      fanBodyPulse(sim, nx, ny);
     }
   }
 }

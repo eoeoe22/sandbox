@@ -1583,6 +1583,17 @@ const WOOFER_KNOCK_SPEED = 6;
 /** Spin a Woofer's pulse kicks into a drum as it's shoved (mirrors BLAST_KNOCK_SPIN). */
 const WOOFER_KNOCK_SPIN = 0.1;
 
+/** How far past its own footprint a Fan's gust still reaches (mirrors
+ *  fan.ts's own REACH — kept as a separate constant rather than importing it,
+ *  the same "own knob" reasoning as WOOFER_KNOCK_RADIUS above). */
+const FAN_KNOCK_REACH = 14;
+/** Half-width, in cells, of the gust's push zone to either side of its own
+ *  travel line — a Fan blows a beam, not a point, but not a wide gale either. */
+const FAN_KNOCK_HALF_WIDTH = 1.2;
+/** Floor speed a gust holds a body to along the wind direction — gentle, a
+ *  steady breeze rather than a shove (contrast BLAST/WOOFER's harder kicks). */
+const FAN_KNOCK_SPEED = 3;
+
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
  *  ordinary ground contact — a thin slice of the footprint — never triggers it.
@@ -1779,6 +1790,46 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
+}
+
+/**
+ * Push a body along every Fan gust queued this tick (see
+ * `SimContext.fanPulseX/Y/DirX/DirY`, populated by materials/fan.ts's
+ * `fanBodyPulse`). Unlike the radial Blast/Woofer knockbacks above, a gust is
+ * a directional *beam*: a body counts as caught by it only while it sits
+ * within `FAN_KNOCK_REACH` cells ahead of the firing cell along the wind axis
+ * AND within `FAN_KNOCK_HALF_WIDTH` cells to either side of that axis: outside
+ * that beam a body feels nothing, exactly like the grid's own loose matter
+ * (see fan.ts's `fanPulse`) which the beam also only ever touches in a
+ * straight line ahead of the Fan face. A body can be caught by several firing
+ * cells in one tick (a wide fan bank); each is applied independently with the
+ * same floor-speed shape the other knockbacks use, so overlapping gusts don't
+ * stack into something faster than any one of them intends. Never destroys a
+ * body — Wind has no destructive power at all, only a gentle steady push.
+ */
+function applyFanKnockback(o: SimBody, ctx: SimContext): void {
+  const xs = ctx.fanPulseX;
+  if (xs.length === 0) return;
+  const ys = ctx.fanPulseY;
+  const dxs = ctx.fanPulseDirX;
+  const dys = ctx.fanPulseDirY;
+  const halfWidth = FAN_KNOCK_HALF_WIDTH + bodyRadius(o);
+  for (let i = 0; i < xs.length; i++) {
+    const dx = dxs[i];
+    const dy = dys[i];
+    const relX = o.x - (xs[i] + 0.5);
+    const relY = o.y - (ys[i] + 0.5);
+    const along = relX * dx + relY * dy; // distance ahead of the Fan face, along the gust
+    if (along < 0 || along > FAN_KNOCK_REACH) continue;
+    const perp = relX * -dy + relY * dx; // signed distance off the gust's own axis
+    if (Math.abs(perp) > halfWidth) continue;
+    const outward = o.vx * dx + o.vy * dy;
+    if (outward < FAN_KNOCK_SPEED) {
+      const add = FAN_KNOCK_SPEED - outward;
+      o.vx += dx * add;
+      o.vy += dy * add;
+    }
+  }
 }
 
 /**
@@ -2095,8 +2146,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
 
 /**
  * Advance every free object one tick in three phases: (A) each body's own physics
- * — a near-miss blast (or a Woofer's shockwave — see applyWooferKnockback) shoves
- * it, then gravity/buoyancy/grid-collision integration — skipped while the
+ * — a near-miss blast (or a Woofer's shockwave, or a Fan's gust — see
+ * applyWooferKnockback/applyFanKnockback) shoves it, then gravity/buoyancy/
+ * grid-collision integration — skipped while the
  * pointer holds it; (B) resolve collisions *between* bodies so
  * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
  * crush) and compact out anything destroyed this tick. Run at the end of
@@ -2130,6 +2182,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     }
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
+    applyFanKnockback(o, ctx);
     if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
     else stepCapsule(o, ctx, ax, ay, s);
   }
