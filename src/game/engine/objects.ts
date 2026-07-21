@@ -1587,11 +1587,11 @@ const WOOFER_KNOCK_SPIN = 0.1;
  *  floor on the velocity component along the wind (never accumulated), so
  *  overlapping streams from a wide fan don't stack into a launcher — the wind
  *  carries a body at a steady drift, it doesn't fling it like a blast. */
-const FAN_WIND_SPEED = 1.4;
+const FAN_WIND_SPEED = 2.6;
 /** Extra half-width (cells) past a body's own reach that a 1-cell wind stream
  *  still catches it — the stream has a little breadth to it, so a ball doesn't
  *  slip between two adjacent fan rows untouched. */
-const FAN_WIND_HALF_WIDTH = 0.75;
+const FAN_WIND_HALF_WIDTH = 1;
 
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so

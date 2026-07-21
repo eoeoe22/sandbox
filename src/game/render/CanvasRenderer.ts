@@ -53,29 +53,55 @@ const HEAT_STOPS: readonly [number, number, number, number][] = [
 ];
 
 /**
- * The Fan's wind-streak effect (바람 이펙트): a low-res streak that slides
- * downwind and curls over at its head, drawn per active wind zone (see
- * Grid.wind). The shape is a fixed pixel path in stream-local coordinates —
- * `f` cells downwind along the stream, `u` cells to the curl side — tracing a
- * long tail, a counter-clockwise curl up-and-back, and a short hook, the same
- * silhouette as the reference SVG's "M 10 20 H 120 V 6 H 104 V 14 H 112" path
- * at cell resolution. Each frame the streak both translates downwind and is
- * dash-drawn head-first / erased tail-first (the SVG's translateX +
- * stroke-dashoffset animation, discretized): over one cycle the visible window
- * [tail, head) sweeps once through the path while the whole path drifts down
- * the stream's open length.
+ * The Fan's wind-streak effect (바람 이펙트): a low-res streak — a long
+ * straight tail with a small counter-clockwise coil at its leading tip, the
+ * same silhouette as the reference SVG's "M 10 20 H 120 V 6 H 104 V 14 H 112"
+ * path — drawn per active wind zone (see Grid.wind). Unlike a single streak
+ * per zone, several of these "comets" flow continuously down the whole open
+ * stream at once (staggered WIND_SPACING apart), each entering at the fan
+ * face, growing its tail out (the SVG's stroke-dashoffset reveal, discretized
+ * — see `grown` in drawWindStreaks), gliding the length of the corridor with
+ * its coil fully formed, and being clipped exactly where the wind itself
+ * would be — at the first solid the stream reaches — before wrapping back to
+ * re-enter at the fan. So a long stream reads as a continuous flow of curling
+ * gusts across its *whole* reach, not one streak stuck near the source.
+ *
+ * Each shape is defined as `[f, u]` cell offsets from the comet's own local
+ * origin — `f` downwind along the stream, `u` toward the curl side — with the
+ * first `tailLen` entries being the straight tail (index i ⇒ f = i, u = 0) so
+ * the tail-growth reveal can slice the array by index; the rest are the coil.
  */
-const WIND_PATH: readonly (readonly [number, number])[] = [
-  [0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], // tail run
-  [7, 1], [7, 2], // curl: up
-  [6, 2], [5, 2], [4, 2], // curl: back over the tail
-  [4, 1], // curl: down
-  [5, 1], // curl: short forward hook — the coil's end
+function windCurl(f0: number): (readonly [number, number])[] {
+  return [
+    [f0, 1],
+    [f0, 2], // up
+    [f0 - 1, 2],
+    [f0 - 2, 2],
+    [f0 - 3, 2], // back, over the tail
+    [f0 - 3, 1], // down
+    [f0 - 2, 1], // short forward hook — the coil's end
+  ];
+}
+const WIND_TAIL_LONG = 9;
+const WIND_TAIL_SHORT = 7;
+/** The two comet shapes (long/short, mirroring the reference's two distinct
+ *  path lengths — its wind-1/3 vs. the shorter wind-2) as combined
+ *  tail+curl offset lists; `WIND_TAIL_LEN[i]` is shape `i`'s tail cell count
+ *  (how many leading entries are the straight run vs. the trailing coil). */
+const WIND_SHAPES: readonly (readonly (readonly [number, number])[])[] = [
+  [...Array.from({ length: WIND_TAIL_LONG }, (_, f) => [f, 0] as const), ...windCurl(WIND_TAIL_LONG - 1)],
+  [...Array.from({ length: WIND_TAIL_SHORT }, (_, f) => [f, 0] as const), ...windCurl(WIND_TAIL_SHORT - 1)],
 ];
-/** Frames per streak animation cycle (~0.7 s at 60 fps). */
-const WIND_CYCLE = 44;
+const WIND_TAIL_LEN: readonly number[] = [WIND_TAIL_LONG, WIND_TAIL_SHORT];
+/** Downwind cells between consecutive comets flowing down one wind corridor —
+ *  small enough that even a short stream shows one, large enough that a long
+ *  (FAN_WIND_RANGE) one reads as a flow rather than a traffic jam. */
+const WIND_SPACING = 16;
+/** Glide speed, cells/frame — render-side time, so the flow stays smooth
+ *  independent of the sim tick rate. */
+const WIND_GLIDE = 0.16;
 /** Streak colors, pale→deeper sky blue (the reference's #bae6fd/#7dd3fc/#38bdf8);
- *  each zone picks one by position hash so neighboring streams differ. */
+ *  each zone/comet picks one by position hash so neighboring streams differ. */
 const WIND_COLORS: readonly number[] = [
   rgb(186, 230, 253),
   rgb(125, 211, 252),
@@ -495,13 +521,16 @@ export class CanvasRenderer implements Renderer {
 
   /**
    * Draw the animated wind streaks for this tick's active wind zones (see
-   * Grid.wind, queued by materials/fan.ts, and the WIND_PATH doc above for the
-   * shape/animation model). One streak per zone, written straight into the
-   * low-res cell buffer so it's pixel art in the exact grain size. Streaks are
-   * drawn only over EMPTY cells — matter in the stream occludes them, so the
-   * wind visibly threads *around* what it's pushing and stops at obstacles.
-   * Per-zone position hashes stagger the animation phase and pick the color, so
-   * a tall fan face reads as many independent gusts rather than a marching band.
+   * Grid.wind, queued by materials/fan.ts, and the WIND_SHAPES doc above for
+   * the shape/flow model). *Several* comets flow down each zone at once
+   * (WIND_SPACING apart), written straight into the low-res cell buffer so
+   * it's pixel art in the exact grain size. Streaks are drawn only over EMPTY
+   * cells — matter in the stream occludes them, so the wind visibly threads
+   * *around* what it's pushing — and are clipped past `len`, the stream's own
+   * reach, so a comet fades out exactly where the wind itself would stop (no
+   * separate "shrink" animation needed: hitting the same wall the wind does
+   * *is* the shrink). Per-zone/comet position hashes stagger the shape/color
+   * so a tall fan face reads as many independent gusts, not a marching band.
    */
   private drawWindStreaks(grid: Grid): void {
     const wind = grid.wind;
@@ -509,7 +538,7 @@ export class CanvasRenderer implements Renderer {
     const buf = this.buf32;
     const w = grid.width;
     const h = grid.height;
-    const L = WIND_PATH.length;
+    const t = this.frame * WIND_GLIDE;
     for (let i = 0; i < wind.length; i += 5) {
       const ox = wind[i];
       const oy = wind[i + 1];
@@ -521,23 +550,38 @@ export class CanvasRenderer implements Renderer {
       const ux = dy;
       const uy = -dx;
       const hash = ox * 31 + oy * 17;
-      const ph = ((this.frame + hash) % WIND_CYCLE) / WIND_CYCLE;
-      // Dash window: the head sweeps the path's length over the first half of
-      // the cycle, the tail chases it over the second — draw, then erase.
-      const head = ph * 2 * L > L ? L : ph * 2 * L;
-      const tail = ph * 2 * L - L > 0 ? ph * 2 * L - L : 0;
-      // Whole-streak drift down the stream's open run (the translateX part).
-      const drift = 1 + Math.round(ph * (len > 8 ? len - 8 : 0));
+      const shapeIdx = hash & 1;
+      const shape = WIND_SHAPES[shapeIdx];
+      const tailLen = WIND_TAIL_LEN[shapeIdx];
       const color = WIND_COLORS[hash % WIND_COLORS.length];
-      for (let k = Math.floor(tail); k < head; k++) {
-        const [pf, pu] = WIND_PATH[k];
-        const f = drift + pf;
-        if (f > len) continue; // never draw past the stream's first obstacle
-        const gx = ox + dx * f + ux * pu;
-        const gy = oy + dy * f + uy * pu;
-        if (gx < 0 || gx >= w || gy < 0 || gy >= h) continue;
-        const j = gy * w + gx;
-        if (cells[j] === EMPTY) buf[j] = color;
+      // One comet's full cycle: it's born just before the fan face (f < 0,
+      // fully clipped) and dies past `len` (also clipped, at the same wall
+      // the wind stops at), so the wrap period spans both.
+      const wrap = len + tailLen;
+      const count = Math.ceil(wrap / WIND_SPACING);
+      for (let n = 0; n < count; n++) {
+        let pos = (t + n * WIND_SPACING + hash) % wrap;
+        if (pos < 0) pos += wrap;
+        pos -= tailLen; // f=0 (the fan face) is reached partway through the cycle
+        // Tail-growth reveal (the SVG's stroke-dashoffset draw-in, discretized):
+        // as the comet's origin rises from -tailLen to 0, more of its tail is
+        // "grown" — 0 grown cells at birth, the full tail once pos reaches 0.
+        // The coil only appears once the tail is fully grown, mirroring how the
+        // reference's coil only resolves after the straight run finishes drawing.
+        let grown = pos + tailLen;
+        if (grown < 0) grown = 0;
+        else if (grown > tailLen) grown = tailLen;
+        for (let idx = 0; idx < shape.length; idx++) {
+          if (idx < tailLen ? idx >= grown : grown < tailLen) continue;
+          const [pf, pu] = shape[idx];
+          const f = pos + pf;
+          if (f < 0 || f > len) continue; // clipped by the fan face or the stream's own obstacle
+          const gx = ox + dx * f + ux * pu;
+          const gy = oy + dy * f + uy * pu;
+          if (gx < 0 || gx >= w || gy < 0 || gy >= h) continue;
+          const j = gy * w + gx;
+          if (cells[j] === EMPTY) buf[j] = color;
+        }
       }
     }
   }

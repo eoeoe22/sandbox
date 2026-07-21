@@ -46,12 +46,13 @@ const DIR_MASK = (1 << DIR_BITS) - 1;
 const POWER_LINGER = 16;
 
 /** How far (in cells) one fan cell's wind stream reaches through open space. */
-export const FAN_WIND_RANGE = 24;
+export const FAN_WIND_RANGE = 40;
 
 /** Per-cell push probability tapers linearly with distance: ~1 at the blades,
- *  fading toward zero past the stream's reach — so matter near the fan is
- *  hurled and matter at the fringe just stirs. */
-const PUSH_FALLOFF = FAN_WIND_RANGE + 6;
+ *  staying strong even out past the stream's reach — matter near the fan is
+ *  hurled almost every tick, and even the far fringe still gets a real shove
+ *  (~35% at FAN_WIND_RANGE) rather than trailing off to a token stir. */
+const PUSH_FALLOFF = 62;
 
 /** Backstop on how far one flood walks the connected fan body in a single pass
  *  (mirrors Woofer's/Turbine's own MAX_BODY) — a giant wall of fans can't make
