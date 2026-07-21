@@ -1,5 +1,5 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
@@ -9,7 +9,9 @@ import { SALTWATER } from './saltwater';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { BLAST, detonate } from './blast';
+import { BLAST, detonate, type DetonateOptions } from './blast';
+import { DIESEL } from './diesel';
+import { KEROSENE } from './kerosene';
 
 // Ammonium Nitrate (질산암모늄, NH₄NO₃) — the poster child for the reaction table's
 // heat term, because it demonstrates BOTH ends of it:
@@ -35,8 +37,24 @@ const BLAST_RADIUS = 6; // a lone grain's pop; a packed mass reaches much farthe
 // charge craters stone/metal, unlike Gunpowder's loose-matter-only concussion.
 const DESTRUCTIVE_POWER = 210;
 
+// ANFO (Ammonium Nitrate/Fuel Oil): a grain that's soaked up Diesel or Kerosene
+// (see below) is a vastly more potent charge than the dry prills alone — real
+// ANFO is a workhorse mining/demolition explosive on par with military high
+// explosives. Ignited while soaked, it goes off at a fixed 80% of TNT's own
+// blast reach/power (see tnt.ts) instead of the dry grain's modest survey-scaled
+// pop, the same fixed-reach-override pattern Napalm/Cluster use (blast.ts).
+const AUX_FUEL_SOAKED = 1; // aux flag: this grain has fuel oil soaked into it
+const SOAK_CHANCE = 0.05; // per-tick chance an adjacent fuel liquid soaks in
+const ANFO_BLAST_RADIUS = 16 * 0.8; // 80% of TNT's BLAST_RADIUS (tnt.ts)
+const ANFO_DESTRUCTIVE_POWER = 100_000 * 0.8; // 80% of TNT's (unset ⇒ default) power
+const ANFO_OPTS: DetonateOptions = { reach: ANFO_BLAST_RADIUS, power: ANFO_DESTRUCTIVE_POWER };
+
 function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;
+}
+
+function isFuelLiquid(id: number): boolean {
+  return id === DIESEL.id || id === KEROSENE.id;
 }
 
 function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
@@ -44,6 +62,7 @@ function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
   // table before this update runs; if it fired, this cell is already Water.)
   let wet = false;
   let trigger = sim.getTemp(x, y) >= DECOMP_TEMP;
+  let soaked = sim.getAux(x, y) === AUX_FUEL_SOAKED;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -51,12 +70,19 @@ function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
     const nid = sim.get(nx, ny);
     if (nid === WATER.id || nid === SALTWATER.id) wet = true;
     else if (isTrigger(nid)) trigger = true;
+    else if (!soaked && isFuelLiquid(nid) && sim.chance(SOAK_CHANCE)) {
+      // Soak up the fuel oil: this grain becomes ANFO, that liquid cell is consumed.
+      sim.set(nx, ny, EMPTY);
+      soaked = true;
+      sim.setAux(x, y, AUX_FUEL_SOAKED);
+    }
   }
 
   // Dry + triggered → explosive decomposition. Wet grains never detonate (they
   // dissolve/cold-pack instead), matching real ammonium nitrate's need to be dry.
+  // A fuel-soaked grain detonates as ANFO instead of the weaker dry pop.
   if (trigger && !wet) {
-    detonate(sim, x, y);
+    detonate(sim, x, y, 0, soaked ? ANFO_OPTS : undefined);
     return;
   }
   updatePowder(x, y, sim);

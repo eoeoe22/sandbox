@@ -10,12 +10,14 @@ import { refluxBoil, REFLUX_DIESEL } from './petroleumdistill';
 // condenses out of petroleum vapor at the hottest band, just before the residue
 // turns to Asphalt. Denser than Kerosene and Gasoline but still lighter than
 // Crude Oil (2.6), so it layers directly on top of the crude, beneath the
-// lighter cuts. The slowest-catching of the liquid fuels — an amber, oily fuel.
-// See combustion.ts. Stays properly flammable (a flame touching it ignites it),
+// lighter cuts. An amber, oily fuel that barely catches — burnChance matches
+// Resin's crawl (see resin.ts), the slowest of any fuel in the game, so a lit
+// pool smoulders along for a very long time rather than flashing off. See
+// combustion.ts. Stays properly flammable (a flame touching it ignites it),
 // and re-boils (refluxes) at the highest cut boiling point — its boil point
 // (320) plus the reflux superheat cap (60) sits below autoignition, so a
 // flameless still refluxes it away rather than igniting it (petroleumdistill.ts).
-const SPEC: Combustible = { burnChance: 0.10, autoIgniteTemp: 450 };
+const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 450 };
 const BOIL_TEMP = 320;
 
 function updateDiesel(x: number, y: number, sim: SimContext): void {
