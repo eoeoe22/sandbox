@@ -1,5 +1,5 @@
 import { register } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
@@ -38,13 +38,14 @@ const BLAST_RADIUS = 6; // a lone grain's pop; a packed mass reaches much farthe
 const DESTRUCTIVE_POWER = 210;
 
 // ANFO (Ammonium Nitrate/Fuel Oil): a grain that's soaked up Diesel or Kerosene
-// (see below) is a vastly more potent charge than the dry prills alone — real
-// ANFO is a workhorse mining/demolition explosive on par with military high
-// explosives. Ignited while soaked, it goes off at a fixed 80% of TNT's own
-// blast reach/power (see tnt.ts) instead of the dry grain's modest survey-scaled
-// pop, the same fixed-reach-override pattern Napalm/Cluster use (blast.ts).
-const AUX_FUEL_SOAKED = 1; // aux flag: this grain has fuel oil soaked into it
-const SOAK_CHANCE = 0.05; // per-tick chance an adjacent fuel liquid soaks in
+// through the shared 겹침 (overlap) layer (see `overlapFluids` on the material
+// below — Diesel/Kerosene poured over a pile soak down into it exactly like
+// water soaks into sand) is a vastly more potent charge than the dry prills
+// alone — real ANFO is a workhorse mining/demolition explosive on par with
+// military high explosives. Ignited while soaked, it goes off at a fixed 80% of
+// TNT's own blast reach/power (see tnt.ts) instead of the dry grain's modest
+// survey-scaled pop, the same fixed-reach-override pattern Napalm/Cluster use
+// (blast.ts).
 const ANFO_BLAST_RADIUS = 16 * 0.8; // 80% of TNT's BLAST_RADIUS (tnt.ts)
 const ANFO_DESTRUCTIVE_POWER = 100_000 * 0.8; // 80% of TNT's (unset ⇒ default) power
 const ANFO_OPTS: DetonateOptions = { reach: ANFO_BLAST_RADIUS, power: ANFO_DESTRUCTIVE_POWER };
@@ -60,9 +61,9 @@ function isFuelLiquid(id: number): boolean {
 function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
   // (The endothermic cold-pack dissolution is handled by the declarative reaction
   // table before this update runs; if it fired, this cell is already Water.)
+  const soaked = isFuelLiquid(sim.getOverlay(x, y));
   let wet = false;
   let trigger = sim.getTemp(x, y) >= DECOMP_TEMP;
-  let soaked = sim.getAux(x, y) === AUX_FUEL_SOAKED;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -70,12 +71,6 @@ function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
     const nid = sim.get(nx, ny);
     if (nid === WATER.id || nid === SALTWATER.id) wet = true;
     else if (isTrigger(nid)) trigger = true;
-    else if (!soaked && isFuelLiquid(nid) && sim.chance(SOAK_CHANCE)) {
-      // Soak up the fuel oil: this grain becomes ANFO, that liquid cell is consumed.
-      sim.set(nx, ny, EMPTY);
-      soaked = true;
-      sim.setAux(x, y, AUX_FUEL_SOAKED);
-    }
   }
 
   // Dry + triggered → explosive decomposition. Wet grains never detonate (they
@@ -104,10 +99,14 @@ export const AMMONIUM_NITRATE = register({
   destructivePower: DESTRUCTIVE_POWER,
   // Crystalline prills grip and pile fairly steeply (마찰).
   friction: 0.4,
-  // Water pools against the prills (and reacts at the surface) rather than
-  // soaking invisibly into the grains as an overlay fluid — otherwise the soaked
-  // water stops being a primary cell and the cold-pack reaction can't see it.
-  liquidOverlap: 0,
+  // 겹침 (overlap) is restricted to just Diesel/Kerosene (ANFO soaking, see
+  // above) via overlapFluids — Water is deliberately left OUT of that allowlist
+  // so it keeps pooling against the prills as an ordinary primary neighbor cell
+  // instead of soaking away invisibly; otherwise the cold-pack reaction and the
+  // wet/misfire check below (both of which only look at primary cells) would
+  // stop seeing it. liquidOverlap left at its default coefficient — same texture
+  // (not every grain admits) as any other powder's soak.
+  overlapFluids: [DIESEL.id, KEROSENE.id],
   // Filed under 냉각 (cooling): its signature toy is the endothermic cold pack —
   // pour water on a pile and it frosts the puddle toward freezing. (It's still an
   // `explosive` and detonates dry; the category is only a palette grouping.)
