@@ -201,7 +201,38 @@ export class SimContext {
   wooferPulseX: number[] = [];
   wooferPulseY: number[] = [];
 
+  /**
+   * Per-tick memo for the Fan's power-up body-flood (materials/fan.ts) — the
+   * same inward, one-way sink shape as `wooferFlooded` above (a pulse reaching
+   * any face powers the whole connected body at once). Keeps a body pulsed
+   * from several directions/sources in the same tick from re-flooding once per
+   * entry point. Cleared whenever `fanFloodTick` falls behind the current
+   * `tick`. Sim-local, same reasoning as `turbineFlooded`.
+   */
+  fanFloodTick = -1;
+  fanFlooded: Set<number> = new Set();
+
   constructor(private grid: Grid) {}
+
+  /**
+   * Queue one active wind stream for this tick: origin cell (x,y), unit
+   * direction (dx,dy), and open length `len` (cells of clear air downwind
+   * before the first solid). Packed flat, 5 numbers per zone, into `Grid.wind`
+   * — the grid rather than this context because the renderer (which only sees
+   * the Grid) draws the wind-streak effect from the same record the object
+   * layer reads its pushes from (see applyFanWind in engine/objects.ts), so
+   * the two can never disagree about where wind blows. Cleared by
+   * Simulation.step at the start of every tick: wind is a pure per-tick
+   * effect, gone the moment its Fan stops re-queueing it (임시 상태).
+   */
+  queueWind(x: number, y: number, dx: number, dy: number, len: number): void {
+    this.grid.wind.push(x, y, dx, dy, len);
+  }
+
+  /** This tick's queued wind zones (see queueWind) — read by stepObjects. */
+  get wind(): readonly number[] {
+    return this.grid.wind;
+  }
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a
    *  disc) can index cells by a flat `y * width + x` key without reaching past

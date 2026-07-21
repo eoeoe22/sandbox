@@ -1583,6 +1583,16 @@ const WOOFER_KNOCK_SPEED = 6;
 /** Spin a Woofer's pulse kicks into a drum as it's shoved (mirrors BLAST_KNOCK_SPIN). */
 const WOOFER_KNOCK_SPIN = 0.1;
 
+/** Downwind speed (cells/tick) a Fan's wind carries a body at. Applied as a
+ *  floor on the velocity component along the wind (never accumulated), so
+ *  overlapping streams from a wide fan don't stack into a launcher — the wind
+ *  carries a body at a steady drift, it doesn't fling it like a blast. */
+const FAN_WIND_SPEED = 1.4;
+/** Extra half-width (cells) past a body's own reach that a 1-cell wind stream
+ *  still catches it — the stream has a little breadth to it, so a ball doesn't
+ *  slip between two adjacent fan rows untouched. */
+const FAN_WIND_HALF_WIDTH = 0.75;
+
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
  *  ordinary ground contact — a thin slice of the footprint — never triggers it.
@@ -1779,6 +1789,41 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
+}
+
+/**
+ * Carry a body downwind on every Fan wind stream it sits in this tick (see
+ * `Grid.wind` via `SimContext.wind`, queued by materials/fan.ts — the same
+ * event-channel shape as the Woofer pulse queue above). A body is "in" a
+ * stream when its center projects onto the stream's open run (from the fan
+ * face out to `len`, the first solid) and sits within the stream's breadth of
+ * the stream line. The push is a *floor* on the downwind velocity component,
+ * exactly like the knockbacks above: however many overlapping streams a wide
+ * fan bathes a body in, it drifts at FAN_WIND_SPEED, never a multiple of it.
+ * Never destroys a body — wind only ever carries (a shoved drum can still die
+ * the ordinary way via evaluateTriggers, unrelated to this push).
+ */
+function applyFanWind(o: SimBody, ctx: SimContext): void {
+  const wind = ctx.wind;
+  if (wind.length === 0) return;
+  const breadth = bodyReach(o) + FAN_WIND_HALF_WIDTH;
+  for (let i = 0; i < wind.length; i += 5) {
+    // Stream origin is the fan cell's center; dx/dy is a unit axis vector.
+    const dx = wind[i + 2];
+    const dy = wind[i + 3];
+    const rx = o.x - (wind[i] + 0.5);
+    const ry = o.y - (wind[i + 1] + 0.5);
+    const along = rx * dx + ry * dy; // distance downwind of the fan face
+    if (along < 0.5 || along > wind[i + 4] + breadth) continue;
+    const perp = rx * dy - ry * dx; // signed distance off the stream line
+    if (perp > breadth || perp < -breadth) continue;
+    const v = o.vx * dx + o.vy * dy;
+    if (v < FAN_WIND_SPEED) {
+      const add = FAN_WIND_SPEED - v;
+      o.vx += dx * add;
+      o.vy += dy * add;
+    }
+  }
 }
 
 /**
@@ -2130,6 +2175,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     }
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
+    applyFanWind(o, ctx);
     if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
     else stepCapsule(o, ctx, ax, ay, s);
   }

@@ -289,6 +289,17 @@ export interface Material {
    */
   arrow?: boolean;
   /**
+   * Like `arrow`, but 4-directional: the chevron (in the `lattice` color, over
+   * the base `color`) points the way the cell's aux *low 3 bits* say — the
+   * FAN_RIGHT/LEFT/UP/DOWN codes (see materials/fan.ts); the rest of the aux
+   * byte is the material's own state (the Fan packs its power countdown there)
+   * and is ignored by the renderer. The Fan uses it so each cell visibly shows
+   * which way its wind blows. Takes precedence over `arrow`/`lattice` in the
+   * renderer; purely a rendering hint the simulation never reads. Omit for an
+   * ordinary material.
+   */
+  arrow4?: boolean;
+  /**
    * Render this cell using the *carried* material named by its `aux` byte, not
    * this material's own `color`. Debris sets it: a flying fragment carries its
    * origin material's id in `aux`, so shoved water draws blue and shoved sand

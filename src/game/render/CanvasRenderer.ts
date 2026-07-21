@@ -52,6 +52,36 @@ const HEAT_STOPS: readonly [number, number, number, number][] = [
   [1500, 255, 244, 210],
 ];
 
+/**
+ * The Fan's wind-streak effect (바람 이펙트): a low-res streak that slides
+ * downwind and curls over at its head, drawn per active wind zone (see
+ * Grid.wind). The shape is a fixed pixel path in stream-local coordinates —
+ * `f` cells downwind along the stream, `u` cells to the curl side — tracing a
+ * long tail, a counter-clockwise curl up-and-back, and a short hook, the same
+ * silhouette as the reference SVG's "M 10 20 H 120 V 6 H 104 V 14 H 112" path
+ * at cell resolution. Each frame the streak both translates downwind and is
+ * dash-drawn head-first / erased tail-first (the SVG's translateX +
+ * stroke-dashoffset animation, discretized): over one cycle the visible window
+ * [tail, head) sweeps once through the path while the whole path drifts down
+ * the stream's open length.
+ */
+const WIND_PATH: readonly (readonly [number, number])[] = [
+  [0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], // tail run
+  [7, 1], [7, 2], // curl: up
+  [6, 2], [5, 2], [4, 2], // curl: back over the tail
+  [4, 1], // curl: down
+  [5, 1], // curl: short forward hook — the coil's end
+];
+/** Frames per streak animation cycle (~0.7 s at 60 fps). */
+const WIND_CYCLE = 44;
+/** Streak colors, pale→deeper sky blue (the reference's #bae6fd/#7dd3fc/#38bdf8);
+ *  each zone picks one by position hash so neighboring streams differ. */
+const WIND_COLORS: readonly number[] = [
+  rgb(186, 230, 253),
+  rgb(125, 211, 252),
+  rgb(56, 189, 248),
+];
+
 /** Precomputed temperature→color ramp for a glowing material (see Material.glow). */
 interface GlowRamp {
   min: number;
@@ -101,6 +131,13 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
+  /** id → 1 if the material draws a 4-directional chevron from its aux byte's
+   *  low 3 bits (Fan), in the `lattice` colour over the base (see
+   *  Material.arrow4). */
+  private arrow4: Uint8Array;
+  /** Frame counter driving the wind-streak animation (see drawWindStreaks) —
+   *  render-side time, so the streaks glide smoothly even between sim ticks. */
+  private frame = 0;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -153,6 +190,7 @@ export class CanvasRenderer implements Renderer {
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
+    this.arrow4 = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -170,6 +208,7 @@ export class CanvasRenderer implements Renderer {
           this.lattice[i] = m.lattice;
         }
         if (m.arrow) this.arrow[i] = 1;
+        if (m.arrow4) this.arrow4[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -313,6 +352,7 @@ export class CanvasRenderer implements Renderer {
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
     const arrow = this.arrow;
+    const arrow4 = this.arrow4;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -351,7 +391,28 @@ export class CanvasRenderer implements Renderer {
       // its aux byte says it runs, so the belt's travel direction is visible. The
       // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
       // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
-      if (arrow[id]) {
+      if (arrow4[id]) {
+        // The 4-directional variant (Fan): same period-4 chevron tent as the
+        // Conveyor's below, but the direction comes from the aux byte's low 3
+        // bits (FAN_RIGHT/LEFT/UP/DOWN = 1/2/3/4 — see materials/fan.ts; the
+        // high bits are the fan's own power state and are masked off here),
+        // and the up/down cases transpose the tent so the chevron points
+        // vertically ('^' / 'v').
+        const x = i % w;
+        const y = (i / w) | 0;
+        const dir = auxArr[i] & 7;
+        let on: boolean;
+        if (dir === 3 || dir === 4) {
+          const fold = x & 2 ? 3 - (x & 3) : x & 3; // x%4 → 0,1,1,0
+          const phase = y & 3;
+          on = dir === 3 ? phase === 3 - fold : phase === fold;
+        } else {
+          const fold = y & 2 ? 3 - (y & 3) : y & 3;
+          const phase = x & 3;
+          on = dir === 2 ? phase === 3 - fold : phase === fold;
+        }
+        c = on ? latCol[id] : pal[id];
+      } else if (arrow[id]) {
         const x = i % w;
         const y = (i / w) | 0;
         const fold = y & 2 ? 3 - (y & 3) : y & 3; // y%4 → 0,1,1,0
@@ -397,6 +458,10 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    // The Fan's wind-streak effect rides on top of the cell colors, over open
+    // air only — skipped on the thermal camera (wind has no temperature to show).
+    this.frame++;
+    if (!heat && grid.wind.length > 0) this.drawWindStreaks(grid);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -426,6 +491,55 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Draw the animated wind streaks for this tick's active wind zones (see
+   * Grid.wind, queued by materials/fan.ts, and the WIND_PATH doc above for the
+   * shape/animation model). One streak per zone, written straight into the
+   * low-res cell buffer so it's pixel art in the exact grain size. Streaks are
+   * drawn only over EMPTY cells — matter in the stream occludes them, so the
+   * wind visibly threads *around* what it's pushing and stops at obstacles.
+   * Per-zone position hashes stagger the animation phase and pick the color, so
+   * a tall fan face reads as many independent gusts rather than a marching band.
+   */
+  private drawWindStreaks(grid: Grid): void {
+    const wind = grid.wind;
+    const cells = grid.cells;
+    const buf = this.buf32;
+    const w = grid.width;
+    const h = grid.height;
+    const L = WIND_PATH.length;
+    for (let i = 0; i < wind.length; i += 5) {
+      const ox = wind[i];
+      const oy = wind[i + 1];
+      const dx = wind[i + 2];
+      const dy = wind[i + 3];
+      const len = wind[i + 4];
+      // Curl side: downwind rotated 90° counter-clockwise on screen (for a
+      // rightward wind the curl arcs upward, like the reference animation).
+      const ux = dy;
+      const uy = -dx;
+      const hash = ox * 31 + oy * 17;
+      const ph = ((this.frame + hash) % WIND_CYCLE) / WIND_CYCLE;
+      // Dash window: the head sweeps the path's length over the first half of
+      // the cycle, the tail chases it over the second — draw, then erase.
+      const head = ph * 2 * L > L ? L : ph * 2 * L;
+      const tail = ph * 2 * L - L > 0 ? ph * 2 * L - L : 0;
+      // Whole-streak drift down the stream's open run (the translateX part).
+      const drift = 1 + Math.round(ph * (len > 8 ? len - 8 : 0));
+      const color = WIND_COLORS[hash % WIND_COLORS.length];
+      for (let k = Math.floor(tail); k < head; k++) {
+        const [pf, pu] = WIND_PATH[k];
+        const f = drift + pf;
+        if (f > len) continue; // never draw past the stream's first obstacle
+        const gx = ox + dx * f + ux * pu;
+        const gy = oy + dy * f + uy * pu;
+        if (gx < 0 || gx >= w || gy < 0 || gy >= h) continue;
+        const j = gy * w + gx;
+        if (cells[j] === EMPTY) buf[j] = color;
+      }
+    }
   }
 
   /**

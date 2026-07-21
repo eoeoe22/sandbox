@@ -35,6 +35,7 @@ import { Phase } from '../engine/types';
 import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
+import { FAN, FAN_RIGHT, FAN_LEFT, FAN_UP, FAN_DOWN } from '../materials/fan';
 import { CLONE } from '../materials/clone';
 import {
   createRubberBall,
@@ -161,6 +162,12 @@ export class PointerPainter {
    *  between events; a pure click (no drag) uses the last direction, defaulting
    *  right. */
   private beltDirX = 1;
+  /** Dominant direction of the current brush drag (a FAN_* aux code), so a Fan
+   *  is placed blowing the way the stroke moved — the Conveyor's 좌우 정렬 rule
+   *  extended to all four directions (a mostly-vertical drag places an up/down
+   *  fan). Kept between events; a pure click uses the last direction,
+   *  defaulting right. */
+  private fanDir: number = FAN_RIGHT;
   private px = 0;
   private py = 0;
   /** The object currently being dragged in 보기(view) mode, or null. While set,
@@ -573,7 +580,9 @@ export class PointerPainter {
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
-    // (좌우 정렬); a Clone painted via the palette's 더블클릭 shortcut records the
+    // (좌우 정렬), and a Fan likewise records the stroke's dominant direction
+    // (4-way — see trackDragDir) so it blows the way the brush moved; a Clone
+    // painted via the palette's 더블클릭 shortcut records the
     // pre-latched target material's id so it starts emitting immediately instead
     // of waiting to touch it first (see $cloneTarget, MaterialPalette.pickClone,
     // and Clone's own updateClone, which treats a non-zero aux as "already
@@ -583,9 +592,11 @@ export class PointerPainter {
         ? this.beltDirX < 0
           ? CONVEYOR_LEFT
           : CONVEYOR_RIGHT
-        : id === CLONE.id
-          ? ($cloneTarget.get() ?? 0)
-          : 0;
+        : id === FAN.id
+          ? this.fanDir
+          : id === CLONE.id
+            ? ($cloneTarget.get() ?? 0)
+            : 0;
     for (let k = 0; k < cells.length; k += 2) {
       const x = cells[k];
       const y = cells[k + 1];
@@ -735,6 +746,22 @@ export class PointerPainter {
     this.paintCells(this.cellsInBounds(bounds), false);
   }
 
+  /** Record the drag's direction for the direction-stamped materials: the
+   *  horizontal component keeps the Conveyor's left/right latch (beltDirX, its
+   *  original 좌우 정렬 rule, unchanged), and the *dominant* axis sets the Fan's
+   *  4-way direction (fanDir) — a mostly-sideways drag places a left/right fan,
+   *  a mostly-vertical one an up/down fan. A zero delta (pure click / no cell
+   *  change) leaves both latches as they were. */
+  private trackDragDir(dx: number, dy: number): void {
+    if (dx !== 0) this.beltDirX = dx > 0 ? 1 : -1;
+    if (dx === 0 && dy === 0) return;
+    if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) {
+      this.fanDir = dx > 0 ? FAN_RIGHT : FAN_LEFT;
+    } else if (dy !== 0) {
+      this.fanDir = dy > 0 ? FAN_DOWN : FAN_UP;
+    }
+  }
+
   /** Bresenham line so a quick drag paints a continuous stroke. */
   private stroke(x0: number, y0: number, x1: number, y1: number): void {
     const dx = Math.abs(x1 - x0);
@@ -826,7 +853,7 @@ export class PointerPainter {
       const [x, y] = this.toCell(e);
       this.rectEX = x;
       this.rectEY = y;
-      if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      this.trackDragDir(x - this.rectSX, y - this.rectSY);
       this.updateRectOverlay();
       return;
     }
@@ -835,9 +862,9 @@ export class PointerPainter {
     // updateCursor just updated — so a hover survey needs nothing more here.
     if (!this.down) return;
     const [x, y] = this.toCell(e);
-    // Record the drag's horizontal direction so a Conveyor stamped this stroke
-    // runs the way the brush moved.
-    if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
+    // Record the drag's direction so a Conveyor/Fan stamped this stroke
+    // runs/blows the way the brush moved.
+    this.trackDragDir(x - this.px, y - this.py);
     this.stroke(this.px, this.py, x, y);
     this.px = x;
     this.py = y;

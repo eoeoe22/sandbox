@@ -86,6 +86,10 @@ export class Simulation {
     const g = this.grid;
     g.moved.fill(0);
     g.overlayMoved.fill(0);
+    // Wind is a per-tick effect: every powered Fan re-queues its stream during
+    // the scan below, so clearing here is what makes wind vanish the instant
+    // its fan loses power (see Grid.wind / materials/fan.ts).
+    g.wind.length = 0;
     // When the Phase 0 profiler is on, time each pass; `t` tracks the last mark.
     // The whole block compiles to a boolean check per pass when it's off (the
     // production default), so instrumentation is free unless you ask for it.

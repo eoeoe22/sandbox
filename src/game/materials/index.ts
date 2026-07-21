@@ -106,6 +106,7 @@ import { SOAPY_WATER } from './soapywater';
 import { BUBBLE } from './bubble';
 import { SOAP } from './soap';
 import { WOOFER } from './woofer';
+import { FAN } from './fan';
 
 export {
   EMPTY_MAT,
@@ -211,6 +212,7 @@ export {
   BUBBLE,
   SOAP,
   WOOFER,
+  FAN,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -280,6 +282,7 @@ export const MATERIALS = [
   LFP_BATTERY,
   NICHROME,
   WOOFER,
+  FAN,
   MERCURY,
   HONEY,
   ALCOHOL,

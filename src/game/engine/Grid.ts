@@ -119,6 +119,20 @@ export class Grid {
   objects: SimBody[] = [];
 
   /**
+   * This tick's active wind streams (Fan — see materials/fan.ts), packed flat
+   * as [x, y, dx, dy, len] per zone. A pure per-tick event record, not world
+   * state: cleared by Simulation.step at the start of every tick and re-queued
+   * by each powered fan cell, so wind exists only while its Fan sustains it
+   * (임시 상태). Lives on the Grid rather than SimContext because it has two
+   * consumers on opposite sides of that seam — the object layer's push
+   * (applyFanWind in engine/objects.ts, via SimContext) and the renderer's
+   * wind-streak effect (CanvasRenderer, which only sees the Grid). Runtime-only:
+   * never persisted or snapshotted, like `objects`' velocities it just
+   * re-derives next tick.
+   */
+  wind: number[] = [];
+
+  /**
    * Active-tile tracker for the CA scan (see engine/dirtyTiles.ts). Every grid
    * write marks its tile so the scan can skip tiles holding only inert (empty,
    * un-overlapped) cells — bit-identical to the full scan, just faster. Inert
@@ -227,6 +241,7 @@ export class Grid {
     this.aux.fill(0);
     this.tint.fill(0);
     this.objects.length = 0; // free objects live beside the grid; clear them too
+    this.wind.length = 0; // per-tick wind zones — stale ones must not outlive a clear
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
   }
