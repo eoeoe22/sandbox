@@ -48,6 +48,11 @@ const FALL_BOOST_CHANCE = 0.5;
 function canHostOverlap(hostId: number, fluidId: number): boolean {
   if (hostId === EMPTY || fluidId === EMPTY) return false;
   const host = getMaterial(hostId);
+  // A material-level allowlist (Material.overlapFluids) narrows which specific
+  // fluid ids may enter this host's slot at all, before the general phase rule
+  // below — e.g. Ammonium Nitrate hosts Diesel/Kerosene but not Water, so Water
+  // stays a primary neighbor cell for its own reaction/wet checks.
+  if (host.overlapFluids !== undefined && !host.overlapFluids.includes(fluidId)) return false;
   const fluidPhase = getMaterial(fluidId).phase;
   if (host.porous) return fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas;
   return host.phase === Phase.Powder && fluidPhase === Phase.Liquid;

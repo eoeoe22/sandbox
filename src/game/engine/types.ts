@@ -257,6 +257,19 @@ export interface Material {
    */
   liquidOverlap?: number;
   /**
+   * Restricts *which* fluid ids may enter this material's 겹침 (overlap) slot at
+   * all — a type-level gate checked before `liquidOverlap`'s per-grain
+   * coefficient (see SimContext's `canHostOverlap`/`canOverlapAt`). Omitted ⇒
+   * any fluid whose phase matches the general host rule (Powder hosts Liquid,
+   * `porous` hosts Liquid/Gas) may attempt to overlap. Set this when a host
+   * should soak up *some* fluids invisibly but must keep others as ordinary
+   * primary neighbor cells — e.g. Ammonium Nitrate soaks up Diesel/Kerosene
+   * (ANFO) but must NOT let Water disappear into its overlap slot, since the
+   * cold-pack dissolve reaction and the wet/misfire check both only see fluids
+   * that are still primary cells (see ammoniumnitrate.ts).
+   */
+  overlapFluids?: readonly number[];
+  /**
    * A second packed color woven through the base `color` as a positional
    * checkerboard, so the material reads as a grid/lattice screen rather than a
    * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw
