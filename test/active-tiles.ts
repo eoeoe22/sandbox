@@ -396,6 +396,97 @@ function verifyMeltPinnedMixMoved(initial: Snapshot, frames: Snapshot[]): string
   return 'meltPinnedMix shelf interior never changed at any tick — swapOntoPinnedPowder appears to be a no-op';
 }
 
+/** A powered Fan wall blowing right down an open corridor scattered with
+ *  Sand/Water/Helium — one per loose phase (powder/liquid/gas) Fan.blow()
+ *  pushes — stopped by a Stone wall at a known distance. Targeted coverage
+ *  for materials/fan.ts: nothing else in this harness ever exercises a fan
+ *  cell actually blowing (`makeScene`'s random fill seeds every cell's aux at
+ *  0, so any Fan it happens to place is permanently unpowered — see
+ *  docs/MATERIAL-SYSTEMS.md's Fan section), so this is the wind push's only
+ *  path to being proven bit-identical between the full and active-tile scans.
+ *
+ *  A Battery sits diagonally against the fan wall's top cell (direct-contact
+ *  power, like a Woofer/Turbine wired straight to a terminal — no relay wire
+ *  needed) and re-pulses it every PULSE_PERIOD (12) ticks, comfortably inside
+ *  POWER_LINGER (16), so the whole 5-cell connected body stays continuously
+ *  powered for the run (fanBodyPulse floods the body from that single contact
+ *  point). The corridor is boxed with a Stone ceiling/floor flush against the
+ *  fan wall's own top/bottom rows — each of the wall's 5 cells blows straight
+ *  along its own row only (dy=0), so a grain that fell (or a Helium bubble
+ *  that rose) to a *different* row within the band is still on a row some
+ *  fan cell blows; only a floor/ceiling stops one from drifting out of the
+ *  band entirely (Sand/Water settling below the band, Helium escaping above
+ *  it) into open space the wind can never reach again. Deterministic (no RNG
+ *  in the layout) so it drops straight into the equivalence harness like the
+ *  other targeted scenes. */
+function makeFanTunnel(w: number, h: number): Snapshot {
+  const STONE = 4;
+  const BATTERY = 39;
+  const FAN = 110;
+  const FAN_RIGHT = 1;
+  const SAND = 2;
+  const WATER = 3;
+  const HELIUM = 97;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(20);
+  const aux = new Uint8Array(n);
+  const tint = new Uint8Array(n);
+  const fanX = 8;
+  const fanTop = 10;
+  const fanBottom = 14; // 5-cell-tall connected body
+  const wallX = 30; // stops the stream at a known, sub-FAN_WIND_RANGE distance
+  cells[9 * w + (fanX - 1)] = BATTERY; // diagonal to (fanX, fanTop) — direct contact
+  for (let y = fanTop; y <= fanBottom; y++) {
+    cells[y * w + fanX] = FAN;
+    aux[y * w + fanX] = FAN_RIGHT;
+  }
+  for (let y = fanTop; y <= fanBottom; y++) cells[y * w + wallX] = STONE;
+  // Ceiling/floor flush against the fan band, spanning the open corridor only
+  // (not the Battery's column) so loose matter can't fall/rise out of reach.
+  for (let x = fanX + 1; x < wallX; x++) {
+    cells[(fanTop - 1) * w + x] = STONE;
+    cells[(fanBottom + 1) * w + x] = STONE;
+  }
+  // Deterministic (formula-based, no RNG) scatter of all three loose phases
+  // through the open corridor, so the wind push exercises Powder/Liquid/Gas.
+  for (let x = fanX + 1; x < wallX; x++) {
+    for (let y = fanTop; y <= fanBottom; y++) {
+      const slot = (x + y * 3) % 5;
+      if (slot === 0) cells[y * w + x] = SAND;
+      else if (slot === 1) cells[y * w + x] = WATER;
+      else if (slot === 2) cells[y * w + x] = HELIUM;
+    }
+  }
+  return { w, h, cells, temp, aux, overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
+/** Fails the fanTunnel case if the corridor's loose matter never drifted
+ *  net-rightward — proving the fan actually blew rather than merely running
+ *  without diverging. Sums each loose cell's x-position (mass-weighted center
+ *  of mass proxy) at the start and after the run; the equivalence/determinism
+ *  checks above only prove the two scan orders agree with *each other*, not
+ *  that Fan.blow() fired at all. */
+function verifyFanBlew(initial: Snapshot, frames: Snapshot[]): string | null {
+  const { w, h } = initial;
+  const looseIds = new Set([2, 3, 97]); // SAND, WATER, HELIUM
+  const sumX = (s: Snapshot): number => {
+    let sum = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (looseIds.has(s.cells[y * w + x])) sum += x;
+      }
+    }
+    return sum;
+  };
+  const before = sumX(initial);
+  const after = sumX(frames[frames.length - 1]);
+  if (after <= before) {
+    return `fanTunnel corridor's loose matter didn't drift rightward (Σx ${before} → ${after}) — Fan.blow() appears inert`;
+  }
+  return null;
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -495,6 +586,7 @@ interface Case {
   verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
   mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
   loadedMixedRaft?: boolean; // if set, use a mixed Ash/Sawdust raft loaded by Sand on Water (jitter repro)
+  fanTunnel?: boolean; // if set, use a powered Fan wall blowing Sand/Water/Helium down an open corridor
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -565,6 +657,21 @@ const CASES: Case[] = [
     loadedMixedRaft: true,
     verifyMove: verifyNoVerticalJitter,
   },
+  // Targeted: a powered Fan wall blowing Sand/Water/Helium down an open
+  // corridor to a Stone wall — materials/fan.ts's only path to being
+  // exercised here, since makeScene's random fill never powers a Fan it
+  // happens to place (aux starts at 0 — see makeFanTunnel's doc comment).
+  {
+    seed: 0xc7,
+    w: 40,
+    h: 24,
+    fill: 0,
+    gravity: 'down',
+    ticks: 150,
+    mixEvery: 0,
+    fanTunnel: true,
+    verifyMove: verifyFanBlew,
+  },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -584,7 +691,9 @@ for (const c of CASES) {
             ? makeMixedFloat(c.w, c.h)
             : c.loadedMixedRaft
               ? makeLoadedMixedRaft(c.w, c.h)
-              : makeScene(c.seed, c.w, c.h, c.fill);
+              : c.fanTunnel
+                ? makeFanTunnel(c.w, c.h)
+                : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
