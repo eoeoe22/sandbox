@@ -76,6 +76,18 @@ function rotationCount(dirAux: number): number {
 /** Precomputed curl table per direction (built once at module load, not per
  *  particle per tick — a streak lives only ~a dozen ticks but many can be in
  *  flight from a bank of fans at once). */
+/** Look up a direction's curl table, falling back to RIGHT's for 0/unrecognized
+ *  — the same "unrecognized ⇒ RIGHT" contract `dirVecFor` documents. A Fan
+ *  cell's aux isn't always one PointerPainter wrote: Clone (`clone.ts`) can
+ *  latch onto a Fan and spawn fresh Fan cells via `SimContext.spawn`, which
+ *  always zeroes aux, so `dirAux` reaching here can genuinely be 0 in normal
+ *  play. Straight-line flight already tolerates that (`dirVecFor` itself
+ *  defaults 0 to RIGHT); this keeps the curl phase equally safe instead of
+ *  indexing CURL_BY_DIR[0], which is never populated below. */
+function curlTableFor(dirAux: number): ReadonlyArray<readonly [number, number]> {
+  return CURL_BY_DIR[dirAux] ?? CURL_BY_DIR[DIR_RIGHT];
+}
+
 const CURL_BY_DIR: Record<number, ReadonlyArray<readonly [number, number]>> = (() => {
   const table: Record<number, ReadonlyArray<readonly [number, number]>> = {};
   for (const dir of [DIR_RIGHT, DIR_UP, DIR_LEFT, DIR_DOWN]) {
@@ -121,7 +133,7 @@ function updateWindStreak(x: number, y: number, sim: SimContext): void {
     [dx, dy] = dirVecFor(dirAux);
   } else {
     const idx = CURL_LEN - 1 - remaining;
-    [dx, dy] = CURL_BY_DIR[dirAux][idx];
+    [dx, dy] = curlTableFor(dirAux)[idx];
   }
   const tx = x + dx;
   const ty = y + dy;

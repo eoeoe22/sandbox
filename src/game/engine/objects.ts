@@ -1813,14 +1813,21 @@ function applyFanKnockback(o: SimBody, ctx: SimContext): void {
   const ys = ctx.fanPulseY;
   const dxs = ctx.fanPulseDirX;
   const dys = ctx.fanPulseDirY;
-  const halfWidth = FAN_KNOCK_HALF_WIDTH + bodyRadius(o);
+  // Inflate both the along- and perp-axis bounds by the body's own reach (its
+  // full center-to-tip extent), the same fudge `bodyReach(o)` gives the radial
+  // Blast/Woofer knockbacks above — a capsule can overlap the beam through its
+  // length even while its *center* sits just outside it (short on the near/far
+  // edge, or lying broadside across the beam), and `bodyRadius` alone (just the
+  // cap) undercounts that for a drum/dynamite lying across the wind.
+  const reach = bodyReach(o);
+  const halfWidth = FAN_KNOCK_HALF_WIDTH + reach;
   for (let i = 0; i < xs.length; i++) {
     const dx = dxs[i];
     const dy = dys[i];
     const relX = o.x - (xs[i] + 0.5);
     const relY = o.y - (ys[i] + 0.5);
     const along = relX * dx + relY * dy; // distance ahead of the Fan face, along the gust
-    if (along < 0 || along > FAN_KNOCK_REACH) continue;
+    if (along < -reach || along > FAN_KNOCK_REACH + reach) continue;
     const perp = relX * -dy + relY * dx; // signed distance off the gust's own axis
     if (Math.abs(perp) > halfWidth) continue;
     const outward = o.vx * dx + o.vy * dy;
