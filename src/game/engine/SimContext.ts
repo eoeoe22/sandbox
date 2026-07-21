@@ -802,10 +802,31 @@ export class SimContext {
   // drops. A gated-out (stalled) move returns false, so the caller falls through
   // to its next behavior that tick, exactly as if the cell were blocked.
 
-  /** Move one step along gravity ("down"). */
+  /**
+   * Move one step along gravity ("down"). Powder and Liquid cells get a
+   * second consecutive step for free (재미 우선 — 낙하만 2배속, 대각선 쌓임/옆
+   * 퍼짐은 그대로): a straight-down fall reads as noticeably snappier than the
+   * pile-forming tumble or the sideways leveling, without touching friction,
+   * viscosity, or buoyancy, since those never call moveDown a second time
+   * themselves. Gated on the source cell having actually landed as a real
+   * cell at the first step (`get(nx,ny) === srcId`) — a drag-gate stall
+   * (tryMove returns true but never swapped, see tryMove) or a 겹침 overlay
+   * entry (the source became an overlay slot, not a standalone cell) must
+   * not trigger a phantom second move.
+   */
   moveDown(x: number, y: number): boolean {
     if (!this.gravityPass()) return false;
-    return this.tryMove(x, y, x + this.gravityX, y + this.gravityY);
+    const srcId = this.get(x, y);
+    if (!this.tryMove(x, y, x + this.gravityX, y + this.gravityY)) return false;
+    const phase = getMaterial(srcId).phase;
+    if (phase === Phase.Powder || phase === Phase.Liquid) {
+      const nx = x + this.gravityX;
+      const ny = y + this.gravityY;
+      if (this.inBounds(nx, ny) && this.get(nx, ny) === srcId) {
+        this.tryMove(nx, ny, nx + this.gravityX, ny + this.gravityY);
+      }
+    }
+    return true;
   }
 
   /** A random perpendicular-to-gravity step, ±(perpX,perpY) with the sign
