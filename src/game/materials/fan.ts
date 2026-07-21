@@ -39,9 +39,17 @@ export const FAN_UP = DIR_UP;
 export const FAN_DOWN = DIR_DOWN;
 
 /** How far a gust reaches: pushes loose matter and nudges free objects up to
- *  this many cells ahead of the Fan face. Modest on purpose — a screen-filling
- *  gale from one tile would blow away the point of placing several. */
-const REACH = 14;
+ *  this many cells ahead of the Fan face. */
+const REACH = 26;
+
+/** A single Fan cell doesn't blow a 1-wide laser — real air spreads out as it
+ *  travels, so the gust widens into a cone: every `CONE_WIDEN_EVERY` cells of
+ *  forward travel, the affected width grows by one cell to each side, capped
+ *  at `MAX_HALF_SPREAD` (so the cone tops out at 2*MAX_HALF_SPREAD+1 cells
+ *  wide). A lone Fan tile still reaches far and wide, not just straight
+ *  ahead — a bank of several just starts that much wider up front. */
+const CONE_WIDEN_EVERY = 3;
+const MAX_HALF_SPREAD = 4;
 
 /** Backstop on how far one flood walks the connected Fan body in a single
  *  pass (mirrors Turbine's/Woofer's own MAX_BODY) — a giant bank can't make
@@ -49,10 +57,10 @@ const REACH = 14;
 const MAX_BODY = 256;
 
 /** Cells in front of the Fan face a fresh Wind Streak is seeded at per pulse —
- *  two, staggered, so a gust reads as a short layered burst (see the
- *  reference "서서히 말리는 바람" animation's several parallel lines) rather
- *  than one lone dash. */
-const STREAK_SEED_OFFSETS = [1, 3];
+ *  staggered, so a gust reads as a short layered burst of several lines (see
+ *  the reference "서서히 말리는 바람" animation's several parallel lines)
+ *  rather than one lone dash. */
+const STREAK_SEED_OFFSETS = [1, 2, 4];
 
 /** True if `id` is loose matter Wind can shove (powder or liquid) — the same
  *  pairing Conveyor carries (see conveyor.ts's isLoose): this engine has no
@@ -65,20 +73,21 @@ function isLoose(id: number): boolean {
   return p === Phase.Powder || p === Phase.Liquid;
 }
 
-/** Fire one Fan cell's gust: walk up to REACH cells along (dx,dy), shoving any
- *  loose matter one step further whenever the next cell is open, and stopping
- *  dead at a solid wall (wind doesn't blow through a wall). Also queues the
- *  beam for the free-object layer (see engine/objects.ts's
- *  applyFanKnockback) and seeds a couple of decorative Wind Streaks. */
-function fanPulse(sim: SimContext, x: number, y: number): void {
-  const dirAux = sim.getAux(x, y);
-  const [dx, dy] = dirVecFor(dirAux);
-
-  let cx = x;
-  let cy = y;
-  for (let step = 0; step < REACH; step++) {
+/** Walk one lane (one perpendicular offset `w` from the Fan's own column/row)
+ *  up to REACH cells along (dx,dy), shoving any loose matter one step further
+ *  whenever the next cell is open, and stopping dead at a solid wall (wind
+ *  doesn't blow through a wall). A lane only starts acting once the cone has
+ *  widened enough to include it (`step >= laneStart`) — before that it just
+ *  walks its coordinates forward without touching anything, so every lane's
+ *  wall-stop still lines up with its own actual starting point. */
+function fanLane(sim: SimContext, x: number, y: number, dx: number, dy: number, px: number, py: number, w: number): void {
+  const laneStart = Math.abs(w) * CONE_WIDEN_EVERY;
+  let cx = x + px * w;
+  let cy = y + py * w;
+  for (let step = 1; step <= REACH; step++) {
     cx += dx;
     cy += dy;
+    if (step < laneStart) continue; // cone hasn't spread this wide yet
     if (!sim.inBounds(cx, cy)) break;
     const id = sim.get(cx, cy);
     if (id !== EMPTY && getMaterial(id).phase === Phase.Solid) break; // a wall stops the gust outright
@@ -87,6 +96,21 @@ function fanPulse(sim: SimContext, x: number, y: number): void {
       const ty = cy + dy;
       if (sim.inBounds(tx, ty) && sim.get(tx, ty) === EMPTY) sim.swap(cx, cy, tx, ty);
     }
+  }
+}
+
+/** Fire one Fan cell's gust: a widening cone of lanes (see fanLane/
+ *  CONE_WIDEN_EVERY) fanning out from dead ahead. Also queues the beam for
+ *  the free-object layer (see engine/objects.ts's applyFanKnockback) and
+ *  seeds a few decorative Wind Streaks. */
+function fanPulse(sim: SimContext, x: number, y: number): void {
+  const dirAux = sim.getAux(x, y);
+  const [dx, dy] = dirVecFor(dirAux);
+  const px = -dy; // perpendicular unit step, 90° from the wind direction
+  const py = dx;
+
+  for (let w = -MAX_HALF_SPREAD; w <= MAX_HALF_SPREAD; w++) {
+    fanLane(sim, x, y, dx, dy, px, py, w);
   }
 
   sim.fanPulseX.push(x);

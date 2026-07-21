@@ -25,7 +25,14 @@ import { DIR_RIGHT, DIR_UP, DIR_LEFT, DIR_DOWN, dirVecFor } from './direction4';
 // lingering.
 
 /** Ticks spent flying straight before the curl begins. */
-const STRAIGHT_LEN = 6;
+const STRAIGHT_LEN = 9;
+
+/** How many ticks a vacated head cell lingers as a dimmer, immobile afterimage
+ *  (see WIND_TAIL below) before it too clears. A single traveling pixel reads
+ *  as a blinking dot; leaving a short fading trail behind it is what actually
+ *  reads as a *line* sweeping past — closer to the reference animation's
+ *  visibly long stroke than one lone cell ever could. */
+const TAIL_LIFE = 3;
 
 /** The curl itself, expressed as a fixed sequence of unit steps for a
  *  RIGHT-facing streak: up, up, left, left, down, right — a small hook at the
@@ -137,10 +144,24 @@ function updateWindStreak(x: number, y: number, sim: SimContext): void {
   }
   const tx = x + dx;
   const ty = y + dy;
-  sim.set(x, y, EMPTY);
+  // Leave a fading afterimage behind instead of clearing straight to EMPTY —
+  // see TAIL_LIFE above. spawn()'s own bounds check makes this a no-op if the
+  // head somehow moved off-grid, which never happens here but keeps the call
+  // symmetric with the head's own inBounds-gated spawn just below.
+  sim.spawn(x, y, WIND_TAIL.id);
+  sim.setAux(x, y, TAIL_LIFE);
   if (!sim.inBounds(tx, ty) || sim.get(tx, ty) !== EMPTY) return; // disperses on contact
   sim.spawn(tx, ty, WIND_STREAK.id);
   sim.setAux(tx, ty, packStreak(dirAux, remaining));
+}
+
+function updateWindTail(x: number, y: number, sim: SimContext): void {
+  const remaining = sim.getAux(x, y) - 1;
+  if (remaining <= 0) {
+    sim.set(x, y, EMPTY);
+    return;
+  }
+  sim.setAux(x, y, remaining);
 }
 
 export const WIND_STREAK = register({
@@ -154,4 +175,20 @@ export const WIND_STREAK = register({
   density: 1,
   thermal: { conductivity: 0 },
   update: updateWindStreak,
+});
+
+/** The dimmer, immobile afterimage a Wind Streak's head leaves behind each
+ *  tick it moves (see TAIL_LIFE) — never itself spawned by a Fan, never
+ *  painted from the palette, purely the streak's own trailing exhaust. */
+export const WIND_TAIL = register({
+  id: 112,
+  name: 'Wind Tail',
+  phase: Phase.Gas,
+  // A darker, desaturated step down from the streak's own color — the
+  // reference animation layers several shades (#bae6fd/#7dd3fc/#38bdf8); this
+  // reuses that same family for the "already passed through" trail.
+  color: rgb(0x38, 0x8f, 0xbd),
+  density: 1,
+  thermal: { conductivity: 0 },
+  update: updateWindTail,
 });

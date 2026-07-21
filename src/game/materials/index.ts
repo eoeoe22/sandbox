@@ -107,7 +107,7 @@ import { BUBBLE } from './bubble';
 import { SOAP } from './soap';
 import { WOOFER } from './woofer';
 import { FAN } from './fan';
-import { WIND_STREAK } from './windstreak';
+import { WIND_STREAK, WIND_TAIL } from './windstreak';
 
 export {
   EMPTY_MAT,
@@ -215,6 +215,7 @@ export {
   WOOFER,
   FAN,
   WIND_STREAK,
+  WIND_TAIL,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -239,10 +240,11 @@ export {
  *   • BUBBLE — the air bubble only Soapy Water produces (see bubble.ts); it rises
  *     and pops back to soapy water, so hand-placed in open air it just pops at
  *     once.
- *   • WIND_STREAK — the decorative dash a Fan seeds ahead of itself while
- *     blowing (see windstreak.ts); like Ember it only ever exists mid-flight,
- *     seeded by fan.ts, and would just sit inert for a few ticks then vanish
- *     if hand-placed. */
+ *   • WIND_STREAK / WIND_TAIL — the decorative dash a Fan seeds ahead of
+ *     itself while blowing, and the fading afterimage it leaves behind each
+ *     step (see windstreak.ts); like Ember they only ever exist mid-flight,
+ *     seeded by fan.ts/windstreak.ts itself, and would just sit inert for a
+ *     few ticks then vanish if hand-placed. */
 export const MATERIALS = [
   WALL,
   SAND,

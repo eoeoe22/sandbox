@@ -1586,10 +1586,15 @@ const WOOFER_KNOCK_SPIN = 0.1;
 /** How far past its own footprint a Fan's gust still reaches (mirrors
  *  fan.ts's own REACH — kept as a separate constant rather than importing it,
  *  the same "own knob" reasoning as WOOFER_KNOCK_RADIUS above). */
-const FAN_KNOCK_REACH = 14;
-/** Half-width, in cells, of the gust's push zone to either side of its own
- *  travel line — a Fan blows a beam, not a point, but not a wide gale either. */
+const FAN_KNOCK_REACH = 26;
+/** Half-width, in cells, of the gust's push zone right at the Fan's own face —
+ *  it then widens with distance below (see FAN_KNOCK_CONE_SLOPE), mirroring
+ *  the grid beam's own widening cone (fan.ts's CONE_WIDEN_EVERY). */
 const FAN_KNOCK_HALF_WIDTH = 1.2;
+/** How many extra cells of half-width the gust gains per cell traveled —
+ *  1/fan.ts's CONE_WIDEN_EVERY, so an object floating downrange is caught by
+ *  the same widening cone the grid's own loose matter is. */
+const FAN_KNOCK_CONE_SLOPE = 1 / 3;
 /** Floor speed a gust holds a body to along the wind direction — gentle, a
  *  steady breeze rather than a shove (contrast BLAST/WOOFER's harder kicks). */
 const FAN_KNOCK_SPEED = 3;
@@ -1820,7 +1825,6 @@ function applyFanKnockback(o: SimBody, ctx: SimContext): void {
   // edge, or lying broadside across the beam), and `bodyRadius` alone (just the
   // cap) undercounts that for a drum/dynamite lying across the wind.
   const reach = bodyReach(o);
-  const halfWidth = FAN_KNOCK_HALF_WIDTH + reach;
   for (let i = 0; i < xs.length; i++) {
     const dx = dxs[i];
     const dy = dys[i];
@@ -1829,6 +1833,10 @@ function applyFanKnockback(o: SimBody, ctx: SimContext): void {
     const along = relX * dx + relY * dy; // distance ahead of the Fan face, along the gust
     if (along < -reach || along > FAN_KNOCK_REACH + reach) continue;
     const perp = relX * -dy + relY * dx; // signed distance off the gust's own axis
+    // The cone widens with distance (clamp `along` to 0 first so a body
+    // slightly behind the face, `along` inflated negative by `reach`, doesn't
+    // get a *narrower* zero-or-negative allowance).
+    const halfWidth = FAN_KNOCK_HALF_WIDTH + reach + Math.max(0, along) * FAN_KNOCK_CONE_SLOPE;
     if (Math.abs(perp) > halfWidth) continue;
     const outward = o.vx * dx + o.vy * dy;
     if (outward < FAN_KNOCK_SPEED) {
