@@ -444,19 +444,29 @@ function makeFanTunnel(w: number, h: number): Snapshot {
   for (let y = fanTop; y <= fanBottom; y++) cells[y * w + wallX] = STONE;
   // Ceiling/floor flush against the fan band, spanning the open corridor only
   // (not the Battery's column) so loose matter can't fall/rise out of reach.
-  for (let x = fanX + 1; x < wallX; x++) {
+  // Runs through x=wallX inclusive — stopping one short would leave a
+  // diagonal gap at the corridor's downstream corners (against the Stone
+  // wall's own top/bottom cells) for a rising Helium bubble to slip through.
+  for (let x = fanX + 1; x <= wallX; x++) {
     cells[(fanTop - 1) * w + x] = STONE;
     cells[(fanBottom + 1) * w + x] = STONE;
   }
-  // Deterministic (formula-based, no RNG) scatter of all three loose phases
-  // through the open corridor, so the wind push exercises Powder/Liquid/Gas.
-  for (let x = fanX + 1; x < wallX; x++) {
-    for (let y = fanTop; y <= fanBottom; y++) {
-      const slot = (x + y * 3) % 5;
-      if (slot === 0) cells[y * w + x] = SAND;
-      else if (slot === 1) cells[y * w + x] = WATER;
-      else if (slot === 2) cells[y * w + x] = HELIUM;
-    }
+  // One isolated grain of each loose phase per row (deterministic, formula-
+  // based x — no RNG), spaced well apart both from the fan and from each
+  // other. Deliberately sparse: an earlier version densely packed ~3/5 of
+  // every row and gravity alone settled that much Sand into a floor exactly
+  // wide enough to fill edge-to-edge with zero gaps before the wind ever
+  // got a turn — a fully congested floor blocks blow()'s push (its target
+  // cell must be EMPTY), freezing Sand in place and making the scene falsely
+  // fail verifyFanBlew despite Fan.blow() working correctly. Sparse grains
+  // with room to travel avoid that congestion and give the wind push (not
+  // gravity settling) the decisive share of each grain's rightward drift.
+  for (let r = 0; r < fanBottom - fanTop + 1; r++) {
+    const y = fanTop + r;
+    const base = fanX + 2 + r * 4;
+    cells[y * w + base] = SAND;
+    cells[y * w + (base + 1)] = WATER;
+    cells[y * w + (base + 2)] = HELIUM;
   }
   return { w, h, cells, temp, aux, overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
 }
