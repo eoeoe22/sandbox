@@ -442,12 +442,16 @@ function makeFanTunnel(w: number, h: number): Snapshot {
     aux[y * w + fanX] = FAN_RIGHT;
   }
   for (let y = fanTop; y <= fanBottom; y++) cells[y * w + wallX] = STONE;
-  // Ceiling/floor flush against the fan band, spanning the open corridor only
-  // (not the Battery's column) so loose matter can't fall/rise out of reach.
-  // Runs through x=wallX inclusive — stopping one short would leave a
-  // diagonal gap at the corridor's downstream corners (against the Stone
-  // wall's own top/bottom cells) for a rising Helium bubble to slip through.
-  for (let x = fanX + 1; x <= wallX; x++) {
+  // Ceiling/floor flush against the fan band, spanning from the fan wall's
+  // own column through the Stone wall inclusive (not the Battery's column,
+  // one further left) so loose matter can't fall/rise out of reach at either
+  // end. Both boundaries matter: stopping short of the fan's column leaves
+  // (fanX, fanTop-1)/(fanX, fanBottom+1) open for a rising Helium bubble to
+  // slip out right at the source (confirmed reachable — a bubble that drifts
+  // up while still near the fan escapes through this exact notch); stopping
+  // short of the Stone wall leaves the same kind of gap at the corridor's far
+  // corners instead.
+  for (let x = fanX; x <= wallX; x++) {
     cells[(fanTop - 1) * w + x] = STONE;
     cells[(fanBottom + 1) * w + x] = STONE;
   }
@@ -476,7 +480,16 @@ function makeFanTunnel(w: number, h: number): Snapshot {
  *  without diverging. Sums each loose cell's x-position (mass-weighted center
  *  of mass proxy) at the start and after the run; the equivalence/determinism
  *  checks above only prove the two scan orders agree with *each other*, not
- *  that Fan.blow() fired at all. */
+ *  that Fan.blow() fired at all.
+ *
+ *  Counts a cell's 겹침 (overlap) fluid too, not just its primary occupant:
+ *  Sand hosts a Liquid in its overlap slot (SimContext's canHostOverlap), so
+ *  a Water grain that sinks into an adjacent Sand cell doesn't vanish from
+ *  the corridor — it rides along in that cell's `overlay`, still present and
+ *  still (via the swap that carries a host's overlay with it) still getting
+ *  blown along with its host. Scanning only `cells[]` would silently drop
+ *  every absorbed grain from the tally, eroding the pass margin for reasons
+ *  that have nothing to do with whether the wind actually pushed anything. */
 function verifyFanBlew(initial: Snapshot, frames: Snapshot[]): string | null {
   const { w, h } = initial;
   const looseIds = new Set([2, 3, 97]); // SAND, WATER, HELIUM
@@ -484,7 +497,9 @@ function verifyFanBlew(initial: Snapshot, frames: Snapshot[]): string | null {
     let sum = 0;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        if (looseIds.has(s.cells[y * w + x])) sum += x;
+        const i = y * w + x;
+        if (looseIds.has(s.cells[i])) sum += x;
+        if (looseIds.has(s.overlay[i])) sum += x;
       }
     }
     return sum;
