@@ -389,7 +389,7 @@ function defaultCell(
     // outright instead of flying off as Debris — unless this concussion is
     // itself harmless (Woofer), which treats it exactly like ordinary matter.
     if (!harmless && m.shockFragile !== undefined) {
-      sim.set(x, y, m.shockFragile);
+      sim.spawn(x, y, m.shockFragile);
     } else {
       launchDebris(sim, x, y, prevId, entryDx, entryDy, outB);
     }
@@ -852,7 +852,7 @@ function pressureRing(
       // matching branch for the in-crater shove.
       const fragileInto = getMaterial(id).shockFragile;
       if (!harmless && fragileInto !== undefined) {
-        sim.set(x, y, fragileInto);
+        sim.spawn(x, y, fragileInto);
       } else {
         launchBallistic(sim, x, y, edx, edy, DEBRIS.id, PRESSURE_SHOVE);
         sim.setAux(x, y, id);
