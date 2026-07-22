@@ -60,6 +60,15 @@ const POWERED_TICKS = 24;
 /** How many cells ahead the gust reaches (≈ 45px at 1 cell/px — 길이 45픽셀). */
 const WIND_LENGTH = 45;
 
+/** How many ticks a Wind cell survives once the fan stops feeding it. The fan
+ *  refreshes every trail cell to this value each tick while it blows (and marks it
+ *  moved so it doesn't tick down that tick), so the whole beam stays *fully lit and
+ *  steady* — no random per-cell dropout, which is what made an earlier `life`-based
+ *  trail strobe. Once power is cut the cells all count down together and clear
+ *  within a few ticks (Fan이 유지하지 않으면 곧바로 사라짐). Packed like the fan's
+ *  own countdown (aux >> 2, direction in the low 2 bits); small, fits 6 bits. */
+const WIND_TTL = 3;
+
 /** Backstop on how far one flood walks the connected fan body in a single pass —
  *  mirrors the Turbine/Woofer MAX_BODY so a giant fan wall can't make one pulse
  *  unbounded (a larger body is covered across several capped floods a tick, each
@@ -122,18 +131,41 @@ function blow(fx: number, fy: number, dir: number, sim: SimContext): void {
     sim.swap(cx, cy, tx, ty);
   }
 
-  // 3) Paint the Wind trail into the empty cells of the beam (the matter cells
-  //    show through as themselves, visibly being blown). Each Wind cell carries
-  //    the blow direction in its aux so the object layer knows which way to push
-  //    a body sitting in the stream (see engine/objects.ts applyWindPush).
+  // 3) Paint / refresh the Wind trail across the whole beam (the matter cells show
+  //    through as themselves, visibly being blown). EVERY empty beam cell holds a
+  //    Wind cell refreshed to full life this tick, and every existing Wind cell is
+  //    topped back up and marked moved so it can't tick down — so the trail is a
+  //    solid, steady field while the fan blows (no flicker) and only fades once the
+  //    fan stops feeding it. Each cell's aux packs its life countdown (high bits)
+  //    and the blow direction (low 2 bits) — the direction is what the object layer
+  //    reads to push a body in the stream (see engine/objects.ts applyWindPush).
+  const packed = (WIND_TTL << 2) | dir;
   for (let d = 1; d <= reach; d++) {
     const cx = fx + dx * d;
     const cy = fy + dy * d;
-    if (sim.get(cx, cy) === EMPTY) {
-      sim.spawn(cx, cy, WIND.id);
-      sim.setAux(cx, cy, dir);
+    const id = sim.get(cx, cy);
+    if (id === EMPTY) {
+      sim.spawn(cx, cy, WIND.id); // marks moved, so it won't tick down this tick
+      sim.setAux(cx, cy, packed);
+    } else if (id === WIND.id) {
+      sim.setAux(cx, cy, packed); // top the trail back up so it stays lit and steady
+      sim.markMoved(cx, cy); // and skip its own countdown this tick
     }
   }
+}
+
+// A Wind cell just counts its life down; while a fan keeps feeding the beam it's
+// refreshed to full and marked moved every tick (see blow step 3), so this only
+// ever runs once the fan stops — the trail then clears within WIND_TTL ticks
+// instead of lingering. No motion (the gas default would smear the beam).
+function updateWind(x: number, y: number, sim: SimContext): void {
+  const aux = sim.getAux(x, y);
+  const ttl = aux >> 2;
+  if (ttl <= 1) {
+    sim.set(x, y, EMPTY);
+    return;
+  }
+  sim.setAux(x, y, ((ttl - 1) << 2) | (aux & DIR_MASK));
 }
 
 function updateFan(x: number, y: number, sim: SimContext): void {
@@ -212,15 +244,15 @@ export const WIND = register({
   // material you place (hand-placed it would just expire).
   phase: Phase.Gas,
   color: rgb(186, 230, 253),
+  // Flat, unshaded light-blue — a moving/varying tint on a full-field gust would
+  // read as noise, so keep every trail cell the exact same colour for a calm,
+  // steady stream (the anti-flicker rendering, paired with the steady repaint).
   colorVary: 0,
   density: 0.1,
   category: '전기',
-  // Purely temporary: it decays back to air almost at once, so a gust vanishes
-  // the moment the fan stops repainting it (Fan이 유지하지 않으면 즉시 사라짐). The
-  // fan refreshes it every tick while powered, so it reads as a steady stream.
-  life: { ticks: 2 },
-  // A no-op update: without one the gas default would make the trail rise and
-  // drift, smearing the beam. It just sits (and expires via `life`) until the fan
-  // repaints it.
-  update: () => {},
+  // Purely temporary: the fan tops its life back up every tick while it blows, so
+  // once it stops the trail counts down and clears within WIND_TTL ticks (Fan이
+  // 유지하지 않으면 곧바로 사라짐). The countdown lives in aux (high bits); the
+  // update is what drains it (and it never drifts — no gas-default motion).
+  update: updateWind,
 });
