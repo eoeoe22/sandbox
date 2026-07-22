@@ -164,6 +164,26 @@ function arcFireBeside(sim: SimContext, nx: number, ny: number): boolean {
   return false;
 }
 
+/** React an explosive neighbor touched by a live pulse — shared by a Spark's
+ *  own arc phase (reached through a relay of conductors) and a Battery's
+ *  direct-contact injection (배터리 직접 연결, no wire needed), the same two
+ *  call sites that special-case Woofer by id (see woofer.ts's design note). A
+ *  charge that only answers to a shock/arc (C4, `electricDetonate`) detonates
+ *  directly and deterministically; every other explosive instead gets a lick
+ *  of Fire seated beside it so its own ignition rules catch it — electricity
+ *  still doesn't ignite ordinary fuels or flammable gas. Returns false for a
+ *  non-explosive neighbor, or for an ordinary explosive with no open cell free
+ *  to seat the arcing Fire in (a full arcFireBeside miss). */
+export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: number): boolean {
+  const m = getMaterial(nid);
+  if (!m.explosive) return false;
+  if (m.electricDetonate) {
+    detonate(sim, nx, ny);
+    return true;
+  }
+  return arcFireBeside(sim, nx, ny);
+}
+
 /** Electrolyse an energized Water/Saltwater/Acid cell into gas: the cell becomes
  *  Hydrogen, and about half the time a free open neighbor gets an Oxygen bubble
  *  (2H₂O → 2H₂ + O₂). */
@@ -210,15 +230,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
-      if (m.electricDetonate) {
-        // A charge that only answers to a shock/arc (C4): detonate it directly,
-        // so the trigger is deterministic and works even when the charge is
-        // packed flush against a wall with no open cell for a fire hand-off.
-        detonate(sim, nx, ny);
-        arced = true;
-      } else {
-        arced = arcFireBeside(sim, nx, ny);
-      }
+      arced = tryArcExplosive(sim, nx, ny, nid);
     } else if (nid === WOOFER.id) {
       // Electric appliance, not a charge: relayed current reaching any face
       // of the connected Woofer body floods the whole body and fires its

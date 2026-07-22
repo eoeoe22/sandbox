@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
-import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
+import { SPARK, packSpark, conductorClass, FULL_STRENGTH, tryArcExplosive } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
 import { WOOFER, wooferBodyPulse } from './woofer';
@@ -116,6 +116,16 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
       // case where the appliance is plugged straight into the battery instead
       // of reached through a relay of ordinary conductors.
       wooferBodyPulse(sim, nx, ny);
+    } else {
+      // Same direct-contact case for an explosive charge (C4, TNT, Gunpowder,
+      // …): none of them are `conductive` either, so a charge plugged straight
+      // into the battery (no wire in between) would otherwise never see the
+      // arc a relayed Spark gives it in spark.ts's own arc phase. Every
+      // terminal gets its own independent beat here (unlike a single
+      // travelling Spark, which caps itself to one arc per tick), so a battery
+      // wired flush against charges on several faces at once sets off each of
+      // them.
+      tryArcExplosive(sim, nx, ny, nid);
     }
   }
 }
