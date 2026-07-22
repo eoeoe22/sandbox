@@ -1583,6 +1583,24 @@ const WOOFER_KNOCK_SPEED = 6;
 /** Spin a Woofer's pulse kicks into a drum as it's shoved (mirrors BLAST_KNOCK_SPIN). */
 const WOOFER_KNOCK_SPIN = 0.1;
 
+/** Cells beyond a body's footprint a Fan's Wind trail can reach to push it. Small
+ *  — a body only rides the gust when it's actually sitting in the stream. */
+const WIND_KNOCK_RADIUS = 2;
+/** Target drift speed (cells/tick) the wind carries a body along its blow
+ *  direction. Applied as a floor on the along-wind velocity (not accumulated), so
+ *  a body in the stream steadily drifts downwind rather than being rocketed. */
+const WIND_PUSH_SPEED = 2.5;
+/** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along. */
+const WIND_KNOCK_SPIN = 0.04;
+/** Unit blow vector per Wind aux direction code (0 up / 1 down / 2 left / 3 right —
+ *  see materials/fan.ts). */
+const WIND_DIRV: ReadonlyArray<readonly [number, number]> = [
+  [0, -1],
+  [0, 1],
+  [-1, 0],
+  [1, 0],
+];
+
 /** Footprint-solid fraction at/above which a body is judged crushed (entombed in
  *  or pinched by solid it can't be pushed out of) and destroyed. Above ½ so
  *  ordinary ground contact — a thin slice of the footprint — never triggers it.
@@ -1779,6 +1797,55 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
+}
+
+/**
+ * Carry a body along on a Fan's wind (see materials/fan.ts). Scan the cells around
+ * the body's footprint for stamped wind-field cells (Grid.wind — a transient,
+ * one-way effect layer, NOT a particle), sum each one's blow direction (a single
+ * fan's cells all agree, crossing gusts partly cancel), and push the body along the
+ * resultant as a *floor* on its along-wind speed (capped at WIND_PUSH_SPEED, not
+ * accumulated), so it drifts steadily downwind instead of being flung. Directional,
+ * unlike the radial blast/Woofer knockback — the push is the wind's own direction,
+ * not "away from the cell". Never destroys a body; it only ever nudges it, and
+ * gravity reclaims it the moment it leaves the stream.
+ */
+function applyWindPush(o: SimBody, ctx: SimContext): void {
+  const reach = bodyReach(o) + WIND_KNOCK_RADIUS;
+  const reach2 = reach * reach;
+  const x0 = Math.floor(o.x - reach);
+  const x1 = Math.ceil(o.x + reach);
+  const y0 = Math.floor(o.y - reach);
+  const y1 = Math.ceil(o.y + reach);
+  let px = 0;
+  let py = 0;
+  let found = false;
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const wv = ctx.getWind(cx, cy); // 0 = none, else direction + 1
+      if (wv === 0) continue;
+      const dx = cx + 0.5 - o.x;
+      const dy = cy + 0.5 - o.y;
+      if (dx * dx + dy * dy > reach2) continue;
+      const [wdx, wdy] = WIND_DIRV[wv - 1];
+      px += wdx;
+      py += wdy;
+      found = true;
+    }
+  }
+  if (!found) return;
+  const plen = Math.hypot(px, py);
+  if (plen < 1e-6) return;
+  const nx = px / plen;
+  const ny = py / plen;
+  const along = o.vx * nx + o.vy * ny;
+  if (along < WIND_PUSH_SPEED) {
+    const add = WIND_PUSH_SPEED - along;
+    o.vx += nx * add;
+    o.vy += ny * add;
+  }
+  if (o.kind !== 'ball') o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -2130,6 +2197,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     }
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
+    applyWindPush(o, ctx);
     if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
     else stepCapsule(o, ctx, ax, ay, s);
   }

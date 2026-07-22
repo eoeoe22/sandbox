@@ -114,6 +114,16 @@ export class Simulation {
       t = n;
     }
     this.ctx.tick = this.tick;
+    // Clear the transient wind field from last tick before the fans repaint it in
+    // the scan below (a Fan stamps the empty cells of its beam via ctx.setWind).
+    // Lazy: only fill when a fan actually wrote last tick, so a world with no fans
+    // never pays for it — and when the last fan stops, this one final clear wipes
+    // the gust the instant it's unpowered. Read afterward by stepObjects (object
+    // knockback) and by the renderer (the animated wind streaks).
+    if (this.ctx.windStamped) {
+      g.wind.fill(0);
+      this.ctx.windStamped = false;
+    }
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;
 

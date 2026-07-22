@@ -201,6 +201,26 @@ export class SimContext {
   wooferPulseX: number[] = [];
   wooferPulseY: number[] = [];
 
+  /**
+   * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
+   * `wooferFlooded` above (both are one-way "outside → inside" electric sinks that
+   * flood the whole connected body from any powered face). When a pulse reaches
+   * any face of a connected fan body, every cell's powered countdown is refreshed
+   * at once; this memo keeps a body touched from several faces/sources in the same
+   * tick from re-flooding once per entry point. Cleared whenever `fanFloodTick`
+   * falls behind the current `tick`. Sim-local, same reasoning as `wooferFlooded`.
+   */
+  fanFloodTick = -1;
+  fanFlooded: Set<number> = new Set();
+
+  /**
+   * True once any Fan has stamped the wind field this tick (see setWind / Grid.wind).
+   * Simulation.step reads it to clear the field lazily — only when a fan actually
+   * wrote to it last tick — so a world with no fans never pays for the fill. Reset
+   * by Simulation right after the clear.
+   */
+  windStamped = false;
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a
@@ -287,6 +307,23 @@ export class SimContext {
 
   setAux(x: number, y: number, v: number): void {
     this.grid.setAux(x, y, v);
+  }
+
+  /** Stamp the transient wind field at (x,y) with a blow direction (0..3), encoded
+   *  as `dir + 1` (0 means no wind — see Grid.wind). A Fan calls this over the
+   *  empty cells of its beam each tick; the field is cleared at the next step's
+   *  start. One-directional: this only *writes* the field — the CA never reads it
+   *  as an occupant, so wind pushes matter (via the fan's own swaps) without ever
+   *  being blocked or displaced by it. */
+  setWind(x: number, y: number, dir: number): void {
+    this.grid.wind[this.grid.idx(x, y)] = (dir & 0b11) + 1;
+    this.windStamped = true;
+  }
+
+  /** The wind field at (x,y): 0 = no wind, else `direction + 1` (see setWind).
+   *  Read by the object layer to shove free bodies downwind (applyWindPush). */
+  getWind(x: number, y: number): number {
+    return this.grid.wind[this.grid.idx(x, y)];
   }
 
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or

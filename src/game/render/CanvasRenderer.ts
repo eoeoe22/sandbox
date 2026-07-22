@@ -24,6 +24,21 @@ const BALL_BORDER_COLOR = rgb(0x1a, 0x10, 0x12); // near-black rubber outline
  *  finer. */
 const OBJECT_SCALE = 2;
 
+// ── Fan wind streaks (선풍기 바람 이펙트) ──────────────────────────────────────
+// The wind field (Grid.wind) is drawn as an animated low-res *background* effect
+// over the empty air of a fan's beam — flowing light-blue dashes, not a solid
+// fill and not a particle. A streak sits on every WIND_LINE_SPACING'th cell across
+// the beam; along the beam it's a WIND_DASH-long lit run inside a WIND_PERIOD
+// cycle, scrolled by the per-frame windPhase so the dashes drift in the blow
+// direction. Between dashes (and off the streak lines) the air is left as-is, so
+// the effect reads as a few moving lines with plenty of gap — matching the 저해상도
+// 바람 look, and making clear the wind acts *on* the scene rather than covering it.
+const WIND_STREAK_COLOR = rgb(150, 205, 245); // bright dash
+const WIND_LINE_SPACING = 3; // one streak line every N cells across the beam
+const WIND_PERIOD = 10; // dash+gap length along the beam (cells)
+const WIND_DASH = 5; // lit run within each period
+const WIND_ANIM_SPEED = 0.35; // cells the dashes advance per rendered frame
+
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
  * ImageData at grid resolution, then scales it up to the sandbox rectangle with
@@ -101,6 +116,14 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
+  /** id → 1 if the material draws a 4-directional chevron from its aux byte, with
+   *  the low 2 bits the blow direction and the rest a powered countdown that
+   *  brightens the chevron (Fan — see Material.windArrow). */
+  private windArrow: Uint8Array;
+  /** Advancing animation phase for the Fan's wind streaks — bumped once per
+   *  rendered frame so the dashes flow along the blow direction (see the wind
+   *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
+  private windPhase = 0;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -153,6 +176,7 @@ export class CanvasRenderer implements Renderer {
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
+    this.windArrow = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -170,6 +194,7 @@ export class CanvasRenderer implements Renderer {
           this.lattice[i] = m.lattice;
         }
         if (m.arrow) this.arrow[i] = 1;
+        if (m.windArrow) this.windArrow[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -313,11 +338,17 @@ export class CanvasRenderer implements Renderer {
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
     const arrow = this.arrow;
+    const windArrow = this.windArrow;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
+    const windArr = grid.wind;
     const w = grid.width;
     const heat = this.heatOverlay;
+    // Advance the wind animation once per frame; floor to an int for clean per-cell
+    // dash stepping (the field itself is 0 when there are no fans, so this is idle).
+    this.windPhase += WIND_ANIM_SPEED;
+    const windPhase = this.windPhase | 0;
     for (let i = 0; i < cells.length; i++) {
       // Heat overlay: recolor occupied cells by temperature (a live thermal
       // camera); empty cells keep the ambient background so shapes read against
@@ -358,6 +389,32 @@ export class CanvasRenderer implements Renderer {
         const phase = x & 3; // x % 4
         const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
         c = on ? latCol[id] : pal[id];
+      } else if (windArrow[id]) {
+        // A Fan draws a 4-directional chevron pointing the way it blows: the low 2
+        // bits of aux are the direction (0 up / 1 down / 2 left / 3 right) and the
+        // rest a powered countdown, so a running fan's chevron lights up brighter.
+        // Same period-4 tent as the Conveyor '>' (0,1,1,0 over four steps), folded
+        // over y for a horizontal blow and over x for a vertical one, and mirrored
+        // for the up/left senses.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const a = auxArr[i];
+        const dir = a & 0b11;
+        let on: boolean;
+        if (dir >= 2) {
+          // left (2) / right (3): chevron runs along x, folded over y.
+          const fold = y & 2 ? 3 - (y & 3) : y & 3;
+          const phase = x & 3;
+          on = dir === 3 ? phase === fold : phase === 3 - fold;
+        } else {
+          // up (0) / down (1): chevron runs along y, folded over x.
+          const fold = x & 2 ? 3 - (x & 3) : x & 3;
+          const phase = y & 3;
+          on = dir === 1 ? phase === fold : phase === 3 - fold;
+        }
+        // aux >> 2 is the powered countdown — brighten the lit chevron while it's
+        // running so a powered fan reads as active at a glance.
+        c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -389,6 +446,35 @@ export class CanvasRenderer implements Renderer {
           // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
           c = CanvasRenderer.tinted(pal[id], d);
+        }
+      }
+      // Fan wind streaks: an animated low-res effect painted over the empty air of
+      // a gust (Grid.wind — a transient one-way field, never a cell). Only bare air
+      // carries it (matter in the beam shows through as itself, visibly blown), and
+      // it's skipped in the thermal camera. A streak line every WIND_LINE_SPACING
+      // cells across; along the beam, a scrolling dash so the wind reads as flowing.
+      const wv = windArr[i];
+      if (wv !== 0 && id === EMPTY && !heat) {
+        const x = i % w;
+        const y = (i / w) | 0;
+        const dir = wv - 1; // 0 up, 1 down, 2 left, 3 right
+        let along: number;
+        let across: number;
+        let sign: number;
+        if (dir >= 2) {
+          along = x; // horizontal blow: dashes run along x
+          across = y;
+          sign = dir === 3 ? 1 : -1; // right / left
+        } else {
+          along = y; // vertical blow: dashes run along y
+          across = x;
+          sign = dir === 1 ? 1 : -1; // down / up
+        }
+        // Sparse lines, staggered a little across the beam so it doesn't read as a
+        // grid; a scrolling dash along the travel direction.
+        if (across % WIND_LINE_SPACING === 0) {
+          const s = along - sign * windPhase + across;
+          if (((s % WIND_PERIOD) + WIND_PERIOD) % WIND_PERIOD < WIND_DASH) c = WIND_STREAK_COLOR;
         }
       }
       // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or

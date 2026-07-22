@@ -108,6 +108,21 @@ export class Grid {
   bgTint: Uint8Array;
 
   /**
+   * Wind field (선풍기 바람) — a transient, per-cell force/effect layer that is
+   * NOT part of the cellular grid: 0 = no wind, else `direction + 1` (1=up, 2=down,
+   * 3=left, 4=right; see materials/fan.ts). A powered Fan stamps this over the
+   * empty cells of its beam each tick; the whole field is cleared at the start of
+   * every step (see Simulation.step), so it reflects exactly the current tick's
+   * gusts and vanishes the instant the fan stops. Deliberately one-directional:
+   * the CA never reads it as an occupant (matter is pushed by the fan's own swaps,
+   * never blocked or displaced by "wind"), the object layer reads it to shove free
+   * bodies (engine/objects.ts applyWindPush), and the renderer reads it to draw the
+   * animated low-res wind streaks over the air (CanvasRenderer) — a background
+   * effect, not a particle. Runtime-only; not copied on resize (recomputed each tick).
+   */
+  wind: Uint8Array;
+
+  /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
    * position/velocity/physics, living *beside* the cell grid rather than in it
    * (see engine/objects.ts). Stepped by Simulation as a pass separate from the
@@ -144,6 +159,7 @@ export class Grid {
     this.aux = new Uint8Array(this.size);
     this.tint = new Uint8Array(this.size); // 0 = neutral until seeded on placement
     this.bgTint = randomBytes(this.size); // positional background texture
+    this.wind = new Uint8Array(this.size); // transient wind field, 0 = no wind
     this.dirty = new DirtyTiles(width, height);
     this.dirty.enabled = USE_ACTIVE_TILES;
   }
@@ -226,6 +242,7 @@ export class Grid {
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
     this.tint.fill(0);
+    this.wind.fill(0); // wipe the transient wind field so no gust flashes over a cleared board
     this.objects.length = 0; // free objects live beside the grid; clear them too
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
@@ -316,6 +333,7 @@ export class Grid {
     this.aux = nextAux;
     this.tint = nextTint;
     this.bgTint = nextBgTint;
+    this.wind = new Uint8Array(this.size); // transient — recomputed each tick, no copy
     // Re-tile for the new dimensions and re-arm every tile holding kept content,
     // so the active-tile scan resumes correctly after a resize/load.
     const wasEnabled = this.dirty.enabled;

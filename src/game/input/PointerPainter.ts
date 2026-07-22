@@ -35,6 +35,7 @@ import { Phase } from '../engine/types';
 import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
+import { FAN, FAN_UP, FAN_DOWN, FAN_LEFT, FAN_RIGHT } from '../materials/fan';
 import { CLONE } from '../materials/clone';
 import {
   createRubberBall,
@@ -161,6 +162,15 @@ export class PointerPainter {
    *  between events; a pure click (no drag) uses the last direction, defaulting
    *  right. */
   private beltDirX = 1;
+  /** Grid cell where the current stroke was pressed down, so a Fan can be placed
+   *  blowing whichever of the four ways the stroke has moved from its start
+   *  (컨베이어처럼 배치 방향으로 바람 방향 — 상하좌우). */
+  private fanStartX = 0;
+  private fanStartY = 0;
+  /** Blow direction the next-placed Fan cell records (FAN_* code). Derived from the
+   *  stroke's cumulative drag from its press point; a pure click keeps the last
+   *  direction, defaulting right. */
+  private fanDir: number = FAN_RIGHT;
   private px = 0;
   private py = 0;
   /** The object currently being dragged in 보기(view) mode, or null. While set,
@@ -578,14 +588,18 @@ export class PointerPainter {
     // of waiting to touch it first (see $cloneTarget, MaterialPalette.pickClone,
     // and Clone's own updateClone, which treats a non-zero aux as "already
     // latched"); every other material clears aux to 0 like normal.
+    // A Fan records its drag-chosen blow direction (상하좌우) in the low 2 bits of
+    // aux, powered countdown 0 (idle until wired) — see materials/fan.ts.
     const initAux =
       id === CONVEYOR.id
         ? this.beltDirX < 0
           ? CONVEYOR_LEFT
           : CONVEYOR_RIGHT
-        : id === CLONE.id
-          ? ($cloneTarget.get() ?? 0)
-          : 0;
+        : id === FAN.id
+          ? this.fanDir
+          : id === CLONE.id
+            ? ($cloneTarget.get() ?? 0)
+            : 0;
     for (let k = 0; k < cells.length; k += 2) {
       const x = cells[k];
       const y = cells[k + 1];
@@ -735,6 +749,18 @@ export class PointerPainter {
     this.paintCells(this.cellsInBounds(bounds), false);
   }
 
+  /** Update the Fan blow direction from the stroke's cumulative drag off its press
+   *  point (fanStartX/Y): the dominant axis wins, so a mostly-rightward drag blows
+   *  right, a mostly-upward one blows up, etc. A zero drag (pure click) leaves the
+   *  last direction as-is. */
+  private updateFanDir(x: number, y: number): void {
+    const dx = x - this.fanStartX;
+    const dy = y - this.fanStartY;
+    if (dx === 0 && dy === 0) return;
+    if (Math.abs(dx) >= Math.abs(dy)) this.fanDir = dx > 0 ? FAN_RIGHT : FAN_LEFT;
+    else this.fanDir = dy > 0 ? FAN_DOWN : FAN_UP;
+  }
+
   /** Bresenham line so a quick drag paints a continuous stroke. */
   private stroke(x0: number, y0: number, x1: number, y1: number): void {
     const dx = Math.abs(x1 - x0);
@@ -771,6 +797,10 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     this.px = x;
     this.py = y;
+    // Remember where this stroke started so a Fan placed by dragging blows the way
+    // the stroke has moved from here (see updateFanDir).
+    this.fanStartX = x;
+    this.fanStartY = y;
     // 영역 select mode: start a rectangular marquee drag instead of a brush
     // stroke, regardless of the active tool (it takes priority over the
     // object-spawn and 보기 object-drag presses below too). Both left (fill)
@@ -827,6 +857,7 @@ export class PointerPainter {
       this.rectEX = x;
       this.rectEY = y;
       if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      this.updateFanDir(x, y);
       this.updateRectOverlay();
       return;
     }
@@ -838,6 +869,7 @@ export class PointerPainter {
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
     // runs the way the brush moved.
     if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
+    this.updateFanDir(x, y);
     this.stroke(this.px, this.py, x, y);
     this.px = x;
     this.py = y;

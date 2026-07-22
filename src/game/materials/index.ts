@@ -108,6 +108,7 @@ import { SOAP } from './soap';
 import { WOOFER } from './woofer';
 import { TERMITE } from './termite';
 import { NANOBOT } from './nanobot';
+import { FAN } from './fan';
 
 export {
   EMPTY_MAT,
@@ -215,6 +216,7 @@ export {
   WOOFER,
   TERMITE,
   NANOBOT,
+  FAN,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -238,7 +240,11 @@ export {
  *     exist mid-flight; painted by hand they'd fall inert at once.
  *   • BUBBLE — the air bubble only Soapy Water produces (see bubble.ts); it rises
  *     and pops back to soapy water, so hand-placed in open air it just pops at
- *     once. */
+ *     once.
+ *
+ *  The Fan's gust is deliberately NOT a material at all: it's a transient wind
+ *  *field* (Grid.wind) the Fan stamps and the renderer/object layer read, so there
+ *  is no "Wind" material to list or exclude here (see materials/fan.ts). */
 export const MATERIALS = [
   WALL,
   SAND,
@@ -284,6 +290,7 @@ export const MATERIALS = [
   LFP_BATTERY,
   NICHROME,
   WOOFER,
+  FAN,
   MERCURY,
   HONEY,
   ALCOHOL,
