@@ -201,6 +201,18 @@ export class SimContext {
   wooferPulseX: number[] = [];
   wooferPulseY: number[] = [];
 
+  /**
+   * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
+   * `wooferFlooded` above (both are one-way "outside → inside" electric sinks that
+   * flood the whole connected body from any powered face). When a pulse reaches
+   * any face of a connected fan body, every cell's powered countdown is refreshed
+   * at once; this memo keeps a body touched from several faces/sources in the same
+   * tick from re-flooding once per entry point. Cleared whenever `fanFloodTick`
+   * falls behind the current `tick`. Sim-local, same reasoning as `wooferFlooded`.
+   */
+  fanFloodTick = -1;
+  fanFlooded: Set<number> = new Set();
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a

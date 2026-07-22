@@ -8,6 +8,7 @@ import { SPARK, packSpark, conductorClass, FULL_STRENGTH, tryArcExplosive } from
 import { FIRE } from './fire';
 import { detonate } from './blast';
 import { WOOFER, wooferBodyPulse } from './woofer';
+import { FAN, energizeFanBody } from './fan';
 
 // Lithium Battery — the power source that makes the electricity subsystem
 // self-running (the volatile chemistry; see lfpbattery.ts for the safe one).
@@ -108,6 +109,12 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
       sim.spawn(nx, ny, SPARK.id);
       sim.setTemp(nx, ny, heat);
       sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
+    } else if (nid === FAN.id) {
+      // Direct contact (배터리 직접 연결), no wire needed: a Fan isn't `conductive`
+      // either (it's a one-way "outside → inside" sink like the Woofer — see
+      // fan.ts), so a battery flush against a fan face powers the whole connected
+      // fan body here by id, exactly like the Woofer special-case below.
+      energizeFanBody(sim, nx, ny);
     } else if (nid === WOOFER.id) {
       // Direct contact (배터리 직접 연결), no wire needed: a Woofer isn't a
       // `conductive` material (see woofer.ts's design note — it's a one-way

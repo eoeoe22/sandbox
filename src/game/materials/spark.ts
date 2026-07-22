@@ -15,6 +15,7 @@ import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { WOOFER, wooferBodyPulse } from './woofer';
+import { FAN, energizeFanBody } from './fan';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -233,6 +234,13 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
       arced = tryArcExplosive(sim, nx, ny, nid);
+    } else if (nid === FAN.id) {
+      // Electric appliance, not a charge: relayed current reaching any face of a
+      // connected Fan body powers the whole body at once (fan.ts's one-way
+      // "outside → inside" sink), refreshing its blow countdown — the same
+      // id-driven hand-off the Woofer uses just below, and for the same reason (a
+      // Fan is deliberately not `conductive`, so it never becomes/relays a Spark).
+      energizeFanBody(sim, nx, ny);
     } else if (nid === WOOFER.id) {
       // Electric appliance, not a charge: relayed current reaching any face
       // of the connected Woofer body floods the whole body and fires its

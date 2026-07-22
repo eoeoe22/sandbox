@@ -101,6 +101,10 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
+  /** id → 1 if the material draws a 4-directional chevron from its aux byte, with
+   *  the low 2 bits the blow direction and the rest a powered countdown that
+   *  brightens the chevron (Fan — see Material.windArrow). */
+  private windArrow: Uint8Array;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -153,6 +157,7 @@ export class CanvasRenderer implements Renderer {
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
+    this.windArrow = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -170,6 +175,7 @@ export class CanvasRenderer implements Renderer {
           this.lattice[i] = m.lattice;
         }
         if (m.arrow) this.arrow[i] = 1;
+        if (m.windArrow) this.windArrow[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -313,6 +319,7 @@ export class CanvasRenderer implements Renderer {
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
     const arrow = this.arrow;
+    const windArrow = this.windArrow;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -358,6 +365,32 @@ export class CanvasRenderer implements Renderer {
         const phase = x & 3; // x % 4
         const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
         c = on ? latCol[id] : pal[id];
+      } else if (windArrow[id]) {
+        // A Fan draws a 4-directional chevron pointing the way it blows: the low 2
+        // bits of aux are the direction (0 up / 1 down / 2 left / 3 right) and the
+        // rest a powered countdown, so a running fan's chevron lights up brighter.
+        // Same period-4 tent as the Conveyor '>' (0,1,1,0 over four steps), folded
+        // over y for a horizontal blow and over x for a vertical one, and mirrored
+        // for the up/left senses.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const a = auxArr[i];
+        const dir = a & 0b11;
+        let on: boolean;
+        if (dir >= 2) {
+          // left (2) / right (3): chevron runs along x, folded over y.
+          const fold = y & 2 ? 3 - (y & 3) : y & 3;
+          const phase = x & 3;
+          on = dir === 3 ? phase === fold : phase === 3 - fold;
+        } else {
+          // up (0) / down (1): chevron runs along y, folded over x.
+          const fold = x & 2 ? 3 - (x & 3) : x & 3;
+          const phase = y & 3;
+          on = dir === 1 ? phase === fold : phase === 3 - fold;
+        }
+        // aux >> 2 is the powered countdown — brighten the lit chevron while it's
+        // running so a powered fan reads as active at a glance.
+        c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
