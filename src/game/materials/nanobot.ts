@@ -10,8 +10,9 @@ import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
 // Nanobot (나노봇) — a metal-colored crawler that wanders the surface of solid
 // and powder terrain, slowly gnawing Iron/Metal Powder. A bite always clears
 // the eaten cell; REPRODUCE_CHANCE of the time it also spawns a fresh nanobot
-// there (self-replication), otherwise the metal just disappears. See
-// crawler.ts for the shared crawl/eat/no-clump core.
+// there (self-replication), otherwise the metal just disappears. Free to
+// cluster with other crawlers (own kind or Termite) — see crawler.ts for the
+// shared crawl/eat/reproduce core and its ground-hop-count gravity guard.
 //
 // Unlike Termite it has no flammability and no fear of liquid (a machine
 // doesn't drown) — instead it shares Iron/Metal Powder's own melting point:
@@ -49,7 +50,7 @@ export const NANOBOT = register({
   color: rgb(170, 182, 196),
   density: 7, // same weight class as the Metal Powder it eats and melts into
   colorVary: 0, // a single small machine, not a granular pile — no per-grain shimmer
-  crawler: true, // never terrain to, and never moves/spawns next to, another crawler
+  crawler: true, // participates in the shared crawler ground-hop-count/no-defy-gravity logic
   category: '생명',
   thermal: { conductivity: 0.35 },
   // Caught in a real explosion's non-destructive concussion (crater shove or

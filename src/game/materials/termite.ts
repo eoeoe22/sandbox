@@ -10,8 +10,9 @@ import { SAWDUST } from './sawdust';
 // Termite (흰개미) — a wood-colored crawler that wanders the surface of solid
 // and powder terrain, gnawing Wood/Sawdust. A bite always clears the eaten
 // cell; REPRODUCE_CHANCE of the time it also spawns a fresh termite there
-// (colony growth), otherwise the food just disappears. See crawler.ts for the
-// shared crawl/eat/no-clump core.
+// (colony growth), otherwise the food just disappears. Free to cluster with
+// other crawlers (own kind or Nanobot) — see crawler.ts for the shared
+// crawl/eat/reproduce core and its ground-hop-count gravity guard.
 //
 // It's exactly as flammable as the Sawdust it's made of (same Combustible
 // spec) — `tryBurn` runs first every tick so a termite standing in an actual
@@ -57,7 +58,7 @@ export const TERMITE = register({
   density: 2, // as light as the Sawdust it eats and dies into
   combustible: true,
   colorVary: 0, // a single small creature, not a granular pile — no per-grain shimmer
-  crawler: true, // never terrain to, and never moves/spawns next to, another crawler
+  crawler: true, // participates in the shared crawler ground-hop-count/no-defy-gravity logic
   category: '생명',
   thermal: { conductivity: 0.2 },
   // Caught in a real explosion's non-destructive concussion (crater shove or

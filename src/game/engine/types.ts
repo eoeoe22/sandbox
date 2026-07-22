@@ -360,11 +360,11 @@ export interface Material {
   reactions?: ReactionRule[];
   /**
    * Marks a "surface crawler" (Termite/Nanobot — see materials/crawler.ts): a
-   * living grain that clings to and wanders across solid/powder terrain. A
-   * crawler never counts as terrain to another crawler — of its own kind OR
-   * the other kind — so two crawlers can never treat each other as ground and
-   * prop each other up in mid-air (the whole reason this is a shared,
-   * type-agnostic tag rather than each crawler only recognizing its own id).
+   * living grain that clings to and wanders across solid/powder terrain,
+   * free to move/spawn right next to and climb over other crawlers of either
+   * kind. Read generically (type-agnostic) by `isCrawler` in crawler.ts to
+   * decide what counts as real, ground-anchoring terrain versus another
+   * crawler in the support chain that gates falling (see `computeGroundHop`).
    */
   crawler?: boolean;
   /**
