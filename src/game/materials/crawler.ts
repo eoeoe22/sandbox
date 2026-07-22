@@ -93,6 +93,61 @@ function isAttached(sim: SimContext, x: number, y: number, selfId: number, liqui
   return false;
 }
 
+// Same-kind 8-neighbor count at which a bug actively squeezes out of the clump
+// rather than wall-following. A single-file trail leaves ~2 same-kind neighbors,
+// a 2-wide band ~5, so this thins bands to a line but never disturbs a lone trail.
+const CROWD_THRESHOLD = 4;
+
+/** Count this bug's own kind in the 8-neighborhood, optionally skipping one cell
+ *  (the bug's current cell, when scoring a candidate it would vacate). */
+function countSelf(sim: SimContext, x: number, y: number, selfId: number, skipX: number, skipY: number): number {
+  let c = 0;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx === skipX && ny === skipY) continue;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === selfId) c++;
+  }
+  return c;
+}
+
+/** Anti-clumping ("층을 이루지 않게"): a bug packed among its own kind squeezes
+ *  toward open space — it moves to the adjacent passable cell with the FEWEST
+ *  same-kind neighbors, and only when that's *strictly* fewer than where it
+ *  stands. Because every move lowers the total same-kind adjacency in the world,
+ *  a heap boils apart into a thin trail and the process converges (no endless
+ *  jitter). Without this, a bug walled in on all sides by its own kind — which
+ *  blocks movement and offers no surface to cling to — just sits: the "쌓인 더미가
+ *  반쯤 멈춰있음" (a piled heap half-frozen) case. Returns true if it dispersed. */
+function disperseCrowded(
+  x: number,
+  y: number,
+  sim: SimContext,
+  selfId: number,
+  enterLiquid: boolean,
+  heading: number,
+): boolean {
+  const mine = countSelf(sim, x, y, selfId, -1, -1);
+  if (mine < CROWD_THRESHOLD) return false;
+  let bestX = -1;
+  let bestY = -1;
+  let best = mine; // must strictly improve to move
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!canStepInto(sim, nx, ny, selfId, enterLiquid)) continue;
+    const c = countSelf(sim, nx, ny, selfId, x, y);
+    if (c < best) {
+      best = c;
+      bestX = nx;
+      bestY = ny;
+    }
+  }
+  if (bestX < 0) return false; // boxed in with no better spot — a neighbor frees it next tick
+  moveTo(sim, x, y, bestX, bestY, heading);
+  return true;
+}
+
 /** One locomotion step. Attached to a surface → a right-hand wall-follow (hug the
  *  surface, turning through corners while keeping the current heading when it can).
  *  Not attached (adrift in open air / water) → drift along gravity to find a
@@ -103,6 +158,10 @@ export function crawl(x: number, y: number, sim: SimContext, selfId: number, pol
 
   let h = sim.getAux(x, y) - 1;
   if (h < 0 || h > 3) h = sim.randInt(4);
+
+  // Relieve crowding first: a bug buried in a heap of its own kind squeezes out
+  // toward open space before it tries any surface-following (see disperseCrowded).
+  if (disperseCrowded(x, y, sim, selfId, enterLiquid, h)) return;
 
   if (!isAttached(sim, x, y, selfId, liquidIsSurface)) {
     // Adrift: sink toward gravity until a surface is found (straight, then the two
