@@ -1162,15 +1162,27 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   (`spawn`, moved 마킹이라 한 틱에 먹이 블록 전체를 못 채우고 한 칸씩 번짐). 흰개미 먹이 =
   Sawdust·Wood, 나노봇 먹이 = Iron·Metal Powder.
 - **죽음 판정(공용 헬퍼)**: `isSubmerged`(공기/기체 이웃이 하나도 없고 액체가 하나 이상 —
-  수면을 걷는 개체·먹이에 파묻힌 개체는 제외) / `touchingBlast`(8이웃에 Blast 섬광 셀). 후자가
-  **"폭발 충격파(단 Woofer 제외)"의 핵심 트릭** — 일반 폭발은 크레이터에 Blast 섬광 셀을 칠하지만
-  Woofer의 충격파는 의도적으로 섬광 셀을 만들지 않으므로(woofer.ts), 인접 Blast 셀을 죽음
-  트리거로 삼으면 별도 분기 없이 일반 폭발엔 죽고 Woofer 충격파엔 멀쩡하다. 흰개미는 위 둘 +
-  **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal Powder와 같은
-  녹는점**(Iron 융점→Molten Metal 융해)이며 Blast엔 **Metal Powder**로 부서진다.
+  수면을 걷는 개체·먹이에 파묻힌 개체·언(frozen) 액체는 제외) / `touchingBlast`(8이웃에 Blast
+  섬광 셀). 후자가 **"폭발 충격파(단 Woofer 제외)"의 핵심 트릭** — 일반 폭발은 크레이터에 Blast
+  섬광 셀을 칠하지만 Woofer의 충격파는 의도적으로 섬광 셀을 만들지 않으므로(woofer.ts), 인접
+  Blast 셀을 죽음 트리거로 삼으면 별도 분기 없이 일반 폭발엔 죽고 Woofer 충격파엔 멀쩡하다.
+  흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal
+  Powder와 같은 녹는점**(Iron 융점→Molten Metal 융해)이며 Blast엔 **Metal Powder**로 부서진다.
+- **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
+  개체만 잡는다 — 폭심에서 폭발이 직접 파괴한 셀은 자기 `update`가 돌기 전에 `defaultCell`
+  (blast.ts)이 곧장 Blast 섬광 셀로 덮어써서 불/빈칸으로 사라져, 명세가 요구한 잔재(Sawdust/
+  Metal Powder)를 못 남긴다. 이를 위해 `Material.blastDeathId`(신규 데이터 태그)를 도입 —
+  파괴 경로(power ≥ durability)에서 이 값이 있으면 섬광 대신 그 물질을 `spawn`으로 남긴다.
+  흰개미=Sawdust, 나노봇=Metal Powder. **Woofer 제외 성질도 그대로 유지**된다: Woofer는 power
+  0이라 어떤 고체의 내구력도 못 이겨 파괴 경로에 도달하지 못하므로 이 태그를 건드리지 않는다.
+- **언 액체 = 고체 취급 일관성**: 얼어붙은(freeze점 이하) 액체는 엔진 전반에서 고체처럼 행동하므로
+  (`isFrozen`), 벌레도 이를 (1) 표면으로 붙잡고, (2) 통과하지 않으며(나노봇도 언 웅덩이 위를
+  기어감), (3) 침수 판정에서 물로 세지 않는다 — 다른 밀도 이동자(`tryMove`/`swapOntoLiquid`)와
+  동일한 `isFrozen` 게이트.
 
 `npm run check`(0 errors)·`npm run build`·`npm run test:active-tiles`(15 시나리오 전건
-bit-identical + deterministic) 통과. `test:heat`는 이 환경에 Rust 빌드 wasm 바이너리가 없어
-원래도 실행 불가(이번 변경과 무관).
+bit-identical + deterministic) 통과, 헤드리스로 폭심 잔재(더미에 폭탄→Sawdust/Metal Powder
+생성) 확인. `test:heat`는 이 환경에 Rust 빌드 wasm 바이너리가 없어 원래도 실행 불가(이번
+변경과 무관).
 
 향후 추가 아이디어·팔레트 확장안은 [docs/PROPOSALS.md](https://github.com/eoeoe22/sandbox/blob/main/docs/PROPOSALS.md) 참조.

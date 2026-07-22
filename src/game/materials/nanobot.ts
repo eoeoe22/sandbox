@@ -48,6 +48,9 @@ export const NANOBOT = register({
   colorVary: 22,
   density: 1000,
   category: '생명',
+  // Shattered to Metal Powder when a blast destroys it at the epicenter, matching
+  // the death-by-shockwave its update handles for rim survivors.
+  blastDeathId: METAL_POWDER.id,
   // Metallic, so it conducts heat about as well as loose Metal Powder — it warms
   // toward its melting point at a metal's pace, not an insulator's.
   thermal: { conductivity: 0.35 },

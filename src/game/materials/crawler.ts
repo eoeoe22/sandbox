@@ -57,7 +57,10 @@ function isSurface(sim: SimContext, x: number, y: number, selfId: number, liquid
   if (id === EMPTY || id === selfId) return false;
   const p = getMaterial(id).phase;
   if (p === Phase.Solid || p === Phase.Powder) return true;
-  if (p === Phase.Liquid) return liquidIsSurface;
+  // A liquid chilled to/below its freezing point acts solid (see Material.freeze),
+  // so it's a surface to cling to for *both* bugs; a flowing liquid is a surface
+  // only for the liquid-avoiding Termite (walks its shoreline).
+  if (p === Phase.Liquid) return liquidIsSurface || sim.isFrozen(x, y);
   return false; // gas
 }
 
@@ -70,7 +73,10 @@ function canStepInto(sim: SimContext, x: number, y: number, selfId: number, ente
   if (id === EMPTY) return true;
   if (id === selfId) return false;
   const p = getMaterial(id).phase;
-  if (p === Phase.Liquid) return enterLiquid;
+  // A frozen liquid acts solid — every other density-mover in the engine gates on
+  // !isFrozen (SimContext.tryMove/swapOntoLiquid), so a Nanobot can't swim through
+  // a chilled puddle either; it crawls on it like ground.
+  if (p === Phase.Liquid) return enterLiquid && !sim.isFrozen(x, y);
   return false;
 }
 
@@ -249,7 +255,9 @@ export function isSubmerged(x: number, y: number, sim: SimContext): boolean {
     if (id === EMPTY) return false; // an air pocket to breathe → not submerged
     const p = getMaterial(id).phase;
     if (p === Phase.Gas) return false; // gas pocket counts as air too
-    if (p === Phase.Liquid) touchesLiquid = true;
+    // A frozen liquid acts solid (encased in ice, not drowning in water), so it
+    // counts as neither air nor liquid here — consistent with canStepInto/isSurface.
+    if (p === Phase.Liquid && !sim.isFrozen(nx, ny)) touchesLiquid = true;
   }
   return touchesLiquid;
 }

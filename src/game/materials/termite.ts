@@ -44,6 +44,9 @@ export const TERMITE = register({
   colorVary: 22,
   density: 1000,
   category: '생명',
+  // Crushed to Sawdust (its own food) when a blast destroys it at the epicenter,
+  // matching the death-by-shockwave its update handles for rim survivors.
+  blastDeathId: SAWDUST.id,
   // Organic and poorly conductive (like Wood/Sawdust), so it heats up slowly —
   // but once it crosses 70° it's cooked.
   thermal: { conductivity: 0.2 },
