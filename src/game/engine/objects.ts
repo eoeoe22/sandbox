@@ -15,7 +15,6 @@ import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
 import { VOID } from '../materials/void';
-import { WIND } from '../materials/fan';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -1801,14 +1800,15 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
 }
 
 /**
- * Carry a body along on a Fan's Wind (see materials/fan.ts). Scan the cells around
- * the body's footprint for Wind trail cells, sum each one's blow direction (packed
- * in its aux — a single fan's cells all agree, crossing gusts partly cancel), and
- * push the body along the resultant as a *floor* on its along-wind speed (capped
- * at WIND_PUSH_SPEED, not accumulated), so it drifts steadily downwind instead of
- * being flung. Directional, unlike the radial blast/Woofer knockback — the push is
- * the wind's own direction, not "away from the cell". Never destroys a body; it
- * only ever nudges it, and gravity reclaims it the moment it leaves the stream.
+ * Carry a body along on a Fan's wind (see materials/fan.ts). Scan the cells around
+ * the body's footprint for stamped wind-field cells (Grid.wind — a transient,
+ * one-way effect layer, NOT a particle), sum each one's blow direction (a single
+ * fan's cells all agree, crossing gusts partly cancel), and push the body along the
+ * resultant as a *floor* on its along-wind speed (capped at WIND_PUSH_SPEED, not
+ * accumulated), so it drifts steadily downwind instead of being flung. Directional,
+ * unlike the radial blast/Woofer knockback — the push is the wind's own direction,
+ * not "away from the cell". Never destroys a body; it only ever nudges it, and
+ * gravity reclaims it the moment it leaves the stream.
  */
 function applyWindPush(o: SimBody, ctx: SimContext): void {
   const reach = bodyReach(o) + WIND_KNOCK_RADIUS;
@@ -1823,11 +1823,12 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      if (ctx.get(cx, cy) !== WIND.id) continue;
+      const wv = ctx.getWind(cx, cy); // 0 = none, else direction + 1
+      if (wv === 0) continue;
       const dx = cx + 0.5 - o.x;
       const dy = cy + 0.5 - o.y;
       if (dx * dx + dy * dy > reach2) continue;
-      const [wdx, wdy] = WIND_DIRV[ctx.getAux(cx, cy) & 0b11];
+      const [wdx, wdy] = WIND_DIRV[wv - 1];
       px += wdx;
       py += wdy;
       found = true;
