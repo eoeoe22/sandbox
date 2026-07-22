@@ -106,6 +106,8 @@ import { SOAPY_WATER } from './soapywater';
 import { BUBBLE } from './bubble';
 import { SOAP } from './soap';
 import { WOOFER } from './woofer';
+import { TERMITE } from './termite';
+import { NANOBOT } from './nanobot';
 
 export {
   EMPTY_MAT,
@@ -211,6 +213,8 @@ export {
   BUBBLE,
   SOAP,
   WOOFER,
+  TERMITE,
+  NANOBOT,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -331,4 +335,6 @@ export const MATERIALS = [
   SEED,
   YEAST,
   SLIME,
+  TERMITE,
+  NANOBOT,
 ];
