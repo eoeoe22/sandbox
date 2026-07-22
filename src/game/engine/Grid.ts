@@ -242,6 +242,7 @@ export class Grid {
     this.temp.fill(AMBIENT_TEMP);
     this.aux.fill(0);
     this.tint.fill(0);
+    this.wind.fill(0); // wipe the transient wind field so no gust flashes over a cleared board
     this.objects.length = 0; // free objects live beside the grid; clear them too
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
