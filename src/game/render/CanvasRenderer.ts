@@ -503,7 +503,14 @@ export class CanvasRenderer implements Renderer {
         // WIND_PERIOD, scroll with windPhase, and are staggered per line (+line) so
         // the streaks don't march in lockstep.
         const dA = (((windPhase - sign * along + line) % WIND_PERIOD) + WIND_PERIOD) % WIND_PERIOD;
-        if (windGlyphLit(dA, dc)) {
+        // windGlyphLit is authored in the rightward-blow frame, where the hook curls
+        // toward −dc (counter-clockwise). Reflecting the along-axis for the other
+        // three senses would flip that handedness for left/down blows, so mirror the
+        // across-axis too (curlSign) whenever the along-axis is reflected on exactly
+        // one screen axis — keeping every fan's streak curling the same way as the
+        // reference glyph. curlSign is +1 for up/right (dir 0,3), −1 for down/left (1,2).
+        const curlSign = ((dir >> 1) ^ (dir & 1)) ? -1 : 1;
+        if (windGlyphLit(dA, dc * curlSign)) {
           // A hook cell (dc≠0) only lights when its own centreline is inside the
           // beam, so a narrow beam degrades cleanly to just the line instead of
           // shedding floating hook fragments.
@@ -515,7 +522,7 @@ export class CanvasRenderer implements Renderer {
               ok = windArr[cy * w + cx] !== 0;
             }
           }
-          if (ok) c = WIND_STREAK_COLORS[((line % 3) + 3) % 3];
+          if (ok) c = WIND_STREAK_COLORS[line % 3]; // line ≥ 0 (across is a grid coord)
         }
       }
       // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or
