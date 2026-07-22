@@ -75,17 +75,17 @@ const WIND_TTL = 3;
  *  memoized in SimContext.fanFlooded). */
 const MAX_BODY = 256;
 
-/** A cell the wind pushes: loose matter (powder/liquid) or an ordinary solid,
- *  but never the container Wall, an indestructible block, or another Fan (so a
- *  fan can't blow its own structure — or a fan in front of it — apart). Gases are
- *  left alone (they drift on their own); the Wind trail itself (a gas) is handled
- *  by id before this is ever consulted. */
+/** A cell the wind pushes: loose matter only — powder or liquid. Solids are
+ *  deliberately NOT pushed: a fixed structure (a wall, a machine, a wired circuit)
+ *  stays put and instead *blocks* the beam, so a fan can never walk its own battery
+ *  or mount off the board (편의성 — 고정 구조물은 안 밀림). Solid *objects* (a drum,
+ *  a ball) still get blown — those are handled in the object layer (engine/objects.ts
+ *  applyWindPush), not here. Gases drift on their own; the Wind trail (a gas) is
+ *  matched by id before this is ever consulted. */
 function isWindPushable(id: number): boolean {
   if (id === EMPTY) return false;
-  const m = getMaterial(id);
-  if (m.isWall || m.indestructible || id === FAN.id) return false;
-  const p = m.phase;
-  return p === Phase.Powder || p === Phase.Liquid || p === Phase.Solid;
+  const p = getMaterial(id).phase;
+  return p === Phase.Powder || p === Phase.Liquid;
 }
 
 /** True if the wind flows *through* this cell (empty, its own Wind trail, any
