@@ -25,19 +25,44 @@ const BALL_BORDER_COLOR = rgb(0x1a, 0x10, 0x12); // near-black rubber outline
 const OBJECT_SCALE = 2;
 
 // ── Fan wind streaks (선풍기 바람 이펙트) ──────────────────────────────────────
-// The wind field (Grid.wind) is drawn as an animated low-res *background* effect
-// over the empty air of a fan's beam — flowing light-blue dashes, not a solid
-// fill and not a particle. A streak sits on every WIND_LINE_SPACING'th cell across
-// the beam; along the beam it's a WIND_DASH-long lit run inside a WIND_PERIOD
-// cycle, scrolled by the per-frame windPhase so the dashes drift in the blow
-// direction. Between dashes (and off the streak lines) the air is left as-is, so
-// the effect reads as a few moving lines with plenty of gap — matching the 저해상도
-// 바람 look, and making clear the wind acts *on* the scene rather than covering it.
-const WIND_STREAK_COLOR = rgb(150, 205, 245); // bright dash
-const WIND_LINE_SPACING = 3; // one streak line every N cells across the beam
-const WIND_PERIOD = 10; // dash+gap length along the beam (cells)
-const WIND_DASH = 5; // lit run within each period
-const WIND_ANIM_SPEED = 0.35; // cells the dashes advance per rendered frame
+// The wind field (Grid.wind) is drawn as animated low-res *streaks* over the empty
+// air of a fan's beam — little curling gust glyphs (the classic "말리는 바람" wind
+// icon: a line that hooks into a squared counter-clockwise spiral at its leading
+// edge), not a solid fill and not a particle. Streaks sit on centrelines spaced
+// WIND_LINE_SPACING cells across the beam, repeat every WIND_PERIOD cells along it,
+// and scroll by the per-frame windPhase so they blow downwind; a per-line stagger
+// and three light-blue shades keep them from marching in lockstep. Where the beam
+// is too narrow to fit the hook the streak degrades cleanly to just its line, so
+// the effect always reads as wind acting *on* the scene rather than covering it —
+// mirroring the standalone example while staying inside the pixel grid.
+// Three light-blue shades (bae6fd / 7dd3fc / 38bdf8), one per centreline, matching
+// the example's stacked wind lines.
+const WIND_STREAK_COLORS = [rgb(186, 230, 253), rgb(125, 211, 252), rgb(56, 189, 248)];
+const WIND_LINE_SPACING = 8; // one streak centreline every N cells across the beam
+const WIND_PERIOD = 20; // streak repeat length along the beam (cells)
+const WIND_ANIM_SPEED = 0.35; // cells the streaks advance per rendered frame
+// Curl-streak geometry, in cells, measured back from the leading head (dA ≥ 0 is
+// distance behind the head along the blow; dc is the perpendicular offset from the
+// centreline, the hook curling toward −dc). Mirrors the example glyph's squared
+// spiral: a long trailing line, a vertical rise at the head, a short return along
+// the top, then a little inward hook.
+const WIND_BODY = 12; // lit length of the trailing line
+const WIND_HOOK = 5; // how far the top of the hook runs back from the head
+const WIND_HOOK_IN = 2; // where the inner return starts (back from head)
+const WIND_CURL_H = 3; // outer height of the hook
+const WIND_CURL_IN = 1; // inner return height
+
+/** True if a cell at shape-local (dA behind the head, dc across from the centreline)
+ *  falls on the curling wind glyph — a trailing line with a squared counter-clockwise
+ *  hook at its leading end (see the WIND_* constants and the example it mirrors). */
+function windGlyphLit(dA: number, dc: number): boolean {
+  if (dc === 0) return dA <= WIND_BODY; // trailing line
+  if (dA === 0) return dc >= -WIND_CURL_H && dc < 0; // vertical rise at the head
+  if (dc === -WIND_CURL_H) return dA <= WIND_HOOK; // top of the hook
+  if (dA === WIND_HOOK) return dc <= -WIND_CURL_IN && dc >= -WIND_CURL_H; // inner drop
+  if (dc === -WIND_CURL_IN) return dA >= WIND_HOOK_IN && dA <= WIND_HOOK; // inner return
+  return false;
+}
 
 /**
  * Canvas 2D renderer. Writes one packed Uint32 color per cell into an offscreen
@@ -451,8 +476,8 @@ export class CanvasRenderer implements Renderer {
       // Fan wind streaks: an animated low-res effect painted over the empty air of
       // a gust (Grid.wind — a transient one-way field, never a cell). Only bare air
       // carries it (matter in the beam shows through as itself, visibly blown), and
-      // it's skipped in the thermal camera. A streak line every WIND_LINE_SPACING
-      // cells across; along the beam, a scrolling dash so the wind reads as flowing.
+      // it's skipped in the thermal camera. Each streak is a curling gust glyph
+      // scrolling along the beam (see windGlyphLit and the WIND_* constants).
       const wv = windArr[i];
       if (wv !== 0 && id === EMPTY && !heat) {
         const x = i % w;
@@ -462,19 +487,35 @@ export class CanvasRenderer implements Renderer {
         let across: number;
         let sign: number;
         if (dir >= 2) {
-          along = x; // horizontal blow: dashes run along x
+          along = x; // horizontal blow: streaks run along x
           across = y;
           sign = dir === 3 ? 1 : -1; // right / left
         } else {
-          along = y; // vertical blow: dashes run along y
+          along = y; // vertical blow: streaks run along y
           across = x;
           sign = dir === 1 ? 1 : -1; // down / up
         }
-        // Sparse lines, staggered a little across the beam so it doesn't read as a
-        // grid; a scrolling dash along the travel direction.
-        if (across % WIND_LINE_SPACING === 0) {
-          const s = along - sign * windPhase + across;
-          if (((s % WIND_PERIOD) + WIND_PERIOD) % WIND_PERIOD < WIND_DASH) c = WIND_STREAK_COLOR;
+        // Nearest streak centreline across the beam, and this cell's offset from it.
+        const line = Math.round(across / WIND_LINE_SPACING);
+        const centre = line * WIND_LINE_SPACING;
+        const dc = across - centre;
+        // Distance behind the nearest streak head along the blow: heads repeat every
+        // WIND_PERIOD, scroll with windPhase, and are staggered per line (+line) so
+        // the streaks don't march in lockstep.
+        const dA = (((windPhase - sign * along + line) % WIND_PERIOD) + WIND_PERIOD) % WIND_PERIOD;
+        if (windGlyphLit(dA, dc)) {
+          // A hook cell (dc≠0) only lights when its own centreline is inside the
+          // beam, so a narrow beam degrades cleanly to just the line instead of
+          // shedding floating hook fragments.
+          let ok = dc === 0;
+          if (!ok) {
+            const cx = dir >= 2 ? along : centre;
+            const cy = dir >= 2 ? centre : along;
+            if (cx >= 0 && cx < w && cy >= 0 && cy < grid.height) {
+              ok = windArr[cy * w + cx] !== 0;
+            }
+          }
+          if (ok) c = WIND_STREAK_COLORS[((line % 3) + 3) % 3];
         }
       }
       // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or
