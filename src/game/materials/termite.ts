@@ -57,6 +57,7 @@ export const TERMITE = register({
   density: 2, // as light as the Sawdust it eats and dies into
   combustible: true,
   colorVary: 0, // a single small creature, not a granular pile — no per-grain shimmer
+  crawler: true, // never terrain to, and never moves/spawns next to, another crawler
   category: '생명',
   thermal: { conductivity: 0.2 },
   // Caught in a real explosion's non-destructive concussion (crater shove or

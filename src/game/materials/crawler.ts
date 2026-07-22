@@ -14,25 +14,29 @@ import type { SimContext } from '../engine/SimContext';
 // material's own file handles its own death/melt conditions before handing off
 // to `updateCrawler`.
 
+/** True if `id` is any crawler (Termite OR Nanobot — see `Material.crawler`),
+ *  the type-agnostic check that keeps crawlers from ever treating EACH OTHER
+ *  (same kind or not) as ground or as a legal neighbor to move/spawn next to. */
+function isCrawler(id: number): boolean {
+  return id !== EMPTY && getMaterial(id).crawler === true;
+}
+
 /** A cell that counts as "ground" a crawler can grip: any Solid/Powder cell
- *  that isn't the crawler's own kind (so a crawler never treats another
- *  crawler — of its own or the other kind — as terrain to stand on). */
+ *  that isn't itself a crawler (see `isCrawler` — no crawler, of either kind,
+ *  is ever terrain to another). */
 function isGround(id: number): boolean {
-  if (id === EMPTY) return false;
+  if (id === EMPTY || isCrawler(id)) return false;
   const phase = getMaterial(id).phase;
   return phase === Phase.Solid || phase === Phase.Powder;
 }
 
-/** True if any 8-neighbor of (x,y) is ground, per `isGround`, other than the
- *  crawler's own id (so a termite standing next to another termite doesn't
- *  count that neighbor as terrain). */
-function hasGroundNeighbor(sim: SimContext, x: number, y: number, selfId: number): boolean {
+/** True if any 8-neighbor of (x,y) is ground, per `isGround`. */
+function hasGroundNeighbor(sim: SimContext, x: number, y: number): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const id = sim.get(nx, ny);
-    if (id !== selfId && isGround(id)) return true;
+    if (isGround(sim.get(nx, ny))) return true;
   }
   return false;
 }
@@ -49,15 +53,16 @@ function hasLiquidNeighbor(sim: SimContext, x: number, y: number): boolean {
   return false;
 }
 
-/** True if any 8-neighbor of (x,y), other than (skipX,skipY), already holds
- *  `selfId` — used to keep a crawler from moving next to one of its own kind
- *  (no clumping). `skipX/skipY` excludes the mover's own about-to-vacate cell,
- *  which is trivially a neighbor of every candidate destination. */
-function hasSameNeighbor(
+/** True if any 8-neighbor of (x,y), other than (skipX,skipY), is any crawler
+ *  — used to keep a crawler from moving/spawning next to another crawler of
+ *  EITHER kind (no clumping, no mutual mid-air propping-up — see `isCrawler`).
+ *  `skipX/skipY` excludes the mover's own about-to-vacate cell (or the eating
+ *  parent, for a reproduction check), which is trivially a neighbor of every
+ *  candidate destination. */
+function hasCrawlerNeighbor(
   sim: SimContext,
   x: number,
   y: number,
-  selfId: number,
   skipX: number,
   skipY: number,
 ): boolean {
@@ -66,7 +71,7 @@ function hasSameNeighbor(
     const ny = y + dy;
     if (nx === skipX && ny === skipY) continue;
     if (!sim.inBounds(nx, ny)) continue;
-    if (sim.get(nx, ny) === selfId) return true;
+    if (isCrawler(sim.get(nx, ny))) return true;
   }
   return false;
 }
@@ -91,10 +96,14 @@ export interface CrawlerSpec {
  * One tick of shared crawler behavior: liquid-aversion death, then a chance to
  * eat an adjacent food cell (clearing it, and 30%-by-default also spawning a
  * new crawler there), then crawling to a random empty neighbor that still
- * touches solid/powder ground and isn't next to another crawler of its own
- * kind. A crawler that finds itself touching no ground at all (knocked into
- * open air) just drops with gravity until it lands somewhere it can grip
- * again, rather than floating.
+ * touches solid/powder ground and isn't next to another crawler — of its own
+ * kind OR the other kind (see `isCrawler`), so Termite and Nanobot never prop
+ * each other up as if either were solid ground. A crawler that finds itself
+ * touching no ground at all (knocked into open air, or buried several cells
+ * deep in an over-thick painted blob) just drops with gravity — sinking
+ * straight through a same-kind sibling if one is directly below, since that
+ * swap is visually a no-op — until it lands somewhere it can grip again,
+ * rather than floating or locking rigid forever.
  */
 export function updateCrawler(x: number, y: number, sim: SimContext, spec: CrawlerSpec): void {
   if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, x, y)) {
@@ -113,7 +122,7 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
       // check here — but it must not ALSO land next to some other, unrelated
       // crawler, or reproduction would seed permanent clumps. If it would, just
       // fall through to the plain-disappearance outcome instead.
-      if (sim.chance(spec.reproduceChance) && !hasSameNeighbor(sim, nx, ny, spec.selfId, x, y)) {
+      if (sim.chance(spec.reproduceChance) && !hasCrawlerNeighbor(sim, nx, ny, x, y)) {
         sim.spawn(nx, ny, spec.selfId); // eaten cell becomes a new crawler
       } else {
         sim.set(nx, ny, EMPTY); // eaten cell just disappears
@@ -130,8 +139,8 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     if (!sim.inBounds(nx, ny)) continue;
     if (sim.get(nx, ny) !== EMPTY) continue;
     if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, nx, ny)) continue;
-    if (!hasGroundNeighbor(sim, nx, ny, spec.selfId)) continue;
-    if (hasSameNeighbor(sim, nx, ny, spec.selfId, x, y)) continue;
+    if (!hasGroundNeighbor(sim, nx, ny)) continue;
+    if (hasCrawlerNeighbor(sim, nx, ny, x, y)) continue;
     cxs.push(nx);
     cys.push(ny);
   }
@@ -141,10 +150,22 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     return;
   }
 
-  // No valid surface move (crowded by its own kind, or simply no ground
+  // No valid surface move (crowded by other crawlers, or simply no ground
   // nearby to grip): if it isn't touching any ground at all, drop with
   // gravity until it lands somewhere it can crawl again.
-  if (!hasGroundNeighbor(sim, x, y, spec.selfId)) {
-    sim.tryMove(x, y, x + sim.gravityX, y + sim.gravityY);
+  if (!hasGroundNeighbor(sim, x, y)) {
+    const tx = x + sim.gravityX;
+    const ty = y + sim.gravityY;
+    if (sim.inBounds(tx, ty) && sim.get(tx, ty) === spec.selfId) {
+      // Packed too deep in a thick same-kind pile (a brush blob painted
+      // several cells thick) to find open ground of its own: sink through a
+      // sibling below instead of locking rigid forever. A same-material swap
+      // is visually a no-op (identical cell either way), so this can't
+      // jitter/flicker — it just lets an over-thick pile gradually settle,
+      // cell by cell each tick, until its members reach real ground.
+      sim.swap(x, y, tx, ty);
+    } else {
+      sim.tryMove(x, y, tx, ty);
+    }
   }
 }

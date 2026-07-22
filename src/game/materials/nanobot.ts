@@ -49,6 +49,7 @@ export const NANOBOT = register({
   color: rgb(170, 182, 196),
   density: 7, // same weight class as the Metal Powder it eats and melts into
   colorVary: 0, // a single small machine, not a granular pile — no per-grain shimmer
+  crawler: true, // never terrain to, and never moves/spawns next to, another crawler
   category: '생명',
   thermal: { conductivity: 0.35 },
   // Caught in a real explosion's non-destructive concussion (crater shove or

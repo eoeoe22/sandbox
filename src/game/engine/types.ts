@@ -359,6 +359,15 @@ export interface Material {
    */
   reactions?: ReactionRule[];
   /**
+   * Marks a "surface crawler" (Termite/Nanobot — see materials/crawler.ts): a
+   * living grain that clings to and wanders across solid/powder terrain. A
+   * crawler never counts as terrain to another crawler — of its own kind OR
+   * the other kind — so two crawlers can never treat each other as ground and
+   * prop each other up in mid-air (the whole reason this is a shared,
+   * type-agnostic tag rather than each crawler only recognizing its own id).
+   */
+  crawler?: boolean;
+  /**
    * 충격파 취약 (shockwave-fragile), for a Powder/Liquid material: when a blast's
    * non-destructive concussion (a weak crater shove, or the outer pressure
    * ring beyond it — see blast.ts) would otherwise fling this loose cell aside
