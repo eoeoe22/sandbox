@@ -53,11 +53,27 @@ function isStructure(id: number): boolean {
   return phase === Phase.Solid || phase === Phase.Powder;
 }
 
-/** True if any 8-neighbor of (x,y) is structure, per `isStructure`. */
-function hasStructureNeighbor(sim: SimContext, x: number, y: number): boolean {
+/** True if any 8-neighbor of (x,y), other than (skipX,skipY), is structure per
+ *  `isStructure`. The skip is the crawler's OWN about-to-vacate cell: a crawler
+ *  is itself Powder-phase (structure), so without excluding it every empty
+ *  neighbor of the crawler — including one straight out into open air — would
+ *  look "surface-supported" by the crawler's own body, and the crawler would
+ *  pop off the surface into the void, get marked ungrounded, and fall right
+ *  back (a fizzing, upward-drifting bounce). Excluding self means a candidate
+ *  destination must touch some OTHER structure — real terrain or a different
+ *  crawler — so the critter actually hugs and crawls along surfaces (and can
+ *  still climb over its neighbors, which count as that other structure). */
+function hasStructureNeighbor(
+  sim: SimContext,
+  x: number,
+  y: number,
+  skipX: number,
+  skipY: number,
+): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
+    if (nx === skipX && ny === skipY) continue;
     if (!sim.inBounds(nx, ny)) continue;
     if (isStructure(sim.get(nx, ny))) return true;
   }
@@ -133,17 +149,32 @@ export interface CrawlerSpec {
   avoidsLiquid?: number;
 }
 
+/** Per-tick chance a grounded crawler actually takes a wander step. Below 1 so
+ *  it ambles along a surface at a deliberate, readable crawl instead of
+ *  vibrating one cell every single tick — the throttle only paces the wander;
+ *  eating, liquid-death, and gravity-fall are never slowed by it. */
+const MOVE_CHANCE = 0.4;
+
 /**
  * One tick of shared crawler behavior: liquid-aversion death, then refreshing
  * this cell's grounded hop count (see `computeGroundHop`), then a chance to
  * eat an adjacent food cell (clearing it, and 30%-by-default also spawning a
  * new crawler there — free to land right next to any other crawler now, no
- * anti-clump gate), then either crawling to a random empty neighbor that
- * still touches some structure (real ground or another crawler — climbing
- * over and clustering with other crawlers is fine) if grounded, or falling
- * one step with gravity if not. A crawler with nothing under it — knocked
- * into open air, or its whole support chain severed — keeps falling until it
- * lands somewhere with a real path back to solid ground.
+ * anti-clump gate), then either crawling along a surface (if grounded) or
+ * falling one step with gravity (if not).
+ *
+ * The wander step picks, at MOVE_CHANCE pace, a random empty neighbor that
+ * still touches some OTHER structure — real terrain, or a different crawler —
+ * with the crawler's own about-to-vacate cell excluded from that "touches
+ * structure" test (see `hasStructureNeighbor`). Excluding self is what makes
+ * it read as crawling rather than fizzing: it can only step to cells that stay
+ * glued to a surface, so it hugs floors, walls, and ceilings and moves freely
+ * in every cardinal direction the surface offers (up AND down a wall, along a
+ * floor) with no heading/turn-around state — instead of popping off into open
+ * air on the strength of its own body and immediately falling back. A crawler
+ * with nothing else under it — knocked into open air, or its whole support
+ * chain severed — keeps falling until it lands somewhere with a real path back
+ * to solid ground.
  */
 export function updateCrawler(x: number, y: number, sim: SimContext, spec: CrawlerSpec): void {
   if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, x, y)) {
@@ -181,6 +212,8 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     return;
   }
 
+  if (!sim.chance(MOVE_CHANCE)) return; // linger on the surface this tick — deliberate crawl pace
+
   const cxs: number[] = [];
   const cys: number[] = [];
   for (const [dx, dy] of DIR8) {
@@ -189,7 +222,7 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     if (!sim.inBounds(nx, ny)) continue;
     if (sim.get(nx, ny) !== EMPTY) continue;
     if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, nx, ny)) continue;
-    if (!hasStructureNeighbor(sim, nx, ny)) continue;
+    if (!hasStructureNeighbor(sim, nx, ny, x, y)) continue; // must grip OTHER structure, not its own body
     cxs.push(nx);
     cys.push(ny);
   }
