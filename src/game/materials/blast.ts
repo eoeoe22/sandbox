@@ -368,11 +368,16 @@ function defaultCell(
   // the mass it carries. Leave it flying.
   if (prevId === DEBRIS.id) return;
   if (power >= durabilityOf(prevId)) {
-    // Strong enough to destroy it: water flash-boils to a steam plume, everything
-    // else takes the ordinary crater flash.
+    // Strong enough to destroy it: water flash-boils to a steam plume; a material
+    // that drops residue when destroyed (Termite→Sawdust, Nanobot→Metal Powder)
+    // leaves that instead of a flash, so a bug caught at the epicenter still leaves
+    // its remains rather than silently burning away; everything else takes the
+    // ordinary crater flash.
     if (isWater(prevId)) {
       sim.spawn(x, y, STEAM.id); // marks moved; won't be re-processed this tick
       sim.setTemp(x, y, UNDERWATER_STEAM_TEMP); // a hot, buoyant bubble that rises
+    } else if (m.blastDeathId !== undefined) {
+      sim.spawn(x, y, m.blastDeathId); // residue; spawn marks it moved this tick
     } else {
       flashCell(sim, x, y);
     }

@@ -172,6 +172,19 @@ export interface Material {
    */
   durability?: number;
   /**
+   * What a cell of this material leaves behind when a blast destroys it, instead
+   * of the usual shockwave flash that fades to Fire/Empty (see defaultCell in
+   * blast.ts). A material that should drop *residue* when caught in a crater —
+   * a Termite crushed to Sawdust, a Nanobot shattered to Metal Powder — sets this
+   * so the residue appears even at the epicenter, not just for the rim cells its
+   * own `update` can catch via an adjacent Blast cell. Omitted ⇒ the ordinary
+   * flash. Only consulted on the destroy path (power ≥ durability); a blast too
+   * weak to break the material never reaches it, so a Woofer's power-0 shockwave
+   * (which can't beat any solid's durability) never triggers this — the same
+   * "Woofer excluded" property the adjacent-Blast check relies on.
+   */
+  blastDeathId?: MatId;
+  /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
    * material load order. Temperature-driven *reactions* (Lava freezing to
