@@ -340,6 +340,7 @@ function defaultCell(
   entryDx: number,
   entryDy: number,
   outB: number,
+  harmless: boolean,
 ): void {
   // Empty air and the detonating charge itself always take the shockwave flash:
   // air so the blast still reads as a filled disc, an explosive so a source cell
@@ -383,7 +384,15 @@ function defaultCell(
   // back. A solid it can't crack never reaches here (blocksBlast keeps the front
   // out of it), so anything still solid is left untouched, defensively.
   if (m.phase !== Phase.Solid) {
-    launchDebris(sim, x, y, prevId, entryDx, entryDy, outB);
+    // A shock-fragile living grain (Termite/Nanobot) doesn't survive being
+    // knocked around by a real blast the way inert matter does — it dies
+    // outright instead of flying off as Debris — unless this concussion is
+    // itself harmless (Woofer), which treats it exactly like ordinary matter.
+    if (!harmless && m.shockFragile !== undefined) {
+      sim.set(x, y, m.shockFragile);
+    } else {
+      launchDebris(sim, x, y, prevId, entryDx, entryDy, outB);
+    }
   }
 }
 
@@ -559,6 +568,15 @@ export interface DetonateOptions {
    * fixed fireball) that chains to neighbors one at a time instead of pooling
    * into one lopsided mass survey. */
   soloSource?: boolean;
+  /**
+   * This blast's concussion is truly harmless to living things caught in it —
+   * even a `Material.shockFragile` grain (Termite/Nanobot) is just shoved as
+   * ordinary Debris instead of dying (see defaultCell/pressureRing). Set by
+   * Woofer (woofer.ts), the one "explosion" that's actually a non-destructive
+   * audio device rather than a weapon; every real explosive omits this and
+   * kills shock-fragile matter its non-destructive shove/pressure-ring reaches.
+   */
+  harmless?: boolean;
 }
 
 /**
@@ -651,6 +669,7 @@ export function detonate(
 
   const onCell = opts.onCell;
   const costMul = opts.costMul;
+  const harmless = opts.harmless === true;
   const callCap =
     opts.maxCells !== undefined && opts.maxCells < MAX_DETONATE_CELLS
       ? opts.maxCells
@@ -676,7 +695,7 @@ export function detonate(
     const prevId = sim.get(x, y);
     let handled = false;
     if (onCell) handled = onCell(sim, x, y, prevId, edx, edy, outB) === true;
-    if (!handled) defaultCell(sim, x, y, prevId, power, edx, edy, outB);
+    if (!handled) defaultCell(sim, x, y, prevId, power, edx, edy, outB, harmless);
     destroyed++;
     budgetLeft--;
 
@@ -733,7 +752,7 @@ export function detonate(
   // radially outward (concussion), without breaking anything. On by default, its
   // reach scaling with this blast's crater reach R (bigger blast → wider shove).
   if (opts.pressure !== false) {
-    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R));
+    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R), harmless);
   }
 
   const rimHandler = opts.rimHandler;
@@ -771,6 +790,7 @@ function pressureRing(
   stamp: Int32Array,
   id_d: number,
   reach: number,
+  harmless: boolean,
 ): void {
   const w = sim.width;
   const h = sim.height;
@@ -826,8 +846,17 @@ function pressureRing(
       !shadowsPressure(id) &&
       sim.chance(PRESSURE_LAUNCH_CHANCE)
     ) {
-      launchBallistic(sim, x, y, edx, edy, DEBRIS.id, PRESSURE_SHOVE);
-      sim.setAux(x, y, id);
+      // A shock-fragile living grain (Termite/Nanobot) dies from the
+      // concussion instead of being flung unharmed like inert matter —
+      // unless this wave is itself harmless (Woofer). See defaultCell's
+      // matching branch for the in-crater shove.
+      const fragileInto = getMaterial(id).shockFragile;
+      if (!harmless && fragileInto !== undefined) {
+        sim.set(x, y, fragileInto);
+      } else {
+        launchBallistic(sim, x, y, edx, edy, DEBRIS.id, PRESSURE_SHOVE);
+        sim.setAux(x, y, id);
+      }
     }
 
     for (let i = 0; i < NEIGHBORS.length; i++) {

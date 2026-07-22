@@ -47,6 +47,10 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
     power: POWER,
     reach: REACH,
     onCell: (_s, _cx, _cy, prevId) => (prevId === EMPTY ? true : false),
+    // A speaker thump can't hurt anything — even a shock-fragile living grain
+    // (Termite/Nanobot) is just shoved like ordinary loose matter, never
+    // killed. See Material.shockFragile / DetonateOptions.harmless.
+    harmless: true,
   });
 }
 

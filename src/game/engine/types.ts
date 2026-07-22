@@ -358,6 +358,21 @@ export interface Material {
    * multi-stage behavior still lives in `update`.
    */
   reactions?: ReactionRule[];
+  /**
+   * 충격파 취약 (shockwave-fragile), for a Powder/Liquid material: when a blast's
+   * non-destructive concussion (a weak crater shove, or the outer pressure
+   * ring beyond it — see blast.ts) would otherwise fling this loose cell aside
+   * as Debris (which rains back unharmed, mass-conserving), it dies instead
+   * and becomes this material id — a living/fragile grain that can't survive
+   * being knocked around, unlike inert matter (Termite/Nanobot). A blast
+   * marked `DetonateOptions.harmless` (Woofer, a non-destructive audio device
+   * rather than a weapon) is exempt and treats it like ordinary loose matter
+   * — flung as Debris, unharmed. Never checked for a Solid cell (a weak blast
+   * never moves those at all — see blocksBlast/shadowsPressure) or once the
+   * blast is strong enough to destroy it outright (that's the ordinary crater,
+   * not this non-destructive path).
+   */
+  shockFragile?: MatId;
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
 }
