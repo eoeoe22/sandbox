@@ -13,30 +13,53 @@ import type { SimContext } from '../engine/SimContext';
 // molten metal), so only this shared crawl-eat-reproduce core lives here; each
 // material's own file handles its own death/melt conditions before handing off
 // to `updateCrawler`.
+//
+// Termite and Nanobot are free to move/spawn right next to each other (and
+// each other's own kind) and to climb over one another — there's no anti-clump
+// rule here. What they can't do is defy gravity: a crawler only counts as
+// "grounded" if it's touching real terrain directly, or touching another
+// crawler that's itself grounded, all the way back to some real terrain
+// somewhere. That chain is tracked as a hop-count cached in each crawler's aux
+// cell (see `computeGroundHop`) rather than re-flood-filled from scratch every
+// tick, so it's cheap even for a big colony. A capped hop count also means a
+// colony that eats away its own support doesn't get stuck forever quietly
+// referencing its equally-stranded neighbors' stale "I'm grounded" state (the
+// classic distance-vector "count to infinity" trap) — a severed chain's hop
+// count climbs by roughly one per tick until it blows past the cap, at which
+// point it's correctly reclassified ungrounded and starts to fall. That
+// resolution can take up to MAX_HOPS ticks, but it always resolves.
 
-/** True if `id` is any crawler (Termite OR Nanobot — see `Material.crawler`),
- *  the type-agnostic check that keeps crawlers from ever treating EACH OTHER
- *  (same kind or not) as ground or as a legal neighbor to move/spawn next to. */
+/** True if `id` is any crawler (Termite OR Nanobot — see `Material.crawler`). */
 function isCrawler(id: number): boolean {
   return id !== EMPTY && getMaterial(id).crawler === true;
 }
 
-/** A cell that counts as "ground" a crawler can grip: any Solid/Powder cell
- *  that isn't itself a crawler (see `isCrawler` — no crawler, of either kind,
- *  is ever terrain to another). */
-function isGround(id: number): boolean {
+/** Real, non-crawler Solid/Powder terrain — the only thing that can anchor a
+ *  crawler chain to the ground "from scratch" (hop 0). */
+function isRealGround(id: number): boolean {
   if (id === EMPTY || isCrawler(id)) return false;
   const phase = getMaterial(id).phase;
   return phase === Phase.Solid || phase === Phase.Powder;
 }
 
-/** True if any 8-neighbor of (x,y) is ground, per `isGround`. */
-function hasGroundNeighbor(sim: SimContext, x: number, y: number): boolean {
+/** Any Solid/Powder cell a crawler can grip to move onto or spawn next to —
+ *  real terrain OR another crawler of either kind. Termite and Nanobot are
+ *  themselves Powder-phase, so nothing stops them clinging to and climbing
+ *  over each other; whether the resulting position stays up under gravity is
+ *  a separate question, handled by the grounded hop-count below. */
+function isStructure(id: number): boolean {
+  if (id === EMPTY) return false;
+  const phase = getMaterial(id).phase;
+  return phase === Phase.Solid || phase === Phase.Powder;
+}
+
+/** True if any 8-neighbor of (x,y) is structure, per `isStructure`. */
+function hasStructureNeighbor(sim: SimContext, x: number, y: number): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (isGround(sim.get(nx, ny))) return true;
+    if (isStructure(sim.get(nx, ny))) return true;
   }
   return false;
 }
@@ -53,27 +76,45 @@ function hasLiquidNeighbor(sim: SimContext, x: number, y: number): boolean {
   return false;
 }
 
-/** True if any 8-neighbor of (x,y), other than (skipX,skipY), is any crawler
- *  — used to keep a crawler from moving/spawning next to another crawler of
- *  EITHER kind (no clumping, no mutual mid-air propping-up — see `isCrawler`).
- *  `skipX/skipY` excludes the mover's own about-to-vacate cell (or the eating
- *  parent, for a reproduction check), which is trivially a neighbor of every
- *  candidate destination. */
-function hasCrawlerNeighbor(
-  sim: SimContext,
-  x: number,
-  y: number,
-  skipX: number,
-  skipY: number,
-): boolean {
+/** Cap on the "grounded" hop count (see the file header). Bounds how long a
+ *  severed support chain takes to notice it's lost (worst case MAX_HOPS
+ *  ticks) — high enough that no realistically-sized colony ever falsely reads
+ *  as unsupported while genuinely still connected to real terrain. */
+const MAX_HOPS = 128;
+
+/** aux value meaning "no known path to real ground" — also what a freshly
+ *  spawned crawler's aux defaults to (see SimContext.spawn), so a newborn
+ *  starts out conservatively ungrounded until its own next update verifies
+ *  it (almost always immediately true, since it's born right next to its
+ *  parent). */
+const UNGROUNDED = 0;
+
+/**
+ * Recomputes this tick's grounded hop count for (x,y): 1 if it touches real
+ * terrain directly, otherwise one more than the smallest hop count among its
+ * crawler neighbors (their aux value, cached from their own most recent
+ * update), capped at MAX_HOPS and read as UNGROUNDED (0) past that cap. This
+ * is a one-hop-per-tick relaxation of the whole crawler graph's distance to
+ * real ground, not a full flood-fill — cheap, self-stabilizing for any
+ * genuinely-supported structure, and guaranteed (via the cap) to eventually
+ * un-stick a structure whose real support got eaten/blown/melted away instead
+ * of leaving it floating on stale neighbor state forever.
+ */
+function computeGroundHop(sim: SimContext, x: number, y: number): number {
+  let best = 0; // smallest neighbor hop count seen so far (0 = none yet)
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (nx === skipX && ny === skipY) continue;
     if (!sim.inBounds(nx, ny)) continue;
-    if (isCrawler(sim.get(nx, ny))) return true;
+    const id = sim.get(nx, ny);
+    if (isRealGround(id)) return 1; // directly on terrain — the best possible case
+    if (!isCrawler(id)) continue;
+    const hop = sim.getAux(nx, ny);
+    if (hop === UNGROUNDED) continue;
+    if (best === 0 || hop < best) best = hop;
   }
-  return false;
+  if (best === 0 || best >= MAX_HOPS) return UNGROUNDED;
+  return best + 1;
 }
 
 export interface CrawlerSpec {
@@ -93,17 +134,16 @@ export interface CrawlerSpec {
 }
 
 /**
- * One tick of shared crawler behavior: liquid-aversion death, then a chance to
+ * One tick of shared crawler behavior: liquid-aversion death, then refreshing
+ * this cell's grounded hop count (see `computeGroundHop`), then a chance to
  * eat an adjacent food cell (clearing it, and 30%-by-default also spawning a
- * new crawler there), then crawling to a random empty neighbor that still
- * touches solid/powder ground and isn't next to another crawler — of its own
- * kind OR the other kind (see `isCrawler`), so Termite and Nanobot never prop
- * each other up as if either were solid ground. A crawler that finds itself
- * touching no ground at all (knocked into open air, or buried several cells
- * deep in an over-thick painted blob) just drops with gravity — sinking
- * straight through a same-kind sibling if one is directly below, since that
- * swap is visually a no-op — until it lands somewhere it can grip again,
- * rather than floating or locking rigid forever.
+ * new crawler there — free to land right next to any other crawler now, no
+ * anti-clump gate), then either crawling to a random empty neighbor that
+ * still touches some structure (real ground or another crawler — climbing
+ * over and clustering with other crawlers is fine) if grounded, or falling
+ * one step with gravity if not. A crawler with nothing under it — knocked
+ * into open air, or its whole support chain severed — keeps falling until it
+ * lands somewhere with a real path back to solid ground.
  */
 export function updateCrawler(x: number, y: number, sim: SimContext, spec: CrawlerSpec): void {
   if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, x, y)) {
@@ -111,24 +151,34 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     return;
   }
 
+  const hop = computeGroundHop(sim, x, y);
+  sim.setAux(x, y, hop);
+  const grounded = hop !== UNGROUNDED;
+
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
     if (spec.foodIds.has(nid) && sim.chance(spec.eatChance)) {
-      // A newborn is unavoidably adjacent to its own parent (it's born right where
-      // the parent just ate), so the parent (x,y) is exempt from the no-clump
-      // check here — but it must not ALSO land next to some other, unrelated
-      // crawler, or reproduction would seed permanent clumps. If it would, just
-      // fall through to the plain-disappearance outcome instead.
-      if (sim.chance(spec.reproduceChance) && !hasCrawlerNeighbor(sim, nx, ny, x, y)) {
+      if (sim.chance(spec.reproduceChance)) {
         sim.spawn(nx, ny, spec.selfId); // eaten cell becomes a new crawler
       } else {
         sim.set(nx, ny, EMPTY); // eaten cell just disappears
       }
       return;
     }
+  }
+
+  if (!grounded) {
+    // No verified path back to real ground: fall. tryMove only succeeds into
+    // EMPTY (crawlers are Powder-phase, so one crawler can't displace
+    // another) — a cell resting on other still-ungrounded crawlers simply
+    // waits its turn, and as the ones below it fall out from under it on
+    // later ticks it inherits an empty cell below and falls too, cascading
+    // like any unsupported pile collapsing.
+    sim.tryMove(x, y, x + sim.gravityX, y + sim.gravityY);
+    return;
   }
 
   const cxs: number[] = [];
@@ -139,33 +189,12 @@ export function updateCrawler(x: number, y: number, sim: SimContext, spec: Crawl
     if (!sim.inBounds(nx, ny)) continue;
     if (sim.get(nx, ny) !== EMPTY) continue;
     if (spec.avoidsLiquid !== undefined && hasLiquidNeighbor(sim, nx, ny)) continue;
-    if (!hasGroundNeighbor(sim, nx, ny)) continue;
-    if (hasCrawlerNeighbor(sim, nx, ny, x, y)) continue;
+    if (!hasStructureNeighbor(sim, nx, ny)) continue;
     cxs.push(nx);
     cys.push(ny);
   }
   if (cxs.length > 0) {
     const k = sim.randInt(cxs.length);
     sim.swap(x, y, cxs[k], cys[k]);
-    return;
-  }
-
-  // No valid surface move (crowded by other crawlers, or simply no ground
-  // nearby to grip): if it isn't touching any ground at all, drop with
-  // gravity until it lands somewhere it can crawl again.
-  if (!hasGroundNeighbor(sim, x, y)) {
-    const tx = x + sim.gravityX;
-    const ty = y + sim.gravityY;
-    if (sim.inBounds(tx, ty) && sim.get(tx, ty) === spec.selfId) {
-      // Packed too deep in a thick same-kind pile (a brush blob painted
-      // several cells thick) to find open ground of its own: sink through a
-      // sibling below instead of locking rigid forever. A same-material swap
-      // is visually a no-op (identical cell either way), so this can't
-      // jitter/flicker — it just lets an over-thick pile gradually settle,
-      // cell by cell each tick, until its members reach real ground.
-      sim.swap(x, y, tx, ty);
-    } else {
-      sim.tryMove(x, y, tx, ty);
-    }
   }
 }
