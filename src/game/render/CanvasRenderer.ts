@@ -60,10 +60,15 @@ const WIND_HOLD = 0.15; // fraction held fully drawn before the fade begins
 // spiral: a long trailing line, a vertical rise at the head, a short return along
 // the top, then a little inward hook.
 const WIND_BODY = 12; // lit length of the trailing line
-const WIND_HOOK = 5; // how far the top of the hook runs back from the head
+const WIND_HOOK = 4; // how far the top of the hook runs back from the head
 const WIND_HOOK_IN = 2; // where the inner return starts (back from head)
-const WIND_CURL_H = 3; // outer height of the hook
+const WIND_CURL_H = 2; // outer height of the hook — kept tight for a narrow curl
 const WIND_CURL_IN = 1; // inner return height
+// How far the curl may overhang the beam edge before it would be clipped. The hook
+// reaches WIND_CURL_H cells across the centreline, so an empty cell up to this far
+// outside the field can still legitimately host a hook — the overhang pass renders
+// it instead of cutting the curl at the beam boundary.
+const WIND_HALO = WIND_CURL_H;
 // Total arclength of the glyph path, tail → head → around the hook. The lifecycle
 // reveals/retracts this length so the curl draws in progressively.
 const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - WIND_HOOK_IN;
@@ -102,6 +107,34 @@ function windGlyphArc(dA: number, dc: number): number {
     return dA >= WIND_HOOK_IN && dA <= WIND_HOOK
       ? WIND_BODY + 2 * WIND_CURL_H + WIND_HOOK - WIND_CURL_IN + (WIND_HOOK - dA) // inner return
       : -1;
+  return -1;
+}
+
+/** Blow direction (0..3) to borrow for an empty cell that sits just *outside* the
+ *  wind field, so a curl hook overhanging the beam edge still renders instead of
+ *  being clipped. Scans the four orthogonal rays out to WIND_HALO cells and returns
+ *  the nearest wind cell's direction, or −1 if none is within reach. The streak's
+ *  spine check still gates the actual paint, so this only ever *extends* a real
+ *  hook past the boundary — it can't spawn a streak in open air. */
+function windHaloDir(windArr: Uint8Array, x: number, y: number, w: number, h: number): number {
+  for (let k = 1; k <= WIND_HALO; k++) {
+    if (y - k >= 0) {
+      const v = windArr[(y - k) * w + x];
+      if (v !== 0) return v - 1;
+    }
+    if (y + k < h) {
+      const v = windArr[(y + k) * w + x];
+      if (v !== 0) return v - 1;
+    }
+    if (x - k >= 0) {
+      const v = windArr[y * w + (x - k)];
+      if (v !== 0) return v - 1;
+    }
+    if (x + k < w) {
+      const v = windArr[y * w + (x + k)];
+      if (v !== 0) return v - 1;
+    }
+  }
   return -1;
 }
 
@@ -190,6 +223,11 @@ export class CanvasRenderer implements Renderer {
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
   private windPhase = 0;
+  /** True if the previous frame drew any wind cell. Gates the (slightly pricier)
+   *  overhang/halo pass — where a curl hook renders on empty air just outside the
+   *  beam — so a scene with no active fan never pays for it. One-frame latency is
+   *  imperceptible (a beam persists across frames while its fan runs). */
+  private windWasActive = false;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -415,6 +453,10 @@ export class CanvasRenderer implements Renderer {
     // dash stepping (the field itself is 0 when there are no fans, so this is idle).
     this.windPhase += WIND_ANIM_SPEED;
     const windPhase = this.windPhase | 0;
+    const gh = grid.height;
+    // Only run the overhang pass when a fan was blowing last frame (see windWasActive).
+    const windHalo = this.windWasActive;
+    let sawWind = false;
     for (let i = 0; i < cells.length; i++) {
       // Heat overlay: recolor occupied cells by temperature (a live thermal
       // camera); empty cells keep the ambient background so shapes read against
@@ -521,10 +563,21 @@ export class CanvasRenderer implements Renderer {
       // in, curls, and fades over its own lifecycle from a random spawn slot (see
       // windGlyphArc, windHash01 and the WIND_* constants).
       const wv = windArr[i];
-      if (wv !== 0 && id === EMPTY && !heat) {
+      if (wv !== 0) sawWind = true;
+      // Enter for any empty air: cells inside the beam (wv≠0) carry a streak, and
+      // — when a fan was active last frame — empty cells just outside the beam can
+      // host a curl hook that overhangs the edge, borrowing the beam's direction so
+      // the overhang renders instead of being clipped (windHaloDir).
+      if (id === EMPTY && !heat && (wv !== 0 || windHalo)) {
         const x = i % w;
         const y = (i / w) | 0;
-        const dir = wv - 1; // 0 up, 1 down, 2 left, 3 right
+        const dir = wv !== 0 ? wv - 1 : windHaloDir(windArr, x, y, w, gh); // 0 up,1 down,2 left,3 right
+        if (dir < 0) {
+          // Empty air out of any hook's reach — nothing to draw here.
+          const ovg = ovArr[i];
+          buf[i] = ovg !== 0 ? CanvasRenderer.wetted(c, pal[ovg]) : c;
+          continue;
+        }
         let along: number;
         let across: number;
         let sign: number;
@@ -549,7 +602,7 @@ export class CanvasRenderer implements Renderer {
         // Streaks spawn at jittered positions, so this cell may belong to a streak
         // seeded on the neighbouring base lines too — test all three and take the
         // first that lights. Bound check: a streak's owning centreline can sit at
-        // most WIND_CURL_H + WIND_JITTER/2 (= 3 + 2 = 5) cells from `across`, and the
+        // most WIND_CURL_H + WIND_JITTER/2 (= 2 + 2 = 4) cells from `across`, and the
         // nearest WIND_LINE_SPACING (8) multiple is within 4, so ±1 always covers it.
         let litColor = -1;
         for (let dL = -1; dL <= 1 && litColor < 0; dL++) {
@@ -588,14 +641,20 @@ export class CanvasRenderer implements Renderer {
             retract = ((p - WIND_DRAW - WIND_HOLD) / (1 - WIND_DRAW - WIND_HOLD)) * WIND_TOTAL;
           }
           if (s < retract || s > reveal) continue; // not yet drawn, or already faded
-          // A hook cell (dc≠0) only lights when its own centreline is inside the
-          // beam, so a narrow beam degrades cleanly to just the line instead of
-          // shedding floating hook fragments.
-          let ok = dc === 0;
-          if (!ok) {
+          // A hook cell (dc≠0) lights only when its streak's spine (the centreline
+          // cell at this along position) is inside the beam. That single test does
+          // double duty: it lets the hook overhang the beam edge — this very cell may
+          // be outside the field (a halo cell) yet still light because its in-beam
+          // spine backs it — while still refusing a stray fragment whose spine never
+          // entered the beam. The spine cell being a wind cell is what makes it real.
+          // The trailing line (dc===0) only draws on real in-beam cells (wv≠0), so it
+          // never leaks past the beam's along-ends; the halo pass extends the curl
+          // (dc≠0) only.
+          let ok = dc === 0 && wv !== 0;
+          if (dc !== 0) {
             const cx = dir >= 2 ? along : centre;
             const cy = dir >= 2 ? centre : along;
-            if (cx >= 0 && cx < w && cy >= 0 && cy < grid.height) {
+            if (cx >= 0 && cx < w && cy >= 0 && cy < gh) {
               ok = windArr[cy * w + cx] !== 0;
             }
           }
@@ -609,6 +668,7 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    this.windWasActive = sawWind;
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
