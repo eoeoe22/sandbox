@@ -5,6 +5,8 @@ import { DIR4, DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
 import { SPARK, packSpark, conductorClass, FULL_STRENGTH } from './spark';
+import { WOOFER, wooferBodyPulse } from './woofer';
+import { FAN, energizeFanBody } from './fan';
 
 // Turbine — a steam-driven generator. Like the Mesh it's a porous solid that
 // fluids pass straight through via the 겹침 overlap layer (see Grid.overlay),
@@ -35,7 +37,11 @@ const MAX_BODY = 256;
 /** Inject a full-strength Spark into every ready conductive neighbor of (x,y) —
  *  the same hand-off a Battery does, triggered here by steam in the body. A
  *  neighbor already energized (its aux still set, or already turned to Spark)
- *  is skipped, so repeated pulses within a tick don't stack. */
+ *  is skipped, so repeated pulses within a tick don't stack. Non-conductive
+ *  electric appliances (Fan, Woofer) are one-way "outside → inside" sinks, not
+ *  wires, so they never take the conductive branch — they're special-cased by id
+ *  exactly like Battery's injectPulses / spark.ts's arc phase, so plugging one
+ *  straight onto a turbine face (도체 없이 직접 연결) powers it with no wire. */
 function energizeNeighbors(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -49,6 +55,10 @@ function energizeNeighbors(x: number, y: number, sim: SimContext): void {
       sim.spawn(nx, ny, SPARK.id);
       sim.setTemp(nx, ny, heat); // carry the wire's heat across the spawned spark
       sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
+    } else if (nid === FAN.id) {
+      energizeFanBody(sim, nx, ny); // whole connected fan body turns on
+    } else if (nid === WOOFER.id) {
+      wooferBodyPulse(sim, nx, ny); // whole connected woofer body thumps (memoized per tick)
     }
   }
 }
