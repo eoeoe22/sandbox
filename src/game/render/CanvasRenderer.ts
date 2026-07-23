@@ -862,24 +862,45 @@ export class CanvasRenderer implements Renderer {
       if (trav < SHOCK_FADE) fade = trav / SHOCK_FADE;
       if (tail < SHOCK_FADE) fade = Math.min(fade, tail / SHOCK_FADE);
       if (fade <= 0) continue;
-      // Scan the crest's bbox (outermost lit radius is rr, +1 slack for rounding).
-      const outer = rr + 1;
-      let x0 = Math.floor(s.cx - outer);
-      let x1 = Math.ceil(s.cx + outer);
-      let y0 = Math.floor(s.cy - outer);
-      let y1 = Math.ceil(s.cy + outer);
-      if (x0 < 0) x0 = 0;
+      // Lit band is the thin annulus of integer rings [rr-(rings-1), rr]. Rounding
+      // lights a cell whose true distance is within ±0.5 of an integer ring, so the
+      // band spans distances [innerR, outerR). Scan it by *rows*, computing each
+      // row's two x-spans and jumping over the interior hole — so the work is
+      // O(perimeter), not O(radius²) (keeps a giant Woofer wall's ring cheap while
+      // the wavefront still honestly leaves the whole body surface).
+      const outerR = rr + 0.5;
+      const innerR = rr - (rings - 1) - 0.5;
+      const outerR2 = outerR * outerR;
+      const innerR2 = innerR > 0 ? innerR * innerR : 0;
+      const cx = s.cx;
+      const cy = s.cy;
+      let y0 = Math.ceil(cy - outerR);
+      let y1 = Math.floor(cy + outerR);
       if (y0 < 0) y0 = 0;
-      if (x1 > w - 1) x1 = w - 1;
       if (y1 > h - 1) y1 = h - 1;
       for (let y = y0; y <= y1; y++) {
-        const dy = y - s.cy;
+        const dy = y - cy;
+        const dy2 = dy * dy;
+        if (dy2 >= outerR2) continue;
         const row = y * w;
-        for (let x = x0; x <= x1; x++) {
-          const dx = x - s.cx;
-          const rd = Math.round(Math.sqrt(dx * dx + dy * dy)); // this cell's integer ring
+        const outerDx = Math.sqrt(outerR2 - dy2);
+        // Interior hole half-width at this row (0 where the row clears the hole).
+        const holeHalf = innerR2 > dy2 ? Math.sqrt(innerR2 - dy2) : 0;
+        let xl = Math.ceil(cx - outerDx);
+        let xr = Math.floor(cx + outerDx);
+        if (xl < 0) xl = 0;
+        if (xr > w - 1) xr = w - 1;
+        for (let x = xl; x <= xr; x++) {
+          const dx = x - cx;
+          // Skip the hole in one jump — leap from the left arc straight to the right.
+          if (holeHalf > 0 && dx > -holeHalf && dx < holeHalf) {
+            const nx = Math.ceil(cx + holeHalf);
+            if (nx > x) x = nx - 1; // next loop step (x++) lands on the right arc
+            continue;
+          }
+          const rd = Math.round(Math.sqrt(dx * dx + dy2)); // this cell's integer ring
           const k = rr - rd; // 0 = leading crest, 1..rings-1 = trailing tones
-          if (k < 0 || k >= rings) continue; // not on the wave
+          if (k < 0 || k >= rings) continue; // rounding edge just outside the band
           const i = row + x;
           const id = cells[i];
           // Opaque matter (powder / solid / gas) occludes the background wave.
@@ -889,7 +910,7 @@ export class CanvasRenderer implements Renderer {
           if (SHOCK_BAYER[(y & 3) * 4 + (x & 3)] >= fade * 16) continue;
           // A wall between the epicentre and this cell shadows it (POWER-0 pulses
           // are stopped by any solid). Cheapest test last, only for cells we'd draw.
-          if (this.shockShadowed(cells, solid, w, h, s.cx, s.cy, x, y, s.r0)) continue;
+          if (this.shockShadowed(cells, solid, w, h, cx, cy, x, y, s.r0)) continue;
           const shade = SHOCK_SHADES[k];
           if (id === EMPTY) {
             buf[i] = shade; // hard pixel — crisp arcade crest over the dark board
