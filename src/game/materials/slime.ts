@@ -143,12 +143,12 @@ export const SLIME = register({
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
   // (high coefficient of restitution) before it settles (see debris.ts 탄성).
   elasticity: 0.92,
-  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): still the poorest
-  // conductor in the roster in spirit, but current now carries a good stretch
-  // into a blob (on par with fresh Water, ~10 cells) instead of dying within a
-  // cell or two — and current that actually passes through it is what seeds the
-  // blob's own electric-dissolve front, now with a bigger bite per shock
-  // (SLIME_DISSOLVE_BUDGET) too (전기전도성 및 제거 범위 상향).
+  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): the poorest conductor
+  // in the roster in spirit (its acidic cousin Acid Slime aside, which conducts at
+  // the max), but current still carries a good stretch into a blob (on par with
+  // fresh Water, ~7 cells) instead of dying within a cell or two — and current that
+  // actually passes through it is what seeds the blob's own electric-dissolve
+  // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
   conductive: true,
   thermal: { conductivity: 0.2 },
   update: updateSlime,

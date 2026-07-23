@@ -25,13 +25,15 @@ import { WATER } from './water';
 // the same density, so left alone they'd stack in flat layers; the occasional
 // diffusive swap is what blends a blob of one into the other over time.
 //
-// Deliberately NOT conductive (unlike plain Slime): the Spark subsystem packs its
-// conductor id into a 3-bit class field that is already exactly full (7 classes —
-// see spark.ts CONDUCTOR_IDS/CLASS_MASK), so an 8th conductor can't be added
-// without widening that packing and re-tuning the whole electricity engine. Acid
-// Slime therefore forgoes Slime's niche electric-dissolve weakness and keeps only
-// its ooze/feed/melt identity plus the acid corrosion — a clean, self-contained
-// addition that leaves the electricity subsystem untouched.
+// Electricity: like plain Slime it conducts and dissolves under current — and
+// then some. It's the roster's one non-metal at *zero* strength loss (전기전도성
+// 최대치 — see spark.ts CONDUCTOR_LOSS), so a pulse runs full length through a
+// blob rather than fading out. Its weakness to that current is Slime's, unchanged:
+// a spark that travelled *through* a cell has a low chance to seed a bounded,
+// ragged electric-dissolve front (aux = remaining reach) that reverts the cell to
+// Water and frays outward to healthy Acid-Slime neighbours (전기 닿으면 물로 분해).
+// One lone spark takes only a small bite; a battery pulsing spark after spark is
+// what erodes a whole blob back to a puddle — identical to Slime's mechanism.
 const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more acid slime
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
@@ -47,6 +49,11 @@ const SELF_CONSUME_CHANCE = 0.08;
 // goos gradually interdiffuse across their boundary (mirrors Acid↔Water).
 const DIFFUSE_CHANCE = 0.02;
 
+// Freshly-dissolved Water carries this brief "recently electrolysed" countdown in
+// its aux so the blob can't instantly drink its own dissolve puddle back and heal
+// (mirrors slime.ts DISSOLVE_WATER_GRACE — Water's own update ticks the mark down).
+const DISSOLVE_WATER_GRACE = 14;
+
 function isCorrodible(id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
@@ -54,7 +61,45 @@ function isCorrodible(id: number): boolean {
   return m.phase === Phase.Solid || m.phase === Phase.Powder;
 }
 
+// One electric-dissolve-front step (aux = remaining reach), mirroring slime.ts:
+// revert this cell to Water and, while reach is left, hand budget-1 to ONE random
+// still-healthy Acid-Slime neighbour via `spawn` (moved-guard: it acts next tick,
+// one random step per tick). The decrementing budget bounds a single seed's reach.
+function dissolveFront(x: number, y: number, sim: SimContext): void {
+  const budget = sim.getAux(x, y);
+  if (budget > 1) {
+    const cxs: number[] = [];
+    const cys: number[] = [];
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!sim.inBounds(nx, ny)) continue;
+      if (sim.get(nx, ny) === ACID_SLIME.id && sim.getAux(nx, ny) === 0) {
+        cxs.push(nx);
+        cys.push(ny);
+      }
+    }
+    if (cxs.length > 0) {
+      const k = sim.randInt(cxs.length);
+      sim.spawn(cxs[k], cys[k], ACID_SLIME.id); // moved-guard: acts next tick
+      sim.setAux(cxs[k], cys[k], budget - 1);
+    }
+  }
+  sim.set(x, y, WATER.id); // this cell has reverted to water…
+  // …carrying a brief "recently electrolysed" grace so the blob can't instantly
+  // drink it back (set() leaves aux untouched on a non-EMPTY write, so stamp it).
+  sim.setAux(x, y, DISSOLVE_WATER_GRACE);
+}
+
 function updateAcidSlime(x: number, y: number, sim: SimContext): void {
+  // Electric-dissolve front (aux = remaining reach, seeded by a passing Spark):
+  // revert to Water and pass the bounded front on. Checked first so a caught cell
+  // always dissolves, whatever else is around it.
+  if (sim.getAux(x, y) !== 0) {
+    dissolveFront(x, y, sim);
+    return;
+  }
+
   // Melt away in heat: past the melt point, or beside an open flame.
   if (sim.getTemp(x, y) >= MELT_TEMP) {
     sim.set(x, y, SMOKE.id);
@@ -87,12 +132,14 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
     return;
   }
 
-  // Feed: absorb an adjacent Water cell, growing the blob by one cell.
+  // Feed: absorb an adjacent Water cell, growing the blob by one cell — but NOT
+  // water still marked as freshly electrolysed (aux !== 0), so a blob can't heal
+  // itself off its own electric-dissolve puddle before that water drains away.
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (sim.get(nx, ny) === WATER.id && sim.chance(ABSORB_CHANCE)) {
+    if (sim.get(nx, ny) === WATER.id && sim.getAux(nx, ny) === 0 && sim.chance(ABSORB_CHANCE)) {
       sim.spawn(nx, ny, ACID_SLIME.id);
       return;
     }
@@ -120,6 +167,10 @@ export const ACID_SLIME = register({
   viscosity: 0.86,
   // Springy goo: a glob flung by a blast bounces energetically before it settles.
   elasticity: 0.92,
+  // Conducts at the maximum: spark.ts lists it at zero strength loss (전기전도성
+  // 최대치), so current runs full length through a blob, and a pulse passing
+  // *through* a cell seeds the same electric-dissolve-to-Water front Slime has.
+  conductive: true,
   thermal: { conductivity: 0.2 },
   update: updateAcidSlime,
 });
