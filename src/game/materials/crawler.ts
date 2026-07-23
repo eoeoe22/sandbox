@@ -68,7 +68,7 @@ function isSurface(sim: SimContext, x: number, y: number, selfId: number, liquid
  *  bug ignores liquid (Nanobot). Solids, powders, gases, and its own kind block —
  *  a blocked cardinal is what the wall-follower turns away from. */
 function canStepInto(sim: SimContext, x: number, y: number, selfId: number, enterLiquid: boolean): boolean {
-  if (!sim.inBounds(x, y)) return false;
+  if (!sim.inBounds(x, y)) return sim.borderMode === 'void';
   const id = sim.get(x, y);
   if (id === EMPTY) return true;
   if (id === selfId) return false;
@@ -87,7 +87,7 @@ function canStepInto(sim: SimContext, x: number, y: number, selfId: number, ente
  *  regardless of density/direction — it truly "ignores" the water. */
 function moveTo(sim: SimContext, x: number, y: number, tx: number, ty: number, heading: number): void {
   sim.setAux(x, y, heading + 1);
-  if (sim.get(tx, ty) === EMPTY) sim.tryMove(x, y, tx, ty);
+  if (!sim.inBounds(tx, ty) || sim.get(tx, ty) === EMPTY) sim.tryMove(x, y, tx, ty);
   else sim.swap(x, y, tx, ty);
 }
 
