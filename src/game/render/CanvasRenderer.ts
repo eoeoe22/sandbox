@@ -500,6 +500,9 @@ export class CanvasRenderer implements Renderer {
     this.objOff.height = oh;
     this.objImage = this.objCtx.createImageData(ow, oh);
     this.objBuf32 = new Uint32Array(this.objImage.data.buffer);
+    // Drop any in-flight Woofer shockwaves — their distance fields hold absolute
+    // coordinates for the old dimensions, which would paint into the wrong cells.
+    this.shocks.length = 0;
   }
 
   render(grid: Grid): void {
