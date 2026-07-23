@@ -37,6 +37,7 @@ import { SAWDUST } from './sawdust';
 import { IRON } from './iron';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
+import { BROKEN_GLASS } from './brokenglass';
 import { GLASS } from './glass';
 import { LIQUID_NITROGEN } from './liquidnitrogen';
 import { DRY_ICE } from './dryice';
@@ -151,6 +152,7 @@ export {
   IRON,
   MOLTEN_METAL,
   MOLTEN_GLASS,
+  BROKEN_GLASS,
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
@@ -294,6 +296,7 @@ export const MATERIALS = [
   GALLIUM,
   MOLTEN_METAL,
   MOLTEN_GLASS,
+  BROKEN_GLASS,
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
