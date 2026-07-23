@@ -73,6 +73,24 @@ const WIND_LENGTH = 45;
  *  below ambient. */
 const WIND_COOL_RATE = 0.03;
 
+/** Chance a pushed gas cell fans out on a diagonal (downwind + a perpendicular)
+ *  step instead of being marched straight downwind. Left as a rigid one-cell shove
+ *  every tick, a gust force-marched a gas up (or along) in a dead-straight,
+ *  single-file column and — because the fan's swap marks the cell moved, skipping
+ *  its own updateGas that tick — the gas never got to diffuse sideways at all (기체
+ *  가 바람을 통과할 때 확산하지 않던 문제). Mirroring updateGas's GAS_WOBBLE_CHANCE,
+ *  a share of ticks push the gas diagonally so a blown cloud spreads and drifts
+ *  apart the way it naturally would, while still being carried downwind. */
+const GAS_PUSH_SPREAD = 0.4;
+
+/** Chance a pushed cell takes a *second* straight step downwind the same tick, so
+ *  loose matter drifts ≈1.5 cells/tick on average — the wind's push made half again
+ *  as strong (밀어내기 효과 1.5배 상향). One cell is the grid's natural per-tick step,
+ *  so the extra reach is delivered probabilistically rather than as a fractional
+ *  cell. Only ever fills an empty cell ahead, so it never overruns a blocker or
+ *  compresses a column. */
+const WIND_PUSH_BOOST = 0.5;
+
 /** Backstop on how far one flood walks the connected fan body in a single pass —
  *  mirrors the Turbine/Woofer MAX_BODY so a giant fan wall can't make one pulse
  *  unbounded (a larger body is covered across several capped floods a tick, each
@@ -129,6 +147,61 @@ function coolInWind(x: number, y: number, sim: SimContext): void {
   sim.setTemp(x, y, t - (t - AMBIENT_TEMP) * WIND_COOL_RATE);
 }
 
+/** Swap the cell at (cx,cy) into (tx,ty) iff that target is in-bounds and empty.
+ *  swap carries temp/aux/tint and marks both cells moved. Returns whether it moved. */
+function trySwapInto(cx: number, cy: number, tx: number, ty: number, sim: SimContext): boolean {
+  if (!sim.inBounds(tx, ty) || sim.get(tx, ty) !== EMPTY) return false;
+  sim.swap(cx, cy, tx, ty);
+  return true;
+}
+
+/** Push one loose (windPushable) cell downwind. Powder and liquid step straight one
+ *  cell along the blow direction; a gas may instead fan out on a diagonal
+ *  (GAS_PUSH_SPREAD) so a blown cloud spreads and diffuses rather than riding along
+ *  in a rigid single-file column (기체 확산). Then, either way, with WIND_PUSH_BOOST
+ *  it takes a second straight step the same tick, so matter drifts ≈1.5 cells/tick
+ *  on average (밀어내기 효과 1.5배). Every step only ever fills an empty cell ahead
+ *  (trySwapInto), so a blocked step is simply skipped — no column is ever compressed
+ *  and the boost never overruns the beam's blocker. The caller has already excluded
+ *  EMPTY, non-pushable, and already-moved cells. */
+function shoveDownwind(
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+  id: number,
+  sim: SimContext,
+): void {
+  let nx = cx;
+  let ny = cy;
+  let moved = false;
+
+  if (getMaterial(id).phase === Phase.Gas && sim.chance(GAS_PUSH_SPREAD)) {
+    // Perpendicular to the blow direction; pick a side, try that diagonal first
+    // (downwind + sideways), then the other, before falling back to straight.
+    const px = -dy;
+    const py = dx;
+    const s = sim.chance(0.5) ? 1 : -1;
+    if (trySwapInto(cx, cy, cx + dx + px * s, cy + dy + py * s, sim)) {
+      nx = cx + dx + px * s;
+      ny = cy + dy + py * s;
+      moved = true;
+    } else if (trySwapInto(cx, cy, cx + dx - px * s, cy + dy - py * s, sim)) {
+      nx = cx + dx - px * s;
+      ny = cy + dy - py * s;
+      moved = true;
+    }
+  }
+
+  if (!moved) {
+    if (!trySwapInto(cx, cy, cx + dx, cy + dy, sim)) return;
+    nx = cx + dx;
+    ny = cy + dy;
+  }
+
+  if (sim.chance(WIND_PUSH_BOOST)) trySwapInto(nx, ny, nx + dx, ny + dy, sim);
+}
+
 /** Blow one gust from a single powered fan cell in direction `dir`: shove the
  *  loose matter in the beam one cell downwind and stamp the wind field over the
  *  empty cells of the beam (Grid.wind — a transient, one-way effect layer, never a
@@ -154,20 +227,20 @@ function blow(fx: number, fy: number, dir: number, sim: SimContext): void {
     reach = d;
   }
 
-  // 2) Shove pushable matter (powder/liquid/gas) one cell downwind, processed
-  //    far→near so a whole column shifts forward without cells colliding (the
-  //    front cell vacates first, then each cell behind steps into the gap). One
-  //    step per tick, and a `hasMoved` guard, keep it from teleporting a grain
-  //    the length of the beam in a single scan (컨베이어와 같은 규율).
+  // 2) Shove pushable matter (powder/liquid/gas) downwind, processed far→near so a
+  //    whole column shifts forward without cells colliding (the front cell vacates
+  //    first, then each cell behind steps into the gap). shoveDownwind carries the
+  //    per-material detail — a gas fans out on a diagonal so a blown cloud diffuses
+  //    (기체 확산), and any matter takes a chance at a second step for the 1.5×
+  //    push (밀어내기 1.5배). The `hasMoved` guard still keeps a cell to a single
+  //    resolution per scan (컨베이어와 같은 규율); the boosted second step is that
+  //    one resolution reaching two cells, not the cell being visited twice.
   for (let d = reach; d >= 1; d--) {
     const cx = fx + dx * d;
     const cy = fy + dy * d;
     const id = sim.get(cx, cy);
     if (id === EMPTY || !isWindPushable(id) || sim.hasMoved(cx, cy)) continue;
-    const tx = cx + dx;
-    const ty = cy + dy;
-    if (!sim.inBounds(tx, ty) || sim.get(tx, ty) !== EMPTY) continue; // blocked ahead
-    sim.swap(cx, cy, tx, ty);
+    shoveDownwind(cx, cy, dx, dy, id, sim);
   }
 
   // 3) Sweep the beam: stamp the wind field over the empty (air) cells, and
