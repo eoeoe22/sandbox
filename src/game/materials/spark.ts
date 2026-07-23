@@ -84,7 +84,7 @@ import { FAN, energizeFanBody } from './fan';
 const REFRACTORY_TICKS = 3;
 
 // --- Electricity strength -----------------------------------------------------
-// The class + strength share one 8-bit `aux` byte. With 8 conductors the class
+// The class + strength share one 8-bit `aux` byte. With 10 conductors the class
 // needs 4 bits (classes 1..15, 0 = "none"), leaving 4 bits for strength (0..15).
 const CLASS_BITS = 4;
 const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b1111 — low bits hold the conductor class
