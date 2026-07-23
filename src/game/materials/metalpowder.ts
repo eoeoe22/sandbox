@@ -4,6 +4,24 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updatePowder } from '../engine/behaviors';
 import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { SALTWATER } from './saltwater';
+import { RUST_POWDER } from './rustpowder';
+
+const RUST_CHANCE = 0.005; // 틱당 낮은 확률로 천천히 부식
+
+function isSaltWaterAdjacent(x: number, y: number, sim: SimContext): boolean {
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 // Metal Powder — the pourable, shattered form of metal. It's what a blue drum
 // bursts into when an explosion tears it apart (see objects.ts): the shell is
@@ -20,6 +38,12 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
     // In-place `set` keeps the (now high) temperature so the fresh Molten Metal
     // reads as molten instead of instantly re-freezing next tick (mirrors Iron).
     sim.set(x, y, MOLTEN_METAL.id);
+    return;
+  }
+  // Salt water corrosion: oxidizes to Rust Powder (100% chance) when touching salt water
+  // (including inside as salt water permeates).
+  if (sim.chance(RUST_CHANCE) && isSaltWaterAdjacent(x, y, sim)) {
+    sim.set(x, y, RUST_POWDER.id);
     return;
   }
   updatePowder(x, y, sim);
@@ -42,3 +66,4 @@ export const METAL_POWDER = register({
   thermal: { conductivity: 0.35 },
   update: updateMetalPowder,
 });
+

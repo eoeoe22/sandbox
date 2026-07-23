@@ -109,6 +109,8 @@ import { WOOFER } from './woofer';
 import { TERMITE } from './termite';
 import { NANOBOT } from './nanobot';
 import { FAN } from './fan';
+import { RUST } from './rust';
+import { RUST_POWDER } from './rustpowder';
 
 export {
   EMPTY_MAT,
@@ -217,6 +219,8 @@ export {
   TERMITE,
   NANOBOT,
   FAN,
+  RUST,
+  RUST_POWDER,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -278,6 +282,7 @@ export const MATERIALS = [
   WOOD,
   SAWDUST,
   IRON,
+  RUST,
   MOLTEN_METAL,
   MOLTEN_GLASS,
   GLASS,
@@ -323,6 +328,7 @@ export const MATERIALS = [
   MOLTEN_IRON_ORE,
   COAL_POWDER,
   METAL_POWDER,
+  RUST_POWDER,
   LIMESTONE,
   SLAG,
   HEATPIPE,

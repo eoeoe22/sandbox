@@ -5,7 +5,10 @@ import type { SimContext } from '../engine/SimContext';
 import { IRON } from './iron';
 import { METAL_POWDER } from './metalpowder';
 import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { SALTWATER } from './saltwater';
+import { RUST } from './rust';
 import { crawl, eatAndReproduce, touchingBlast, EAT_CHANCE } from './crawler';
+import { DIR8 } from '../engine/directions';
 
 // Nanobot (나노봇) — a metal-eating machine that crawls along surfaces, the
 // mechanical twin of the Termite (same locomotion — see crawler.ts). It gnaws
@@ -21,7 +24,21 @@ import { crawl, eatAndReproduce, touchingBlast, EAT_CHANCE } from './crawler';
 //   • 폭발 충격파 (단 Woofer 제외) — an adjacent Blast flash cell shatters it back
 //     into loose Metal Powder; a Woofer's flashless shockwave leaves it unharmed
 //     (see crawler.ts).
+//   • 소금물 부식 — Exposed to Saltwater, a nanobot slowly corrodes into Rust.
+//     It does NOT consume or interact with Rust series materials (Rust / Rust Powder).
 const FOOD = [IRON.id, METAL_POWDER.id] as const;
+const RUST_CHANCE = 0.005;
+
+function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function updateNanobot(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
@@ -32,6 +49,10 @@ function updateNanobot(x: number, y: number, sim: SimContext): void {
   }
   if (touchingBlast(x, y, sim)) {
     sim.set(x, y, METAL_POWDER.id); // shattered by the shockwave into loose grains
+    return;
+  }
+  if (sim.chance(RUST_CHANCE) && touchingSaltWater(x, y, sim)) {
+    sim.set(x, y, RUST.id);
     return;
   }
   eatAndReproduce(x, y, sim, NANOBOT.id, FOOD, EAT_CHANCE);
@@ -56,3 +77,4 @@ export const NANOBOT = register({
   thermal: { conductivity: 0.35 },
   update: updateNanobot,
 });
+
