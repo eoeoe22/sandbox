@@ -688,7 +688,10 @@ export class CanvasRenderer implements Renderer {
           // at this along position) to be a wind cell *blowing this same direction*
           // (=== dir+1) — matching the direction keeps a halo cell from borrowing a
           // neighbouring, differently-oriented beam's spine and painting a hook with
-          // the wrong handedness where two beams run close together.
+          // the wrong handedness where two beams run close together. In a genuine
+          // beam-overlap zone (setWind is last-writer-wins, so overlapping cells hold
+          // just one direction) a hook whose spine was overwritten by a crossing beam
+          // drops to just its line — expected graceful degradation, not a bug.
           let ok = dc === 0 && wv !== 0;
           if (dc !== 0) {
             const cx = dir >= 2 ? along : centre;
