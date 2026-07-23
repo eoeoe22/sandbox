@@ -1588,8 +1588,10 @@ const WOOFER_KNOCK_SPIN = 0.1;
 const WIND_KNOCK_RADIUS = 2;
 /** Target drift speed (cells/tick) the wind carries a body along its blow
  *  direction. Applied as a floor on the along-wind velocity (not accumulated), so
- *  a body in the stream steadily drifts downwind rather than being rocketed. */
-const WIND_PUSH_SPEED = 2.5;
+ *  a body in the stream steadily drifts downwind rather than being rocketed. Raised
+ *  half again (was 2.5) to match the 1.5× stronger matter push (밀어내기 효과 1.5배
+ *  상향 — see materials/fan.ts WIND_PUSH_BOOST), so blown drums/balls keep pace. */
+const WIND_PUSH_SPEED = 3.75;
 /** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along. */
 const WIND_KNOCK_SPIN = 0.04;
 /** Unit blow vector per Wind aux direction code (0 up / 1 down / 2 left / 3 right —
