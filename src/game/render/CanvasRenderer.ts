@@ -228,6 +228,15 @@ export class CanvasRenderer implements Renderer {
    *  beam — so a scene with no active fan never pays for it. One-frame latency is
    *  imperceptible (a beam persists across frames while its fan runs). */
   private windWasActive = false;
+  /** Bounding box of the previous frame's wind cells (maxX < minX ⇒ empty). The
+   *  overhang pass only scans empty cells within WIND_HALO of this box, so a single
+   *  fan doesn't make the whole grid pay the halo scan — only the neighbourhood of
+   *  actual beams. Lagged one frame like windWasActive; beams move at most a cell or
+   *  two per frame, well inside the WIND_HALO padding. */
+  private windMinX = 0;
+  private windMaxX = -1;
+  private windMinY = 0;
+  private windMaxY = -1;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -454,9 +463,19 @@ export class CanvasRenderer implements Renderer {
     this.windPhase += WIND_ANIM_SPEED;
     const windPhase = this.windPhase | 0;
     const gh = grid.height;
-    // Only run the overhang pass when a fan was blowing last frame (see windWasActive).
+    // Only run the overhang pass when a fan was blowing last frame (windWasActive),
+    // and then only for cells within WIND_HALO of last frame's wind bounding box
+    // (hx/hy min-max) — so one small fan doesn't make the whole grid pay the scan.
     const windHalo = this.windWasActive;
+    const hxMin = this.windMinX - WIND_HALO;
+    const hxMax = this.windMaxX + WIND_HALO;
+    const hyMin = this.windMinY - WIND_HALO;
+    const hyMax = this.windMaxY + WIND_HALO;
     let sawWind = false;
+    let bxMin = w;
+    let bxMax = -1;
+    let byMin = gh;
+    let byMax = -1;
     for (let i = 0; i < cells.length; i++) {
       // Heat overlay: recolor occupied cells by temperature (a live thermal
       // camera); empty cells keep the ambient background so shapes read against
@@ -563,7 +582,16 @@ export class CanvasRenderer implements Renderer {
       // in, curls, and fades over its own lifecycle from a random spawn slot (see
       // windGlyphArc, windHash01 and the WIND_* constants).
       const wv = windArr[i];
-      if (wv !== 0) sawWind = true;
+      if (wv !== 0) {
+        // Track this frame's wind extent for next frame's overhang box (see above).
+        sawWind = true;
+        const wy = (i / w) | 0;
+        const wx = i - wy * w;
+        if (wx < bxMin) bxMin = wx;
+        if (wx > bxMax) bxMax = wx;
+        if (wy < byMin) byMin = wy;
+        if (wy > byMax) byMax = wy;
+      }
       // Enter for any empty air: cells inside the beam (wv≠0) carry a streak, and
       // — when a fan was active last frame — empty cells just outside the beam can
       // host a curl hook that overhangs the edge, borrowing the beam's direction so
@@ -571,7 +599,14 @@ export class CanvasRenderer implements Renderer {
       if (id === EMPTY && !heat && (wv !== 0 || windHalo)) {
         const x = i % w;
         const y = (i / w) | 0;
-        const dir = wv !== 0 ? wv - 1 : windHaloDir(windArr, x, y, w, gh); // 0 up,1 down,2 left,3 right
+        // In-beam cells know their own direction; an empty cell only bothers with the
+        // halo scan when it lies within the padded box of last frame's wind.
+        let dir = -1;
+        if (wv !== 0) {
+          dir = wv - 1; // 0 up, 1 down, 2 left, 3 right
+        } else if (x >= hxMin && x <= hxMax && y >= hyMin && y <= hyMax) {
+          dir = windHaloDir(windArr, x, y, w, gh);
+        }
         if (dir < 0) {
           // Empty air out of any hook's reach — nothing to draw here.
           const ovg = ovArr[i];
@@ -649,13 +684,17 @@ export class CanvasRenderer implements Renderer {
           // entered the beam. The spine cell being a wind cell is what makes it real.
           // The trailing line (dc===0) only draws on real in-beam cells (wv≠0), so it
           // never leaks past the beam's along-ends; the halo pass extends the curl
-          // (dc≠0) only.
+          // (dc≠0) only. A hook cell requires its streak's spine (the centreline cell
+          // at this along position) to be a wind cell *blowing this same direction*
+          // (=== dir+1) — matching the direction keeps a halo cell from borrowing a
+          // neighbouring, differently-oriented beam's spine and painting a hook with
+          // the wrong handedness where two beams run close together.
           let ok = dc === 0 && wv !== 0;
           if (dc !== 0) {
             const cx = dir >= 2 ? along : centre;
             const cy = dir >= 2 ? centre : along;
             if (cx >= 0 && cx < w && cy >= 0 && cy < gh) {
-              ok = windArr[cy * w + cx] !== 0;
+              ok = windArr[cy * w + cx] === dir + 1;
             }
           }
           if (ok) litColor = WIND_STREAK_COLORS[((line % 3) + 3) % 3];
@@ -669,6 +708,10 @@ export class CanvasRenderer implements Renderer {
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
     this.windWasActive = sawWind;
+    this.windMinX = bxMin;
+    this.windMaxX = bxMax;
+    this.windMinY = byMin;
+    this.windMaxY = byMax;
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
