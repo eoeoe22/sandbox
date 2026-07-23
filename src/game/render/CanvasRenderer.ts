@@ -26,21 +26,34 @@ const OBJECT_SCALE = 2;
 
 // ── Fan wind streaks (선풍기 바람 이펙트) ──────────────────────────────────────
 // The wind field (Grid.wind) is drawn as animated low-res *streaks* over the empty
-// air of a fan's beam — little curling gust glyphs (the classic "말리는 바람" wind
-// icon: a line that hooks into a squared counter-clockwise spiral at its leading
-// edge), not a solid fill and not a particle. Streaks sit on centrelines spaced
-// WIND_LINE_SPACING cells across the beam, repeat every WIND_PERIOD cells along it,
-// and scroll by the per-frame windPhase so they blow downwind; a per-line stagger
-// and three light-blue shades keep them from marching in lockstep. Where the beam
-// is too narrow to fit the hook the streak degrades cleanly to just its line, so
-// the effect always reads as wind acting *on* the scene rather than covering it —
-// mirroring the standalone example while staying inside the pixel grid.
+// air of a fan's beam — little gust glyphs (the classic "말리는 바람" wind icon: a
+// line that hooks into a squared counter-clockwise spiral at its leading edge), not
+// a solid fill and not a particle. Each streak runs its own *lifecycle*, exactly
+// like the standalone example's per-line keyframes: it first draws in as a straight
+// trailing line, then the head curls into the hook (서서히 말리는 — it is NOT born
+// pre-curled), holds a beat, and finally retracts/fades from the tail. The lit
+// portion is thresholded along the glyph's arclength (reveal grows tail→hook while
+// drawing, retract eats tail→hook while fading), so the curl visibly forms over
+// time instead of popping in complete.
+//
+// Streaks no longer sit on a rigid grid: each streak slot is picked pseudo-randomly
+// (windHash01) so heads spawn at scattered positions across *and* along the beam
+// (WIND_JITTER cross-spread, per-line phase offset) and each runs its lifecycle out
+// of phase with its neighbours. So at any instant the beam shows a natural mix of
+// young straight streaks and older curled ones rather than a marching lockstep row.
+// Where the beam is too narrow to fit the hook the streak degrades cleanly to just
+// its line, so the effect always reads as wind acting *on* the scene, not covering
+// it — mirroring the example while staying inside the pixel grid.
 // Three light-blue shades (bae6fd / 7dd3fc / 38bdf8), one per centreline, matching
 // the example's stacked wind lines.
 const WIND_STREAK_COLORS = [rgb(186, 230, 253), rgb(125, 211, 252), rgb(56, 189, 248)];
-const WIND_LINE_SPACING = 8; // one streak centreline every N cells across the beam
+const WIND_LINE_SPACING = 8; // base spacing of streak centrelines across the beam
+const WIND_JITTER = 4; // cross-spread of a streak's random spawn (± cells)
 const WIND_PERIOD = 20; // streak repeat length along the beam (cells)
 const WIND_ANIM_SPEED = 0.35; // cells the streaks advance per rendered frame
+const WIND_LIFE = 40; // phase-steps in one streak lifecycle (draw → hold → fade)
+const WIND_DRAW = 0.55; // fraction of the life spent drawing the line + curling in
+const WIND_HOLD = 0.15; // fraction held fully drawn before the fade begins
 // Curl-streak geometry, in cells, measured back from the leading head (dA ≥ 0 is
 // distance behind the head along the blow; dc is the perpendicular offset from the
 // centreline, the hook curling toward −dc). Mirrors the example glyph's squared
@@ -51,17 +64,42 @@ const WIND_HOOK = 5; // how far the top of the hook runs back from the head
 const WIND_HOOK_IN = 2; // where the inner return starts (back from head)
 const WIND_CURL_H = 3; // outer height of the hook
 const WIND_CURL_IN = 1; // inner return height
+// Total arclength of the glyph path, tail → head → around the hook. The lifecycle
+// reveals/retracts this length so the curl draws in progressively.
+const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - WIND_HOOK_IN;
 
-/** True if a cell at shape-local (dA behind the head, dc across from the centreline)
- *  falls on the curling wind glyph — a trailing line with a squared counter-clockwise
- *  hook at its leading end (see the WIND_* constants and the example it mirrors). */
-function windGlyphLit(dA: number, dc: number): boolean {
-  if (dc === 0) return dA <= WIND_BODY; // trailing line
-  if (dA === 0) return dc >= -WIND_CURL_H && dc < 0; // vertical rise at the head
-  if (dc === -WIND_CURL_H) return dA <= WIND_HOOK; // top of the hook
-  if (dA === WIND_HOOK) return dc <= -WIND_CURL_IN && dc >= -WIND_CURL_H; // inner drop
-  if (dc === -WIND_CURL_IN) return dA >= WIND_HOOK_IN && dA <= WIND_HOOK; // inner return
-  return false;
+/** Fractional part, kept in [0, 1). */
+function windFrac(v: number): number {
+  return v - Math.floor(v);
+}
+
+/** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
+ *  own stable random spawn offset and lifecycle phase without any per-cell state. */
+function windHash01(a: number, b: number): number {
+  let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) | 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Arclength (0 at the tail … WIND_TOTAL around the hook) of the cell at shape-local
+ *  (dA behind the head, dc across from the centreline), or −1 if the cell is off the
+ *  glyph. The lifecycle lights a cell only while its arclength sits between the
+ *  current reveal (draw-in) and retract (fade) thresholds — so the squared
+ *  counter-clockwise hook forms gradually rather than all at once. */
+function windGlyphArc(dA: number, dc: number): number {
+  if (dc === 0) return dA <= WIND_BODY ? WIND_BODY - dA : -1; // trailing line (tail→head)
+  if (dA === 0) return dc >= -WIND_CURL_H && dc < 0 ? WIND_BODY - dc : -1; // rise at the head
+  if (dc === -WIND_CURL_H) return dA >= 0 && dA <= WIND_HOOK ? WIND_BODY + WIND_CURL_H + dA : -1; // top
+  if (dA === WIND_HOOK)
+    return dc >= -WIND_CURL_H && dc <= -WIND_CURL_IN
+      ? WIND_BODY + WIND_CURL_H + WIND_HOOK + (dc + WIND_CURL_H) // inner drop
+      : -1;
+  if (dc === -WIND_CURL_IN)
+    return dA >= WIND_HOOK_IN && dA <= WIND_HOOK
+      ? WIND_BODY + 2 * WIND_CURL_H + WIND_HOOK - WIND_CURL_IN + (WIND_HOOK - dA) // inner return
+      : -1;
+  return -1;
 }
 
 /**
@@ -476,8 +514,9 @@ export class CanvasRenderer implements Renderer {
       // Fan wind streaks: an animated low-res effect painted over the empty air of
       // a gust (Grid.wind — a transient one-way field, never a cell). Only bare air
       // carries it (matter in the beam shows through as itself, visibly blown), and
-      // it's skipped in the thermal camera. Each streak is a curling gust glyph
-      // scrolling along the beam (see windGlyphLit and the WIND_* constants).
+      // it's skipped in the thermal camera. Each streak is a gust glyph that draws
+      // in, curls, and fades over its own lifecycle from a random spawn slot (see
+      // windGlyphArc, windHash01 and the WIND_* constants).
       const wv = windArr[i];
       if (wv !== 0 && id === EMPTY && !heat) {
         const x = i % w;
@@ -495,22 +534,48 @@ export class CanvasRenderer implements Renderer {
           across = x;
           sign = dir === 1 ? 1 : -1; // down / up
         }
-        // Nearest streak centreline across the beam, and this cell's offset from it.
-        const line = Math.round(across / WIND_LINE_SPACING);
-        const centre = line * WIND_LINE_SPACING;
-        const dc = across - centre;
-        // Distance behind the nearest streak head along the blow: heads repeat every
-        // WIND_PERIOD, scroll with windPhase, and are staggered per line (+line) so
-        // the streaks don't march in lockstep.
-        const dA = (((windPhase - sign * along + line) % WIND_PERIOD) + WIND_PERIOD) % WIND_PERIOD;
-        // windGlyphLit is authored in the rightward-blow frame, where the hook curls
+        const u = sign * along; // along-coordinate increasing downwind
+        // windGlyphArc is authored in the rightward-blow frame, where the hook curls
         // toward −dc (counter-clockwise). Reflecting the along-axis for the other
         // three senses would flip that handedness for left/down blows, so mirror the
         // across-axis too (curlSign) whenever the along-axis is reflected on exactly
         // one screen axis — keeping every fan's streak curling the same way as the
         // reference glyph. curlSign is +1 for up/right (dir 0,3), −1 for down/left (1,2).
         const curlSign = ((dir >> 1) ^ (dir & 1)) ? -1 : 1;
-        if (windGlyphLit(dA, dc * curlSign)) {
+        const baseLine = Math.round(across / WIND_LINE_SPACING);
+        // Streaks spawn at jittered positions, so this cell may belong to a streak
+        // seeded on the neighbouring base lines too — test all three and take the
+        // first that lights.
+        let litColor = -1;
+        for (let dL = -1; dL <= 1 && litColor < 0; dL++) {
+          const line = baseLine + dL;
+          // Per-line along phase offset so the lines don't share head positions.
+          const phaseOff = windHash01(line, 0x9e37) * WIND_PERIOD;
+          // Identify the streak (slot index kf) whose head is just downwind of this
+          // cell, and how far behind that head the cell sits (dA ≥ 0).
+          const rel = windPhase + phaseOff - u;
+          const kf = Math.floor(rel / WIND_PERIOD);
+          const dA = rel - kf * WIND_PERIOD;
+          // This streak's random cross jitter (spawn position) and lifecycle phase.
+          const jitter = Math.round((windHash01(line, kf) - 0.5) * WIND_JITTER);
+          const centre = line * WIND_LINE_SPACING + jitter;
+          const dc = across - centre;
+          const s = windGlyphArc(dA, dc * curlSign);
+          if (s < 0) continue; // cell isn't on this streak's glyph
+          // Lifecycle: reveal grows tail→hook while drawing in (서서히 말리는), holds
+          // full, then retract eats the tail forward while fading. Desynced per slot.
+          const p = windFrac(windPhase / WIND_LIFE + windHash01(kf, line * 2 + 1));
+          let reveal: number;
+          let retract = 0;
+          if (p < WIND_DRAW) {
+            reveal = (p / WIND_DRAW) * WIND_TOTAL;
+          } else if (p < WIND_DRAW + WIND_HOLD) {
+            reveal = WIND_TOTAL;
+          } else {
+            reveal = WIND_TOTAL;
+            retract = ((p - WIND_DRAW - WIND_HOLD) / (1 - WIND_DRAW - WIND_HOLD)) * WIND_TOTAL;
+          }
+          if (s < retract || s > reveal) continue; // not yet drawn, or already faded
           // A hook cell (dc≠0) only lights when its own centreline is inside the
           // beam, so a narrow beam degrades cleanly to just the line instead of
           // shedding floating hook fragments.
@@ -522,8 +587,9 @@ export class CanvasRenderer implements Renderer {
               ok = windArr[cy * w + cx] !== 0;
             }
           }
-          if (ok) c = WIND_STREAK_COLORS[line % 3]; // line ≥ 0 (across is a grid coord)
+          if (ok) litColor = WIND_STREAK_COLORS[((line % 3) + 3) % 3];
         }
+        if (litColor >= 0) c = litColor;
       }
       // 겹침 (overlap): a cell sharing space with a fluid — wet sand, water or
       // steam mid-passage through a Mesh/Turbine — is tinted toward the fluid's
