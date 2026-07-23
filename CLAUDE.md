@@ -27,3 +27,13 @@
 
 작업 완료 후 체크인 트리거는 생성하지 않음. 
 브라우저 테스트(Playwright 등)는 직접 수행하지 않고 유저에게 요청.
+
+# 검증 스크립트
+
+- **물질 id 중복 검사** — `npm run check:material-ids`
+  (내부적으로 `node scripts/check-material-ids.mjs` 실행). `src/game/materials/`
+  의 모든 `register({ ... })`에서 `id`를 정적으로 스캔해 중복이 있으면 목록을
+  출력하고 종료 코드 1로 실패한다. 중복이 없으면 통과.
+  이 검사는 `npm run build`(따라서 `deploy`)의 첫 단계로 묶여 있어,
+  **Cloudflare Workers 빌드 시 자동 실행되며 물질 id가 겹치면 빌드가 강제 실패한다.**
+  새 물질을 추가할 때는 이 스크립트로 id 충돌 여부를 먼저 확인할 것.

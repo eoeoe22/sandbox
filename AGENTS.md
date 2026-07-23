@@ -23,3 +23,12 @@
 4. 리뷰에서 지적사항이 있다면 조치후 리뷰 재시도 (no issues 확정 까지 반복)
 5. 사용자의 승인 대기 (Merge는 사용자가 진행)
 6. 개발 기록은 `docs/` 폴더의 해당 분야 문서를 갱신한다.
+
+# 검증 스크립트
+
+- **물질 id 중복 검사** — `npm run check:material-ids`
+  (내부적으로 `node scripts/check-material-ids.mjs` 실행). `src/game/materials/`
+  의 모든 `register({ ... })`에서 `id`를 정적으로 스캔해 중복이 있으면 목록을
+  출력하고 종료 코드 1로 실패한다. `npm run build`(따라서 `deploy`)의 첫 단계에
+  묶여 있어 **Cloudflare Workers 빌드 시 자동 실행되고, id가 겹치면 빌드가 강제
+  실패한다.** 새 물질 추가 시 id 충돌 여부를 먼저 확인할 것.
