@@ -2,6 +2,7 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
+import { AMBIENT_TEMP } from '../config';
 import type { SimContext } from '../engine/SimContext';
 
 // Fan (선풍기) — an electric appliance that turns power into a directional gust of
@@ -64,31 +65,52 @@ const POWERED_TICKS = 24;
 /** How many cells ahead the gust reaches (≈ 45px at 1 cell/px — 길이 45픽셀). */
 const WIND_LENGTH = 45;
 
+/** Fraction of a cell's above-ambient heat the airflow carries off each tick it
+ *  sits in the beam (근거리 대류 냉각). Kept small so cooling is a slow, gradual
+ *  settle toward 상온 (20°C = AMBIENT_TEMP) — a fan calms a hot spot over a few
+ *  seconds, it doesn't quench it (천천히 냉각). Exponential toward ambient: fast
+ *  while very hot, tapering as it nears room temperature, and it never overshoots
+ *  below ambient. */
+const WIND_COOL_RATE = 0.03;
+
 /** Backstop on how far one flood walks the connected fan body in a single pass —
  *  mirrors the Turbine/Woofer MAX_BODY so a giant fan wall can't make one pulse
  *  unbounded (a larger body is covered across several capped floods a tick, each
  *  memoized in SimContext.fanFlooded). */
 const MAX_BODY = 256;
 
-/** A cell the wind pushes: loose matter only — powder or liquid. Solids are
- *  deliberately NOT pushed: a fixed structure (a wall, a machine, a wired circuit)
- *  stays put and instead *blocks* the beam, so a fan can never walk its own battery
- *  or mount off the board (편의성 — 고정 구조물은 안 밀림). Solid *objects* (a drum,
- *  a ball) still get blown — those are handled in the object layer (engine/objects.ts
- *  applyWindPush), not here. Gases drift on their own. */
+/** A cell the wind shoves one step downwind: loose matter — powder, liquid, or a
+ *  gas. Gases are pushed here too (기체를 제대로 밀어냄): left to their own update
+ *  they only rise/diffuse, so a fan blew *through* a cloud without moving it; now
+ *  the beam carries the cloud along its blow direction like any other loose matter.
+ *  Solids are deliberately NOT shoved: a fixed structure (a wall, a machine, a
+ *  wired circuit) stays put and instead *blocks* the beam, so a fan can never walk
+ *  its own battery or mount off the board (편의성 — 고정 구조물은 안 밀림). Solid
+ *  *objects* (a drum, a ball) still get blown — those are handled in the object
+ *  layer (engine/objects.ts applyWindPush), not here. */
 function isWindPushable(id: number): boolean {
   if (id === EMPTY) return false;
   const p = getMaterial(id).phase;
-  return p === Phase.Powder || p === Phase.Liquid;
+  return p === Phase.Powder || p === Phase.Liquid || p === Phase.Gas;
 }
 
-/** True if the wind flows *through* this cell (empty, any gas, or something it can
- *  push). Anything else (a Wall, a machine, an indestructible block, any fixed
- *  solid) stops the beam. */
+/** True if the wind flows *through* this cell (empty, or any loose matter it can
+ *  push — powder, liquid, gas). Anything else (a Wall, a machine, an
+ *  indestructible block, any fixed solid) stops the beam. */
 function isWindPassable(id: number): boolean {
   if (id === EMPTY) return true;
-  if (getMaterial(id).phase === Phase.Gas) return true;
   return isWindPushable(id);
+}
+
+/** Convective cooling from the airflow: nudge one cell's temperature toward 상온
+ *  (AMBIENT_TEMP) by WIND_COOL_RATE of the gap, but never below ambient (the wind
+ *  is room-temperature air, it can't chill matter past it). A no-op on anything
+ *  already at or below room temperature — the fan only ever *cools* what's hot,
+ *  never warms what's cold. */
+function coolInWind(x: number, y: number, sim: SimContext): void {
+  const t = sim.getTemp(x, y);
+  if (t <= AMBIENT_TEMP) return;
+  sim.setTemp(x, y, t - (t - AMBIENT_TEMP) * WIND_COOL_RATE);
 }
 
 /** Blow one gust from a single powered fan cell in direction `dir`: shove the
@@ -98,21 +120,29 @@ function isWindPassable(id: number): boolean {
 function blow(fx: number, fy: number, dir: number, sim: SimContext): void {
   const [dx, dy] = DIRV[dir];
 
-  // 1) How far the beam reaches before an immovable cell blocks it.
+  // 1) How far the beam reaches before an immovable cell blocks it. Remember the
+  //    blocking cell too — the surface the gust hits is bathed in the airflow and
+  //    cooled along with the beam below.
   let reach = 0;
+  let blockedX = -1;
+  let blockedY = -1;
   for (let d = 1; d <= WIND_LENGTH; d++) {
     const cx = fx + dx * d;
     const cy = fy + dy * d;
     if (!sim.inBounds(cx, cy)) break;
-    if (!isWindPassable(sim.get(cx, cy))) break;
+    if (!isWindPassable(sim.get(cx, cy))) {
+      blockedX = cx;
+      blockedY = cy;
+      break;
+    }
     reach = d;
   }
 
-  // 2) Shove pushable matter one cell downwind, processed far→near so a whole
-  //    column shifts forward without cells colliding (the front cell vacates
-  //    first, then each cell behind steps into the gap). One step per tick, and
-  //    a `hasMoved` guard, keep it from teleporting a grain the length of the
-  //    beam in a single scan (컨베이어와 같은 규율).
+  // 2) Shove pushable matter (powder/liquid/gas) one cell downwind, processed
+  //    far→near so a whole column shifts forward without cells colliding (the
+  //    front cell vacates first, then each cell behind steps into the gap). One
+  //    step per tick, and a `hasMoved` guard, keep it from teleporting a grain
+  //    the length of the beam in a single scan (컨베이어와 같은 규율).
   for (let d = reach; d >= 1; d--) {
     const cx = fx + dx * d;
     const cy = fy + dy * d;
@@ -124,18 +154,24 @@ function blow(fx: number, fy: number, dir: number, sim: SimContext): void {
     sim.swap(cx, cy, tx, ty);
   }
 
-  // 3) Stamp the wind field over the empty (air) cells of the beam. This is a
+  // 3) Sweep the beam: stamp the wind field over the empty (air) cells, and
+  //    convectively cool any matter cell that's hotter than 상온 (coolInWind —
+  //    바람 영향 범위 내 물질이 상온보다 뜨거우면 천천히 냉각). The wind field is a
   //    transient, non-cell layer (Grid.wind): the object layer reads it to shove
   //    free bodies downwind and the renderer draws the animated streaks from it,
   //    but the CA never treats it as an occupant — so it only ever *acts on*
   //    matter, never the reverse (단방향). Matter cells in the beam are left as
   //    themselves (visibly blown), not overwritten. Simulation clears the whole
-  //    field each step, so no per-cell lifetime is needed here.
+  //    field each step, so no per-cell lifetime is needed here. Runs after the
+  //    shove so pushed matter is cooled at whichever cell it now occupies.
   for (let d = 1; d <= reach; d++) {
     const cx = fx + dx * d;
     const cy = fy + dy * d;
     if (sim.get(cx, cy) === EMPTY) sim.setWind(cx, cy, dir);
+    else coolInWind(cx, cy, sim);
   }
+  // The solid surface that stopped the beam catches the airflow too.
+  if (blockedX >= 0) coolInWind(blockedX, blockedY, sim);
 }
 
 function updateFan(x: number, y: number, sim: SimContext): void {
