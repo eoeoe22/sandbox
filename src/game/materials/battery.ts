@@ -4,11 +4,9 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
-import { SPARK, packSpark, conductorClass, FULL_STRENGTH, tryArcExplosive } from './spark';
+import { SPARK, packSpark, conductorClass, FULL_STRENGTH, reactToPulse } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
-import { WOOFER, wooferBodyPulse } from './woofer';
-import { FAN, energizeFanBody } from './fan';
 
 // Lithium Battery — the power source that makes the electricity subsystem
 // self-running (the volatile chemistry; see lfpbattery.ts for the safe one).
@@ -109,30 +107,19 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
       sim.spawn(nx, ny, SPARK.id);
       sim.setTemp(nx, ny, heat);
       sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
-    } else if (nid === FAN.id) {
-      // Direct contact (배터리 직접 연결), no wire needed: a Fan isn't `conductive`
-      // either (it's a one-way "outside → inside" sink like the Woofer — see
-      // fan.ts), so a battery flush against a fan face powers the whole connected
-      // fan body here by id, exactly like the Woofer special-case below.
-      energizeFanBody(sim, nx, ny);
-    } else if (nid === WOOFER.id) {
-      // Direct contact (배터리 직접 연결), no wire needed: a Woofer isn't a
-      // `conductive` material (see woofer.ts's design note — it's a one-way
-      // sink, not a wire), so it never reaches the branch above. Special-cased
-      // here exactly like the same id-check in spark.ts's arc phase, for the
-      // case where the appliance is plugged straight into the battery instead
-      // of reached through a relay of ordinary conductors.
-      wooferBodyPulse(sim, nx, ny);
     } else {
-      // Same direct-contact case for an explosive charge (C4, TNT, Gunpowder,
-      // …): none of them are `conductive` either, so a charge plugged straight
-      // into the battery (no wire in between) would otherwise never see the
-      // arc a relayed Spark gives it in spark.ts's own arc phase. Every
-      // terminal gets its own independent beat here (unlike a single
-      // travelling Spark, which caps itself to one arc per tick), so a battery
-      // wired flush against charges on several faces at once sets off each of
-      // them.
-      tryArcExplosive(sim, nx, ny, nid);
+      // Direct contact (직접 연결), no wire needed: a non-conductor neighbor is an
+      // electric appliance (Fan/Woofer and any future `directPulse` device — its
+      // whole connected body reacts) or an explosive charge (C4/TNT/Gunpowder/…
+      // arced as an electric detonator). Both are dispatched through the one
+      // shared helper every pulse source uses (see spark.ts reactToPulse), so a
+      // charge or device plugged straight onto a battery face reacts exactly as
+      // it would when reached through a relay of ordinary conductors — and every
+      // pulse source stays consistent by construction. Every terminal gets its
+      // own independent beat here (unlike a single travelling Spark, which caps
+      // itself to one arc per tick), so a battery flush against charges/devices on
+      // several faces at once triggers each of them.
+      reactToPulse(sim, nx, ny, nid);
     }
   }
 }

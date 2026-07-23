@@ -71,27 +71,29 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
 //      packing bits from every conductor's strength range). A one-way sink
 //      doesn't need any of that machinery: it never *reverts* from a Spark
 //      because it never *becomes* one, so it needs no class at all.
-//   2. Acceptance is wired directly at every *source* of a pulse instead of
-//      through the generic conductive path: battery.ts's `injectPulses`
-//      (direct contact — 배터리 직접 연결) and spark.ts's own arc phase
-//      (reached via a relay through ordinary conductors) both special-case
-//      `WOOFER.id` by id and call `wooferBodyPulse` straight away — the same
-//      shape as C4's `electricDetonate` / Nichrome's Joule-heat special
-//      cases. Neither path ever calls `sim.spawn(..., SPARK.id)` on a Woofer
-//      cell: the pulse is consumed on arrival, so **no Spark is ever
-//      rendered inside/on the body**, and nothing propagates onward to any
-//      *other* conductor the body happens to touch — the one-way
-//      "outside → inside" property falls out for free, with no extra guard
-//      needed.
+//   2. Acceptance is declared once, as an electric-appliance hook, instead of
+//      being special-cased at every pulse source. The Woofer registers
+//      `directPulse: wooferBodyPulse` (see the register call below); every pulse
+//      source — battery.ts's `injectPulses` (direct contact — 배터리 직접 연결),
+//      turbine.ts's `energizeNeighbors`, and spark.ts's own arc phase (reached
+//      via a relay through ordinary conductors) — dispatches a non-conductor
+//      neighbor through the one shared `reactToPulse` (spark.ts), which fires that
+//      hook. So a Woofer reacts to *every* source by construction, the same shape
+//      as C4's `electricDetonate` / Nichrome's Joule-heat data-driven cases.
+//      No path ever calls `sim.spawn(..., SPARK.id)` on a Woofer cell: the pulse
+//      is consumed on arrival, so **no Spark is ever rendered inside/on the
+//      body**, and nothing propagates onward to any *other* conductor the body
+//      happens to touch — the one-way "outside → inside" property falls out for
+//      free, with no extra guard needed.
 //
 // A future device that wants this same shape (external trigger → whole
-// connected body reacts as one, never conducts further) can copy points 1–2
-// verbatim: skip `conductive`, add an id-check + flood call at each pulse
-// source (battery/turbine/spark.ts), and memoize the flood per tick via a
-// dedicated SimContext field (see `wooferFlooded`/`wooferFloodTick` there,
-// modeled directly on Turbine's own `turbineFlooded`/`turbineFloodTick`) so a
-// body touched from several directions/sources in one tick still fires
-// exactly once instead of re-flooding per entry point.
+// connected body reacts as one, never conducts further) copies points 1–2
+// verbatim: skip `conductive`, register a `directPulse` hook (so no pulse source
+// needs editing — the shared dispatch already routes to it), and memoize the
+// flood per tick via a dedicated SimContext field (see `wooferFlooded`/
+// `wooferFloodTick` there, modeled directly on Turbine's own `turbineFlooded`/
+// `turbineFloodTick`) so a body touched from several directions/sources in one
+// tick still fires exactly once instead of re-flooding per entry point.
 //
 // ── Reaching the free-object layer (독립 오브젝트) without a BLAST cell ──────
 // Ordinary explosives push a rubber ball/drum/dynamite by leaving BLAST flash
@@ -176,4 +178,10 @@ export const WOOFER = register({
   density: 1000,
   category: '전기',
   thermal: { conductivity: 0.3 },
+  // One-way "outside → inside" electric sink: any pulse source touching a face —
+  // a Battery/LFP Battery/Turbine in direct contact, or a Spark relayed down a
+  // wire — floods the whole connected body and thumps it. Declared once here so
+  // every source reacts to it through the shared dispatch (spark.ts reactToPulse),
+  // with no per-source id special-casing to keep in sync.
+  directPulse: wooferBodyPulse,
 });

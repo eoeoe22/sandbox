@@ -53,6 +53,27 @@ export interface Material {
    * pulse travels one way down a wire instead of bouncing back (see spark.ts).
    */
   conductive?: boolean;
+  /**
+   * Electric-appliance sink: a hook fired when a live electric pulse reaches a
+   * cell of this material — whether from a power source in *direct contact*
+   * (Battery/LFP Battery `injectPulses`, Turbine `energizeNeighbors`) or from a
+   * Spark relayed down a wire (spark.ts arc phase). It's the one-way
+   * "outside → inside" counterpart to `conductive`: the material never becomes
+   * or relays a Spark (so it can't act as a free wire), it just *consumes* the
+   * pulse and reacts — e.g. the Fan refreshes its blow countdown, the Woofer
+   * thumps out a shockwave. Both flood their whole connected body from the
+   * touched face, so the hook takes the touched cell (x,y) and is expected to
+   * memoize per tick itself (see fan.ts/woofer.ts).
+   *
+   * This is the single registration point that keeps every pulse *source*
+   * consistent: sources dispatch a non-conductive neighbor through the shared
+   * `reactToPulse` (spark.ts), which fires this hook if present and otherwise
+   * falls through to the explosive arc. A new electric-reaction device is wired
+   * up everywhere at once just by declaring `directPulse` here — no power source
+   * needs to special-case it by id (the copy-paste that used to drift, so a
+   * device worked off a Battery but not a Turbine).
+   */
+  directPulse?: (sim: SimContext, x: number, y: number) => void;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
   flammable?: boolean;
   /**
