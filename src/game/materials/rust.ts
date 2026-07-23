@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { IRON_MELT_TEMP } from './moltenmetal';
 import { SLAG } from './slag';
 import { MOLTEN_IRON_ORE } from './moltenironore';
 
