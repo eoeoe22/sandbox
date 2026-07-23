@@ -7,8 +7,8 @@ import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
 import { SALTWATER } from './saltwater';
 import { RUST_POWDER } from './rustpowder';
 
-const SURFACE_RUST_CHANCE = 0.005; // 표면 부식 확률 (0.5%)
-const INSIDE_RUST_CHANCE = 0.001;  // 안쪽(스며든 부위) 부식 확률 (표면의 1/5인 0.1%)
+const SURFACE_RUST_CHANCE = 0.001;  // 표면 부식 확률 (0.1%)
+const INSIDE_RUST_CHANCE = 0.0002; // 안쪽(스며든 부위) 부식 확률 (0.02%)
 
 // Metal Powder — the pourable, shattered form of metal. It's what a blue drum
 // bursts into when an explosion tears it apart (see objects.ts): the shell is

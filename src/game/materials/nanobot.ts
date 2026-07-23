@@ -27,7 +27,7 @@ import { DIR8 } from '../engine/directions';
 //   • 소금물 부식 — Exposed to Saltwater, a nanobot slowly corrodes into Rust.
 //     It does NOT consume or interact with Rust series materials (Rust / Rust Powder).
 const FOOD = [IRON.id, METAL_POWDER.id] as const;
-const RUST_CHANCE = 0.005;
+const RUST_CHANCE = 0.001; // 소금물 노출 시 부식 확률 (0.1%)
 
 function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR8) {
