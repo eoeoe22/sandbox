@@ -185,6 +185,21 @@ export interface Material {
    */
   blastDeathId?: MatId;
   /**
+   * What a *fragile* solid crazes into when a blast's shock washes over it but
+   * can't otherwise break it (power < durability) — Glass shattering into Broken
+   * Glass under a Gunpowder concussion or a Woofer's power-0 shockwave (see
+   * blast.ts). Unlike `blastDeathId` (the destroy path), this is the *can't
+   * break* path: the cell still SHADOWS the blast exactly as the intact solid did
+   * (a shattered pane is no window), it just leaves the shattered material behind
+   * instead of shrugging the shock off untouched. Consulted both by the crater
+   * flood (where a weak blast is blocked by the solid) and by the non-destructive
+   * pressure wave (충격파 압력전파) that rings out past the crater — so a shockwave
+   * shatters glass whether it reaches it as the blast front or as the concussion.
+   * Omitted ⇒ the solid is unaffected when a blast can't break it (the classic
+   * shadow). Only meaningful on a solid.
+   */
+  shatterId?: MatId;
+  /**
    * Heat-conduction properties (see config.ts and Simulation's diffusion pass).
    * Pure self-data — no cross-material references — so it never affects the
    * material load order. Temperature-driven *reactions* (Lava freezing to
