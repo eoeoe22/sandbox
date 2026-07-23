@@ -60,11 +60,12 @@ function updateIron(x: number, y: number, sim: SimContext): void {
   }
 
   // Salt water corrosion: surface (depth 1) 0.5%, inside (depth 2) 0.1% (1/5th speed).
-  // 20% Rust Powder, 80% Rust.
+  // 20% Rust Powder, 80% Rust. +30~+100°C exothermic reaction heat.
   const depth = getSaltWaterDepth(x, y, sim);
   if (depth > 0) {
     const chance = depth === 1 ? SURFACE_RUST_CHANCE : INSIDE_RUST_CHANCE;
     if (sim.chance(chance)) {
+      sim.setTemp(x, y, sim.getTemp(x, y) + 30 + sim.randInt(71));
       if (sim.chance(0.2)) {
         sim.set(x, y, RUST_POWDER.id);
       } else {

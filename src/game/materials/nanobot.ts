@@ -54,6 +54,7 @@ function updateNanobot(x: number, y: number, sim: SimContext): void {
     return;
   }
   if (sim.chance(RUST_CHANCE) && touchingSaltWater(x, y, sim)) {
+    sim.setTemp(x, y, sim.getTemp(x, y) + 30 + sim.randInt(71));
     sim.set(x, y, RUST.id);
     return;
   }

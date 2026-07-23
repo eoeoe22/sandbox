@@ -30,8 +30,10 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
 
   // Salt water corrosion: oxidizes to Rust Powder (100% chance).
   // Inside soaked cells corrode at 1/5th speed (0.1% vs surface 0.5%).
+  // Exothermic reaction generates +30~+100°C random heat.
   if (sim.getOverlay(x, y) === SALTWATER.id) {
     if (sim.chance(INSIDE_RUST_CHANCE)) {
+      sim.setTemp(x, y, sim.getTemp(x, y) + 30 + sim.randInt(71));
       sim.set(x, y, RUST_POWDER.id);
       return;
     }
@@ -58,11 +60,13 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
 
     if (touchesLiquid) {
       if (sim.chance(SURFACE_RUST_CHANCE)) {
+        sim.setTemp(x, y, sim.getTemp(x, y) + 30 + sim.randInt(71));
         sim.set(x, y, RUST_POWDER.id);
         return;
       }
     } else if (touchesOverlay) {
       if (sim.chance(INSIDE_RUST_CHANCE)) {
+        sim.setTemp(x, y, sim.getTemp(x, y) + 30 + sim.randInt(71));
         sim.set(x, y, RUST_POWDER.id);
         return;
       }
