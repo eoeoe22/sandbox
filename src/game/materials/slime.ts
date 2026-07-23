@@ -34,6 +34,14 @@ const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more slime
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
 
+// Thick, heavy goo doesn't drop like thin water: on a fraction of ticks it just
+// holds instead of moving, so a poured blob sinks and settles slowly rather than
+// splashing straight down (낙하 속도 ↓). Gates the whole movement step (fall +
+// spread) — the liquid mirror of updateGas's stall. Its `viscosity` already
+// throttles the lateral spread but NOT the straight fall (see updateLiquid), so
+// this is what actually slows the drop. Exported so Acid Slime falls identically.
+export const SLIME_FALL_STALL_CHANCE = 0.5;
+
 // Reach budget a Spark stamps on the one slime cell it seeds (see spark.ts), and
 // the whole aux state slime uses: a healthy cell reads 0, a front cell holds its
 // remaining reach (1..BUDGET). Twice the Virus corrosion front's CURE_SEED_BUDGET
@@ -47,12 +55,15 @@ export const SLIME_DISSOLVE_BUDGET = 20;
 // counter would do nothing. So freshly-dissolved Water is stamped with a short
 // "recently electrolysed" countdown in its aux, and slime refuses to drink water
 // whose aux is non-zero. Water's own update already ticks any aux down each turn
-// (its post-spark refractory bookkeeping), so the mark clears itself after a beat —
-// long enough for the puddle to drain/rise clear of the blob before it can be eaten
-// back. (A minor, in-theme side effect: for that beat the spent water also won't
+// (its post-spark refractory bookkeeping), so the mark clears itself after a short
+// while — deliberately long enough for the puddle to actually drain/rise clear of
+// the blob before it can be eaten back. A big blob's freshly-dissolved water needs
+// a real beat to escape, so this runs well past a couple of ticks; too short and
+// the goo just re-drinks its own puddle and heals faster than the current can eat
+// it. (A minor, in-theme side effect: for that window the spent water also won't
 // carry a spark — it reads as briefly "used up".) This is what makes a sustained
 // current actually eat a blob down rather than fight a losing tug-of-war with it.
-const DISSOLVE_WATER_GRACE = 14;
+const DISSOLVE_WATER_GRACE = 40;
 
 // One dissolve-front step (aux = remaining reach), mirroring virus.ts's corrosion
 // front: revert this cell to Water and, while reach is left, hand budget-1 to ONE
@@ -125,7 +136,10 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly.
+  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly, and a
+  // fall-stall throttles the drop itself: skip all movement on a fraction of ticks
+  // so a heavy blob sinks slowly, not like thin water (SLIME_FALL_STALL_CHANCE).
+  if (sim.chance(SLIME_FALL_STALL_CHANCE)) return;
   updateLiquid(x, y, sim);
 }
 
@@ -143,12 +157,12 @@ export const SLIME = register({
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
   // (high coefficient of restitution) before it settles (see debris.ts 탄성).
   elasticity: 0.92,
-  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): still the poorest
-  // conductor in the roster in spirit, but current now carries a good stretch
-  // into a blob (on par with fresh Water, ~10 cells) instead of dying within a
-  // cell or two — and current that actually passes through it is what seeds the
-  // blob's own electric-dissolve front, now with a bigger bite per shock
-  // (SLIME_DISSOLVE_BUDGET) too (전기전도성 및 제거 범위 상향).
+  // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): the poorest conductor
+  // in the roster in spirit (its acidic cousin Acid Slime aside, which conducts at
+  // the max), but current still carries a good stretch into a blob (on par with
+  // fresh Water, ~7 cells) instead of dying within a cell or two — and current that
+  // actually passes through it is what seeds the blob's own electric-dissolve
+  // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
   conductive: true,
   thermal: { conductivity: 0.2 },
   update: updateSlime,

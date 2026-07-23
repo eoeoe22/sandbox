@@ -14,6 +14,7 @@ import { HYDROGEN } from './hydrogen';
 import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
+import { ACID_SLIME } from './acidslime';
 import { WOOFER, wooferBodyPulse } from './woofer';
 import { FAN, energizeFanBody } from './fan';
 
@@ -24,31 +25,41 @@ import { FAN, energizeFanBody } from './fan';
 // adjacent Spark. A pulse therefore reads as a bright dot racing along a wire.
 //
 // Conductors and strength: current flows only through `conductive` materials
-// (Iron, Mercury, Nichrome, Water, Saltwater, Acid, Slime); everything else is an
-// insulator that blocks it outright. A pulse carries a *strength* that decays as
-// it travels, so it fades out in a resistive medium instead of running forever.
-// The whole subsystem's conductivity lives in the two knobs below (FULL_STRENGTH
-// and CONDUCTOR_LOSS) — raise the first or lower the second and *every* conductor
-// carries current further, without touching any material's own definition:
+// (Iron, Mercury, Nichrome, Water, Saltwater, Acid, Slime, Acid Slime); everything
+// else is an insulator that blocks it outright. A pulse carries a *strength* that
+// decays as it travels, so it fades out in a resistive medium instead of running
+// forever. The whole subsystem's conductivity lives in the two knobs below
+// (FULL_STRENGTH and CONDUCTOR_LOSS) — raise the first or lower the second and
+// *every* conductor carries current further, without touching any material's own
+// definition:
 //   • Iron / Mercury / Nichrome (metal-class conductors) — no signal loss, a
 //     pulse keeps full strength end to end. Nichrome still Joule-heats as
 //     pulses pass (see nichrome.ts) — its resistance now lives entirely in
 //     that heating, not in how far a pulse reaches.
+//   • Acid Slime — the one non-metal at zero loss: it conducts at the maximum, a
+//     pulse running full strength end to end through a blob (전기전도성 최대치),
+//     while still carrying Slime's electric-dissolve weakness (see below).
 //   • Saltwater / Acid — electrolytes, bleed strength slowly (carry a long way);
 //     both conduct at the same rate.
-//   • Water — bleeds strength faster than the electrolytes, but a pulse now still
-//     runs a good stretch through it (roughly a third of a full wire) instead of
-//     dying after a couple of cells.
-//   • Slime — a thick, non-ionic goo: still the worst conductor in the roster,
-//     but no longer a dead end — a pulse now carries a good stretch into a blob
-//     (roughly a third of a wire, on par with fresh Water) instead of dying
-//     within a cell or two, and it genuinely carries on through (see below)
-//     rather than just reacting on contact.
+//   • Water — bleeds strength faster than the electrolytes, but a pulse still runs
+//     a good stretch through it (about half a full wire) instead of dying after a
+//     couple of cells.
+//   • Slime — a thick, non-ionic goo: still the worst conductor in the roster (its
+//     acidic cousin aside), but no longer a dead end — a pulse carries a good
+//     stretch into a blob (on par with fresh Water) and genuinely carries on
+//     through (see below) rather than just reacting on contact.
+//
+// Adding Acid Slime as an 8th conductor filled the 3-bit class field, so it was
+// widened to 4 bits (CLASS_BITS) — which necessarily shrinks the strength field to
+// 4 bits (FULL_STRENGTH 15, was 31), the two sharing one 8-bit `aux`. Reaches in
+// the lossy media are correspondingly shorter than before (electrolytes span a big
+// tank rather than an enormous one; water/slime reach ~half a wire) — the metals
+// and zero-loss Acid Slime are unaffected since 0 loss runs any length regardless.
 //
 // State packed into the spark cell's single `aux` byte:
-//   • the conductor CLASS (low 3 bits) — which conductor to revert back into
+//   • the conductor CLASS (low 4 bits) — which conductor to revert back into
 //     (Iron→Iron, Water→Water, …); class 0 = "no conductor" → the spark fizzles.
-//   • the remaining STRENGTH (high 5 bits, 0..31).
+//   • the remaining STRENGTH (high 4 bits, 0..15).
 // A compact class (a 1-based index into CONDUCTOR_IDS) rather than the raw id
 // leaves room for the strength in the same byte, and — as before — the
 // conductor's heat rides untouched in `temp`, so energizing a hot wire doesn't
@@ -69,42 +80,56 @@ import { FAN, energizeFanBody } from './fan';
 const REFRACTORY_TICKS = 3;
 
 // --- Electricity strength -----------------------------------------------------
-const CLASS_BITS = 3;
-const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b111 — low bits hold the conductor class
-const MAX_STRENGTH = 0xff >> CLASS_BITS; // 31 — high 5 bits hold strength
+// The class + strength share one 8-bit `aux` byte. With 8 conductors the class
+// needs 4 bits (classes 1..15, 0 = "none"), leaving 4 bits for strength (0..15).
+const CLASS_BITS = 4;
+const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b1111 — low bits hold the conductor class
+const MAX_STRENGTH = 0xff >> CLASS_BITS; // 15 — high 4 bits hold strength
 /** Strength a fresh pulse starts at (what a Battery/Turbine injects). Sits at the
  *  packing's ceiling (MAX_STRENGTH) so every conductor gets the longest reach the
- *  5-bit strength field allows — the engine-wide "more range" knob. */
-export const FULL_STRENGTH = 31;
+ *  4-bit strength field allows — the engine-wide "more range" knob. Halved from
+ *  the old 31 when the class field grew to 4 bits to make room for an 8th
+ *  conductor (Acid Slime); the lossy media reach correspondingly less far, the
+ *  zero-loss ones (metals, Acid Slime) not at all. */
+export const FULL_STRENGTH = 15;
 
 // Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
 // appending a new conductor keeps existing packed values valid. Every material
 // tagged `conductive` must appear here so a spark on it knows what to revert to.
-const CONDUCTOR_IDS = [IRON.id, MERCURY.id, WATER.id, SALTWATER.id, NICHROME.id, ACID.id, SLIME.id];
+const CONDUCTOR_IDS = [
+  IRON.id,
+  MERCURY.id,
+  WATER.id,
+  SALTWATER.id,
+  NICHROME.id,
+  ACID.id,
+  SLIME.id,
+  ACID_SLIME.id,
+];
 // Strength lost entering a cell of each class — the engine's per-medium
-// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 31:
+// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 15:
 // metal and nichrome keep it in full (0 → runs the whole wire — nichrome's
-// resistance is now down at the engine's floor, same as Iron/Mercury), brine
-// and acid barely bleed (1 → ~31 cells, essentially across a tank), and fresh
-// water and Slime both bleed at the same middling rate (3 → ~10 cells) — Slime
-// is still the poorest conductor in spirit (a thick, non-ionic goo has no
-// business carrying current well) but no longer dies within a cell or two, so
-// sustained current has room to actually punch into a blob before a pulse
-// gives out. These were raised across the board from the old [8,2,1,2]
-// water/brine/nichrome/acid, where a pulse died after only a few cells of
-// water — the whole-subsystem conductivity uplift, done here in the engine
-// rather than by editing any material's `conductive` flag. Nichrome's
+// resistance is now down at the engine's floor, same as Iron/Mercury); Acid Slime
+// also sits at 0 (전기전도성 최대치 — it conducts as far as any metal, unlike its
+// plain cousin); brine and acid barely bleed (1 → ~15 cells, a big tank); and
+// fresh water and Slime bleed at the same middling rate (2 → ~7 cells) — Slime is
+// still the poorest conductor in spirit (a thick, non-ionic goo has no business
+// carrying current well) but no longer dies within a cell or two, so sustained
+// current has room to actually punch into a blob before a pulse gives out. Water
+// and Slime dropped from 3→2 to soften the shorter reach that came with halving
+// FULL_STRENGTH (31→15) to fit the widened 4-bit class field. Nichrome's
 // resistance still shows up as heat: each passing pulse deposits a fixed dose
 // of Joule heat into the wire on revert (see nichromeJouleHeat), independent
 // of this per-cell strength loss.
-const CONDUCTOR_LOSS = [0, 0, 3, 1, 0, 1, 3];
+const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
-// byte, with class 0 reserved for "no conductor"; adding Slime brings the count
-// to 7, which exactly fills the 3-bit field (classes 1..CLASS_MASK). An 8th
-// conductor would encode as class CLASS_MASK+1, wrap to 0 under `& CLASS_MASK`,
-// and be silently deleted on revert (myClass===0 ⇒ set EMPTY) — so fail loudly at
-// load instead. Widen CLASS_BITS (at the cost of strength bits) before adding one.
+// byte, with class 0 reserved for "no conductor". Adding Acid Slime brought the
+// count to 8, so the field was widened from 3 to 4 bits (classes 1..CLASS_MASK =
+// 1..15). A conductor past CLASS_MASK would encode as class CLASS_MASK+1, wrap to
+// 0 under `& CLASS_MASK`, and be silently deleted on revert (myClass===0 ⇒ set
+// EMPTY) — so fail loudly at load instead. Widen CLASS_BITS further (at the cost
+// of strength bits, both sharing one 8-bit aux) before adding a 16th.
 if (CONDUCTOR_IDS.length > CLASS_MASK) {
   throw new Error(
     `Too many spark conductors (${CONDUCTOR_IDS.length}) for a ${CLASS_BITS}-bit class field (max ${CLASS_MASK}).`,
@@ -294,6 +319,19 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     // its heavy per-cell strength loss (CONDUCTOR_LOSS) already bounds how far a
     // pulse can spread through a blob.
     sim.set(x, y, SLIME.id);
+    sim.setAux(x, y, sim.chance(SLIME_SHOCK_CHANCE) ? SLIME_DISSOLVE_BUDGET : 0);
+    return;
+  }
+  if (conductorId === ACID_SLIME.id) {
+    // Acid Slime carries Slime's identical electric-dissolve weakness (its aux is
+    // the very same dissolve-front budget, read by acidslime.ts's own updateAcidSlime
+    // — "any non-zero aux ⇒ dissolve to Water next tick"), so it reverts exactly like
+    // Slime above: no REFRACTORY_TICKS stamp (that 3 would be misread as a reach-3
+    // budget and eat the blob every hop), just a low-chance shock that seeds a real
+    // bounded dissolve front, every other hop reverting to inert Acid Slime (aux 0).
+    // Unlike Slime it's a zero-loss conductor, so range is bounded by SLIME_SHOCK_CHANCE
+    // needing a sustained pulse train, not by the medium's strength loss.
+    sim.set(x, y, ACID_SLIME.id);
     sim.setAux(x, y, sim.chance(SLIME_SHOCK_CHANCE) ? SLIME_DISSOLVE_BUDGET : 0);
     return;
   }

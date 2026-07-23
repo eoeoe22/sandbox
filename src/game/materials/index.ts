@@ -92,6 +92,7 @@ import { HYDROGEN_PEROXIDE } from './hydrogenperoxide';
 import { YEAST } from './yeast';
 import { SEED } from './seed';
 import { SLIME } from './slime';
+import { ACID_SLIME } from './acidslime';
 import { RESIN } from './resin';
 import { AMBER } from './amber';
 import { WHITE_PHOSPHORUS } from './whitephosphorus';
@@ -202,6 +203,7 @@ export {
   YEAST,
   SEED,
   SLIME,
+  ACID_SLIME,
   RESIN,
   AMBER,
   WHITE_PHOSPHORUS,
@@ -348,6 +350,7 @@ export const MATERIALS = [
   SEED,
   YEAST,
   SLIME,
+  ACID_SLIME,
   TERMITE,
   NANOBOT,
 ];
