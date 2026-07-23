@@ -33,8 +33,10 @@ function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
-      return true;
+    if (sim.inBounds(nx, ny)) {
+      if (sim.get(nx, ny) === SALTWATER.id || sim.getOverlay(nx, ny) === SALTWATER.id) {
+        return true;
+      }
     }
   }
   return false;

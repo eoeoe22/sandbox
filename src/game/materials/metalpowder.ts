@@ -10,13 +10,20 @@ import { RUST_POWDER } from './rustpowder';
 const RUST_CHANCE = 0.005; // 틱당 낮은 확률로 천천히 부식
 
 function isSaltWaterAdjacent(x: number, y: number, sim: SimContext): boolean {
+  // Check if saltwater is soaked directly inside this cell (overlay layer)
+  if (sim.getOverlay(x, y) === SALTWATER.id) {
+    return true;
+  }
+  // Check surrounding 5x5 area for liquid saltwater or soaked saltwater in powder
   for (let dx = -2; dx <= 2; dx++) {
     for (let dy = -2; dy <= 2; dy++) {
       if (dx === 0 && dy === 0) continue;
       const nx = x + dx;
       const ny = y + dy;
-      if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
-        return true;
+      if (sim.inBounds(nx, ny)) {
+        if (sim.get(nx, ny) === SALTWATER.id || sim.getOverlay(nx, ny) === SALTWATER.id) {
+          return true;
+        }
       }
     }
   }
