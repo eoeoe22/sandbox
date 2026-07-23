@@ -326,6 +326,15 @@ export class SimContext {
     return this.grid.wind[this.grid.idx(x, y)];
   }
 
+  /** Queue a Woofer shockwave ring VFX centred at (x,y) reaching `r` cells — the
+   *  Woofer's visible counterpart to a Fan stamping the wind field. Purely
+   *  cosmetic: the CA and object layers never read it (the shockwave's physics
+   *  rides the blast / wooferPulse path); the renderer drains the queue each
+   *  frame into an animated expanding ring (see Grid.shockwaves / CanvasRenderer). */
+  emitShockwave(x: number, y: number, r: number): void {
+    this.grid.shockwaves.push({ x, y, r });
+  }
+
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or
    *  EMPTY when nothing is overlapped (see Grid.overlay). A material rule can
    *  read this to react to a fluid passing through it — the Turbine makes power

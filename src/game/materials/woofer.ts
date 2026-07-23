@@ -33,6 +33,11 @@ import { detonate } from './blast';
 const REACH = 12; // × the global 2/3 blast-scale ⇒ ~8-cell non-destructive shove
 const POWER = 0; // can't break anything, however tough — see blast.ts durability
 
+// Visible reach of the cosmetic shockwave ring (cells): REACH trimmed by the
+// same global 2/3 blast-scale detonate() applies (see blast.ts BLAST_REACH_SCALE),
+// so the drawn ring sweeps out to exactly where the pulse actually shoves matter.
+const SHOCK_VIS_REACH = (REACH * 2) / 3;
+
 /** Fire one invisible, non-destructive shockwave pulse from a single Woofer
  *  cell: only the blast subsystem's physics is reused (loose matter shoved
  *  via the power/durability axis, solids shadowed untouched) — the visual
@@ -129,10 +134,16 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
   const seen = new Set<number>([startIdx]);
   const stack: number[] = [sx, sy];
   let count = 0;
+  // Accumulate the flood's centroid so the cosmetic ring emanates from the body's
+  // middle (a speaker cabinet thumps from its centre), not the entry face.
+  let sumX = 0;
+  let sumY = 0;
   while (stack.length > 0 && count < MAX_BODY) {
     const y = stack.pop()!;
     const x = stack.pop()!;
     count++;
+    sumX += x;
+    sumY += y;
     sim.wooferFlooded.add(y * w + x);
     wooferPulse(sim, x, y);
     sim.wooferPulseX.push(x);
@@ -147,6 +158,9 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
       stack.push(nx, ny);
     }
   }
+  // One expanding-ring VFX per firing body (a background effect the renderer
+  // animates and draws behind matter — see Grid.shockwaves / CanvasRenderer).
+  if (count > 0) sim.emitShockwave(sumX / count, sumY / count, SHOCK_VIS_REACH);
 }
 
 export const WOOFER = register({

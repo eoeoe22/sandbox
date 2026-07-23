@@ -2,7 +2,7 @@ import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
-import { EMPTY, type BorderMode } from '../engine/types';
+import { EMPTY, Phase, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
@@ -77,6 +77,21 @@ const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - 
 function windFrac(v: number): number {
   return v - Math.floor(v);
 }
+
+// ── Woofer shockwave rings (우퍼 충격파 이펙트) ────────────────────────────────
+// Where the Fan paints continuous streaks, the Woofer thumps a *pulse*: each
+// firing body queues one ring (Grid.shockwaves) that the renderer owns and
+// animates as a bright pixel wave expanding outward from the cabinet, then
+// fading at the rim — the radial analog of the reference's advancing wave, and a
+// background layer just like the wind. Matter occludes it (it's drawn behind the
+// scene), except liquid, which the ring renders semi-transparent so the wave (and
+// the board behind) shows through the pool — 액체는 반투명으로 처리 (Woofer 충격파만).
+const SHOCK_COLOR = rgb(0x00, 0xd2, 0xff); // cyan crest, matching the reference wave
+const SHOCK_SPEED = 0.45; // cells the crest advances per rendered frame
+const SHOCK_BAND = 1.6; // half-thickness of the lit crest (cells) — a chunky pixel wave
+const SHOCK_FADE_IN = 1.5; // cells of travel over which the ring fades up from nothing
+const SHOCK_LIQUID_CLEAR = 0.55; // how far a lit liquid cell is blended toward the background
+const SHOCK_LIQUID_TINT = 0.3; // cyan wash mixed into a lit liquid cell on top of that
 
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
@@ -237,6 +252,15 @@ export class CanvasRenderer implements Renderer {
   private windMaxX = -1;
   private windMinY = 0;
   private windMaxY = -1;
+  /** id → 1 for a Liquid, so the Woofer shockwave pass can render a pool cell
+   *  semi-transparent (letting the wave show through) while other matter occludes
+   *  the wave (see the shockwave draw in render()). */
+  private isLiquid: Uint8Array;
+  /** Live Woofer shockwave rings, each an expanding pixel wave: `cx,cy` centre,
+   *  `age` frames since spawn, `maxR` terminal radius (cells). Fed from
+   *  Grid.shockwaves each frame and dropped once the crest passes the rim. Purely
+   *  cosmetic renderer state, animated per rendered frame like windPhase. */
+  private shocks: { cx: number; cy: number; age: number; maxR: number }[] = [];
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -290,6 +314,7 @@ export class CanvasRenderer implements Renderer {
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
+    this.isLiquid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -308,6 +333,7 @@ export class CanvasRenderer implements Renderer {
         }
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
+        if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -339,6 +365,17 @@ export class CanvasRenderer implements Renderer {
     const r = (((host & 0xff) * 5 + (fluid & 0xff) * 3) >> 3) & 0xff;
     const g = ((((host >> 8) & 0xff) * 5 + ((fluid >> 8) & 0xff) * 3) >> 3) & 0xff;
     const b = ((((host >> 16) & 0xff) * 5 + ((fluid >> 16) & 0xff) * 3) >> 3) & 0xff;
+    return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+  }
+
+  /** Linearly blend packed 0xAABBGGRR `host` toward `other` by `t` (0..1),
+   *  keeping host's alpha. The per-channel mix behind the Woofer shockwave's
+   *  crest (host → cyan) and its translucent liquid (host → background). */
+  private static mix(host: number, other: number, t: number): number {
+    const it = 1 - t;
+    const r = (((host & 0xff) * it + (other & 0xff) * t) | 0) & 0xff;
+    const g = ((((host >> 8) & 0xff) * it + ((other >> 8) & 0xff) * t) | 0) & 0xff;
+    const b = ((((host >> 16) & 0xff) * it + ((other >> 16) & 0xff) * t) | 0) & 0xff;
     return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
@@ -715,6 +752,9 @@ export class CanvasRenderer implements Renderer {
     this.windMaxX = bxMax;
     this.windMinY = byMin;
     this.windMaxY = byMax;
+    // Woofer shockwave rings: an expanding pixel wave drawn over the finished cell
+    // image (behind matter, through translucent liquid) before it's blitted.
+    this.drawShockwaves(grid, heat);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -744,6 +784,79 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Draw and advance the live Woofer shockwave rings (see Grid.shockwaves). Newly
+   * queued pulses are drained into this.shocks, then every ring's crest is expanded
+   * one frame's worth (SHOCK_SPEED) and painted as an annulus of cyan pixels into
+   * the finished cell image — a *background* effect, so opaque matter (powder,
+   * solid, gas) simply occludes the wave (its cell is left untouched) while empty
+   * air lights up with the crest and a liquid cell is rendered semi-transparent so
+   * the wave and the board behind show through the pool (액체는 반투명 — Woofer
+   * 충격파만). Rings whose crest has passed the rim are dropped. Purely cosmetic;
+   * the cell buffer (grid.cells) is never touched. In the thermal camera the rings
+   * still age and expire but paint nothing, so the queue can't pile up.
+   */
+  private drawShockwaves(grid: Grid, heat: boolean): void {
+    const q = grid.shockwaves;
+    if (q.length > 0) {
+      for (const s of q) this.shocks.push({ cx: s.x, cy: s.y, age: 0, maxR: s.r });
+      q.length = 0;
+    }
+    if (this.shocks.length === 0) return;
+    const buf = this.buf32;
+    const cells = grid.cells;
+    const liquid = this.isLiquid;
+    const w = grid.width;
+    const h = grid.height;
+    const bg = this.palette[EMPTY]; // board background — what a cleared liquid reveals
+    const survivors: { cx: number; cy: number; age: number; maxR: number }[] = [];
+    for (const s of this.shocks) {
+      const r = s.age * SHOCK_SPEED; // current crest radius
+      s.age++;
+      if (r - SHOCK_BAND > s.maxR) continue; // whole crest has swept past the rim → done
+      survivors.push(s);
+      if (heat) continue; // thermal camera: keep it aging/expiring, but draw nothing
+      // Fade the crest up over its first cells of travel, then back down at the rim.
+      const fadeIn = r < SHOCK_FADE_IN ? r / SHOCK_FADE_IN : 1;
+      const fadeOut = 1 - r / s.maxR;
+      const alpha = fadeOut > 0 ? fadeIn * fadeOut : 0;
+      if (alpha <= 0) continue;
+      // Only the annulus [r - SHOCK_BAND, r + SHOCK_BAND] can light — scan its bbox.
+      const outer = r + SHOCK_BAND;
+      let x0 = Math.floor(s.cx - outer);
+      let x1 = Math.ceil(s.cx + outer);
+      let y0 = Math.floor(s.cy - outer);
+      let y1 = Math.ceil(s.cy + outer);
+      if (x0 < 0) x0 = 0;
+      if (y0 < 0) y0 = 0;
+      if (x1 > w - 1) x1 = w - 1;
+      if (y1 > h - 1) y1 = h - 1;
+      for (let y = y0; y <= y1; y++) {
+        const dy = y - s.cy;
+        const row = y * w;
+        for (let x = x0; x <= x1; x++) {
+          const dx = x - s.cx;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const band = SHOCK_BAND - Math.abs(d - r); // >0 inside the crest, peak at centre
+          if (band <= 0) continue;
+          const inten = alpha * (band / SHOCK_BAND); // brightest along the crest line
+          const i = row + x;
+          const id = cells[i];
+          if (id === EMPTY) {
+            buf[i] = CanvasRenderer.mix(buf[i], SHOCK_COLOR, inten * 0.85);
+          } else if (liquid[id]) {
+            // Reveal the wave through the pool: thin the liquid toward the board
+            // background, then wash the crest's cyan over it.
+            const cleared = CanvasRenderer.mix(buf[i], bg, inten * SHOCK_LIQUID_CLEAR);
+            buf[i] = CanvasRenderer.mix(cleared, SHOCK_COLOR, inten * SHOCK_LIQUID_TINT);
+          }
+          // Opaque matter (powder/solid/gas) occludes the background wave — untouched.
+        }
+      }
+    }
+    this.shocks = survivors;
   }
 
   /**

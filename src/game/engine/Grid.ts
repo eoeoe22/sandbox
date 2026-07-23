@@ -123,6 +123,19 @@ export class Grid {
   wind: Uint8Array;
 
   /**
+   * Woofer shockwave ring spawns queued this tick (materials/woofer.ts) — a
+   * transient, one-way VFX channel that is NOT part of the cellular grid. Each
+   * entry is one firing Woofer body: `x,y` its centre and `r` how far the pulse
+   * reaches (cells, matching the physical shove). The renderer drains this list
+   * each frame into its own animated expanding-ring effect — a *background*
+   * layer drawn behind matter (translucent liquids let it show through, see
+   * CanvasRenderer), the visible counterpart to the Fan's wind streaks. Never
+   * read by the CA or the object layer (the shockwave's physics rides the blast/
+   * wooferPulse path); purely cosmetic. Runtime-only; not carried on resize.
+   */
+  shockwaves: { x: number; y: number; r: number }[] = [];
+
+  /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
    * position/velocity/physics, living *beside* the cell grid rather than in it
    * (see engine/objects.ts). Stepped by Simulation as a pass separate from the
@@ -243,6 +256,7 @@ export class Grid {
     this.aux.fill(0);
     this.tint.fill(0);
     this.wind.fill(0); // wipe the transient wind field so no gust flashes over a cleared board
+    this.shockwaves.length = 0; // drop any queued Woofer shockwave VFX with the board
     this.objects.length = 0; // free objects live beside the grid; clear them too
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
