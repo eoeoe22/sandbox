@@ -326,6 +326,19 @@ export class SimContext {
     return this.grid.wind[this.grid.idx(x, y)];
   }
 
+  /** Queue a Woofer shockwave VFX for one firing body: `bx,by` are its cell
+   *  coordinates and `reach` how far the pulse shoves outward. The renderer grows
+   *  the wavefront out of the body's actual outline (so a wide cabinet's wave
+   *  leaves its whole surface, not a point) exactly `reach` cells — matching where
+   *  the pulse actually shoves matter. The Woofer's visible counterpart to a Fan
+   *  stamping the wind field. Purely cosmetic: the CA and object layers never read
+   *  it (the shockwave's physics rides the blast / wooferPulse path); the renderer
+   *  drains the queue each frame into an animated wavefront (see Grid.shockwaves /
+   *  CanvasRenderer). */
+  emitShockwave(bx: number[], by: number[], reach: number): void {
+    this.grid.shockwaves.push({ bx, by, reach });
+  }
+
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or
    *  EMPTY when nothing is overlapped (see Grid.overlay). A material rule can
    *  read this to react to a fluid passing through it — the Turbine makes power

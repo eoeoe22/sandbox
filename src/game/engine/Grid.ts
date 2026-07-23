@@ -123,6 +123,22 @@ export class Grid {
   wind: Uint8Array;
 
   /**
+   * Woofer shockwave spawns queued this tick (materials/woofer.ts) — a transient,
+   * one-way VFX channel that is NOT part of the cellular grid. Each entry is one
+   * firing Woofer body: `bx,by` are the body's own cell coordinates and `reach`
+   * how many cells the pulse shoves outward from them. The renderer drains this
+   * list each frame and grows a wavefront *out of the body's actual outline* (a
+   * distance field seeded on the body cells, blocked by solids), so the effect
+   * honestly follows the cabinet's shape and true reach instead of a circle from
+   * its centre. It's a *background* layer drawn behind matter (translucent liquids
+   * let it show through, walls stop it; see CanvasRenderer), the radial counterpart
+   * to the Fan's wind streaks. Never read by the CA or the object layer (the
+   * shockwave's physics rides the blast/wooferPulse path); purely cosmetic.
+   * Runtime-only; not carried on resize.
+   */
+  shockwaves: { bx: number[]; by: number[]; reach: number }[] = [];
+
+  /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
    * position/velocity/physics, living *beside* the cell grid rather than in it
    * (see engine/objects.ts). Stepped by Simulation as a pass separate from the
@@ -243,6 +259,7 @@ export class Grid {
     this.aux.fill(0);
     this.tint.fill(0);
     this.wind.fill(0); // wipe the transient wind field so no gust flashes over a cleared board
+    this.shockwaves.length = 0; // drop any queued Woofer shockwave VFX with the board
     this.objects.length = 0; // free objects live beside the grid; clear them too
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
@@ -334,6 +351,7 @@ export class Grid {
     this.tint = nextTint;
     this.bgTint = nextBgTint;
     this.wind = new Uint8Array(this.size); // transient — recomputed each tick, no copy
+    this.shockwaves.length = 0; // in-flight rings hold absolute coords the remap would misplace
     // Re-tile for the new dimensions and re-arm every tile holding kept content,
     // so the active-tile scan resumes correctly after a resize/load.
     const wasEnabled = this.dirty.enabled;

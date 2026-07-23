@@ -2,7 +2,7 @@ import type { Renderer } from './Renderer';
 import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
-import { EMPTY, type BorderMode } from '../engine/types';
+import { EMPTY, Phase, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
@@ -77,6 +77,39 @@ const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - 
 function windFrac(v: number): number {
   return v - Math.floor(v);
 }
+
+// ── Woofer shockwave wavefront (우퍼 충격파 이펙트) ───────────────────────────
+// Where the Fan paints continuous streaks, the Woofer thumps a *pulse*: each
+// firing body hands the renderer its own cells (Grid.shockwaves) and the renderer
+// grows a single wavefront *out of the cabinet's actual outline*, then fades it at
+// the rim — a background layer just like the wind. Drawn as pixel art on purpose:
+// one flat cyan shade (single layer), a *thin* front only SHOCK_THICK cell(s) wide
+// on a SHOCK_BLOCK×SHOCK_BLOCK lattice (1 = a crisp 1-particle-thick line), and the
+// spawn/rim dissolve is a 4×4 ordered (Bayer) dither rather than an alpha ramp.
+//
+// It stays honest to the physics: the front is a distance field *seeded on the
+// body cells and blocked by solids* (see buildShockField), so it leaves the body's
+// real surface — not a circle from its centre — spreads exactly the pulse's reach,
+// and a wall stops it instead of letting it shine through, matching the POWER-0
+// pulse every solid blocks. Opaque matter (powder / solid / gas) occludes the
+// background wave; only liquid is special-cased — a lit pool cell is stippled
+// (checkerboard) toward the board behind it, so 액체는 반투명 처리 — 백그라운드가
+// 비쳐 보임 (Woofer 충격파만).
+const SHOCK_SHADE = rgb(0x38, 0xbd, 0xf8); // single flat cyan layer
+const SHOCK_BLOCK = 1; // wave drawn on a SHOCK_BLOCK²-cell lattice (1 = native particle pixels)
+const SHOCK_SPEED = 0.6; // cells the wavefront advances per rendered frame (< THICK ⇒ no radial gaps)
+const SHOCK_THICK = 1; // wavefront thickness in cells — a thin ~1-particle-wide line
+const SHOCK_FADE = 3; // cells over which the front dithers in (spawn) / out (rim)
+const SHOCK_LIQUID_WASH = 0.5; // cyan mixed into a pool's see-through (stippled) pixel
+const SHOCK_INF = 1e9; // "unreachable" marker in the distance field
+// 8-neighbour steps + costs for the geodesic distance transform (√2 on diagonals
+// so the front stays round-ish while still routing around walls).
+const SHOCK_DX8 = [1, -1, 0, 0, 1, 1, -1, -1];
+const SHOCK_DY8 = [0, 0, 1, -1, 1, -1, 1, -1];
+const SHOCK_C8 = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
+// 4×4 ordered-dither threshold matrix (values 0..15), the classic pixel-art fade —
+// a block draws only when its (blockX&3,blockY&3) threshold is below the fade level.
+const SHOCK_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
@@ -237,6 +270,30 @@ export class CanvasRenderer implements Renderer {
   private windMaxX = -1;
   private windMinY = 0;
   private windMaxY = -1;
+  /** id → 1 for a Liquid, so the Woofer shockwave pass can render a pool cell
+   *  semi-transparent (stippled toward the board behind) while other matter
+   *  occludes the wave (see the shockwave draw in render()). */
+  private isLiquid: Uint8Array;
+  /** id → 1 for a Solid, which blocks the Woofer shockwave's distance field the
+   *  way a POWER-0 pulse is stopped by any solid it can't break — the wavefront
+   *  routes around / halts at a wall instead of shining through it (see
+   *  buildShockField). */
+  private isSolid: Uint8Array;
+  /** Live Woofer shockwaves, each a precomputed geodesic distance-from-body field
+   *  the wavefront sweeps outward through: `dist` the field over its bbox (SHOCK_INF
+   *  where unreachable), `x0,y0` the bbox's fine-grid origin, `bw,bh` its dims,
+   *  `maxR` the terminal radius (= reach), `age` frames since spawn. Built from
+   *  Grid.shockwaves on drain and dropped once the front clears the rim. Purely
+   *  cosmetic renderer state, animated per rendered frame like windPhase. */
+  private shocks: {
+    dist: Float64Array;
+    x0: number;
+    y0: number;
+    bw: number;
+    bh: number;
+    maxR: number;
+    age: number;
+  }[] = [];
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -290,6 +347,8 @@ export class CanvasRenderer implements Renderer {
     this.lattice = new Uint32Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
+    this.isLiquid = new Uint8Array(256);
+    this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -308,6 +367,8 @@ export class CanvasRenderer implements Renderer {
         }
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
+        if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
+        if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -339,6 +400,17 @@ export class CanvasRenderer implements Renderer {
     const r = (((host & 0xff) * 5 + (fluid & 0xff) * 3) >> 3) & 0xff;
     const g = ((((host >> 8) & 0xff) * 5 + ((fluid >> 8) & 0xff) * 3) >> 3) & 0xff;
     const b = ((((host >> 16) & 0xff) * 5 + ((fluid >> 16) & 0xff) * 3) >> 3) & 0xff;
+    return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+  }
+
+  /** Linearly blend packed 0xAABBGGRR `host` toward `other` by `t` (0..1),
+   *  keeping host's alpha. The per-channel mix behind the Woofer shockwave's
+   *  crest (host → cyan) and its translucent liquid (host → background). */
+  private static mix(host: number, other: number, t: number): number {
+    const it = 1 - t;
+    const r = (((host & 0xff) * it + (other & 0xff) * t) | 0) & 0xff;
+    const g = ((((host >> 8) & 0xff) * it + ((other >> 8) & 0xff) * t) | 0) & 0xff;
+    const b = ((((host >> 16) & 0xff) * it + ((other >> 16) & 0xff) * t) | 0) & 0xff;
     return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
@@ -428,6 +500,9 @@ export class CanvasRenderer implements Renderer {
     this.objOff.height = oh;
     this.objImage = this.objCtx.createImageData(ow, oh);
     this.objBuf32 = new Uint32Array(this.objImage.data.buffer);
+    // Drop any in-flight Woofer shockwaves — their distance fields hold absolute
+    // coordinates for the old dimensions, which would paint into the wrong cells.
+    this.shocks.length = 0;
   }
 
   render(grid: Grid): void {
@@ -715,6 +790,9 @@ export class CanvasRenderer implements Renderer {
     this.windMaxX = bxMax;
     this.windMinY = byMin;
     this.windMaxY = byMax;
+    // Woofer shockwaves: an expanding pixel wavefront drawn over the finished cell
+    // image (behind matter, through translucent liquid) before it's blitted.
+    this.drawShockwaves(grid, heat);
     this.offCtx.putImageData(this.image, 0, 0);
 
     const cw = this.canvas.width;
@@ -744,6 +822,213 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Draw and advance the live Woofer shockwaves (see Grid.shockwaves). Newly queued
+   * pulses are drained and turned into a geodesic distance-from-body field once
+   * (buildShockField), then every frame the wavefront advances one frame's worth
+   * (SHOCK_SPEED) and is painted as low-res pixel art into the finished cell image:
+   * a single flat cyan shade (SHOCK_SHADE) on a chunky SHOCK_BLOCK²-cell lattice,
+   * with the spawn/rim dissolve done by a per-block ordered (Bayer) dither.
+   *
+   * Honest to the physics of a POWER-0 pulse: because the field is seeded on the
+   * body's own cells and blocked by solids, the front leaves the cabinet's real
+   * outline (not a circle from its centre), spreads exactly the pulse's reach, and
+   * a wall stops it instead of letting it shine through. It's a *background* effect,
+   * so opaque matter (powder / solid / gas) occludes it (its cell is left
+   * untouched); only liquid is special — a lit pool cell is stippled (checkerboard)
+   * toward the board behind it, so the wave and background show through the water —
+   * 액체는 반투명 (Woofer 충격파만). Waves whose front has cleared the rim are dropped.
+   * Purely cosmetic; the cell buffer (grid.cells) is never touched. In the thermal
+   * camera they still age and expire but paint nothing, so the queue can't pile up.
+   */
+  private drawShockwaves(grid: Grid, heat: boolean): void {
+    const q = grid.shockwaves;
+    if (q.length > 0) {
+      for (const s of q) {
+        const field = this.buildShockField(grid, s.bx, s.by, s.reach);
+        if (field) this.shocks.push(field);
+      }
+      q.length = 0;
+    }
+    if (this.shocks.length === 0) return;
+    const buf = this.buf32;
+    const cells = grid.cells;
+    const liquid = this.isLiquid;
+    const w = grid.width;
+    const bg = this.palette[EMPTY]; // board background — what a stippled liquid reveals
+    const B = SHOCK_BLOCK;
+    const survivors: typeof this.shocks = [];
+    for (const s of this.shocks) {
+      // Front radius (geodesic cells from the body surface): steps outward each frame.
+      const r = s.age * SHOCK_SPEED;
+      s.age++;
+      const inner = r - SHOCK_THICK; // trailing edge of the one-block-thick front
+      if (inner > s.maxR) continue; // whole front has cleared the rim — retire
+      survivors.push(s);
+      if (heat) continue; // thermal camera: keep it aging/expiring, but draw nothing
+      // Fade level (0..1) the dither thresholds against: rises over the first cells
+      // of travel (spawn) and falls as the front's inner edge nears the rim.
+      let fade = 1;
+      if (r < SHOCK_FADE) fade = r / SHOCK_FADE;
+      const tail = s.maxR - inner;
+      if (tail < SHOCK_FADE) fade = Math.min(fade, tail / SHOCK_FADE);
+      if (fade <= 0) continue;
+      const fadeLvl = fade * 16;
+      const dist = s.dist;
+      const x0 = s.x0;
+      const y0 = s.y0;
+      const bw = s.bw;
+      const gx1 = x0 + bw; // exclusive fine bounds of the field's bbox
+      const gy1 = y0 + s.bh;
+      // Walk the field in absolute-grid-aligned SHOCK_BLOCK² tiles so the chunky
+      // pixels stay put frame to frame instead of shimmering with the bbox.
+      const bxStart = x0 - (x0 % B);
+      const byStart = y0 - (y0 % B);
+      for (let byb = byStart; byb < gy1; byb += B) {
+        const bj = (byb / B) & 3;
+        const fy0 = byb < y0 ? y0 : byb;
+        const fy1 = byb + B < gy1 ? byb + B : gy1;
+        for (let bxb = bxStart; bxb < gx1; bxb += B) {
+          // Per-block Bayer dither — the whole tile shares one threshold (chunky).
+          if (SHOCK_BAYER[bj * 4 + ((bxb / B) & 3)] >= fadeLvl) continue;
+          const fx0 = bxb < x0 ? x0 : bxb;
+          const fx1 = bxb + B < gx1 ? bxb + B : gx1;
+          // Representative distance = the block's leading (nearest) field cell.
+          let d = SHOCK_INF;
+          for (let yy = fy0; yy < fy1; yy++) {
+            const rowL = (yy - y0) * bw - x0;
+            for (let xx = fx0; xx < fx1; xx++) {
+              const dv = dist[rowL + xx];
+              if (dv < d) d = dv;
+            }
+          }
+          if (d >= SHOCK_INF || d <= inner || d > r) continue; // block not on the front
+          for (let yy = fy0; yy < fy1; yy++) {
+            const grow = yy * w;
+            for (let xx = fx0; xx < fx1; xx++) {
+              const gi = grow + xx;
+              const id = cells[gi];
+              if (id === EMPTY) {
+                buf[gi] = SHOCK_SHADE; // hard pixel — crisp cyan front over the dark board
+              } else if (liquid[id] && ((xx + yy) & 1) === 0) {
+                // Liquid: stipple half the front cells to board+cyan, leaving the rest
+                // as water — a 50% checkerboard reads as a see-through ripple.
+                buf[gi] = CanvasRenderer.mix(bg, SHOCK_SHADE, SHOCK_LIQUID_WASH);
+              }
+            }
+          }
+        }
+      }
+    }
+    this.shocks = survivors;
+  }
+
+  /** Build a Woofer shockwave's geodesic distance field: a multi-source Dijkstra
+   *  seeded at 0 on every body cell (bx,by) that spreads outward — orthogonal step
+   *  cost 1, diagonal √2 — through anything but a *solid*, so the front routes
+   *  around / halts at walls exactly like the POWER-0 pulse (완전한 비파괴성) every
+   *  solid blocks. Bounded to `reach` cells, over a bbox padded by the reach; a cell
+   *  the front can't reach within `reach` stays SHOCK_INF. Returns the drawable
+   *  entry, or null if the body was empty. Run once per firing, not per frame. */
+  private buildShockField(
+    grid: Grid,
+    bx: number[],
+    by: number[],
+    reach: number,
+  ): (typeof this.shocks)[number] | null {
+    const n = bx.length;
+    if (n === 0) return null;
+    const w = grid.width;
+    const h = grid.height;
+    const cells = grid.cells;
+    const solid = this.isSolid;
+    let minX = bx[0];
+    let maxX = bx[0];
+    let minY = by[0];
+    let maxY = by[0];
+    for (let i = 1; i < n; i++) {
+      if (bx[i] < minX) minX = bx[i];
+      if (bx[i] > maxX) maxX = bx[i];
+      if (by[i] < minY) minY = by[i];
+      if (by[i] > maxY) maxY = by[i];
+    }
+    const margin = Math.ceil(reach) + 1;
+    const x0 = Math.max(0, minX - margin);
+    const y0 = Math.max(0, minY - margin);
+    const x1 = Math.min(w - 1, maxX + margin);
+    const y1 = Math.min(h - 1, maxY + margin);
+    const bw = x1 - x0 + 1;
+    const bh = y1 - y0 + 1;
+    // Float64 (not Float32): the heap keys are float64 sums, so a Float32 field
+    // would round diagonal distances (√2 steps) just enough that the `d > dist[li]`
+    // stale-check spuriously drops valid pops — leaving the wavefront patchy.
+    const dist = new Float64Array(bw * bh).fill(SHOCK_INF);
+    // Binary min-heap over local field indices (parallel key/value arrays).
+    const heapD: number[] = [];
+    const heapI: number[] = [];
+    const push = (d: number, idx: number): void => {
+      let c = heapD.length;
+      heapD.push(d);
+      heapI.push(idx);
+      while (c > 0) {
+        const p = (c - 1) >> 1;
+        if (heapD[p] <= heapD[c]) break;
+        [heapD[p], heapD[c]] = [heapD[c], heapD[p]];
+        [heapI[p], heapI[c]] = [heapI[c], heapI[p]];
+        c = p;
+      }
+    };
+    for (let i = 0; i < n; i++) {
+      const li = (by[i] - y0) * bw + (bx[i] - x0);
+      if (dist[li] !== 0) {
+        dist[li] = 0;
+        push(0, li);
+      }
+    }
+    while (heapD.length > 0) {
+      const d = heapD[0];
+      const li = heapI[0];
+      // Pop min: move last to root, sift down.
+      const lastD = heapD.pop()!;
+      const lastI = heapI.pop()!;
+      if (heapD.length > 0) {
+        heapD[0] = lastD;
+        heapI[0] = lastI;
+        let p = 0;
+        const len = heapD.length;
+        for (;;) {
+          const l = 2 * p + 1;
+          const rr = l + 1;
+          let m = p;
+          if (l < len && heapD[l] < heapD[m]) m = l;
+          if (rr < len && heapD[rr] < heapD[m]) m = rr;
+          if (m === p) break;
+          [heapD[p], heapD[m]] = [heapD[m], heapD[p]];
+          [heapI[p], heapI[m]] = [heapI[m], heapI[p]];
+          p = m;
+        }
+      }
+      if (d > dist[li]) continue; // stale heap entry
+      const lx = li % bw;
+      const ly = (li / bw) | 0;
+      for (let k = 0; k < 8; k++) {
+        const nx = lx + SHOCK_DX8[k];
+        const ny = ly + SHOCK_DY8[k];
+        if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+        // A solid neighbour blocks the front (and skips other body cells for free).
+        if (solid[cells[(ny + y0) * w + (nx + x0)]]) continue;
+        const nd = d + SHOCK_C8[k];
+        if (nd > reach) continue; // past the pulse's reach — don't grow further
+        const ni = ny * bw + nx;
+        if (nd < dist[ni]) {
+          dist[ni] = nd;
+          push(nd, ni);
+        }
+      }
+    }
+    return { dist, x0, y0, bw, bh, maxR: reach, age: 0 };
   }
 
   /**

@@ -33,6 +33,11 @@ import { detonate } from './blast';
 const REACH = 12; // × the global 2/3 blast-scale ⇒ ~8-cell non-destructive shove
 const POWER = 0; // can't break anything, however tough — see blast.ts durability
 
+// Visible reach of the cosmetic shockwave (cells): REACH trimmed by the same
+// global 2/3 blast-scale detonate() applies (see blast.ts BLAST_REACH_SCALE), so
+// the drawn wavefront sweeps out to exactly where the pulse actually shoves matter.
+const SHOCK_VIS_REACH = (REACH * 2) / 3;
+
 /** Fire one invisible, non-destructive shockwave pulse from a single Woofer
  *  cell: only the blast subsystem's physics is reused (loose matter shoved
  *  via the power/durability axis, solids shadowed untouched) — the visual
@@ -128,11 +133,18 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
 
   const seen = new Set<number>([startIdx]);
   const stack: number[] = [sx, sy];
-  let count = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
+  // Collect this flood's cells so the effect can honestly reflect the pulse's reach:
+  // the shockwave fires from *every* body cell (wooferPulse below), so its true
+  // extent is the body dilated by the reach — not a fixed radius from one point.
+  // We hand the whole cell set to the renderer, which grows the wavefront out of
+  // the body's own outline (see CanvasRenderer's distance-field ring).
+  const bx: number[] = [];
+  const by: number[] = [];
+  while (stack.length > 0 && bx.length < MAX_BODY) {
     const y = stack.pop()!;
     const x = stack.pop()!;
-    count++;
+    bx.push(x);
+    by.push(y);
     sim.wooferFlooded.add(y * w + x);
     wooferPulse(sim, x, y);
     sim.wooferPulseX.push(x);
@@ -147,6 +159,10 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
       stack.push(nx, ny);
     }
   }
+  // One expanding-wavefront VFX per firing body (a background effect the renderer
+  // animates out of the body's own outline and draws behind matter — see
+  // Grid.shockwaves / CanvasRenderer).
+  if (bx.length > 0) sim.emitShockwave(bx, by, SHOCK_VIS_REACH);
 }
 
 export const WOOFER = register({
