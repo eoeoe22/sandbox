@@ -112,6 +112,9 @@ import { NANOBOT } from './nanobot';
 import { FAN } from './fan';
 import { RUST } from './rust';
 import { RUST_POWDER } from './rustpowder';
+import { GALLIUM } from './gallium';
+import { LIQUID_GALLIUM } from './liquidgallium';
+import { MERCURY_VAPOR } from './mercuryvapor';
 
 export {
   EMPTY_MAT,
@@ -223,6 +226,9 @@ export {
   FAN,
   RUST,
   RUST_POWDER,
+  GALLIUM,
+  LIQUID_GALLIUM,
+  MERCURY_VAPOR,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -285,6 +291,7 @@ export const MATERIALS = [
   SAWDUST,
   IRON,
   RUST,
+  GALLIUM,
   MOLTEN_METAL,
   MOLTEN_GLASS,
   GLASS,
@@ -299,6 +306,8 @@ export const MATERIALS = [
   WOOFER,
   FAN,
   MERCURY,
+  MERCURY_VAPOR,
+  LIQUID_GALLIUM,
   HONEY,
   ALCOHOL,
   SOAPY_WATER,

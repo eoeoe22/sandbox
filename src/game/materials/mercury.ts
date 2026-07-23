@@ -3,6 +3,13 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
+import { MERCURY_VAPOR } from './mercuryvapor';
+
+// Real mercury boils at ~357°: heated past this, a puddle flashes to Mercury
+// Vapor, which drifts up and condenses back to liquid Mercury when it cools
+// (see mercuryvapor.ts) — the same boil↔condense loop Water/Steam and
+// Acid/Acid Vapor run.
+export const MERCURY_BOIL_TEMP = 357;
 
 // Mercury — liquid metal: the densest fluid in the game (9), so it sinks beneath
 // everything, even Molten Metal, and shoulders lighter liquids up and out of its
@@ -15,6 +22,14 @@ import type { SimContext } from '../engine/SimContext';
 function updateMercury(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
+
+  if (sim.getTemp(x, y) >= MERCURY_BOIL_TEMP) {
+    // In-place `set` keeps the (now scorching) temperature so the fresh Mercury
+    // Vapor reads as hot instead of instantly condensing back next tick.
+    sim.set(x, y, MERCURY_VAPOR.id);
+    return;
+  }
+
   updateLiquid(x, y, sim);
 }
 
