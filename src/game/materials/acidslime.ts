@@ -6,7 +6,7 @@ import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { SMOKE } from './smoke';
-import { SLIME } from './slime';
+import { SLIME, SLIME_FALL_STALL_CHANCE } from './slime';
 import { WATER } from './water';
 
 // Acid Slime (산성 슬라임) — Slime's corrosive cousin. It behaves almost exactly
@@ -49,10 +49,12 @@ const SELF_CONSUME_CHANCE = 0.08;
 // goos gradually interdiffuse across their boundary (mirrors Acid↔Water).
 const DIFFUSE_CHANCE = 0.02;
 
-// Freshly-dissolved Water carries this brief "recently electrolysed" countdown in
-// its aux so the blob can't instantly drink its own dissolve puddle back and heal
-// (mirrors slime.ts DISSOLVE_WATER_GRACE — Water's own update ticks the mark down).
-const DISSOLVE_WATER_GRACE = 14;
+// Freshly-dissolved Water carries this "recently electrolysed" countdown in its aux
+// so the blob can't drink its own dissolve puddle back and heal before it drains —
+// run long enough that a big blob's dissolved water actually escapes rather than
+// being re-eaten (mirrors slime.ts DISSOLVE_WATER_GRACE; Water's update ticks it
+// down each turn). Kept in step with plain Slime so the two behave identically.
+const DISSOLVE_WATER_GRACE = 40;
 
 function isCorrodible(id: number): boolean {
   if (id === EMPTY) return false;
@@ -148,7 +150,10 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
   // Interdiffuse with plain Slime across their shared boundary (like Water+Acid).
   if (diffuseWith(x, y, sim, SLIME.id, DIFFUSE_CHANCE)) return;
 
-  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly.
+  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly, and a
+  // fall-stall throttles the drop itself so a heavy blob sinks slowly, not like thin
+  // water. Shared with plain Slime (SLIME_FALL_STALL_CHANCE) so both fall identically.
+  if (sim.chance(SLIME_FALL_STALL_CHANCE)) return;
   updateLiquid(x, y, sim);
 }
 
