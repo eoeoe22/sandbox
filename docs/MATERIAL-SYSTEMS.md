@@ -72,7 +72,7 @@
 시스템 노트:
 - **소금물 접촉 조건 & 틱당 확률적 부식**: 소금물 접촉 시 즉시 변환되는 대신 틱당 낮은 확률(3%)로 발생해 자연스러운 산화 진행 연출.
 - **Iron 표면 부식 제한 (깊이 2칸 이내)**: 고체 Iron은 소금물과 직접 닿는 표면(깊이 1) 및 바로 뒤쪽 셀(깊이 2)까지만 산화 대상이 됨. 부식 시 20% 확률로 Rust Powder(가루), 80% 확률로 Rust(고체)로 변경.
-- **Metal Powder & Nanobot 부식**: Metal Powder는 소금물 접촉 부위에서 100% Rust Powder로 부식. Nanobot은 소금물에 노출 시 100% Rust(고체)로 부식되며, Rust 계열 물질(Rust, Rust Powder)을 먹이 대상에서 제외하여 상호작용하지 않음.
+- **Metal Powder & Nanobot 부식**: Metal Powder는 소금물이 스며들었을 때 표면 2칸 제한을 무시하고 접촉 부위 어디서나 100% Rust Powder로 부식. Nanobot은 소금물에 노출 시 100% Rust(고체)로 부식되며, Rust 계열 물질(Rust, Rust Powder)을 먹이 대상에서 제외하여 상호작용하지 않음.
 - **녹 분해 / 재용융 메커니즘**: Rust 및 Rust Powder는 철 녹는점(1200°) 이상으로 가열되면 50% 확률로 Slag, 50% 확률로 Molten Iron Ore로 용융 분해되어 제련 순환 구조에 편입.
 
 ## 석탄불 온도 상향 (Coal 전용 `burnTemp`)

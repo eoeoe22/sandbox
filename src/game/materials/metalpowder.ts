@@ -8,6 +8,9 @@ import { SALTWATER } from './saltwater';
 import { RUST_POWDER } from './rustpowder';
 import { DIR8 } from '../engine/directions';
 
+// Metal Powder — when saltwater touches metal powder (including when saltwater
+// soaks deep into a powder heap), it ignores solid Iron's depth-2 surface restriction
+// and oxidizes into Rust Powder at any contact depth.
 const RUST_CHANCE = 0.03;
 
 function touchesSaltwater(x: number, y: number, sim: SimContext): boolean {
