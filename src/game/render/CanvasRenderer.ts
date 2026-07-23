@@ -86,7 +86,10 @@ function windHash01(a: number, b: number): number {
  *  (dA behind the head, dc across from the centreline), or −1 if the cell is off the
  *  glyph. The lifecycle lights a cell only while its arclength sits between the
  *  current reveal (draw-in) and retract (fade) thresholds — so the squared
- *  counter-clockwise hook forms gradually rather than all at once. */
+ *  counter-clockwise hook forms gradually rather than all at once.
+ *  NOTE: dA and dc must be integers — the two hook connector strokes gate on exact
+ *  equality (dA === 0, dA === WIND_HOOK), so a fractional dA would silently drop
+ *  them and gap the hook. Callers keep dA integral (see the render loop). */
 function windGlyphArc(dA: number, dc: number): number {
   if (dc === 0) return dA <= WIND_BODY ? WIND_BODY - dA : -1; // trailing line (tail→head)
   if (dA === 0) return dc >= -WIND_CURL_H && dc < 0 ? WIND_BODY - dc : -1; // rise at the head
@@ -545,17 +548,26 @@ export class CanvasRenderer implements Renderer {
         const baseLine = Math.round(across / WIND_LINE_SPACING);
         // Streaks spawn at jittered positions, so this cell may belong to a streak
         // seeded on the neighbouring base lines too — test all three and take the
-        // first that lights.
+        // first that lights. Bound check: a streak's owning centreline can sit at
+        // most WIND_CURL_H + WIND_JITTER/2 (= 3 + 2 = 5) cells from `across`, and the
+        // nearest WIND_LINE_SPACING (8) multiple is within 4, so ±1 always covers it.
         let litColor = -1;
         for (let dL = -1; dL <= 1 && litColor < 0; dL++) {
           const line = baseLine + dL;
-          // Per-line along phase offset so the lines don't share head positions.
-          const phaseOff = windHash01(line, 0x9e37) * WIND_PERIOD;
-          // Identify the streak (slot index kf) whose head is just downwind of this
-          // cell, and how far behind that head the cell sits (dA ≥ 0).
+          // Per-line along phase offset so the lines don't share head positions. Kept
+          // integral (round) so the resulting dA stays an integer — windGlyphArc's
+          // hook strokes gate on exact-integer dA.
+          const phaseOff = Math.round(windHash01(line, 0x9e37) * WIND_PERIOD);
+          // Identify the streak slot (index kf) this cell falls in along the beam.
           const rel = windPhase + phaseOff - u;
           const kf = Math.floor(rel / WIND_PERIOD);
-          const dA = rel - kf * WIND_PERIOD;
+          // Per-streak along offset within the slot: shifts the head so successive
+          // heads aren't a rigid WIND_PERIOD comb but spawn at scattered along
+          // positions. Bounded to [0, WIND_PERIOD − WIND_BODY − 1] so each streak's
+          // glyph stays inside its own slot (no bleed into the neighbour slot).
+          const alongJit = Math.round(windHash01(kf, line ^ 0x51ed) * (WIND_PERIOD - WIND_BODY - 1));
+          const dA = rel - kf * WIND_PERIOD - alongJit;
+          if (dA < 0) continue; // cell is ahead of this streak's (jittered) head
           // This streak's random cross jitter (spawn position) and lifecycle phase.
           const jitter = Math.round((windHash01(line, kf) - 0.5) * WIND_JITTER);
           const centre = line * WIND_LINE_SPACING + jitter;
