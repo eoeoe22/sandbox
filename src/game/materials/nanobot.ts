@@ -24,11 +24,17 @@ import { crawl, eatAndReproduce, touchingBlast, EAT_CHANCE } from './crawler';
 const FOOD = [IRON.id, METAL_POWDER.id] as const;
 const RUST_CHANCE = 0.03;
 
+function isSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.inBounds(x, y)) return false;
+  return sim.get(x, y) === SALTWATER.id || sim.getOverlay(x, y) === SALTWATER.id;
+}
+
 function touchesSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (sim.getOverlay(x, y) === SALTWATER.id) return true;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+    if (isSaltwater(nx, ny, sim)) {
       return true;
     }
   }

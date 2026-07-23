@@ -13,12 +13,25 @@ import { DIR8 } from '../engine/directions';
 // and oxidizes into Rust Powder at any contact depth.
 const RUST_CHANCE = 0.03;
 
+function isSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.inBounds(x, y)) return false;
+  return sim.get(x, y) === SALTWATER.id || sim.getOverlay(x, y) === SALTWATER.id;
+}
+
 function touchesSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (sim.getOverlay(x, y) === SALTWATER.id) return true;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
-      return true;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (isSaltwater(nx, ny, sim)) return true;
+    if (sim.get(nx, ny) === RUST_POWDER.id) {
+      if (sim.getOverlay(nx, ny) === SALTWATER.id) return true;
+      for (const [ddx, ddy] of DIR8) {
+        const nnx = nx + ddx;
+        const nny = ny + ddy;
+        if (isSaltwater(nnx, nny, sim)) return true;
+      }
     }
   }
   return false;

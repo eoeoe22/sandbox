@@ -10,26 +10,46 @@ import { DIR8 } from '../engine/directions';
 
 const RUST_CHANCE = 0.03;
 
-function isIronLike(id: number): boolean {
+function isSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.inBounds(x, y)) return false;
+  return sim.get(x, y) === SALTWATER.id || sim.getOverlay(x, y) === SALTWATER.id;
+}
+
+function isRustOrIron(id: number): boolean {
   return id === IRON.id || id === RUST.id || id === RUST_POWDER.id;
+}
+
+function isWetRustOrSaltwater(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.inBounds(x, y)) return false;
+  if (isSaltwater(x, y, sim)) return true;
+  const id = sim.get(x, y);
+  if (id === RUST.id || id === RUST_POWDER.id) {
+    if (sim.getOverlay(x, y) === SALTWATER.id) return true;
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (isSaltwater(nx, ny, sim)) return true;
+    }
+  }
+  return false;
 }
 
 function touchingSaltwaterWithinDepth2(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+    if (isWetRustOrSaltwater(nx, ny, sim)) {
       return true;
     }
   }
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && isIronLike(sim.get(nx, ny))) {
+    if (sim.inBounds(nx, ny) && isRustOrIron(sim.get(nx, ny))) {
       for (const [ddx, ddy] of DIR8) {
         const nnx = nx + ddx;
         const nny = ny + ddy;
-        if (sim.inBounds(nnx, nny) && sim.get(nnx, nny) === SALTWATER.id) {
+        if (isWetRustOrSaltwater(nnx, nny, sim)) {
           return true;
         }
       }
