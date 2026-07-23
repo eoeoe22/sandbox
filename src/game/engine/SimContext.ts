@@ -326,16 +326,17 @@ export class SimContext {
     return this.grid.wind[this.grid.idx(x, y)];
   }
 
-  /** Queue a Woofer shockwave ring VFX centred at (x,y): the wavefront starts at
-   *  the body's own radius `r0` (so a wide cabinet's wave leaves its whole surface,
-   *  not a point) and travels `reach` cells further out — the body dilated by the
-   *  reach, matching where the pulse actually shoves matter. The Woofer's visible
-   *  counterpart to a Fan stamping the wind field. Purely cosmetic: the CA and
-   *  object layers never read it (the shockwave's physics rides the blast /
-   *  wooferPulse path); the renderer drains the queue each frame into an animated
-   *  expanding ring (see Grid.shockwaves / CanvasRenderer). */
-  emitShockwave(x: number, y: number, r0: number, reach: number): void {
-    this.grid.shockwaves.push({ x, y, r0, maxR: r0 + reach });
+  /** Queue a Woofer shockwave VFX for one firing body: `bx,by` are its cell
+   *  coordinates and `reach` how far the pulse shoves outward. The renderer grows
+   *  the wavefront out of the body's actual outline (so a wide cabinet's wave
+   *  leaves its whole surface, not a point) exactly `reach` cells — matching where
+   *  the pulse actually shoves matter. The Woofer's visible counterpart to a Fan
+   *  stamping the wind field. Purely cosmetic: the CA and object layers never read
+   *  it (the shockwave's physics rides the blast / wooferPulse path); the renderer
+   *  drains the queue each frame into an animated wavefront (see Grid.shockwaves /
+   *  CanvasRenderer). */
+  emitShockwave(bx: number[], by: number[], reach: number): void {
+    this.grid.shockwaves.push({ bx, by, reach });
   }
 
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or

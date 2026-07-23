@@ -123,20 +123,20 @@ export class Grid {
   wind: Uint8Array;
 
   /**
-   * Woofer shockwave ring spawns queued this tick (materials/woofer.ts) — a
-   * transient, one-way VFX channel that is NOT part of the cellular grid. Each
-   * entry is one firing Woofer body: `x,y` its centre, `r0` the body's own radius
-   * (where the wavefront starts) and `maxR` how far it reaches (`r0` + the pulse's
-   * cell reach), so the ring honestly covers the body dilated by its reach — the
-   * region the pulse actually shoves. The renderer drains this list each frame
-   * into its own animated expanding-ring effect — a *background* layer drawn
-   * behind matter (translucent liquids let it show through, blocked by solids like
-   * the real shockwave; see CanvasRenderer), the visible counterpart to the Fan's
-   * wind streaks. Never read by the CA or the object layer (the shockwave's physics
-   * rides the blast/wooferPulse path); purely cosmetic. Runtime-only; not carried
-   * on resize.
+   * Woofer shockwave spawns queued this tick (materials/woofer.ts) — a transient,
+   * one-way VFX channel that is NOT part of the cellular grid. Each entry is one
+   * firing Woofer body: `bx,by` are the body's own cell coordinates and `reach`
+   * how many cells the pulse shoves outward from them. The renderer drains this
+   * list each frame and grows a wavefront *out of the body's actual outline* (a
+   * distance field seeded on the body cells, blocked by solids), so the effect
+   * honestly follows the cabinet's shape and true reach instead of a circle from
+   * its centre. It's a *background* layer drawn behind matter (translucent liquids
+   * let it show through, walls stop it; see CanvasRenderer), the radial counterpart
+   * to the Fan's wind streaks. Never read by the CA or the object layer (the
+   * shockwave's physics rides the blast/wooferPulse path); purely cosmetic.
+   * Runtime-only; not carried on resize.
    */
-  shockwaves: { x: number; y: number; r0: number; maxR: number }[] = [];
+  shockwaves: { bx: number[]; by: number[]; reach: number }[] = [];
 
   /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
