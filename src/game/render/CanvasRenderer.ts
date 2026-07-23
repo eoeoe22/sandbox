@@ -82,10 +82,10 @@ function windFrac(v: number): number {
 // Where the Fan paints continuous streaks, the Woofer thumps a *pulse*: each
 // firing body hands the renderer its own cells (Grid.shockwaves) and the renderer
 // grows a single wavefront *out of the cabinet's actual outline*, then fades it at
-// the rim — a background layer just like the wind. Drawn as low-res pixel art on
-// purpose: one flat cyan shade (single layer) on a chunky SHOCK_BLOCK×SHOCK_BLOCK
-// lattice, the front stepping outward a block at a time, and the spawn/rim
-// dissolve is a 4×4 ordered (Bayer) dither per block rather than an alpha ramp.
+// the rim — a background layer just like the wind. Drawn as pixel art on purpose:
+// one flat cyan shade (single layer), a *thin* front only SHOCK_THICK cell(s) wide
+// on a SHOCK_BLOCK×SHOCK_BLOCK lattice (1 = a crisp 1-particle-thick line), and the
+// spawn/rim dissolve is a 4×4 ordered (Bayer) dither rather than an alpha ramp.
 //
 // It stays honest to the physics: the front is a distance field *seeded on the
 // body cells and blocked by solids* (see buildShockField), so it leaves the body's
@@ -96,9 +96,9 @@ function windFrac(v: number): number {
 // (checkerboard) toward the board behind it, so 액체는 반투명 처리 — 백그라운드가
 // 비쳐 보임 (Woofer 충격파만).
 const SHOCK_SHADE = rgb(0x38, 0xbd, 0xf8); // single flat cyan layer
-const SHOCK_BLOCK = 2; // low-res: wave drawn on a SHOCK_BLOCK²-cell lattice (chunky pixels)
-const SHOCK_SPEED = 0.6; // cells the wavefront advances per rendered frame
-const SHOCK_THICK = 2; // wavefront thickness in cells (~one low-res block)
+const SHOCK_BLOCK = 1; // wave drawn on a SHOCK_BLOCK²-cell lattice (1 = native particle pixels)
+const SHOCK_SPEED = 0.6; // cells the wavefront advances per rendered frame (< THICK ⇒ no radial gaps)
+const SHOCK_THICK = 1; // wavefront thickness in cells — a thin ~1-particle-wide line
 const SHOCK_FADE = 3; // cells over which the front dithers in (spawn) / out (rim)
 const SHOCK_LIQUID_WASH = 0.5; // cyan mixed into a pool's see-through (stippled) pixel
 const SHOCK_INF = 1e9; // "unreachable" marker in the distance field
