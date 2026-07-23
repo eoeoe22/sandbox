@@ -7,6 +7,8 @@ import { FIRE } from './fire';
 import { detonate } from './blast';
 import { IRON } from './iron';
 import { MERCURY } from './mercury';
+import { GALLIUM } from './gallium';
+import { LIQUID_GALLIUM } from './liquidgallium';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { ACID } from './acid';
@@ -25,8 +27,10 @@ import { FAN, energizeFanBody } from './fan';
 // adjacent Spark. A pulse therefore reads as a bright dot racing along a wire.
 //
 // Conductors and strength: current flows only through `conductive` materials
-// (Iron, Mercury, Nichrome, Water, Saltwater, Acid, Slime, Acid Slime); everything
-// else is an insulator that blocks it outright. A pulse carries a *strength* that
+// (Iron, Mercury, Gallium, Liquid Gallium, Nichrome, Water, Saltwater, Acid,
+// Slime, Acid Slime); everything else is an insulator that blocks it outright.
+// The metal-class conductors (Iron/Mercury/Gallium/Liquid Gallium/Nichrome) run a
+// pulse at full strength end to end. A pulse carries a *strength* that
 // decays as it travels, so it fades out in a resistive medium instead of running
 // forever. The whole subsystem's conductivity lives in the two knobs below
 // (FULL_STRENGTH and CONDUCTOR_LOSS) — raise the first or lower the second and
@@ -105,6 +109,8 @@ const CONDUCTOR_IDS = [
   ACID.id,
   SLIME.id,
   ACID_SLIME.id,
+  GALLIUM.id,
+  LIQUID_GALLIUM.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
 // resistance, and the lever for "how far does current reach". At FULL_STRENGTH 15:
@@ -121,7 +127,10 @@ const CONDUCTOR_IDS = [
 // resistance still shows up as heat: each passing pulse deposits a fixed dose
 // of Joule heat into the wire on revert (see nichromeJouleHeat), independent
 // of this per-cell strength loss.
-const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0];
+// (…, GALLIUM 0, LIQUID GALLIUM 0) — both are metals (solid & molten Gallium),
+// so they conduct at the engine's floor exactly like Iron/Mercury: a pulse runs
+// full strength end to end through a Gallium wire or puddle.
+const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // byte, with class 0 reserved for "no conductor". Adding Acid Slime brought the
