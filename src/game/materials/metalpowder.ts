@@ -7,28 +7,8 @@ import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
 import { SALTWATER } from './saltwater';
 import { RUST_POWDER } from './rustpowder';
 
-const RUST_CHANCE = 0.005; // 틱당 낮은 확률로 천천히 부식
-
-function isSaltWaterAdjacent(x: number, y: number, sim: SimContext): boolean {
-  // Check if saltwater is soaked directly inside this cell (overlay layer)
-  if (sim.getOverlay(x, y) === SALTWATER.id) {
-    return true;
-  }
-  // Check surrounding 5x5 area for liquid saltwater or soaked saltwater in powder
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dy = -2; dy <= 2; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (sim.inBounds(nx, ny)) {
-        if (sim.get(nx, ny) === SALTWATER.id || sim.getOverlay(nx, ny) === SALTWATER.id) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
+const SURFACE_RUST_CHANCE = 0.005; // 표면 부식 확률 (0.5%)
+const INSIDE_RUST_CHANCE = 0.001;  // 안쪽(스며든 부위) 부식 확률 (표면의 1/5인 0.1%)
 
 // Metal Powder — the pourable, shattered form of metal. It's what a blue drum
 // bursts into when an explosion tears it apart (see objects.ts): the shell is
@@ -47,12 +27,48 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, MOLTEN_METAL.id);
     return;
   }
-  // Salt water corrosion: oxidizes to Rust Powder (100% chance) when touching salt water
-  // (including inside as salt water permeates).
-  if (sim.chance(RUST_CHANCE) && isSaltWaterAdjacent(x, y, sim)) {
-    sim.set(x, y, RUST_POWDER.id);
-    return;
+
+  // Salt water corrosion: oxidizes to Rust Powder (100% chance).
+  // Inside soaked cells corrode at 1/5th speed (0.1% vs surface 0.5%).
+  if (sim.getOverlay(x, y) === SALTWATER.id) {
+    if (sim.chance(INSIDE_RUST_CHANCE)) {
+      sim.set(x, y, RUST_POWDER.id);
+      return;
+    }
+  } else {
+    let touchesLiquid = false;
+    let touchesOverlay = false;
+
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (sim.inBounds(nx, ny)) {
+          if (sim.get(nx, ny) === SALTWATER.id) {
+            touchesLiquid = true;
+            break;
+          } else if (sim.getOverlay(nx, ny) === SALTWATER.id) {
+            touchesOverlay = true;
+          }
+        }
+      }
+      if (touchesLiquid) break;
+    }
+
+    if (touchesLiquid) {
+      if (sim.chance(SURFACE_RUST_CHANCE)) {
+        sim.set(x, y, RUST_POWDER.id);
+        return;
+      }
+    } else if (touchesOverlay) {
+      if (sim.chance(INSIDE_RUST_CHANCE)) {
+        sim.set(x, y, RUST_POWDER.id);
+        return;
+      }
+    }
   }
+
   updatePowder(x, y, sim);
 }
 
