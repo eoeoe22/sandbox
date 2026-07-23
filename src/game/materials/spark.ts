@@ -17,8 +17,6 @@ import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { ACID_SLIME } from './acidslime';
-import { WOOFER, wooferBodyPulse } from './woofer';
-import { FAN, energizeFanBody } from './fan';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -221,6 +219,26 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
   return arcFireBeside(sim, nx, ny);
 }
 
+/** Deliver a live electric pulse to a NON-conductive neighbor (nx,ny) of a pulse
+ *  source (a Battery/Turbine in direct contact, or a travelling Spark's arc
+ *  phase): fire the material's electric-appliance hook if it declares one
+ *  (`Material.directPulse` — Fan, Woofer, and any future device), otherwise try
+ *  to set it off as an explosive (electric detonator). Returns true if the pulse
+ *  did something (so a Spark can cap itself to one arc per tick — see
+ *  updateSpark). This is the single dispatch every pulse source shares for its
+ *  non-conductor branch, so a new electric-reaction material reacts to *every*
+ *  source (all battery chemistries and the Turbine, direct-contact or wired) the
+ *  moment it registers `directPulse`/`explosive` — no source special-cases it by
+ *  id. */
+export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: number): boolean {
+  const hook = getMaterial(nid).directPulse;
+  if (hook) {
+    hook(sim, nx, ny);
+    return true;
+  }
+  return tryArcExplosive(sim, nx, ny, nid);
+}
+
 /** Electrolyse an energized Water/Saltwater/Acid cell into gas: the cell becomes
  *  Hydrogen, and about half the time a free open neighbor gets an Oxygen bubble
  *  (2H₂O → 2H₂ + O₂). */
@@ -264,29 +282,22 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
         const next = strength - classLoss(cls);
         if (next > 0) energize(sim, nx, ny, cls, next);
       }
+    } else if (m.directPulse) {
+      // Electric appliance, not a charge (Fan, Woofer, any future device):
+      // relayed current reaching any face of the connected body floods the whole
+      // body and reacts at once via its registered hook — the one-way
+      // "outside → inside" sink (see woofer.ts's design note). Ungated by
+      // `arced`: an appliance and an explosive are different reactions, and a
+      // pulse can legitimately power a fan *and* set off a charge on other faces
+      // the same tick. Driven off the Spark's own arc phase (the same
+      // scan-order-independent trick electricDetonate uses for C4) because the
+      // appliance's own update can't reliably see an adjacent Spark — it may have
+      // reverted to its conductor before the appliance's turn this same tick.
+      m.directPulse(sim, nx, ny);
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
       arced = tryArcExplosive(sim, nx, ny, nid);
-    } else if (nid === FAN.id) {
-      // Electric appliance, not a charge: relayed current reaching any face of a
-      // connected Fan body powers the whole body at once (fan.ts's one-way
-      // "outside → inside" sink), refreshing its blow countdown — the same
-      // id-driven hand-off the Woofer uses just below, and for the same reason (a
-      // Fan is deliberately not `conductive`, so it never becomes/relays a Spark).
-      energizeFanBody(sim, nx, ny);
-    } else if (nid === WOOFER.id) {
-      // Electric appliance, not a charge: relayed current reaching any face
-      // of the connected Woofer body floods the whole body and fires its
-      // (invisible, non-destructive) shockwave at once — see woofer.ts's
-      // design note on the one-way "outside → inside" sink. Driven directly
-      // off the Spark's own arc phase, the same scan-order-independent trick
-      // electricDetonate uses for C4 — Woofer's own per-tick update can't
-      // reliably self-check for an adjacent Spark since the Spark may already
-      // have reverted to its conductor by the time Woofer's turn comes up
-      // this same tick. Never spawns a Spark on the Woofer cell itself, so
-      // nothing is rendered traveling inside/on the body.
-      wooferBodyPulse(sim, nx, ny);
     }
   }
 

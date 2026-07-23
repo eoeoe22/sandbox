@@ -13,11 +13,13 @@ import type { SimContext } from '../engine/SimContext';
 // Powering it copies the one-way "outside → inside" electric sink the Woofer
 // documents (see woofer.ts, "Reusable pattern"): the Fan is deliberately NOT
 // `conductive`, so a Spark can never travel *into* or *across* it (it would turn
-// a fan wall into a free wire). Instead every pulse source — a Battery in direct
-// contact (battery.ts injectPulses) or a Spark relayed down a wire (spark.ts arc
-// phase) — special-cases FAN.id and calls `energizeFanBody`, which floods the
-// whole connected fan body (4-connected, like the Turbine/Woofer body walk) and
-// stamps a *powered countdown* onto every cell at once. So current reaching any
+// a fan wall into a free wire). Instead the Fan declares an electric-appliance
+// hook (`Material.directPulse` = `energizeFanBody`), and every pulse source — a
+// Battery/LFP Battery/Turbine in direct contact or a Spark relayed down a wire —
+// dispatches a non-conductor neighbor through the shared `reactToPulse`
+// (spark.ts), which fires that hook. It floods the whole connected fan body
+// (4-connected, like the Turbine/Woofer body walk) and stamps a *powered
+// countdown* onto every cell at once. So current reaching any
 // one face powers the entire connected structure (내부에서는 연결된 부분 전역
 // 전도), and it only ever *consumes* power, never conducts it onward.
 //
@@ -327,5 +329,11 @@ export const FAN = register({
   // Doesn't burn or corrode away underfoot, like the other electric machines.
   acidResistant: true,
   thermal: { conductivity: 0.3 },
+  // One-way "outside → inside" electric sink (see the header note): any pulse
+  // source touching a face — Battery/LFP Battery/Turbine direct, or a relayed
+  // Spark — floods the connected body and refreshes its blow countdown. Declared
+  // once here so every source powers it through the shared dispatch
+  // (spark.ts reactToPulse), with no per-source id special-casing.
+  directPulse: energizeFanBody,
   update: updateFan,
 });

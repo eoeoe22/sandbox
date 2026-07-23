@@ -97,11 +97,12 @@ function windFrac(v: number): number {
 // 비쳐 보임 (Woofer 충격파만).
 const SHOCK_SHADE = rgb(0x38, 0xbd, 0xf8); // single flat cyan layer
 const SHOCK_BLOCK = 1; // wave drawn on a SHOCK_BLOCK²-cell lattice (1 = native particle pixels)
-const SHOCK_SPEED = 2.4; // cells the wavefront advances per rendered frame — fast, so a rapid
-// emitter like a Turbine reads as quick moving rings (not a packed disc) and each pulse also
-// clears its reach in ~half the frames (plays back & disappears faster)
-const SHOCK_THICK = 2.4; // wavefront thickness in cells — kept equal to SHOCK_SPEED so the fast
-// front still tiles every distance exactly once (SPEED > THICK would punch radial gaps/holes)
+const SHOCK_SPEED = 1.2; // cells the wavefront advances per rendered frame — brisk enough that
+// each pulse reads as a moving ring (not a packed disc). A rapid emitter no longer piles wavefronts
+// up because the pulse source itself now beats on the battery cadence (see turbine.ts), not because
+// the ring is raced across the screen
+const SHOCK_THICK = 1.2; // wavefront thickness in cells — kept equal to SHOCK_SPEED so the front
+// tiles every distance exactly once (SPEED > THICK would punch radial gaps/holes)
 const SHOCK_FADE = 3; // cells over which the front dithers in (spawn) / out (rim)
 const SHOCK_LIQUID_WASH = 0.5; // cyan mixed into a pool's see-through (stippled) pixel
 const SHOCK_INF = 1e9; // "unreachable" marker in the distance field
