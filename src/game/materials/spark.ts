@@ -57,9 +57,9 @@ import { FAN, energizeFanBody } from './fan';
 // and zero-loss Acid Slime are unaffected since 0 loss runs any length regardless.
 //
 // State packed into the spark cell's single `aux` byte:
-//   • the conductor CLASS (low 3 bits) — which conductor to revert back into
+//   • the conductor CLASS (low 4 bits) — which conductor to revert back into
 //     (Iron→Iron, Water→Water, …); class 0 = "no conductor" → the spark fizzles.
-//   • the remaining STRENGTH (high 5 bits, 0..31).
+//   • the remaining STRENGTH (high 4 bits, 0..15).
 // A compact class (a 1-based index into CONDUCTOR_IDS) rather than the raw id
 // leaves room for the strength in the same byte, and — as before — the
 // conductor's heat rides untouched in `temp`, so energizing a hot wire doesn't
@@ -326,7 +326,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     // Acid Slime carries Slime's identical electric-dissolve weakness (its aux is
     // the very same dissolve-front budget, read by acidslime.ts's own updateAcidSlime
     // — "any non-zero aux ⇒ dissolve to Water next tick"), so it reverts exactly like
-    // Slime above: no REFRACTORY_TICKS stamp (that 2 would be misread as a reach-2
+    // Slime above: no REFRACTORY_TICKS stamp (that 3 would be misread as a reach-3
     // budget and eat the blob every hop), just a low-chance shock that seeds a real
     // bounded dissolve front, every other hop reverting to inert Acid Slime (aux 0).
     // Unlike Slime it's a zero-loss conductor, so range is bounded by SLIME_SHOCK_CHANCE
