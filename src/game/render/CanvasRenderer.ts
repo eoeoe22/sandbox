@@ -81,17 +81,31 @@ function windFrac(v: number): number {
 // ── Woofer shockwave rings (우퍼 충격파 이펙트) ────────────────────────────────
 // Where the Fan paints continuous streaks, the Woofer thumps a *pulse*: each
 // firing body queues one ring (Grid.shockwaves) that the renderer owns and
-// animates as a bright pixel wave expanding outward from the cabinet, then
-// fading at the rim — the radial analog of the reference's advancing wave, and a
-// background layer just like the wind. Matter occludes it (it's drawn behind the
-// scene), except liquid, which the ring renders semi-transparent so the wave (and
-// the board behind) shows through the pool — 액체는 반투명으로 처리 (Woofer 충격파만).
-const SHOCK_COLOR = rgb(0x00, 0xd2, 0xff); // cyan crest, matching the reference wave
-const SHOCK_SPEED = 0.45; // cells the crest advances per rendered frame
-const SHOCK_BAND = 1.6; // half-thickness of the lit crest (cells) — a chunky pixel wave
-const SHOCK_FADE_IN = 1.5; // cells of travel over which the ring fades up from nothing
-const SHOCK_LIQUID_CLEAR = 0.55; // how far a lit liquid cell is blended toward the background
-const SHOCK_LIQUID_TINT = 0.3; // cyan wash mixed into a lit liquid cell on top of that
+// animates as a chunky pixel wave expanding outward from the cabinet, then fading
+// at the rim — the radial analog of the reference's advancing wave, and a
+// background layer just like the wind. Drawn as pixel art on purpose: the crest is
+// a few *hard* concentric integer-radius rings in a tiny fixed cyan palette (no
+// smooth gradient), the radius steps out a whole cell at a time, and the spawn/
+// death fade is a 4×4 ordered (Bayer) dither rather than an alpha ramp — the same
+// look as the reference's stacked wave bars.
+//
+// It stays honest to the physics: the wavefront starts at the body's own surface
+// (r0) and travels the true reach outward (so a wide cabinet's wave leaves its
+// whole face, not a point), matter occludes it (it's a background layer), and it
+// is shadowed by solids exactly like the real POWER-0 pulse — a wall stops the
+// wave, it doesn't shine through. Only liquid is special-cased: a lit pool cell is
+// stippled (checkerboard) toward the board behind it, so 액체는 반투명 처리 —
+// 백그라운드가 비쳐 보임 (Woofer 충격파만).
+//
+// Three-tone crest, leading edge brightest → dim trailing (the reference's stacked
+// light-blue wave lines).
+const SHOCK_SHADES = [rgb(0xda, 0xf4, 0xff), rgb(0x38, 0xbd, 0xf8), rgb(0x00, 0x9e, 0xd6)];
+const SHOCK_SPEED = 0.5; // cells the crest steps outward per rendered frame
+const SHOCK_FADE = 3; // cells of travel over which the wave dithers in (spawn) / out (rim)
+const SHOCK_LIQUID_WASH = 0.5; // cyan mixed into a pool's see-through (stippled) pixel
+// 4×4 ordered-dither threshold matrix (values 0..15), the classic pixel-art fade —
+// a cell draws only when its cell (x&3,y&3) threshold is below the wave's fade level.
+const SHOCK_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
@@ -253,14 +267,19 @@ export class CanvasRenderer implements Renderer {
   private windMinY = 0;
   private windMaxY = -1;
   /** id → 1 for a Liquid, so the Woofer shockwave pass can render a pool cell
-   *  semi-transparent (letting the wave show through) while other matter occludes
-   *  the wave (see the shockwave draw in render()). */
+   *  semi-transparent (stippled toward the board behind) while other matter
+   *  occludes the wave (see the shockwave draw in render()). */
   private isLiquid: Uint8Array;
+  /** id → 1 for a Solid, which shadows the Woofer shockwave the way a POWER-0
+   *  pulse is blocked by any solid it can't break — the wave stops at a wall
+   *  instead of shining through it (see drawShockwaves' shadow ray). */
+  private isSolid: Uint8Array;
   /** Live Woofer shockwave rings, each an expanding pixel wave: `cx,cy` centre,
-   *  `age` frames since spawn, `maxR` terminal radius (cells). Fed from
-   *  Grid.shockwaves each frame and dropped once the crest passes the rim. Purely
-   *  cosmetic renderer state, animated per rendered frame like windPhase. */
-  private shocks: { cx: number; cy: number; age: number; maxR: number }[] = [];
+   *  `r0` the body radius the wavefront starts at, `maxR` the terminal radius
+   *  (cells), `age` frames since spawn. Fed from Grid.shockwaves each frame and
+   *  dropped once the crest passes the rim. Purely cosmetic renderer state,
+   *  animated per rendered frame like windPhase. */
+  private shocks: { cx: number; cy: number; r0: number; maxR: number; age: number }[] = [];
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -315,6 +334,7 @@ export class CanvasRenderer implements Renderer {
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
+    this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
     this.overlayTemp = new Float32Array(256).fill(NaN);
     for (let i = 0; i < 256; i++) {
@@ -334,6 +354,7 @@ export class CanvasRenderer implements Renderer {
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
+        if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
           this.frost[i] = CanvasRenderer.frosted(m.color);
@@ -788,43 +809,61 @@ export class CanvasRenderer implements Renderer {
 
   /**
    * Draw and advance the live Woofer shockwave rings (see Grid.shockwaves). Newly
-   * queued pulses are drained into this.shocks, then every ring's crest is expanded
-   * one frame's worth (SHOCK_SPEED) and painted as an annulus of cyan pixels into
-   * the finished cell image — a *background* effect, so opaque matter (powder,
-   * solid, gas) simply occludes the wave (its cell is left untouched) while empty
-   * air lights up with the crest and a liquid cell is rendered semi-transparent so
-   * the wave and the board behind show through the pool (액체는 반투명 — Woofer
-   * 충격파만). Rings whose crest has passed the rim are dropped. Purely cosmetic;
-   * the cell buffer (grid.cells) is never touched. In the thermal camera the rings
-   * still age and expire but paint nothing, so the queue can't pile up.
+   * queued pulses are drained into this.shocks, then every ring's crest steps out
+   * one frame's worth (SHOCK_SPEED) and is painted as pixel art into the finished
+   * cell image: a few *hard* concentric integer-radius rings in the small fixed
+   * SHOCK_SHADES cyan palette (leading edge brightest), with the spawn/rim fade
+   * done by an ordered Bayer dither rather than a smooth alpha ramp.
+   *
+   * Honest to the physics of a POWER-0 pulse: the wavefront starts at the body's
+   * own surface (r0) and reaches maxR (= r0 + the pulse's cell reach), so the ring
+   * covers the body dilated by its reach — exactly the region matter is shoved.
+   * It's a *background* effect, so opaque matter (powder / solid / gas) occludes it
+   * (its cell is left untouched), and a solid on the line from the centre shadows
+   * everything behind it (a wall stops the wave, it doesn't shine through — see
+   * shockShadowed). Liquid alone is special: a lit pool cell is stippled
+   * (checkerboard) toward the board behind it, so the wave and background show
+   * through the water — 액체는 반투명 (Woofer 충격파만). Rings whose crest has passed
+   * the rim are dropped. Purely cosmetic; the cell buffer (grid.cells) is never
+   * touched. In the thermal camera the rings still age and expire but paint
+   * nothing, so the queue can't pile up.
    */
   private drawShockwaves(grid: Grid, heat: boolean): void {
     const q = grid.shockwaves;
     if (q.length > 0) {
-      for (const s of q) this.shocks.push({ cx: s.x, cy: s.y, age: 0, maxR: s.r });
+      for (const s of q) this.shocks.push({ cx: s.x, cy: s.y, r0: s.r0, maxR: s.maxR, age: 0 });
       q.length = 0;
     }
     if (this.shocks.length === 0) return;
     const buf = this.buf32;
     const cells = grid.cells;
     const liquid = this.isLiquid;
+    const solid = this.isSolid;
     const w = grid.width;
     const h = grid.height;
-    const bg = this.palette[EMPTY]; // board background — what a cleared liquid reveals
-    const survivors: { cx: number; cy: number; age: number; maxR: number }[] = [];
+    const bg = this.palette[EMPTY]; // board background — what a stippled liquid reveals
+    const rings = SHOCK_SHADES.length; // hard crest rings (leading + trailing tones)
+    const survivors: { cx: number; cy: number; r0: number; maxR: number; age: number }[] = [];
     for (const s of this.shocks) {
-      const r = s.age * SHOCK_SPEED; // current crest radius
+      // Crest radius: starts at the body surface (r0) and steps outward each frame.
+      const r = s.r0 + s.age * SHOCK_SPEED;
       s.age++;
-      if (r - SHOCK_BAND > s.maxR) continue; // whole crest has swept past the rim → done
+      // Retire once even the trailing rings have passed the rim (crest is `rings-1`
+      // cells ahead of the last trailing ring).
+      if (r - (rings - 1) > s.maxR) continue;
       survivors.push(s);
       if (heat) continue; // thermal camera: keep it aging/expiring, but draw nothing
-      // Fade the crest up over its first cells of travel, then back down at the rim.
-      const fadeIn = r < SHOCK_FADE_IN ? r / SHOCK_FADE_IN : 1;
-      const fadeOut = 1 - r / s.maxR;
-      const alpha = fadeOut > 0 ? fadeIn * fadeOut : 0;
-      if (alpha <= 0) continue;
-      // Only the annulus [r - SHOCK_BAND, r + SHOCK_BAND] can light — scan its bbox.
-      const outer = r + SHOCK_BAND;
+      const rr = Math.round(r); // integer crest ring — the wave steps a whole cell at a time
+      // Fade level (0..1) the dither thresholds against: rises over the first cells
+      // of travel (spawn) and falls over the last (rim), full in between.
+      const trav = r - s.r0;
+      const tail = s.maxR - r;
+      let fade = 1;
+      if (trav < SHOCK_FADE) fade = trav / SHOCK_FADE;
+      if (tail < SHOCK_FADE) fade = Math.min(fade, tail / SHOCK_FADE);
+      if (fade <= 0) continue;
+      // Scan the crest's bbox (outermost lit radius is rr, +1 slack for rounding).
+      const outer = rr + 1;
       let x0 = Math.floor(s.cx - outer);
       let x1 = Math.ceil(s.cx + outer);
       let y0 = Math.floor(s.cy - outer);
@@ -838,25 +877,64 @@ export class CanvasRenderer implements Renderer {
         const row = y * w;
         for (let x = x0; x <= x1; x++) {
           const dx = x - s.cx;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          const band = SHOCK_BAND - Math.abs(d - r); // >0 inside the crest, peak at centre
-          if (band <= 0) continue;
-          const inten = alpha * (band / SHOCK_BAND); // brightest along the crest line
+          const rd = Math.round(Math.sqrt(dx * dx + dy * dy)); // this cell's integer ring
+          const k = rr - rd; // 0 = leading crest, 1..rings-1 = trailing tones
+          if (k < 0 || k >= rings) continue; // not on the wave
           const i = row + x;
           const id = cells[i];
+          // Opaque matter (powder / solid / gas) occludes the background wave.
+          if (id !== EMPTY && !liquid[id]) continue;
+          // Ordered-dither fade: draw only when this cell's Bayer threshold is below
+          // the current fade level (the pixel-art spawn/rim dissolve).
+          if (SHOCK_BAYER[(y & 3) * 4 + (x & 3)] >= fade * 16) continue;
+          // A wall between the epicentre and this cell shadows it (POWER-0 pulses
+          // are stopped by any solid). Cheapest test last, only for cells we'd draw.
+          if (this.shockShadowed(cells, solid, w, h, s.cx, s.cy, x, y, s.r0)) continue;
+          const shade = SHOCK_SHADES[k];
           if (id === EMPTY) {
-            buf[i] = CanvasRenderer.mix(buf[i], SHOCK_COLOR, inten * 0.85);
-          } else if (liquid[id]) {
-            // Reveal the wave through the pool: thin the liquid toward the board
-            // background, then wash the crest's cyan over it.
-            const cleared = CanvasRenderer.mix(buf[i], bg, inten * SHOCK_LIQUID_CLEAR);
-            buf[i] = CanvasRenderer.mix(cleared, SHOCK_COLOR, inten * SHOCK_LIQUID_TINT);
+            buf[i] = shade; // hard pixel — crisp arcade crest over the dark board
+          } else {
+            // Liquid: stipple half the crest cells to the board+cyan behind, leaving
+            // the rest as water — a 50% checkerboard reads as a see-through ripple.
+            if (((x + y) & 1) === 0) buf[i] = CanvasRenderer.mix(bg, shade, SHOCK_LIQUID_WASH);
           }
-          // Opaque matter (powder/solid/gas) occludes the background wave — untouched.
         }
       }
     }
     this.shocks = survivors;
+  }
+
+  /** True if a solid cell lies on the straight line from a shockwave's centre
+   *  (cx,cy) to (x,y), beyond the emitting body's own radius r0 — so the wave is
+   *  shadowed there, the way a POWER-0 Woofer pulse is blocked by any solid it
+   *  can't break. Marching starts just past r0 so the Woofer's own (solid) body
+   *  never self-shadows, and stops before the target cell (handled by the caller).
+   *  Cheap: a handful of samples along a ≤~16-cell ray, run only for cells the
+   *  crest would otherwise light. */
+  private shockShadowed(
+    cells: Uint8Array,
+    solid: Uint8Array,
+    w: number,
+    h: number,
+    cx: number,
+    cy: number,
+    x: number,
+    y: number,
+    r0: number,
+  ): boolean {
+    const dx = x - cx;
+    const dy = y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1.5) return false; // adjacent to the epicentre — nothing can be between
+    const ux = dx / dist;
+    const uy = dy / dist;
+    for (let t = Math.floor(r0) + 1; t < dist; t++) {
+      const sx = (cx + ux * t + 0.5) | 0;
+      const sy = (cy + uy * t + 0.5) | 0;
+      if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+      if (solid[cells[sy * w + sx]]) return true;
+    }
+    return false;
   }
 
   /**

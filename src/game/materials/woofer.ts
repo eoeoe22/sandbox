@@ -133,15 +133,21 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
 
   const seen = new Set<number>([startIdx]);
   const stack: number[] = [sx, sy];
-  let count = 0;
-  // Accumulate the flood's centroid so the cosmetic ring emanates from the body's
-  // middle (a speaker cabinet thumps from its centre), not the entry face.
+  // Collect this flood's cells so the ring can honestly reflect the pulse's reach:
+  // the shockwave fires from *every* body cell (wooferPulse below), so its true
+  // extent is the body dilated by the reach — not a fixed radius from one point.
+  // We take the centroid as the ring centre and the body's own radius (farthest
+  // cell from that centre) as where the wavefront *starts*, so it then travels the
+  // real reach outward from the cabinet's surface (see the renderer's ring).
+  const bx: number[] = [];
+  const by: number[] = [];
   let sumX = 0;
   let sumY = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
+  while (stack.length > 0 && bx.length < MAX_BODY) {
     const y = stack.pop()!;
     const x = stack.pop()!;
-    count++;
+    bx.push(x);
+    by.push(y);
     sumX += x;
     sumY += y;
     sim.wooferFlooded.add(y * w + x);
@@ -160,7 +166,20 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
   }
   // One expanding-ring VFX per firing body (a background effect the renderer
   // animates and draws behind matter — see Grid.shockwaves / CanvasRenderer).
-  if (count > 0) sim.emitShockwave(sumX / count, sumY / count, SHOCK_VIS_REACH);
+  const count = bx.length;
+  if (count > 0) {
+    const cx = sumX / count;
+    const cy = sumY / count;
+    // Body radius: farthest covered cell from the centroid — the wavefront's start.
+    let r0 = 0;
+    for (let i = 0; i < count; i++) {
+      const dx = bx[i] - cx;
+      const dy = by[i] - cy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > r0) r0 = d;
+    }
+    sim.emitShockwave(cx, cy, r0, SHOCK_VIS_REACH);
+  }
 }
 
 export const WOOFER = register({

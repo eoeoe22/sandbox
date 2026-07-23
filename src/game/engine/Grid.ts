@@ -125,15 +125,18 @@ export class Grid {
   /**
    * Woofer shockwave ring spawns queued this tick (materials/woofer.ts) — a
    * transient, one-way VFX channel that is NOT part of the cellular grid. Each
-   * entry is one firing Woofer body: `x,y` its centre and `r` how far the pulse
-   * reaches (cells, matching the physical shove). The renderer drains this list
-   * each frame into its own animated expanding-ring effect — a *background*
-   * layer drawn behind matter (translucent liquids let it show through, see
-   * CanvasRenderer), the visible counterpart to the Fan's wind streaks. Never
-   * read by the CA or the object layer (the shockwave's physics rides the blast/
-   * wooferPulse path); purely cosmetic. Runtime-only; not carried on resize.
+   * entry is one firing Woofer body: `x,y` its centre, `r0` the body's own radius
+   * (where the wavefront starts) and `maxR` how far it reaches (`r0` + the pulse's
+   * cell reach), so the ring honestly covers the body dilated by its reach — the
+   * region the pulse actually shoves. The renderer drains this list each frame
+   * into its own animated expanding-ring effect — a *background* layer drawn
+   * behind matter (translucent liquids let it show through, blocked by solids like
+   * the real shockwave; see CanvasRenderer), the visible counterpart to the Fan's
+   * wind streaks. Never read by the CA or the object layer (the shockwave's physics
+   * rides the blast/wooferPulse path); purely cosmetic. Runtime-only; not carried
+   * on resize.
    */
-  shockwaves: { x: number; y: number; r: number }[] = [];
+  shockwaves: { x: number; y: number; r0: number; maxR: number }[] = [];
 
   /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
@@ -348,6 +351,7 @@ export class Grid {
     this.tint = nextTint;
     this.bgTint = nextBgTint;
     this.wind = new Uint8Array(this.size); // transient — recomputed each tick, no copy
+    this.shockwaves.length = 0; // in-flight rings hold absolute coords the remap would misplace
     // Re-tile for the new dimensions and re-arm every tile holding kept content,
     // so the active-tile scan resumes correctly after a resize/load.
     const wasEnabled = this.dirty.enabled;
