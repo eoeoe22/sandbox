@@ -190,14 +190,21 @@ export class PointerPainter {
   private dragVY = 0;
 
   /** 영역 (rect) marquee state. `rectDragging` is true while the pointer is
-   *  held down defining a rectangle; `rectPending` is true after release on
-   *  non-touch pointers, while the selection waits for Enter to confirm.
-   *  Touch pointers confirm immediately on release (no pending state). */
+   *  held down defining a rectangle; `rectPending` is true after a *deferred*
+   *  release, while the selection waits for Enter to confirm.
+   *
+   *  On PC the mouse button now picks the commit *timing* rather than
+   *  erase-vs-fill: a left-button drag applies the active tool immediately on
+   *  release (touch-like, no pending state), and a right-button drag defers —
+   *  it leaves the marquee pending so it can be reviewed and confirmed with
+   *  Enter (or cancelled with Escape). Touch always confirms immediately. Both
+   *  buttons apply whatever `$tool` is active; erasing an area is done by
+   *  selecting the 지우개 tool, so the button no longer means "erase". */
   private rectDragging = false;
   private rectPending = false;
-  /** Whether the current marquee will erase (right-drag) instead of applying
-   *  the active tool. */
-  private rectErase = false;
+  /** Whether the current marquee waits for Enter to confirm (right-button
+   *  drag) instead of applying immediately on release (left-button/touch). */
+  private rectDeferred = false;
   /** Marquee corners in grid-cell coordinates (start = pointerdown, end = last
    *  move). The rectangle is the axis-aligned bounding box of the two. */
   private rectSX = 0;
@@ -698,19 +705,21 @@ export class PointerPainter {
   }
 
   /**
-   * Commit the current 영역 marquee: apply whatever the active `$tool` (or a
-   * right-button erase) would do to a brush stroke, but over the marquee's
-   * rectangular footprint in one shot instead of a per-tick stamp — the 영역
-   * (rect) selection mode's confirm action. Every tool `stamp()` supports is
-   * supported here too (재료/혼합 fill, 가열/냉각, 섞기, 지우개/우클릭 clear),
-   * except 'object' (a spawn action, not area-shaped) and 'view' (inert by
-   * design), which no-op just like their brush-stroke counterparts.
+   * Commit the current 영역 marquee: apply whatever the active `$tool` would do
+   * to a brush stroke, but over the marquee's rectangular footprint in one shot
+   * instead of a per-tick stamp — the 영역 (rect) selection mode's confirm
+   * action. Every tool `stamp()` supports is supported here too (재료/혼합 fill,
+   * 가열/냉각, 섞기, 지우개 clear), except 'object' (a spawn action, not
+   * area-shaped) and 'view' (inert by design), which no-op just like their
+   * brush-stroke counterparts. The mouse button no longer forces an erase here
+   * (it now only picks the commit timing — see `onDown`); an area erase is the
+   * 지우개 tool being active.
    */
-  private applyRect(erase: boolean): void {
+  private applyRect(): void {
     const bounds = this.rectBounds();
     if (!bounds) return;
     const tool = $tool.get();
-    if (erase || tool === 'erase') {
+    if (tool === 'erase') {
       // Erase any free objects whose center falls inside the marquee, the same
       // way the brush eraser sweeps its footprint.
       this.eraseObjectsWhere((o) => this.objectInRectBounds(o, bounds));
@@ -743,11 +752,11 @@ export class PointerPainter {
         // Neither has an area-shaped action (spawn is a point action; 보기 is
         // inert) — a marquee under either just no-ops on confirm.
         return;
-      // 'erase' isn't a case here — the `erase || tool === 'erase'` guard
-      // above already returns for it, and TypeScript narrows `tool`'s type
-      // past that guard to exclude 'erase', so a stray `case 'erase':` here
-      // would itself be a compile error — the type system, not a runtime
-      // check, is what keeps this switch and that guard from drifting apart.
+      // 'erase' isn't a case here — the `tool === 'erase'` guard above already
+      // returns for it, and TypeScript narrows `tool`'s type past that guard to
+      // exclude 'erase', so a stray `case 'erase':` here would itself be a
+      // compile error — the type system, not a runtime check, is what keeps
+      // this switch and that guard from drifting apart.
     }
     this.paintCells(this.cellsInBounds(bounds), false);
   }
@@ -806,14 +815,16 @@ export class PointerPainter {
     this.fanStartY = y;
     // 영역 select mode: start a rectangular marquee drag instead of a brush
     // stroke, regardless of the active tool (it takes priority over the
-    // object-spawn and 보기 object-drag presses below too). Both left (fill)
-    // and right (erase) drags select a rectangle; the selection is confirmed
-    // by Enter on PC or on release for touch pointers, then applies whichever
-    // tool is active (see `applyRect`).
+    // object-spawn and 보기 object-drag presses below too). The mouse button
+    // now selects the commit *timing*, not erase-vs-fill: a left-button drag
+    // applies the active tool immediately on release (like touch), while a
+    // right-button drag defers — the marquee stays pending until Enter (see
+    // `onUp`/`confirmRect`). Either way the active tool is what applies (see
+    // `applyRect`); an area erase is done by picking the 지우개 tool.
     if ($areaSelect.get()) {
       this.cancelRect(); // a new press supersedes any pending marquee
       this.rectDragging = true;
-      this.rectErase = this.erasing;
+      this.rectDeferred = e.button === 2;
       this.rectSX = x;
       this.rectSY = y;
       this.rectEX = x;
@@ -892,16 +903,17 @@ export class PointerPainter {
       body.vy = clamp(this.dragVY);
       this.dragBody = null;
     }
-    // 영역 (rect) marquee release: touch pointers confirm the fill immediately
-    // (one gesture → one fill); mouse/pen pointers leave the marquee pending
-    // so the user can review it and press Enter to apply (or Escape to cancel).
-    // Note: confirmRect() reads rectDragging, so it must run before we clear it.
-    // A pointercancel (OS scroll interrupt, palm rejection) is NOT a deliberate
-    // release — cancel the marquee instead of committing a surprise fill.
+    // 영역 (rect) marquee release. Immediate commit (one gesture → one apply)
+    // for touch and for a left-button mouse/pen drag; a right-button drag
+    // (rectDeferred) leaves the marquee pending so the user can review it and
+    // press Enter to apply (or Escape to cancel). Note: confirmRect() reads
+    // rectDragging, so it must run before we clear it. A pointercancel (OS
+    // scroll interrupt, palm rejection) is NOT a deliberate release — cancel
+    // the marquee instead of committing a surprise fill.
     if (this.rectDragging) {
       if (e.type === 'pointercancel') {
         this.cancelRect();
-      } else if (e.pointerType === 'touch') {
+      } else if (e.pointerType === 'touch' || !this.rectDeferred) {
         this.confirmRect(); // calls cancelRect() internally (clears dragging)
       } else {
         this.rectDragging = false;
@@ -992,7 +1004,7 @@ export class PointerPainter {
    *  (see `applyRect`) and dismiss it. */
   private confirmRect(): void {
     if (!this.rectPending && !this.rectDragging) return;
-    this.applyRect(this.rectErase);
+    this.applyRect();
     this.cancelRect();
   }
 
@@ -1062,10 +1074,10 @@ export class PointerPainter {
     this.rectEl.style.width = `${width}px`;
     this.rectEl.style.height = `${height}px`;
     // Tint the marquee like the brush cursor (heat = warm, cool = cold, mix =
-    // violet, ...) so it's obvious which action Enter will apply — a
-    // right-drag (or the 지우개 tool) always erases regardless of $tool, same
-    // as the brush. A pending selection (awaiting Enter) pulses (data-pending).
-    this.rectEl.dataset.mode = this.rectErase ? 'erase' : $tool.get();
+    // violet, ...) so it's obvious which action confirming will apply — the
+    // active $tool, including the 지우개 tool's erase tint. A pending selection
+    // (a deferred right-drag awaiting Enter) pulses (data-pending).
+    this.rectEl.dataset.mode = $tool.get();
     this.rectEl.dataset.pending = this.rectPending ? 'true' : 'false';
   }
 
