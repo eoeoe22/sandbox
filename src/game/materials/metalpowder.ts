@@ -4,22 +4,32 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updatePowder } from '../engine/behaviors';
 import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { SALTWATER } from './saltwater';
+import { RUST_POWDER } from './rustpowder';
+import { DIR8 } from '../engine/directions';
 
-// Metal Powder — the pourable, shattered form of metal. It's what a blue drum
-// bursts into when an explosion tears it apart (see objects.ts): the shell is
-// blown to bits rather than cleanly melting, so it rains down as a heap of heavy
-// steel grains instead of a molten puddle. It falls and piles like Sand, and —
-// being metal — it still melts: heated past Iron's melting point it turns to
-// Molten Metal exactly as solid Iron does, so a pile of drum shrapnel dropped in
-// Lava pools back into liquid metal. Denser than the lighter mineral powders
-// (sand ~5) so a metal-dust heap settles beneath them and sinks through
-// water and liquid Slag (5.75) alike — heavy metal grains settling under the
-// light waste slag — yet nowhere near solid Iron's block density.
+const RUST_CHANCE = 0.03;
+
+function touchesSaltwater(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function updateMetalPowder(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten Metal
     // reads as molten instead of instantly re-freezing next tick (mirrors Iron).
     sim.set(x, y, MOLTEN_METAL.id);
+    return;
+  }
+  if (touchesSaltwater(x, y, sim) && sim.chance(RUST_CHANCE)) {
+    sim.set(x, y, RUST_POWDER.id);
     return;
   }
   updatePowder(x, y, sim);

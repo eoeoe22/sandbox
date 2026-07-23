@@ -22,6 +22,18 @@ import { crawl, eatAndReproduce, touchingBlast, EAT_CHANCE } from './crawler';
 //     into loose Metal Powder; a Woofer's flashless shockwave leaves it unharmed
 //     (see crawler.ts).
 const FOOD = [IRON.id, METAL_POWDER.id] as const;
+const RUST_CHANCE = 0.03;
+
+function touchesSaltwater(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function updateNanobot(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
@@ -32,6 +44,10 @@ function updateNanobot(x: number, y: number, sim: SimContext): void {
   }
   if (touchingBlast(x, y, sim)) {
     sim.set(x, y, METAL_POWDER.id); // shattered by the shockwave into loose grains
+    return;
+  }
+  if (touchesSaltwater(x, y, sim) && sim.chance(RUST_CHANCE)) {
+    sim.set(x, y, RUST.id); // corrodes into Rust when exposed to saltwater
     return;
   }
   eatAndReproduce(x, y, sim, NANOBOT.id, FOOD, EAT_CHANCE);

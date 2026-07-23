@@ -3,22 +3,41 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { SALTWATER } from './saltwater';
+import { RUST } from './rust';
+import { RUST_POWDER } from './rustpowder';
+import { DIR8 } from '../engine/directions';
 
-// Solid metal — the workhorse of two subsystems at once:
-//
-//  • Heat: it conducts heat better than any other material (conductivity 0.85),
-//    so a bar of Iron carries a flame's warmth to its far end and, heated past
-//    its melting point (by Lava, Blue Flame, or Thermite), turns molten and
-//    flows away as Molten Metal — which then re-freezes to Iron when it cools.
-//  • Electricity: it's `conductive`, so a Spark travels along it (see spark.ts).
-//    When a spark passes through and reverts, it stamps this cell's `aux` byte
-//    with a short refractory countdown; Iron's only per-tick job as a static
-//    solid is to tick that countdown back down so the cell can carry current
-//    again — that one-way "recently energized" memory is what makes a pulse run
-//    down a wire instead of sloshing back and forth (see spark.ts's comment).
-//
-// Acid dissolves Iron outright via Acid's own corrosion pass (Iron isn't tagged
-// acidResistant), so a wet-but-safe metal is still vulnerable to acid.
+const RUST_CHANCE = 0.03;
+
+function isIronLike(id: number): boolean {
+  return id === IRON.id || id === RUST.id || id === RUST_POWDER.id;
+}
+
+function touchingSaltwaterWithinDepth2(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) {
+      return true;
+    }
+  }
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && isIronLike(sim.get(nx, ny))) {
+      for (const [ddx, ddy] of DIR8) {
+        const nnx = nx + ddx;
+        const nny = ny + ddy;
+        if (sim.inBounds(nnx, nny) && sim.get(nnx, nny) === SALTWATER.id) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function updateIron(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again.
   const refractory = sim.getAux(x, y);
@@ -28,6 +47,16 @@ function updateIron(x: number, y: number, sim: SimContext): void {
     // In-place `set` keeps the (now high) temperature, so the fresh Molten Metal
     // reads as molten instead of instantly re-freezing next tick.
     sim.set(x, y, MOLTEN_METAL.id);
+    return;
+  }
+
+  // Saltwater oxidation (surface depth 2 max): 20% Rust Powder, 80% Rust
+  if (touchingSaltwaterWithinDepth2(x, y, sim) && sim.chance(RUST_CHANCE)) {
+    if (sim.chance(0.2)) {
+      sim.set(x, y, RUST_POWDER.id);
+    } else {
+      sim.set(x, y, RUST.id);
+    }
   }
 }
 
