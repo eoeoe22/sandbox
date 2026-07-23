@@ -649,9 +649,10 @@
       <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
            $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
            가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
-           스트로크 대신 사각형을 드래그해 선택하고, Enter(모바일은 드롭 즉시)로
-           확정할 때 그 시점에 고른 도구를 사각 영역 전체에 한 번에 적용한다
-           (PointerPainter.applyRect). .mode-group은 순전히 시각적 묶음이다. -->
+           스트로크 대신 사각형을 드래그해 선택하고, 그 시점에 고른 도구를 사각
+           영역 전체에 한 번에 적용한다(PointerPainter.applyRect). PC에서 좌클릭
+           드래그는 드롭 즉시 적용(터치와 동일), 우클릭 드래그는 Enter로 확정하는
+           대기 상태로 남는다. .mode-group은 순전히 시각적 묶음이다. -->
       <div class="group mode-group" role="group" aria-label="그리기 방식">
         <button
           class="ctl material-btn"
@@ -671,7 +672,7 @@
           bind:this={areaBtn}
           aria-pressed={$areaSelect}
           aria-label="영역 선택"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: Enter로 확정·Escape로 취소, 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: 좌클릭 드래그는 즉시 적용, 우클릭 드래그는 Enter로 확정·Escape로 취소 / 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
