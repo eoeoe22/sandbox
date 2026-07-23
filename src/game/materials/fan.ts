@@ -87,27 +87,43 @@ const MAX_BODY = 256;
  *  wired circuit) stays put and instead *blocks* the beam, so a fan can never walk
  *  its own battery or mount off the board (편의성 — 고정 구조물은 안 밀림). Solid
  *  *objects* (a drum, a ball) still get blown — those are handled in the object
- *  layer (engine/objects.ts applyWindPush), not here. */
+ *  layer (engine/objects.ts applyWindPush), not here.
+ *
+ *  `packedTemp` materials are excluded even though several (Ember/Debris/Bomblet/
+ *  Blast/Heat Ray) are gas-phase: they are self-propelled ballistic/beam particles
+ *  that run their own multi-cell motion each tick from state packed in `temp` (see
+ *  Material.packedTemp). A generic one-cell wind swap would mark them moved and rob
+ *  them of that per-tick flight step, freezing an arc into a single nudge — so the
+ *  wind flows *past* them (they stay windPassable) without shoving them. */
 function isWindPushable(id: number): boolean {
   if (id === EMPTY) return false;
-  const p = getMaterial(id).phase;
+  const m = getMaterial(id);
+  if (m.packedTemp) return false;
+  const p = m.phase;
   return p === Phase.Powder || p === Phase.Liquid || p === Phase.Gas;
 }
 
-/** True if the wind flows *through* this cell (empty, or any loose matter it can
- *  push — powder, liquid, gas). Anything else (a Wall, a machine, an
+/** True if the wind flows *through* this cell (empty, or any loose matter —
+ *  powder, liquid, gas — including a self-propelled `packedTemp` gas the beam
+ *  doesn't shove but still passes through). Anything else (a Wall, a machine, an
  *  indestructible block, any fixed solid) stops the beam. */
 function isWindPassable(id: number): boolean {
   if (id === EMPTY) return true;
-  return isWindPushable(id);
+  const p = getMaterial(id).phase;
+  return p === Phase.Powder || p === Phase.Liquid || p === Phase.Gas;
 }
 
 /** Convective cooling from the airflow: nudge one cell's temperature toward 상온
  *  (AMBIENT_TEMP) by WIND_COOL_RATE of the gap, but never below ambient (the wind
  *  is room-temperature air, it can't chill matter past it). A no-op on anything
  *  already at or below room temperature — the fan only ever *cools* what's hot,
- *  never warms what's cold. */
+ *  never warms what's cold — and on `packedTemp` materials, whose `temp` field
+ *  holds packed non-thermal bookkeeping (flight velocity/life, flash markers), not
+ *  a real degree reading, so touching it would corrupt their state (see
+ *  Material.packedTemp; same skip the object heat scan / inspect / heat overlay do). */
 function coolInWind(x: number, y: number, sim: SimContext): void {
+  const id = sim.get(x, y);
+  if (id === EMPTY || getMaterial(id).packedTemp) return;
   const t = sim.getTemp(x, y);
   if (t <= AMBIENT_TEMP) return;
   sim.setTemp(x, y, t - (t - AMBIENT_TEMP) * WIND_COOL_RATE);
