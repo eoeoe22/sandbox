@@ -153,6 +153,9 @@ function sameInspect(a: InspectStats | null, b: InspectStats): boolean {
 
 export class PointerPainter {
   private down = false;
+  /** Flags whether a stamp or stroke was executed during a pointer event (onDown/onMove)
+   *  in the current tick/frame, avoiding redundant double-stamping in update(). */
+  private paintedThisFrame = false;
   /** Whether the active press is erasing: the secondary (right) button always
    *  erases, regardless of the selected material or active tool. Latched at
    *  pointerdown so it persists through moves and per-frame re-stamps. */
@@ -842,6 +845,7 @@ export class PointerPainter {
       }
     }
     this.stamp(x, y);
+    this.paintedThisFrame = true;
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -871,6 +875,7 @@ export class PointerPainter {
     if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
     this.updateFanDir(x, y);
     this.stroke(this.px, this.py, x, y);
+    this.paintedThisFrame = true;
     this.px = x;
     this.py = y;
   };
@@ -1126,6 +1131,9 @@ export class PointerPainter {
    * what makes holding still read as "pouring" instead of a single splat.
    */
   update(): void {
-    if (this.down) this.stamp(this.px, this.py);
+    if (this.down && !this.paintedThisFrame) {
+      this.stamp(this.px, this.py);
+    }
+    this.paintedThisFrame = false;
   }
 }

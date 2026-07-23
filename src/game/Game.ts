@@ -262,9 +262,14 @@ export function startGame(canvas: HTMLCanvasElement): void {
   let lastAutosave = last;
 
   const frame = (now: number): void => {
-    const dt = now - last;
-    acc += dt;
+    let dt = now - last;
     last = now;
+    // Cap lag spikes (e.g. from pointer capture, GC, tab switches) so large
+    // accumulators don't trigger multi-step catch-up bursts that warp speed.
+    if (dt > stepMs * 2) dt = stepMs * 2;
+    acc += dt;
+    if (acc > stepMs * 2) acc = stepMs * 2;
+
     // Smooth the raw frame delta the same way FPS is smoothed, so the HUD's
     // millisecond readout doesn't jitter frame to frame.
     frameMsSmooth = frameMsSmooth === 0 ? dt : frameMsSmooth * 0.8 + dt * 0.2;
