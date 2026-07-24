@@ -267,13 +267,19 @@ function diamondForwardScatter(
  *  to EMPTY; one that was resting inside a transparent pane (glass/broken glass/
  *  diamond, carried in its `aux`) puts that pane back — resetting the cell to
  *  ambient so the beam's packed `temp` doesn't linger as a bogus reading and its
- *  own `aux` doesn't stay behind as stale state. The `hostId` guard means a
- *  corrupt/legacy aux value falls back to EMPTY rather than spawning junk. */
+ *  own `aux` doesn't stay behind as stale state. The pane's original grain `tint`
+ *  is stashed on the beam cell (see the landing in updateHeatRay) and re-applied
+ *  here, because `set()` re-rolls the tint on every non-empty write — without this
+ *  a pane a beam keeps crossing would shimmer/flicker as its brightness re-rolls
+ *  each tick. The `hostId` guard means a corrupt/legacy aux value falls back to
+ *  EMPTY rather than spawning junk. */
 function restoreCell(sim: SimContext, x: number, y: number, hostId: number): void {
   if (hostId === GLASS.id || hostId === BROKEN_GLASS.id || hostId === DIAMOND.id) {
+    const paneTint = sim.getTint(x, y); // the pane tint parked on the beam cell
     sim.set(x, y, hostId);
     sim.setTemp(x, y, AMBIENT_TEMP);
     sim.setAux(x, y, 0);
+    sim.setTint(x, y, paneTint);
   } else {
     sim.set(x, y, EMPTY);
   }
@@ -418,6 +424,15 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       // Glass / Broken Glass — passed as if it weren't there: normal-speed,
       // landable travel. The beam can rest inside a thick pane, carrying it in aux.
       inDiamond = false;
+      // A soaked pane (Broken Glass is a Powder that can hold a water 겹침 overlay)
+      // is not landable: overwriting it to park the beam would destroy the absorbed
+      // fluid (spawn can't re-host it). Pass over it for free instead, leaving the
+      // wet cell — and its water — untouched. Glass/diamond never carry an overlay.
+      if (sim.getOverlay(nx, ny) !== 0) {
+        wx = nx;
+        wy = ny;
+        continue;
+      }
       wx = nx;
       wy = ny;
       cx = nx;
@@ -490,13 +505,21 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   if (cx !== x || cy !== y) {
     // Move: put back whatever pane the beam was resting on at the old cell, then
     // spawn the beam at the landing cell, stamping the pane it now rests inside (if
-    // any) into its aux so it can be restored on the next move.
+    // any) into its aux so it can be restored on the next move. When landing inside
+    // a pane, grab that pane's grain tint *before* spawn overwrites the cell and
+    // park it on the beam cell (aux carries the id, tint carries the shade — the
+    // beam's own tint is unused for rendering), so restoreCell can hand the pane
+    // back its exact brightness instead of a re-rolled one.
     restoreCell(sim, x, y, hostId);
+    const paneTint = cHost !== 0 ? sim.getTint(cx, cy) : 0;
     sim.spawn(cx, cy, HEAT_RAY.id);
     sim.setTemp(cx, cy, newTemp);
-    if (cHost !== 0) sim.setAux(cx, cy, cHost);
+    if (cHost !== 0) {
+      sim.setAux(cx, cy, cHost);
+      sim.setTint(cx, cy, paneTint);
+    }
   } else {
-    // Stayed put — the pane under it (aux) is unchanged; just re-encode its state.
+    // Stayed put — the pane under it (aux/tint) is unchanged; just re-encode state.
     sim.setTemp(cx, cy, newTemp);
   }
 }

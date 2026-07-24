@@ -358,6 +358,18 @@ export class SimContext {
     return this.grid.getOverlay(x, y);
   }
 
+  /** Per-particle cosmetic tint byte at a cell (see Grid.tint / game/tint.ts).
+   *  Exposed so a material that temporarily overwrites another cell can stash and
+   *  restore its grain tint (the Heat Ray carries a transparent pane's tint while
+   *  it passes through, so the pane doesn't re-roll its brightness — see heatray). */
+  getTint(x: number, y: number): number {
+    return this.grid.getTint(x, y);
+  }
+
+  setTint(x: number, y: number, v: number): void {
+    this.grid.setTint(x, y, v);
+  }
+
   /** Current temperature at a cell. Material `update` rules read this to drive
    *  temperature-based phase changes (Lava→Stone freeze, Water→Steam boil). */
   getTemp(x: number, y: number): number {
