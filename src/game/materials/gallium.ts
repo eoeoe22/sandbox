@@ -33,6 +33,9 @@ export const GALLIUM = register({
   density: 1000,
   conductive: true,
   category: '고체',
+  // A bright silvery metal surface: a Heat Ray beam reflects cleanly off it
+  // (정반사) — see heatray.ts.
+  laserReflective: true,
   // A metal, so it carries heat readily — which, with its very low melt point,
   // is exactly why the smallest warm touch spreads through a bar and melts it.
   thermal: { conductivity: 0.7 },

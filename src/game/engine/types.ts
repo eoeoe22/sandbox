@@ -87,6 +87,15 @@ export interface Material {
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
   /**
+   * A polished, highly-reflective surface that a Heat Ray beam bounces off with a
+   * clean specular (정반사) reflection instead of being absorbed — Mercury and the
+   * shiny metals (Iron, Heatpipe, Gallium, Liquid Gallium). The Heat Ray walk
+   * (heatray.ts) reads this flag alone, so any future high-reflectivity metal just
+   * sets `laserReflective: true` to become a laser mirror — no change to the beam
+   * code needed. Read only by heatray.ts; the rest of the engine ignores it.
+   */
+  laserReflective?: boolean;
+  /**
    * Part of the crude-oil / petroleum family (Crude Oil, Gasoline, Kerosene,
    * Diesel). Two purely-data uses: the renderer draws these liquids as a flat
    * single colour instead of sampling the shimmering background tint field (so

@@ -5,7 +5,7 @@ import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { GLASS } from './glass';
 import { BROKEN_GLASS } from './brokenglass';
-import { MERCURY } from './mercury';
+import { DIAMOND } from './diamond';
 
 // Heat Ray — the laser beam a powered Laser emitter fires (see laser.ts). It
 // borrows the Nuclear Ray's *flight* (nuclearray.ts): packed per-cell state in
@@ -13,26 +13,34 @@ import { MERCURY } from './mercury';
 // speed, no gravity, reflecting off Wall and the grid boundary. But where a
 // Nuclear Ray is a wrecking beam that shreds terrain, a Heat Ray has **no
 // destructive power at all** — it never removes a cell. Its whole effect is
-// *heat*, delivered where it lands:
-//   • Solids / powders it can't see through STOP it: it dumps heat into the
-//     struck cell (and splashes a little into the neighbours) and mirror-reflects
-//     away, scorching what it hits instead of smashing it. So a beam trained on a
-//     wall slowly cooks it — igniting, melting, boiling — without ever breaking it.
+// *heat*, and how a cell answers the beam depends on what the cell is:
+//   • Solids / powders it can't see through mostly ABSORB it: it dumps heat into
+//     the struck cell (and splashes a little into the neighbours) and then, most
+//     of the time, dies there — scorching what it hits without smashing it. Only
+//     a small fraction of hits bounce off as a rough, scattered 난반사 reflection.
+//     So a beam trained on a wall slowly cooks it (igniting, melting, boiling)
+//     rather than mirroring away as a clean line.
 //   • Glass and Broken Glass are TRANSPARENT: the beam passes straight through a
 //     pane, untouched, like clear air.
-//   • Mercury is a MIRROR: the beam reflects off a Mercury surface cleanly (no
-//     random scatter), so a puddle of Mercury aims the beam — build reflector
-//     mazes with it.
+//   • Reflective metals (Mercury, Iron, Heatpipe, Gallium, Liquid Gallium — any
+//     material flagged `laserReflective`) are MIRRORS: the beam reflects off them
+//     cleanly (정반사, no scatter), so a metal surface aims the beam. New shiny
+//     metals become mirrors just by setting the flag — no change here needed.
+//   • Diamond is a PRISM: the beam enters the gem straight, travels through it,
+//     and where it exits back into open air it bursts into a starburst spraying
+//     in every direction (사방으로 확산) — a sparkle of shorter-lived child beams.
 //   • Gases SCATTER it: the beam flows through a gas cloud, and each cell it
 //     crosses it has a small chance to jink one 45° step (산란) — a beam through
 //     smoke frays slightly instead of staying a razor line.
-//   • Liquids REFRACT and ABSORB it: crossing a liquid boundary bends the beam by
-//     a fixed step (경계면 굴절), and every liquid cell it travels through it may
-//     be absorbed (확률적 소멸) — when it dies in the liquid it dumps its heat into
-//     that cell, so a beam played across water boils it away cell by cell.
+//   • Liquids mostly let it THROUGH: the beam travels straight on through a body
+//     of liquid, and only a small fraction of the cells it crosses do anything —
+//     a low chance to scatter one step (산란), or a low chance to be absorbed and
+//     die, dumping its heat there (가열 후 소멸). So a beam mostly bores through
+//     water, warming it here and there, instead of stopping at the surface.
 //
-// Reflections here are CLEAN mirrors (unlike the Nuclear Ray's chaotic scatter),
-// so a Heat Ray is a predictable, buildable beam — the point of a laser toy.
+// The clean reflections here are true mirrors (unlike the Nuclear Ray's chaotic
+// scatter), so a Heat Ray is a predictable, buildable beam — the point of a laser
+// toy — while the rough 난반사 off ordinary solids adds a little spray.
 //
 // As with the Nuclear Ray / Ember / Blast, the packed per-cell state (remaining
 // life + flight direction) lives in `temp` with conductivity 0 so the heat pass
@@ -49,8 +57,20 @@ const SPLASH_HEAT = 45;
 const VANISH_HEAT = 130;
 // Per-gas-cell chance the beam jinks one 45° step as it passes through (산란).
 const GAS_SCATTER_CHANCE = 0.06;
-// Per-liquid-cell chance the beam is absorbed and dies there (확률적 소멸).
-const LIQUID_VANISH_CHANCE = 0.22;
+// Passing through a liquid, most cells do nothing — a small fraction either jink
+// one step (산란) or absorb the beam and kill it (확률적 소멸, 가열 후 소멸).
+const LIQUID_SCATTER_CHANCE = 0.05;
+const LIQUID_VANISH_CHANCE = 0.06;
+// Striking an ordinary (non-reflective) solid: most of the time the beam is
+// absorbed — it heats the spot and dies — and only this fraction of hits bounce
+// off as a rough, scattered 난반사 reflection instead.
+const SOLID_REFLECT_CHANCE = 0.18;
+// A Diamond exit-burst (사방으로 확산) seeds child beams each carrying this
+// fraction of the parent's remaining life, so the sparkle decays geometrically
+// gem-to-gem and can't grow without bound. Below DIFFUSE_LIFE_MIN the beam is too
+// weak to sparkle and simply exits straight instead.
+const DIFFUSE_LIFE_FRACTION = 0.45;
+const DIFFUSE_LIFE_MIN = 3;
 // Extra life a beam burns each time it reflects, on top of the −1 every ray pays
 // per tick — so a beam trapped ricocheting in a pocket drains fast instead of
 // lingering its whole life (mirrors nuclearray.ts's BOUNCE_LIFE_COST).
@@ -125,8 +145,8 @@ function mirror(sim: SimContext, cx: number, cy: number, vx: number, vy: number)
   return [bvx, bvy];
 }
 
-/** A small random jink as the beam crosses a gas cell: rotate ±1 step, keeping to
- *  open space where possible so the scattered beam actually leaves the cell. */
+/** A small random jink as the beam crosses a gas/liquid cell: rotate ±1 step,
+ *  keeping to open space where possible so the scattered beam leaves the cell. */
 function gasScatter(sim: SimContext, cx: number, cy: number, vx: number, vy: number): [number, number] {
   const s = sim.chance(0.5) ? 1 : -1;
   let [rx, ry] = rotate(vx, vy, s);
@@ -134,6 +154,40 @@ function gasScatter(sim: SimContext, cx: number, cy: number, vx: number, vy: num
   [rx, ry] = rotate(vx, vy, -s);
   if (isOpen(sim, cx + rx, cy + ry)) return [rx, ry];
   return [vx, vy];
+}
+
+/** A rough (난반사) bounce off an ordinary solid: take the clean mirror reflection,
+ *  then usually nudge it one 45° step toward open space, so a beam that bounces off
+ *  a rough wall sprays a little instead of returning as a razor line. */
+function diffuseReflect(sim: SimContext, cx: number, cy: number, vx: number, vy: number): [number, number] {
+  const [mx, my] = mirror(sim, cx, cy, vx, vy);
+  if (sim.chance(0.6)) {
+    const s = sim.chance(0.5) ? 1 : -1;
+    let [jx, jy] = rotate(mx, my, s);
+    if (isOpen(sim, cx + jx, cy + jy)) return [jx, jy];
+    [jx, jy] = rotate(mx, my, -s);
+    if (isOpen(sim, cx + jx, cy + jy)) return [jx, jy];
+  }
+  return [mx, my];
+}
+
+/** The Diamond exit-burst (사방으로 확산): from the open cell (ex,ey) where the beam
+ *  leaves the gem, seed a starburst of child beams — one flying forward, and one
+ *  into every open neighbour heading outward — each carrying `childLife`. The
+ *  fractional life (DIFFUSE_LIFE_FRACTION) makes the spray decay gem-to-gem so it
+ *  stays bounded. The caller clears the parent cell afterwards. */
+function diamondBurst(sim: SimContext, ex: number, ey: number, fvx: number, fvy: number, childLife: number): void {
+  sim.spawn(ex, ey, HEAT_RAY.id);
+  sim.setTemp(ex, ey, encodeRay(childLife, fvx, fvy));
+  for (const [dx, dy] of DIR_RING) {
+    if (dx === fvx && dy === fvy) continue; // forward already seeded at (ex,ey)
+    const tx = ex + dx;
+    const ty = ey + dy;
+    if (isOpen(sim, tx, ty)) {
+      sim.spawn(tx, ty, HEAT_RAY.id);
+      sim.setTemp(tx, ty, encodeRay(childLife, dx, dy));
+    }
+  }
 }
 
 /** Deposit the beam's heat where it strikes a solid: warm the struck cell and
@@ -180,26 +234,26 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   }
 
   // Two cursors: (wx,wy) is where the walk currently is — it may sit on a
-  // transparent cell (glass, gas, liquid, a sibling/packed beam) it is passing over
-  // — while (cx,cy) is the last EMPTY cell, the only kind the beam may land on when
-  // its steps run out. `inLiquid` tracks whether the walk is currently inside a
-  // liquid body so a boundary crossing refracts exactly once each way.
+  // transparent cell (glass, gas, liquid, a Diamond, a sibling/packed beam) it is
+  // passing over — while (cx,cy) is the last EMPTY cell, the only kind the beam may
+  // land on when its steps run out. `inDiamond` tracks whether the walk is
+  // currently inside a Diamond body so the exit into open air can burst (사방 확산).
   //
   // Air travel spends `airSteps` (the SPEED budget) and reflections consume a step
   // too, exactly like the Nuclear Ray. Passing *through* transparent media, though,
   // is FREE — it doesn't spend the air budget — so a beam crosses a medium of any
   // width within this one tick (light-like) and either lands in the air beyond,
-  // vanishes inside a liquid, or reflects off something solid past it. That's what
-  // stops a beam fizzling at the surface of a pool/cloud wider than the 2-3 cell
-  // step budget: `inLiquid` and the landing cursor stay valid because the whole
-  // crossing resolves in one call, so there's no cross-tick stall to re-refract.
-  // MAX_STEPS bounds the free traversal so a pathologically wide medium can't loop.
+  // vanishes inside a liquid, bursts out of a diamond, or reflects/dies at a solid
+  // past it. That's what stops a beam fizzling at the surface of a pool/cloud/gem
+  // wider than the 2-3 cell step budget: the landing cursor stays valid because the
+  // whole crossing resolves in one call. MAX_STEPS bounds the free traversal so a
+  // pathologically wide medium can't loop.
   let airSteps = vx !== 0 && vy !== 0 ? SPEED_DIAG : SPEED_ORTH;
   let wx = x;
   let wy = y;
   let cx = x;
   let cy = y;
-  let inLiquid = false;
+  let inDiamond = false;
   let lifeCost = 1;
   let iter = 0;
   while (airSteps > 0 && iter < MAX_STEPS) {
@@ -218,9 +272,17 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     const nid = sim.get(nx, ny);
 
     if (nid === EMPTY) {
-      if (inLiquid) {
-        [vx, vy] = rotate(vx, vy, -1); // left the liquid — refract back
-        inLiquid = false;
+      if (inDiamond) {
+        // Leaving the gem into open air — burst into a starburst (사방으로 확산),
+        // provided there's enough life left to make a worthwhile sparkle.
+        inDiamond = false;
+        const childLife = Math.floor(Math.max(0, life - lifeCost) * DIFFUSE_LIFE_FRACTION);
+        if (childLife >= DIFFUSE_LIFE_MIN) {
+          diamondBurst(sim, nx, ny, vx, vy, childLife);
+          sim.set(x, y, EMPTY);
+          return;
+        }
+        // Too weak to sparkle — fall through and just exit straight.
       }
       wx = nx;
       wy = ny;
@@ -231,34 +293,37 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     }
 
     // Transparent to the beam: a sibling Heat Ray, a Nuclear Ray or other packed
-    // flier, or a glass pane. The walk passes over it for free (not landable), and
-    // stepping out of a liquid into it still refracts back.
+    // flier, or a glass pane. The walk passes over it for free (not landable).
     if (nid === HEAT_RAY.id || getMaterial(nid).packedTemp || isTransparent(nid)) {
-      if (inLiquid) {
-        [vx, vy] = rotate(vx, vy, -1);
-        inLiquid = false;
-      }
       wx = nx;
       wy = ny;
       continue;
     }
 
-    if (nid === MERCURY.id) {
-      // Mercury is a mirror — reflect cleanly, no heat, nothing destroyed.
+    if (nid === DIAMOND.id) {
+      // Enter the gem and travel through it for free; it bursts on the way out
+      // (handled at the EMPTY branch above once inDiamond is set).
+      inDiamond = true;
+      wx = nx;
+      wy = ny;
+      continue;
+    }
+
+    const m = getMaterial(nid);
+
+    if (m.laserReflective) {
+      // A polished metal surface (Mercury, Iron, Heatpipe, Gallium, Liquid
+      // Gallium, …) is a mirror — reflect cleanly, no heat, nothing destroyed.
+      // Checked before the phase branches so Liquid Gallium mirrors rather than
+      // absorbs like an ordinary liquid.
       [vx, vy] = mirror(sim, wx, wy, vx, vy);
       airSteps--;
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
 
-    const m = getMaterial(nid);
-
     if (m.phase === Phase.Gas) {
       // Flow through the gas for free; a small chance to scatter one step (산란).
-      if (inLiquid) {
-        [vx, vy] = rotate(vx, vy, -1);
-        inLiquid = false;
-      }
       if (sim.chance(GAS_SCATTER_CHANCE)) [vx, vy] = gasScatter(sim, wx, wy, vx, vy);
       wx = nx;
       wy = ny;
@@ -266,30 +331,33 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     }
 
     if (m.phase === Phase.Liquid) {
-      // A non-Mercury liquid: refract on entry, then risk absorption each cell it
-      // travels through (free, so a whole pool is crossed this tick — but the
-      // per-cell vanish roll means a wide pool almost always swallows the beam
-      // before the far side).
-      if (!inLiquid) {
-        [vx, vy] = rotate(vx, vy, 1); // crossed into the liquid — refract
-        inLiquid = true;
-      }
+      // A non-reflective liquid mostly lets the beam straight through (free, so a
+      // whole pool is crossed this tick). Only a small fraction of cells act: a
+      // low chance to be absorbed and die here (dumping heat, 가열 후 소멸), else a
+      // low chance to jink one step (산란); otherwise it passes untouched.
       if (sim.chance(LIQUID_VANISH_CHANCE)) {
-        // Absorbed inside the liquid — dump the beam's heat here and die.
         sim.setTemp(nx, ny, sim.getTemp(nx, ny) + VANISH_HEAT);
         sim.set(x, y, EMPTY);
         return;
       }
+      if (sim.chance(LIQUID_SCATTER_CHANCE)) [vx, vy] = gasScatter(sim, wx, wy, vx, vy);
       wx = nx;
       wy = ny;
       continue;
     }
 
-    // Opaque solid/powder/wall: no destruction — heat the impact and mirror away.
+    // Opaque solid/powder/wall: no destruction. Heat the impact, then mostly die
+    // there (대부분 가열 후 소멸); only a small fraction bounce off as a rough,
+    // scattered 난반사 reflection.
     heatImpact(sim, nx, ny);
-    [vx, vy] = mirror(sim, wx, wy, vx, vy);
-    airSteps--;
-    lifeCost += BOUNCE_LIFE_COST;
+    if (sim.chance(SOLID_REFLECT_CHANCE)) {
+      [vx, vy] = diffuseReflect(sim, wx, wy, vx, vy);
+      airSteps--;
+      lifeCost += BOUNCE_LIFE_COST;
+      continue;
+    }
+    sim.set(x, y, EMPTY);
+    return;
   }
 
   // Safety drain (mirrors nuclearray.ts): a beam that only ever walked over

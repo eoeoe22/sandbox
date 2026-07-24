@@ -49,6 +49,10 @@ export const LIQUID_GALLIUM = register({
   // A smooth mirror-like metal, so it renders as a flat single colour rather
   // than sampling the shimmering background tint field (mirrors Mercury).
   colorVary: 0,
+  // A shiny liquid-metal surface is a mirror: a Heat Ray beam reflects cleanly off
+  // it (정반사) just like Mercury (see heatray.ts) — this takes priority over the
+  // ordinary liquid absorb/scatter path.
+  laserReflective: true,
   // Placed just above its melt point so a freshly poured puddle stays liquid;
   // conducts heat well like the other metals.
   thermal: { init: 35, conductivity: 0.7 },

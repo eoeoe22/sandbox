@@ -47,6 +47,9 @@ export const MERCURY = register({
   // A smooth mirror-like metal, so it renders as a flat single colour rather than
   // sampling the shimmering background tint field the other liquids use.
   colorVary: 0,
+  // A quicksilver surface is a mirror — a Heat Ray beam reflects cleanly off it
+  // (정반사), so a puddle aims the beam (see heatray.ts).
+  laserReflective: true,
   thermal: { conductivity: 0.7 },
   // Freezes solid deep below zero (real mercury sets at ~-39°): a chilled puddle
   // hardens in place (still conducts electricity — solid metal) until it warms.
