@@ -252,7 +252,7 @@ export class CanvasRenderer implements Renderer {
   private lattice: Uint32Array;
   /** id → 1 if the material draws a 2x2 positional checkerboard (Diamond). */
   private checker2x2: Uint8Array;
-  /** id → 1 if the material draws a 14x14 pixel-art battery pattern (Batteries). */
+  /** id → 1 if the material draws the tiled pixel-art battery pattern (Batteries). */
   private batteryPattern: Uint8Array;
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
@@ -654,15 +654,16 @@ export class CanvasRenderer implements Renderer {
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
       } else if (batPat[id]) {
-        // 2x6 mini lightning bolt pattern on a 4x7 tile with 1px vertical gap (Lithium Battery, LFP Battery).
+        // Diagonal 2-step staircase on a 4x5 tile (Lithium Battery, LFP Battery):
+        // two black cells drop one column to the right, leaving a 1px border of the
+        // battery's base color around them.
         const x = i % w;
         const y = (i / w) | 0;
         const px = x % 4;
-        const py = y % 7;
+        const py = y % 5;
         const isPattern =
-          (py >= 1 && py <= 2 && px === 2) ||
-          (py >= 3 && py <= 4 && (px === 1 || px === 2)) ||
-          (py >= 5 && py <= 6 && px === 1);
+          (px === 1 && (py === 1 || py === 2)) ||
+          (px === 2 && (py === 2 || py === 3));
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
