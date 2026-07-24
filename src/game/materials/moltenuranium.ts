@@ -28,7 +28,7 @@ import { emitNuclearRay, NUCLEAR_RAY } from './nuclearray';
 //  • Let it keep heating and at CRITICAL_TEMP the mass goes prompt-critical.
 //
 // Criticality is NOT the old instant detonation. The pool *burns*: each
-// critical cell keeps flash-emitting Nuclear Rays (see heatray.ts) from any
+// critical cell keeps flash-emitting Nuclear Rays (see nuclearray.ts) from any
 // face not blocked by more fuel — a surface burn, eating inward layer by
 // layer, that punches straight through rubble burying the pool — and after
 // BURN_EMISSIONS emissions the spent cell burns away to a wisp of smoke. The
@@ -86,7 +86,7 @@ function spendMeltdown(x: number, y: number, sim: SimContext, amount: number): b
  * its decay*: the beam advances that cell's burn progress, so a swarm of rays
  * sweeping a critical pool actively burns it away instead of only heating it.
  * This is what keeps a big meltdown from dragging on: rays ricocheting through
- * the pool eat it from within. Called from heatray.ts on impact; spends the cell
+ * the pool eat it from within. Called from nuclearray.ts on impact; spends the cell
  * if the quota is reached.
  */
 export function triggerMeltdownDecay(sim: SimContext, x: number, y: number): void {

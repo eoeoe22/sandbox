@@ -55,6 +55,12 @@ const LIQUID_VANISH_CHANCE = 0.22;
 // per tick — so a beam trapped ricocheting in a pocket drains fast instead of
 // lingering its whole life (mirrors nuclearray.ts's BOUNCE_LIFE_COST).
 const BOUNCE_LIFE_COST = 10;
+// Hard cap on cells walked in one tick, so a beam crossing a very wide medium (see
+// the walk loop) can't loop unbounded. Air travel spends the SPEED budget; passing
+// through transparent media (glass, gas, liquid, sibling beams) is "free" — light
+// crosses a medium within the tick rather than stalling a cell or two in — and this
+// only bounds that free traversal. Comfortably above any ordinary medium's width.
+const MAX_STEPS = 64;
 // Pins the beam white-hot in the heat-overlay thermal camera (its `temp` holds
 // packed flight state, not a real reading) — same trick the Nuclear Ray uses.
 const OVERLAY_TEMP = 1600;
@@ -173,20 +179,31 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     return;
   }
 
-  // Walk unit steps; every reflection consumes the step it happened on so the loop
-  // always terminates. Two cursors: (wx,wy) is where the walk currently is — it may
-  // sit on a transparent cell (glass, gas, liquid, a sibling beam) it is passing
-  // over — while (cx,cy) is the last EMPTY cell, the only kind the beam may land on
-  // when its steps run out. `inLiquid` tracks whether the walk is currently inside a
+  // Two cursors: (wx,wy) is where the walk currently is — it may sit on a
+  // transparent cell (glass, gas, liquid, a sibling/packed beam) it is passing over
+  // — while (cx,cy) is the last EMPTY cell, the only kind the beam may land on when
+  // its steps run out. `inLiquid` tracks whether the walk is currently inside a
   // liquid body so a boundary crossing refracts exactly once each way.
-  const steps = vx !== 0 && vy !== 0 ? SPEED_DIAG : SPEED_ORTH;
+  //
+  // Air travel spends `airSteps` (the SPEED budget) and reflections consume a step
+  // too, exactly like the Nuclear Ray. Passing *through* transparent media, though,
+  // is FREE — it doesn't spend the air budget — so a beam crosses a medium of any
+  // width within this one tick (light-like) and either lands in the air beyond,
+  // vanishes inside a liquid, or reflects off something solid past it. That's what
+  // stops a beam fizzling at the surface of a pool/cloud wider than the 2-3 cell
+  // step budget: `inLiquid` and the landing cursor stay valid because the whole
+  // crossing resolves in one call, so there's no cross-tick stall to re-refract.
+  // MAX_STEPS bounds the free traversal so a pathologically wide medium can't loop.
+  let airSteps = vx !== 0 && vy !== 0 ? SPEED_DIAG : SPEED_ORTH;
   let wx = x;
   let wy = y;
   let cx = x;
   let cy = y;
   let inLiquid = false;
   let lifeCost = 1;
-  for (let s = 0; s < steps; s++) {
+  let iter = 0;
+  while (airSteps > 0 && iter < MAX_STEPS) {
+    iter++;
     const nx = wx + vx;
     const ny = wy + vy;
     if (!sim.inBounds(nx, ny)) {
@@ -194,6 +211,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       // off the edge. No scatter: a Heat Ray reflects cleanly.
       if (nx < 0 || nx >= sim.width) vx = -vx;
       if (ny < 0 || ny >= sim.height) vy = -vy;
+      airSteps--;
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
@@ -208,12 +226,13 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       wy = ny;
       cx = nx;
       cy = ny;
+      airSteps--;
       continue;
     }
 
     // Transparent to the beam: a sibling Heat Ray, a Nuclear Ray or other packed
-    // flier, or a glass pane. The walk passes over it (not landable), and stepping
-    // out of a liquid into it still refracts back.
+    // flier, or a glass pane. The walk passes over it for free (not landable), and
+    // stepping out of a liquid into it still refracts back.
     if (nid === HEAT_RAY.id || getMaterial(nid).packedTemp || isTransparent(nid)) {
       if (inLiquid) {
         [vx, vy] = rotate(vx, vy, -1);
@@ -227,6 +246,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     if (nid === MERCURY.id) {
       // Mercury is a mirror — reflect cleanly, no heat, nothing destroyed.
       [vx, vy] = mirror(sim, wx, wy, vx, vy);
+      airSteps--;
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
@@ -234,7 +254,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     const m = getMaterial(nid);
 
     if (m.phase === Phase.Gas) {
-      // Flow through the gas; a small chance to scatter one step (산란).
+      // Flow through the gas for free; a small chance to scatter one step (산란).
       if (inLiquid) {
         [vx, vy] = rotate(vx, vy, -1);
         inLiquid = false;
@@ -246,7 +266,10 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     }
 
     if (m.phase === Phase.Liquid) {
-      // A non-Mercury liquid: refract on entry, then risk absorption each cell.
+      // A non-Mercury liquid: refract on entry, then risk absorption each cell it
+      // travels through (free, so a whole pool is crossed this tick — but the
+      // per-cell vanish roll means a wide pool almost always swallows the beam
+      // before the far side).
       if (!inLiquid) {
         [vx, vy] = rotate(vx, vy, 1); // crossed into the liquid — refract
         inLiquid = true;
@@ -265,14 +288,14 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     // Opaque solid/powder/wall: no destruction — heat the impact and mirror away.
     heatImpact(sim, nx, ny);
     [vx, vy] = mirror(sim, wx, wy, vx, vy);
+    airSteps--;
     lifeCost += BOUNCE_LIFE_COST;
   }
 
-  // The transparent-gridlock drain (mirrors nuclearray.ts): a beam whose whole
-  // step path this tick was transparent cells (a wide gas cloud, a thick pane, a
-  // pack of sibling beams) advances its walk cursor yet finds no empty landing, so
-  // (cx,cy) never moved. Drain it like a reflection so such a beam doesn't hang in
-  // place shedding only 1 life/tick.
+  // Safety drain (mirrors nuclearray.ts): a beam that only ever walked over
+  // transparent cells and never found an empty landing — a medium wider than
+  // MAX_STEPS — advances its walk cursor yet leaves (cx,cy) unmoved. Drain it like a
+  // reflection so it can't hang in place shedding only 1 life/tick.
   if (cx === x && cy === y && lifeCost === 1 && (wx !== x || wy !== y)) {
     lifeCost += BOUNCE_LIFE_COST;
   }

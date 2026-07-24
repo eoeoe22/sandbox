@@ -12,6 +12,7 @@ import { URANIUM } from './uranium';
 import { MOLTEN_URANIUM, triggerMeltdownDecay } from './moltenuranium';
 import { U238 } from './u238';
 import { MOLTEN_U238 } from './moltenu238';
+import { HEAT_RAY } from './heatray';
 
 // Nuclear Ray — the searing beam a critical uranium mass emits (see
 // moltenuranium.ts). Where an Ember is ballistic debris (drooping arc, short
@@ -226,9 +227,12 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       cy = ny;
       continue;
     }
-    if (nid === NUCLEAR_RAY.id) {
-      // Sibling rays don't interact: pass straight over (transparent, but not
-      // landable — the walk cursor advances, the landing cursor doesn't).
+    if (nid === NUCLEAR_RAY.id || nid === HEAT_RAY.id) {
+      // Sibling beams don't interact: pass straight over (transparent, but not
+      // landable — the walk cursor advances, the landing cursor doesn't). A Heat
+      // Ray (laser beam — heatray.ts) is treated the same, so the two kinds of
+      // beam are mutually transparent rather than a Nuclear Ray smashing a Heat
+      // Ray it crosses (Heat Ray already passes through any packed flier).
       wx = nx;
       wy = ny;
       continue;

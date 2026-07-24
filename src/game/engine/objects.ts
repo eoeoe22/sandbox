@@ -1276,7 +1276,7 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
  * cleared cells become short-lived BLAST cells → instant destruction), a Nuclear Ray
- * beam cell overlapping it (the searing critical-mass beam — see heatray.ts —
+ * beam cell overlapping it (the searing critical-mass beam — see nuclearray.ts —
  * which destroys everything it strikes on the CA grid and is no gentler on a
  * free-floating object it grazes: instant destruction, same as a direct blast),
  * the hottest footprint temperature (heat exposure, judged over time by the
