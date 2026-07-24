@@ -25,6 +25,8 @@ import { Phase, type Material } from './engine/types';
 export const POWDER_VARY = 18;
 /** Default brightness spread for liquids that don't set their own `colorVary`. */
 export const LIQUID_VARY = 22;
+/** Low brightness spread for petroleum liquids. */
+export const PETROLEUM_VARY = 7;
 
 /**
  * Background-field drift, an Ornstein–Uhlenbeck-style step applied to the
@@ -46,7 +48,7 @@ export const TINT_NEUTRAL = 128;
 
 /** Which tint field a material samples (see above). */
 export const VARY_NONE = 0;
-export const VARY_PARTICLE = 1; // powder: fixed per-particle tint (Grid.tint)
+export const VARY_PARTICLE = 1; // powder/solid: fixed per-particle tint (Grid.tint)
 export const VARY_BACKGROUND = 2; // liquid: positional background field (Grid.bgTint)
 
 /**
@@ -58,20 +60,16 @@ export const VARY_BACKGROUND = 2; // liquid: positional background field (Grid.b
 export function varyAmplitude(m: Material): number {
   if (m.colorVary !== undefined) return m.colorVary;
   if (m.glow) return 0;
-  // Petroleum liquids (Crude Oil, Gasoline, Kerosene, Diesel) render as a flat
-  // single colour instead of shimmering through the background tint field, so a
-  // slick reads as one solid, uniform body of fuel (see Material.petroleum).
-  if (m.petroleum) return 0;
+  if (m.petroleum) return PETROLEUM_VARY;
   if (m.phase === Phase.Powder) return POWDER_VARY;
   if (m.phase === Phase.Liquid) return LIQUID_VARY;
   return 0;
 }
 
-/** Which tint field this material samples: per-particle (powder), positional
- *  background (liquid), or none. */
+/** Which tint field this material samples: per-particle (powder/solid with colorVary),
+ *  positional background (liquid), or none. */
 export function varyMode(m: Material): number {
   if (varyAmplitude(m) <= 0) return VARY_NONE;
-  if (m.phase === Phase.Powder) return VARY_PARTICLE;
   if (m.phase === Phase.Liquid) return VARY_BACKGROUND;
-  return VARY_NONE;
+  return VARY_PARTICLE;
 }

@@ -338,6 +338,15 @@ export interface Material {
    */
   lattice?: number;
   /**
+   * Draw a 2x2 positional checkerboard (using the `lattice` color over base `color`)
+   * thicker than Mesh's 1x1 checkerboard (Diamond).
+   */
+  checker2x2?: boolean;
+  /**
+   * Draw a fixed 14x14 pixel-art battery pattern (Lithium Battery, LFP Battery).
+   */
+  batteryPattern?: boolean;
+  /**
    * Draw a directional chevron (in the `lattice` color, over the base `color`)
    * whose direction is read from the cell's `aux` byte — 2 points left, anything
    * else points right. The Conveyor uses it so a belt visibly shows which way it

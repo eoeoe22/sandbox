@@ -249,6 +249,10 @@ export class CanvasRenderer implements Renderer {
   private hasLattice: Uint8Array;
   /** id → the packed lattice colour woven through the base (valid where hasLattice). */
   private lattice: Uint32Array;
+  /** id → 1 if the material draws a 2x2 positional checkerboard (Diamond). */
+  private checker2x2: Uint8Array;
+  /** id → 1 if the material draws the tiled pixel-art battery pattern (Batteries). */
+  private batteryPattern: Uint8Array;
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
@@ -349,6 +353,8 @@ export class CanvasRenderer implements Renderer {
     this.frost = new Uint32Array(256);
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
+    this.checker2x2 = new Uint8Array(256);
+    this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
@@ -366,9 +372,11 @@ export class CanvasRenderer implements Renderer {
         if (m.packedTemp) this.packed[i] = 1;
         if (m.overlayTemp !== undefined) this.overlayTemp[i] = m.overlayTemp;
         if (m.lattice !== undefined) {
-          this.hasLattice[i] = 1;
+          if (!m.checker2x2) this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
         }
+        if (m.checker2x2) this.checker2x2[i] = 1;
+        if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
@@ -529,6 +537,8 @@ export class CanvasRenderer implements Renderer {
     const frost = this.frost;
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
+    const chk2x2 = this.checker2x2;
+    const batPat = this.batteryPattern;
     const arrow = this.arrow;
     const windArrow = this.windArrow;
     const packed = this.packed;
@@ -622,6 +632,17 @@ export class CanvasRenderer implements Renderer {
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (chk2x2[id]) {
+        // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
+        const amp = vary[id];
+        if (amp !== 0) {
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
+          c = CanvasRenderer.tinted(c, d);
+        }
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -629,6 +650,18 @@ export class CanvasRenderer implements Renderer {
         const x = i % w;
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
+      } else if (batPat[id]) {
+        // Diagonal 2-step staircase on a 4x5 tile (Lithium Battery, LFP Battery):
+        // two black cells drop one column to the right, leaving a 1px border of the
+        // battery's base color around them.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const px = x % 4;
+        const py = y % 5;
+        const isPattern =
+          (px === 1 && (py === 1 || py === 2)) ||
+          (px === 2 && (py === 2 || py === 3));
+        c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
         const amp = vary[id];
