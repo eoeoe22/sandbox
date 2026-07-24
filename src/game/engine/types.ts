@@ -99,7 +99,7 @@ export interface Material {
   /**
    * Truly indestructible — nothing in the world can remove it: a Blast front is
    * blocked by it, a flying Ember shatters on it, Antimatter skips it, a Void
-   * can't swallow it, and even a critical uranium's Heat Ray bounces off it
+   * can't swallow it, and even a critical uranium's Nuclear Ray bounces off it
    * (the one thing that pierces blast-proof Diamond). Unlike `isWall` it isn't
    * the container boundary, so it stays an ordinary placeable solid the brush
    * treats normally — it just can't be destroyed by any in-world force (Clone).
@@ -127,7 +127,7 @@ export interface Material {
    * (Diamond) that just happens to be blast-proof. Combined with never declaring
    * a temperature reaction, it makes a material effectively indestructible by
    * heat/cold/explosion while still conducting heat. The single exception: a
-   * critical uranium's Heat Ray (heatray.ts) smashes through it — only
+   * critical uranium's Nuclear Ray (heatray.ts) smashes through it — only
    * `isWall` stops that.
    */
   explosionProof?: boolean;
@@ -237,7 +237,7 @@ export interface Material {
   };
   /**
    * `temp` on this material holds packed non-thermal bookkeeping (flight
-   * velocity/life for Ember/Debris/Bomblet/Napalm Gel/Heat Ray, flash life for
+   * velocity/life for Ember/Debris/Bomblet/Napalm Gel/Nuclear Ray, flash life for
    * Blast — see ballistic.ts), not a real degree reading. `conductivity: 0` alone
    * only stops the heat pass from touching it; it doesn't stop other code from
    * misreading the packed number as an actual temperature. So any consumer that
@@ -256,7 +256,7 @@ export interface Material {
    * is unusable there (see `packedTemp`). Default (unset) keeps the overlay's
    * old behavior of drawing the cell as background — invisible — which is right
    * for a fragment whose own color already reads fine (Ember, Debris) but hides
-   * a Heat Ray beam whose entire point is to look ultra-hot. Ignored for any
+   * a Nuclear Ray beam whose entire point is to look ultra-hot. Ignored for any
    * material that isn't `packedTemp`.
    */
   overlayTemp?: number;

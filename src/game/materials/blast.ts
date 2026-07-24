@@ -280,7 +280,7 @@ function cellPower(id: number): number {
  *  Always the indestructible boundary Wall and blast-proof solids (Diamond); and,
  *  for a blast too weak to break it, any *solid* whose durability exceeds `power`.
  *  Loose matter never blocks — a weak blast shoves it aside and passes through.
- *  (The one force that gets past Diamond is a critical uranium's Heat Ray — see
+ *  (The one force that gets past Diamond is a critical uranium's Nuclear Ray — see
  *  heatray.ts — which isn't a blast at all.) */
 function blocksBlast(id: number, power: number): boolean {
   if (id === EMPTY) return false;

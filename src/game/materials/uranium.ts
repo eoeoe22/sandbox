@@ -20,13 +20,13 @@ import { MOLTEN_URANIUM } from './moltenuranium';
 // free-flowing, densest-of-all liquid that keeps the chain reaction going. No
 // instant detonation happens here anymore — catastrophe now unfolds in stages:
 // melt → the pool keeps self-heating → criticality → a slow, screen-sweeping
-// Heat Ray burn (see moltenuranium.ts / heatray.ts). Cool the melt back below
+// Nuclear Ray burn (see moltenuranium.ts / heatray.ts). Cool the melt back below
 // its freeze point and it sets into solid Uranium again, so the whole
 // meltdown is reversible right up until the fuel actually burns.
 //
 // The "critical mass" is emergent: it falls out of the geometry (surface-area-
 // to-volume) and the thermal conduction system. A thin line or a few scattered
-// grains never build enough heat; a thick block does. Stray Heat Rays also
+// grains never build enough heat; a thick block does. Stray Nuclear Rays also
 // dump heat into any uranium they strike, so a burning deposit elsewhere can
 // push this one over the edge — chain reactions jump between piles.
 //
@@ -86,7 +86,7 @@ export const URANIUM = register({
   // 방폭: every uranium-series material is immune to explosions — a Blast front
   // stops at it, a flying Ember shatters on it, Antimatter skips it (see
   // blast.ts/ember.ts/antimatter.ts). It does NOT stop a critical uranium's
-  // Heat Ray though (heatray.ts checks isWall/indestructible only), so the ray
+  // Nuclear Ray though (heatray.ts checks isWall/indestructible only), so the ray
   // still melts a struck deposit exactly as before.
   explosionProof: true,
   thermal: { conductivity: 0.5 },

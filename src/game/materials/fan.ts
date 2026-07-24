@@ -110,7 +110,7 @@ const MAX_BODY = 256;
  *  layer (engine/objects.ts applyWindPush), not here.
  *
  *  `packedTemp` materials are excluded even though several (Ember/Debris/Bomblet/
- *  Blast/Heat Ray) are gas-phase: they are self-propelled ballistic/beam particles
+ *  Blast/Nuclear Ray) are gas-phase: they are self-propelled ballistic/beam particles
  *  that run their own multi-cell motion each tick from state packed in `temp` (see
  *  Material.packedTemp). A generic one-cell wind swap would mark them moved and rob
  *  them of that per-tick flight step, freezing an arc into a single nudge — so the

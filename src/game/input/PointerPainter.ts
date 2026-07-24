@@ -36,6 +36,7 @@ import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushToo
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 import { FAN, FAN_UP, FAN_DOWN, FAN_LEFT, FAN_RIGHT } from '../materials/fan';
+import { LASER } from '../materials/laser';
 import { CLONE } from '../materials/clone';
 import {
   createRubberBall,
@@ -598,14 +599,16 @@ export class PointerPainter {
     // of waiting to touch it first (see $cloneTarget, MaterialPalette.pickClone,
     // and Clone's own updateClone, which treats a non-zero aux as "already
     // latched"); every other material clears aux to 0 like normal.
-    // A Fan records its drag-chosen blow direction (상하좌우) in the low 2 bits of
-    // aux, powered countdown 0 (idle until wired) — see materials/fan.ts.
+    // A Fan (blow direction) and a Laser (fire direction) both record their
+    // drag-chosen 상하좌우 direction in the low 2 bits of aux, powered countdown 0
+    // (idle until wired) — see materials/fan.ts and materials/laser.ts (they share
+    // the FAN_* direction codes, so `fanDir` stamps either one).
     const initAux =
       id === CONVEYOR.id
         ? this.beltDirX < 0
           ? CONVEYOR_LEFT
           : CONVEYOR_RIGHT
-        : id === FAN.id
+        : id === FAN.id || id === LASER.id
           ? this.fanDir
           : id === CLONE.id
             ? ($cloneTarget.get() ?? 0)

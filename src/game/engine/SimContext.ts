@@ -81,7 +81,7 @@ export class SimContext {
    * "smoke off"), and `medium` keeps only SMOKE_MEDIUM_KEEP of it, dropping the
    * rest to Empty. The thinning happens at the single seam below (applySmokeLevel,
    * funnelled through set/spawn), so this one field covers Fire, Blue Flame,
-   * Ember, Molten Uranium, Heat Ray, etc. without threading a level into each
+   * Ember, Molten Uranium, Nuclear Ray, etc. without threading a level into each
    * material rule. Kept public so a material can read the level directly (Blue
    * Flame leaves a wisp only at `high`). Manual brush placement paints straight to
    * the Grid (bypassing this context), so it stays unaffected — the level governs
@@ -212,6 +212,17 @@ export class SimContext {
    */
   fanFloodTick = -1;
   fanFlooded: Set<number> = new Set();
+
+  /**
+   * Per-tick memo for the Laser's body-flood (materials/laser.ts) — identical in
+   * shape and purpose to `fanFlooded` above: a powered Laser is a one-way
+   * "outside → inside" electric sink whose whole connected body lights up from any
+   * powered face, and this keeps a body touched from several faces/sources in the
+   * same tick from re-flooding once per entry point. Cleared whenever
+   * `laserFloodTick` falls behind the current `tick`. Sim-local.
+   */
+  laserFloodTick = -1;
+  laserFlooded: Set<number> = new Set();
 
   /**
    * True once any Fan has stamped the wind field this tick (see setWind / Grid.wind).

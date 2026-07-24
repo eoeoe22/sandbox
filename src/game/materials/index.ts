@@ -68,7 +68,9 @@ import { MOLTEN_URANIUM } from './moltenuranium';
 import { U238 } from './u238';
 import { MOLTEN_U238 } from './moltenu238';
 import { NUKE_WASTE } from './nukewaste';
+import { NUCLEAR_RAY } from './nuclearray';
 import { HEAT_RAY } from './heatray';
+import { LASER } from './laser';
 import { COAL_POWDER } from './coalpowder';
 import { METAL_POWDER } from './metalpowder';
 import { SLAG } from './slag';
@@ -183,7 +185,9 @@ export {
   U238,
   MOLTEN_U238,
   NUKE_WASTE,
+  NUCLEAR_RAY,
   HEAT_RAY,
+  LASER,
   COAL_POWDER,
   METAL_POWDER,
   SLAG,
@@ -244,9 +248,13 @@ export {
  *   • SPARK — the one-tick electric pulse that only exists while a conductor is
  *     energized (see spark.ts); it's produced by a Battery or handed on from a
  *     neighboring spark, and painted onto bare ground it would simply fizzle.
- *   • HEAT_RAY — the searing beam a critical uranium mass emits with a real
- *     flight direction (see heatray.ts); hand-placed it would die on its first
+ *   • NUCLEAR_RAY — the searing beam a critical uranium mass emits with a real
+ *     flight direction (see nuclearray.ts); hand-placed it would die on its first
  *     turn just like an unlaunched ember.
+ *   • HEAT_RAY — the laser beam a powered Laser fires, again with a real flight
+ *     direction (see heatray.ts / laser.ts); like the Nuclear Ray it only exists
+ *     mid-flight, so hand-placed it would die at once. The Laser emitter itself is
+ *     in the palette (전기 tab); the beam it fires is not.
  *   • DEBRIS / BOMBLET / NAPALM_GEL — ballistic ejecta a blast throws with a
  *     real velocity (see ballistic.ts): the loose grains a weak blast shoves
  *     aside (the built-in concussion — see blast.ts/debris.ts), a cluster shell's
@@ -308,6 +316,7 @@ export const MATERIALS = [
   NICHROME,
   WOOFER,
   FAN,
+  LASER,
   MERCURY,
   MERCURY_VAPOR,
   LIQUID_GALLIUM,

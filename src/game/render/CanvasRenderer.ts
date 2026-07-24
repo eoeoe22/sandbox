@@ -562,7 +562,7 @@ export class CanvasRenderer implements Renderer {
       // flying Ember/Debris/Blast fragment) keeps the background too: its `temp`
       // holds packed flight/life state, not a real reading, so colouring it would
       // flash it spuriously garbage-hot (see Material.packedTemp) — UNLESS the
-      // material opts into a fixed apparent reading via `overlayTemp` (Heat Ray),
+      // material opts into a fixed apparent reading via `overlayTemp` (Nuclear Ray),
       // which paints it at that reading instead so it still reads on the camera.
       if (heat) {
         const hid = cells[i];
@@ -596,9 +596,10 @@ export class CanvasRenderer implements Renderer {
         const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
         c = on ? latCol[id] : pal[id];
       } else if (windArrow[id]) {
-        // A Fan draws a 4-directional chevron pointing the way it blows: the low 2
-        // bits of aux are the direction (0 up / 1 down / 2 left / 3 right) and the
-        // rest a powered countdown, so a running fan's chevron lights up brighter.
+        // A Fan (blow) or Laser (fire) draws a 4-directional chevron pointing its
+        // way: the low 2 bits of aux are the direction (0 up / 1 down / 2 left /
+        // 3 right) and the rest a powered countdown, so a running one lights up
+        // brighter.
         // Same period-4 tent as the Conveyor '>' (0,1,1,0 over four steps), folded
         // over y for a horizontal blow and over x for a vertical one, and mirrored
         // for the up/left senses.
