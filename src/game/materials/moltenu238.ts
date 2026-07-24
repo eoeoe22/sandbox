@@ -14,7 +14,7 @@ import { NUKE_WASTE } from './nukewaste';
 // it keeps self-heating, goes prompt-critical, and burns off in a Heat-Ray sweep.
 // Molten U238 does the opposite — the meltdown itself is the end of its reaction.
 // The chain reaction STOPS here: this pool has no per-neighbor self-heating, never
-// reaches criticality, and never emits a Heat Ray. It simply sits and cools.
+// reaches criticality, and never emits a Nuclear Ray. It simply sits and cools.
 //
 // And it never sets back into solid U238. The meltdown is irreversible: once the
 // pool cools below FREEZE_TEMP it solidifies into Nuke Waste (nukewaste.ts) — the

@@ -221,7 +221,7 @@ export const $borderMode = atom<BorderMode>('wall');
  * How much Smoke reactions emit: 'high' (the original "smoke on" level),
  * 'medium' (the default — a thinned-out amount), or 'off' (no reaction Smoke at
  * all). This replaces the old on/off toggle. Governs every combustion/explosion
- * reaction (Fire, Blue Flame, Ember, Molten Uranium, Heat Ray, …) through one
+ * reaction (Fire, Blue Flame, Ember, Molten Uranium, Nuclear Ray, …) through one
  * seam in SimContext; the engine reads it via Simulation.setSmokeLevel. Manual
  * Smoke painting bypasses that seam, so it still works at any level. See
  * `SmokeLevel` / `SMOKE_MEDIUM_KEEP` in config.ts.

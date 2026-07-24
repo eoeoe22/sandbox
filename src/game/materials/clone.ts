@@ -18,7 +18,7 @@ import { VOID } from './void';
 //
 // Clone is `indestructible`: no in-world force can remove it — blasts are blocked
 // by it, embers shatter on it, antimatter and Void skip it, and even a critical
-// uranium's Heat Ray bounces off it. So a Clone source keeps running no matter
+// uranium's Nuclear Ray bounces off it. So a Clone source keeps running no matter
 // what you throw at it; only the eraser brush (or a full clear) takes it out.
 //
 // The adopted id lives in `aux` (0 = "hasn't latched yet"). It won't latch onto

@@ -21,7 +21,7 @@ import { MOLTEN_U238 } from './moltenu238';
 // off in a Heat-Ray sweep. U238 is deliberately **non-explosive — it only ever
 // melts down**. At MELT_TEMP the cell turns into Molten U238 (moltenu238.ts), and
 // there the story ends: the melt stops reacting, cools, and sets *irreversibly*
-// into Nuke Waste. No criticality, no Heat Ray, no detonation — meltdown is the
+// into Nuke Waste. No criticality, no Nuclear Ray, no detonation — meltdown is the
 // worst it can do. So U238 is the "slow, dirty" fuel: it'll cook itself down into
 // a pile of waste, but it will never blow the screen apart the way U235 does.
 const HEAT_PER_NEIGHBOR = 1;

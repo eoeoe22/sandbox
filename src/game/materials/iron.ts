@@ -83,6 +83,9 @@ export const IRON = register({
   density: 1000,
   conductive: true,
   category: '고체',
+  // A polished metal surface: a Heat Ray beam reflects cleanly off it (정반사) —
+  // see heatray.ts.
+  laserReflective: true,
   // The best heat conductor in the game: an Iron bar shuttles heat end-to-end,
   // so it both melts readily against a hot source and makes a fine cold bridge.
   thermal: { conductivity: 0.85 },

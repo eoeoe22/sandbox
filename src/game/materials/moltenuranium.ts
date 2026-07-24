@@ -10,7 +10,7 @@ import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
 import { SMOKE } from './smoke';
 import { FIRE } from './fire';
-import { emitHeatRay, HEAT_RAY } from './heatray';
+import { emitNuclearRay, NUCLEAR_RAY } from './nuclearray';
 
 // Molten Uranium — a solid uranium mass past its melting point (see
 // uranium.ts). Unlike Lava or Molten Metal it is deliberately *not* viscous:
@@ -28,7 +28,7 @@ import { emitHeatRay, HEAT_RAY } from './heatray';
 //  • Let it keep heating and at CRITICAL_TEMP the mass goes prompt-critical.
 //
 // Criticality is NOT the old instant detonation. The pool *burns*: each
-// critical cell keeps flash-emitting Heat Rays (see heatray.ts) from any
+// critical cell keeps flash-emitting Nuclear Rays (see nuclearray.ts) from any
 // face not blocked by more fuel — a surface burn, eating inward layer by
 // layer, that punches straight through rubble burying the pool — and after
 // BURN_EMISSIONS emissions the spent cell burns away to a wisp of smoke. The
@@ -55,7 +55,7 @@ const SPENT_SMOKE_CHANCE = 0.5;
 // *internally*, so a dense clump burns from the inside as well as the surface.
 const CLUMP_THRESHOLD = 6;
 const CLUMP_DECAY_CHANCE = 0.4;
-// A Heat Ray striking molten uranium advances that cell's burn by this much, so
+// A Nuclear Ray striking molten uranium advances that cell's burn by this much, so
 // a beam sweeping a critical pool actively eats it away (see triggerMeltdownDecay).
 const RAY_DECAY_AMOUNT = 2;
 // Painted molten uranium starts above the freeze point with headroom below
@@ -82,11 +82,11 @@ function spendMeltdown(x: number, y: number, sim: SimContext, amount: number): b
 }
 
 /**
- * A Heat Ray striking Molten Uranium doesn't just feed it heat — it *triggers
+ * A Nuclear Ray striking Molten Uranium doesn't just feed it heat — it *triggers
  * its decay*: the beam advances that cell's burn progress, so a swarm of rays
  * sweeping a critical pool actively burns it away instead of only heating it.
  * This is what keeps a big meltdown from dragging on: rays ricocheting through
- * the pool eat it from within. Called from heatray.ts on impact; spends the cell
+ * the pool eat it from within. Called from nuclearray.ts on impact; spends the cell
  * if the quota is reached.
  */
 export function triggerMeltdownDecay(sim: SimContext, x: number, y: number): void {
@@ -138,7 +138,7 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
     }
 
     if (sim.chance(EMIT_CHANCE)) {
-      // Prompt-critical: fire a Heat Ray out of one randomly chosen face.
+      // Prompt-critical: fire a Nuclear Ray out of one randomly chosen face.
       // Only faces blocked by more fuel (or the indestructible Wall, or a ray
       // already in flight) can't emit — so the burn eats the pool from its
       // surface inward, but a pool buried under rubble or its own melted-rock
@@ -155,10 +155,10 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
         const blocked =
           nid === URANIUM.id ||
           nid === MOLTEN_URANIUM.id ||
-          nid === HEAT_RAY.id ||
+          nid === NUCLEAR_RAY.id ||
           getMaterial(nid).isWall === true;
         if (!blocked) {
-          emitHeatRay(sim, nx, ny, dx, dy);
+          emitNuclearRay(sim, nx, ny, dx, dy);
           if (spendMeltdown(x, y, sim, 1)) return;
         }
       }
@@ -177,7 +177,7 @@ export const MOLTEN_URANIUM = register({
   color: rgb(235, 255, 90),
   density: 10, // densest liquid in the game — sinks through even Mercury (9)
   category: '방사성',
-  explosionProof: true, // 방폭 — see uranium.ts (Heat Ray still feeds it as before)
+  explosionProof: true, // 방폭 — see uranium.ts (Nuclear Ray still feeds it as before)
   thermal: { init: MOLTEN_URANIUM_TEMP, conductivity: 0.5 },
   // Glows from dull radioactive olive at the freeze point up to blazing
   // yellow-green as it approaches criticality, so how close a pool is to

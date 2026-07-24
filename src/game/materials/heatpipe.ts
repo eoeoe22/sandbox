@@ -18,6 +18,9 @@ export const HEATPIPE = register({
   color: rgb(184, 115, 51),
   density: 1000,
   category: '고체',
+  // A polished copper surface: a Heat Ray beam reflects cleanly off it (정반사) —
+  // see heatray.ts.
+  laserReflective: true,
   // The best heat conductor in the game — a Heatpipe bar carries heat across a
   // whole build faster than Iron (0.85) or even Diamond (0.95).
   thermal: { conductivity: 1.0 },

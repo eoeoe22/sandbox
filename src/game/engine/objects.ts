@@ -9,7 +9,7 @@ import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
 import { ANTIMATTER } from '../materials/antimatter';
-import { HEAT_RAY } from '../materials/heatray';
+import { NUCLEAR_RAY } from '../materials/nuclearray';
 import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
@@ -1275,8 +1275,8 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 /**
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
- * cleared cells become short-lived BLAST cells → instant destruction), a Heat Ray
- * beam cell overlapping it (the searing critical-mass beam — see heatray.ts —
+ * cleared cells become short-lived BLAST cells → instant destruction), a Nuclear Ray
+ * beam cell overlapping it (the searing critical-mass beam — see nuclearray.ts —
  * which destroys everything it strikes on the CA grid and is no gentler on a
  * free-floating object it grazes: instant destruction, same as a direct blast),
  * the hottest footprint temperature (heat exposure, judged over time by the
@@ -1320,7 +1320,7 @@ function scanBodyExposure(
       // full of Stone is, so it must never read as crushed for it.
       if (m !== null && (m.isWall === true || m.phase === Phase.Solid)) solid++;
       if (id === BLAST.id) blast = true;
-      else if (id === HEAT_RAY.id) heatRay = true;
+      else if (id === NUCLEAR_RAY.id) heatRay = true;
       // Materials whose `temp` holds packed non-thermal bookkeeping (a flying
       // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
       // read as a real degree reading here — a water splash's Debris droplets
@@ -1621,7 +1621,7 @@ const OBJECT_HEAT_CONDUCTION = 0.08;
  * Scan the body's footprint once for the three instant-destruction contacts
  * captured at the tick's *start* (before knockback can move the body clear of the
  * check): a shockwave Blast flash cell overlapping it (직격 — an explosion swept
- * over it), a Heat Ray beam cell overlapping it (직격 — the beam grazed it; see
+ * over it), a Nuclear Ray beam cell overlapping it (직격 — the beam grazed it; see
  * scanBodyExposure for why this is instant rather than judged by heat-over-time),
  * and an Antimatter grain touching it (접촉). Reports which were found.
  *
@@ -1630,8 +1630,8 @@ const OBJECT_HEAT_CONDUCTION = 0.08;
  * while every touched grain dies with it, instead of antimatter.ts's one-for-one
  * swap; Antimatter 접촉시 모든 오브젝트 파괴, no object is antimatter-proof). So this
  * scan mutates the grid, unconditionally over the whole footprint — a body that a
- * Blast/Heat Ray also dooms this tick still annihilates its touching grains.
- * Blast and Heat Ray cells are left alone (they expire on their own). One shared
+ * Blast/Nuclear Ray also dooms this tick still annihilates its touching grains.
+ * Blast and Nuclear Ray cells are left alone (they expire on their own). One shared
  * footprint pass rather than separate ones so the bounding-box / culling geometry
  * can't drift between them.
  */
@@ -1653,14 +1653,14 @@ function footprintHazards(
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
-      if (id !== BLAST.id && id !== HEAT_RAY.id && id !== ANTIMATTER.id) continue;
+      if (id !== BLAST.id && id !== NUCLEAR_RAY.id && id !== ANTIMATTER.id) continue;
       const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
       if (id === BLAST.id) {
         blast = true;
-      } else if (id === HEAT_RAY.id) {
+      } else if (id === NUCLEAR_RAY.id) {
         heatRay = true;
       } else {
         antimatter = true;
@@ -2109,13 +2109,13 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // explode (nor a drum shatter/spill) as it's drawn into the sink.
   if (footprintTouchesVoid(o, ctx)) return false;
   const exp = scanBodyExposure(o, ctx);
-  // Instant destruction: a blast flash or a Heat Ray beam overlapping the
+  // Instant destruction: a blast flash or a Nuclear Ray beam overlapping the
   // footprint (직격 — the ray destroys everything it touches on the CA grid, and
   // an object it grazes is no exception), or being wedged/entombed in solid it
   // can't escape (끼임). A genuine burial is measured *after* the post-collision
   // grid re-resolve (phase B.5) has popped out any transient collision shove into
   // terrain, so only a body with no open face to exit through — truly stuck —
-  // reads as crushed; a momentarily-overlapping one is freed first. Blast/Heat Ray
+  // reads as crushed; a momentarily-overlapping one is freed first. Blast/Nuclear Ray
   // are secondary to the phase-A doomed capture (covers a body knocked into a
   // lingering flash or into the beam's path).
   if (exp.blast || exp.heatRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
@@ -2179,7 +2179,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   const s = ctx.gravityStrength;
   const ax = ctx.gravityX * OBJECT_GRAVITY * s;
   const ay = ctx.gravityY * OBJECT_GRAVITY * s;
-  // Direct blast/Heat Ray hits are captured at the tick's *start* position: a body
+  // Direct blast/Nuclear Ray hits are captured at the tick's *start* position: a body
   // engulfed by an explosion or grazed by the beam is destroyed even though the
   // same blast's knockback is about to fling it clear of the destroy check. (A
   // near-miss blast has no footprint overlap here, so it falls through to the
@@ -2189,7 +2189,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
     if (o.held) continue;
-    // One footprint pass captures a direct Blast/Heat Ray hit and consumes any
+    // One footprint pass captures a direct Blast/Nuclear Ray hit and consumes any
     // touching Antimatter grain; any of the three dooms the body this tick (see
     // footprintHazards).
     const hz = footprintHazards(o, ctx);
@@ -2223,7 +2223,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     if (o.held) {
       objects[w++] = o;
     } else if (doomed.has(o)) {
-      // A blast or Heat Ray reached it this tick — spawn its byproduct, UNLESS
+      // A blast or Nuclear Ray reached it this tick — spawn its byproduct, UNLESS
       // it's also being swallowed by Void, which deletes it cleanly (no
       // byproduct) and wins.
       if (!footprintTouchesVoid(o, ctx)) destroyByproduct(o, ctx);
