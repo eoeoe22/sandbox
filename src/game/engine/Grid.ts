@@ -58,6 +58,8 @@ export class Grid {
    *  independent of the primary's, since the two particles in a cell move on
    *  separate schedules within one step. */
   overlayMoved: Uint8Array;
+  /** Simulation tick timestamp, synced by Simulation each step. */
+  tick = 0;
 
   /**
    * Per-cell temperature for the heat-conduction system (see config.ts). Floats

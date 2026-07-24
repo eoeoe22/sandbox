@@ -7,6 +7,7 @@ import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
+import { HEAT_RAY } from '../materials/heatray';
 import type { DrumFill } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -249,6 +250,10 @@ export class CanvasRenderer implements Renderer {
   private hasLattice: Uint8Array;
   /** id → the packed lattice colour woven through the base (valid where hasLattice). */
   private lattice: Uint32Array;
+  /** id → 1 if the material draws a 2x2 positional checkerboard (Diamond). */
+  private checker2x2: Uint8Array;
+  /** id → 1 if the material draws a 14x14 pixel-art battery pattern (Batteries). */
+  private batteryPattern: Uint8Array;
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
@@ -349,6 +354,8 @@ export class CanvasRenderer implements Renderer {
     this.frost = new Uint32Array(256);
     this.hasLattice = new Uint8Array(256);
     this.lattice = new Uint32Array(256);
+    this.checker2x2 = new Uint8Array(256);
+    this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
@@ -369,6 +376,8 @@ export class CanvasRenderer implements Renderer {
           this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
         }
+        if (m.checker2x2) this.checker2x2[i] = 1;
+        if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
@@ -529,11 +538,15 @@ export class CanvasRenderer implements Renderer {
     const frost = this.frost;
     const hasLat = this.hasLattice;
     const latCol = this.lattice;
+    const chk2x2 = this.checker2x2;
+    const batPat = this.batteryPattern;
     const arrow = this.arrow;
     const windArrow = this.windArrow;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
+    const ovAuxArr = grid.overlayAux;
+    const currentTick = grid.tick & 0xff;
     const windArr = grid.wind;
     const w = grid.width;
     const heat = this.heatOverlay;
@@ -629,6 +642,22 @@ export class CanvasRenderer implements Renderer {
         const x = i % w;
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
+      } else if (chk2x2[id]) {
+        // A 2x2 positional checkerboard (Diamond), thicker than Mesh.
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
+      } else if (batPat[id]) {
+        // Fixed 14x14 pixel-art battery pattern (Lithium Battery, LFP Battery).
+        const x = i % w;
+        const y = (i / w) | 0;
+        const px = x % 14;
+        const py = y % 14;
+        const isPattern =
+          (py >= 4 && py < 6 && px >= 5 && px < 7) ||
+          (py >= 6 && py < 8 && px >= 5 && px < 9) ||
+          (py >= 8 && py < 10 && px >= 7 && px < 9);
+        c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
         const amp = vary[id];
@@ -690,7 +719,21 @@ export class CanvasRenderer implements Renderer {
         if (dir < 0) {
           // Empty air out of any hook's reach — nothing to draw here.
           const ovg = ovArr[i];
-          buf[i] = ovg !== 0 ? CanvasRenderer.wetted(c, pal[ovg]) : c;
+          if (ovg !== 0) {
+            if (ovg === HEAT_RAY.id) {
+              if (ovAuxArr[i] === currentTick) {
+                buf[i] = CanvasRenderer.wetted(c, pal[ovg]);
+              } else {
+                ovArr[i] = 0;
+                ovAuxArr[i] = 0;
+                buf[i] = c;
+              }
+            } else {
+              buf[i] = CanvasRenderer.wetted(c, pal[ovg]);
+            }
+          } else {
+            buf[i] = c;
+          }
           continue;
         }
         let along: number;
@@ -788,7 +831,21 @@ export class CanvasRenderer implements Renderer {
       // steam mid-passage through a Mesh/Turbine — is tinted toward the fluid's
       // color, so a soaked bed reads visibly wetter than a dry one.
       const ov = ovArr[i];
-      buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
+      if (ov !== 0) {
+        if (ov === HEAT_RAY.id) {
+          if (ovAuxArr[i] === currentTick) {
+            buf[i] = CanvasRenderer.wetted(c, pal[ov]);
+          } else {
+            ovArr[i] = 0;
+            ovAuxArr[i] = 0;
+            buf[i] = c;
+          }
+        } else {
+          buf[i] = CanvasRenderer.wetted(c, pal[ov]);
+        }
+      } else {
+        buf[i] = c;
+      }
     }
     this.windWasActive = sawWind;
     this.windMinX = bxMin;

@@ -43,6 +43,7 @@ export const LFP_BATTERY = register({
   name: 'LFP Battery',
   phase: Phase.Solid,
   color: rgb(95, 160, 120),
+  batteryPattern: true,
   density: 1000,
   category: '전기',
   thermal: { conductivity: 0.3 },

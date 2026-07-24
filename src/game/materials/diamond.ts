@@ -17,6 +17,8 @@ export const DIAMOND = register({
   name: 'Diamond',
   phase: Phase.Solid,
   color: rgb(150, 226, 236),
+  lattice: rgb(95, 185, 200),
+  checker2x2: true,
   density: 1000,
   acidResistant: true,
   explosionProof: true,

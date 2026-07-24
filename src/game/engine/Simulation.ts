@@ -113,6 +113,7 @@ export class Simulation {
       profiler.add('heat', n - t);
       t = n;
     }
+    g.tick = this.tick;
     this.ctx.tick = this.tick;
     // Clear the transient wind field from last tick before the fans repaint it in
     // the scan below (a Fan stamps the empty cells of its beam via ctx.setWind).

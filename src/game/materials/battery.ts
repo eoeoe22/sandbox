@@ -129,6 +129,7 @@ export const BATTERY = register({
   name: 'Lithium Battery',
   phase: Phase.Solid,
   color: rgb(225, 195, 70),
+  batteryPattern: true,
   density: 1000,
   category: '전기',
   thermal: { conductivity: 0.3 },
