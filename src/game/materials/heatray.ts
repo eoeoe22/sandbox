@@ -336,9 +336,12 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   // Two cursors: (wx,wy) is where the walk currently is — it may sit on a cell it
   // is only passing over (gas, liquid, a sibling/packed beam) — while (cx,cy) is
   // the last *landable* cell the beam may come to rest on when its steps run out.
-  // Landable now means EMPTY air OR a transparent pane (glass/broken glass/diamond):
-  // the beam moves through a pane at the same speed as air and can stop inside a
-  // thick one, carrying the displaced pane in `aux` (see cHost / the landing below).
+  // Landable now means EMPTY air OR a *dry* transparent pane (glass/broken glass/
+  // diamond): the beam moves through a pane at the same speed as air and can stop
+  // inside a thick one, carrying the displaced pane in `aux` (see cHost / the
+  // landing below). The one carve-out is a soaked pane (Broken Glass holding a water
+  // 겹침 overlay) — the beam free-passes it instead of landing so it can't overwrite
+  // and destroy the absorbed water (see the isTransparent branch).
   // `inDiamond` tracks whether the walk is currently inside a Diamond body so the
   // exit into open air fans forward (부채꼴 난반사); it's seeded from `hostId` so a
   // beam that came to rest mid-gem last tick still knows it's inside one.
