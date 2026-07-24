@@ -347,8 +347,6 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       sim.grid.overlayAux[ny * sim.width + nx] = sim.tick & 0xff;
       wx = nx;
       wy = ny;
-      cx = nx;
-      cy = ny;
       airSteps--;
       continue;
     }

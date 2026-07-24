@@ -373,7 +373,7 @@ export class CanvasRenderer implements Renderer {
         if (m.packedTemp) this.packed[i] = 1;
         if (m.overlayTemp !== undefined) this.overlayTemp[i] = m.overlayTemp;
         if (m.lattice !== undefined) {
-          this.hasLattice[i] = 1;
+          if (!m.checker2x2) this.hasLattice[i] = 1;
           this.lattice[i] = m.lattice;
         }
         if (m.checker2x2) this.checker2x2[i] = 1;
@@ -635,6 +635,11 @@ export class CanvasRenderer implements Renderer {
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (chk2x2[id]) {
+        // A thick 4x4 positional checkerboard (Diamond), noticeably thicker than Mesh (1x1).
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = ((x >> 2) ^ (y >> 2)) & 1 ? latCol[id] : pal[id];
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -642,18 +647,16 @@ export class CanvasRenderer implements Renderer {
         const x = i % w;
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
-      } else if (chk2x2[id]) {
-        // A thick 4x4 positional checkerboard (Diamond), noticeably thicker than Mesh (1x1).
-        const x = i % w;
-        const y = (i / w) | 0;
-        c = ((x >> 2) ^ (y >> 2)) & 1 ? latCol[id] : pal[id];
       } else if (batPat[id]) {
-        // Dense 6x6 mini pixel-art battery pattern (Lithium Battery, LFP Battery).
+        // 2x6 mini lightning bolt pattern on a 4x6 tile (Lithium Battery, LFP Battery).
         const x = i % w;
         const y = (i / w) | 0;
-        const px = x % 6;
+        const px = x % 4;
         const py = y % 6;
-        const isPattern = (py === 1 && px === 2) || (py >= 2 && py <= 4 && px >= 1 && px <= 3);
+        const isPattern =
+          (py <= 1 && px === 2) ||
+          (py >= 2 && py <= 3 && (px === 1 || px === 2)) ||
+          (py >= 4 && px === 1);
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
