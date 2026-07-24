@@ -7,7 +7,6 @@ import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
-import { HEAT_RAY } from '../materials/heatray';
 import type { DrumFill } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -545,8 +544,6 @@ export class CanvasRenderer implements Renderer {
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
-    const ovAuxArr = grid.overlayAux;
-    const currentTick = grid.tick & 0xff;
     const windArr = grid.wind;
     const w = grid.width;
     const heat = this.heatOverlay;
@@ -726,21 +723,7 @@ export class CanvasRenderer implements Renderer {
         if (dir < 0) {
           // Empty air out of any hook's reach — nothing to draw here.
           const ovg = ovArr[i];
-          if (ovg !== 0) {
-            if (ovg === HEAT_RAY.id) {
-              if (ovAuxArr[i] === currentTick) {
-                buf[i] = CanvasRenderer.wetted(c, pal[ovg]);
-              } else {
-                ovArr[i] = 0;
-                ovAuxArr[i] = 0;
-                buf[i] = c;
-              }
-            } else {
-              buf[i] = CanvasRenderer.wetted(c, pal[ovg]);
-            }
-          } else {
-            buf[i] = c;
-          }
+          buf[i] = ovg !== 0 ? CanvasRenderer.wetted(c, pal[ovg]) : c;
           continue;
         }
         let along: number;
@@ -838,21 +821,7 @@ export class CanvasRenderer implements Renderer {
       // steam mid-passage through a Mesh/Turbine — is tinted toward the fluid's
       // color, so a soaked bed reads visibly wetter than a dry one.
       const ov = ovArr[i];
-      if (ov !== 0) {
-        if (ov === HEAT_RAY.id) {
-          if (ovAuxArr[i] === currentTick) {
-            buf[i] = CanvasRenderer.wetted(c, pal[ov]);
-          } else {
-            ovArr[i] = 0;
-            ovAuxArr[i] = 0;
-            buf[i] = c;
-          }
-        } else {
-          buf[i] = CanvasRenderer.wetted(c, pal[ov]);
-        }
-      } else {
-        buf[i] = c;
-      }
+      buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
     this.windWasActive = sawWind;
     this.windMinX = bxMin;

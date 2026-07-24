@@ -2,6 +2,7 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
+import { AMBIENT_TEMP } from '../config';
 import type { SimContext } from '../engine/SimContext';
 import { GLASS } from './glass';
 import { BROKEN_GLASS } from './brokenglass';
@@ -21,14 +22,21 @@ import { DIAMOND } from './diamond';
 //     So a beam trained on a wall slowly cooks it (igniting, melting, boiling)
 //     rather than mirroring away as a clean line.
 //   • Glass and Broken Glass are TRANSPARENT: the beam passes straight through a
-//     pane, untouched, like clear air.
+//     pane *as if it weren't there at all* — travelling at the same speed it does
+//     through open air (유리가 없는 것처럼 투과), so you watch it cross a pane cell by
+//     cell instead of teleporting to the far side. It can even come to rest inside
+//     a thick pane: a beam cell carries the pane it sits on in its own `aux` byte
+//     and puts it right back when it moves off (see updateHeatRay), so the glass is
+//     never actually disturbed — a 가루/액체 겹침-style share of the cell.
 //   • Reflective metals (Mercury, Iron, Heatpipe, Gallium, Liquid Gallium — any
 //     material flagged `laserReflective`) are MIRRORS: the beam reflects off them
 //     cleanly (정반사, no scatter), so a metal surface aims the beam. New shiny
 //     metals become mirrors just by setting the flag — no change here needed.
-//   • Diamond is a PRISM: the beam enters the gem straight, travels through it,
-//     and where it exits back into open air it bursts into a starburst spraying
-//     in every direction (사방으로 확산) — a sparkle of shorter-lived child beams.
+//   • Diamond is a PRISM: the beam enters the gem straight (no direction change)
+//     and travels through it at normal speed just like glass; where it exits back
+//     into open air it scatters into a forward-pointing fan of child beams (전방
+//     부채꼴 난반사) — a diffuse spray aimed along its heading, not the old
+//     all-directions starburst.
 //   • Gases SCATTER it: the beam flows through a gas cloud, and each cell it
 //     crosses it has a small chance to jink one 45° step (산란) — a beam through
 //     smoke frays slightly instead of staying a razor line.
@@ -65,21 +73,33 @@ const LIQUID_VANISH_CHANCE = 0.06;
 // absorbed — it heats the spot and dies — and only this fraction of hits bounce
 // off as a rough, scattered 난반사 reflection instead.
 const SOLID_REFLECT_CHANCE = 0.18;
-// A Diamond exit-burst (사방으로 확산) seeds child beams each carrying this
+// A Diamond exit-fan (전방 부채꼴 난반사) seeds child beams each carrying this
 // fraction of the parent's remaining life, so the sparkle decays geometrically
 // gem-to-gem and can't grow without bound. Below DIFFUSE_LIFE_MIN the beam is too
 // weak to sparkle and simply exits straight instead.
 const DIFFUSE_LIFE_FRACTION = 0.45;
 const DIFFUSE_LIFE_MIN = 3;
+// The forward fan the exit spray fills: dead-ahead (seeded at the exit cell) plus
+// these flanking directions, each a whole number of 45° ring steps off the beam's
+// heading. The ±45° flanks always fire; the ±90° edges only sometimes, so the
+// spray is densest straight ahead and thins toward the sides — a fan, not a burst.
+const FAN_EDGE_CHANCE = 0.5;
+const FAN_SIDE_STEPS: ReadonlyArray<readonly [number, number]> = [
+  [-1, 1], // −45°, always
+  [1, 1], // +45°, always
+  [-2, FAN_EDGE_CHANCE], // −90°, sometimes
+  [2, FAN_EDGE_CHANCE], // +90°, sometimes
+];
 // Extra life a beam burns each time it reflects, on top of the −1 every ray pays
 // per tick — so a beam trapped ricocheting in a pocket drains fast instead of
 // lingering its whole life (mirrors nuclearray.ts's BOUNCE_LIFE_COST).
 const BOUNCE_LIFE_COST = 10;
 // Hard cap on cells walked in one tick, so a beam crossing a very wide medium (see
-// the walk loop) can't loop unbounded. Air travel spends the SPEED budget; passing
-// through transparent media (glass, gas, liquid, sibling beams) is "free" — light
-// crosses a medium within the tick rather than stalling a cell or two in — and this
-// only bounds that free traversal. Comfortably above any ordinary medium's width.
+// the walk loop) can't loop unbounded. Air, glass and diamond travel spend the
+// SPEED budget (a beam moves through them at a fixed speed, no teleport); passing
+// through the still-"free" media — gas, liquid, sibling beams — doesn't spend the
+// budget, so light crosses a whole pool/cloud within the tick rather than stalling
+// a cell in. This bounds that free traversal. Above any ordinary medium's width.
 const MAX_STEPS = 64;
 // Pins the beam white-hot in the heat-overlay thermal camera (its `temp` holds
 // packed flight state, not a real reading) — same trick the Nuclear Ray uses.
@@ -213,22 +233,49 @@ function diffuseReflect(sim: SimContext, cx: number, cy: number, vx: number, vy:
   return [mx, my];
 }
 
-/** The Diamond exit-burst (사방으로 확산): from the open cell (ex,ey) where the beam
- *  leaves the gem, seed a starburst of child beams — one flying forward, and one
- *  into every open neighbour heading outward — each carrying `childLife`. The
- *  fractional life (DIFFUSE_LIFE_FRACTION) makes the spray decay gem-to-gem so it
- *  stays bounded. The caller clears the parent cell afterwards. */
-function diamondBurst(sim: SimContext, ex: number, ey: number, fvx: number, fvy: number, childLife: number): void {
+/** The Diamond exit-fan (전방 부채꼴 난반사): from the open cell (ex,ey) where the
+ *  beam leaves the gem, seed a forward-pointing fan of child beams — one dead ahead
+ *  at (ex,ey), plus the flanks in FAN_SIDE_STEPS (±45° always, ±90° sometimes) into
+ *  whatever open cells lie that way — each carrying `childLife`. The spray stays in
+ *  the beam's forward hemisphere (aimed along its heading) rather than bursting in
+ *  every direction. The fractional life (DIFFUSE_LIFE_FRACTION) makes it decay
+ *  gem-to-gem so it stays bounded. The caller restores the parent cell afterwards. */
+function diamondForwardScatter(
+  sim: SimContext,
+  ex: number,
+  ey: number,
+  fvx: number,
+  fvy: number,
+  childLife: number,
+): void {
+  // Dead-ahead ray occupies the exit cell itself.
   sim.spawn(ex, ey, HEAT_RAY.id);
   sim.setTemp(ex, ey, encodeRay(childLife, fvx, fvy));
-  for (const [dx, dy] of DIR_RING) {
-    if (dx === fvx && dy === fvy) continue; // forward already seeded at (ex,ey)
+  for (const [k, chance] of FAN_SIDE_STEPS) {
+    if (chance < 1 && !sim.chance(chance)) continue;
+    const [dx, dy] = rotate(fvx, fvy, k);
     const tx = ex + dx;
     const ty = ey + dy;
     if (isOpen(sim, tx, ty)) {
       sim.spawn(tx, ty, HEAT_RAY.id);
       sim.setTemp(tx, ty, encodeRay(childLife, dx, dy));
     }
+  }
+}
+
+/** Vacate the cell a beam is leaving. A beam that was riding over open air clears
+ *  to EMPTY; one that was resting inside a transparent pane (glass/broken glass/
+ *  diamond, carried in its `aux`) puts that pane back — resetting the cell to
+ *  ambient so the beam's packed `temp` doesn't linger as a bogus reading and its
+ *  own `aux` doesn't stay behind as stale state. The `hostId` guard means a
+ *  corrupt/legacy aux value falls back to EMPTY rather than spawning junk. */
+function restoreCell(sim: SimContext, x: number, y: number, hostId: number): void {
+  if (hostId === GLASS.id || hostId === BROKEN_GLASS.id || hostId === DIAMOND.id) {
+    sim.set(x, y, hostId);
+    sim.setTemp(x, y, AMBIENT_TEMP);
+    sim.setAux(x, y, 0);
+  } else {
+    sim.set(x, y, EMPTY);
   }
 }
 
@@ -268,34 +315,45 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   const code = packed & 15;
   let vx = ((code / 3) | 0) - 1;
   let vy = (code % 3) - 1;
+  // The transparent pane this beam cell is currently resting inside (glass, broken
+  // glass or diamond), carried in `aux` so it can be put back the moment the beam
+  // moves off — 0 when the beam is over open air. This is what lets the beam travel
+  // through a solid pane at normal speed without ever disturbing it.
+  const hostId = sim.getAux(x, y);
   if (life < 1 || (vx === 0 && vy === 0)) {
     // Expired — or spawned without emitHeatRay (thermal.init 0 decodes to a dead,
     // direction-less ray), which dies quietly just like a hand-placed Ember.
-    sim.set(x, y, EMPTY);
+    restoreCell(sim, x, y, hostId);
     return;
   }
 
-  // Two cursors: (wx,wy) is where the walk currently is — it may sit on a
-  // transparent cell (glass, gas, liquid, a Diamond, a sibling/packed beam) it is
-  // passing over — while (cx,cy) is the last EMPTY cell, the only kind the beam may
-  // land on when its steps run out. `inDiamond` tracks whether the walk is
-  // currently inside a Diamond body so the exit into open air can burst (사방 확산).
+  // Two cursors: (wx,wy) is where the walk currently is — it may sit on a cell it
+  // is only passing over (gas, liquid, a sibling/packed beam) — while (cx,cy) is
+  // the last *landable* cell the beam may come to rest on when its steps run out.
+  // Landable now means EMPTY air OR a transparent pane (glass/broken glass/diamond):
+  // the beam moves through a pane at the same speed as air and can stop inside a
+  // thick one, carrying the displaced pane in `aux` (see cHost / the landing below).
+  // `inDiamond` tracks whether the walk is currently inside a Diamond body so the
+  // exit into open air fans forward (부채꼴 난반사); it's seeded from `hostId` so a
+  // beam that came to rest mid-gem last tick still knows it's inside one.
   //
-  // Air travel spends `airSteps` (the SPEED budget) and reflections consume a step
-  // too, exactly like the Nuclear Ray. Passing *through* transparent media, though,
-  // is FREE — it doesn't spend the air budget — so a beam crosses a medium of any
-  // width within this one tick (light-like) and either lands in the air beyond,
-  // vanishes inside a liquid, bursts out of a diamond, or reflects/dies at a solid
-  // past it. That's what stops a beam fizzling at the surface of a pool/cloud/gem
-  // wider than the 2-3 cell step budget: the landing cursor stays valid because the
-  // whole crossing resolves in one call. MAX_STEPS bounds the free traversal so a
-  // pathologically wide medium can't loop.
+  // Air/glass/diamond travel spends `airSteps` (the SPEED budget) and reflections
+  // consume a step too, exactly like the Nuclear Ray. Passing *through* the still-
+  // free media (gas, liquid, sibling beams) doesn't spend the budget — a beam
+  // crosses a whole pool/cloud within one tick (light-like) and either lands in the
+  // air/pane beyond, vanishes inside a liquid, or reflects/dies at a solid past it.
+  // That's what stops a beam fizzling at the surface of a pool/cloud wider than the
+  // 2-3 cell step budget: the landing cursor stays valid because the whole crossing
+  // resolves in one call. MAX_STEPS bounds that free traversal.
   let airSteps = vx !== 0 && vy !== 0 ? SPEED_DIAG : SPEED_ORTH;
   let wx = x;
   let wy = y;
   let cx = x;
   let cy = y;
-  let inDiamond = false;
+  // The transparent pane at the current landing cell (0 = open air), stamped onto
+  // the beam's aux when it finally comes to rest there.
+  let cHost = hostId;
+  let inDiamond = hostId === DIAMOND.id;
   let lifeCost = 1;
   let iter = 0;
   while (airSteps > 0 && iter < MAX_STEPS) {
@@ -315,13 +373,13 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
 
     if (nid === EMPTY) {
       if (inDiamond) {
-        // Leaving the gem into open air — burst into a starburst (사방으로 확산),
-        // provided there's enough life left to make a worthwhile sparkle.
+        // Leaving the gem into open air — scatter forward into a fan (전방 부채꼴
+        // 난반사), provided there's enough life left to make a worthwhile sparkle.
         inDiamond = false;
         const childLife = Math.floor(Math.max(0, life - lifeCost) * DIFFUSE_LIFE_FRACTION);
         if (childLife >= DIFFUSE_LIFE_MIN) {
-          diamondBurst(sim, nx, ny, vx, vy, childLife);
-          sim.set(x, y, EMPTY);
+          diamondForwardScatter(sim, nx, ny, vx, vy, childLife);
+          restoreCell(sim, x, y, hostId);
           return;
         }
         // Too weak to sparkle — fall through and just exit straight.
@@ -330,32 +388,42 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       wy = ny;
       cx = nx;
       cy = ny;
+      cHost = 0;
       airSteps--;
       continue;
     }
 
-    // Transparent sibling beams/packed fliers: pass over for free
+    // Sibling beams / other packed fliers: transient particles the beam can't rest
+    // on, so it passes over them for free (they don't advance the landing cursor).
     if (nid === HEAT_RAY.id || getMaterial(nid).packedTemp) {
       wx = nx;
       wy = ny;
       continue;
     }
 
-    // Glass / Broken Glass: pass through via 겹침 overlay layer
-    if (isTransparent(nid)) {
-      sim.grid.setOverlay(nx, ny, HEAT_RAY.id);
-      sim.grid.overlayAux[ny * sim.width + nx] = sim.tick & 0xff;
-      wx = nx;
-      wy = ny;
-      continue;
-    }
-
     if (nid === DIAMOND.id) {
-      // Enter the gem and travel through it for free; it bursts on the way out
-      // (handled at the EMPTY branch above once inDiamond is set).
+      // Enter/continue through the gem at normal speed (landable), no direction
+      // change; it fans forward on the way out (the EMPTY branch above).
       inDiamond = true;
       wx = nx;
       wy = ny;
+      cx = nx;
+      cy = ny;
+      cHost = DIAMOND.id;
+      airSteps--;
+      continue;
+    }
+
+    if (isTransparent(nid)) {
+      // Glass / Broken Glass — passed as if it weren't there: normal-speed,
+      // landable travel. The beam can rest inside a thick pane, carrying it in aux.
+      inDiamond = false;
+      wx = nx;
+      wy = ny;
+      cx = nx;
+      cy = ny;
+      cHost = nid;
+      airSteps--;
       continue;
     }
 
@@ -387,7 +455,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       // low chance to jink one step (산란); otherwise it passes untouched.
       if (sim.chance(LIQUID_VANISH_CHANCE)) {
         sim.setTemp(nx, ny, sim.getTemp(nx, ny) + VANISH_HEAT);
-        sim.set(x, y, EMPTY);
+        restoreCell(sim, x, y, hostId);
         return;
       }
       if (sim.chance(LIQUID_SCATTER_CHANCE)) [vx, vy] = gasScatter(sim, wx, wy, vx, vy);
@@ -406,23 +474,31 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
-    sim.set(x, y, EMPTY);
+    restoreCell(sim, x, y, hostId);
     return;
   }
 
-  // Safety drain (mirrors nuclearray.ts): a beam that only ever walked over
-  // transparent cells and never found an empty landing — a medium wider than
-  // MAX_STEPS — advances its walk cursor yet leaves (cx,cy) unmoved. Drain it like a
-  // reflection so it can't hang in place shedding only 1 life/tick.
+  // Safety drain (mirrors nuclearray.ts): a beam that only ever walked over the
+  // free media (gas/liquid/sibling beams) and never found a landing — a body wider
+  // than MAX_STEPS — advances its walk cursor yet leaves (cx,cy) unmoved. Drain it
+  // like a reflection so it can't hang in place shedding only 1 life/tick.
   if (cx === x && cy === y && lifeCost === 1 && (wx !== x || wy !== y)) {
     lifeCost += BOUNCE_LIFE_COST;
   }
 
+  const newTemp = encodeRay(Math.max(0, life - lifeCost), vx, vy);
   if (cx !== x || cy !== y) {
-    sim.set(x, y, EMPTY);
+    // Move: put back whatever pane the beam was resting on at the old cell, then
+    // spawn the beam at the landing cell, stamping the pane it now rests inside (if
+    // any) into its aux so it can be restored on the next move.
+    restoreCell(sim, x, y, hostId);
     sim.spawn(cx, cy, HEAT_RAY.id);
+    sim.setTemp(cx, cy, newTemp);
+    if (cHost !== 0) sim.setAux(cx, cy, cHost);
+  } else {
+    // Stayed put — the pane under it (aux) is unchanged; just re-encode its state.
+    sim.setTemp(cx, cy, newTemp);
   }
-  sim.setTemp(cx, cy, encodeRay(Math.max(0, life - lifeCost), vx, vy));
 }
 
 export const HEAT_RAY = register({
