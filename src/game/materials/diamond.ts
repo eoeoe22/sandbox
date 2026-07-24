@@ -19,6 +19,7 @@ export const DIAMOND = register({
   color: rgb(150, 226, 236),
   lattice: rgb(95, 185, 200),
   checker2x2: true,
+  colorVary: 6,
   density: 1000,
   acidResistant: true,
   explosionProof: true,

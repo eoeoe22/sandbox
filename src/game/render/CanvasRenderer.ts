@@ -636,10 +636,16 @@ export class CanvasRenderer implements Renderer {
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (chk2x2[id]) {
-        // A thick 4x4 positional checkerboard (Diamond), noticeably thicker than Mesh (1x1).
+        // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
         const y = (i / w) | 0;
-        c = ((x >> 2) ^ (y >> 2)) & 1 ? latCol[id] : pal[id];
+        c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
+        const amp = vary[id];
+        if (amp !== 0) {
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
+          c = CanvasRenderer.tinted(c, d);
+        }
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -648,15 +654,15 @@ export class CanvasRenderer implements Renderer {
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
       } else if (batPat[id]) {
-        // 2x6 mini lightning bolt pattern on a 4x6 tile (Lithium Battery, LFP Battery).
+        // 2x6 mini lightning bolt pattern on a 4x7 tile with 1px vertical gap (Lithium Battery, LFP Battery).
         const x = i % w;
         const y = (i / w) | 0;
         const px = x % 4;
-        const py = y % 6;
+        const py = y % 7;
         const isPattern =
-          (py <= 1 && px === 2) ||
-          (py >= 2 && py <= 3 && (px === 1 || px === 2)) ||
-          (py >= 4 && px === 1);
+          (py >= 1 && py <= 2 && px === 2) ||
+          (py >= 3 && py <= 4 && (px === 1 || px === 2)) ||
+          (py >= 5 && py <= 6 && px === 1);
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
