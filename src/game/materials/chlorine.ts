@@ -9,6 +9,7 @@ import { VIRUS } from './virus';
 import { YEAST } from './yeast';
 import { SEED } from './seed';
 import { SLIME } from './slime';
+import { TERMITE } from './termite';
 
 // Chlorine (염소가스) — a heavy, sickly yellow-green poison gas. Like CO₂ it's
 // denser than air, so it slumps and pools along the floor (see updateHeavyGas),
@@ -29,7 +30,8 @@ function isLiving(id: number): boolean {
     id === VIRUS.id ||
     id === YEAST.id ||
     id === SEED.id ||
-    id === SLIME.id
+    id === SLIME.id ||
+    id === TERMITE.id
   );
 }
 
