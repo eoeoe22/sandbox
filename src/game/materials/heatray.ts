@@ -334,15 +334,22 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       continue;
     }
 
-    // Transparent to the beam: a sibling Heat Ray, a Nuclear Ray or other packed
-    // flier, or a glass pane. The walk passes over it for free (not landable).
-    if (nid === HEAT_RAY.id || getMaterial(nid).packedTemp || isTransparent(nid)) {
-      if (isTransparent(nid)) {
-        sim.grid.setOverlay(nx, ny, HEAT_RAY.id);
-        sim.grid.overlayAux[ny * sim.width + nx] = sim.tick & 0xff;
-      }
+    // Transparent sibling beams/packed fliers: pass over for free
+    if (nid === HEAT_RAY.id || getMaterial(nid).packedTemp) {
       wx = nx;
       wy = ny;
+      continue;
+    }
+
+    // Glass / Broken Glass: pass through via 겹침 overlay frame-by-frame at normal speed
+    if (isTransparent(nid)) {
+      sim.grid.setOverlay(nx, ny, HEAT_RAY.id);
+      sim.grid.overlayAux[ny * sim.width + nx] = sim.tick & 0xff;
+      wx = nx;
+      wy = ny;
+      cx = nx;
+      cy = ny;
+      airSteps--;
       continue;
     }
 

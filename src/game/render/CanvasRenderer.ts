@@ -643,20 +643,17 @@ export class CanvasRenderer implements Renderer {
         const y = (i / w) | 0;
         c = (x ^ y) & 1 ? latCol[id] : pal[id];
       } else if (chk2x2[id]) {
-        // A 2x2 positional checkerboard (Diamond), thicker than Mesh.
+        // A thick 4x4 positional checkerboard (Diamond), noticeably thicker than Mesh (1x1).
         const x = i % w;
         const y = (i / w) | 0;
-        c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
+        c = ((x >> 2) ^ (y >> 2)) & 1 ? latCol[id] : pal[id];
       } else if (batPat[id]) {
-        // Fixed 14x14 pixel-art battery pattern (Lithium Battery, LFP Battery).
+        // Dense 6x6 mini pixel-art battery pattern (Lithium Battery, LFP Battery).
         const x = i % w;
         const y = (i / w) | 0;
-        const px = x % 14;
-        const py = y % 14;
-        const isPattern =
-          (py >= 4 && py < 6 && px >= 5 && px < 7) ||
-          (py >= 6 && py < 8 && px >= 5 && px < 9) ||
-          (py >= 8 && py < 10 && px >= 7 && px < 9);
+        const px = x % 6;
+        const py = y % 6;
+        const isPattern = (py === 1 && px === 2) || (py >= 2 && py <= 4 && px >= 1 && px <= 3);
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = CanvasRenderer.shade(glow[id]!, temp[i]);
