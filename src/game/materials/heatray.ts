@@ -124,23 +124,61 @@ function isTransparent(nid: number): boolean {
   return nid === GLASS.id || nid === BROKEN_GLASS.id;
 }
 
+/** Would a beam arriving at (x,y) reflect off it (a wall) rather than pass through
+ *  or land? True for a reflective metal or an opaque solid/powder and for the grid
+ *  edge; false for empty air and everything the beam sees through — glass, gas, an
+ *  ordinary (non-reflective) liquid, Diamond, and sibling/packed beams. Used only
+ *  to read the local surface orientation for a diagonal (45°) reflection. */
+function blocksBeam(sim: SimContext, x: number, y: number): boolean {
+  if (!sim.inBounds(x, y)) return true; // the grid edge acts as a wall
+  const id = sim.get(x, y);
+  if (id === EMPTY || id === HEAT_RAY.id || id === DIAMOND.id) return false;
+  if (isTransparent(id)) return false;
+  const m = getMaterial(id);
+  if (m.packedTemp) return false; // a sibling beam / other packed flier
+  if (m.laserReflective) return true; // a metal mirror, whatever its phase
+  if (m.phase === Phase.Gas || m.phase === Phase.Liquid) return false;
+  return true; // opaque solid / powder
+}
+
 /** Clean mirror reflection off a surface the beam hit while at (cx,cy) heading
- *  (vx,vy): a glancing diagonal flips only the blocked axis, a head-on/corner hit
- *  reverses. Unlike the Nuclear Ray's bounce there is NO random scatter — a Heat
- *  Ray reflects predictably so Mercury mirrors and walls aim it. */
+ *  (vx,vy). Two families:
+ *   • An orthogonally-moving beam that strikes a thin DIAGONAL edge (a 45° metal
+ *     surface — its two opposite diagonal neighbours are wall, the other two open)
+ *     turns 90° like a real mirror (대각선 정반사): "\\" sends → to ↓, "/" sends →
+ *     to ↑. A flat wall (both diagonals wall, or neither) can't be a 45° face, so
+ *     it reverses straight back as before — build a diagonal line of metal to bend
+ *     a laser around a corner.
+ *   • A diagonally-moving beam does a glancing reflection: it flips only the axis
+ *     that's blocked, and a head-on/corner hit reverses.
+ *  There is NO random scatter — a Heat Ray reflects predictably so metal mirrors
+ *  and walls aim it. */
 function mirror(sim: SimContext, cx: number, cy: number, vx: number, vy: number): [number, number] {
+  // Orthogonal incoming: look for a 45° face to turn off, else reverse.
+  if ((vx === 0) !== (vy === 0)) {
+    const nx = cx + vx;
+    const ny = cy + vy;
+    const back = blocksBeam(sim, nx - 1, ny - 1) || blocksBeam(sim, nx + 1, ny + 1); // "\" run
+    const slash = blocksBeam(sim, nx - 1, ny + 1) || blocksBeam(sim, nx + 1, ny - 1); // "/" run
+    if (back !== slash) {
+      // A "\" face reflects (vx,vy)→(vy,vx); a "/" face reflects →(−vy,−vx).
+      const rvx = back ? vy : -vy;
+      const rvy = back ? vx : -vx;
+      if (isOpen(sim, cx + rvx, cy + rvy)) return [rvx, rvy];
+    }
+    return [-vx, -vy];
+  }
+  // Diagonal incoming: flip only the blocked axis; head-on/corner reverses.
   let bvx = -vx;
   let bvy = -vy;
-  if (vx !== 0 && vy !== 0) {
-    const hOpen = isOpen(sim, cx + vx, cy);
-    const vOpen = isOpen(sim, cx, cy + vy);
-    if (hOpen && !vOpen) {
-      bvx = vx;
-      bvy = -vy;
-    } else if (!hOpen && vOpen) {
-      bvx = -vx;
-      bvy = vy;
-    }
+  const hOpen = isOpen(sim, cx + vx, cy);
+  const vOpen = isOpen(sim, cx, cy + vy);
+  if (hOpen && !vOpen) {
+    bvx = vx;
+    bvy = -vy;
+  } else if (!hOpen && vOpen) {
+    bvx = -vx;
+    bvy = vy;
   }
   return [bvx, bvy];
 }
