@@ -158,8 +158,12 @@ function mirror(sim: SimContext, cx: number, cy: number, vx: number, vy: number)
   if ((vx === 0) !== (vy === 0)) {
     const nx = cx + vx;
     const ny = cy + vy;
-    const back = blocksBeam(sim, nx - 1, ny - 1) || blocksBeam(sim, nx + 1, ny + 1); // "\" run
-    const slash = blocksBeam(sim, nx - 1, ny + 1) || blocksBeam(sim, nx + 1, ny - 1); // "/" run
+    // A true 45° face needs BOTH cells of one diagonal pair to be wall (the run of
+    // the diagonal line through the hit) while the other pair is open. Requiring
+    // both (not either) is what keeps a flat or chunky wall — where only a single
+    // corner cell is wall — from falsely reading as a diagonal and getting turned.
+    const back = blocksBeam(sim, nx - 1, ny - 1) && blocksBeam(sim, nx + 1, ny + 1); // "\" run
+    const slash = blocksBeam(sim, nx - 1, ny + 1) && blocksBeam(sim, nx + 1, ny - 1); // "/" run
     if (back !== slash) {
       // A "\" face reflects (vx,vy)→(vy,vx); a "/" face reflects →(−vy,−vx).
       const rvx = back ? vy : -vy;
