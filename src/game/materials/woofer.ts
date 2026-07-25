@@ -12,9 +12,14 @@ import { detonate } from './blast';
 // subsystem's own destructive-power/durability axis (see blast.ts,
 // introduced for Gunpowder's weak "shove, don't crater" concussion) pinned to
 // POWER 0 — a blast too weak to beat even the flimsiest solid's durability,
-// so every solid within reach blocks/shadows it completely untouched
+// so every structural solid within reach blocks/shadows it completely untouched
 // (완전한 비파괴성) while every loose grain of powder or puddle of liquid is
 // flung outward as Debris (mass-conserving — it arcs out and rains back).
+// "Structural" is the operative word: a solid tagged `shockLoose` (a crawling
+// Termite/Nanobot — see blast.ts) is matter this wave *carries* rather than
+// structure it breaks against, so the thump blows the bugs away like powder
+// (and crushes a termite half the time, via its `shockDeathChance`) without the
+// Woofer ever gaining any destructive power.
 // Unlike an ordinary detonation it never paints a Blast flash over the empty
 // air it reaches either (see `onCell` in wooferPulse below) — a real
 // shockwave doesn't glow, and a lit flash cell has a chance to decay into
@@ -45,8 +50,8 @@ const SHOCK_VIS_REACH = (REACH * 2) / 3;
  *  reached EMPTY cell and does nothing to it (no Blast flash, so no chance of
  *  the flash decaying into stray Fire). Non-empty cells fall through
  *  (`onCell` returns false/undefined) to the ordinary default handling, so
- *  loose matter still gets shoved and solids are still shadowed exactly as
- *  before. */
+ *  loose matter (including `shockLoose` bugs) still gets shoved and structural
+ *  solids are still shadowed exactly as before. */
 function wooferPulse(sim: SimContext, x: number, y: number): void {
   detonate(sim, x, y, 0, {
     power: POWER,

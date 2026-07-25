@@ -15,10 +15,17 @@ import { crawl, eatAndReproduce, isSubmerged, touchingBlast, EAT_CHANCE } from '
 // fleck of Sawdust (the frass a termite leaves behind), which conveniently is
 // *also* termite food, so a colony that cooks or drowns feeds the survivors:
 //   • 물에 완전히 잠기면 익사 — fully surrounded by liquid.
-//   • 폭발 충격파 (단 Woofer 제외) — an adjacent Blast flash cell; a Woofer's
-//     silent thump leaves no flash, so it doesn't harm them (see crawler.ts).
+//   • 폭발 충격파 — an adjacent Blast flash cell (a real detonation) kills outright.
+//   • 충격파 노출 50% — a shockwave too weak to *break* it (a Woofer's silent thump,
+//     a Gunpowder concussion) still crushes it half the time; the survivors are
+//     blown away as Debris and land elsewhere. A termite's body is far too small
+//     and unanchored to shrug a pressure wave off, so it rides the wave like loose
+//     matter instead of standing in it (`shockLoose`) — see blast.ts.
 //   • 70°C 이상 열 — anything from a nearby fire to a warm metal bar cooks it.
 const DEATH_TEMP = 70;
+/** 충격파 노출 시 사망 확률 — half the colony caught in a (non-destructive) shockwave
+ *  is crushed to Sawdust; the rest is merely flung. */
+const SHOCK_DEATH_CHANCE = 0.5;
 const FOOD = [SAWDUST.id, WOOD.id] as const;
 
 function updateTermite(x: number, y: number, sim: SimContext): void {
@@ -45,8 +52,14 @@ export const TERMITE = register({
   density: 1000,
   category: '생명',
   // Crushed to Sawdust (its own food) when a blast destroys it at the epicenter,
-  // matching the death-by-shockwave its update handles for rim survivors.
+  // matching the death-by-shockwave its update handles for rim survivors — and
+  // the remains a shockDeathChance roll leaves too.
   blastDeathId: SAWDUST.id,
+  // Only nominally a solid (it walks instead of piling), so a shockwave sweeps it
+  // up like loose matter rather than being shadowed by it, and a body caught in
+  // one is crushed half the time (leaving blastDeathId) instead of just tumbling.
+  shockLoose: true,
+  shockDeathChance: SHOCK_DEATH_CHANCE,
   // Organic and poorly conductive (like Wood/Sawdust), so it heats up slowly —
   // but once it crosses 70° it's cooked.
   thermal: { conductivity: 0.2 },

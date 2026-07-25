@@ -208,12 +208,37 @@ export interface Material {
    * a Termite crushed to Sawdust, a Nanobot shattered to Metal Powder — sets this
    * so the residue appears even at the epicenter, not just for the rim cells its
    * own `update` can catch via an adjacent Blast cell. Omitted ⇒ the ordinary
-   * flash. Only consulted on the destroy path (power ≥ durability); a blast too
-   * weak to break the material never reaches it, so a Woofer's power-0 shockwave
-   * (which can't beat any solid's durability) never triggers this — the same
-   * "Woofer excluded" property the adjacent-Blast check relies on.
+   * flash. Also the residue a `shockDeathChance` roll leaves when a shockwave too
+   * weak to break the material kills it anyway (see below), so one field covers
+   * "what's left of it" on both paths.
    */
   blastDeathId?: MatId;
+  /**
+   * 충격파에 휩쓸리는 고체 — a Solid that a shockwave treats as LOOSE matter rather
+   * than as structure. Normally a solid a blast can't break shadows the wave and
+   * is left untouched (see blocksBlast/shadowsPressure in blast.ts), which is
+   * right for a stone wall but wrong for something tiny and unanchored: a crawling
+   * bug (Termite/Nanobot) is `Phase.Solid` only because it walks instead of
+   * piling, and it should be blown away by a passing shockwave, not act as a
+   * blast shield. With this set, the material never shadows the crater flood nor
+   * the pressure wave, and a blast too weak to destroy it FLINGS it outward as
+   * mass-conserving Debris (it arcs out and lands again) exactly like a powder.
+   * A blast strong enough to beat its `durability` still destroys it as before.
+   * Omitted ⇒ the classic solid behavior (shadow the wave, survive untouched).
+   * Only meaningful on a Solid — loose phases are already shoved.
+   */
+  shockLoose?: boolean;
+  /**
+   * 충격파 노출 시 사망 확률, 0..1 — the chance that a shockwave too weak to *break*
+   * this material kills the cell outright anyway, leaving `blastDeathId` behind
+   * instead of flinging it (a Termite's fragile body being crushed by the pressure
+   * wave, 50%). Rolled once per cell the wave reaches — the crater flood's shove
+   * path and the pressure ring alike — so a Woofer's silent thump is as lethal as
+   * a firecracker's concussion. Requires `blastDeathId` (there'd be no remains to
+   * leave otherwise); omitted ⇒ the shockwave only ever moves the cell, never
+   * kills it (a Nanobot machine just gets thrown around).
+   */
+  shockDeathChance?: number;
   /**
    * What a *fragile* solid crazes into when a blast's shock washes over it but
    * can't otherwise break it (power < durability) — Glass shattering into Broken

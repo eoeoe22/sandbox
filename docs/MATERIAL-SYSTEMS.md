@@ -1327,9 +1327,9 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   Sawdust·Wood, 나노봇 먹이 = Iron·Metal Powder.
 - **죽음 판정(공용 헬퍼)**: `isSubmerged`(공기/기체 이웃이 하나도 없고 액체가 하나 이상 —
   수면을 걷는 개체·먹이에 파묻힌 개체·언(frozen) 액체는 제외) / `touchingBlast`(8이웃에 Blast
-  섬광 셀). 후자가 **"폭발 충격파(단 Woofer 제외)"의 핵심 트릭** — 일반 폭발은 크레이터에 Blast
-  섬광 셀을 칠하지만 Woofer의 충격파는 의도적으로 섬광 셀을 만들지 않으므로(woofer.ts), 인접
-  Blast 셀을 죽음 트리거로 삼으면 별도 분기 없이 일반 폭발엔 죽고 Woofer 충격파엔 멀쩡하다.
+  섬광 셀). 후자는 **일반 폭발(진짜 기폭)** 전용 판정이다 — 크레이터 가장자리에서 살아남은
+  개체도 옆에 섬광 셀이 있으면 확정사한다. Woofer의 충격파는 섬광 셀을 만들지 않으므로
+  (woofer.ts) 이 경로엔 아예 걸리지 않고, 대신 아래 `shockLoose` 경로로 들어온다.
   흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal
   Powder와 같은 녹는점**(Iron 융점→Molten Metal 융해)이며 Blast엔 **Metal Powder**로 부서진다.
 - **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
@@ -1337,8 +1337,8 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   (blast.ts)이 곧장 Blast 섬광 셀로 덮어써서 불/빈칸으로 사라져, 명세가 요구한 잔재(Sawdust/
   Metal Powder)를 못 남긴다. 이를 위해 `Material.blastDeathId`(신규 데이터 태그)를 도입 —
   파괴 경로(power ≥ durability)에서 이 값이 있으면 섬광 대신 그 물질을 `spawn`으로 남긴다.
-  흰개미=Sawdust, 나노봇=Metal Powder. **Woofer 제외 성질도 그대로 유지**된다: Woofer는 power
-  0이라 어떤 고체의 내구력도 못 이겨 파괴 경로에 도달하지 못하므로 이 태그를 건드리지 않는다.
+  흰개미=Sawdust, 나노봇=Metal Powder. 이 잔재는 아래 `shockDeathChance`(약한 충격파에 의한
+  죽음)가 남기는 물질로도 그대로 재사용된다 — "이 물질이 죽으면 뭐가 남나"를 한 곳에만 적는다.
 - **언 액체 = 고체 취급 일관성**: 얼어붙은(freeze점 이하) 액체는 엔진 전반에서 고체처럼 행동하므로
   (`isFrozen`), 벌레도 이를 (1) 표면으로 붙잡고, (2) 통과하지 않으며(나노봇도 언 웅덩이 위를
   기어감), (3) 침수 판정에서 물로 세지 않는다 — 다른 밀도 이동자(`tryMove`/`swapOntoLiquid`)와
@@ -1348,6 +1348,49 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
 bit-identical + deterministic) 통과, 헤드리스로 폭심 잔재(더미에 폭탄→Sawdust/Metal Powder
 생성) 확인. `test:heat`는 이 환경에 Rust 빌드 wasm 바이너리가 없어 원래도 실행 불가(이번
 변경과 무관).
+
+## 충격파에 휩쓸리는 고체 (`shockLoose` + `shockDeathChance` — 벌레가 충격파에 날아감)
+
+Woofer 충격파(파괴력 0)나 화약의 약한 진탕이 **흰개미·나노봇을 전혀 건드리지 못하던** 문제를
+고친 기능. 원인은 두 벌레가 `Phase.Solid`라는 점이었다 — 벌레가 고체인 건 "쌓이지 않고 기어
+다닌다"는 이동 모델 때문이지 구조물이라서가 아닌데, blast.ts는 고체를 전부 **구조물**로 보고
+(`blocksBlast`/`shadowsPressure`) 약한 충격파를 **막고 뒤를 그림자 처리**해 버렸다. 결과적으로
+벌레는 밀리지도 죽지도 않으면서 **폭풍 방패** 노릇까지 하고 있었다.
+
+- **신규 데이터 태그 `Material.shockLoose`**: "고체지만 충격파에는 **가루처럼** 취급"이라는
+  선언. 선언한 물질은 (1) `blocksBlast`에서 그림자를 만들지 않아 크레이터 플러드가 그 칸에
+  **들어오고**, (2) `shadowsPressure`에서도 제외돼 크레이터 밖 **압력전파**가 통과하며,
+  (3) 못 부수는 경로(power < durability)에서 **Debris로 날아간다**(질량 보존 — 포물선으로
+  날았다가 도로 착지해 원래 물질로 복원). 강한 폭발(power ≥ durability)은 종전대로 파괴하고
+  `blastDeathId` 잔재를 남기므로 **기존 폭발 거동은 그대로**다.
+- **신규 데이터 태그 `Material.shockDeathChance`(0..1)**: 충격파가 **부수지는 못해도** 이 확률로
+  셀을 즉사시키고 `blastDeathId`를 남긴다. 흰개미 = **0.5**(기획: "충격파 노출 시 50% 확률로
+  사망 → Sawdust"), 나노봇은 미선언 — 기계라 **던져질 뿐 멀쩡**하다.
+- **굴림은 "노출 1회 = 1굴림"**(`shockKill`, blast.ts). 두 가지 희석/중복을 막는다:
+  - **압력파의 발사 확률(`PRESSURE_LAUNCH_CHANCE` 0.5)과 독립**으로 먼저 굴린다 — 안 그러면
+    "노출 시 50%"가 "50%의 50%"가 된다.
+  - **셀당 틱당 1회만**(`SimContext.shockRolled`/`shockRollTick` 메모, `wooferFlooded` 판박이).
+    한 번의 쿵은 `detonate()` 한 번이 아니다 — 우퍼 몸체는 **몸체 칸마다 독립 펄스**를 쏘고
+    (woofer.ts, 이웃 우퍼끼리 한 폭발로 합쳐지지 않게 하려는 의도적 설계) 각 펄스는 자기
+    stamp 버퍼만 갖는다. 앞 펄스가 굴렸지만 날려보내지는 않은 칸(압력파 발사 확률 실패)은
+    다음 몸체 칸의 펄스가 다시 덮치므로, 메모가 없으면 **2칸짜리 우퍼가 75%, 8칸이면 사실상
+    확살**이 된다. 메모는 태그를 선언한 물질에서만 만져지므로 일반 폭발엔 비용이 0.
+    모듈 전역이 아니라 **SimContext에 두는 이유**: 같은 크기 그리드의 두 Simulation이 같은 틱
+    번호를 돌기 때문에 틱 키 전역 버퍼는 한쪽 굴림이 다른 쪽을 억제해 **결정성 하네스가 깨진다**.
+- **적용 지점 3곳(전부 blast.ts 안)**: `blocksBlast` / `shadowsPressure` / 못 부수는 셀의
+  Debris 투척(`defaultCell` + `pressureRing`). 벌레 쪽 코드(crawler.ts·termite.ts·nanobot.ts)엔
+  판정 분기가 하나도 늘지 않는다 — 태그 두 개만 선언한다.
+- **Woofer가 여전히 비파괴인 이유**: Woofer의 파괴력은 그대로 0이다. 벌레가 날아가는 건 Woofer가
+  세져서가 아니라 **벌레가 구조물이 아니게** 됐기 때문이라, 돌벽·가전·오브젝트에 대한 완전한
+  비파괴성(및 벽 뒤 그림자)은 그대로다.
+- 검증(헤드리스): 전원 없는 Woofer 옆 벌레는 30틱 동안 **무변화**. 전원 연결 시 한 펄스에
+  사거리 안(막힌 방에 가둬 노출을 강제) 흰개미 사망률이 **몸체 1·2·4·6칸 전부 49.8~50.0%**
+  (각 100회 반복, 펄스 직후 집계) — 몸체 크기와 무관하게 50%로 고정됨을 확인. 나노봇은 같은
+  조건에서 **손실 0**(날아갔다 착지). 회귀: 돌벽은 개수 불변 + 뒤의 모래도 불변(그림자 유지),
+  TNT 직격은 종전대로 흰개미 전멸 → Sawdust, Woofer 사거리 안 유리는 그대로 Broken Glass 로 파쇄.
+- **측정 함정 메모**: 펄스 몇 틱 **뒤에** 생존 개체 수로 사망률을 재면 안 된다 — 흰개미는 갓
+  생긴 Sawdust(= 자기 먹이)를 먹고 **번식**하므로 개체 수가 도로 차오른다. 실제로 그렇게 쟀더니
+  몸체 6칸에서 "사망률 0%"라는 엉뚱한 값이 나왔다. 사망률은 **펄스 직후 잔재(Sawdust) 수**로 잰다.
 
 ## 깨지는 유리 (Broken Glass + `shatterId` — 취성 고체 충격파 파쇄)
 
