@@ -202,6 +202,30 @@ export class SimContext {
   wooferPulseY: number[] = [];
 
   /**
+   * Per-tick memo for the shockwave death roll (`Material.shockDeathChance`, see
+   * `shockKill` in materials/blast.ts): the flat index of every cell that has
+   * already been rolled this tick, so one *exposure* is one roll no matter how
+   * many shockwave fronts wash over the cell.
+   *
+   * It's needed because a single thump is not a single `detonate()` call: a
+   * Woofer body fires one independent pulse per body cell (materials/woofer.ts,
+   * deliberately — so neighboring Woofers don't merge into one bigger blast), and
+   * each pulse carries its own visited-stamp buffer. A Termite that survives one
+   * pulse's roll and isn't flung by it is still standing there when the next body
+   * cell's pulse arrives, so without this memo an N-cell cabinet would roll its
+   * 50% up to N times (a 2-cell Woofer killing 75%, an 8-cell one nearly always)
+   * — the spec is "충격파 노출 시 50%", not "50% per body cell". Cleared whenever
+   * `shockRollTick` falls behind the current `tick`.
+   *
+   * Sim-local rather than module state in blast.ts, same reasoning as
+   * `wooferFlooded`: two Simulations over identically-sized grids run the same
+   * tick numbers, so a module-level buffer keyed by tick would let one sim's rolls
+   * suppress the other's (and break the lockstep-determinism harness).
+   */
+  shockRollTick = -1;
+  shockRolled: Set<number> = new Set();
+
+  /**
    * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
    * `wooferFlooded` above (both are one-way "outside → inside" electric sinks that
    * flood the whole connected body from any powered face). When a pulse reaches

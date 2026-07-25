@@ -286,14 +286,15 @@ function blocksBlast(id: number, power: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
   if (m.isWall === true || m.explosionProof === true || m.indestructible === true) return true;
-  return m.phase === Phase.Solid && m.shockLoose !== true && durabilityOf(id) > power;
+  return m.phase === Phase.Solid && !isShockLoose(id) && durabilityOf(id) > power;
 }
 
 /** True if the cell is a solid the shockwave treats as LOOSE matter instead of
  *  structure (`Material.shockLoose`) — a crawling bug, which is only nominally a
- *  solid: it never shadows the wave and is flung like a grain of powder. Kept as
- *  one helper so the crater flood, the pressure ring, and the shove path can't
- *  drift apart on what counts as loose. */
+ *  solid: it never shadows the wave and is flung like a grain of powder. Every
+ *  place that decides "structure or loose?" — blocksBlast, shadowsPressure, the
+ *  crater flood's shove path (defaultCell) and the pressure ring — goes through
+ *  this one helper, so they can't drift apart on what counts as loose. */
 function isShockLoose(id: number): boolean {
   return id !== EMPTY && getMaterial(id).shockLoose === true;
 }
@@ -301,11 +302,25 @@ function isShockLoose(id: number): boolean {
 /** A shockwave that can't *break* a material may still kill it outright — the
  *  `shockDeathChance` roll (a Termite crushed by the passing pressure wave), which
  *  leaves its `blastDeathId` residue instead of the cell being shoved. Returns
- *  true when the cell died and the caller should skip its shove. */
+ *  true when the cell died and the caller should skip its shove.
+ *
+ *  Rolled at most ONCE per cell per tick (`SimContext.shockRolled`): one thump is
+ *  several `detonate()` calls — a Woofer body fires one independent pulse per body
+ *  cell — and a cell the first pulse rolled but didn't fling is reached again by
+ *  the next, which would compound "50% on exposure" into 75% for a 2-cell cabinet
+ *  and worse for a bigger one. The memo is only ever touched by a material that
+ *  actually declares the tag, so an ordinary blast pays nothing for it. */
 function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
   if (m.shockDeathChance === undefined || m.blastDeathId === undefined) return false;
+  if (sim.tick !== sim.shockRollTick) {
+    sim.shockRollTick = sim.tick;
+    sim.shockRolled.clear();
+  }
+  const k = y * sim.width + x;
+  if (sim.shockRolled.has(k)) return false; // already exposed this tick — one roll only
+  sim.shockRolled.add(k);
   if (!sim.chance(m.shockDeathChance)) return false;
   sim.spawn(x, y, m.blastDeathId); // spawn marks it moved this tick
   return true;
@@ -324,7 +339,7 @@ function shadowsPressure(id: number): boolean {
   if (m.explosionProof === true || m.indestructible === true) return true;
   // A `shockLoose` solid (a crawling bug) is matter the wave carries, not
   // structure it breaks against — it shelters nothing behind it.
-  return m.phase === Phase.Solid && m.shockLoose !== true;
+  return m.phase === Phase.Solid && !isShockLoose(id);
 }
 
 /** A *fragile* solid — one that declares a `shatterId` — CRAZES into that
@@ -438,7 +453,7 @@ function defaultCell(
   // (shockDeathChance → its residue). A structural solid it can't crack never
   // reaches here (blocksBlast keeps the front out of it), so anything else still
   // solid is left untouched, defensively.
-  if (m.phase !== Phase.Solid || m.shockLoose === true) {
+  if (m.phase !== Phase.Solid || isShockLoose(prevId)) {
     if (shockKill(sim, x, y, prevId)) return;
     launchDebris(sim, x, y, prevId, entryDx, entryDy, outB);
   }
