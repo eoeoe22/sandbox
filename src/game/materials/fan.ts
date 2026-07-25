@@ -4,6 +4,8 @@ import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
 import { AMBIENT_TEMP } from '../config';
 import type { SimContext } from '../engine/SimContext';
+import { TERMITE } from './termite';
+import { NANOBOT } from './nanobot';
 
 // Fan (선풍기) — an electric appliance that turns power into a directional gust of
 // wind. Like the Conveyor, which way it blows is chosen at placement time by the
@@ -117,6 +119,7 @@ const MAX_BODY = 256;
  *  wind flows *past* them (they stay windPassable) without shoving them. */
 function isWindPushable(id: number): boolean {
   if (id === EMPTY) return false;
+  if (id === TERMITE.id || id === NANOBOT.id) return true;
   const m = getMaterial(id);
   if (m.packedTemp) return false;
   const p = m.phase;
@@ -129,6 +132,7 @@ function isWindPushable(id: number): boolean {
  *  indestructible block, any fixed solid) stops the beam. */
 function isWindPassable(id: number): boolean {
   if (id === EMPTY) return true;
+  if (id === TERMITE.id || id === NANOBOT.id) return true;
   const p = getMaterial(id).phase;
   return p === Phase.Powder || p === Phase.Liquid || p === Phase.Gas;
 }
