@@ -262,12 +262,17 @@ export function isSubmerged(x: number, y: number, sim: SimContext): boolean {
   return touchesLiquid;
 }
 
-/** True if any 8-neighbor is a Blast shockwave flash cell. This is exactly the
- *  "폭발 충격파 노출 (단 Woofer 제외)" test: a real detonation paints Blast flash
- *  cells across and around its crater, while a Woofer's shockwave deliberately
- *  never creates one (see woofer.ts) — so keying death off an adjacent Blast cell
- *  makes the bugs die to ordinary explosions but shrug off a Woofer's thump, with
- *  no special-casing needed. */
+/** True if any 8-neighbor is a Blast shockwave flash cell — the "폭발 충격파 노출"
+ *  test for a *real detonation*: it paints Blast flash cells across and around its
+ *  crater, so a bug that survived the crater flood but stands at its rim still
+ *  dies to the explosion it was next to.
+ *
+ *  A Woofer's shockwave deliberately paints no flash (see woofer.ts), so it never
+ *  trips this — it reaches the bugs through the other channel instead: both are
+ *  `shockLoose`, so a shockwave too weak to break them sweeps them up as Debris
+ *  (and rolls the Termite's `shockDeathChance`) right inside blast.ts. Two
+ *  channels, two intensities: a detonation's flash is certain death, a passing
+ *  pressure wave merely throws you (and may crush a termite). */
 export function touchingBlast(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;

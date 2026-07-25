@@ -21,9 +21,13 @@ import { DIR8 } from '../engine/directions';
 // it fails two ways instead, matching its metal-powder body:
 //   • 녹는점 — the same melting point as Metal Powder (Iron's melt temp); heated
 //     past it, a nanobot melts into Molten Metal just like any other metal.
-//   • 폭발 충격파 (단 Woofer 제외) — an adjacent Blast flash cell shatters it back
-//     into loose Metal Powder; a Woofer's flashless shockwave leaves it unharmed
-//     (see crawler.ts).
+//   • 폭발 충격파 — an adjacent Blast flash cell (a real detonation) shatters it
+//     back into loose Metal Powder (see crawler.ts).
+// A shockwave too weak to break it (a Woofer's silent thump, a Gunpowder
+// concussion) doesn't destroy it, but it doesn't stand in one either: a machine
+// this small is unanchored, so the wave picks it up and throws it like a grain of
+// powder (`shockLoose`) — it lands intact and crawls on, unlike the Termite, whose
+// soft body the same wave crushes half the time.
 //   • 소금물 부식 — Exposed to Saltwater, a nanobot slowly corrodes into Rust.
 //     It does NOT consume or interact with Rust series materials (Rust / Rust Powder).
 const FOOD = [IRON.id, METAL_POWDER.id] as const;
@@ -75,6 +79,10 @@ export const NANOBOT = register({
   // Shattered to Metal Powder when a blast destroys it at the epicenter, matching
   // the death-by-shockwave its update handles for rim survivors.
   blastDeathId: METAL_POWDER.id,
+  // Only nominally a solid (it walks instead of piling), so a shockwave it can't be
+  // broken by still throws it around like loose matter instead of being shadowed by
+  // it. No shockDeathChance: the machine survives the ride and keeps crawling.
+  shockLoose: true,
   // Metallic, so it conducts heat about as well as loose Metal Powder — it warms
   // toward its melting point at a metal's pace, not an insulator's.
   thermal: { conductivity: 0.35 },
