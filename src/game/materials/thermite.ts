@@ -1,5 +1,6 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
+import { POWDER_VARY } from '../tint';
 import { rgb } from '../render/color';
 import { AMBIENT_TEMP } from '../config';
 import { DIR8 } from '../engine/directions';
@@ -193,6 +194,7 @@ export const THERMITE = register({
   id: 54,
   name: 'Thermite',
   phase: Phase.Powder,
+  colorVary: POWDER_VARY,
   // Base color is the white-hot molten end of the glow ramp; unlit (at ambient)
   // it renders as the dull tan `glow.cool` powder color instead.
   color: rgb(255, 190, 90),
