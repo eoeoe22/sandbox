@@ -89,7 +89,7 @@ export const HYDROGEN = register({
   phase: Phase.Gas,
   color: rgb(214, 228, 238),
   density: 1,
-  category: '기체',
+  category: 'gas',
   // Very low conductivity, but a low autoignition point, so even a little
   // sustained heat lights it.
   thermal: { conductivity: 0.05 },

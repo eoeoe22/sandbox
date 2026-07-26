@@ -167,7 +167,7 @@ export const ACID_SLIME = register({
   // Same density as plain Slime, so a blob of each stacks in flat layers and only
   // blends via the diffusive swap above (mirrors Acid/Water being equal density).
   density: 4,
-  category: '생명',
+  category: 'life',
   // Thick, gooey ooze — holds a mound instead of spreading flat (like Slime).
   viscosity: 0.86,
   // Springy goo: a glob flung by a blast bounces energetically before it settles.

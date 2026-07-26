@@ -84,7 +84,7 @@ export const METAL_POWDER = register({
   // so a loose pile reads as dusty metal shavings rather than a solid bar.
   color: rgb(158, 162, 172),
   density: 7,
-  category: '가루',
+  category: 'powder',
   // Rounded, tumbling grains slide more freely than angular coal dust, so a metal
   // heap spreads to a shallower angle of repose (마찰 lower than Coal Powder).
   friction: 0.32,

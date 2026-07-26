@@ -78,7 +78,7 @@ export const YEAST = register({
   // sinks to stay in contact with the sugar/water it ferments instead of
   // floating away from the mash.
   density: 3.3,
-  category: '생명',
+  category: 'life',
   thermal: { conductivity: 0.3 },
   update: updateYeast,
 });

@@ -51,7 +51,7 @@ export const MOLTEN_GLASS = register({
   phase: Phase.Liquid,
   color: rgb(255, 200, 120),
   density: 5,
-  category: '불·열',
+  category: 'fire',
   thermal: { init: MOLTEN_GLASS_TEMP, conductivity: 0.5 },
   glow: { min: MOLTEN_GLASS_FREEZE_TEMP, max: MOLTEN_GLASS_TEMP, cool: rgb(130, 95, 70) },
   update: updateMoltenGlass,

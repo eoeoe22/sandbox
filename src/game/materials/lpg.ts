@@ -73,7 +73,7 @@ export const LPG = register({
   phase: Phase.Gas,
   color: rgb(210, 215, 170),
   density: 0.8,
-  category: '석유',
+  category: 'oil',
   thermal: { init: 60, conductivity: 0.08 },
   update: updateLPG,
 });

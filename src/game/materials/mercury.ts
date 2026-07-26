@@ -40,7 +40,7 @@ export const MERCURY = register({
   color: rgb(205, 208, 216),
   density: 9,
   conductive: true,
-  category: '액체',
+  category: 'liquid',
   // Beads up hard (표면장력): scattered drops pull themselves into tight rounded
   // balls instead of wetting a surface — the signature "quicksilver beads".
   surfaceTension: 0.6,

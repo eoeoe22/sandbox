@@ -13,7 +13,6 @@
     $selectedMaterial as selectedMaterial,
     $selectedObject as selectedObject,
     $cloneTarget as cloneTarget,
-    OBJECT_LABELS,
     $fps as fps,
     $fpsPeak as fpsPeak,
     $gridDims as gridDims,
@@ -33,9 +32,14 @@
     resetSettings,
   } from '../state/store';
   import {
+    $locale as locale,
+    t,
+    materialName,
+    objectLabel,
+  } from '../i18n';
+  import {
     BRUSH_MIN,
     BRUSH_MAX,
-    OVERWRITE_LEVELS,
     OVERWRITE_LEVEL_MIN,
     OVERWRITE_LEVEL_MAX,
     OVERWRITE_AUTO,
@@ -67,14 +71,15 @@
   // "물질이름(Clone)" instead of plain "Clone", so the button still reads as
   // "what will this paint" rather than just naming the carrier material.
   const selectedName = $derived.by(() => {
-    if ($tool === 'object') return OBJECT_LABELS[$selectedObject];
+    void $locale; // re-resolve when the language changes
+    if ($tool === 'object') return objectLabel($selectedObject);
     const mat = getMaterial($selectedMaterial);
-    if (!mat) return '재료';
+    if (!mat) return t('tool.material');
     if (mat.id === CLONE.id && $cloneTarget !== null) {
       const target = getMaterial($cloneTarget);
-      if (target) return `${target.name}(Clone)`;
+      if (target) return `${materialName(target.id, target.name)}(Clone)`;
     }
-    return mat.name;
+    return materialName(mat.id, mat.name);
   });
 
   // Modals, opened from the toolbar. The 설정 modal holds the settings that
@@ -155,11 +160,12 @@
 
   // Gravity direction buttons: an arrow icon + label per direction, laid out to
   // read like a D-pad (up on top, left/right in the middle, down on the bottom).
-  const GRAVITY_DIRS_META: { dir: GravityDir; icon: string; label: string }[] = [
-    { dir: 'up', icon: 'bi-arrow-up', label: '위' },
-    { dir: 'left', icon: 'bi-arrow-left', label: '왼쪽' },
-    { dir: 'right', icon: 'bi-arrow-right', label: '오른쪽' },
-    { dir: 'down', icon: 'bi-arrow-down', label: '아래' },
+  // Labels resolve through `t()` so they follow the active locale.
+  const GRAVITY_DIRS_META: { dir: GravityDir; icon: string; labelKey: string }[] = [
+    { dir: 'up', icon: 'bi-arrow-up', labelKey: 'sim.gravityDirUp' },
+    { dir: 'left', icon: 'bi-arrow-left', labelKey: 'sim.gravityDirLeft' },
+    { dir: 'right', icon: 'bi-arrow-right', labelKey: 'sim.gravityDirRight' },
+    { dir: 'down', icon: 'bi-arrow-down', labelKey: 'sim.gravityDirDown' },
   ];
   const gravityPct = $derived(Math.round($gravityStrength * 100));
 
@@ -173,11 +179,15 @@
 
   // 덮어쓰기 slider spans AUTO (-1) and the 0..MAX manual levels. AUTO derives
   // its effective level from the selected material, so its label is annotated.
-  const overwriteLabel = $derived(
-    $overwriteLevel === OVERWRITE_AUTO
-      ? `자동 (${getMaterial($selectedMaterial)?.name ?? '?'})`
-      : OVERWRITE_LEVELS[$overwriteLevel],
-  );
+  const overwriteLabel = $derived.by(() => {
+    void $locale;
+    if ($overwriteLevel === OVERWRITE_AUTO) {
+      const mat = getMaterial($selectedMaterial);
+      const name = mat ? materialName(mat.id, mat.name) : t('brush.overwriteMissing');
+      return t('brush.overwriteAutoLabel', { name });
+    }
+    return t(`brush.overwriteLevel${$overwriteLevel}`);
+  });
 
   // Expanded HUD readouts.
   const fillPct = $derived.by(() => {
@@ -187,19 +197,24 @@
   // Actual step rate: the loop's interval is 2000/(TICK_HZ*mult) ms, i.e.
   // TICK_HZ*mult/2 Hz — so ×1 is 30 Hz (half of TICK_HZ), ×2 is 60, ×4 is 120.
   const simHz = $derived(Math.round((TICK_HZ * $simSpeed) / 2));
-  const gridLabel = $derived($gridDivision === 0 ? '끔' : `${$gridDivision}`);
+  const gridLabel = $derived.by(() => {
+    void $locale;
+    return $gridDivision === 0 ? t('grid.divisionOff') : `${$gridDivision}`;
+  });
 
   // Phase 0 per-pass breakdown (dev only; non-null only under `?perf`). Each
   // value is ms per sim tick, except render which is ms per frame. See
   // game/engine/profiler.ts and docs/PERFORMANCE.md.
   const perfLine = $derived.by(() => {
+    void $locale;
     const p = $perfPasses;
     if (!p) return null;
     const f = (v: number): string => v.toFixed(3);
     const sim = p.ms.heat + p.ms.ca + p.ms.objects + p.ms.drift;
     return (
-      `열 ${f(p.ms.heat)} · CA ${f(p.ms.ca)} · 오브젝트 ${f(p.ms.objects)} · ` +
-      `드리프트 ${f(p.ms.drift)} · 렌더 ${f(p.ms.render)} (틱 ${f(sim)} ms/tick)`
+      `${t('hud.perfHeat')} ${f(p.ms.heat)} · ${t('hud.perfCa')} ${f(p.ms.ca)} · ` +
+      `${t('hud.perfObjects')} ${f(p.ms.objects)} · ${t('hud.perfDrift')} ${f(p.ms.drift)} · ` +
+      `${t('hud.perfRender')} ${f(p.ms.render)} (${t('hud.perfTick')} ${f(sim)} ms/tick)`
     );
   });
 
@@ -256,7 +271,7 @@
 {#snippet frequentSettings()}
   <label class="field">
     <span class="field-label">
-      브러시 크기: {$brushSize}<span class="wheel-hint"> (휠로 조절)</span>
+      {t('brush.size', { n: $brushSize })}<span class="wheel-hint">{t('brush.sizeWheelHint')}</span>
     </span>
     <input
       type="range"
@@ -268,59 +283,59 @@
   </label>
 
   <div class="field">
-    <span class="field-label">브러시 모양</span>
-    <div class="seg" role="group" aria-label="브러시 모양">
+    <span class="field-label">{t('brush.shape')}</span>
+    <div class="seg" role="group" aria-label={t('brush.shape')}>
       <button
         class="ctl"
         class:active={$brushShape === 'circle'}
         onclick={() => brushShape.set('circle')}
         aria-pressed={$brushShape === 'circle'}
-        title="원형 브러시"
+        title={t('brush.shapeCircleTooltip')}
       >
         <i class="bi bi-circle-fill" aria-hidden="true"></i>
-        <span class="label">원형</span>
+        <span class="label">{t('brush.shapeCircle')}</span>
       </button>
       <button
         class="ctl"
         class:active={$brushShape === 'square'}
         onclick={() => brushShape.set('square')}
         aria-pressed={$brushShape === 'square'}
-        title="사각형 브러시"
+        title={t('brush.shapeSquareTooltip')}
       >
         <i class="bi bi-square-fill" aria-hidden="true"></i>
-        <span class="label">사각형</span>
+        <span class="label">{t('brush.shapeSquare')}</span>
       </button>
     </div>
   </div>
 
   <div class="field">
-    <span class="field-label">채우기</span>
-    <div class="seg" role="group" aria-label="브러시 채우기 방식">
+    <span class="field-label">{t('brush.fill')}</span>
+    <div class="seg" role="group" aria-label={t('brush.fill')}>
       <button
         class="ctl"
         class:active={$brushMode === 'full'}
         onclick={() => brushMode.set('full')}
         aria-pressed={$brushMode === 'full'}
-        title="브러시 영역을 빈틈없이 채웁니다"
+        title={t('brush.fillFullTooltip')}
       >
         <i class="bi bi-grid-fill" aria-hidden="true"></i>
-        <span class="label">Full</span>
+        <span class="label">{t('brush.fillFull')}</span>
       </button>
       <button
         class="ctl"
         class:active={$brushMode === 'particle'}
         onclick={() => brushMode.set('particle')}
         aria-pressed={$brushMode === 'particle'}
-        title="브러시 영역에 무작위로 빈틈을 남깁니다 (고체는 항상 Full)"
+        title={t('brush.fillParticleTooltip')}
       >
         <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
-        <span class="label">Particle</span>
+        <span class="label">{t('brush.fillParticle')}</span>
       </button>
     </div>
   </div>
 
   <label class="field">
-    <span class="field-label">덮어쓰기: {overwriteLabel}</span>
+    <span class="field-label">{t('brush.overwrite', { label: overwriteLabel })}</span>
     <input
       type="range"
       min={OVERWRITE_AUTO}
@@ -330,8 +345,12 @@
       oninput={(e) => overwriteLevel.set(+e.currentTarget.value)}
     />
     <div class="overwrite-steps" aria-hidden="true">
-      <span class="step auto" class:filled={$overwriteLevel === OVERWRITE_AUTO} title="자동"></span>
-      {#each OVERWRITE_LEVELS as _, i}
+      <span
+        class="step auto"
+        class:filled={$overwriteLevel === OVERWRITE_AUTO}
+        title={t('brush.overwriteAuto')}
+      ></span>
+      {#each Array(OVERWRITE_LEVEL_MAX + 1) as _, i}
         <span class="step" class:filled={$overwriteLevel >= i}></span>
       {/each}
     </div>
@@ -339,16 +358,16 @@
 
   <div class="field">
     <span class="field-label">
-      속도: ×{$simSpeed}{#if $simSpeed === 1}<span class="wheel-hint"> (기본)</span>{/if}
+      {t('sim.speed', { n: $simSpeed })}{#if $simSpeed === 1}<span class="wheel-hint">{t('sim.speedDefaultHint')}</span>{/if}
     </span>
-    <div class="seg speed-seg" role="group" aria-label="시뮬레이션 속도">
+    <div class="seg speed-seg" role="group" aria-label={t('sim.speedGroup')}>
       {#each SIM_SPEEDS as sp (sp)}
         <button
           class="ctl"
           class:active={$simSpeed === sp}
           onclick={() => simSpeed.set(sp)}
           aria-pressed={$simSpeed === sp}
-          title={`시뮬레이션 속도 ×${sp}`}
+          title={t('sim.speedTooltip', { n: sp })}
         >
           ×{sp}
         </button>
@@ -358,18 +377,20 @@
 
   <div class="field">
     <span class="field-label">
-      중력: {GRAVITY_DIRS_META.find((g) => g.dir === $gravityDir)?.label}
-      · {gravityPct === 0 ? '무중력' : `세기 ${gravityPct}%`}
+      {t('sim.gravity', {
+        dir: t(GRAVITY_DIRS_META.find((g) => g.dir === $gravityDir)?.labelKey ?? ''),
+        strength: gravityPct === 0 ? t('sim.gravityZero') : t('sim.gravityStrength', { n: gravityPct }),
+      })}
     </span>
-    <div class="gravity-pad" role="group" aria-label="중력 방향">
+    <div class="gravity-pad" role="group" aria-label={t('sim.gravityDirGroup')}>
       {#each GRAVITY_DIRS_META as g (g.dir)}
         <button
           class={`ctl grav-${g.dir}`}
           class:active={$gravityDir === g.dir}
           onclick={() => gravityDir.set(g.dir)}
           aria-pressed={$gravityDir === g.dir}
-          aria-label={`중력 ${g.label}`}
-          title={`중력을 ${g.label}쪽으로`}
+          aria-label={t('sim.gravityDirAria', { dir: t(g.labelKey) })}
+          title={t('sim.gravityDirTooltip', { dir: t(g.labelKey) })}
         >
           <i class={`bi ${g.icon}`} aria-hidden="true"></i>
         </button>
@@ -377,7 +398,7 @@
     </div>
     <input
       type="range"
-      aria-label="중력 세기"
+      aria-label={t('sim.gravityStrengthAria')}
       min={GRAVITY_STRENGTH_MIN}
       max={GRAVITY_STRENGTH_MAX}
       step={GRAVITY_STRENGTH_STEP}
@@ -390,63 +411,63 @@
        eye/thermometer icons in the header, so the inline copy is hidden there
        (.heat-field) and this control only surfaces in the mobile settings modal. -->
   <div class="field heat-field">
-    <span class="field-label">온도 열지도</span>
-    <div class="seg" role="group" aria-label="온도 열지도 오버레이">
+    <span class="field-label">{t('render.heatmap')}</span>
+    <div class="seg" role="group" aria-label={t('render.heatmapGroup')}>
       <button
         class="ctl"
         class:active={!$heatOverlay}
         onclick={() => heatOverlay.set(false)}
         aria-pressed={!$heatOverlay}
-        title="일반 물질 색으로 표시합니다"
+        title={t('render.heatmapOffTooltip')}
       >
         <i class="bi bi-palette" aria-hidden="true"></i>
-        <span class="label">일반</span>
+        <span class="label">{t('render.heatmapOff')}</span>
       </button>
       <button
         class="ctl"
         class:active={$heatOverlay}
         onclick={() => heatOverlay.set(true)}
         aria-pressed={$heatOverlay}
-        title="온도에 따라 색을 입혀 열화상처럼 표시합니다"
+        title={t('render.heatmapOnTooltip')}
       >
         <i class="bi bi-thermometer-half" aria-hidden="true"></i>
-        <span class="label">열지도</span>
+        <span class="label">{t('render.heatmapOn')}</span>
       </button>
     </div>
   </div>
 
   <div class="field">
-    <span class="field-label">연기</span>
-    <div class="seg" role="group" aria-label="연기 세기">
+    <span class="field-label">{t('render.smoke')}</span>
+    <div class="seg" role="group" aria-label={t('render.smokeGroup')}>
       <button
         class="ctl"
         class:active={$smokeLevel === 'high'}
         onclick={() => smokeLevel.set('high')}
         aria-pressed={$smokeLevel === 'high'}
-        title="연소·폭발 반응이 연기를 많이 냅니다"
+        title={t('render.smokeHighTooltip')}
       >
         <i class="bi bi-cloud-fog2" aria-hidden="true"></i>
-        <span class="label">상</span>
+        <span class="label">{t('render.smokeHigh')}</span>
       </button>
       <button
         class="ctl"
         class:active={$smokeLevel === 'medium'}
         onclick={() => smokeLevel.set('medium')}
         aria-pressed={$smokeLevel === 'medium'}
-        title="연기를 적당히 냅니다 (기본값)"
+        title={t('render.smokeMediumTooltip')}
       >
         <i class="bi bi-cloud" aria-hidden="true"></i>
-        <span class="label">중</span>
+        <span class="label">{t('render.smokeMedium')}</span>
       </button>
       <button
         class="ctl"
         class:active={$smokeLevel === 'off'}
         onclick={() => smokeLevel.set('off')}
         aria-pressed={$smokeLevel === 'off'}
-        title="반응에서 연기를 내지 않습니다"
+        title={t('render.smokeOffTooltip')}
       >
         <i class="bi bi-cloud-slash" aria-hidden="true"></i>
-        <span class="label">끔</span>
+        <span class="label">{t('render.smokeOff')}</span>
       </button>
     </div>
   </div>
@@ -455,36 +476,63 @@
 <!-- Set-once settings: tucked in the 설정 modal on every viewport so they don't
      crowd the常用 controls. -->
 {#snippet fixedSettings()}
+  <!-- Language switch: rarely changed but easy to find at the top of the
+       set-once settings. Two segment buttons; picking one writes $locale,
+       which persistence saves and the whole UI re-derives from. -->
   <div class="field">
-    <span class="field-label">테두리</span>
-    <div class="seg" role="group" aria-label="테두리 모드">
+    <span class="field-label">{t('language.label')}</span>
+    <div class="seg" role="group" aria-label={t('language.group')}>
+      <button
+        class="ctl"
+        class:active={$locale === 'ko'}
+        onclick={() => locale.set('ko')}
+        aria-pressed={$locale === 'ko'}
+        title={t('language.tooltip')}
+      >
+        <span class="label">{t('language.korean')}</span>
+      </button>
+      <button
+        class="ctl"
+        class:active={$locale === 'en'}
+        onclick={() => locale.set('en')}
+        aria-pressed={$locale === 'en'}
+        title={t('language.tooltip')}
+      >
+        <span class="label">{t('language.english')}</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">{t('border.label')}</span>
+    <div class="seg" role="group" aria-label={t('border.group')}>
       <button
         class="ctl"
         class:active={$borderMode === 'wall'}
         onclick={() => borderMode.set('wall')}
         aria-pressed={$borderMode === 'wall'}
-        title="테두리가 단단한 벽 — 파티클이 밖으로 나가지 못합니다"
+        title={t('border.wallTooltip')}
       >
         <i class="bi bi-bricks" aria-hidden="true"></i>
-        <span class="label">벽</span>
+        <span class="label">{t('border.wall')}</span>
       </button>
       <button
         class="ctl"
         class:active={$borderMode === 'void'}
         onclick={() => borderMode.set('void')}
         aria-pressed={$borderMode === 'void'}
-        title="테두리가 공허 — 가장자리에 닿은 파티클은 밖으로 떨어져 사라집니다"
+        title={t('border.voidTooltip')}
       >
         <i class="bi bi-dash-square-dotted" aria-hidden="true"></i>
-        <span class="label">공허</span>
+        <span class="label">{t('border.void')}</span>
       </button>
     </div>
   </div>
 
   <label class="field">
     <span class="field-label">
-      해상도: {$gridDims.w}×{$gridDims.h}
-      <span class="wheel-hint"> (셀 크기)</span>
+      {t('grid.resolution', { w: $gridDims.w, h: $gridDims.h })}
+      <span class="wheel-hint">{t('grid.resolutionHint')}</span>
     </span>
     <input
       type="range"
@@ -495,23 +543,23 @@
       oninput={(e) => setCellScaleFromIndex(+e.currentTarget.value)}
     />
     <div class="range-ends" aria-hidden="true">
-      <span>저해상도</span>
-      <span>고해상도</span>
+      <span>{t('grid.lowRes')}</span>
+      <span>{t('grid.highRes')}</span>
     </div>
   </label>
 
   <div class="field">
-    <span class="field-label">격자 표시: {gridLabel}</span>
-    <div class="seg grid-seg" role="group" aria-label="격자 표시 간격">
+    <span class="field-label">{t('grid.division', { label: gridLabel })}</span>
+    <div class="seg grid-seg" role="group" aria-label={t('grid.divisionGroup')}>
       {#each GRID_DIVISIONS as gd (gd)}
         <button
           class="ctl"
           class:active={$gridDivision === gd}
           onclick={() => gridDivision.set(gd)}
           aria-pressed={$gridDivision === gd}
-          title={gd === 0 ? '격자선을 표시하지 않습니다' : `${gd}칸마다 격자선을 표시합니다`}
+          title={gd === 0 ? t('grid.divisionTooltipOff') : t('grid.divisionTooltipOn', { n: gd })}
         >
-          {gd === 0 ? '끔' : gd}
+          {gd === 0 ? t('grid.divisionOff') : gd}
         </button>
       {/each}
     </div>
@@ -519,12 +567,12 @@
 
   <label class="field">
     <span class="field-label">
-      아래 데드존: {$bottomDeadzone}px
-      <span class="wheel-hint"> (화면 아래 가림 방지)</span>
+      {t('grid.bottomDeadzone', { n: $bottomDeadzone })}
+      <span class="wheel-hint">{t('grid.bottomDeadzoneHint')}</span>
     </span>
     <input
       type="range"
-      aria-label="아래 데드존"
+      aria-label={t('grid.bottomDeadzoneAria')}
       min={BOTTOM_DEADZONE_MIN}
       max={BOTTOM_DEADZONE_MAX}
       step={BOTTOM_DEADZONE_STEP}
@@ -532,31 +580,30 @@
       oninput={(e) => bottomDeadzone.set(+e.currentTarget.value)}
     />
     <p class="field-note">
-      태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스
-      아래에 빈 공간을 확보합니다. (PC는 0 권장)
+      {t('grid.bottomDeadzoneNote')}
     </p>
   </label>
 
   <div class="field">
-    <span class="field-label">브러시 세부 설정</span>
+    <span class="field-label">{t('brushDetails.label')}</span>
     <div class="settings-links">
       <button
         class="ctl"
         onclick={openHeatCoolFromSettings}
-        aria-label="가열/냉각 감도 설정 열기"
-        title="가열/냉각 브러시의 감도(절대온도/상대온도)를 조절합니다"
+        aria-label={t('brushDetails.heatCoolAria')}
+        title={t('brushDetails.heatCoolTooltip')}
       >
         <i class="bi bi-thermometer-half" aria-hidden="true"></i>
-        <span class="label">가열/냉각 감도</span>
+        <span class="label">{t('brushDetails.heatCool')}</span>
       </button>
       <button
         class="ctl"
         onclick={openBlendFromSettings}
-        aria-label="혼합 브러시 구성 열기"
-        title="혼합 브러시가 섞을 물질과 비율을 조절합니다"
+        aria-label={t('brushDetails.blendAria')}
+        title={t('brushDetails.blendTooltip')}
       >
         <i class="bi bi-palette-fill" aria-hidden="true"></i>
-        <span class="label">혼합 브러시 구성</span>
+        <span class="label">{t('brushDetails.blend')}</span>
       </button>
     </div>
   </div>
@@ -576,8 +623,8 @@
         class:active={!$heatOverlay}
         onclick={() => heatOverlay.set(false)}
         aria-pressed={!$heatOverlay}
-        aria-label="일반 렌더링"
-        title="일반 렌더링 — 물질 색으로 표시"
+        aria-label={t('render.heatmapNormalAria')}
+        title={t('render.heatmapNormalTooltip')}
       >
         <i class="bi bi-eye" aria-hidden="true"></i>
       </button>
@@ -586,16 +633,16 @@
         class:active={$heatOverlay}
         onclick={() => heatOverlay.set(true)}
         aria-pressed={$heatOverlay}
-        aria-label="열지도 렌더링"
-        title="열지도 렌더링 — 온도에 따라 열화상처럼 표시"
+        aria-label={t('render.heatmapHeatAria')}
+        title={t('render.heatmapHeatTooltip')}
       >
         <i class="bi bi-thermometer-half" aria-hidden="true"></i>
       </button>
       <button
         class="head-btn"
         onclick={() => (settingsOpen = true)}
-        aria-label="설정"
-        title="설정"
+        aria-label={t('tool.settings')}
+        title={t('tool.settingsTooltip')}
       >
         <i class="bi bi-sliders2" aria-hidden="true"></i>
       </button>
@@ -605,44 +652,44 @@
   <!-- Primary controls (bottom-bar row 1 on mobile) + material palette (row 2). -->
   <div class="bar">
     <div class="bar-row primary">
-      <div class="group" role="group" aria-label="재생 제어">
+      <div class="group" role="group" aria-label={t('play.groupPlayback')}>
         <button
           class="ctl"
           onclick={() => running.set(!$running)}
-          aria-label={$running ? '일시정지' : '재생'}
-          title={$running ? '일시정지' : '재생'}
+          aria-label={$running ? t('play.pause') : t('play.resume')}
+          title={$running ? t('play.pause') : t('play.resume')}
         >
           <i class={`bi ${$running ? 'bi-pause-fill' : 'bi-play-fill'}`} aria-hidden="true"></i>
-          <span class="label">{$running ? '일시정지' : '재생'}</span>
+          <span class="label">{$running ? t('play.pause') : t('play.resume')}</span>
         </button>
         <button
           class="ctl"
           onclick={requestStep}
           disabled={$running}
-          aria-label="한 스텝 진행"
-          title="한 스텝 진행 (일시정지 중)"
+          aria-label={t('play.stepFull')}
+          title={t('play.stepTooltip')}
         >
           <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
-          <span class="label">스텝</span>
+          <span class="label">{t('play.step')}</span>
         </button>
         <button
           class="ctl clear-btn"
           class:armed={clearArmed}
           onclick={handleClear}
-          aria-label={clearArmed ? '전체 지우기 확인' : '전체 지우기'}
-          title="전체 지우기"
+          aria-label={clearArmed ? t('play.clearFull') : t('play.clearFull')}
+          title={t('play.clearTooltip')}
         >
           <i class="bi bi-trash3" aria-hidden="true"></i>
-          <span class="label">{clearArmed ? '계속하시겠습니까?' : '지우기'}</span>
+          <span class="label">{clearArmed ? t('play.clearConfirm') : t('play.clear')}</span>
         </button>
         <button
           class="ctl"
           onclick={openSaveSlots}
-          aria-label="저장 / 불러오기"
-          title="현재 샌드박스를 저장하거나 불러옵니다"
+          aria-label={t('play.saveFull')}
+          title={t('play.saveTooltip')}
         >
           <i class="bi bi-collection" aria-hidden="true"></i>
-          <span class="label">저장</span>
+          <span class="label">{t('play.save')}</span>
         </button>
       </div>
 
@@ -653,14 +700,14 @@
            영역 전체에 한 번에 적용한다(PointerPainter.applyRect). PC에서 좌클릭
            드래그는 드롭 즉시 적용(터치와 동일), 우클릭 드래그는 Enter로 확정하는
            대기 상태로 남는다. .mode-group은 순전히 시각적 묶음이다. -->
-      <div class="group mode-group" role="group" aria-label="그리기 방식">
+      <div class="group mode-group" role="group" aria-label={t('tool.groupDraw')}>
         <button
           class="ctl material-btn"
           class:active={$tool === 'material'}
           onclick={() => tool.set('material')}
           aria-pressed={$tool === 'material'}
-          aria-label={`재료: ${selectedName}`}
-          title={`선택한 재료를 그립니다: ${selectedName}`}
+          aria-label={t('tool.materialLabel', { name: selectedName })}
+          title={t('tool.materialTooltip', { name: selectedName })}
         >
           <i class="bi bi-brush" aria-hidden="true"></i>
           <span class="label material-name">{selectedName}</span>
@@ -671,26 +718,26 @@
           onclick={handleAreaSelectClick}
           bind:this={areaBtn}
           aria-pressed={$areaSelect}
-          aria-label="영역 선택"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: 좌클릭 드래그는 즉시 적용, 우클릭 드래그는 Enter로 확정·Escape로 취소 / 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
+          aria-label={t('tool.area')}
+          title={t('tool.areaTooltip')}
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
-          <span class="label">영역</span>
+          <span class="label">{t('tool.area')}</span>
         </button>
       </div>
 
-      <div class="group" role="group" aria-label="특수 브러시">
+      <div class="group" role="group" aria-label={t('tool.groupSpecial')}>
         <button
           class="ctl"
           class:active={$tool === 'blend'}
           onclick={() => tool.set('blend')}
           ondblclick={() => (blendOpen = true)}
           aria-pressed={$tool === 'blend'}
-          aria-label="혼합 브러시"
-          title="여러 물질을 비율대로 섞어 그립니다 (더블클릭하면 비율 조절 창이 열립니다)"
+          aria-label={t('tool.blend')}
+          title={t('tool.blendTooltip')}
         >
           <i class="bi bi-palette-fill" aria-hidden="true"></i>
-          <span class="label">혼합</span>
+          <span class="label">{t('tool.blend')}</span>
         </button>
         <button
           class="ctl"
@@ -701,11 +748,11 @@
             heatCoolOpen = true;
           }}
           aria-pressed={$tool === 'heat'}
-          aria-label="가열"
-          title="브러시 영역의 온도를 올립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
+          aria-label={t('tool.heat')}
+          title={t('tool.heatTooltip')}
         >
           <i class="bi bi-fire" aria-hidden="true"></i>
-          <span class="label">가열</span>
+          <span class="label">{t('tool.heat')}</span>
         </button>
         <button
           class="ctl"
@@ -716,60 +763,60 @@
             heatCoolOpen = true;
           }}
           aria-pressed={$tool === 'cool'}
-          aria-label="냉각"
-          title="브러시 영역의 온도를 내립니다 (빈칸 제외) — 더블클릭하면 감도 설정이 열립니다"
+          aria-label={t('tool.cool')}
+          title={t('tool.coolTooltip')}
         >
           <i class="bi bi-snow" aria-hidden="true"></i>
-          <span class="label">냉각</span>
+          <span class="label">{t('tool.cool')}</span>
         </button>
         <button
           class="ctl"
           class:active={$tool === 'mix'}
           onclick={() => tool.set('mix')}
           aria-pressed={$tool === 'mix'}
-          aria-label="섞기"
-          title="브러시 영역의 파티클을 섞습니다 (고체 제외)"
+          aria-label={t('tool.mix')}
+          title={t('tool.mixTooltip')}
         >
           <i class="bi bi-tornado" aria-hidden="true"></i>
-          <span class="label">섞기</span>
+          <span class="label">{t('tool.mix')}</span>
         </button>
         <button
           class="ctl"
           class:active={$tool === 'erase'}
           onclick={() => tool.set('erase')}
           aria-pressed={$tool === 'erase'}
-          aria-label="지우개"
-          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
+          aria-label={t('tool.erase')}
+          title={t('tool.eraseTooltip')}
         >
           <i class="bi bi-eraser-fill" aria-hidden="true"></i>
-          <span class="label">지우개</span>
+          <span class="label">{t('tool.erase')}</span>
         </button>
         <button
           class="ctl"
           class:active={$tool === 'view'}
           onclick={() => tool.set('view')}
           aria-pressed={$tool === 'view'}
-          aria-label="보기"
-          title="보기 모드 — 그리지 않습니다. 오브젝트(공·드럼통)를 끌어 옮길 수 있어요 (오른쪽 클릭 지우개는 사용 가능)"
+          aria-label={t('tool.view')}
+          title={t('tool.viewTooltip')}
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
-          <span class="label">보기</span>
+          <span class="label">{t('tool.view')}</span>
         </button>
       </div>
 
       <!-- 돋보기 inspect overlay: an independent toggle (not one of the brush
            tools) that surveys what's under the brush while on. -->
-      <div class="group" role="group" aria-label="관찰 도구">
+      <div class="group" role="group" aria-label={t('tool.groupObserve')}>
         <button
           class="ctl"
           class:active={$inspect}
           onclick={() => inspect.set(!$inspect)}
           aria-pressed={$inspect}
-          aria-label="돋보기"
-          title="돋보기 — 브러시 영역의 파티클 종류·개수·비율·평균온도를 표시합니다 (그리기와 별도로 켜짐)"
+          aria-label={t('tool.inspect')}
+          title={t('tool.inspectTooltip')}
         >
           <i class="bi bi-search" aria-hidden="true"></i>
-          <span class="label">돋보기</span>
+          <span class="label">{t('tool.inspect')}</span>
         </button>
       </div>
 
@@ -778,8 +825,8 @@
       <button
         class="ctl settings-toggle"
         onclick={() => (settingsOpen = true)}
-        aria-label="설정"
-        title="설정"
+        aria-label={t('tool.settings')}
+        title={t('tool.settingsTooltip')}
       >
         <i class="bi bi-sliders2" aria-hidden="true"></i>
       </button>
@@ -800,7 +847,7 @@
 <!-- 설정 modal. On mobile it also carries the frequently-tweaked settings (there
      is no room for them inline in the bottom bar); on desktop those show inline
      and .modal-frequent is hidden, leaving just the set-once settings here. -->
-<Modal open={settingsOpen} title="설정" icon="bi-sliders2" onclose={() => (settingsOpen = false)}>
+<Modal open={settingsOpen} title={t('modal.settingsTitle')} icon="bi-sliders2" onclose={() => (settingsOpen = false)}>
   <div class="modal-frequent">
     {@render frequentSettings()}
   </div>
@@ -808,23 +855,16 @@
   {@render fixedSettings()}
 
   <div class="hud">
-    <span class="dims">격자 {$gridDims.w}×{$gridDims.h}</span>
-    <span title="현재 배치된 입자 수 (빈칸 제외)">입자 {$particleCount.toLocaleString()}</span>
-    <span title="격자에서 입자가 차지하는 비율">채움 {fillPct}%</span>
-    <span
-      class="fps"
-      title="적응형 주사율(ProMotion/Adaptive Sync) 기기는 유휴 시 절전을 위해 주사율을 낮춥니다. '최대'는 이 세션에서 관측된 최고값입니다."
-    >
-      {$fps} FPS {#if $fpsPeak > $fps + 5}· 최대 {$fpsPeak}{/if}
+    <span class="dims">{t('hud.grid', { w: $gridDims.w, h: $gridDims.h })}</span>
+    <span title={t('hud.particlesTooltip')}>{t('hud.particles', { n: $particleCount.toLocaleString() })}</span>
+    <span title={t('hud.fillTooltip')}>{t('hud.fill', { n: fillPct })}</span>
+    <span class="fps" title={t('hud.fpsTooltip')}>
+      {t('hud.fps', { n: $fps })}{#if $fpsPeak > $fps + 5}{t('hud.fpsPeak', { n: $fpsPeak })}{/if}
     </span>
-    <span title="프레임 렌더링에 걸린 평균 시간">{$frameMs} ms/프레임</span>
-    <span title="현재 시뮬레이션 갱신 속도 (속도 배율 × 기본 틱레이트)">시뮬 {simHz} Hz</span>
+    <span title={t('hud.frameMsTooltip')}>{t('hud.frameMs', { n: $frameMs })}</span>
+    <span title={t('hud.simHzTooltip')}>{t('hud.simHz', { n: simHz })}</span>
     {#if perfLine}
-      <span
-        class="perf"
-        title="Phase 0 개발 프로파일러 (?perf): 틱을 패스별로 계측한 평균 시간. 열=열확산, CA=물질 스캔, 렌더=프레임 렌더."
-        >{perfLine}</span
-      >
+      <span class="perf" title={t('hud.perfTooltip')}>{perfLine}</span>
     {/if}
   </div>
 
@@ -832,24 +872,23 @@
     class="ctl reset-btn"
     class:armed={resetArmed}
     onclick={handleReset}
-    aria-label={resetArmed ? '기본값 복원 확인' : '모든 설정 기본값 복원'}
-    title="모든 설정을 기본값으로 되돌립니다 (월드·즐겨찾기는 유지)"
+    aria-label={resetArmed ? t('reset.ariaArmed') : t('reset.aria')}
+    title={t('reset.tooltip')}
   >
     <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-    <span class="label">{resetArmed ? '기본값으로 되돌릴까요?' : '설정 기본값 복원'}</span>
+    <span class="label">{resetArmed ? t('reset.buttonArmed') : t('reset.button')}</span>
   </button>
 
   <p class="hint">
-    캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.
+    {t('hint.draw')}
   </p>
 </Modal>
 
 <!-- 혼합 브러시 ratio editor, opened by double-clicking the 혼합 button (a single
      click just selects the tool), or from 설정 → 브러시 세부 설정. -->
-<Modal open={blendOpen} title="혼합 브러시 비율" icon="bi-palette-fill" onclose={() => (blendOpen = false)}>
+<Modal open={blendOpen} title={t('modal.blendTitle')} icon="bi-palette-fill" onclose={() => (blendOpen = false)}>
   <p class="blend-hint">
-    최대 3가지 물질을 골라 비율을 정하면, 혼합 브러시가 그 비율대로 섞어 칠합니다. 막대의
-    경계를 드래그해 비율을 조절하세요.
+    {t('modal.blendHint')}
   </p>
   <BlendBrush />
 </Modal>
@@ -858,7 +897,7 @@
      from 설정 → 브러시 세부 설정. -->
 <Modal
   open={heatCoolOpen}
-  title="가열/냉각 브러시 설정"
+  title={t('modal.heatCoolTitle')}
   icon="bi-thermometer-half"
   onclose={() => (heatCoolOpen = false)}
 >
@@ -866,7 +905,7 @@
 </Modal>
 
 <!-- 저장 / 불러오기 modal: named snapshot slots saved in localStorage. -->
-<Modal open={saveSlotsOpen} title="저장 / 불러오기" icon="bi-collection" onclose={() => (saveSlotsOpen = false)}>
+<Modal open={saveSlotsOpen} title={t('modal.saveTitle')} icon="bi-collection" onclose={() => (saveSlotsOpen = false)}>
   <SaveSlots bind:this={saveSlotsPanel} />
 </Modal>
 
@@ -885,7 +924,7 @@
     role="tooltip"
     style={`top:${areaPopoverPos.top}px; left:${areaPopoverPos.left}px`}
   >
-    <div class="area-popover-body">오브젝트는 영역 선택을 사용할 수 없습니다.</div>
+    <div class="area-popover-body">{t('tool.areaObjectBlocked')}</div>
     <div class="area-popover-arrow"></div>
   </div>
 {/if}

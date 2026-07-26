@@ -39,7 +39,7 @@ export const NUKE_WASTE = register({
   color: rgb(120, 150, 80),
   colorVary: POWDER_VARY,
   density: 6,
-  category: '방사성',
+  category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
   thermal: { init: WARM_TEMP, conductivity: 0.3 },
   // Faintly glows a warmer sickly green as its decay heat builds, cooling to a

@@ -127,7 +127,7 @@ export const LASER = register({
   lattice: rgb(255, 90, 120),
   windArrow: true,
   density: 1000,
-  category: '전기',
+  category: 'electric',
   // Doesn't burn or corrode away underfoot, like the other electric machines.
   acidResistant: true,
   thermal: { conductivity: 0.3 },

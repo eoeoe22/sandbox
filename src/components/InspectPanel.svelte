@@ -1,6 +1,7 @@
 <script lang="ts">
   import { $inspect as inspect, $inspectData as inspectData, $areaSelect as areaSelect } from '../state/store';
   import { toCss } from '../game/render/color';
+  import { $locale as locale, t, materialName } from '../i18n';
 
   // The 돋보기 readout. Floats over the top of the sandbox (not tucked in the
   // settings sheet) so the survey is visible the moment inspect is on, on both
@@ -40,27 +41,31 @@
   <div class="inspect" role="status" aria-live="polite">
     <div class="ins-head">
       <i class={`bi ${$areaSelect ? 'bi-bounding-box' : 'bi-search'}`} aria-hidden="true"></i>
-      <span>{$areaSelect ? '영역 정보' : '브러시 정보'}</span>
+      <span>{$areaSelect ? t('inspect.areaInfo') : t('inspect.brushInfo')}</span>
     </div>
 
     {#if !data}
-      <p class="empty">드래그해 영역을 선택하면 정보가 표시됩니다</p>
+      <p class="empty">{t('inspect.emptyArea')}</p>
     {:else if occupied === 0}
-      <p class="empty">빈 공간 · {data.footprint}칸</p>
+      <p class="empty">{t('inspect.emptySpace', { n: data.footprint })}</p>
     {:else}
       <div class="summary">
-        <span title="브러시 영역에서 입자가 찬 칸 / 전체 칸">
-          입자 {occupied.toLocaleString()} / {data.footprint}칸 · {fillPct}%
+        <span title={t('inspect.particlesTooltip')}>
+          {t('inspect.particles', {
+            occupied: occupied.toLocaleString(),
+            total: data.footprint,
+            pct: fillPct,
+          })}
         </span>
         {#if data.avgTemp !== null}
-          <span title="입자가 있는 칸의 평균 온도 (벽 제외)">
-            평균 {Math.round(data.avgTemp).toLocaleString()}°C
+          <span title={t('inspect.avgTempTooltip')}>
+            {t('inspect.avgTemp', { n: Math.round(data.avgTemp).toLocaleString() })}
           </span>
         {/if}
         {#if overlapped > 0}
-          <span class="wet" title="액체가 스며든(겹친) 칸 수 — 예: 젖은 모래">
+          <span class="wet" title={t('inspect.overlapTooltip')}>
             <i class="bi bi-droplet-half" aria-hidden="true"></i>
-            겹침 {overlapped.toLocaleString()}칸
+            {t('inspect.overlap', { n: overlapped.toLocaleString() })}
           </span>
         {/if}
       </div>
@@ -69,13 +74,13 @@
         {#each rows as e (e.id)}
           <li>
             <span class="swatch" style={`background:${toCss(e.color)}`}></span>
-            <span class="name">{e.name}</span>
+            <span class="name">{materialName(e.id, e.name)}</span>
             {#if e.avgTemp !== null}
-              <span class="temp" title={`${e.name} 평균 온도`}>
+              <span class="temp" title={t('inspect.materialAvgTempTooltip', { name: materialName(e.id, e.name) })}>
                 {Math.round(e.avgTemp).toLocaleString()}°C
               </span>
             {:else}
-              <span class="temp none" title="온도 없음 (벽 등)">—</span>
+              <span class="temp none" title={t('inspect.noTempTooltip')}>—</span>
             {/if}
             <span class="count">{e.count.toLocaleString()}</span>
             <span class="ratio">{pct(e.count)}%</span>
@@ -83,7 +88,7 @@
         {/each}
       </ul>
       {#if hiddenKinds > 0}
-        <p class="more">그 외 {hiddenKinds}종</p>
+        <p class="more">{t('inspect.more', { n: hiddenKinds })}</p>
       {/if}
     {/if}
   </div>

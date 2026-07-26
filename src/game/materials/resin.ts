@@ -46,7 +46,7 @@ export const RESIN = register({
   // surface before it sets.
   density: 2.6,
   combustible: true,
-  category: '액체',
+  category: 'liquid',
   thermal: { conductivity: 0.2 },
   update: updateResin,
 });

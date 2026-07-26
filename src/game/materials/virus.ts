@@ -115,7 +115,7 @@ export const VIRUS = register({
   color: rgb(158, 66, 176),
   density: 1000,
   flammable: true,
-  category: '생명',
+  category: 'life',
   thermal: { conductivity: 0.3 },
   update: updateVirus,
 });

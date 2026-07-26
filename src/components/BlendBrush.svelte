@@ -10,12 +10,19 @@
   import { toCss } from '../game/render/color';
   import { BLEND_MAX_SLOTS, BLEND_RATIO_STEP } from '../game/config';
   import MaterialPicker from './MaterialPicker.svelte';
+  import { $locale as locale, t, materialName } from '../i18n';
 
   // Real materials only — the blend paints matter, never the eraser (id 0),
   // which isn't in MATERIALS anyway; the guard keeps this robust if that changes.
   const OPTIONS = MATERIALS.filter((m) => m.id !== 0);
   const matOf = (id: number) => MATERIALS.find((m) => m.id === id);
-  const nameOf = (id: number) => matOf(id)?.name ?? '?';
+  const nameOf = $derived.by(() => {
+    void $locale;
+    return (id: number) => {
+      const m = matOf(id);
+      return m ? materialName(m.id, m.name) : t('picker.missing');
+    };
+  });
   const colorOf = (id: number) => {
     const m = matOf(id);
     return m ? toCss(m.color) : '#888';
@@ -132,8 +139,8 @@
         class="divider"
         style={`left:${cum[i + 1]}%`}
         onpointerdown={(e) => onDividerDown(e, i)}
-        aria-label={`${nameOf(comps[i].id)}와 ${nameOf(comps[i + 1].id)} 비율 조절`}
-        title="드래그해 비율 조절"
+        aria-label={t('blend.dividerAria', { a: nameOf(comps[i].id), b: nameOf(comps[i + 1].id) })}
+        title={t('blend.dividerTooltip')}
       ></button>
     {/each}
   </div>
@@ -145,24 +152,24 @@
           value={c.id}
           options={OPTIONS}
           onpick={(id) => setId(i, id)}
-          ariaLabel={`${i + 1}번 물질`}
+          ariaLabel={t('picker.slotLabel', { n: i + 1 })}
         />
         <span class="slot-pct">{c.ratio}%</span>
         <button
           class="mini"
           onclick={() => removeComp(i)}
           disabled={comps.length <= 2}
-          aria-label="이 물질 제거"
-          title="제거"
+          aria-label={t('blend.remove')}
+          title={t('blend.removeTooltip')}
         >
           <i class="bi bi-dash-lg" aria-hidden="true"></i>
         </button>
       </div>
     {/each}
     {#if comps.length < BLEND_MAX_SLOTS}
-      <button class="add" onclick={addComp} title="물질 추가">
+      <button class="add" onclick={addComp} title={t('blend.add')}>
         <i class="bi bi-plus-lg" aria-hidden="true"></i>
-        <span>물질 추가</span>
+        <span>{t('blend.add')}</span>
       </button>
     {/if}
   </div>

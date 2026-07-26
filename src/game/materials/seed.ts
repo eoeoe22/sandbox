@@ -71,7 +71,7 @@ export const SEED = register({
   // to reach the soil bed at the bottom of a flooded plot instead of floating
   // on the surface out of germinating reach.
   density: 3.45,
-  category: '생명',
+  category: 'life',
   thermal: { conductivity: 0.3 },
   update: updateSeed,
 });

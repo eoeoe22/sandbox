@@ -63,7 +63,7 @@ export const CHLORINE = register({
   // Heaviest of the gases — sinks below CO₂ (2) and the ordinary gases (1), pools
   // on the floor, but still lighter than any liquid so it rides on a puddle.
   density: 2.5,
-  category: '기체',
+  category: 'gas',
   thermal: { conductivity: 0.06 },
   update: updateChlorine,
 });

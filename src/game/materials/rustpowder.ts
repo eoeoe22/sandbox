@@ -30,7 +30,7 @@ export const RUST_POWDER = register({
   color: rgb(190, 85, 50),
   density: 5.5,
   friction: 0.35,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.25 },
   update: updateRustPowder,
 });

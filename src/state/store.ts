@@ -112,19 +112,9 @@ export const $areaSelect = atom<boolean>(false);
 export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum' | 'dynamite';
 export const $selectedObject = atom<ObjectKind>('ball');
 
-/**
- * Display name for each object kind — the single source of truth shared by the
- * 독립 오브젝트 palette tab (MaterialPalette) and the control panel's brush-name
- * readout, which shows the selected object's name while `$tool === 'object'`
- * (see ControlPanel.svelte's `selectedName`).
- */
-export const OBJECT_LABELS: Record<ObjectKind, string> = {
-  ball: 'Rubber Ball',
-  drum: 'Empty Drum',
-  oildrum: 'Crude Oil Drum',
-  aciddrum: 'Acid Drum',
-  dynamite: 'Dynamite',
-};
+// Object display names now live in src/i18n/materials.ts (objectLabelsEn /
+// objectLabelsKo), resolved at display time via the `objectLabel()` helper so
+// they follow the active locale.
 
 /**
  * The 돋보기 (inspect) overlay toggle. Independent of `$tool` — it can be on

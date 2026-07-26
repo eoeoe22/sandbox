@@ -32,7 +32,7 @@ export const GALLIUM = register({
   color: rgb(178, 188, 202),
   density: 1000,
   conductive: true,
-  category: '고체',
+  category: 'solid',
   // A bright silvery metal surface: a Heat Ray beam reflects cleanly off it
   // (정반사) — see heatray.ts.
   laserReflective: true,

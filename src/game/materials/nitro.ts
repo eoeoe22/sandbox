@@ -47,7 +47,7 @@ export const NITRO = register({
   density: 4.8,
   explosive: true,
   blastRadius: BLAST_RADIUS,
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.4 },
   // Nitroglycerin sets to a solid just above zero (real nitro freezes ~13°); a
   // chilled pool hardens in place, still every bit as touchy.

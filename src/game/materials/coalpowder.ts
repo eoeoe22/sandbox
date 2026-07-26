@@ -140,7 +140,7 @@ export const COAL_POWDER = register({
   // Molten Metal.
   density: 7.5,
   combustible: true,
-  category: '제련',
+  category: 'smelt',
   // Angular, dusty grains grip hard — a coal-dust heap piles steeply (마찰).
   friction: 0.48,
   thermal: { conductivity: 0.2 },

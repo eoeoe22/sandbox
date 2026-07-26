@@ -35,7 +35,7 @@ export const HONEY = register({
   color: rgb(214, 150, 34),
   density: 3.5,
   combustible: true,
-  category: '액체',
+  category: 'liquid',
   // Very viscous — oozes and holds a mound instead of racing flat like water.
   viscosity: 0.8,
   thermal: { conductivity: 0.25 },

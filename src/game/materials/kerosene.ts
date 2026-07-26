@@ -32,7 +32,7 @@ export const KEROSENE = register({
   density: 2.35,
   combustible: true,
   petroleum: true, // flat single-colour render; burns on water without steaming it
-  category: '석유',
+  category: 'oil',
   thermal: { conductivity: 0.2 },
   freeze: { temp: -26 },
   update: updateKerosene,

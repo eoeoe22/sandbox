@@ -110,7 +110,7 @@ export const AMMONIUM_NITRATE = register({
   // Filed under 냉각 (cooling): its signature toy is the endothermic cold pack —
   // pour water on a pile and it frosts the puddle toward freezing. (It's still an
   // `explosive` and detonates dry; the category is only a palette grouping.)
-  category: '냉각',
+  category: 'cooling',
   thermal: { conductivity: 0.3 },
   // Endothermic cold-pack dissolution (흡열): a grain touching Water dissolves into
   // it, pulling heat out of both cells (heat < 0). Only while cool — once hot the

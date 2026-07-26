@@ -371,7 +371,7 @@ export const SPARK = register({
   phase: Phase.Solid,
   color: rgb(255, 255, 190),
   density: 1,
-  category: '전기',
+  category: 'electric',
   // Normal conductivity is fine: the spark only lives one tick and its temp is
   // the wire's heat being ferried across, restored right after spawn.
   thermal: { conductivity: 0.3 },

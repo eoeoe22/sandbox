@@ -93,7 +93,7 @@ export const BLUE_FLAME = register({
   phase: Phase.Gas,
   color: rgb(90, 160, 255),
   density: 1,
-  category: '불·열',
+  category: 'fire',
   // Hotter than Lava (1500) and well past Stone's melt point (1100), so its
   // conducted heat melts rock even where the direct roll doesn't; conducts
   // poorly like every other gas.

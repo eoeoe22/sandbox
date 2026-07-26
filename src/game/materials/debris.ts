@@ -233,7 +233,7 @@ export const DEBRIS = register({
   phase: Phase.Gas,
   color: rgb(150, 130, 110), // fallback tone (drawn only if aux carries no material)
   density: 1,
-  category: '폭발',
+  category: 'explosive',
   // A fragment draws as the material it's carrying (its origin id, in aux) —
   // shoved water flies blue, sand flies tan — not as a uniform grey grain.
   renderAsAux: true,
