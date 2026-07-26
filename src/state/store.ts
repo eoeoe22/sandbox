@@ -173,7 +173,7 @@ export const $blendBrush = atom<BlendComponent[]>(DEFAULT_BLEND.map((c) => ({ ..
  * How aggressively the brush overwrites existing (non-Empty) particles, as a
  * step from 0 (never overwrite) to `OVERWRITE_LEVEL_MAX` (overwrite anything,
  * including Wall). Each step also allows every phase the previous steps
- * allow — see `OVERWRITE_LEVELS` in config.ts for the level labels.
+ * allow — see the `brush.overwriteLevel<N>` keys in src/i18n for the labels.
  */
 export const $overwriteLevel = atom<number>(OVERWRITE_LEVEL_MAX);
 

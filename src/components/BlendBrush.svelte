@@ -10,19 +10,19 @@
   import { toCss } from '../game/render/color';
   import { BLEND_MAX_SLOTS, BLEND_RATIO_STEP } from '../game/config';
   import MaterialPicker from './MaterialPicker.svelte';
-  import { $locale as locale, t, materialName } from '../i18n';
+  import { t, materialName } from '../i18n';
 
   // Real materials only — the blend paints matter, never the eraser (id 0),
   // which isn't in MATERIALS anyway; the guard keeps this robust if that changes.
   const OPTIONS = MATERIALS.filter((m) => m.id !== 0);
   const matOf = (id: number) => MATERIALS.find((m) => m.id === id);
-  const nameOf = $derived.by(() => {
-    void $locale;
-    return (id: number) => {
-      const m = matOf(id);
-      return m ? materialName(m.id, m.name) : t('picker.missing');
-    };
-  });
+  // Resolves a material's display name in the active locale. Reactivity on
+  // $locale is driven by the t(...) calls in the template that read this — no
+  // $derived wrapper needed here.
+  const nameOf = (id: number): string => {
+    const m = matOf(id);
+    return m ? materialName(m.id, m.name) : t('picker.missing');
+  };
   const colorOf = (id: number) => {
     const m = matOf(id);
     return m ? toCss(m.color) : '#888';
