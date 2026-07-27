@@ -143,25 +143,38 @@ function sourceY(sim: SimContext, x: number, y: number): number {
 
 /**
  * Where the mouth's discharge lands when the cell right above the pump is already
- * taken: the first open cell up the column of liquid/powder standing on it, or -1
- * if that column is capped (a closed pipe, a full tank, trapped gas) or runs
- * longer than MAX_PUSH.
+ * taken: the first open cell up the column standing on it, or -1 if that column is
+ * capped or runs longer than MAX_PUSH.
  *
  * Without this a pump fills a pipe with exactly one cell and stops forever — the
  * discharge sits on the mouth and blocks the next one, which is precisely the
- * deadlock a real column doesn't have. A liquid column is incompressible, so
- * pushing a cell in at the bottom *is* a cell leaving at the top; that's what this
- * walks. Delivery over a long pipe reads as instant because it is the far end of
- * the column moving, not the pumped cell teleporting.
+ * deadlock a real column doesn't have. A column of one liquid is incompressible,
+ * so pushing a cell in at the bottom *is* a cell leaving at the top: the cells are
+ * interchangeable, and putting the pumped one at the far end is that same event
+ * written the cheap way — nothing in between has to be touched.
+ *
+ * **Only a column of the payload's own phase is walked.** That interchangeability
+ * is exactly what breaks down against a *different* kind of matter: walking a sand
+ * plug would deliver water above it without the sand ever moving, i.e. the pump
+ * would quietly cheat matter through a plug it should be stopped by. So a powder
+ * plug caps a liquid discharge and a liquid pool caps a powder discharge, the same
+ * way a solid cap, a frozen slug or trapped gas does — while a pipe of the payload
+ * itself (water into water, sand onto sand) still fills to the top.
+ *
+ * Two liquids of the same phase but different materials (oil floating on water)
+ * are still walked as one column, so the pumped cell arrives above the slick
+ * rather than under it. That's the honest reading of "push a column along" at
+ * one-cell resolution, and it keeps a pump from stalling under an oil film.
  */
-function deliveryY(sim: SimContext, x: number, y: number): number {
+function deliveryY(sim: SimContext, x: number, y: number, phase: Phase): number {
   for (let n = 0; n < MAX_PUSH; n++) {
     const cy = y - n;
     if (!sim.inBounds(x, cy)) return -1;
     if (sim.get(x, cy) === EMPTY) return cy;
-    // Only a column of the stuff the pump moves is pushed along; a solid cap, a
-    // frozen slug or trapped gas stops it where it stands.
-    if (!isIntake(sim, x, cy)) return -1;
+    // Only a column of what's being pushed is pushed along; anything else — a
+    // solid cap, a plug of the other phase, a frozen slug, trapped gas — stops
+    // the discharge where it stands.
+    if (!isIntake(sim, x, cy) || getMaterial(sim.get(x, cy)).phase !== phase) return -1;
   }
   return -1;
 }
@@ -199,8 +212,11 @@ function liftColumn(x: number, topY: number, sim: SimContext): void {
   // percolating, since every powered cell pins its occupant in updatePump — and
   // the column below simply doesn't advance this tick.
   if (!sim.pushOverlay(x, topY, x, topY - 1)) {
-    const drop = deliveryY(sim, x, topY - 1);
-    if (drop >= 0) sim.pushOverlay(x, topY, x, drop);
+    const payload = sim.getOverlay(x, topY);
+    if (payload !== EMPTY) {
+      const drop = deliveryY(sim, x, topY - 1, getMaterial(payload).phase);
+      if (drop >= 0) sim.pushOverlay(x, topY, x, drop);
+    }
   }
   // Then the rest of the run, each cell into the pore the one above just freed.
   let y = topY + 1;
