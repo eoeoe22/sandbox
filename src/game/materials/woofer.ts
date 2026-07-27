@@ -247,13 +247,20 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
  *
  * One consequence worth knowing, since it's the object layer's rule and not
  * something this function can decide: `applyWooferKnockback` (engine/objects.ts)
- * blends *every* queued pulse into one net direction and then applies a single
- * outward speed floor, rather than pushing once per pulse. So paused firings on
- * opposite sides of a body partly cancel, and a mirror-symmetric pair cancels
- * exactly — the body doesn't move at all, where the same two firings a tick
- * apart would each have shoved it. Cells are pushed per pulse regardless (that's
- * the grid-level `detonate`, which runs immediately), so this only affects free
- * objects, and only for deliberately symmetric placement while paused.
+ * resolves *every* queued pulse into one net direction and then applies a single
+ * outward speed floor, rather than pushing once per pulse. A body sitting at the
+ * symmetric centre of the sources therefore isn't pushed anywhere at all — the
+ * pushes cancel, which is the honest answer for something squeezed evenly from
+ * all sides, but it does mean the thump can look like it missed. This is not
+ * specific to the queue batching above: one ordinary 영역 firing does it with the
+ * sandbox running, if a body happens to sit dead centre of that selection's own
+ * source lattice (measured: a 61×61 selection leaves a ball at its exact centre
+ * completely unmoved, while one cell off centre takes the full shove). Batching
+ * only adds the case where *separately fired* pulses cancel each other, which
+ * pausing makes easy to do deliberately — fire once each side of a body — since
+ * a running sandbox's own firing cadence keeps separate firings from queuing
+ * together. Grid cells are shoved per pulse regardless (that's the immediate
+ * `detonate` above), so none of this touches matter, only free objects.
  *
  * Deliberately does NOT consult `sim.wooferFlooded`: that memo answers "has this
  * connected body already thumped this tick", which a free-floating footprint has
