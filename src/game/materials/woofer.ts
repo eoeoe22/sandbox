@@ -143,15 +143,43 @@ function firePulseAt(sim: SimContext, x: number, y: number): void {
   sim.wooferPulseY.push(y);
 }
 
-/** How many source cells one 충격파 브러시 firing pulses from, at most. Each
- *  source runs its own `detonate` flood over a REACH-radius disc, so an
- *  unbounded count would make a big brush (or a large 영역 selection) cost
- *  hundreds of floods for a wave that looks identical: the sources are thinned
- *  onto a square lattice instead (see `fireShockwave`), whose spacing stays
- *  within a single pulse's own reach for any plausible footprint, so the
- *  thinning never leaves an unshoved pocket inside the wave. The *visual*
- *  wavefront is unaffected — it's always grown from the full footprint. */
-const BRUSH_MAX_SOURCES = 48;
+/**
+ * Lattice spacing the 충격파 브러시 thins its pulse *sources* down to (see
+ * `fireShockwave`). Unlike a Woofer body — which is small, and fires from every
+ * single cell — a brush footprint can be thousands of cells, and firing a
+ * reach-`SHOCK_VIS_REACH` flood from each one would be enormously redundant:
+ * neighbouring sources one cell apart push almost exactly the same matter.
+ *
+ * Interior coverage alone would allow a much coarser lattice (the farthest point
+ * from a lattice of spacing `s` is `s·√2/2` away, so anything up to `s = reach`
+ * leaves every interior cell inside some source's reach). What actually sets the
+ * spacing is the footprint's **rim**: the outermost sources sit up to `s-1` cells
+ * inside the edge, so they push that much less far outward than the drawn
+ * wavefront travels — and "the wave visibly sweeps over matter without moving
+ * it" is exactly the mismatch this brush must not have. Measured against firing
+ * from every cell, over a max-size brush on a fully packed world: `s=2` moves
+ * 100% of the matter, `s=3` 93%, `s=4` 89%. So a quarter of the reach it is —
+ * the coarsest spacing that still matches its own wavefront. The cost is ~9ms
+ * for the largest possible brush on a completely packed world (~2ms on an
+ * ordinary one), paid at most once per SHOCK_BRUSH_PERIOD ticks.
+ */
+const BRUSH_SOURCE_SPACING = Math.max(1, Math.round(SHOCK_VIS_REACH / 4));
+
+/** Hard ceiling on how many source cells one 충격파 브러시 firing pulses from —
+ *  the footprint's answer to `MAX_BODY`, and deliberately the same number, so a
+ *  brush firing can never cost more than the giant cabinet the material already
+ *  tolerates. Past `MAX_BODY × BRUSH_SOURCE_SPACING²` (~1k cells — so every brush
+ *  footprint clears it, and only a 영역 selection ever hits the cap) the lattice
+ *  is coarsened beyond BRUSH_SOURCE_SPACING to stay under it, which walks the rim
+ *  shortfall described above back up as the selection grows. The push stays at
+ *  least *interior*-solid (spacing within one pulse's own reach) up to
+ *  `MAX_BODY × SHOCK_VIS_REACH²` ≈ 16k cells, about a 128×128 selection; a larger
+ *  one still thumps everywhere, but as a lattice of overlapping discs with
+ *  thinning pockets between them rather than one solid wall of push — the
+ *  deliberate trade for bounded work, exactly as `MAX_BODY` trades away the far
+ *  side of an enormous cabinet. The *visual* wavefront is never thinned: it's
+ *  always grown from the full footprint. */
+const BRUSH_MAX_SOURCES = MAX_BODY;
 
 /** Flood the connected Woofer body (4-connected, like Turbine's own body
  *  walk) starting at (sx,sy) and fire every cell's pulse in the same event —
@@ -207,8 +235,15 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
  * POWER-0, completely non-destructive shove (`wooferPulse`), the same
  * object-layer event queue, and the same wavefront VFX grown from the source's
  * own outline — a hand-held Woofer, not a second kind of blast. Only the count
- * of pulse *sources* is capped (BRUSH_MAX_SOURCES), since a footprint can be far
- * larger than any cabinet.
+ * of pulse *sources* is capped (BRUSH_MAX_SOURCES — see there for what that
+ * costs in coverage), since a footprint can be far larger than any cabinet.
+ *
+ * Note the object-knockback queue this appends to is drained by the *simulation*
+ * step (see Simulation.step), so while the sandbox is paused several firings
+ * accumulate and are delivered together on the first step after resuming. That's
+ * the honest reading of a paused world — nothing has moved in between, so every
+ * thump you fired while time was stopped lands the moment it starts again — and
+ * each queued pulse is still delivered exactly once and then dropped.
  *
  * Deliberately does NOT consult `sim.wooferFlooded`: that memo answers "has this
  * connected body already thumped this tick", which a free-floating footprint has
@@ -224,7 +259,9 @@ export function fireShockwave(sim: SimContext, cells: readonly number[]): void {
   // every k-th of the flat run) so they stay spread evenly over the footprint
   // whatever its shape: a stride over row-major order would rake a diagonal line
   // across a wide selection and leave its corners unshoved.
-  const step = Math.max(1, Math.ceil(Math.sqrt(n / BRUSH_MAX_SOURCES)));
+  // Coarsen to the coverage spacing, and coarsen further only if the cap forces
+  // it (a footprint over BRUSH_MAX_SOURCES × spacing² cells).
+  const step = Math.max(BRUSH_SOURCE_SPACING, Math.ceil(Math.sqrt(n / BRUSH_MAX_SOURCES)));
   // Anchor the lattice on the footprint's own first cell rather than on absolute
   // grid coordinates: a thin selection (a 1-cell-wide column at an odd x, say)
   // would miss an absolute lattice entirely and thump nothing at all. Anchored,
