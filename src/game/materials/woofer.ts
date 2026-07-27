@@ -245,6 +245,16 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
  * thump you fired while time was stopped lands the moment it starts again — and
  * each queued pulse is still delivered exactly once and then dropped.
  *
+ * One consequence worth knowing, since it's the object layer's rule and not
+ * something this function can decide: `applyWooferKnockback` (engine/objects.ts)
+ * blends *every* queued pulse into one net direction and then applies a single
+ * outward speed floor, rather than pushing once per pulse. So paused firings on
+ * opposite sides of a body partly cancel, and a mirror-symmetric pair cancels
+ * exactly — the body doesn't move at all, where the same two firings a tick
+ * apart would each have shoved it. Cells are pushed per pulse regardless (that's
+ * the grid-level `detonate`, which runs immediately), so this only affects free
+ * objects, and only for deliberately symmetric placement while paused.
+ *
  * Deliberately does NOT consult `sim.wooferFlooded`: that memo answers "has this
  * connected body already thumped this tick", which a free-floating footprint has
  * no identity in. The brush does its own rate limiting instead (see
