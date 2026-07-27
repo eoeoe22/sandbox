@@ -695,7 +695,7 @@
 
       <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
            $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
-           가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
+           가열/냉각/섞기/지우개/전기/충격파에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
            스트로크 대신 사각형을 드래그해 선택하고, 그 시점에 고른 도구를 사각
            영역 전체에 한 번에 적용한다(PointerPainter.applyRect). PC에서 좌클릭
            드래그는 드롭 즉시 적용(터치와 동일), 우클릭 드래그는 Enter로 확정하는
@@ -726,7 +726,20 @@
         </button>
       </div>
 
+      <!-- 특수 브러시. 지우개가 맨 앞 — 가장 자주 집는 도구라 재료 바로 옆에 두고,
+           전기/충격파는 맨 뒤에 붙여 전기 계열끼리 묶는다. -->
       <div class="group" role="group" aria-label={t('tool.groupSpecial')}>
+        <button
+          class="ctl"
+          class:active={$tool === 'erase'}
+          onclick={() => tool.set('erase')}
+          aria-pressed={$tool === 'erase'}
+          aria-label={t('tool.erase')}
+          title={t('tool.eraseTooltip')}
+        >
+          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
+          <span class="label">{t('tool.erase')}</span>
+        </button>
         <button
           class="ctl"
           class:active={$tool === 'blend'}
@@ -782,17 +795,6 @@
         </button>
         <button
           class="ctl"
-          class:active={$tool === 'erase'}
-          onclick={() => tool.set('erase')}
-          aria-pressed={$tool === 'erase'}
-          aria-label={t('tool.erase')}
-          title={t('tool.eraseTooltip')}
-        >
-          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
-          <span class="label">{t('tool.erase')}</span>
-        </button>
-        <button
-          class="ctl"
           class:active={$tool === 'view'}
           onclick={() => tool.set('view')}
           aria-pressed={$tool === 'view'}
@@ -801,6 +803,28 @@
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">{t('tool.view')}</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'spark'}
+          onclick={() => tool.set('spark')}
+          aria-pressed={$tool === 'spark'}
+          aria-label={t('tool.spark')}
+          title={t('tool.sparkTooltip')}
+        >
+          <i class="bi bi-lightning-charge-fill" aria-hidden="true"></i>
+          <span class="label">{t('tool.spark')}</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'shock'}
+          onclick={() => tool.set('shock')}
+          aria-pressed={$tool === 'shock'}
+          aria-label={t('tool.shock')}
+          title={t('tool.shockTooltip')}
+        >
+          <i class="bi bi-broadcast" aria-hidden="true"></i>
+          <span class="label">{t('tool.shock')}</span>
         </button>
       </div>
 

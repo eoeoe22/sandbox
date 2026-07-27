@@ -1,7 +1,9 @@
 import type { Grid } from './Grid';
+import type { SimContext } from './SimContext';
 import type { MatId } from './types';
 import { EMPTY, Phase } from './types';
 import { getMaterial } from '../materials/registry';
+import { pulseCell } from '../materials/spark';
 
 /**
  * Special-brush operations that act on cells already in the grid, as opposed to
@@ -13,6 +15,15 @@ import { getMaterial } from '../materials/registry';
  * `cells` is a flat run of in-bounds coordinates the brush covers, packed as
  * `[x0, y0, x1, y1, ...]` (the shape mask is applied by the caller when it
  * builds the list).
+ *
+ * The heat/mix/inspect brushes only need raw cell access and so take the `Grid`
+ * directly; the 전기 브러시 (`sparkCells`) acts through the live `SimContext`
+ * instead, because what a pulse does to a cell is defined by the electricity
+ * subsystem (spawn a Spark, fire an appliance's `directPulse` hook, set off a
+ * charge) and poking cells by hand here would fork those rules. Its sibling 충격파
+ * 브러시 is the same shape but lives entirely in the material that defines the
+ * effect — PointerPainter hands the footprint straight to `fireShockwave`
+ * (materials/woofer.ts), with nothing left for this layer to add.
  */
 
 /**
@@ -166,6 +177,24 @@ function pushIfEligible(
     visited.add(idx);
     stack.push(idx);
   }
+}
+
+/**
+ * 전기 브러시: supply power to every cell under the footprint — the brush form
+ * of a battery terminal. Each cell goes through the one shared per-cell pulse
+ * rule (`pulseCell`, materials/spark.ts), so a ready conductor turns into a
+ * full-strength Spark that then races down the wire under its own rules, an
+ * electric appliance (Fan/Woofer/Laser — anything with a `directPulse` hook)
+ * fires, and an electric charge goes off, exactly as they would wired to a
+ * Battery or Turbine. Cells that aren't any of those (empty air, insulators, a
+ * conductor still refractory from the last pulse) are simply skipped.
+ *
+ * Painting straight onto a conductor is the point: you can energize a wire that
+ * has no power source attached at all, which is what makes the brush a probe
+ * rather than a second Battery material.
+ */
+export function sparkCells(sim: SimContext, cells: readonly number[]): void {
+  for (let k = 0; k < cells.length; k += 2) pulseCell(sim, cells[k], cells[k + 1]);
 }
 
 /** One material's share of what the inspect (돋보기) brush sees under its

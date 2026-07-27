@@ -1,4 +1,5 @@
 import type { Grid } from '../engine/Grid';
+import type { SimContext } from '../engine/SimContext';
 import type { SandboxLayout } from '../layout';
 import {
   $selectedMaterial,
@@ -27,17 +28,19 @@ import {
   OVERWRITE_AUTO,
   OVERWRITE_LEVEL_MAX,
   SIM_HZ_AT_1X,
+  SHOCK_BRUSH_PERIOD,
 } from '../config';
 import type { HeatRateMode } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
 import { getMaterial } from '../materials';
 import { Phase } from '../engine/types';
-import { heatCells, heatDelta, mixCells, inspectCells } from '../engine/brushTools';
+import { heatCells, heatDelta, mixCells, inspectCells, sparkCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
 import { FAN, FAN_UP, FAN_DOWN, FAN_LEFT, FAN_RIGHT } from '../materials/fan';
 import { LASER } from '../materials/laser';
 import { CLONE } from '../materials/clone';
+import { fireShockwave } from '../materials/woofer';
 import {
   createRubberBall,
   createDrum,
@@ -123,7 +126,10 @@ function effectiveOverwriteLevel(level: number, selectedId: number): number {
  * brushes: `erase` clears cells (the same path as a right-button drag), `blend`
  * stamps a per-cell stochastic mix of `$blendBrush`'s materials, and the
  * heat/cool/mix special brushes act on the cells already under the footprint
- * rather than placing new material.
+ * rather than placing new material. The two electric brushes go one step
+ * further and act through the live `SimContext` the simulation itself runs on:
+ * `spark` (전기) delivers a real full-strength pulse to every cell it covers, and
+ * `shock` (충격파) fires a Woofer shockwave out of the footprint's own shape.
  *
  * Also owns two pieces of pointer-adjacent UX: a brush-size cursor outline
  * that follows the pointer, and mouse-wheel resizing of the brush.
@@ -217,10 +223,20 @@ export class PointerPainter {
    *  영역 select mode is actively dragging or holding a pending selection. */
   private rectEl: HTMLDivElement;
 
+  /** Sim tick the 충격파 브러시 last fired on, or -1 when it's ready to fire
+   *  immediately (reset on every pointerdown, so a deliberate click always
+   *  thumps). See `shockGate` for the cadence this enforces. */
+  private lastShockTick = -1;
+
   constructor(
     private canvas: HTMLCanvasElement,
     private grid: Grid,
     private layout: SandboxLayout,
+    /** The simulation's own context — the seam the 전기/충격파 brushes act
+     *  through, so a hand-delivered pulse is the same event a Battery emits and
+     *  a hand-fired shockwave shares the object-knockback queue and per-tick
+     *  bookkeeping with a real Woofer (see Simulation.context). */
+    private sim: SimContext,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -476,9 +492,29 @@ export class PointerPainter {
     body.vy = 0;
   }
 
+  /**
+   * Whether the 충격파 브러시 may fire right now, claiming the slot if so. A
+   * shockwave is a one-off event, so unlike the accumulating heat/cool brushes a
+   * held or dragged press thumps on a fixed cadence (SHOCK_BRUSH_PERIOD ticks,
+   * a Battery's own beat) instead of once per stamp — several stamps within one
+   * tick (a fast drag's Bresenham line) collapse into a single thump, and a
+   * stationary press re-fires only when the cadence comes round again.
+   *
+   * `lastShockTick` is cleared on every pointerdown, so each new press fires
+   * immediately however recently the previous one did. While the sandbox is
+   * paused the tick doesn't advance, so a press thumps exactly once — which is
+   * what you want from a paused world: one wave per deliberate click.
+   */
+  private shockGate(): boolean {
+    const tick = this.sim.tick;
+    if (this.lastShockTick >= 0 && tick - this.lastShockTick < SHOCK_BRUSH_PERIOD) return false;
+    this.lastShockTick = tick;
+    return true;
+  }
+
   /** Apply the active brush at (cx,cy). A right-button press always erases; a
    *  normal press paints the selected material, or — for a special brush —
-   *  heats/cools or mixes the cells already there. */
+   *  heats/cools, mixes, energizes, or thumps the cells already there. */
   private stamp(cx: number, cy: number): void {
     if (this.erasing) return this.paintBrush(cx, cy, true);
     switch ($tool.get()) {
@@ -499,6 +535,17 @@ export class PointerPainter {
         return this.paintBrush(cx, cy, true);
       case 'blend':
         return this.paintBlend(this.brushCells(cx, cy));
+      case 'spark':
+        // 전기: power every cell under the footprint, stamp after stamp — a
+        // held brush is a live terminal, so a wire stays energized while you
+        // hold it there. Individual cells rate-limit themselves (a conductor is
+        // refractory right after a pulse), so this needs no gate of its own.
+        return sparkCells(this.sim, this.brushCells(cx, cy));
+      case 'shock':
+        // 충격파: the footprint stands in for a speaker cabinet. Gated to a
+        // fixed cadence — see shockGate.
+        if (this.shockGate()) fireShockwave(this.sim, this.brushCells(cx, cy));
+        return;
       case 'object':
         // Objects are placed once per press in onDown, not stamped continuously
         // (a held/dragged brush must not spew a stream of balls).
@@ -712,7 +759,7 @@ export class PointerPainter {
    * to a brush stroke, but over the marquee's rectangular footprint in one shot
    * instead of a per-tick stamp — the 영역 (rect) selection mode's confirm
    * action. Every tool `stamp()` supports is supported here too (재료/혼합 fill,
-   * 가열/냉각, 섞기, 지우개 clear), except 'object' (a spawn action, not
+   * 가열/냉각, 섞기, 지우개 clear, 전기 pulse, 충격파 thump), except 'object' (a spawn action, not
    * area-shaped) and 'view' (inert by design), which no-op just like their
    * brush-stroke counterparts. The mouse button no longer forces an erase here
    * (it now only picks the commit timing — see `onDown`); an area erase is the
@@ -750,6 +797,15 @@ export class PointerPainter {
         );
       case 'blend':
         return this.paintBlend(this.cellsInBounds(bounds));
+      case 'spark':
+        // One pulse into every cell of the marquee — a whole circuit energized
+        // at once instead of traced by hand.
+        return sparkCells(this.sim, this.cellsInBounds(bounds));
+      case 'shock':
+        // One thump out of the whole rectangle. No cadence gate here: a marquee
+        // confirm is a single deliberate action, not a held stroke, so it always
+        // fires (and, like the other 영역 actions, applies exactly once).
+        return fireShockwave(this.sim, this.cellsInBounds(bounds));
       case 'object':
       case 'view':
         // Neither has an area-shaped action (spawn is a point action; 보기 is
@@ -804,6 +860,9 @@ export class PointerPainter {
     // paints/uses the active tool. `contextmenu` is already suppressed on the
     // canvas so the right press is a clean erase gesture.
     this.erasing = e.button === 2;
+    // Every new press starts the 충격파 브러시 ready, so a deliberate click always
+    // thumps even if the last one was moments ago (see shockGate).
+    this.lastShockTick = -1;
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {

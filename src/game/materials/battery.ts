@@ -1,10 +1,10 @@
-import { register, getMaterial } from './registry';
+import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
-import { SPARK, packSpark, conductorClass, FULL_STRENGTH, reactToPulse } from './spark';
+import { pulseCell } from './spark';
 import { FIRE } from './fire';
 import { detonate } from './blast';
 
@@ -99,28 +99,18 @@ export function injectPulses(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (getMaterial(nid).conductive && sim.getAux(nx, ny) === 0) {
-      const cls = conductorClass(nid);
-      if (cls === 0) continue;
-      const heat = sim.getTemp(nx, ny);
-      sim.spawn(nx, ny, SPARK.id);
-      sim.setTemp(nx, ny, heat);
-      sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
-    } else {
-      // Direct contact (직접 연결), no wire needed: a non-conductor neighbor is an
-      // electric appliance (Fan/Woofer and any future `directPulse` device — its
-      // whole connected body reacts) or an explosive charge (C4/TNT/Gunpowder/…
-      // arced as an electric detonator). Both are dispatched through the one
-      // shared helper every pulse source uses (see spark.ts reactToPulse), so a
-      // charge or device plugged straight onto a battery face reacts exactly as
-      // it would when reached through a relay of ordinary conductors — and every
-      // pulse source stays consistent by construction. Every terminal gets its
-      // own independent beat here (unlike a single travelling Spark, which caps
-      // itself to one arc per tick), so a battery flush against charges/devices on
-      // several faces at once triggers each of them.
-      reactToPulse(sim, nx, ny, nid);
-    }
+    // One shared rule for what a pulse does to a cell (see spark.ts pulseCell):
+    // a ready conductor is energized at full strength, and anything else is
+    // dispatched through reactToPulse — direct contact (직접 연결), no wire
+    // needed, so a non-conductor neighbor that's an electric appliance
+    // (Fan/Woofer and any future `directPulse` device — its whole connected body
+    // reacts) or an explosive charge (C4/TNT/Gunpowder/… arced as an electric
+    // detonator) reacts exactly as it would when reached through a relay of
+    // ordinary conductors. Every terminal gets its own independent beat here
+    // (unlike a single travelling Spark, which caps itself to one arc per tick),
+    // so a battery flush against charges/devices on several faces at once
+    // triggers each of them.
+    pulseCell(sim, nx, ny);
   }
 }
 

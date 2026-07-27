@@ -106,6 +106,7 @@
 - **`SimContext.wooferPulseX/Y`**: Woofer 몸체가 한 틱에 발동한 모든 칸 좌표를 담는 틱당 큐(`materials/woofer.ts`의 `wooferBodyPulse`가 채움). `stepObjects`가 CA 스캔 이후 이 큐를 읽어 `applyWooferKnockback`으로 근처 오브젝트를 민다 — 폭발 넉백과 같은 역제곱 가중 방향 + 바깥쪽 속도 바닥값 로직이지만, 그리드를 스캔하는 대신 이 큐를 순회한다는 점만 다르다.
 - **직접 함수 호출 대신 이벤트 큐인 이유**: `objects.ts`는 이미 Spark 물질을 위해 `materials/spark.ts`를 import하고, `spark.ts`는 Woofer 발동을 위해 `materials/woofer.ts`를 import한다 — 만약 `woofer.ts`가 `objects.ts`의 넉백 함수를 직접 import하면 순환 참조가 닫힌다. `SimContext`(양쪽이 이미 의존하는 중립 지대)를 경유한 평범한 데이터 큐로 우회했다.
 - **파괴는 절대 없음**: `applyWooferKnockback`은 `applyBlastKnockback`과 달리 오브젝트를 **절대 파괴하지 않는다** — Woofer는 BLAST 셀이 없으므로 직격 파괴 판정(`footprintHazards`)에 애초에 걸리지 않는다. 아무리 가까워도 밀리기만 한다(완전한 비파괴성이 오브젝트에도 그대로 적용).
+- **큐는 진짜로 "틱당" 이벤트다 (버그 수정)**: 예전에는 큐를 **다음 flood가 게으르게 비우는** 구조였다(`wooferBodyPulse`가 틱이 바뀐 걸 보고 리셋). 그래서 한 번 발동한 뒤 **아무 우퍼도 안 뛰는 틱이 이어지면 큐가 그대로 남아**, `stepObjects`가 매 틱 같은 펄스로 오브젝트를 계속 다시 밀어냈다(속도 바닥값이 매 틱 다시 걸려 공이 하염없이 날아감). 이제 `Simulation.step()`이 **`stepObjects` 직후 큐를 비운다** — 유일한 소비자가 다 읽은 시점이다. 덕분에 큐를 **스텝 밖에서 채우는 것도 안전**해져서, 충격파 브러시(FEATURES.md)가 틱 사이에 넣은 발동도 바로 다음 스텝에 **정확히 한 번** 오브젝트로 전달된다.
 
 검증: 헤드리스로 (1) 배터리에 직접 연결한 Woofer 근처 고무공이 강하게 밀려나면서도 오브젝트 목록에서 사라지지 않음(비파괴), (2) Woofer 사거리 안에 놓인 TNT가 40틱 동안 기폭되지 않음(BLAST 셀 부재로 연쇄 기폭 없음)을 확인. `astro check` 0에러, active-tile 결정성 테스트 전건 통과.
 

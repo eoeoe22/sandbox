@@ -106,7 +106,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
   }
   const sim = new Simulation(grid);
   const renderer = new CanvasRenderer(canvas, grid, layout);
-  const painter = new PointerPainter(canvas, grid, layout);
+  // The painter shares the simulation's own context so the 전기/충격파 brushes
+  // deliver real pulses/shockwaves through the same seam material rules use.
+  const painter = new PointerPainter(canvas, grid, layout, sim.context);
 
   // Hand the grid to the snapshot module so the SaveSlots UI can save/load
   // named snapshots. Registering once here avoids passing the engine instance
