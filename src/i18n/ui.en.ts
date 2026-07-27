@@ -50,7 +50,7 @@ export const en = {
       'View mode — draws nothing. Objects (ball/drum) can be dragged around (right-click erase still works)',
     spark: 'Spark',
     sparkTooltip:
-      'Spark — supplies power to every conductor in the brush area. Drive a circuit by hand with no battery wired in; electric appliances it touches (fan/woofer/laser) and electrically-detonated charges fire too',
+      'Spark — supplies power to every conductor in the brush area. Drive a circuit by hand with no battery wired in; electric appliances it touches (fan/woofer/laser/pump/electromagnet) and electrically-detonated charges fire too',
     shock: 'Shockwave',
     shockTooltip:
       'Shockwave — thumps a Woofer shockwave out of the brush area. No woofer needed, and it breaks nothing: only powder, liquid and objects are pushed outward (repeats on a steady beat while held)',

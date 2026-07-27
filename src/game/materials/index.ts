@@ -118,6 +118,8 @@ import { RUST_POWDER } from './rustpowder';
 import { GALLIUM } from './gallium';
 import { LIQUID_GALLIUM } from './liquidgallium';
 import { MERCURY_VAPOR } from './mercuryvapor';
+import { PUMP } from './pump';
+import { ELECTROMAGNET } from './electromagnet';
 
 export {
   EMPTY_MAT,
@@ -235,6 +237,8 @@ export {
   GALLIUM,
   LIQUID_GALLIUM,
   MERCURY_VAPOR,
+  PUMP,
+  ELECTROMAGNET,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -317,6 +321,8 @@ export const MATERIALS = [
   WOOFER,
   FAN,
   LASER,
+  PUMP,
+  ELECTROMAGNET,
   MERCURY,
   MERCURY_VAPOR,
   LIQUID_GALLIUM,

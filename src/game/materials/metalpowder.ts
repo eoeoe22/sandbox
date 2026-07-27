@@ -88,6 +88,9 @@ export const METAL_POWDER = register({
   // Rounded, tumbling grains slide more freely than angular coal dust, so a metal
   // heap spreads to a shallower angle of repose (마찰 lower than Coal Powder).
   friction: 0.32,
+  // Iron shavings: the archetypal thing an Electromagnet's field lifts out of a
+  // mixed heap (see materials/electromagnet.ts).
+  magnetic: true,
   // Loose grains bridge heat far worse than a solid Iron bar (0.85), but metal
   // still carries warmth better than mineral dust.
   thermal: { conductivity: 0.35 },

@@ -83,6 +83,12 @@ export const NANOBOT = register({
   // broken by still throws it around like loose matter instead of being shadowed by
   // it. No shockDeathChance: the machine survives the ride and keeps crawling.
   shockLoose: true,
+  // A metal machine small enough to be dragged: an Electromagnet's field plucks a
+  // crawling swarm off the floor and pins it, which is the one way to *catch* the
+  // things short of destroying them (see materials/electromagnet.ts). Pullable
+  // despite being a Solid for the same reason `shockLoose` is set — it walks
+  // instead of piling, so it isn't structure.
+  magnetic: true,
   // Metallic, so it conducts heat about as well as loose Metal Powder — it warms
   // toward its melting point at a metal's pace, not an insulator's.
   thermal: { conductivity: 0.35 },

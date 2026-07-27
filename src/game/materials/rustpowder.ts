@@ -31,6 +31,10 @@ export const RUST_POWDER = register({
   density: 5.5,
   friction: 0.35,
   category: 'powder',
+  // Iron oxide dust still answers a magnet (weakly in reality, fully here — 재미
+  // 우선), so scale swept off a rusted build can be gathered up with the filings
+  // it came from (see materials/electromagnet.ts).
+  magnetic: true,
   thermal: { conductivity: 0.25 },
   update: updateRustPowder,
 });
