@@ -50,7 +50,7 @@ export const TERMITE = register({
   color: rgb(224, 206, 168),
   colorVary: 22,
   density: 1000,
-  category: '생명',
+  category: 'life',
   // Crushed to Sawdust (its own food) when a blast destroys it at the epicenter,
   // matching the death-by-shockwave its update handles for rim survivors — and
   // the remains a shockDeathChance roll leaves too.

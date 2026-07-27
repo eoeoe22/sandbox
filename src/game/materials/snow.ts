@@ -40,7 +40,7 @@ export const SNOW = register({
   phase: Phase.Powder,
   color: rgb(228, 241, 255),
   density: 2,
-  category: '냉각',
+  category: 'cooling',
   thermal: { init: SNOW_INIT_TEMP, conductivity: 0.12 },
   update: updateSnow,
 });

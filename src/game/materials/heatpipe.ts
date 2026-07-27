@@ -17,7 +17,7 @@ export const HEATPIPE = register({
   phase: Phase.Solid,
   color: rgb(184, 115, 51),
   density: 1000,
-  category: '고체',
+  category: 'solid',
   // A polished copper surface: a Heat Ray beam reflects cleanly off it (정반사) —
   // see heatray.ts.
   laserReflective: true,

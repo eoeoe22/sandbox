@@ -33,7 +33,7 @@ export const DRY_ICE = register({
   phase: Phase.Solid,
   color: rgb(236, 240, 245),
   density: 1000,
-  category: '냉각',
+  category: 'cooling',
   thermal: { init: -78, conductivity: 0.4 },
   update: updateDryIce,
 });

@@ -18,6 +18,6 @@ export const HELIUM = register({
   // Lighter than every other gas so it rises above all of them (see the density
   // sort in SimContext.tryMove); inert, so no custom update — pure data.
   density: 0.5,
-  category: '기체',
+  category: 'gas',
   thermal: { conductivity: 0.04 },
 });

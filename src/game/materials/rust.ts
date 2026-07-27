@@ -26,7 +26,7 @@ export const RUST = register({
   phase: Phase.Solid,
   color: rgb(175, 75, 45),
   density: 900,
-  category: '고체',
+  category: 'solid',
   thermal: { conductivity: 0.3 },
   update: updateRust,
 });

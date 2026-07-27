@@ -69,7 +69,7 @@ export const CLONE = register({
   density: 1000,
   acidResistant: true,
   indestructible: true,
-  category: '특수',
+  category: 'exotic',
   thermal: { conductivity: 0.2 },
   update: updateClone,
 });

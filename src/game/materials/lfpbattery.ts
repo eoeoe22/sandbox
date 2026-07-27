@@ -45,7 +45,7 @@ export const LFP_BATTERY = register({
   color: rgb(95, 160, 120),
   batteryPattern: true,
   density: 1000,
-  category: '전기',
+  category: 'electric',
   thermal: { conductivity: 0.3 },
   update: updateLfpBattery,
 });

@@ -8,31 +8,38 @@
 // custom material picker (MaterialPicker.svelte) build their category > material
 // UI from these helpers, so the two selectors always group and order materials
 // identically.
+//
+// Category keys are stable ASCII identifiers (see src/i18n/materials.ko.ts /
+// materials.en.ts for the displayed labels). A material's `category:` field may
+// name any key present in CATEGORY_META, or omit it to fall back to a phase key.
 import { Phase, type Material } from '../engine/types';
+import { categoryLabel } from '../../i18n';
 
-/** Thematic palette tabs, in display order, each with a Bootstrap Icon class. */
+/** Thematic palette tabs, in display order, each with a Bootstrap Icon class.
+ *  The `key` is a stable identifier; the label shown in the UI is localized. */
 export const CATEGORY_META: { key: string; icon: string }[] = [
-  { key: '고체', icon: 'bi-box-fill' },
-  { key: '가루', icon: 'bi-hourglass-split' },
-  { key: '액체', icon: 'bi-droplet-fill' },
-  { key: '기체', icon: 'bi-cloud-fill' },
-  { key: '불·열', icon: 'bi-fire' },
-  { key: '제련', icon: 'bi-hammer' },
-  { key: '석유', icon: 'bi-fuel-pump-fill' },
-  { key: '폭발', icon: 'bi-asterisk' },
-  { key: '냉각', icon: 'bi-snow' },
-  { key: '전기', icon: 'bi-lightning-charge-fill' },
-  { key: '생명', icon: 'bi-flower1' },
-  { key: '방사성', icon: 'bi-radioactive' },
-  { key: '특수', icon: 'bi-stars' },
+  { key: 'solid', icon: 'bi-box-fill' },
+  { key: 'powder', icon: 'bi-hourglass-split' },
+  { key: 'liquid', icon: 'bi-droplet-fill' },
+  { key: 'gas', icon: 'bi-cloud-fill' },
+  { key: 'fire', icon: 'bi-fire' },
+  { key: 'smelt', icon: 'bi-hammer' },
+  { key: 'oil', icon: 'bi-fuel-pump-fill' },
+  { key: 'explosive', icon: 'bi-asterisk' },
+  { key: 'cooling', icon: 'bi-snow' },
+  { key: 'electric', icon: 'bi-lightning-charge-fill' },
+  { key: 'life', icon: 'bi-flower1' },
+  { key: 'radioactive', icon: 'bi-radioactive' },
+  { key: 'exotic', icon: 'bi-stars' },
 ];
 
+/** Stable phase-fallback keys (the displayed labels are localized). */
 const PHASE_FALLBACK: Record<Phase, string> = {
-  [Phase.Empty]: '지우개',
-  [Phase.Solid]: '고체',
-  [Phase.Powder]: '가루',
-  [Phase.Liquid]: '액체',
-  [Phase.Gas]: '기체',
+  [Phase.Empty]: 'eraser',
+  [Phase.Solid]: 'solid',
+  [Phase.Powder]: 'powder',
+  [Phase.Liquid]: 'liquid',
+  [Phase.Gas]: 'gas',
 };
 
 export const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
@@ -69,7 +76,7 @@ export function buildCategories(materials: readonly Material[]): PaletteCategory
   return orderedKeys.map((key, index) => ({
     key,
     index,
-    label: key,
+    label: categoryLabel(key),
     icon: iconFor(key),
     materials: grouped.get(key)!,
   }));

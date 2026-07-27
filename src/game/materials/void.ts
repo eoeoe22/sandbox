@@ -30,7 +30,7 @@ export const VOID = register({
   color: rgb(34, 22, 44),
   density: 1000,
   acidResistant: true,
-  category: '특수',
+  category: 'exotic',
   thermal: { conductivity: 0 },
   update: updateVoid,
 });

@@ -44,7 +44,7 @@ export const MUD = register({
   phase: Phase.Liquid,
   color: rgb(84, 60, 40),
   density: 5.5,
-  category: '액체',
+  category: 'liquid',
   // Sluggish — slumps and oozes, holding a soft mound.
   viscosity: 0.82,
   thermal: { conductivity: 0.35 },

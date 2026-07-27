@@ -41,7 +41,7 @@ export const ALCOHOL = register({
   color: rgb(222, 228, 238),
   density: 1.9,
   combustible: true,
-  category: '액체',
+  category: 'liquid',
   thermal: { conductivity: 0.2 },
   // Freezes only at a brutal chill (real ethanol sets near -114°); needs a strong
   // cold sink like Liquid N₂ to harden it in place.

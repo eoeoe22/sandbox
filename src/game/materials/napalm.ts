@@ -150,7 +150,7 @@ export const NAPALM = register({
   density: 1000,
   explosive: true,
   blastRadius: REACH,
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.3 },
   update: updateNapalm,
 });

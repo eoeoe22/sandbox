@@ -1,10 +1,54 @@
 ---
 import Base from '../layouts/Base.astro';
+// Static page — client i18n can't run before paint, so render both languages
+// and toggle visibility with a tiny inline script based on the browser language
+// (mirrors src/i18n's detectLocale: anything starting with `ko` → Korean).
 ---
 
 <Base title="404 · Particle Sandbox">
-  <main class="notfound">
+  <main class="notfound" data-locale-loading>
     <h1>404</h1>
-    <p>페이지를 찾을 수 없습니다. <a href="/">샌드박스로 돌아가기</a></p>
+    <p data-ko>페이지를 찾을 수 없습니다. <a href="/">샌드박스로 돌아가기</a></p>
+    <p data-en>Page not found. <a href="/">Back to the sandbox</a></p>
   </main>
+  <script is:inline>
+    // Hide the non-matching language before first paint (avoids a flash of the
+    // wrong language). Defaults to Korean (the project's default locale).
+    (function () {
+      var ko = true;
+      try {
+        var langs = navigator.languages && navigator.languages.length
+          ? navigator.languages
+          : [navigator.language];
+        for (var i = 0; i < langs.length; i++) {
+          if (!langs[i]) continue;
+          if (langs[i].toLowerCase().indexOf('en') === 0) { ko = false; break; }
+          if (langs[i].toLowerCase().indexOf('ko') === 0) { ko = true; break; }
+        }
+      } catch (e) {}
+      var root = document.querySelector('.notfound');
+      if (root) {
+        root.removeAttribute('data-locale-loading');
+        root.classList.add(ko ? 'show-ko' : 'show-en');
+      }
+    })();
+  </script>
+  <style>
+    /* Until the inline script runs, both lines are hidden to avoid a flash;
+       the script adds show-ko/show-en to reveal the right one. If JS is off,
+       fall back to Korean (the project default) via :not([data-locale-loading]). */
+    .notfound[data-locale-loading] [data-ko],
+    .notfound[data-locale-loading] [data-en] {
+      display: none;
+    }
+    .notfound:not(.show-ko):not(.show-en) [data-en] {
+      display: none;
+    }
+    .notfound.show-ko [data-en] {
+      display: none;
+    }
+    .notfound.show-en [data-ko] {
+      display: none;
+    }
+  </style>
 </Base>

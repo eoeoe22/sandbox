@@ -82,7 +82,7 @@ export const HYDROGEN_PEROXIDE = register({
   color: rgb(206, 228, 238),
   // A touch denser than Water (3), so a peroxide layer sinks beneath fresh water.
   density: 3.4,
-  category: '액체',
+  category: 'liquid',
   // Catalytic decomposition, expressed declaratively (see engine/reactions.ts):
   //  • Yeast (catalase) is the classic "elephant toothpaste" catalyst — it rips
   //    the peroxide into Water and a frothing gush of Oxygen, exothermically.

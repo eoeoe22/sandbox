@@ -26,7 +26,7 @@ export const SOAP = register({
   // invisibly in as an overlay fluid, so the dissolve reaction sees real water —
   // the same trick Ammonium Nitrate uses for its cold pack.
   liquidOverlap: 0,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.3 },
   // Dissolves on contact with water: both the soap grain and the water it touches
   // become Soapy Water. Gradual (probability) so a bar melts into suds over a

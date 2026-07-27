@@ -39,7 +39,7 @@ export const GLASS = register({
   // still crazes it into Broken Glass instead of leaving it intact — see
   // blast.ts's shatter hook and brokenglass.ts.
   shatterId: BROKEN_GLASS.id,
-  category: '고체',
+  category: 'solid',
   thermal: { conductivity: 0.4 },
   update: updateGlass,
 });

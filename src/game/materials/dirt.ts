@@ -35,7 +35,7 @@ export const DIRT = register({
   phase: Phase.Powder,
   color: rgb(112, 82, 52),
   density: 5,
-  category: '가루',
+  category: 'powder',
   // Clumpy earth grips more than sand, so a dirt pile stands steeper (마찰).
   friction: 0.42,
   thermal: { conductivity: 0.3 },

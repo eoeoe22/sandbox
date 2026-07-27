@@ -979,7 +979,7 @@ export const BLAST = register({
   // below as each flash cell's life counts down.
   color: rgb(255, 246, 224),
   density: 1,
-  category: '폭발',
+  category: 'explosive',
   // conductivity 0 is load-bearing: it makes the heat pass treat `temp` as inert
   // per-cell state (the flash's life / the seed marker) instead of real heat.
   // init = SEED_TEMP so a brush-placed cell reads as a seed and detonates.

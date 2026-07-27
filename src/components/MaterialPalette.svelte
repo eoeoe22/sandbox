@@ -9,7 +9,6 @@
     $cloneTarget as cloneTarget,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
-    OBJECT_LABELS,
     recordMaterialUse,
     toggleFavorite,
   } from '../state/store';
@@ -20,42 +19,47 @@
   import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
   import { objectSvgFor } from '../game/render/objectSvg';
+  import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
   // identically. This is the ordered list of category tabs with their members.
-  const categories = buildCategories(MATERIALS);
+  // Re-resolved when the locale changes so labels follow the active language.
+  const categories = $derived.by(() => {
+    void $locale;
+    return buildCategories(MATERIALS);
+  });
 
   // The 독립 오브젝트 layer isn't made of materials, so it gets its own palette
   // tab appended after the material categories. Picking an item here switches to
   // the 'object' tool, and a click on the canvas spawns that object (see
   // PointerPainter). The three drums share one capsule and differ only in what
   // they spill when destroyed; the swatch color matches each drum's sprite.
-  // Item names are in English (이름 영어 통일), but the category tab name stays
-  // Korean like the other palette categories. Each item's palette swatch is the
-  // object's real in-world shape as SVG (objectSvgFor), generated from the same
-  // sprite data the renderer draws — no more hand-approximated CSS swatch.
-  const OBJECT_KEY = '오브젝트';
-  const OBJECT_ITEMS: {
-    key: ObjectKind;
-    label: string;
-  }[] = (['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]).map((key) => ({
-    key,
-    label: OBJECT_LABELS[key],
-  }));
+  // Item labels resolve through `objectLabel()` so they follow the active
+  // language. Each item's palette swatch is the object's real in-world shape as
+  // SVG (objectSvgFor), generated from the same sprite data the renderer draws.
+  const OBJECT_ITEMS: { key: ObjectKind }[] = (
+    ['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]
+  ).map((key) => ({ key }));
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
   // grid, matching the material name or its category (both case-insensitive), in
-  // registry order. The category flyout is suppressed while searching.
+  // registry order. Matches against the current locale's display name so typing
+  // Korean finds Korean-named materials. The category flyout is suppressed while
+  // searching. Re-runs when the locale changes so the query language tracks the
+  // display language.
   let query = $state('');
   const searching = $derived(query.trim().length > 0);
   const matches = $derived.by<Material[]>(() => {
+    void $locale;
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return MATERIALS.filter(
-      (m) => m.name.toLowerCase().includes(q) || categoryOf(m).toLowerCase().includes(q),
-    );
+    return MATERIALS.filter((m) => {
+      const name = materialName(m.id, m.name).toLowerCase();
+      const cat = categoryLabel(categoryOf(m)).toLowerCase();
+      return name.includes(q) || cat.includes(q);
+    });
   });
 
   // --- Favorites / recent quick-access ------------------------------------
@@ -87,6 +91,14 @@
   let hovered = $state<string | null>(null);
   let pinned = $state<string | null>(null);
   const open = $derived(pinned ?? hovered);
+
+  // The object tab's key. A constant string used both as the palette state key
+  // (hovered/pinned) and as the resolved display label via `t()`.
+  const OBJECT_KEY = '__objects__';
+  const objectTabLabel = $derived.by(() => {
+    void $locale;
+    return t('palette.objectKey');
+  });
 
   // Entering search swaps the category list for the results grid and the
   // template hides the flyout (`!searching` guard). Also drop any pinned/hovered
@@ -356,8 +368,8 @@
       <input
         class="search"
         type="search"
-        placeholder="물질 검색…"
-        aria-label="물질 검색"
+        placeholder={t('palette.searchPlaceholder')}
+        aria-label={t('palette.searchAria')}
         bind:value={query}
         onkeydown={(e) => {
           if (e.key === 'Escape') query = '';
@@ -367,8 +379,8 @@
         <button
           class="search-clear"
           onclick={() => (query = '')}
-          aria-label="검색 지우기"
-          title="검색 지우기"
+          aria-label={t('palette.searchClear')}
+          title={t('palette.searchClearTooltip')}
         >
           <i class="bi bi-x-lg" aria-hidden="true"></i>
         </button>
@@ -376,7 +388,7 @@
     </div>
 
     {#if !searching}
-      <div class="quick" role="group" aria-label="즐겨찾기·최근 사용">
+      <div class="quick" role="group" aria-label={t('palette.quickGroup')}>
         {#each quickSlots as m, i (i)}
           {#if m}
             {@render starChip(m)}
@@ -391,9 +403,9 @@
   </div>
 
   {#if searching}
-    <div class="results" role="group" aria-label="검색 결과">
+    <div class="results" role="group" aria-label={t('palette.resultsGroup')}>
       {#if matches.length === 0}
-        <span class="no-results">일치하는 물질이 없습니다</span>
+        <span class="no-results">{t('palette.noResults')}</span>
       {:else}
         {#each matches as m (m.id)}
           {@render starChip(m)}
@@ -443,10 +455,10 @@
           aria-expanded={open === OBJECT_KEY}
           aria-haspopup="true"
           aria-controls="cat-flyout-object"
-          title={OBJECT_KEY}
+          title={objectTabLabel}
         >
           <i class="bi bi-circle-fill icon" aria-hidden="true"></i>
-          <span class="cat-label">{OBJECT_KEY}</span>
+          <span class="cat-label">{objectTabLabel}</span>
           <span class="count">{OBJECT_ITEMS.length}</span>
         </button>
       </div>
@@ -460,7 +472,7 @@
       bind:this={flyoutEl}
       id="cat-flyout-object"
       role="menu"
-      aria-label={OBJECT_KEY}
+      aria-label={objectTabLabel}
       style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
       onmouseenter={() => openOnHover(OBJECT_KEY)}
       onmouseleave={scheduleHoverClose}
@@ -471,13 +483,13 @@
           role="menuitem"
           class:active={$tool === 'object' && $selectedObject === it.key}
           onclick={() => pickObject(it.key)}
-          title={it.label}
+          title={objectLabel(it.key)}
         >
           <!-- The object's real in-world silhouette as SVG, scaled to the swatch
                box (see objectSvgFor). {@html} is safe here: the markup is built
                only from trusted constant sprite data, never user input. -->
           <span class="swatch obj">{@html objectSvgFor(it.key)}</span>
-          <span class="label">{it.label}</span>
+          <span class="label">{objectLabel(it.key)}</span>
         </button>
       {/each}
     </div>
@@ -502,10 +514,10 @@
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={m.name}
+            title={materialName(m.id, m.name)}
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
-            <span class="label">{m.name}</span>
+            <span class="label">{materialName(m.id, m.name)}</span>
           </button>
         {/each}
       </div>
@@ -523,18 +535,20 @@
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
       ondblclick={() => pickClone(m.id)}
-      title={m.name}
+      title={materialName(m.id, m.name)}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>
-      <span class="label">{m.name}</span>
+      <span class="label">{materialName(m.id, m.name)}</span>
     </button>
     <button
       class="star"
       class:on={isFav(m.id)}
       onclick={(e) => toggleFav(e, m.id)}
-      aria-label={isFav(m.id) ? `${m.name} 즐겨찾기 해제` : `${m.name} 즐겨찾기 추가`}
+      aria-label={isFav(m.id)
+        ? t('palette.favRemove', { name: materialName(m.id, m.name) })
+        : t('palette.favAdd', { name: materialName(m.id, m.name) })}
       aria-pressed={isFav(m.id)}
-      title={isFav(m.id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+      title={isFav(m.id) ? t('palette.favRemoveTooltip') : t('palette.favAddTooltip')}
     >
       <i class={`bi ${isFav(m.id) ? 'bi-star-fill' : 'bi-star'}`} aria-hidden="true"></i>
     </button>
@@ -803,7 +817,9 @@
      so a wrapped row still reads as a row. 9px + break-word is what keeps the
      longest single token in the registry (Phosphorus/Antimatter, 10 chars) on
      one line inside that width; break-word only ever kicks in if a future name
-     is longer still, and even then it wraps instead of overflowing. */
+     is longer still, and even then it wraps instead of overflowing. Korean
+     names (the ko locale) break between syllables on their own, so a long one
+     like 드라이아이스 wraps the same way instead of spilling out. */
   .chip .label {
     width: 100%;
     overflow-wrap: break-word;

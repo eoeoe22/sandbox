@@ -31,7 +31,7 @@ export const MOLTEN_SALT = register({
   phase: Phase.Liquid,
   color: rgb(245, 205, 150),
   density: 4,
-  category: '불·열',
+  category: 'fire',
   thermal: { init: MOLTEN_SALT_TEMP, conductivity: 0.5 },
   glow: { min: MOLTEN_SALT_FREEZE_TEMP, max: MOLTEN_SALT_TEMP, cool: rgb(150, 110, 80) },
   update: updateMoltenSalt,

@@ -114,7 +114,7 @@ export const SUGAR_WATER = register({
   // Denser than fresh Water (3) so a sweet layer sinks beneath it, still lighter
   // than a Sugar grain (5) so undissolved sugar sinks through it to the bottom.
   density: 3.6,
-  category: '액체',
+  category: 'liquid',
   thermal: { conductivity: 0.5 },
   // A mild freezing-point depression (less than brine's −18): sets a little below
   // fresh water. Freezes in place (frosted) rather than crystallizing to a solid.
