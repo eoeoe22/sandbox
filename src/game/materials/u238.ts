@@ -71,7 +71,7 @@ export const U238 = register({
   phase: Phase.Solid,
   color: rgb(150, 165, 95),
   density: 1000,
-  category: '방사성',
+  category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
   thermal: { conductivity: 0.5 },
   // Duller, more metallic olive than U235's brighter yellow-green, brightening as

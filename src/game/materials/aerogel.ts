@@ -20,7 +20,7 @@ export const AEROGEL = register({
   phase: Phase.Solid,
   color: rgb(214, 224, 232),
   density: 1000,
-  category: '고체',
+  category: 'solid',
   // The defining property: a perfect insulator. min(conductivity) gating means a
   // 0 here blocks all conduction through the material, whatever it's touching.
   thermal: { conductivity: 0 },

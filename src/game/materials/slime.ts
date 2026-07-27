@@ -151,7 +151,7 @@ export const SLIME = register({
   // Denser than water so a blob sinks and oozes along the floor of a pool while
   // it drinks the water around it.
   density: 4,
-  category: '생명',
+  category: 'life',
   // Thick, gooey ooze — holds a mound instead of spreading flat.
   viscosity: 0.86,
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically

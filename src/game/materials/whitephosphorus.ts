@@ -90,7 +90,7 @@ export const WHITE_PHOSPHORUS = register({
   // and stays fully submerged (the "물속에선 안전" storage trick) instead of
   // bobbing back to open air where it would reignite.
   density: 3.2,
-  category: '불·열',
+  category: 'fire',
   thermal: { init: 20, conductivity: 0.3 },
   // Waxy pale yellow when cold, glaring white-hot while it burns.
   glow: { min: 60, max: BURN_TEMP, cool: rgb(224, 214, 150) },

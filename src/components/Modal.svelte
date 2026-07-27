@@ -5,6 +5,7 @@
   // both desktop and mobile. Closes on the backdrop, the × button, or Escape.
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
+  import { t } from '../i18n';
 
   interface Props {
     /** Whether the modal is shown. */
@@ -109,7 +110,7 @@
       <div class="modal-head">
         {#if icon}<i class={`bi ${icon}`} aria-hidden="true"></i>{/if}
         <span class="modal-title">{title}</span>
-        <button class="close" onclick={onclose} aria-label="닫기" title="닫기">
+        <button class="close" onclick={onclose} aria-label={t('close')} title={t('close')}>
           <i class="bi bi-x-lg" aria-hidden="true"></i>
         </button>
       </div>

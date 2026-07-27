@@ -26,7 +26,7 @@ export const MESH = register({
   // reads as a grid/lattice rather than a flat grey slab (see the renderer).
   lattice: rgb(92, 96, 102),
   density: 1000,
-  category: '고체',
+  category: 'solid',
   // Fluids pass through it via the 겹침 overlap layer — see Material.porous.
   porous: true,
   thermal: { conductivity: 0.4 },

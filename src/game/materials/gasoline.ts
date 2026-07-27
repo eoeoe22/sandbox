@@ -37,7 +37,7 @@ export const GASOLINE = register({
   density: 2.2,
   combustible: true,
   petroleum: true, // flat single-colour render; burns on water without steaming it
-  category: '석유',
+  category: 'oil',
   thermal: { conductivity: 0.2 },
   freeze: { temp: -40 },
   update: updateGasoline,

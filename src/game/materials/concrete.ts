@@ -15,6 +15,6 @@ export const CONCRETE = register({
   color: rgb(110, 112, 118),
   colorVary: 7,
   density: 1000,
-  category: '고체',
+  category: 'solid',
   thermal: { conductivity: 0.4 },
 });

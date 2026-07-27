@@ -62,7 +62,7 @@ export const LIMESTONE = register({
   // Lighter than every smelting liquid, but only actually floats clear of
   // Molten Metal (see updateLimestone) — Slag and Molten Iron Ore hold it in.
   density: 5,
-  category: '제련',
+  category: 'smelt',
   thermal: { conductivity: 0.35 },
   update: updateLimestone,
 });

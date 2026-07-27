@@ -119,7 +119,7 @@ export const SUGAR = register({
   // but floats clear of denser liquids salt sinks straight through.
   density: 3.65,
   combustible: true,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.3 },
   update: updateSugar,
 });

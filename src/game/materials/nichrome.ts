@@ -139,7 +139,7 @@ export const NICHROME = register({
   density: 1000,
   conductive: true,
   acidResistant: true,
-  category: '전기',
+  category: 'electric',
   // Real nichrome conducts heat poorly for a metal (~11 W/mK vs Iron's ~80) —
   // that's half of why it makes a good element: the Joule heat stays in the
   // coil and radiates/soaks into what the coil is buried in, instead of racing

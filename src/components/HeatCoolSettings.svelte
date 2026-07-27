@@ -18,40 +18,41 @@
     HEAT_REL_RATE_MAX,
     HEAT_REL_RATE_STEP,
   } from '../game/config';
+  import { t } from '../i18n';
 
   const isAbsolute = $derived($heatRateMode === 'absolute');
 </script>
 
 <div class="heat-settings">
   <div class="field">
-    <span class="field-label">기준 방식</span>
-    <div class="seg" role="group" aria-label="가열/냉각 감도 기준 방식">
+    <span class="field-label">{t('heatCool.mode')}</span>
+    <div class="seg" role="group" aria-label={t('heatCool.modeGroup')}>
       <button
         class="ctl"
         class:active={isAbsolute}
         onclick={() => heatRateMode.set('absolute')}
         aria-pressed={isAbsolute}
-        title="온도를 고정된 도(°) 단위로 올리거나 내립니다"
+        title={t('heatCool.absoluteTooltip')}
       >
         <i class="bi bi-thermometer" aria-hidden="true"></i>
-        <span class="label">절대온도</span>
+        <span class="label">{t('heatCool.absolute')}</span>
       </button>
       <button
         class="ctl"
         class:active={!isAbsolute}
         onclick={() => heatRateMode.set('relative')}
         aria-pressed={!isAbsolute}
-        title="현재 온도 크기에 비례한 퍼센트(%)로 올리거나 내립니다 (영하에서도 방향은 항상 가열=상승·냉각=하강)"
+        title={t('heatCool.relativeTooltip')}
       >
         <i class="bi bi-percent" aria-hidden="true"></i>
-        <span class="label">상대온도</span>
+        <span class="label">{t('heatCool.relative')}</span>
       </button>
     </div>
   </div>
 
   {#if isAbsolute}
     <label class="field">
-      <span class="field-label">감도: 초당 {$heatAbsoluteRate}°</span>
+      <span class="field-label">{t('heatCool.sensitivityAbs', { n: $heatAbsoluteRate })}</span>
       <input
         type="range"
         min={HEAT_ABS_RATE_MIN}
@@ -63,7 +64,7 @@
     </label>
   {:else}
     <label class="field">
-      <span class="field-label">감도: 초당 {$heatRelativeRate}%</span>
+      <span class="field-label">{t('heatCool.sensitivityRel', { n: $heatRelativeRate })}</span>
       <input
         type="range"
         min={HEAT_REL_RATE_MIN}
@@ -76,12 +77,7 @@
   {/if}
 
   <p class="hint">
-    값은 <strong>배속×1로 1초간</strong> 눌렀을 때 오르내리는 양(절대온도는 도, 상대온도는 현재
-    온도 크기 대비 퍼센트) 기준입니다. 배속을 올리면 브러시를 누르는 동안 실제 초당 변화량도
-    그만큼 빨라집니다. <strong>영역 선택</strong>으로 확정할 때는 현재 배속과 무관하게 이 기준값
-    1초치를 한 번에 그대로 적용합니다. 냉각 브러시도 같은 감도를 반대 방향으로 씁니다. 상대온도는
-    영하에서도 방향이 뒤집히지 않도록 온도의 <strong>크기(절대값)</strong>에 비례해 움직이므로,
-    정확히 0°인 대상은 상대온도로 움직이지 않습니다(절대온도는 항상 동작).
+    {t('heatCool.hint')}
   </p>
 </div>
 

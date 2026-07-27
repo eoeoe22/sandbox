@@ -181,7 +181,7 @@ export const WOOFER = register({
   color: rgb(40, 42, 48),
   lattice: rgb(150, 108, 66),
   density: 1000,
-  category: '전기',
+  category: 'electric',
   thermal: { conductivity: 0.3 },
   // One-way "outside → inside" electric sink: any pulse source touching a face —
   // a Battery/LFP Battery/Turbine in direct contact, or a Spark relayed down a

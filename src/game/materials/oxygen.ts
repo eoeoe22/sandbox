@@ -76,7 +76,7 @@ export const OXYGEN = register({
   phase: Phase.Gas,
   color: rgb(180, 205, 225),
   density: 1,
-  category: '기체',
+  category: 'gas',
   thermal: { conductivity: 0.06 },
   update: updateOxygen,
 });

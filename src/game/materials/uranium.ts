@@ -82,7 +82,7 @@ export const URANIUM = register({
   phase: Phase.Solid,
   color: rgb(210, 225, 70),
   density: 1000,
-  category: '방사성',
+  category: 'radioactive',
   // 방폭: every uranium-series material is immune to explosions — a Blast front
   // stops at it, a flying Ember shatters on it, Antimatter skips it (see
   // blast.ts/ember.ts/antimatter.ts). It does NOT stop a critical uranium's

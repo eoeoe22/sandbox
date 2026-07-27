@@ -41,7 +41,7 @@ export const BROKEN_GLASS = register({
   // Angular shards grip one another, so a poured heap stands as a steepish cone
   // (a touch more than Sand's rounded grains).
   friction: 0.4,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.4 },
   update: updateBrokenGlass,
 });

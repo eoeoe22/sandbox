@@ -148,7 +148,7 @@ export const PLANT = register({
   // it's tagged `combustible`, not `flammable` — the two ignition paths are
   // mutually exclusive by design (combustion.ts) to keep the per-fuel burn rate.
   combustible: true,
-  category: '생명',
+  category: 'life',
   thermal: { conductivity: 0.3 },
   update: updatePlant,
 });

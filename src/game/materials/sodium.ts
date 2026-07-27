@@ -84,7 +84,7 @@ export const SODIUM = register({
   explosive: true,
   blastRadius: BLAST_RADIUS,
   destructivePower: DESTRUCTIVE_POWER,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.4 },
   update: updateSodium,
 });

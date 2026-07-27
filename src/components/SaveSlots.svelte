@@ -11,6 +11,7 @@
     renameSnapshot,
     type SnapshotMeta,
   } from '../state/snapshots';
+  import { t } from '../i18n';
 
   let snapshots = $state<SnapshotMeta[]>([]);
   let newName = $state('');
@@ -58,28 +59,28 @@
     // Check the deterministic cap before attempting the write so the user can
     // tell "delete a slot" from "storage is full".
     if (snapshots.length >= 50) {
-      showFlash('저장 한도(50개) 초과 — 기존 스냅샷을 삭제하세요');
+      showFlash(t('save.limitExceeded'));
       return;
     }
     const meta = saveLiveSnapshot(newName);
     if (meta) {
       newName = '';
-      showFlash(`"${meta.name}" 저장됨`);
+      showFlash(t('save.saved', { name: meta.name }));
     } else {
-      showFlash('저장 실패 (저장 공간이 부족합니다)');
+      showFlash(t('save.saveFailed'));
     }
     refresh();
   }
 
   function handleLoad(id: string): void {
     const ok = applySnapshot(id);
-    showFlash(ok ? '불러오기 완료' : '불러오기 실패');
+    showFlash(ok ? t('save.loadOk') : t('save.loadFailed'));
   }
 
   function handleDelete(id: string, name: string): void {
-    if (!confirm(`"${name}" 삭제할까요?`)) return;
+    if (!confirm(t('save.deleteConfirm', { name }))) return;
     deleteSnapshot(id);
-    showFlash(`"${name}" 삭제됨`);
+    showFlash(t('save.deleted', { name }));
     refresh();
   }
 
@@ -92,7 +93,7 @@
     if (renamingId !== id) return;
     const ok = renameSnapshot(id, renameValue);
     renamingId = null;
-    if (!ok) showFlash('이름 변경 실패 (저장 공간 부족)');
+    if (!ok) showFlash(t('save.renameFailed'));
     refresh();
   }
 
@@ -117,7 +118,7 @@
     <input
       class="name-input"
       type="text"
-      placeholder="저장할 이름 (비우면 자동)"
+      placeholder={t('save.namePlaceholder')}
       value={newName}
       maxlength={40}
       oninput={(e) => (newName = e.currentTarget.value)}
@@ -128,9 +129,9 @@
         }
       }}
     />
-    <button class="ctl save-btn" onclick={handleSave} aria-label="현재 캔버스 저장">
+    <button class="ctl save-btn" onclick={handleSave} aria-label={t('save.saveAria')}>
       <i class="bi bi-save" aria-hidden="true"></i>
-      <span>저장</span>
+      <span>{t('save.save')}</span>
     </button>
   </div>
 
@@ -139,14 +140,14 @@
   {/if}
 
   {#if snapshots.length > 0}
-    <div class="view-toggle" role="radiogroup" aria-label="스냅샷 보기 방식">
+    <div class="view-toggle" role="radiogroup" aria-label={t('save.viewToggleGroup')}>
       <button
         class="seg"
         role="radio"
         aria-checked={viewMode === 'gallery'}
         class:active={viewMode === 'gallery'}
         onclick={() => (viewMode = 'gallery')}
-        title="갤러리 보기"
+        title={t('save.galleryTooltip')}
       >
         <i class="bi bi-grid" aria-hidden="true"></i>
       </button>
@@ -156,7 +157,7 @@
         aria-checked={viewMode === 'list'}
         class:active={viewMode === 'list'}
         onclick={() => (viewMode = 'list')}
-        title="목록 보기"
+        title={t('save.listTooltip')}
       >
         <i class="bi bi-list-ul" aria-hidden="true"></i>
       </button>
@@ -165,7 +166,7 @@
 
   <div class="scroller">
     {#if snapshots.length === 0}
-      <p class="empty">저장된 스냅샷이 없습니다. 현재 샌드박스 상태를 저장해 보세요.</p>
+      <p class="empty">{t('save.empty')}</p>
     {:else if viewMode === 'gallery'}
       <div class="gallery">
         {#each snapshots as s (s.id)}
@@ -182,24 +183,24 @@
                 <button
                   class="mini"
                   onclick={() => handleLoad(s.id)}
-                  aria-label={`"${s.name}" 불러오기`}
-                  title="불러오기"
+                  aria-label={t('save.loadAria', { name: s.name })}
+                  title={t('save.loadTooltip')}
                 >
                   <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                 </button>
                 <button
                   class="mini"
                   onclick={() => startRename(s)}
-                  aria-label={`"${s.name}" 이름 변경`}
-                  title="이름 변경"
+                  aria-label={t('save.renameAria', { name: s.name })}
+                  title={t('save.renameTooltip')}
                 >
                   <i class="bi bi-pencil" aria-hidden="true"></i>
                 </button>
                 <button
                   class="mini danger"
                   onclick={() => handleDelete(s.id, s.name)}
-                  aria-label={`"${s.name}" 삭제`}
-                  title="삭제"
+                  aria-label={t('save.deleteAria', { name: s.name })}
+                  title={t('save.deleteTooltip')}
                 >
                   <i class="bi bi-trash3" aria-hidden="true"></i>
                 </button>
@@ -279,24 +280,24 @@
               <button
                 class="mini"
                 onclick={() => handleLoad(s.id)}
-                aria-label={`"${s.name}" 불러오기`}
-                title="불러오기"
+                aria-label={t('save.loadAria', { name: s.name })}
+                title={t('save.loadTooltip')}
               >
                 <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
               </button>
               <button
                 class="mini"
                 onclick={() => startRename(s)}
-                aria-label={`"${s.name}" 이름 변경`}
-                title="이름 변경"
+                aria-label={t('save.renameAria', { name: s.name })}
+                title={t('save.renameTooltip')}
               >
                 <i class="bi bi-pencil" aria-hidden="true"></i>
               </button>
               <button
                 class="mini danger"
                 onclick={() => handleDelete(s.id, s.name)}
-                aria-label={`"${s.name}" 삭제`}
-                title="삭제"
+                aria-label={t('save.deleteAria', { name: s.name })}
+                title={t('save.deleteTooltip')}
               >
                 <i class="bi bi-trash3" aria-hidden="true"></i>
               </button>
@@ -308,7 +309,7 @@
   </div>
 
   <p class="hint">
-    저장 스냅샷은 브라우저 로컬에 보관됩니다. 화면 크기가 달라도 현재 캔버스에 맞춰 불러옵니다.
+    {t('save.hint')}
   </p>
 </div>
 

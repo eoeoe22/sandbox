@@ -60,6 +60,6 @@ export const SOAPY_WATER = register({
   // A little surface tension like water, so stray droplets bead.
   surfaceTension: 0.12,
   thermal: { conductivity: 0.5 },
-  category: '액체',
+  category: 'liquid',
   update: updateSoapyWater,
 });

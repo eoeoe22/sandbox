@@ -54,7 +54,7 @@ export const ANTIMATTER = register({
   phase: Phase.Powder,
   color: rgb(196, 128, 236),
   density: 5,
-  category: '특수',
+  category: 'exotic',
   thermal: { conductivity: 0.2 },
   update: updateAntimatter,
 });

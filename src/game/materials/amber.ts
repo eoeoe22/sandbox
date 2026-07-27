@@ -59,7 +59,7 @@ export const AMBER = register({
   color: rgb(210, 148, 40),
   density: 1000,
   combustible: true,
-  category: '고체',
+  category: 'solid',
   thermal: { conductivity: 0.2 },
   update: updateAmber,
 });
