@@ -67,7 +67,13 @@
   const isFav = (id: number): boolean => favSet.has(id);
   // Favorites first (in the order they were starred), then recently-used
   // materials not already starred. Ids that no longer resolve are dropped.
+  // `void $locale` for the same reason as `categories`/`matches`: the chips this
+  // feeds resolve their label and title through `materialName()`, which reads the
+  // locale atom with a plain `.get()` and so registers no dependency of its own —
+  // without this the quick-access strip would keep the old language's names until
+  // the favorites/recents list happened to change.
   const quickItems = $derived.by<Material[]>(() => {
+    void $locale;
     const resolve = (ids: number[]): Material[] =>
       ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
     const favs = resolve($favorites);
