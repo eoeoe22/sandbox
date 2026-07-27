@@ -1,10 +1,10 @@
-import { register, getMaterial } from './registry';
+import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
-import { SPARK, packSpark, conductorClass, FULL_STRENGTH, reactToPulse } from './spark';
+import { pulseCell } from './spark';
 import { PULSE_PERIOD } from './battery';
 
 // Turbine — a steam-driven generator. Like the Mesh it's a porous solid that
@@ -42,27 +42,18 @@ const MAX_BODY = 256;
  *  neighbor already energized (its aux still set, or already turned to Spark)
  *  is skipped, so repeated pulses within a tick don't stack. A non-conductor
  *  neighbor — an electric appliance (Fan/Woofer, a one-way "outside → inside"
- *  sink) or an explosive charge — is handed to the shared `reactToPulse`, the
- *  exact same dispatch Battery's injectPulses and spark.ts's arc phase use, so
- *  plugging any device or charge straight onto a turbine face (도체 없이 직접
- *  연결) reacts with no wire — and stays consistent with the batteries by
- *  construction (a new `directPulse`/explosive material needs no turbine edit). */
+ *  sink) or an explosive charge — arcs/reacts instead, so plugging any device or
+ *  charge straight onto a turbine face (도체 없이 직접 연결) reacts with no wire.
+ *  Both cases go through the one shared per-cell rule every pulse source uses
+ *  (spark.ts's `pulseCell`, also behind Battery's injectPulses and the 전기
+ *  브러시), so the turbine stays consistent with them by construction — a new
+ *  `directPulse`/explosive material needs no turbine edit. */
 function energizeNeighbors(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (getMaterial(nid).conductive && sim.getAux(nx, ny) === 0) {
-      const cls = conductorClass(nid);
-      if (cls === 0) continue;
-      const heat = sim.getTemp(nx, ny);
-      sim.spawn(nx, ny, SPARK.id);
-      sim.setTemp(nx, ny, heat); // carry the wire's heat across the spawned spark
-      sim.setAux(nx, ny, packSpark(FULL_STRENGTH, cls));
-    } else {
-      reactToPulse(sim, nx, ny, nid); // appliance body reacts, or an explosive arcs
-    }
+    pulseCell(sim, nx, ny);
   }
 }
 

@@ -73,7 +73,13 @@ export const $brushMode = atom<BrushMode>('full');
  * cells already under the brush instead of placing material: 'heat'/'cool'
  * nudge each cell's temperature, 'mix' shuffles the non-solid particles (solids
  * stay put), and 'erase' clears cells to Empty (the same as a right-button
- * drag, promoted to its own selectable tool). 'object' spawns a free rigid
+ * drag, promoted to its own selectable tool). 'spark' (전기) supplies power to
+ * whatever it touches — a conductor under it becomes a full-strength Spark that
+ * runs off down the wire, an electric appliance (Fan/Woofer/Laser) fires, a
+ * charge goes off — so a circuit can be driven by hand with no Battery wired
+ * in. 'shock' (충격파) thumps a Woofer shockwave out of the brush footprint
+ * itself: the same completely non-destructive push (loose matter flung, solids
+ * untouched), with no Woofer needed. 'object' spawns a free rigid
  * object (the rubber ball) at the click instead of painting cells — the 독립
  * 오브젝트 layer's placement tool. 'view' (보기) is an inert brush: a
  * left-click/drag places nothing, so you can move the pointer over the world
@@ -84,7 +90,17 @@ export const $brushMode = atom<BrushMode>('full');
  * that atom's doc comment. Selecting a material in the palette snaps this
  * back to 'material'.
  */
-export type Tool = 'material' | 'heat' | 'cool' | 'mix' | 'erase' | 'blend' | 'object' | 'view';
+export type Tool =
+  | 'material'
+  | 'heat'
+  | 'cool'
+  | 'mix'
+  | 'erase'
+  | 'blend'
+  | 'spark'
+  | 'shock'
+  | 'object'
+  | 'view';
 export const $tool = atom<Tool>('material');
 
 /**
@@ -94,7 +110,9 @@ export const $tool = atom<Tool>('material');
  * drag defines a rectangular marquee, confirmed with Enter on PC (or on
  * release for touch) to apply the active tool's action to that whole
  * rectangle in one shot (재료 fills it, 혼합 stochastically fills it, 가열/냉각
- * nudge its temperature, 섞기 shuffles it, 지우개/우클릭 clears it). 'object' and
+ * nudge its temperature, 섞기 shuffles it, 지우개/우클릭 clears it, 전기 pulses
+ * every cell in it, 충격파 thumps one shockwave out of the whole
+ * rectangle). 'object' and
  * 'view' don't have an area-shaped action, so a marquee under those two
  * no-ops on confirm. See PointerPainter (`applyRect`, `rectBounds`).
  */

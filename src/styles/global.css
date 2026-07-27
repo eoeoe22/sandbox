@@ -116,6 +116,17 @@ body {
 .brush-cursor[data-tool='blend'] {
   border-color: rgba(120, 220, 160, 0.95);
 }
+/* 전기 — the Spark's own pale yellow, glowing like a live terminal. */
+.brush-cursor[data-tool='spark'] {
+  border-color: rgba(255, 235, 130, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 10px 1px rgba(255, 220, 90, 0.4);
+}
+/* 충격파 — the cyan the Woofer's own wavefront is drawn in (see CanvasRenderer). */
+.brush-cursor[data-tool='shock'] {
+  border-color: rgba(120, 230, 240, 0.95);
+}
 /* 보기 (view) is an inert brush — a dim, dashed outline signals it places
    nothing on a left press. */
 .brush-cursor[data-tool='view'] {
@@ -166,6 +177,14 @@ body {
 .rect-select[data-mode='blend'] {
   border-color: rgba(120, 220, 160, 0.95);
   background: rgba(120, 220, 160, 0.1);
+}
+.rect-select[data-mode='spark'] {
+  border-color: rgba(255, 235, 130, 0.95);
+  background: rgba(255, 235, 130, 0.1);
+}
+.rect-select[data-mode='shock'] {
+  border-color: rgba(120, 230, 240, 0.95);
+  background: rgba(120, 230, 240, 0.1);
 }
 /* 'object'/'view' no-op on confirm (see PointerPainter.applyRect) — a dim,
    dashed outline signals the marquee won't do anything, mirroring the 보기

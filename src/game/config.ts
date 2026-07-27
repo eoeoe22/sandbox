@@ -256,8 +256,20 @@ export const PARTICLE_FILL_RATE = 0.55;
  * Special (non-painting) brush tools — see the store's `$tool` and
  * PointerPainter. Instead of placing material, they act on the cells already
  * under the brush: heat/cool nudge each cell's temperature, mix shuffles the
- * non-solid particles.
+ * non-solid particles, 전기 pulses them, 충격파 thumps a shockwave out of them.
  */
+
+/**
+ * Minimum sim ticks between two firings of the 충격파 브러시 while it's held or
+ * dragged. A shockwave is an *event*, not something that accumulates like heat,
+ * and each firing floods a disc per source cell and queues an animated wavefront
+ * — letting a held brush thump every single tick would be both a strobing mess
+ * and needless work. Set to a Battery's own PULSE_PERIOD (materials/battery.ts)
+ * so a held brush beats at exactly the rate a battery-wired Woofer does. Each
+ * new press starts ready, so deliberate clicks always thump immediately, and the
+ * 영역 (one-shot) confirm bypasses this entirely.
+ */
+export const SHOCK_BRUSH_PERIOD = 12;
 /** Upper clamp for the heat brush, comfortably above every material's own
  *  temperature (Lava ~1500, Fire ~1000) so superheating still has headroom. */
 export const HEAT_BRUSH_MAX = 2000;

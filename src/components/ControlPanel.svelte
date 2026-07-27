@@ -648,7 +648,7 @@
 
       <!-- 재료(브러시 도구 선택) 옆에 영역(사각 선택 모드)을 붙여 둔다. 영역은
            $tool과 독립적인 토글(돋보기와 같은 패턴)이라 재료 자신뿐 아니라 혼합/
-           가열/냉각/섞기/지우개에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
+           가열/냉각/섞기/지우개/전기/충격파에도 켠 채로 함께 쓸 수 있다 — 켜져 있으면 브러시
            스트로크 대신 사각형을 드래그해 선택하고, 그 시점에 고른 도구를 사각
            영역 전체에 한 번에 적용한다(PointerPainter.applyRect). PC에서 좌클릭
            드래그는 드롭 즉시 적용(터치와 동일), 우클릭 드래그는 Enter로 확정하는
@@ -672,14 +672,27 @@
           bind:this={areaBtn}
           aria-pressed={$areaSelect}
           aria-label="영역 선택"
-          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개)를 한 번에 적용합니다 (PC: 좌클릭 드래그는 즉시 적용, 우클릭 드래그는 Enter로 확정·Escape로 취소 / 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
+          title="영역 선택 — 사각형으로 드래그해 영역을 지정하고, 그 순간 고른 도구(재료/혼합/가열/냉각/섞기/지우개/전기/충격파)를 한 번에 적용합니다 (PC: 좌클릭 드래그는 즉시 적용, 우클릭 드래그는 Enter로 확정·Escape로 취소 / 모바일: 드롭시 즉시 적용). 다른 브러시 도구와 함께 켜둘 수 있습니다 (오브젝트 도구에서는 사용할 수 없습니다)"
         >
           <i class="bi bi-bounding-box" aria-hidden="true"></i>
           <span class="label">영역</span>
         </button>
       </div>
 
+      <!-- 특수 브러시. 지우개가 맨 앞 — 가장 자주 집는 도구라 재료 바로 옆에 두고,
+           전기/충격파는 맨 뒤에 붙여 전기 계열끼리 묶는다. -->
       <div class="group" role="group" aria-label="특수 브러시">
+        <button
+          class="ctl"
+          class:active={$tool === 'erase'}
+          onclick={() => tool.set('erase')}
+          aria-pressed={$tool === 'erase'}
+          aria-label="지우개"
+          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
+        >
+          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
+          <span class="label">지우개</span>
+        </button>
         <button
           class="ctl"
           class:active={$tool === 'blend'}
@@ -735,17 +748,6 @@
         </button>
         <button
           class="ctl"
-          class:active={$tool === 'erase'}
-          onclick={() => tool.set('erase')}
-          aria-pressed={$tool === 'erase'}
-          aria-label="지우개"
-          title="브러시 영역을 지웁니다 (빈칸으로) — 닿은 오브젝트도 삭제"
-        >
-          <i class="bi bi-eraser-fill" aria-hidden="true"></i>
-          <span class="label">지우개</span>
-        </button>
-        <button
-          class="ctl"
           class:active={$tool === 'view'}
           onclick={() => tool.set('view')}
           aria-pressed={$tool === 'view'}
@@ -754,6 +756,28 @@
         >
           <i class="bi bi-eye" aria-hidden="true"></i>
           <span class="label">보기</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'spark'}
+          onclick={() => tool.set('spark')}
+          aria-pressed={$tool === 'spark'}
+          aria-label="전기"
+          title="전기 — 브러시 영역의 도체에 전원(Spark)을 공급합니다. 배터리 없이도 회로를 손으로 돌릴 수 있고, 닿은 전기 장치(선풍기·우퍼·레이저)와 전기 기폭 장약도 그대로 작동합니다"
+        >
+          <i class="bi bi-lightning-charge-fill" aria-hidden="true"></i>
+          <span class="label">전기</span>
+        </button>
+        <button
+          class="ctl"
+          class:active={$tool === 'shock'}
+          onclick={() => tool.set('shock')}
+          aria-pressed={$tool === 'shock'}
+          aria-label="충격파"
+          title="충격파 — 브러시 영역에서 Woofer 충격파를 터뜨립니다. 우퍼가 없어도 되고, 아무것도 부수지 않으면서 가루·액체·오브젝트만 바깥으로 밀어냅니다 (누르고 있으면 일정 박자로 반복)"
+        >
+          <i class="bi bi-broadcast" aria-hidden="true"></i>
+          <span class="label">충격파</span>
         </button>
       </div>
 

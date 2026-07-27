@@ -63,6 +63,19 @@ export class Simulation {
     }
   }
 
+  /**
+   * The live SimContext every material rule runs through, exposed so the input
+   * layer can act through the same seam: the 전기/충격파 brushes deliver a real
+   * electric pulse / Woofer shockwave rather than reimplementing either against
+   * the raw grid (see input/PointerPainter and engine/brushTools). Sharing the
+   * one context is what keeps their per-tick bookkeeping — the Woofer body-flood
+   * memo and the object-knockback event queue — consistent with the simulation's
+   * own.
+   */
+  get context(): SimContext {
+    return this.ctx;
+  }
+
   /** Choose how the sandbox edges behave (solid wall vs. open void). Forwarded
    *  to the SimContext that all material movement flows through. */
   setBorderMode(mode: BorderMode): void {
@@ -154,6 +167,16 @@ export class Simulation {
     // after the CA scan and fully separate from it — they carry their own
     // continuous position/velocity and only read the grid (see engine/objects.ts).
     stepObjects(g.objects, this.ctx);
+    // The Woofer pulse queue is a one-tick event list, and the object pass above
+    // is its only consumer — drop it here, now that it has been read. Leaving it
+    // to the next flood's lazy reset (materials/woofer.ts) would mean a tick with
+    // no Woofer firing at all still re-shoves every nearby body from the *last*
+    // pulse, over and over until some Woofer happens to fire again. That also
+    // makes the queue safe to fill from outside a step: the 충격파 브러시 appends
+    // to it between ticks (see input/PointerPainter), and the very next step
+    // delivers that thump to the object layer exactly once.
+    this.ctx.wooferPulseX.length = 0;
+    this.ctx.wooferPulseY.length = 0;
     if (prof) {
       const n = performance.now();
       profiler.add('objects', n - t);

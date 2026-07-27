@@ -239,6 +239,36 @@ export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: numbe
   return tryArcExplosive(sim, nx, ny, nid);
 }
 
+/**
+ * Deliver one full-strength pulse to the cell (x,y) *itself* — the single
+ * "what does a pulse do to this cell" rule, shared by every direct-contact
+ * source: a Battery/LFP Battery terminal and a Turbine face (each applying it
+ * to their neighbors, see battery.ts's `injectPulses` / turbine.ts's
+ * `energizeNeighbors`) and the 전기 브러시, which applies it to every cell under
+ * its own footprint (engine/brushTools.sparkCells).
+ *
+ * A ready `conductive` cell becomes a Spark at FULL_STRENGTH, keeping its own
+ * heat (so energizing a hot wire doesn't cool it). A conductor still holding
+ * per-cell state — a post-pulse refractory countdown, a Slime dissolve budget —
+ * is left alone rather than overwritten, the same `aux === 0` readiness gate the
+ * Spark-to-Spark hand-off uses. Anything else (empty air aside) is dispatched
+ * through `reactToPulse`, so an appliance (`directPulse`) or an explosive charge
+ * reacts exactly as it would to a pulse relayed down a wire. Returns whether the
+ * pulse did anything at all.
+ */
+export function pulseCell(sim: SimContext, x: number, y: number): boolean {
+  const id = sim.get(x, y);
+  if (id === EMPTY) return false;
+  if (getMaterial(id).conductive) {
+    if (sim.getAux(x, y) !== 0) return false; // refractory / carrying other state
+    const cls = conductorClass(id);
+    if (cls === 0) return false;
+    energize(sim, x, y, cls, FULL_STRENGTH);
+    return true;
+  }
+  return reactToPulse(sim, x, y, id);
+}
+
 /** Electrolyse an energized Water/Saltwater/Acid cell into gas: the cell becomes
  *  Hydrogen, and about half the time a free open neighbor gets an Oxygen bubble
  *  (2H₂O → 2H₂ + O₂). */

@@ -122,18 +122,44 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
  *  pulse unbounded. */
 const MAX_BODY = 256;
 
+/** Roll the per-tick Woofer bookkeeping over to `sim.tick` if it's still holding
+ *  a previous tick's state: the body-flood memo and the object-knockback event
+ *  queue are cleared together, lazily, so a tick with no Woofer activity costs
+ *  nothing. Shared by the material's own body flood and the 충격파 브러시 (see
+ *  `fireShockwave`), which both append to that same queue. */
+function beginWooferTick(sim: SimContext): void {
+  if (sim.tick === sim.wooferFloodTick) return;
+  sim.wooferFloodTick = sim.tick;
+  sim.wooferFlooded.clear();
+  sim.wooferPulseX.length = 0;
+  sim.wooferPulseY.length = 0;
+}
+
+/** Fire one Woofer pulse from `(x,y)` and queue it for the object layer's own
+ *  knockback pass (see `SimContext.wooferPulseX/Y`, drained by `stepObjects`). */
+function firePulseAt(sim: SimContext, x: number, y: number): void {
+  wooferPulse(sim, x, y);
+  sim.wooferPulseX.push(x);
+  sim.wooferPulseY.push(y);
+}
+
+/** How many source cells one 충격파 브러시 firing pulses from, at most. Each
+ *  source runs its own `detonate` flood over a REACH-radius disc, so an
+ *  unbounded count would make a big brush (or a large 영역 selection) cost
+ *  hundreds of floods for a wave that looks identical: the sources are thinned
+ *  onto a square lattice instead (see `fireShockwave`), whose spacing stays
+ *  within a single pulse's own reach for any plausible footprint, so the
+ *  thinning never leaves an unshoved pocket inside the wave. The *visual*
+ *  wavefront is unaffected — it's always grown from the full footprint. */
+const BRUSH_MAX_SOURCES = 48;
+
 /** Flood the connected Woofer body (4-connected, like Turbine's own body
  *  walk) starting at (sx,sy) and fire every cell's pulse in the same event —
  *  "전기가 즉시 전역 확산" (the whole cabinet thumps together). Memoized per
  *  tick via `SimContext.wooferFlooded` so a body reached from several
  *  directions/sources this tick still fires exactly once. */
 export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
-  if (sim.tick !== sim.wooferFloodTick) {
-    sim.wooferFloodTick = sim.tick;
-    sim.wooferFlooded.clear();
-    sim.wooferPulseX.length = 0;
-    sim.wooferPulseY.length = 0;
-  }
+  beginWooferTick(sim);
   const w = sim.width;
   const startIdx = sy * w + sx;
   if (sim.wooferFlooded.has(startIdx)) return;
@@ -153,9 +179,7 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
     bx.push(x);
     by.push(y);
     sim.wooferFlooded.add(y * w + x);
-    wooferPulse(sim, x, y);
-    sim.wooferPulseX.push(x);
-    sim.wooferPulseY.push(y);
+    firePulseAt(sim, x, y);
     for (const [dx, dy] of DIR4) {
       const nx = x + dx;
       const ny = y + dy;
@@ -170,6 +194,55 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
   // animates out of the body's own outline and draws behind matter — see
   // Grid.shockwaves / CanvasRenderer).
   if (bx.length > 0) sim.emitShockwave(bx, by, SHOCK_VIS_REACH);
+}
+
+/**
+ * Fire one Woofer shockwave whose *source* is an arbitrary set of cells rather
+ * than a Woofer body — the 충격파 브러시 (see engine/brushTools.shockCells): the
+ * brush footprint (or the 영역 marquee) stands in for the speaker cabinet, so
+ * the thump grows out of exactly the shape the cursor outline showed and scales
+ * with the brush size. `cells` is the usual flat `[x0,y0,x1,y1,…]` run.
+ *
+ * Everything downstream is the material's own pulse, unchanged: the same
+ * POWER-0, completely non-destructive shove (`wooferPulse`), the same
+ * object-layer event queue, and the same wavefront VFX grown from the source's
+ * own outline — a hand-held Woofer, not a second kind of blast. Only the count
+ * of pulse *sources* is capped (BRUSH_MAX_SOURCES), since a footprint can be far
+ * larger than any cabinet.
+ *
+ * Deliberately does NOT consult `sim.wooferFlooded`: that memo answers "has this
+ * connected body already thumped this tick", which a free-floating footprint has
+ * no identity in. The brush does its own rate limiting instead (see
+ * PointerPainter's shock gate), so a held brush thumps on a battery-like cadence
+ * rather than every tick.
+ */
+export function fireShockwave(sim: SimContext, cells: readonly number[]): void {
+  const n = cells.length / 2;
+  if (n === 0) return;
+  beginWooferTick(sim);
+  // Thin the sources onto a square lattice (rather than taking the first N, or
+  // every k-th of the flat run) so they stay spread evenly over the footprint
+  // whatever its shape: a stride over row-major order would rake a diagonal line
+  // across a wide selection and leave its corners unshoved.
+  const step = Math.max(1, Math.ceil(Math.sqrt(n / BRUSH_MAX_SOURCES)));
+  // Anchor the lattice on the footprint's own first cell rather than on absolute
+  // grid coordinates: a thin selection (a 1-cell-wide column at an odd x, say)
+  // would miss an absolute lattice entirely and thump nothing at all. Anchored,
+  // that first cell always qualifies, so every firing has at least one source.
+  const ax = cells[0];
+  const ay = cells[1];
+  const bx: number[] = [];
+  const by: number[] = [];
+  for (let k = 0; k < cells.length; k += 2) {
+    const x = cells[k];
+    const y = cells[k + 1];
+    // The full footprint is what the wavefront is drawn from…
+    bx.push(x);
+    by.push(y);
+    // …while only the lattice cells actually pulse.
+    if ((x - ax) % step === 0 && (y - ay) % step === 0) firePulseAt(sim, x, y);
+  }
+  sim.emitShockwave(bx, by, SHOCK_VIS_REACH);
 }
 
 export const WOOFER = register({
