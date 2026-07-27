@@ -165,16 +165,28 @@ function sourceY(sim: SimContext, x: number, y: number): number {
  * are still walked as one column, so the pumped cell arrives above the slick
  * rather than under it. That's the honest reading of "push a column along" at
  * one-cell resolution, and it keeps a pump from stalling under an oil film.
+ *
+ * **A GAS payload is exempt from the phase match and passes any column it can
+ * walk.** The pump never sucks gas in (see `isIntake`), but a stray wisp of
+ * Steam/Smoke can drift into an empty pore on its own through the ordinary porous
+ * entry, and a gas rises through liquid and powder unaided anyway — so refusing it
+ * here would be both wrong and *fatal*: a powered cell pins its payload
+ * (updatePump), which suppresses the buoyancy that would otherwise carry the wisp
+ * out, so one mis-typed cell in the mouth would wedge the pore shut and stall the
+ * entire run's lift and intake indefinitely. Letting the bubble through costs
+ * nothing and the machine keeps running.
  */
 function deliveryY(sim: SimContext, x: number, y: number, phase: Phase): number {
+  const bubble = phase === Phase.Gas;
   for (let n = 0; n < MAX_PUSH; n++) {
     const cy = y - n;
     if (!sim.inBounds(x, cy)) return -1;
     if (sim.get(x, cy) === EMPTY) return cy;
     // Only a column of what's being pushed is pushed along; anything else — a
     // solid cap, a plug of the other phase, a frozen slug, trapped gas — stops
-    // the discharge where it stands.
-    if (!isIntake(sim, x, cy) || getMaterial(sim.get(x, cy)).phase !== phase) return -1;
+    // the discharge where it stands. A gas payload bubbles through regardless.
+    if (!isIntake(sim, x, cy)) return -1;
+    if (!bubble && getMaterial(sim.get(x, cy)).phase !== phase) return -1;
   }
   return -1;
 }
