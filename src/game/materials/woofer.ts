@@ -71,11 +71,12 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
 //   1. It is NOT `Material.conductive`. That tag drives a fully generic,
 //      *symmetric* hand-off (any two conductive neighbors pass a Spark back
 //      and forth — see spark.ts) and requires registering a fixed-width
-//      conductor "class" (CONDUCTOR_IDS/CLASS_BITS in spark.ts) that's
-//      already at capacity (7 of 7 — an 8th conductor would need to steal
-//      packing bits from every conductor's strength range). A one-way sink
-//      doesn't need any of that machinery: it never *reverts* from a Spark
-//      because it never *becomes* one, so it needs no class at all.
+//      conductor "class" (CONDUCTOR_IDS/CLASS_BITS in spark.ts) — no longer a
+//      scarce resource since `aux` widened to 16 bits (255 class slots, one
+//      full byte free for strength independent of slot count), but a
+//      one-way sink still doesn't need any of that machinery: it never
+//      *reverts* from a Spark because it never *becomes* one, so it needs no
+//      class at all.
 //   2. Acceptance is declared once, as an electric-appliance hook, instead of
 //      being special-cased at every pulse source. The Woofer registers
 //      `directPulse: wooferBodyPulse` (see the register call below); every pulse
