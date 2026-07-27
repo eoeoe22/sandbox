@@ -89,7 +89,7 @@ export const MOLTEN_METAL = register({
   phase: Phase.Liquid,
   color: rgb(255, 150, 50),
   density: 8,
-  category: '불·열',
+  category: 'fire',
   thermal: { init: MOLTEN_METAL_TEMP, conductivity: 0.85 },
   // Glows blazing yellow-white when fully molten and darkens to a dull ember as
   // conduction cools it toward setting, so the cooling front is visible before

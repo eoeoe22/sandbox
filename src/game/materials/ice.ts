@@ -32,7 +32,7 @@ export const ICE = register({
   phase: Phase.Solid,
   color: rgb(165, 215, 240),
   density: 1000,
-  category: '냉각',
+  category: 'cooling',
   thermal: { init: ICE_INIT_TEMP, conductivity: 0.45 },
   update: updateIce,
 });

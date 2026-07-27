@@ -49,7 +49,7 @@ export const LIQUID_NITROGEN = register({
   phase: Phase.Liquid,
   color: rgb(200, 232, 240),
   density: 2.5,
-  category: '냉각',
+  category: 'cooling',
   // Conducts its cold readily, so it acts as a real cold sink like Water/Ice.
   thermal: { init: -196, conductivity: 0.6 },
   update: updateLiquidNitrogen,

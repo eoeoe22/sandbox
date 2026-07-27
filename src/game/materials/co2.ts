@@ -142,7 +142,7 @@ export const CO2 = register({
   // pools on the floor, but lighter than every liquid (Water 3) so it settles on
   // a puddle's surface instead of diving through. See updateHeavyGas.
   density: 2,
-  category: '기체',
+  category: 'gas',
   // A gas, so it conducts heat poorly; it mostly carries cold (from sublimating
   // Dry Ice) by physically flowing rather than by conduction.
   thermal: { conductivity: 0.06 },

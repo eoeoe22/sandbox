@@ -57,7 +57,7 @@ export const TNT = register({
   density: 1000,
   explosive: true,
   blastRadius: BLAST_RADIUS,
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.3 },
   update: updateTNT,
 });

@@ -202,7 +202,7 @@ export const THERMITE = register({
   // mix than plain Sand/Salt — dense enough to sink clear through Mud, only
   // floating clear of the smelting-grade liquids (Slag and up).
   density: 5.6,
-  category: '폭발',
+  category: 'explosive',
   // Conducts moderately so a burning grain's heat reaches and lights the next
   // grain in a pile even without a Fire cell between them.
   thermal: { conductivity: 0.4 },

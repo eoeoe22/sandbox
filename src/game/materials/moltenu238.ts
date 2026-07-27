@@ -80,7 +80,7 @@ export const MOLTEN_U238 = register({
   phase: Phase.Liquid,
   color: rgb(200, 220, 120),
   density: 10, // as dense as Molten U235 — sinks through everything liquid
-  category: '방사성',
+  category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
   viscosity: 0.5,
   thermal: { init: MOLTEN_U238_TEMP, conductivity: 0.5 },

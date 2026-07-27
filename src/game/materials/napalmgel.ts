@@ -165,7 +165,7 @@ export const NAPALM_GEL = register({
   phase: Phase.Solid, // sticky: it isn't shoved around by fluids, and floats via density
   color: rgb(226, 118, 40), // clinging orange fire-gel
   density: 2, // lighter than water (3) → rides on the surface instead of sinking
-  category: '폭발',
+  category: 'explosive',
   colorVary: 24,
   // conductivity 0: the heat pass must leave `temp` alone while it holds the
   // packed flight state; init 0 → a stray blob (aux 0, life 0) congeals and

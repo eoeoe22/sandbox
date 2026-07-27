@@ -85,7 +85,7 @@ export const FIRE = register({
   phase: Phase.Gas,
   color: rgb(255, 120, 40),
   density: 1,
-  category: '불·열',
+  category: 'fire',
   // Burns hot, so it heats what it touches. Heat exchange across any interface is
   // gated by min(두 전도도), so Fire's own conductivity is the ceiling on how fast
   // it warms *anything* — at the old 0.1 it was the shared bottleneck that made

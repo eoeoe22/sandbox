@@ -39,6 +39,6 @@ export const BUBBLE = register({
   // gases (≈1) too, so it always floats to the top.
   density: 0.5,
   thermal: { conductivity: 0.05 },
-  category: '특수',
+  category: 'exotic',
   update: updateBubble,
 });

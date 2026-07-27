@@ -82,7 +82,7 @@ export const IRON = register({
   color: rgb(135, 140, 150),
   density: 1000,
   conductive: true,
-  category: '고체',
+  category: 'solid',
   // A polished metal surface: a Heat Ray beam reflects cleanly off it (정반사) —
   // see heatray.ts.
   laserReflective: true,

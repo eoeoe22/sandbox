@@ -20,7 +20,7 @@ export const ASH = register({
   phase: Phase.Powder,
   color: rgb(92, 92, 98),
   density: 1.5,
-  category: '가루',
+  category: 'powder',
   thermal: { conductivity: 0.2 },
   update: updateFloatyPowder,
 });

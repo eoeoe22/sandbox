@@ -62,7 +62,7 @@ export const GUNPOWDER = register({
   explosive: true,
   blastRadius: BLAST_RADIUS,
   destructivePower: DESTRUCTIVE_POWER, // weak: shoves loose matter, can't crater solids
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.3 },
   update: updateGunpowder,
 });

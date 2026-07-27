@@ -49,7 +49,7 @@ export const PETROLEUM_VAPOR = register({
   phase: Phase.Gas,
   color: rgb(190, 180, 165),
   density: 1.2,
-  category: '석유',
+  category: 'oil',
   thermal: { init: 110, conductivity: 0.08 },
   update: updatePetroleumVapor,
 });

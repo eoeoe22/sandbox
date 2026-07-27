@@ -13,6 +13,7 @@
   import { buildCategories } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
   import type { Material } from '../game/engine/types';
+  import { $locale as locale, t, materialName } from '../i18n';
 
   interface Props {
     /** Currently selected material id (highlighted in the popover). */
@@ -27,9 +28,15 @@
 
   let { value, options, onpick, ariaLabel }: Props = $props();
 
-  const categories = $derived(buildCategories([...options]));
+  const categories = $derived.by(() => {
+    void $locale;
+    return buildCategories([...options]);
+  });
   const selectedMat = $derived(options.find((m) => m.id === value));
-  const selectedName = $derived(selectedMat?.name ?? '?');
+  const selectedName = $derived.by(() => {
+    void $locale;
+    return selectedMat ? materialName(selectedMat.id, selectedMat.name) : t('picker.missing');
+  });
   const selectedColor = $derived(selectedMat ? toCss(selectedMat.color) : '#888');
 
   // Popover open state and which category is drilled into (null = category list).
@@ -263,7 +270,7 @@
       use:portal
       bind:this={flyoutEl}
       role="group"
-      aria-label={activeCat ? `${activeCat.label} 물질` : '물질 카테고리'}
+      aria-label={activeCat ? t('picker.categoryMaterials', { label: activeCat.label }) : t('picker.categories')}
       onkeydown={onFlyoutKeydown}
       data-picker-portal
       style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
@@ -288,7 +295,7 @@
         </div>
       {:else}
         <div class="mats-head">
-          <button class="back" onclick={back} aria-label="카테고리로 돌아가기" title="뒤로">
+          <button class="back" onclick={back} aria-label={t('picker.backAria')} title={t('picker.back')}>
             <i class="bi bi-chevron-left" aria-hidden="true"></i>
           </button>
           <i class={`bi ${activeCat.icon}`} aria-hidden="true"></i>
@@ -303,10 +310,10 @@
               class:active={m.id === value}
               aria-pressed={m.id === value}
               onclick={() => pick(m.id)}
-              title={m.name}
+              title={materialName(m.id, m.name)}
             >
               <span class="swatch" style={`background:${toCss(m.color)}`}></span>
-              <span class="chip-label">{m.name}</span>
+              <span class="chip-label">{materialName(m.id, m.name)}</span>
             </button>
           {/each}
         </div>

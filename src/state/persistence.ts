@@ -26,6 +26,8 @@ import {
   type Tool,
   type BlendComponent,
 } from './store';
+import { $locale, LOCALES, type Locale } from '../i18n';
+import { syncHtmlLang } from '../i18n';
 import { getMaterial, MATERIALS } from '../game/materials';
 import {
   AMBIENT_TEMP,
@@ -251,6 +253,10 @@ function hydrateSettings(): void {
   // of every palette material.
   $favorites.set(parseIdList(s.favorites, MATERIALS.length));
   $recentMaterials.set(parseIdList(s.recentMaterials, RECENT_MATERIALS_MAX));
+
+  // Locale: a persisted choice overrides the browser-detected default. Only
+  // known locales are accepted; anything else leaves the detected value.
+  if (LOCALES.includes(s.locale as Locale)) $locale.set(s.locale as Locale);
 }
 
 function saveSettings(): void {
@@ -279,6 +285,7 @@ function saveSettings(): void {
       bottomDeadzone: $bottomDeadzone.get(),
       favorites: $favorites.get(),
       recentMaterials: $recentMaterials.get(),
+      locale: $locale.get(),
     }),
   );
 }
@@ -339,6 +346,11 @@ export function initSettingsPersistence(): void {
   $bottomDeadzone.listen(schedule);
   $favorites.listen(schedule);
   $recentMaterials.listen(schedule);
+  $locale.listen(schedule);
+
+  // Keep <html lang> in sync with the active locale (screen readers, browser
+  // features). Idempotent — safe to call alongside other startup wiring.
+  syncHtmlLang();
 
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {

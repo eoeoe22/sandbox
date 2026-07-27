@@ -43,7 +43,7 @@ export const LIQUID_GALLIUM = register({
   color: rgb(198, 206, 218),
   density: 6,
   conductive: true,
-  category: '액체',
+  category: 'liquid',
   // Beads up like Mercury (표면장력) — scattered drops round into shiny balls.
   surfaceTension: 0.5,
   // A smooth mirror-like metal, so it renders as a flat single colour rather

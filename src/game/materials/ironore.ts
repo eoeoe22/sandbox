@@ -46,7 +46,7 @@ export const IRON_ORE = register({
   // beneath the light waste slag while the heavy reduced iron pools on the
   // floor — this just changes how it gets there before it melts.
   density: 7,
-  category: '제련',
+  category: 'smelt',
   // High conductivity so heat drives deep into a pile quickly and it melts
   // briskly rather than crawling in from the surface.
   thermal: { conductivity: 0.85 },

@@ -322,20 +322,18 @@ export const OVERWRITE_AUTO = -1;
 /**
  * Progressive brush overwrite levels, from most conservative to most permissive.
  * Each level also allows everything the previous levels allow (Empty cells are
- * always paintable regardless of level). The UI prepends an '자동' option (index
- * `OVERWRITE_AUTO` = -1) that derives the level from the selected material; the
- * numeric levels below start at 0.
+ * always paintable regardless of level). The UI prepends an 'Auto' option
+ * (index `OVERWRITE_AUTO` = -1) that derives the level from the selected
+ * material; the numeric levels below start at 0.
+ *
+ * Only the *count* matters here — the per-level display labels are localized
+ * and live in src/i18n (key `brush.overwriteLevel<N>`). Keeping a single
+ * numeric count here lets config stay free of UI strings while the i18n table
+ * owns all the wording.
  */
-export const OVERWRITE_LEVELS = [
-  '덮어쓰기 없음',
-  '기체만',
-  '기체+액체',
-  '기체+가루+액체',
-  '기체+가루+액체+고체',
-  '전체 (Wall 포함)',
-] as const;
+export const OVERWRITE_LEVEL_COUNT = 6;
 export const OVERWRITE_LEVEL_MIN = 0;
-export const OVERWRITE_LEVEL_MAX = OVERWRITE_LEVELS.length - 1;
+export const OVERWRITE_LEVEL_MAX = OVERWRITE_LEVEL_COUNT - 1;
 
 /**
  * Density-sorted displacement tunables (SimContext.tryMove).

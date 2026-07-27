@@ -26,7 +26,7 @@ export const FUSE = register({
   color: rgb(112, 92, 64),
   density: 1000,
   combustible: true,
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.25 },
   update: updateFuse,
 });

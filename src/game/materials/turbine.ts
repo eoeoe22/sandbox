@@ -128,7 +128,7 @@ export const TURBINE = register({
   phase: Phase.Solid,
   color: rgb(150, 160, 172),
   density: 1000,
-  category: '전기',
+  category: 'electric',
   // Porous like the Mesh — fluids (and its working steam) pass through any
   // thickness via the 겹침 overlap layer.
   porous: true,

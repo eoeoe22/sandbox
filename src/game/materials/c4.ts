@@ -58,7 +58,7 @@ export const C4 = register({
   combustible: true,
   electricDetonate: true, // a Spark detonates it directly (see spark.ts) — no fire hand-off
   blastRadius: BLAST_RADIUS,
-  category: '폭발',
+  category: 'explosive',
   thermal: { conductivity: 0.3 },
   update: updateC4,
 });

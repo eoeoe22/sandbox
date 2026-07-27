@@ -31,7 +31,7 @@ export const SAWDUST = register({
   color: rgb(184, 146, 92),
   density: 2,
   combustible: true,
-  category: '불·열',
+  category: 'fire',
   thermal: { conductivity: 0.2 },
   update: updateSawdust,
 });

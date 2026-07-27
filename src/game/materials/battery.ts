@@ -121,7 +121,7 @@ export const BATTERY = register({
   color: rgb(225, 195, 70),
   batteryPattern: true,
   density: 1000,
-  category: '전기',
+  category: 'electric',
   thermal: { conductivity: 0.3 },
   update: updateBattery,
 });

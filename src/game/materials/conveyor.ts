@@ -105,7 +105,7 @@ export const CONVEYOR = register({
   lattice: rgb(126, 132, 148),
   arrow: true,
   density: 1000,
-  category: '특수',
+  category: 'exotic',
   // Belts don't burn or corrode away underfoot.
   acidResistant: true,
   thermal: { conductivity: 0.3 },

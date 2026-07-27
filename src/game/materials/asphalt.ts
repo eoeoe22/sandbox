@@ -35,7 +35,7 @@ export const ASPHALT = register({
   phase: Phase.Solid,
   color: rgb(26, 22, 24),
   density: 1000,
-  category: '석유',
+  category: 'oil',
   thermal: { conductivity: 0.2 },
   update: updateAsphalt,
 });

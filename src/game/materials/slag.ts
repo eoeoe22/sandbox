@@ -42,7 +42,7 @@ export const SLAG = register({
   // (at `max`) down to `cool` (at `min`), so this is the hot end of the ramp.
   color: rgb(225, 95, 45),
   density: 5.75,
-  category: '제련',
+  category: 'smelt',
   // Cold crust below the softening point: stops flowing and acts solid.
   freeze: { temp: SLAG_SOFTEN_TEMP },
   // Placed hot (fresh from a melt); conducts a little worse than stone.

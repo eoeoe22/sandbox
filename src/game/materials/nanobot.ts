@@ -75,7 +75,7 @@ export const NANOBOT = register({
   color: rgb(120, 208, 202),
   colorVary: 22,
   density: 1000,
-  category: '생명',
+  category: 'life',
   // Shattered to Metal Powder when a blast destroys it at the epicenter, matching
   // the death-by-shockwave its update handles for rim survivors.
   blastDeathId: METAL_POWDER.id,

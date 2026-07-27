@@ -23,6 +23,6 @@ export const DIAMOND = register({
   density: 1000,
   acidResistant: true,
   explosionProof: true,
-  category: '고체',
+  category: 'solid',
   thermal: { conductivity: 0.95 },
 });

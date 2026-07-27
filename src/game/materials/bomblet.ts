@@ -80,7 +80,7 @@ export const BOMBLET = register({
   phase: Phase.Gas,
   color: rgb(74, 78, 86), // small dark submunition
   density: 1,
-  category: '폭발',
+  category: 'explosive',
   thermal: { init: 0, conductivity: 0 },
   packedTemp: true,
   update: updateBomblet,

@@ -9,7 +9,6 @@
     $cloneTarget as cloneTarget,
     $favorites as favorites,
     $recentMaterials as recentMaterials,
-    OBJECT_LABELS,
     recordMaterialUse,
     toggleFavorite,
   } from '../state/store';
@@ -20,42 +19,59 @@
   import { buildCategories, categoryOf } from '../game/materials/categories';
   import { toCss } from '../game/render/color';
   import { objectSvgFor } from '../game/render/objectSvg';
+  import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
   // identically. This is the ordered list of category tabs with their members.
-  const categories = buildCategories(MATERIALS);
+  // Re-resolved when the locale changes so labels follow the active language.
+  const categories = $derived.by(() => {
+    void $locale;
+    return buildCategories(MATERIALS);
+  });
 
   // The 독립 오브젝트 layer isn't made of materials, so it gets its own palette
   // tab appended after the material categories. Picking an item here switches to
   // the 'object' tool, and a click on the canvas spawns that object (see
   // PointerPainter). The three drums share one capsule and differ only in what
   // they spill when destroyed; the swatch color matches each drum's sprite.
-  // Item names are in English (이름 영어 통일), but the category tab name stays
-  // Korean like the other palette categories. Each item's palette swatch is the
-  // object's real in-world shape as SVG (objectSvgFor), generated from the same
-  // sprite data the renderer draws — no more hand-approximated CSS swatch.
-  const OBJECT_KEY = '오브젝트';
-  const OBJECT_ITEMS: {
-    key: ObjectKind;
-    label: string;
-  }[] = (['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]).map((key) => ({
-    key,
-    label: OBJECT_LABELS[key],
-  }));
+  // Item labels resolve through `objectLabel()` so they follow the active
+  // language. Each item's palette swatch is the object's real in-world shape as
+  // SVG (objectSvgFor), generated from the same sprite data the renderer draws.
+  // The kinds are a plain constant, but the labelled items are `$derived` over
+  // `$locale` (same reason as `categories`/`quickItems`): `objectLabel()` reads
+  // the locale atom with a plain `.get()`, so a constant array would freeze the
+  // flyout's labels at whatever language was active when it was built.
+  const OBJECT_KINDS: readonly ObjectKind[] = [
+    'ball',
+    'drum',
+    'oildrum',
+    'aciddrum',
+    'dynamite',
+  ];
+  const OBJECT_ITEMS = $derived.by<{ key: ObjectKind; label: string }[]>(() => {
+    void $locale;
+    return OBJECT_KINDS.map((key) => ({ key, label: objectLabel(key) }));
+  });
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
   // grid, matching the material name or its category (both case-insensitive), in
-  // registry order. The category flyout is suppressed while searching.
+  // registry order. Matches against the current locale's display name so typing
+  // Korean finds Korean-named materials. The category flyout is suppressed while
+  // searching. Re-runs when the locale changes so the query language tracks the
+  // display language.
   let query = $state('');
   const searching = $derived(query.trim().length > 0);
   const matches = $derived.by<Material[]>(() => {
+    void $locale;
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return MATERIALS.filter(
-      (m) => m.name.toLowerCase().includes(q) || categoryOf(m).toLowerCase().includes(q),
-    );
+    return MATERIALS.filter((m) => {
+      const name = materialName(m.id, m.name).toLowerCase();
+      const cat = categoryLabel(categoryOf(m)).toLowerCase();
+      return name.includes(q) || cat.includes(q);
+    });
   });
 
   // --- Favorites / recent quick-access ------------------------------------
@@ -63,6 +79,9 @@
   const isFav = (id: number): boolean => favSet.has(id);
   // Favorites first (in the order they were starred), then recently-used
   // materials not already starred. Ids that no longer resolve are dropped.
+  // Holds materials, not labels: the chips resolve their own name through
+  // `materialName()` in the markup, which tracks the locale by itself
+  // (i18n/reactive.svelte.ts), so this list has no locale dependency to declare.
   const quickItems = $derived.by<Material[]>(() => {
     const resolve = (ids: number[]): Material[] =>
       ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
@@ -87,6 +106,14 @@
   let hovered = $state<string | null>(null);
   let pinned = $state<string | null>(null);
   const open = $derived(pinned ?? hovered);
+
+  // The object tab's key. A constant string used both as the palette state key
+  // (hovered/pinned) and as the resolved display label via `t()`.
+  const OBJECT_KEY = '__objects__';
+  const objectTabLabel = $derived.by(() => {
+    void $locale;
+    return t('palette.objectKey');
+  });
 
   // Entering search swaps the category list for the results grid and the
   // template hides the flyout (`!searching` guard). Also drop any pinned/hovered
@@ -356,8 +383,8 @@
       <input
         class="search"
         type="search"
-        placeholder="물질 검색…"
-        aria-label="물질 검색"
+        placeholder={t('palette.searchPlaceholder')}
+        aria-label={t('palette.searchAria')}
         bind:value={query}
         onkeydown={(e) => {
           if (e.key === 'Escape') query = '';
@@ -367,8 +394,8 @@
         <button
           class="search-clear"
           onclick={() => (query = '')}
-          aria-label="검색 지우기"
-          title="검색 지우기"
+          aria-label={t('palette.searchClear')}
+          title={t('palette.searchClearTooltip')}
         >
           <i class="bi bi-x-lg" aria-hidden="true"></i>
         </button>
@@ -376,7 +403,7 @@
     </div>
 
     {#if !searching}
-      <div class="quick" role="group" aria-label="즐겨찾기·최근 사용">
+      <div class="quick" role="group" aria-label={t('palette.quickGroup')}>
         {#each quickSlots as m, i (i)}
           {#if m}
             {@render starChip(m)}
@@ -391,9 +418,9 @@
   </div>
 
   {#if searching}
-    <div class="results" role="group" aria-label="검색 결과">
+    <div class="results" role="group" aria-label={t('palette.resultsGroup')}>
       {#if matches.length === 0}
-        <span class="no-results">일치하는 물질이 없습니다</span>
+        <span class="no-results">{t('palette.noResults')}</span>
       {:else}
         {#each matches as m (m.id)}
           {@render starChip(m)}
@@ -443,10 +470,10 @@
           aria-expanded={open === OBJECT_KEY}
           aria-haspopup="true"
           aria-controls="cat-flyout-object"
-          title={OBJECT_KEY}
+          title={objectTabLabel}
         >
           <i class="bi bi-circle-fill icon" aria-hidden="true"></i>
-          <span class="cat-label">{OBJECT_KEY}</span>
+          <span class="cat-label">{objectTabLabel}</span>
           <span class="count">{OBJECT_ITEMS.length}</span>
         </button>
       </div>
@@ -460,7 +487,7 @@
       bind:this={flyoutEl}
       id="cat-flyout-object"
       role="menu"
-      aria-label={OBJECT_KEY}
+      aria-label={objectTabLabel}
       style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
       onmouseenter={() => openOnHover(OBJECT_KEY)}
       onmouseleave={scheduleHoverClose}
@@ -502,10 +529,10 @@
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={`${m.name} (더블클릭: 이 물질의 Clone)`}
+            title={materialName(m.id, m.name)}
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
-            <span class="label">{m.name}</span>
+            <span class="label">{materialName(m.id, m.name)}</span>
           </button>
         {/each}
       </div>
@@ -523,18 +550,20 @@
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
       ondblclick={() => pickClone(m.id)}
-      title={`${m.name} (더블클릭: 이 물질의 Clone)`}
+      title={materialName(m.id, m.name)}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>
-      <span class="label">{m.name}</span>
+      <span class="label">{materialName(m.id, m.name)}</span>
     </button>
     <button
       class="star"
       class:on={isFav(m.id)}
       onclick={(e) => toggleFav(e, m.id)}
-      aria-label={isFav(m.id) ? `${m.name} 즐겨찾기 해제` : `${m.name} 즐겨찾기 추가`}
+      aria-label={isFav(m.id)
+        ? t('palette.favRemove', { name: materialName(m.id, m.name) })
+        : t('palette.favAdd', { name: materialName(m.id, m.name) })}
       aria-pressed={isFav(m.id)}
-      title={isFav(m.id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+      title={isFav(m.id) ? t('palette.favRemoveTooltip') : t('palette.favAddTooltip')}
     >
       <i class={`bi ${isFav(m.id) ? 'bi-star-fill' : 'bi-star'}`} aria-hidden="true"></i>
     </button>
@@ -617,7 +646,7 @@
      so the strip keeps its shape whether or not there are favorites/recents. */
   .chip.empty {
     width: 56px;
-    height: 46px;
+    height: 100%;
     border-style: dashed;
     border-color: #262630;
     background: transparent;
@@ -651,8 +680,12 @@
   }
 
   /* A chip plus its corner star toggle (quick-access + results). */
+  /* display:flex so the chip fills a wrapper that a taller (two-line) neighbour
+     stretched — otherwise the short chips in a row would float with a gap under
+     them. */
   .chip-wrap {
     position: relative;
+    display: flex;
     flex: none;
   }
   .star {
@@ -747,9 +780,11 @@
     flex: none;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     gap: 4px;
     width: 56px;
-    padding: 6px 4px;
+    min-height: 46px;
+    padding: 6px 2px;
     border: 1px solid #2a2a33;
     border-radius: 6px;
     background: #1b1b22;
@@ -790,12 +825,22 @@
     width: 100%;
     height: 100%;
   }
+  /* Names are never truncated: a two-word name ("White Phosphorus") wraps onto a
+     second line rather than turning into "White Pho…". The chip keeps its fixed
+     56px width so the grid stays on its column rhythm — only the height grows,
+     and flex's default stretch makes every chip on a row match the tallest one,
+     so a wrapped row still reads as a row. 9px + break-word is what keeps the
+     longest single token in the registry (Phosphorus/Antimatter, 10 chars) on
+     one line inside that width; break-word only ever kicks in if a future name
+     is longer still, and even then it wraps instead of overflowing. Korean
+     names (the ko locale) break between syllables on their own, so a long one
+     like 드라이아이스 wraps the same way instead of spilling out. */
   .chip .label {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
+    width: 100%;
+    overflow-wrap: break-word;
+    white-space: normal;
+    font-size: 9px;
+    line-height: 1.25;
     text-align: center;
   }
 
@@ -840,6 +885,20 @@
     .cat-label,
     .category > button .count {
       display: none;
+    }
+
+    /* Chips inside the bar — the quick-access slots and the search results, but
+       not the flyout (portalled out of .palette, so it keeps the desktop wrap).
+       The bar is a fixed-height strip that scrolls sideways, so a long name
+       widens its chip instead of wrapping onto a second line that the bar has
+       no room for. */
+    .palette .chip {
+      width: auto;
+      min-width: 56px;
+      padding: 6px 6px;
+    }
+    .palette .chip .label {
+      white-space: nowrap;
     }
 
     /* Quick-access recents/favorites: only the first three slots show on mobile

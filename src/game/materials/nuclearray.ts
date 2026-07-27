@@ -341,7 +341,7 @@ export const NUCLEAR_RAY = register({
   phase: Phase.Gas,
   color: rgb(255, 70, 40),
   density: 1,
-  category: '특수',
+  category: 'exotic',
   // conductivity 0 is load-bearing, as in Ember/Blast: the heat pass leaves
   // `temp` alone so it can hold the packed life+direction state. init 0
   // decodes to a dead ray, so one placed by hand dies quietly on its first turn.
