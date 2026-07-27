@@ -44,7 +44,7 @@ export class Grid {
    */
   overlay: Uint8Array;
   /**
-   * The overlap fluid's own `aux` state byte — its private per-material state
+   * The overlap fluid's own `aux` state word — its private per-material state
    * (Grid.aux) parked here while it rides in a host's overlap slot, since the
    * host is using the real `aux` for its own state. This is what carries a
    * Petroleum Vapor's condensate cut, a Molten Uranium's burn counter, etc.
@@ -52,8 +52,10 @@ export class Grid {
    * instead of resetting to 0. 0 when no fluid is overlapped. Travels with the
    * overlay on every move and is persisted alongside it. Only read while
    * `overlay` is non-zero, so a stale value under a dry cell is inert.
+   * 16-bit to mirror `aux` exactly — a parked value must survive the round trip
+   * unchanged whatever its owner packed into it.
    */
-  overlayAux: Uint8Array;
+  overlayAux: Uint16Array;
   /** Per-tick "overlay already moved" guard — the overlap layer's own `moved`,
    *  independent of the primary's, since the two particles in a cell move on
    *  separate schedules within one step. */
@@ -72,7 +74,7 @@ export class Grid {
   tempScratch: Float32Array;
 
   /**
-   * Per-cell auxiliary state byte, interpreted privately by whichever material
+   * Per-cell auxiliary state word, interpreted privately by whichever material
    * occupies the cell (0 means "no state" / freshly placed). This is the
    * reserved `life`/state slot the comment here used to promise, generalized:
    * a conductor uses it as a spark-refractory countdown, a Battery as a pulse
@@ -84,8 +86,19 @@ export class Grid {
    * as 0, so every use must still tolerate a 0 default. Materials that instead
    * need real-valued state keep using `temp` with `conductivity: 0`
    * (Blast/Ember); `aux` is the cheap integer companion.
+   *
+   * SIXTEEN bits, not eight (widened from Uint8Array). Most materials use a
+   * handful of values and never notice, but the ones that *pack several fields
+   * into one cell* were running out of room: spark.ts splits it into a conductor
+   * class and a pulse strength, and at 8 bits every new conductor stole reach
+   * from every lossy medium (a 4-bit class left strength capped at 15). The
+   * extra byte per cell — ~73 KB on the default 360×203 board — buys both fields
+   * a full byte each, so "add a conductor" and "how far does current reach"
+   * stop being a zero-sum trade. Materials that store a *material id* here
+   * (Clone, Debris, Blast, Heat Ray) still write plain ids in 0..255, which the
+   * renderer's `renderAsAux` path relies on.
    */
-  aux: Uint8Array;
+  aux: Uint16Array;
 
   /**
    * Per-particle color-variation byte (used by powders): each grain's individual
@@ -170,11 +183,11 @@ export class Grid {
     this.cells = new Uint8Array(this.size); // initialized to EMPTY (0)
     this.moved = new Uint8Array(this.size);
     this.overlay = new Uint8Array(this.size); // 겹침: no fluid overlapped
-    this.overlayAux = new Uint8Array(this.size);
+    this.overlayAux = new Uint16Array(this.size);
     this.overlayMoved = new Uint8Array(this.size);
     this.temp = new Float32Array(this.size).fill(AMBIENT_TEMP);
     this.tempScratch = new Float32Array(this.size);
-    this.aux = new Uint8Array(this.size);
+    this.aux = new Uint16Array(this.size);
     this.tint = new Uint8Array(this.size); // 0 = neutral until seeded on placement
     this.bgTint = randomBytes(this.size); // positional background texture
     this.wind = new Uint8Array(this.size); // transient wind field, 0 = no wind
@@ -217,6 +230,8 @@ export class Grid {
     return this.aux[y * this.width + x];
   }
 
+  /** Write the cell's aux state (see Grid.aux). Values are stored in 16 bits, so
+   *  a material may pack up to 0xffff here; the array truncates anything wider. */
   setAux(x: number, y: number, v: number): void {
     this.aux[y * this.width + x] = v;
   }
@@ -294,9 +309,9 @@ export class Grid {
     srcW: number,
     srcH: number,
     srcTemp?: Float32Array,
-    srcAux?: Uint8Array,
+    srcAux?: Uint16Array,
     srcOverlay?: Uint8Array,
-    srcOverlayAux?: Uint8Array,
+    srcOverlayAux?: Uint16Array,
     srcTint?: Uint8Array,
     srcBgTint?: Uint8Array,
   ): void {
@@ -309,12 +324,12 @@ export class Grid {
     // source aux is supplied (a fresh world load, or a drag whose snapshot
     // predates aux) it starts zeroed — safe because every aux use is transient
     // state that self-heals (a Clone re-adopts, a conductor's refractory clears).
-    const nextAux = new Uint8Array(width * height);
+    const nextAux = new Uint16Array(width * height);
     // The 겹침 overlap layer (fluid id + its parked aux) travels with its host
     // cells the same way (a soaked bed stays soaked across a resize). Missing
     // source (older save) → all dry.
     const nextOverlay = new Uint8Array(width * height);
-    const nextOverlayAux = new Uint8Array(width * height);
+    const nextOverlayAux = new Uint16Array(width * height);
     // Cosmetic per-particle tint travels with its cells the same way. When no
     // source tint is supplied it starts zeroed (neutral); callers seed it
     // afterward (Grid.randomizeTints) so a fresh load isn't a flat block.

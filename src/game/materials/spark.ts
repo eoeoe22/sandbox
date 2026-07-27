@@ -41,27 +41,27 @@ import { ACID_SLIME } from './acidslime';
 //   • Acid Slime — the one non-metal at zero loss: it conducts at the maximum, a
 //     pulse running full strength end to end through a blob (전기전도성 최대치),
 //     while still carrying Slime's electric-dissolve weakness (see below).
-//   • Saltwater / Acid — electrolytes, bleed strength slowly (carry a long way);
-//     both conduct at the same rate.
-//   • Water — bleeds strength faster than the electrolytes, but a pulse still runs
-//     a good stretch through it (about half a full wire) instead of dying after a
-//     couple of cells.
+//   • Saltwater / Acid — electrolytes, bleed strength slowly (~63 cells, which
+//     crosses any tank you're likely to build); both conduct at the same rate.
+//   • Water — bleeds strength twice as fast as the electrolytes, but a pulse still
+//     runs a long way through it (~31 cells) instead of dying after a couple.
 //   • Slime — a thick, non-ionic goo: still the worst conductor in the roster (its
 //     acidic cousin aside), but no longer a dead end — a pulse carries a good
 //     stretch into a blob (on par with fresh Water) and genuinely carries on
 //     through (see below) rather than just reacting on contact.
 //
-// Adding Acid Slime as an 8th conductor filled the 3-bit class field, so it was
-// widened to 4 bits (CLASS_BITS) — which necessarily shrinks the strength field to
-// 4 bits (FULL_STRENGTH 15, was 31), the two sharing one 8-bit `aux`. Reaches in
-// the lossy media are correspondingly shorter than before (electrolytes span a big
-// tank rather than an enormous one; water/slime reach ~half a wire) — the metals
-// and zero-loss Acid Slime are unaffected since 0 loss runs any length regardless.
+// Class and strength used to fight over a single 8-bit `aux`, which made "add a
+// conductor" a zero-sum trade against "how far does current reach": the 8th
+// conductor (Acid Slime) filled the 3-bit class field, widening it to 4 bits
+// halved FULL_STRENGTH (31→15), and the 16th would have halved it again (→7).
+// `aux` is now 16 bits per cell (see Grid.aux), so the two fields get a full
+// byte each and the trade is gone — 255 conductor slots *and* a strength ceiling
+// of 255, neither one paid for out of the other.
 //
-// State packed into the spark cell's single `aux` byte:
-//   • the conductor CLASS (low 4 bits) — which conductor to revert back into
+// State packed into the spark cell's `aux` word:
+//   • the conductor CLASS (low 8 bits) — which conductor to revert back into
 //     (Iron→Iron, Water→Water, …); class 0 = "no conductor" → the spark fizzles.
-//   • the remaining STRENGTH (high 4 bits, 0..15).
+//   • the remaining STRENGTH (high 8 bits, 0..255).
 // A compact class (a 1-based index into CONDUCTOR_IDS) rather than the raw id
 // leaves room for the strength in the same byte, and — as before — the
 // conductor's heat rides untouched in `temp`, so energizing a hot wire doesn't
@@ -82,18 +82,26 @@ import { ACID_SLIME } from './acidslime';
 const REFRACTORY_TICKS = 3;
 
 // --- Electricity strength -----------------------------------------------------
-// The class + strength share one 8-bit `aux` byte. With 10 conductors the class
-// needs 4 bits (classes 1..15, 0 = "none"), leaving 4 bits for strength (0..15).
-const CLASS_BITS = 4;
-const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0b1111 — low bits hold the conductor class
-const MAX_STRENGTH = 0xff >> CLASS_BITS; // 15 — high 4 bits hold strength
-/** Strength a fresh pulse starts at (what a Battery/Turbine injects). Sits at the
- *  packing's ceiling (MAX_STRENGTH) so every conductor gets the longest reach the
- *  4-bit strength field allows — the engine-wide "more range" knob. Halved from
- *  the old 31 when the class field grew to 4 bits to make room for an 8th
- *  conductor (Acid Slime); the lossy media reach correspondingly less far, the
- *  zero-loss ones (metals, Acid Slime) not at all. */
-export const FULL_STRENGTH = 15;
+// Class + strength split the 16-bit `aux` word (Grid.aux) evenly, one byte each:
+// classes 1..255 in the low byte (0 = "none"), strength 0..255 in the high byte.
+// Both fields are now far wider than the design needs, which is the point — a new
+// conductor no longer costs reach, and raising reach no longer costs slots.
+const CLASS_BITS = 8;
+const CLASS_MASK = (1 << CLASS_BITS) - 1; // 0xff — low byte holds the conductor class
+const MAX_STRENGTH = 0xffff >> CLASS_BITS; // 255 — high byte holds strength
+/** Strength a fresh pulse starts at (what a Battery/Turbine injects) — the
+ *  engine-wide "how far does current reach" knob, divided by a medium's
+ *  CONDUCTOR_LOSS to give its reach in cells.
+ *
+ *  Deliberately *not* pinned to MAX_STRENGTH (255) any more. While the two
+ *  fields shared a byte this had to sit at the packing's ceiling to squeeze out
+ *  every cell of reach, so widening the class field visibly shortened every
+ *  lossy conductor. With a byte of its own it's a free tuning value: 63 gives
+ *  water/slime ~31 cells and brine/acid ~63 — roughly double the pre-Acid-Slime
+ *  reach and four times what the 4-bit field allowed — while leaving lossy media
+ *  meaningfully lossy against the metals' unlimited run. Raise it toward
+ *  MAX_STRENGTH for longer reach; nothing else has to move. */
+export const FULL_STRENGTH = 63;
 
 // Conductors that can carry a spark, indexed by (class - 1). Order is fixed;
 // appending a new conductor keeps existing packed values valid. Every material
@@ -111,32 +119,33 @@ const CONDUCTOR_IDS = [
   LIQUID_GALLIUM.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
-// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 15:
+// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 63:
 // metal and nichrome keep it in full (0 → runs the whole wire — nichrome's
 // resistance is now down at the engine's floor, same as Iron/Mercury); Acid Slime
 // also sits at 0 (전기전도성 최대치 — it conducts as far as any metal, unlike its
-// plain cousin); brine and acid barely bleed (1 → ~15 cells, a big tank); and
-// fresh water and Slime bleed at the same middling rate (2 → ~7 cells) — Slime is
-// still the poorest conductor in spirit (a thick, non-ionic goo has no business
+// plain cousin); brine and acid barely bleed (1 → ~63 cells, well past a big tank);
+// and fresh water and Slime bleed at the same middling rate (2 → ~31 cells) — Slime
+// is still the poorest conductor in spirit (a thick, non-ionic goo has no business
 // carrying current well) but no longer dies within a cell or two, so sustained
-// current has room to actually punch into a blob before a pulse gives out. Water
-// and Slime dropped from 3→2 to soften the shorter reach that came with halving
-// FULL_STRENGTH (31→15) to fit the widened 4-bit class field. Nichrome's
-// resistance still shows up as heat: each passing pulse deposits a fixed dose
-// of Joule heat into the wire on revert (see nichromeJouleHeat), independent
-// of this per-cell strength loss.
+// current has room to actually punch into a blob before a pulse gives out. These
+// reaches used to be a hostage of the class field: every widening of it halved
+// FULL_STRENGTH and so halved this whole column. The 16-bit aux ended that, and
+// FULL_STRENGTH 15→63 restored (and then some) what the 4-bit class field had
+// taken. Nichrome's resistance still shows up as heat: each passing pulse deposits
+// a fixed dose of Joule heat into the wire on revert (see nichromeJouleHeat),
+// independent of this per-cell strength loss.
 // (…, GALLIUM 0, LIQUID GALLIUM 0) — both are metals (solid & molten Gallium),
 // so they conduct at the engine's floor exactly like Iron/Mercury: a pulse runs
 // full strength end to end through a Gallium wire or puddle.
 const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
-// byte, with class 0 reserved for "no conductor". Adding Acid Slime brought the
-// count to 8, so the field was widened from 3 to 4 bits (classes 1..CLASS_MASK =
-// 1..15). A conductor past CLASS_MASK would encode as class CLASS_MASK+1, wrap to
-// 0 under `& CLASS_MASK`, and be silently deleted on revert (myClass===0 ⇒ set
-// EMPTY) — so fail loudly at load instead. Widen CLASS_BITS further (at the cost
-// of strength bits, both sharing one 8-bit aux) before adding a 16th.
+// word, with class 0 reserved for "no conductor" (classes 1..CLASS_MASK = 1..255).
+// A conductor past CLASS_MASK would encode as class CLASS_MASK+1, wrap to 0 under
+// `& CLASS_MASK`, and be silently deleted on revert (myClass===0 ⇒ set EMPTY) — so
+// fail loudly at load instead. The guard is now a formality rather than a live
+// budget: with a full byte per field the roster would have to grow 25× before it
+// bites, and adding a conductor no longer costs FULL_STRENGTH anything.
 if (CONDUCTOR_IDS.length > CLASS_MASK) {
   throw new Error(
     `Too many spark conductors (${CONDUCTOR_IDS.length}) for a ${CLASS_BITS}-bit class field (max ${CLASS_MASK}).`,
@@ -169,7 +178,7 @@ function classToId(cls: number): number {
 function classLoss(cls: number): number {
   return CONDUCTOR_LOSS[cls - 1];
 }
-/** Pack a spark's (strength, conductor class) into its aux byte. */
+/** Pack a spark's (strength, conductor class) into its aux word. */
 export function packSpark(strength: number, cls: number): number {
   const s = strength < 0 ? 0 : strength > MAX_STRENGTH ? MAX_STRENGTH : strength;
   return (s << CLASS_BITS) | (cls & CLASS_MASK);
