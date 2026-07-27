@@ -260,6 +260,9 @@ export class CanvasRenderer implements Renderer {
    *  the low 2 bits the blow direction and the rest a powered countdown that
    *  brightens the chevron (Fan — see Material.windArrow). */
   private windArrow: Uint8Array;
+  /** id → 1 if the material draws horizontal coil windings that brighten while its
+   *  aux byte is non-zero (Electromagnet — see Material.coilPattern). */
+  private coilPattern: Uint8Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -357,6 +360,7 @@ export class CanvasRenderer implements Renderer {
     this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
+    this.coilPattern = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -379,6 +383,7 @@ export class CanvasRenderer implements Renderer {
         if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
+        if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
@@ -541,6 +546,7 @@ export class CanvasRenderer implements Renderer {
     const batPat = this.batteryPattern;
     const arrow = this.arrow;
     const windArrow = this.windArrow;
+    const coilPattern = this.coilPattern;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -632,6 +638,19 @@ export class CanvasRenderer implements Renderer {
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (coilPattern[id]) {
+        // An Electromagnet draws copper windings around a dark core: two lit rows
+        // out of every four (a period-4 stripe in the `lattice` colour), so a bar
+        // of it reads as a wound coil rather than another flat machine block. It
+        // has no direction to point at, so unlike the Fan's chevron the pattern is
+        // positional only. Its whole aux byte is the powered countdown (see
+        // materials/electromagnet.ts), so a non-zero aux brightens the windings
+        // exactly the way a running fan's chevron brightens — that's the only cue
+        // that the field is up.
+        const y = (i / w) | 0;
+        const band = y & 3;
+        const a = auxArr[i];
+        c = band === 1 || band === 2 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

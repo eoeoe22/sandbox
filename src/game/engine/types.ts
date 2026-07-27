@@ -74,6 +74,23 @@ export interface Material {
    * device worked off a Battery but not a Turbine).
    */
   directPulse?: (sim: SimContext, x: number, y: number) => void;
+  /**
+   * 자성 — ferromagnetic matter a powered Electromagnet's field pulls toward
+   * itself (see materials/electromagnet.ts). A pure data tag: the magnet reads it
+   * and nothing else does, so a new attractable material is added by setting this
+   * alone.
+   *
+   * Only tag matter that is genuinely *loose* — a powder (Metal Powder, Rust
+   * Powder, Iron Ore) or a `shockLoose` crawler (Nanobot). Structural solids
+   * (Iron, Rust) are deliberately NOT tagged even though real iron is magnetic:
+   * dragging a fixed structure around would walk a player's wiring, machines and
+   * walls off their mounts, the same reason the Fan's gust refuses to push solids
+   * (see fan.ts `isWindPushable`). Molten Metal isn't tagged either — above the
+   * Curie point iron isn't ferromagnetic, so the one liquid that might qualify
+   * has a real excuse not to. The magnet enforces this too (it only ever moves
+   * loose matter), so a mistagged wall stays put rather than tearing apart.
+   */
+  magnetic?: boolean;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
   flammable?: boolean;
   /**
@@ -390,6 +407,16 @@ export interface Material {
    * for an ordinary material.
    */
   windArrow?: boolean;
+  /**
+   * Draw horizontal coil windings (in the `lattice` color, over the base `color`)
+   * that brighten while the cell's `aux` byte is non-zero — the Electromagnet,
+   * whose whole aux byte is its powered countdown (see materials/electromagnet.ts).
+   * A magnet has no direction to point at, so it gets stripes rather than the
+   * Fan's chevron; the brightening is what makes "the field is on" readable at a
+   * glance, the same job `windArrow`'s brightening does for a running fan. Purely
+   * a rendering hint the simulation never reads; omit for an ordinary material.
+   */
+  coilPattern?: boolean;
   /**
    * Render this cell using the *carried* material named by its `aux` byte, not
    * this material's own `color`. Debris sets it: a flying fragment carries its

@@ -249,6 +249,42 @@ export class SimContext {
   laserFlooded: Set<number> = new Set();
 
   /**
+   * Per-tick memo for the Pump's body-flood (materials/pump.ts) — identical in
+   * shape and purpose to `fanFlooded`/`laserFlooded` above: a powered Pump is a
+   * one-way "outside → inside" electric sink whose whole connected body spins up
+   * from any powered face, and this keeps a body touched from several
+   * faces/sources in the same tick from re-flooding once per entry point. Cleared
+   * whenever `pumpFloodTick` falls behind the current `tick`. Sim-local.
+   */
+  pumpFloodTick = -1;
+  pumpFlooded: Set<number> = new Set();
+
+  /**
+   * Per-tick memo for the Electromagnet's body-flood (materials/electromagnet.ts)
+   * — the same one-way "outside → inside" electric sink as `fanFlooded` above,
+   * refreshing the whole connected magnet's powered countdown from any powered
+   * face. Cleared whenever `magnetFloodTick` falls behind the current `tick`.
+   * Sim-local.
+   */
+  magnetFloodTick = -1;
+  magnetFlooded: Set<number> = new Set();
+
+  /**
+   * Per-tick memo for the Electromagnet's *attraction field*, which is a separate
+   * event from the flood above: the flood only happens on a power pulse (every
+   * PULSE_PERIOD ticks), while the field pulls every tick the countdown is live.
+   * The pull is computed once for a whole connected magnet — one breadth-first
+   * sweep out of the body's own outline, like the Woofer's geodesic wavefront —
+   * so the first body cell the scan reaches does the work and records every cell
+   * of that body here, letting the rest of the body no-op instead of re-sweeping
+   * the same field once per cell (O(N²) on a big magnet). Cleared whenever
+   * `magnetFieldTick` falls behind the current `tick`. Sim-local, same reasoning
+   * as `wooferFlooded`.
+   */
+  magnetFieldTick = -1;
+  magnetFielded: Set<number> = new Set();
+
+  /**
    * True once any Fan has stamped the wind field this tick (see setWind / Grid.wind).
    * Simulation.step reads it to clear the field lazily — only when a fan actually
    * wrote to it last tick — so a world with no fans never pays for the fill. Reset
