@@ -330,9 +330,9 @@ export interface Material {
    */
   colorVary?: number;
   /**
-   * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine). To
-   * powders and solids it's an ordinary blocking Solid — piles rest on it — but
-   * a fluid moving into it slips into the cell's 겹침 (overlap) slot
+   * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine, Pump).
+   * To powders and solids it's an ordinary blocking Solid — piles rest on it —
+   * but a fluid moving into it slips into the cell's 겹침 (overlap) slot
    * (Grid.overlay) and keeps travelling through under its own gravity/buoyancy,
    * one fluid per cell, surfacing in the first empty cell it reaches — so water
    * pours through a mesh floor of any thickness and seeps through a mesh wall
@@ -340,6 +340,24 @@ export interface Material {
    * canHostOverlap); the rest of the engine ignores it.
    */
   porous?: boolean;
+  /**
+   * For a `porous` host: powders pass through it too, not just liquids and gases
+   * (Pump). A grain moving into such a cell takes the 겹침 slot exactly the way a
+   * liquid does and keeps falling through under gravity, so the material reads as
+   * a sieve with pores wide enough for grit rather than a fluid-only screen —
+   * which is what lets a Pump lift sand as well as water. Ignored unless `porous`
+   * is set. Read by SimContext (canHostOverlap, tryMove entry, updateOverlay).
+   */
+  porousPowder?: boolean;
+  /**
+   * For a `porous` host: only half its cells actually admit a fluid — the light
+   * cells of the `lattice` checkerboard the renderer draws, so the screen filters
+   * at half its pore density and the cells that *look* woven are the ones that
+   * block (Mesh). The light cells connect diagonally, so a fluid still threads a
+   * screen of any thickness. Omitted ⇒ every cell of the porous body admits
+   * (Turbine, Pump). Read by SimContext (canOverlapAt).
+   */
+  latticeFilter?: boolean;
   /**
    * 액체 겹침 계수 (liquid-overlap coefficient), 0..1 — for a Powder, the fraction
    * of its grains that may host a 겹침 (overlap) liquid; the rest are "겹침 불가"
@@ -417,6 +435,16 @@ export interface Material {
    * a rendering hint the simulation never reads; omit for an ordinary material.
    */
   coilPattern?: boolean;
+  /**
+   * Draw vertical channel stripes (in the `lattice` color, over the base `color`)
+   * that brighten while the cell's `aux` byte is non-zero — the Pump, whose whole
+   * aux byte is its powered countdown (see materials/pump.ts). The 90°-rotated
+   * counterpart of `coilPattern`: one lit column of every three, so a block of it
+   * reads as a stack of open risers matter can travel up rather than a solid
+   * machine face, and the brightening is what says "it's pumping". Purely a
+   * rendering hint the simulation never reads; omit for an ordinary material.
+   */
+  stripePattern?: boolean;
   /**
    * Render this cell using the *carried* material named by its `aux` byte, not
    * this material's own `color`. Debris sets it: a flying fragment carries its

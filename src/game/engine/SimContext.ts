@@ -36,9 +36,11 @@ const FALL_BOOST_CHANCE = 0.5;
 
 /**
  * 겹침 (overlap) hosting rule: which fluids may share a cell with which primary
- * occupants (see Grid.overlay). A porous solid (Mesh, Turbine) hosts any liquid
- * or gas — fluids move through it as if it weren't there. A powder hosts a
- * liquid (water soaking into a sand bed). Everything else hosts nothing. One
+ * occupants (see Grid.overlay). A porous solid (Mesh, Turbine, Pump) hosts any
+ * liquid or gas — fluids move through it as if it weren't there — and one that is
+ * also `porousPowder` (Pump) hosts powders too, so grit travels through it the
+ * same way. A powder hosts a liquid (water soaking into a sand bed). Everything
+ * else hosts nothing. One
  * overlap slot per cell. Module-private: the only enforcer of the (host,
  * overlay) invariant is this seam — grid tools that relocate cells (brushTools'
  * mix) instead swap the whole (id, …, overlay, overlayAux) tuple together, so
@@ -54,7 +56,10 @@ function canHostOverlap(hostId: number, fluidId: number): boolean {
   // stays a primary neighbor cell for its own reaction/wet checks.
   if (host.overlapFluids !== undefined && !host.overlapFluids.includes(fluidId)) return false;
   const fluidPhase = getMaterial(fluidId).phase;
-  if (host.porous) return fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas;
+  if (host.porous) {
+    if (fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas) return true;
+    return host.porousPowder === true && fluidPhase === Phase.Powder;
+  }
   return host.phase === Phase.Powder && fluidPhase === Phase.Liquid;
 }
 
@@ -514,12 +519,14 @@ export class SimContext {
    *     POWDER_LIQUID_OVERLAP_DEFAULT). The coefficient is the fraction that
    *     admit; because `tint` is fixed for a grain's life (see game/tint.ts) a
    *     given grain is consistently hosting or blocking.
-   *   - Lattice porous (Mesh): only the light checkerboard cells admit; the dark
-   *     woven cells — the ones the renderer draws in `lattice` — block, so a
-   *     screen filters at half its pore density (fluids thread the light cells,
-   *     which connect diagonally, same parity). Ties the block pattern to the
-   *     exact cells that look solid.
-   *   - Plain porous (Turbine): every cell admits — fluids pass freely.
+   *   - Filtering porous (Mesh — `latticeFilter`): only the light checkerboard
+   *     cells admit; the dark woven cells — the ones the renderer draws in
+   *     `lattice` — block, so a screen filters at half its pore density (fluids
+   *     thread the light cells, which connect diagonally, same parity). Ties the
+   *     block pattern to the exact cells that look solid. Opt-in rather than
+   *     "has a lattice colour", since a porous material can carry a second colour
+   *     for a pattern that isn't a filter weave (the Pump's channel stripes).
+   *   - Plain porous (Turbine, Pump): every cell admits — matter passes freely.
    */
   private canOverlapAt(x: number, y: number, hostId: number, fluidId: number): boolean {
     if (!canHostOverlap(hostId, fluidId)) return false;
@@ -537,8 +544,8 @@ export class SimContext {
       return this.grid.getTint(x, y) < coeff * 256;
     }
     // Mesh's dark checkerboard cells ((x^y) odd, drawn in `lattice`) block; the
-    // light cells admit. Plain porous solids have no lattice → always admit.
-    if (host.lattice !== undefined) return ((x ^ y) & 1) === 0;
+    // light cells admit. A porous solid that isn't a filter always admits.
+    if (host.latticeFilter === true) return ((x ^ y) & 1) === 0;
     return true;
   }
 
@@ -845,16 +852,21 @@ export class SimContext {
     }
     const srcId = this.get(x, y);
     const src = getMaterial(srcId);
-    // 겹침 entry: to a moving liquid or gas, a porous solid (Mesh, Turbine) whose
-    // cell admits the fluid (canOverlapAt — a Mesh blocks on its dark
+    // 겹침 entry: to a moving liquid or gas, a porous solid (Mesh, Turbine, Pump)
+    // whose cell admits the fluid (canOverlapAt — a Mesh blocks on its dark
     // checkerboard cells) and has a free overlap slot is as good as empty — the
     // fluid slips into the slot and keeps travelling through the screen under its
-    // own rules (see updateOverlay). One fluid per cell: a saturated screen
-    // blocks like any solid until its fluid moves on. Powders are NOT entered
-    // here — soaking into a bed is a deliberate last resort (soakDown), not a
-    // movement path, or water would dive into sand instead of pooling on it.
+    // own rules (see updateOverlay). One occupant per cell: a saturated screen
+    // blocks like any solid until its fluid moves on. A moving POWDER enters the
+    // same way, but only into a host that opts in (`porousPowder`, the Pump):
+    // powders are never entered into a powder *bed* here — soaking into one is a
+    // deliberate last resort (soakDown), not a movement path, or water would dive
+    // into sand instead of pooling on it — and a Mesh/Turbine must keep holding a
+    // sand pile up, which is exactly what the opt-in preserves.
     if (
-      (src.phase === Phase.Liquid || src.phase === Phase.Gas) &&
+      (src.phase === Phase.Liquid ||
+        src.phase === Phase.Gas ||
+        (src.phase === Phase.Powder && getMaterial(targetId).porousPowder === true)) &&
       getMaterial(targetId).porous === true &&
       this.canOverlapAt(tx, ty, targetId, srcId) &&
       this.grid.getOverlay(tx, ty) === EMPTY &&
@@ -1288,6 +1300,11 @@ export class SimContext {
    * forth across a wall — re-entering its own pool is impossible). Overlapped
    * fluids get no material update: no boiling, freezing, or reactions while
    * inside a host. Called by Simulation's scan, guarded by Grid.overlayMoved.
+   *
+   * A 겹침 POWDER (only a `porousPowder` host takes one — the Pump) sinks and
+   * creeps diagonally like the fluids but never takes the two sideways steps:
+   * grit doesn't level itself out, so a grain threads down through the pores it
+   * finds instead of spreading along the inside of the machine.
    */
   updateOverlay(x: number, y: number): void {
     // Overlap percolation is gravity-driven too, so it stalls/freezes with the
@@ -1296,14 +1313,69 @@ export class SimContext {
     // hosts, not worth rotating with the bulk motion.
     if (!this.gravityPass()) return;
     const fluidId = this.grid.getOverlay(x, y);
-    // Liquids sink, gases rise; everything tries its vertical first.
-    const dy = getMaterial(fluidId).phase === Phase.Gas ? -1 : 1;
+    const phase = getMaterial(fluidId).phase;
+    // Liquids (and powders) sink, gases rise; everything tries its vertical first.
+    const dy = phase === Phase.Gas ? -1 : 1;
     const dir = this.chance(0.5) ? 1 : -1;
     if (this.tryOverlayMove(x, y, x, y + dy)) return;
     if (this.tryOverlayMove(x, y, x + dir, y + dy)) return;
     if (this.tryOverlayMove(x, y, x - dir, y + dy)) return;
+    if (phase === Phase.Powder) return; // grit doesn't level itself out
     if (this.tryOverlayMove(x, y, x + dir, y)) return;
     this.tryOverlayMove(x, y, x - dir, y);
+  }
+
+  /**
+   * True if the 겹침 occupant of this cell has already moved (or been held) this
+   * tick — the overlap layer's own counterpart to `hasMoved` (see
+   * Grid.overlayMoved). A machine that relocates overlaps itself reads this so it
+   * doesn't move the same payload twice in one scan.
+   */
+  hasOverlayMoved(x: number, y: number): boolean {
+    return this.inBounds(x, y) && this.grid.overlayMoved[this.grid.idx(x, y)] === 1;
+  }
+
+  /**
+   * Pin this cell's 겹침 occupant in place for the rest of the tick: it neither
+   * percolates (updateOverlay skips a cell already marked) nor is relocated again
+   * by a machine that honours the flag. A powered Pump holds every pore it can't
+   * lift this way, so its contents don't drain back down through it between
+   * lifts. Bounds-checked; a cell with no overlap is harmless to mark.
+   */
+  markOverlayMoved(x: number, y: number): void {
+    if (this.inBounds(x, y)) this.grid.overlayMoved[this.grid.idx(x, y)] = 1;
+  }
+
+  /**
+   * Hand this cell's 겹침 occupant to (tx,ty) — the same step `updateOverlay`
+   * takes, but in a direction the caller chooses rather than the one gravity
+   * dictates. It lands in the target's free overlap slot if that's another host,
+   * or surfaces there as an ordinary particle if the target is EMPTY; either way
+   * it's marked moved so the scan doesn't process it again this tick. Returns
+   * false (leaving the occupant put) when the target is a solid, an occupied
+   * host, or a cell that can't host this occupant at all. The Pump's lift.
+   */
+  pushOverlay(x: number, y: number, tx: number, ty: number): boolean {
+    if (this.grid.getOverlay(x, y) === EMPTY) return false;
+    return this.tryOverlayMove(x, y, tx, ty);
+  }
+
+  /**
+   * Suck the cell at (sx,sy) into the free 겹침 slot of the host at (x,y) — the
+   * intake side of the Pump, and the inverse of `pushOverlay`. Unlike the passive
+   * 겹침 entry in tryMove this is the *host* reaching out, so it draws matter that
+   * would never have moved in on its own (a pool sitting under a pump). Refuses
+   * when the slot is taken or this host can't admit that occupant here
+   * (canOverlapAt). Returns true if it drew the cell in, leaving (sx,sy) empty.
+   */
+  drawIntoOverlay(x: number, y: number, sx: number, sy: number): boolean {
+    if (!this.inBounds(x, y) || !this.inBounds(sx, sy)) return false;
+    if (this.grid.getOverlay(x, y) !== EMPTY) return false;
+    const srcId = this.get(sx, sy);
+    if (srcId === EMPTY) return false;
+    if (!this.canOverlapAt(x, y, this.get(x, y), srcId)) return false;
+    this.enterOverlay(sx, sy, x, y, srcId);
+    return true;
   }
 
   private tryOverlayMove(x: number, y: number, tx: number, ty: number): boolean {

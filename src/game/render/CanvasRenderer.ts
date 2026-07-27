@@ -263,6 +263,9 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws horizontal coil windings that brighten while its
    *  aux byte is non-zero (Electromagnet — see Material.coilPattern). */
   private coilPattern: Uint8Array;
+  /** id → 1 if the material draws vertical channel stripes that brighten while its
+   *  aux byte is non-zero (Pump — see Material.stripePattern). */
+  private stripePattern: Uint8Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -361,6 +364,7 @@ export class CanvasRenderer implements Renderer {
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
     this.coilPattern = new Uint8Array(256);
+    this.stripePattern = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -384,6 +388,7 @@ export class CanvasRenderer implements Renderer {
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
         if (m.coilPattern) this.coilPattern[i] = 1;
+        if (m.stripePattern) this.stripePattern[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
@@ -547,6 +552,7 @@ export class CanvasRenderer implements Renderer {
     const arrow = this.arrow;
     const windArrow = this.windArrow;
     const coilPattern = this.coilPattern;
+    const stripePattern = this.stripePattern;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -651,6 +657,17 @@ export class CanvasRenderer implements Renderer {
         const band = y & 3;
         const a = auxArr[i];
         c = band === 1 || band === 2 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (stripePattern[id]) {
+        // A Pump draws vertical channel stripes — one lit column of every three,
+        // in the `lattice` colour — so a block of it reads as open risers matter
+        // travels up rather than a solid machine face (세로줄). The 90°-rotated
+        // counterpart of the Electromagnet's windings, and like them positional
+        // only: the pump has no direction, so its whole aux byte is the powered
+        // countdown (see materials/pump.ts) and a non-zero aux brightens the
+        // stripes — the cue that it's lifting rather than just sieving.
+        const x = i % w;
+        const a = auxArr[i];
+        c = x % 3 === 1 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

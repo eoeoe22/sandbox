@@ -27,7 +27,11 @@ export const MESH = register({
   lattice: rgb(92, 96, 102),
   density: 1000,
   category: 'solid',
-  // Fluids pass through it via the 겹침 overlap layer — see Material.porous.
+  // Fluids pass through it via the 겹침 overlap layer — see Material.porous —
+  // but only through the light checkerboard cells (`latticeFilter`), so the
+  // screen filters at half its pore density and the woven-looking cells are the
+  // ones that actually block.
   porous: true,
+  latticeFilter: true,
   thermal: { conductivity: 0.4 },
 });

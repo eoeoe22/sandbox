@@ -4,53 +4,58 @@ import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 
-// Pump (펌프) — an electric appliance that moves LIQUID against gravity. Until
-// now the only ways to get a fluid somewhere were gravity, a Conveyor, or a Fan's
-// gust, so there was effectively no way to lift a liquid at all: every process toy
-// the sandbox already has (정유·제련·냉각수 순환·수조 배수) dead-ended at "redraw
-// it by hand". The pump is the missing verb, and unlike the Fan — which shoves
-// whatever is loose in a cone of wind — it makes a *path*: liquid enters the back
-// face and leaves the front face, so a pipe the player builds out of Wall/Mesh
-// actually carries flow and the structure they drew means something.
+// Pump (펌프) — a porous machine block that moves LIQUID and POWDER against
+// gravity. Gravity, a Conveyor and a Fan's gust were the only ways to move
+// anything, so there was effectively no way to *lift* a fluid at all: every
+// process toy the sandbox has (정유·제련·냉각수 순환·수조 배수) dead-ended at
+// "redraw it by hand". The pump is the missing verb.
 //
-// Which way it pumps is chosen at placement time by the direction you *drag* the
-// brush (Fan/Laser/Conveyor 방식 — 상하좌우 4방향), recorded in the low 2 bits of
-// each cell's `aux` byte; it shares the Fan's placement path and direction codes
-// (see PointerPainter), and the renderer draws the same brightening chevron.
+// ## It's a sieve, not a wall
 //
-// Powering it is the Fan's one-way "outside → inside" electric sink, verbatim (see
-// fan.ts, and the pattern write-up in woofer.ts): the Pump is deliberately NOT
-// `conductive`, so a Spark can never travel into or across it (a pump wall would
-// otherwise be a free wire, and the conductor-class field in spark.ts has only a
-// handful of slots left). Instead it declares the electric-appliance hook
+// The pump is a **porous solid** (`Material.porous`, like the Mesh and Turbine)
+// that also opts into passing powders (`porousPowder` — the only material that
+// does). Matter entering it slips into the cell's 겹침 (overlap) slot and keeps
+// travelling through under its own rules, so with the power off a pump block is
+// something water and sand simply *fall through*, as if it were a grate. That is
+// the whole placement story: you don't aim it, you drop it into the pipe/tank
+// wall you already built, and it does nothing until it's wired.
+//
+// Switch the power on and every pore turns into a riser: each cell hands its
+// occupant to the cell above, so a column of pump lifts whatever is inside it one
+// cell per tick — water, oil, molten metal, sand, gunpowder — and the bottom of
+// the column sucks the cell directly beneath it in to refill. Matter climbs a
+// pump block visibly, cell by cell, instead of teleporting from face to face.
+//
+// This replaced a directional intake/outlet pump (placement-drag chose one of
+// 상하좌우 and it teleported a cell from the back face to the front). Two reasons
+// it's better: an unpowered machine that matter falls *through* is a legible
+// second state instead of an inert block, and lifting the payload cell by cell
+// through the machine's own body is something you can watch happening — the old
+// one moved liquid you never saw inside the pump at all.
+//
+// ## Powering
+//
+// The Fan's one-way "outside → inside" electric sink, verbatim (see fan.ts, and
+// the pattern write-up in woofer.ts): the Pump is deliberately NOT `conductive`,
+// so a Spark can never travel into or across it (a pump wall would otherwise be a
+// free wire, and the conductor-class field in spark.ts has only a handful of
+// slots left). Instead it declares the electric-appliance hook
 // (`Material.directPulse` = `energizePumpBody`), and every pulse source — a
 // Battery/LFP Battery/Turbine in contact or a Spark relayed down a wire —
 // dispatches it through the shared `reactToPulse` (spark.ts). Current reaching any
 // face floods the connected pump body (4-connected) and refreshes a *powered
 // countdown* on every cell at once, generous enough (POWERED_TICKS) to bridge the
 // quiet ticks between a Battery's periodic pulses so the flow doesn't stutter.
-
-/** aux direction codes (low 2 bits) — identical to the Fan's so the shared
- *  drag-to-place path (PointerPainter.fanDir) stamps a Pump the same way. */
-export const PUMP_UP = 0;
-export const PUMP_DOWN = 1;
-export const PUMP_LEFT = 2;
-export const PUMP_RIGHT = 3;
-/** Low-bit mask separating the direction from the packed powered countdown. */
-const DIR_MASK = 0b11;
-
-/** Unit flow vector for each direction code (intake is the opposite side). */
-const DIRV: ReadonlyArray<readonly [number, number]> = [
-  [0, -1], // up
-  [0, 1], // down
-  [-1, 0], // left
-  [1, 0], // right
-];
+//
+// Like the Electromagnet — and unlike the Fan/Laser — the pump has no direction to
+// record, so its whole `aux` byte is the countdown and the renderer draws
+// brightening vertical channel stripes instead of a chevron (Material.stripePattern).
 
 /** Ticks a single power pulse keeps the pump running. Set well above the
  *  Battery's PULSE_PERIOD (12) so the flow never lapses between pulses — it winds
- *  down only a beat or two after power is genuinely cut. Fits the 6-bit countdown
- *  field (aux >> 2, ≤ 63). Matches the Fan/Laser. */
+ *  down only a beat or two after power is genuinely cut. Matches the Fan/Laser/
+ *  Electromagnet; the whole aux byte is the countdown here, so there's no packing
+ *  limit to respect. */
 const POWERED_TICKS = 24;
 
 /** Backstop on how far one flood walks the connected pump body in a single pass —
@@ -59,191 +64,201 @@ const POWERED_TICKS = 24;
  *  tick, each memoized in SimContext.pumpFlooded). */
 const MAX_BODY = 256;
 
-/** How many of its own cells one pump cell will walk through, along the flow
- *  axis, looking for the body's intake and outlet faces. A pump drawn thicker
- *  than a single cell in the flow direction would otherwise be inert — the
- *  interior cells' immediate neighbors are all pump — so each cell instead tunnels
- *  along the axis to the first non-pump cell on each side. Bounded so a pump slab
- *  drawn the width of the world stays O(1)-ish per cell; past that depth the cell
- *  simply doesn't pump. */
-const MAX_SPAN = 16;
+/** How far down the intake reaches through the column of matter standing under
+ *  the pump's foot to take its cell (see `sourceY`). Long enough for a tank worth
+ *  building — a full-height one on the default grid — and bounded so a
+ *  world-spanning pool can't make one cell's tick walk the whole column. */
+const MAX_PULL = 64;
 
-/** How far past the outlet face the pump looks for somewhere to put the liquid,
- *  travelling along the *column of liquid it is pushing on* (see `updatePump`).
- *  Long enough for a pipe worth building — a full-height standpipe on the default
- *  grid — and bounded so a world-spanning canal can't make one cell's tick walk
- *  the whole row. */
+/** How far up the column standing on the pump's mouth the discharge looks for an
+ *  open cell (see `deliveryY`). Long enough for a standpipe worth building — a
+ *  full-height one on the default grid — and bounded so a world-tall pipe can't
+ *  make one column's tick walk the whole thing. */
 const MAX_PUSH = 64;
 
-/** True if the cell at (x,y) is liquid the pump can draw in. Frozen liquid is
- *  excluded: below its freeze point a liquid acts solid (see SimContext.isFrozen),
- *  and a pump has no business sucking a block of it through the impeller. */
+/** How far below its foot the intake reaches *through open air* to find something
+ *  to draw (see `intakeHead`). Zero would mean a pump stops the moment the level
+ *  it's draining falls one cell below its foot — every drain build would stall
+ *  with a puddle left in it — so the foot gets a short suction reach instead, the
+ *  one deliberately unphysical concession in the machine (재미 우선). Short enough
+ *  that a pump hung in the air is still just a pump hung in the air. */
+const SUCTION_REACH = 8;
+
+/** True if the cell holds matter the intake can suck up into the pump: a liquid
+ *  or a powder, the two phases the body passes. Frozen liquid is excluded — below
+ *  its freeze point a liquid acts solid everywhere else too (see
+ *  SimContext.isFrozen), and a pump has no business drawing a block of it in.
+ *  Gases aren't drawn: they get in on their own (they rise into the pores), and
+ *  sucking one down out of the air below would be daft. */
 function isIntake(sim: SimContext, x: number, y: number): boolean {
+  if (!sim.inBounds(x, y)) return false; // the run runs into the world's floor
   const id = sim.get(x, y);
   if (id === EMPTY) return false;
-  if (getMaterial(id).phase !== Phase.Liquid) return false;
+  const phase = getMaterial(id).phase;
+  if (phase !== Phase.Liquid && phase !== Phase.Powder) return false;
   return !sim.isFrozen(x, y);
 }
 
-/** True if the outlet cell can take the pumped liquid. Empty air always can; a gas
- *  can too, and is displaced back to the intake by the swap — that's what lets a
- *  pump prime a pipe that's full of air/steam instead of stalling against it. A
- *  `packedTemp` gas is excluded: those are self-propelled ballistic/beam particles
- *  whose `temp` holds flight state, not heat (Ember/Debris/Blast/Nuclear Ray/Heat
- *  Ray — see Material.packedTemp), and teleporting one backwards through the pump
- *  would corrupt its arc. Anything else doesn't take the cell *here*: a liquid
- *  standing in the way is pushed along as a column instead (see `deliveryPoint`),
- *  while a powder plug or a solid cap stops the pump until it's cleared. */
-function acceptsOutflow(sim: SimContext, x: number, y: number): boolean {
-  const id = sim.get(x, y);
-  if (id === EMPTY) return true;
-  const m = getMaterial(id);
-  return m.phase === Phase.Gas && !m.packedTemp;
-}
-
-/**
- * Where the pumped cell actually lands: the first cell at or past the outlet face
- * that can take it, travelling along the flow direction through the column of
- * liquid already standing in front of the pump. Returns a flat index, or -1 if the
- * column is capped (a closed pipe, a full tank) or runs longer than MAX_PUSH.
- *
- * Walking the column is what makes a pump able to *fill* a pipe rather than only
- * prime one. Delivering strictly into the adjacent outlet cell stalls the instant
- * that cell is occupied — one cell of water enters the standpipe, sits on the
- * pump, and the pump is done forever. Real plumbing doesn't work that way and
- * neither should this: a liquid column is incompressible, so pushing a cell in at
- * the bottom is the same event as a cell leaving at the top. That's exactly what
- * this does, and it's why the delivery reads as instant over a long pipe — it is
- * the far end of the column moving, not the pumped cell teleporting.
- *
- * A column of *mixed* liquids (oil floating on water) is walked all the same and
- * the cell is delivered past all of it, which does shuffle which liquid sits where
- * within the pipe. That's the honest reading of "push a column along" at one-cell
- * resolution and it keeps the pump from mysteriously stalling under a slick.
- */
-function deliveryPoint(sim: SimContext, ox: number, oy: number, dx: number, dy: number): number {
-  let cx = ox;
-  let cy = oy;
-  for (let n = 0; n <= MAX_PUSH; n++) {
-    if (!sim.inBounds(cx, cy)) return -1;
-    if (acceptsOutflow(sim, cx, cy)) return cy * sim.width + cx;
-    // Only a liquid column is pushed through; a solid cap, a powder plug or a
-    // frozen slug stops the pump dead (it can't shove those aside).
-    if (!isIntake(sim, cx, cy)) return -1;
-    cx += dx;
-    cy += dy;
+/** The head of the column the intake will draw from: the first drawable cell at
+ *  or under (x,y), reaching down through open air up to SUCTION_REACH cells, or
+ *  -1 if there's nothing to draw. Anything that isn't air and isn't drawable — a
+ *  solid floor, a gas-filled pipe, a frozen slug — caps the intake where it
+ *  stands, so a pump sealed off from its supply simply stops. */
+function intakeHead(sim: SimContext, x: number, y: number): number {
+  for (let n = 0; n <= SUCTION_REACH; n++) {
+    const cy = y + n;
+    if (!sim.inBounds(x, cy)) return -1;
+    if (isIntake(sim, x, cy)) return cy;
+    if (sim.get(x, cy) !== EMPTY) return -1;
   }
   return -1;
 }
 
 /**
- * Where the pumped cell is actually drawn *from*: the far end of the liquid column
- * standing behind the intake face, walking back along the flow axis. Returns a flat
- * index; the caller has already checked that the intake face itself holds liquid,
- * so this always returns a liquid cell (the intake face at minimum).
+ * Which cell the intake actually takes: the far (bottom) end of the column of
+ * drawable matter standing under the pump's foot, not the cell touching it.
  *
- * This is the suction-side mirror of `deliveryPoint`, and it is what makes the pump
- * actually run rather than cough. Taking the cell at the intake face leaves the
- * hole *at* the face, pressed under the pump's own solid body — the one place a
- * falling-sand fluid is worst at refilling, since nothing can drop into it and only
- * a sideways shuffle can reach it. Measured, that starved a fully submerged pump
- * down to a few cells a hundred ticks and stalled a sealed duct outright. Taking
- * the cell from the *back* of the column instead puts the hole where the fluid can
- * collapse into it — for an upward pump that's the bottom of the pool, exactly
- * where gravity does the work — and the liquid in between simply stays put, which
- * is what a column shifting by one cell looks like anyway.
+ * This is the one piece of the old face-to-face pump worth keeping, and it was
+ * measured rather than guessed. Taking the cell right under the foot leaves the
+ * hole *directly beneath the pump body* — the one place a falling-sand fluid is
+ * worst at refilling, since nothing can drop into it and, in a pipe, no sideways
+ * shuffle can reach it either — so a pump standing in a sealed duct drew exactly
+ * one cell and then starved forever. Taking the bottom cell instead leaves the
+ * hole where gravity fills it immediately: the whole column above simply falls
+ * one cell, which is what "a column shifted by one" looks like anyway.
+ *
+ * A column of *mixed* matter (oil over water, sand under water) is walked all the
+ * same and the far cell is what rides up, which does shuffle what sits where in
+ * the tank. That's the honest reading of "push a column along" at one-cell
+ * resolution, and it keeps the pump from mysteriously starving under a slick.
  */
-function sourcePoint(sim: SimContext, ix: number, iy: number, bx: number, by: number): number {
-  let cx = ix;
-  let cy = iy;
-  for (let n = 0; n < MAX_PUSH; n++) {
-    const nx = cx + bx;
-    const ny = cy + by;
-    if (!sim.inBounds(nx, ny) || !isIntake(sim, nx, ny)) break;
-    cx = nx;
-    cy = ny;
+function sourceY(sim: SimContext, x: number, y: number): number {
+  let cy = y;
+  for (let n = 1; n < MAX_PULL; n++) {
+    if (!isIntake(sim, x, cy + 1)) break;
+    cy++;
   }
-  return cy * sim.width + cx;
-}
-
-/** Walk from (x,y) along (dx,dy) through this pump's own body and return the first
- *  non-pump cell, or -1 if the walk leaves the grid or runs past MAX_SPAN cells of
- *  pump. Returned as a flat index so both faces come back in one number. */
-function faceBeyondBody(sim: SimContext, x: number, y: number, dx: number, dy: number): number {
-  let cx = x + dx;
-  let cy = y + dy;
-  for (let n = 0; n <= MAX_SPAN; n++) {
-    if (!sim.inBounds(cx, cy)) return -1;
-    if (sim.get(cx, cy) !== PUMP.id) return cy * sim.width + cx;
-    cx += dx;
-    cy += dy;
-  }
-  return -1; // deeper than MAX_SPAN of solid pump — this cell doesn't pump
+  return cy;
 }
 
 /**
- * One pump cell's tick: while its countdown is live, draw a single liquid cell in
- * at the body's intake face (behind it) and deliver it out the front — into the
- * outlet cell if that's open, or, if a liquid column already stands there, out the
- * far end of that column (see `deliveryPoint`).
+ * Where the mouth's discharge lands when the cell right above the pump is already
+ * taken: the first open cell up the column of liquid/powder standing on it, or -1
+ * if that column is capped (a closed pipe, a full tank, trapped gas) or runs
+ * longer than MAX_PUSH.
  *
- * Throughput is therefore one cell per tick *per pump cell*, which is the whole
- * rate model: a wider pump (more cells across the flow) pushes proportionally more
- * liquid, while making one thicker along the flow changes nothing — every cell of
- * a thick column shares the same intake and outlet, and once the first one has
- * moved the liquid the rest find the intake empty. That's the "틱당 상한" the
- * design called for, expressed as geometry the player can see rather than a hidden
- * constant.
+ * Without this a pump fills a pipe with exactly one cell and stops forever — the
+ * discharge sits on the mouth and blocks the next one, which is precisely the
+ * deadlock a real column doesn't have. A liquid column is incompressible, so
+ * pushing a cell in at the bottom *is* a cell leaving at the top; that's what this
+ * walks. Delivery over a long pipe reads as instant because it is the far end of
+ * the column moving, not the pumped cell teleporting.
+ */
+function deliveryY(sim: SimContext, x: number, y: number): number {
+  for (let n = 0; n < MAX_PUSH; n++) {
+    const cy = y - n;
+    if (!sim.inBounds(x, cy)) return -1;
+    if (sim.get(x, cy) === EMPTY) return cy;
+    // Only a column of the stuff the pump moves is pushed along; a solid cap, a
+    // frozen slug or trapped gas stops it where it stands.
+    if (!isIntake(sim, x, cy)) return -1;
+  }
+  return -1;
+}
+
+/**
+ * Lift one vertical run of pump cells: walking from its top cell downward, each
+ * cell hands its 겹침 occupant to the cell above — into the next pump cell's freed
+ * pore, or out into open air above the run, where it surfaces as an ordinary
+ * particle again (see SimContext.pushOverlay). Then the bottom cell refills its
+ * own now-free pore from the column standing beneath the run — the intake, which
+ * takes that column's far end rather than the cell it touches (see `sourceY`).
+ *
+ * **Top-down is what makes it a lift rather than a shuffle.** The cell above has
+ * always vacated before the cell below pushes into it, so a *saturated* column
+ * still advances every cell it holds, one cell per tick — a full pipe of water
+ * climbs at the same speed as a single drop. Bottom-up (or per-cell, in scan
+ * order) the first push would find the pore above occupied and fail, and a full
+ * column would crawl up at one cell per tick *total*.
+ *
+ * Runs are walked whole, and only from their top cell, so the work is O(pump
+ * cells) per tick no matter how the scan reaches them. Vertical runs are the right
+ * unit precisely because the lift is vertical: two columns of one pump body don't
+ * interact, so there's nothing to gain from walking the body as a whole (as the
+ * Fan/Magnet's area effects must).
+ *
+ * Throughput is therefore **one cell per tick per column, per column of width** —
+ * a wider pump lifts proportionally more, a taller one lifts the same amount
+ * higher. Visible structure is the rate model, not a hidden constant.
+ */
+function liftColumn(x: number, topY: number, sim: SimContext): void {
+  const h = sim.height;
+  // The mouth first: out into the open cell above, into a host sitting on top
+  // (a Mesh cap, another machine), or else up the column already standing on it
+  // (see `deliveryY`). A failed discharge leaves the pore full — held, not
+  // percolating, since every powered cell pins its occupant in updatePump — and
+  // the column below simply doesn't advance this tick.
+  if (!sim.pushOverlay(x, topY, x, topY - 1)) {
+    const drop = deliveryY(sim, x, topY - 1);
+    if (drop >= 0) sim.pushOverlay(x, topY, x, drop);
+  }
+  // Then the rest of the run, each cell into the pore the one above just freed.
+  let y = topY + 1;
+  for (; y < h && sim.get(x, y) === PUMP.id; y++) sim.pushOverlay(x, y, x, y - 1);
+  // y stopped one past the run's bottom cell — the intake face. Suck in the
+  // column standing (or puddled a little way) below it, from its far end.
+  const head = intakeHead(sim, x, y);
+  if (head >= 0) sim.drawIntoOverlay(x, y - 1, x, sourceY(sim, x, head));
+}
+
+/**
+ * One pump cell's tick: spin its powered countdown down, pin whatever is in its
+ * pore so gravity doesn't drain it back out between lifts, and — if this is the
+ * top cell of a vertical run — lift the whole run (see `liftColumn`).
+ *
+ * The lift is toward screen-up regardless of which way gravity is set, matching
+ * the 겹침 layer's own screen-relative percolation (see SimContext.updateOverlay):
+ * "the pump pushes it up" stays one rule the player can hold in their head, and
+ * under inverted gravity a pump simply reads as pushing matter down into the floor
+ * instead of holding it up.
+ *
+ * Only the run's *top* cell lifts, so the run is walked exactly once per tick
+ * whatever order the scan reaches its cells in (the scan runs bottom-up under
+ * default gravity, and flips with the gravity setting). All cells of a run share
+ * one countdown — the power flood is 4-connected, so it can't energize part of a
+ * column — which is why the top cell's own timer stands in for the whole run's.
  *
  * Deliberately does NOT skip an intake cell that already moved this tick (the
  * `hasMoved` discipline a Conveyor follows). A pool sloshes constantly, so the
- * exact cell sitting at the intake has usually already flowed somewhere this scan,
- * and honoring the guard would make an otherwise-fed pump run at a fraction of its
- * rate for no visible reason. The pump's rate limit is its own one-transfer-per-
- * tick, not the liquid's move budget; the cost is that a pumped cell can travel
- * its own step *and* the pump's in one tick, which reads as the pump being brisk.
+ * exact cell under the intake has usually already flowed somewhere this scan, and
+ * honoring the guard would make an otherwise-fed pump run at a fraction of its
+ * rate for no visible reason. The pump's rate limit is its own one-cell-per-tick,
+ * not the liquid's move budget.
  */
 function updatePump(x: number, y: number, sim: SimContext): void {
-  const aux = sim.getAux(x, y);
-  const timer = aux >> 2;
-  if (timer <= 0) return; // idle until a pulse energizes the body
-  const dir = aux & DIR_MASK;
-  // Spin the countdown down one tick, preserving the direction bits.
-  sim.setAux(x, y, ((timer - 1) << 2) | dir);
+  const timer = sim.getAux(x, y);
+  if (timer <= 0) return; // idle until a pulse energizes the body — a plain sieve
+  sim.setAux(x, y, timer - 1);
 
-  const [dx, dy] = DIRV[dir];
-  const inlet = faceBeyondBody(sim, x, y, -dx, -dy);
-  if (inlet < 0) return;
-  const w = sim.width;
-  const ix = inlet % w;
-  const iy = (inlet / w) | 0;
-  if (!isIntake(sim, ix, iy)) return;
+  // Hold this pore's contents for the tick: without it a cell scanned before the
+  // run's top cell would percolate its occupant back down (into the pore below,
+  // or out of the pump's underside) and the lift would only ever undo the drop.
+  sim.markOverlayMoved(x, y);
 
-  const outlet = faceBeyondBody(sim, x, y, dx, dy);
-  if (outlet < 0) return;
-  const drop = deliveryPoint(sim, outlet % w, (outlet / w) | 0, dx, dy);
-  if (drop < 0) return;
-  const ox = drop % w;
-  const oy = (drop / w) | 0;
-
-  // Draw from the back of the suction column rather than from the intake face, so
-  // the hole this leaves lands where the fluid can actually collapse into it (see
-  // `sourcePoint`).
-  const src = sourcePoint(sim, ix, iy, -dx, -dy);
-  // swap carries the liquid's temp/aux/tint and its 겹침 overlay, and marks both
-  // ends moved — so pumped coolant stays cold and pumped lava stays molten.
-  sim.swap(src % w, (src / w) | 0, ox, oy);
+  // Not the top of this vertical run? The top cell will lift the whole thing.
+  if (sim.inBounds(x, y - 1) && sim.get(x, y - 1) === PUMP.id) return;
+  liftColumn(x, y, sim);
 }
 
 /**
  * Deliver a power pulse to the connected pump body containing (sx,sy): flood it
  * through pump cells (4-connected) and refresh every cell's powered countdown to
- * POWERED_TICKS, keeping each cell's own direction bits. A one-way sink — a pulse
- * only ever *arrives* here (see the header) — so power reaching any face energizes
- * the whole structure. Memoized per tick via SimContext.pumpFlooded so a body
- * touched from several faces/sources in one tick still floods exactly once. Called
- * from the pulse sources (battery.ts, spark.ts) via the shared reactToPulse, the
- * same way the Fan's and Laser's body pulses are.
+ * POWERED_TICKS. A one-way sink — a pulse only ever *arrives* here (see the
+ * header) — so power reaching any face energizes the whole structure. Memoized per
+ * tick via SimContext.pumpFlooded so a body touched from several faces/sources in
+ * one tick still floods exactly once. Called from the pulse sources (battery.ts,
+ * spark.ts) via the shared reactToPulse, the same way the Fan's, Laser's and
+ * Electromagnet's body pulses are.
  */
 export function energizePumpBody(sim: SimContext, sx: number, sy: number): void {
   if (sim.tick !== sim.pumpFloodTick) {
@@ -262,7 +277,8 @@ export function energizePumpBody(sim: SimContext, sx: number, sy: number): void 
     const cx = stack.pop()!;
     count++;
     sim.pumpFlooded.add(cy * w + cx);
-    sim.setAux(cx, cy, (POWERED_TICKS << 2) | (sim.getAux(cx, cy) & DIR_MASK));
+    // The whole aux byte is the countdown — a pump has no direction to preserve.
+    sim.setAux(cx, cy, POWERED_TICKS);
     for (const [dx, dy] of DIR4) {
       const nx = cx + dx;
       const ny = cy + dy;
@@ -279,14 +295,20 @@ export const PUMP = register({
   id: 122,
   name: 'Pump',
   phase: Phase.Solid,
-  // A dark machine housing with a bright teal impeller chevron pointing the way it
-  // pushes (drawn from the aux direction; brightens while powered — the same
-  // windArrow path the Fan and Laser use).
+  // A dark machine housing cut by bright teal vertical channels — the risers
+  // matter climbs — which brighten while the pump is powered (see
+  // Material.stripePattern).
   color: rgb(58, 74, 82),
   lattice: rgb(110, 225, 215),
-  windArrow: true,
+  stripePattern: true,
   density: 1000,
   category: 'electric',
+  // Liquids and gases pass through it via the 겹침 overlap layer like any porous
+  // solid, and powders do too (porousPowder) — with the power off it's a grate.
+  // Every cell admits: no `latticeFilter`, so the stripes are decoration rather
+  // than a Mesh-style half-density filter weave.
+  porous: true,
+  porousPowder: true,
   // Doesn't burn or corrode away underfoot, like the other electric machines.
   acidResistant: true,
   thermal: { conductivity: 0.3 },
