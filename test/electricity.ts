@@ -106,6 +106,14 @@ check('iron runs the whole wire (zero loss)', ironReach > 150, `${ironReach} cel
 // --- 2. every conductor round-trips through the class field -------------------
 // The failure this guards against is silent: a class that overflows the field
 // wraps to 0 and the spark deletes the wire cell instead of reverting to it.
+//
+// The 8/8 split is unpacked here with literal `& 0xff` / `>> 8` rather than by
+// importing spark.ts's CLASS_BITS/CLASS_MASK, and that is deliberate: these
+// checks are meant to pin the layout, not to follow it. Reading the constants
+// back out of the module under test would make the assertions restate whatever
+// the packing currently is, so narrowing the class field again would still
+// "pass". With the literals, a regression to CLASS_BITS 4 fails both checks
+// below — the class masks down to 4 bits and the strength clamps to 15.
 {
   const conductors = allMaterials().filter((m) => m.conductive);
   let allOk = conductors.length > 0;
