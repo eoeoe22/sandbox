@@ -38,9 +38,21 @@
   // Item labels resolve through `objectLabel()` so they follow the active
   // language. Each item's palette swatch is the object's real in-world shape as
   // SVG (objectSvgFor), generated from the same sprite data the renderer draws.
-  const OBJECT_ITEMS: { key: ObjectKind }[] = (
-    ['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]
-  ).map((key) => ({ key }));
+  // The kinds are a plain constant, but the labelled items are `$derived` over
+  // `$locale` (same reason as `categories`/`quickItems`): `objectLabel()` reads
+  // the locale atom with a plain `.get()`, so a constant array would freeze the
+  // flyout's labels at whatever language was active when it was built.
+  const OBJECT_KINDS: readonly ObjectKind[] = [
+    'ball',
+    'drum',
+    'oildrum',
+    'aciddrum',
+    'dynamite',
+  ];
+  const OBJECT_ITEMS = $derived.by<{ key: ObjectKind; label: string }[]>(() => {
+    void $locale;
+    return OBJECT_KINDS.map((key) => ({ key, label: objectLabel(key) }));
+  });
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
@@ -67,13 +79,10 @@
   const isFav = (id: number): boolean => favSet.has(id);
   // Favorites first (in the order they were starred), then recently-used
   // materials not already starred. Ids that no longer resolve are dropped.
-  // `void $locale` for the same reason as `categories`/`matches`: the chips this
-  // feeds resolve their label and title through `materialName()`, which reads the
-  // locale atom with a plain `.get()` and so registers no dependency of its own —
-  // without this the quick-access strip would keep the old language's names until
-  // the favorites/recents list happened to change.
+  // Holds materials, not labels: the chips resolve their own name through
+  // `materialName()` in the markup, which tracks the locale by itself
+  // (i18n/reactive.svelte.ts), so this list has no locale dependency to declare.
   const quickItems = $derived.by<Material[]>(() => {
-    void $locale;
     const resolve = (ids: number[]): Material[] =>
       ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
     const favs = resolve($favorites);
@@ -489,13 +498,13 @@
           role="menuitem"
           class:active={$tool === 'object' && $selectedObject === it.key}
           onclick={() => pickObject(it.key)}
-          title={objectLabel(it.key)}
+          title={it.label}
         >
           <!-- The object's real in-world silhouette as SVG, scaled to the swatch
                box (see objectSvgFor). {@html} is safe here: the markup is built
                only from trusted constant sprite data, never user input. -->
           <span class="swatch obj">{@html objectSvgFor(it.key)}</span>
-          <span class="label">{objectLabel(it.key)}</span>
+          <span class="label">{it.label}</span>
         </button>
       {/each}
     </div>
