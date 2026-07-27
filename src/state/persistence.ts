@@ -426,6 +426,41 @@ function decodeCellsRle(bytes: Uint8Array, size: number): Uint8Array {
 }
 
 /**
+ * Split a 16-bit aux plane into one byte plane for storage. `aux`/`overlayAux`
+ * are 16-bit (see Grid.aux), but the RLE codec — and the save format's existing
+ * `aux`/`ova` fields — are byte-wide, so each is written as two planes: the low
+ * byte under the original key and the high byte under a companion `…Hi` key.
+ *
+ * That split is deliberate rather than a wider codec: the low plane keeps
+ * exactly the bytes older builds wrote, so a save made before aux was widened
+ * (no `…Hi` field at all) reloads bit-identically with a zero high plane. Both
+ * planes are overwhelmingly zero and RLE to almost nothing.
+ */
+function auxPlane(src: Uint16Array, shift: number): Uint8Array {
+  const out = new Uint8Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = (src[i] >> shift) & 0xff;
+  return out;
+}
+
+/** Recombine the low/high byte planes written by `auxPlane` into one 16-bit
+ *  aux array. A missing high plane (older save) leaves the top byte zero. */
+function joinAuxPlanes(lo: Uint8Array, hi: Uint8Array | undefined, size: number): Uint16Array {
+  const out = new Uint16Array(size);
+  for (let i = 0; i < size; i++) out[i] = lo[i] | ((hi ? hi[i] : 0) << 8);
+  return out;
+}
+
+/** Decode one base64+RLE byte plane, or undefined if it's absent/corrupt. */
+function decodePlane(field: unknown, size: number): Uint8Array | undefined {
+  if (typeof field !== 'string') return undefined;
+  try {
+    return decodeCellsRle(base64ToBytes(field), size);
+  } catch {
+    return undefined; // invalid base64
+  }
+}
+
+/**
  * Quantize temperatures for storage. Empty cells are always stored at ambient:
  * their temperature is physically inert (Empty has zero conductivity), so there's
  * no reason to spend RLE runs on whatever stale value an emptied cell happened to
@@ -484,15 +519,15 @@ export interface PersistedWorld {
   h: number;
   cells: Uint8Array;
   temp: Float32Array;
-  /** Per-cell material state byte (Grid.aux), when the save carried it. Older
+  /** Per-cell material state word (Grid.aux), when the save carried it. Older
    *  saves predate it and leave this undefined (aux then reloads as zero). */
-  aux?: Uint8Array;
+  aux?: Uint16Array;
   /** Per-cell 겹침 overlap fluid id (Grid.overlay), when the save carried it.
    *  Older saves predate it and reload dry (all zero). */
   overlay?: Uint8Array;
   /** The overlap fluid's parked aux state (Grid.overlayAux), paired with
    *  `overlay`. Undefined on saves that predate it (reloads as zero). */
-  overlayAux?: Uint8Array;
+  overlayAux?: Uint16Array;
 }
 
 let lastWorldJson: string | null = null;
@@ -510,22 +545,26 @@ export function serializeWorld(grid: Grid): string {
     h: grid.height,
     cells: bytesToBase64(encodeCellsRle(grid.cells)),
     temp: bytesToBase64(encodeTempRle(quantizeTemps(grid.cells, grid.temp))),
-    // Per-cell material state (Grid.aux) — an ordinary u8 field, RLE'd like
-    // cells. Persisting it is what lets electrical state survive a reload: a
-    // Spark cell has *replaced* a wire cell and stores which conductor to turn
-    // back into in its aux, so without this an in-flight spark reloads with
-    // aux 0 and fizzles to Empty, leaving a hole in the circuit. It also
-    // restores a Clone's adopted id, a Petroleum Vapor's condensate code, etc.
-    // Mostly zero, so it compresses to almost nothing.
-    aux: bytesToBase64(encodeCellsRle(grid.aux)),
+    // Per-cell material state (Grid.aux) — 16 bits per cell, stored as two
+    // byte planes (see auxPlane): `aux` is the low byte, `auxHi` the high one.
+    // Persisting it is what lets electrical state survive a reload: a Spark
+    // cell has *replaced* a wire cell and stores which conductor to turn back
+    // into in its aux, so without this an in-flight spark reloads with aux 0
+    // and fizzles to Empty, leaving a hole in the circuit. It also restores a
+    // Clone's adopted id, a Petroleum Vapor's condensate code, etc. Mostly
+    // zero, so both planes compress to almost nothing.
+    aux: bytesToBase64(encodeCellsRle(auxPlane(grid.aux, 0))),
+    auxHi: bytesToBase64(encodeCellsRle(auxPlane(grid.aux, 8))),
     // 겹침 overlap fluid ids (Grid.overlay) — an ordinary u8 field, RLE'd like
     // cells, so a soaked sand bed or a screen mid-flow survives a reload
     // instead of drying out. Mostly zero, so it compresses to almost nothing.
     ov: bytesToBase64(encodeCellsRle(grid.overlay)),
     // The overlap fluid's parked aux state (Grid.overlayAux), paired with `ov`
     // so a tagged fluid mid-passage (a petroleum vapor cut, …) keeps its
-    // identity across a reload. Also mostly zero.
-    ova: bytesToBase64(encodeCellsRle(grid.overlayAux)),
+    // identity across a reload. 16-bit like `aux`, so it's split the same way
+    // into `ova` (low byte) + `ovaHi` (high). Also mostly zero.
+    ova: bytesToBase64(encodeCellsRle(auxPlane(grid.overlayAux, 0))),
+    ovaHi: bytesToBase64(encodeCellsRle(auxPlane(grid.overlayAux, 8))),
   });
 }
 
@@ -556,33 +595,21 @@ export function deserializeWorld(raw: unknown): PersistedWorld | null {
   }
 
   // Aux is optional (older saves lack it); a decode failure just drops it,
-  // degrading to the pre-aux behavior rather than losing the whole world.
-  let aux: Uint8Array | undefined;
-  if (typeof j.aux === 'string') {
-    try {
-      aux = decodeCellsRle(base64ToBytes(j.aux), w * h);
-    } catch {
-      aux = undefined;
-    }
-  }
+  // degrading to the pre-aux behavior rather than losing the whole world. The
+  // low plane is what decides whether we have aux at all: a save written before
+  // aux was widened to 16 bits carries only that one, and rejoins with a zero
+  // high plane for exactly its old meaning.
+  let aux: Uint16Array | undefined;
+  const auxLo = decodePlane(j.aux, w * h);
+  if (auxLo) aux = joinAuxPlanes(auxLo, decodePlane(j.auxHi, w * h), w * h);
 
   // The 겹침 overlap layer is optional the same way (a dropped decode reloads
   // the world dry rather than losing it). overlayAux is paired with it.
-  let overlay: Uint8Array | undefined;
-  let overlayAux: Uint8Array | undefined;
-  if (typeof j.ov === 'string') {
-    try {
-      overlay = decodeCellsRle(base64ToBytes(j.ov), w * h);
-    } catch {
-      overlay = undefined;
-    }
-  }
-  if (overlay && typeof j.ova === 'string') {
-    try {
-      overlayAux = decodeCellsRle(base64ToBytes(j.ova), w * h);
-    } catch {
-      overlayAux = undefined;
-    }
+  const overlay = decodePlane(j.ov, w * h);
+  let overlayAux: Uint16Array | undefined;
+  if (overlay) {
+    const ovaLo = decodePlane(j.ova, w * h);
+    if (ovaLo) overlayAux = joinAuxPlanes(ovaLo, decodePlane(j.ovaHi, w * h), w * h);
   }
 
   for (let i = 0; i < cells.length; i++) {

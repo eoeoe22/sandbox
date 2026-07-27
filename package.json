@@ -12,7 +12,8 @@
     "deploy": "npm run build && wrangler deploy",
     "test:heat": "node wasm/test/golden.mjs && node wasm/test/integration.mjs",
     "test:active-tiles": "node test/run-active-tiles.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles"
+    "test:electricity": "node test/run-electricity.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
