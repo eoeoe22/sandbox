@@ -502,7 +502,7 @@
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={`${m.name} (더블클릭: 이 물질의 Clone)`}
+            title={m.name}
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
             <span class="label">{m.name}</span>
@@ -523,7 +523,7 @@
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
       ondblclick={() => pickClone(m.id)}
-      title={`${m.name} (더블클릭: 이 물질의 Clone)`}
+      title={m.name}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>
       <span class="label">{m.name}</span>
@@ -617,7 +617,7 @@
      so the strip keeps its shape whether or not there are favorites/recents. */
   .chip.empty {
     width: 56px;
-    height: 46px;
+    height: 100%;
     border-style: dashed;
     border-color: #262630;
     background: transparent;
@@ -651,8 +651,12 @@
   }
 
   /* A chip plus its corner star toggle (quick-access + results). */
+  /* display:flex so the chip fills a wrapper that a taller (two-line) neighbour
+     stretched — otherwise the short chips in a row would float with a gap under
+     them. */
   .chip-wrap {
     position: relative;
+    display: flex;
     flex: none;
   }
   .star {
@@ -747,9 +751,11 @@
     flex: none;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     gap: 4px;
     width: 56px;
-    padding: 6px 4px;
+    min-height: 46px;
+    padding: 6px 2px;
     border: 1px solid #2a2a33;
     border-radius: 6px;
     background: #1b1b22;
@@ -790,12 +796,20 @@
     width: 100%;
     height: 100%;
   }
+  /* Names are never truncated: a two-word name ("White Phosphorus") wraps onto a
+     second line rather than turning into "White Pho…". The chip keeps its fixed
+     56px width so the grid stays on its column rhythm — only the height grows,
+     and flex's default stretch makes every chip on a row match the tallest one,
+     so a wrapped row still reads as a row. 9px + break-word is what keeps the
+     longest single token in the registry (Phosphorus/Antimatter, 10 chars) on
+     one line inside that width; break-word only ever kicks in if a future name
+     is longer still, and even then it wraps instead of overflowing. */
   .chip .label {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
+    width: 100%;
+    overflow-wrap: break-word;
+    white-space: normal;
+    font-size: 9px;
+    line-height: 1.25;
     text-align: center;
   }
 
@@ -840,6 +854,20 @@
     .cat-label,
     .category > button .count {
       display: none;
+    }
+
+    /* Chips inside the bar — the quick-access slots and the search results, but
+       not the flyout (portalled out of .palette, so it keeps the desktop wrap).
+       The bar is a fixed-height strip that scrolls sideways, so a long name
+       widens its chip instead of wrapping onto a second line that the bar has
+       no room for. */
+    .palette .chip {
+      width: auto;
+      min-width: 56px;
+      padding: 6px 6px;
+    }
+    .palette .chip .label {
+      white-space: nowrap;
     }
 
     /* Quick-access recents/favorites: only the first three slots show on mobile
