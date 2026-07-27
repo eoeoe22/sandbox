@@ -225,7 +225,6 @@ export const en = {
     resultsGroup: 'Search results',
     quickGroup: 'Favorites · Recent',
     objectKey: 'Objects',
-    cloneTooltip: '{name} (double-click: Clone of this material)',
     favAdd: 'Add {name} to favorites',
     favRemove: 'Remove {name} from favorites',
     favAddTooltip: 'Add to favorites',

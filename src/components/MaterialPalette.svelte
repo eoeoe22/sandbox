@@ -38,9 +38,21 @@
   // Item labels resolve through `objectLabel()` so they follow the active
   // language. Each item's palette swatch is the object's real in-world shape as
   // SVG (objectSvgFor), generated from the same sprite data the renderer draws.
-  const OBJECT_ITEMS: { key: ObjectKind }[] = (
-    ['ball', 'drum', 'oildrum', 'aciddrum', 'dynamite'] as ObjectKind[]
-  ).map((key) => ({ key }));
+  // The kinds are a plain constant, but the labelled items are `$derived` over
+  // `$locale` (same reason as `categories`/`quickItems`): `objectLabel()` reads
+  // the locale atom with a plain `.get()`, so a constant array would freeze the
+  // flyout's labels at whatever language was active when it was built.
+  const OBJECT_KINDS: readonly ObjectKind[] = [
+    'ball',
+    'drum',
+    'oildrum',
+    'aciddrum',
+    'dynamite',
+  ];
+  const OBJECT_ITEMS = $derived.by<{ key: ObjectKind; label: string }[]>(() => {
+    void $locale;
+    return OBJECT_KINDS.map((key) => ({ key, label: objectLabel(key) }));
+  });
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
@@ -67,6 +79,9 @@
   const isFav = (id: number): boolean => favSet.has(id);
   // Favorites first (in the order they were starred), then recently-used
   // materials not already starred. Ids that no longer resolve are dropped.
+  // Holds materials, not labels: the chips resolve their own name through
+  // `materialName()` in the markup, which tracks the locale by itself
+  // (i18n/reactive.svelte.ts), so this list has no locale dependency to declare.
   const quickItems = $derived.by<Material[]>(() => {
     const resolve = (ids: number[]): Material[] =>
       ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
@@ -483,13 +498,13 @@
           role="menuitem"
           class:active={$tool === 'object' && $selectedObject === it.key}
           onclick={() => pickObject(it.key)}
-          title={objectLabel(it.key)}
+          title={it.label}
         >
           <!-- The object's real in-world silhouette as SVG, scaled to the swatch
                box (see objectSvgFor). {@html} is safe here: the markup is built
                only from trusted constant sprite data, never user input. -->
           <span class="swatch obj">{@html objectSvgFor(it.key)}</span>
-          <span class="label">{objectLabel(it.key)}</span>
+          <span class="label">{it.label}</span>
         </button>
       {/each}
     </div>
@@ -514,7 +529,7 @@
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={t('palette.cloneTooltip', { name: materialName(m.id, m.name) })}
+            title={materialName(m.id, m.name)}
           >
             <span class="swatch" style={`background:${toCss(m.color)}`}></span>
             <span class="label">{materialName(m.id, m.name)}</span>
@@ -535,7 +550,7 @@
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
       ondblclick={() => pickClone(m.id)}
-      title={t('palette.cloneTooltip', { name: materialName(m.id, m.name) })}
+      title={materialName(m.id, m.name)}
     >
       <span class="swatch" style={`background:${toCss(m.color)}`}></span>
       <span class="label">{materialName(m.id, m.name)}</span>
@@ -631,7 +646,7 @@
      so the strip keeps its shape whether or not there are favorites/recents. */
   .chip.empty {
     width: 56px;
-    height: 46px;
+    height: 100%;
     border-style: dashed;
     border-color: #262630;
     background: transparent;
@@ -665,8 +680,12 @@
   }
 
   /* A chip plus its corner star toggle (quick-access + results). */
+  /* display:flex so the chip fills a wrapper that a taller (two-line) neighbour
+     stretched — otherwise the short chips in a row would float with a gap under
+     them. */
   .chip-wrap {
     position: relative;
+    display: flex;
     flex: none;
   }
   .star {
@@ -761,9 +780,11 @@
     flex: none;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     gap: 4px;
     width: 56px;
-    padding: 6px 4px;
+    min-height: 46px;
+    padding: 6px 2px;
     border: 1px solid #2a2a33;
     border-radius: 6px;
     background: #1b1b22;
@@ -804,12 +825,22 @@
     width: 100%;
     height: 100%;
   }
+  /* Names are never truncated: a two-word name ("White Phosphorus") wraps onto a
+     second line rather than turning into "White Pho…". The chip keeps its fixed
+     56px width so the grid stays on its column rhythm — only the height grows,
+     and flex's default stretch makes every chip on a row match the tallest one,
+     so a wrapped row still reads as a row. 9px + break-word is what keeps the
+     longest single token in the registry (Phosphorus/Antimatter, 10 chars) on
+     one line inside that width; break-word only ever kicks in if a future name
+     is longer still, and even then it wraps instead of overflowing. Korean
+     names (the ko locale) break between syllables on their own, so a long one
+     like 드라이아이스 wraps the same way instead of spilling out. */
   .chip .label {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
+    width: 100%;
+    overflow-wrap: break-word;
+    white-space: normal;
+    font-size: 9px;
+    line-height: 1.25;
     text-align: center;
   }
 
@@ -854,6 +885,20 @@
     .cat-label,
     .category > button .count {
       display: none;
+    }
+
+    /* Chips inside the bar — the quick-access slots and the search results, but
+       not the flyout (portalled out of .palette, so it keeps the desktop wrap).
+       The bar is a fixed-height strip that scrolls sideways, so a long name
+       widens its chip instead of wrapping onto a second line that the bar has
+       no room for. */
+    .palette .chip {
+      width: auto;
+      min-width: 56px;
+      padding: 6px 6px;
+    }
+    .palette .chip .label {
+      white-space: nowrap;
     }
 
     /* Quick-access recents/favorites: only the first three slots show on mobile

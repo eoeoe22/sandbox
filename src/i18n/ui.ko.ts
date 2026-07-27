@@ -222,7 +222,6 @@ export const ko = {
     resultsGroup: '검색 결과',
     quickGroup: '즐겨찾기·최근 사용',
     objectKey: '오브젝트',
-    cloneTooltip: '{name} (더블클릭: 이 물질의 Clone)',
     favAdd: '{name} 즐겨찾기 추가',
     favRemove: '{name} 즐겨찾기 해제',
     favAddTooltip: '즐겨찾기 추가',

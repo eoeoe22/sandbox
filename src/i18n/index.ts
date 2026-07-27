@@ -12,37 +12,18 @@
 // (keyed by stable ids / keys, not by English strings) and are exposed via the
 // `materialName` / `objectLabel` / `categoryLabel` helpers below.
 
-import { atom } from 'nanostores';
 import type { ObjectKind } from '../state/store';
 import { en as uiEn } from './ui.en';
 import { ko as uiKo } from './ui.ko';
 import { materialNamesEn, materialNamesKo, objectLabelsEn, objectLabelsKo, categoryLabelsEn, categoryLabelsKo } from './materials';
+import { $locale, LOCALES, type Locale } from './locale';
+import { trackLocale } from './reactive.svelte';
 
-export type Locale = 'ko' | 'en';
-
-export const LOCALES: readonly Locale[] = ['ko', 'en'];
-
-/**
- * Detect the initial locale: a persisted choice wins, otherwise the browser's
- * language (anything starting with `ko` → Korean, everything else → English).
- * Safe under SSR / no-`navigator` (returns Korean, the project's default).
- */
-function detectLocale(): Locale {
-  if (typeof navigator !== 'undefined') {
-    const langs = navigator.languages?.length ? navigator.languages : [navigator.language];
-    for (const l of langs) {
-      if (!l) continue;
-      if (l.toLowerCase().startsWith('ko')) return 'ko';
-      if (l.toLowerCase().startsWith('en')) return 'en';
-    }
-  }
-  return 'ko';
-}
-
-/** The active UI locale. Persisted by state/persistence.ts; the initial value is
- *  the browser-detected one so the very first render is correct before
- *  hydration runs (no flash of the wrong language). */
-export const $locale = atom<Locale>(detectLocale());
+// The atom itself lives in `./locale` so `./reactive.svelte` can mirror it into
+// a Svelte signal without an import cycle; re-exported here so `../i18n` stays
+// the single import site for the rest of the app.
+export { $locale, LOCALES };
+export type { Locale };
 
 const UI_TABLES: Record<Locale, unknown> = {
   ko: uiKo,
@@ -73,11 +54,13 @@ function interpolate(template: string, params?: Record<string, string | number>)
 
 /**
  * Translate a dotted UI key under the current locale, falling back to English
- * then the raw key. `params` fills `{placeholder}` tokens. Reading `$locale`
- * (via `$locale.get()`) keeps this in sync inside a Svelte `$derived` — callers
- * that want reactivity should access `$locale` in the same expression.
+ * then the raw key. `params` fills `{placeholder}` tokens. `trackLocale()` makes
+ * the call reactive on its own: used from markup or a `$derived`, the enclosing
+ * effect re-runs on a language switch with no `$locale` bookkeeping at the call
+ * site (see reactive.svelte.ts).
  */
 export function t(key: string, params?: Record<string, string | number>): string {
+  trackLocale();
   const loc = $locale.get();
   const tpl = lookup(UI_TABLES[loc], key) ?? lookup(uiEn, key) ?? key;
   return interpolate(tpl, params);
@@ -86,10 +69,12 @@ export function t(key: string, params?: Record<string, string | number>): string
 // --- Material / object / category display names -----------------------------
 // Keyed by stable ids / keys (not English strings), so renaming a material's
 // English `name` never orphans a translation. Falls back to the material's own
-// `name` field (English) when no localized entry exists.
+// `name` field (English) when no localized entry exists. Each one calls
+// `trackLocale()` for the same reason `t()` does.
 
 /** Display name of material `id` in the current locale (English `name` fallback). */
 export function materialName(id: number, fallback?: string): string {
+  trackLocale();
   const loc = $locale.get();
   const table = loc === 'ko' ? materialNamesKo : materialNamesEn;
   return table[id] ?? fallback ?? '?';
@@ -97,6 +82,7 @@ export function materialName(id: number, fallback?: string): string {
 
 /** Display name of object `kind` in the current locale. */
 export function objectLabel(kind: ObjectKind): string {
+  trackLocale();
   const loc = $locale.get();
   const table = loc === 'ko' ? objectLabelsKo : objectLabelsEn;
   return table[kind];
@@ -104,6 +90,7 @@ export function objectLabel(kind: ObjectKind): string {
 
 /** Display label of a category `key` (stable id) in the current locale. */
 export function categoryLabel(key: string): string {
+  trackLocale();
   const loc = $locale.get();
   const table = loc === 'ko' ? categoryLabelsKo : categoryLabelsEn;
   return table[key] ?? key;
