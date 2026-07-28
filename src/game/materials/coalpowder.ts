@@ -9,6 +9,7 @@ import { IRON_ORE } from './ironore';
 import { LIMESTONE } from './limestone';
 import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
 import { MOLTEN_METAL } from './moltenmetal';
+import { tryMixGunpowder } from './gunpowdermix';
 
 // Powdered coal — the pourable form of Coal. Solid Coal (id 25) is a rigid lump
 // that holds its shape (Solid has no default movement), so a heap of it can't be
@@ -89,6 +90,12 @@ function mixIntoMelt(x: number, y: number, sim: SimContext): boolean {
 let mixIds: readonly number[] | undefined;
 
 function updateCoalPowder(x: number, y: number, sim: SimContext): void {
+  // Third ingredient of the black-powder recipe: cold coal dust sitting against
+  // Sulfur and Saltpeter grinds into Gunpowder (see gunpowdermix.ts). Checked
+  // first because it's an unambiguous recipe — but it's temperature-gated well
+  // below this fuel's 580° autoignition, so it can never pre-empt the burn or
+  // the smelting paths below, which both run hot.
+  if (tryMixGunpowder(x, y, sim)) return;
   // Reductant against the hearth (ore/molten iron): don't burn — it's spent by
   // the ore's reduction (see moltenironore.ts), so mixed-in coal survives being
   // heated instead of flashing off, and dusted coal reduces the melt instead of
