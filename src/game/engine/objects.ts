@@ -246,8 +246,8 @@ export interface SimDynamite {
  * physics and 1-axis rotation, so it tumbles and rolls) that is a *smoke source*
  * rather than an explosive. Thrown, it immediately starts trickling a wisp of
  * Smoke from its nozzle; four seconds later the canister lets go and pours out a
- * dense cloud for one second, and then it is spent and gone (소환 시 소량의 연기를
- * 뿜다가 4초 후 대량의 연기를 1초간 발산 → 소멸).
+ * dense cloud for two and a half seconds, and then it is spent and gone (소환 시
+ * 소량의 연기를 뿜다가 4초 후 대량의 연기를 2.5초간 발산 → 소멸).
  *
  * That's the whole lifecycle, and the two counters below are all the state it
  * takes: `fuseTicks` runs the quiet trickle down, then `ventTicks` runs the
@@ -529,8 +529,10 @@ export const SMOKE_BOMB_SPAWN_SPIN = 0.06;
  *  in *seconds* at the default sim rate, like the dynamite's fuse, so a faster or
  *  slower sandbox scales the wall-clock delay along with everything else. */
 export const SMOKE_BOMB_FUSE_TICKS = Math.round(4 * SIM_HZ_AT_1X);
-/** How long the heavy discharge lasts before the spent canister vanishes (1초). */
-export const SMOKE_BOMB_VENT_TICKS = Math.round(1 * SIM_HZ_AT_1X);
+/** How long the heavy discharge lasts before the spent canister vanishes (기획:
+ *  연기 생성 시간 2.5초). Sized in seconds like the fuse, so the sandbox's speed
+ *  dial scales it too. */
+export const SMOKE_BOMB_VENT_TICKS = Math.round(2.5 * SIM_HZ_AT_1X);
 // Both stages seed Smoke over a disc (see puffDisc); they differ only in where
 // that disc sits, how wide it is and how densely it fills. The numbers are sized
 // so the two stages read as different *events*, not as one turned up: the fuse
@@ -544,14 +546,14 @@ const SMOKE_BOMB_TRICKLE_RADIUS = 2.5;
  *  is a clear step change rather than more of the same. */
 const SMOKE_BOMB_TRICKLE_DENSITY = 0.1;
 /** Per-cell, per-tick chance the open vent seeds a Smoke cell somewhere in its
- *  cloud radius. Across the ~2800-cell disc below that's ~600 new cells a tick,
- *  and it keeps that up for a full second while the cloud rises and spreads well
- *  past the seeding disc — a canister genuinely blankets its surroundings
- *  (대량의 연기). Occupied cells are simply skipped, so a bomb wedged in a crevice
- *  vents through whatever gaps it has. */
+ *  cloud radius, and it keeps that up for 2.5 seconds while the cloud rises and
+ *  spreads well past the area it was seeded into — a canister genuinely blankets
+ *  its surroundings (대량의 연기). Only cells the front can actually REACH are
+ *  seeded (see puffDisc), so a bomb wedged in a crevice vents through the gaps it
+ *  has and a bomb behind a wall doesn't smoke through it. */
 const SMOKE_BOMB_VENT_DENSITY = 0.22;
-/** Radius the discharge scatters over, as a multiple of the body's own reach
- *  (≈5 cells) — so a ~30-cell radius, a cloud tens of cells across before the gas
+/** How far the discharge's front travels, as a multiple of the body's own reach
+ *  (≈5 cells) — so ~30 cells of travel, a cloud tens of cells across before the gas
  *  starts drifting on its own. It erupts around the whole canister rather than
  *  streaming from the nozzle the way the fuse-stage wisp does. */
 const SMOKE_BOMB_VENT_SPREAD = 6;
@@ -2247,18 +2249,73 @@ function puffSmoke(ctx: SimContext, cx: number, cy: number): void {
   ctx.spawn(cx, cy, SMOKE.id);
 }
 
+// Chamfer step costs for the smoke flood below, so the cloud grows as a round
+// front rather than a diamond (a diagonal step is ~√2 orthogonal ones) — the same
+// metric blast.ts uses for its crater.
+const SMOKE_STEPS: ReadonlyArray<readonly [number, number, number]> = [
+  [0, -1, 1],
+  [0, 1, 1],
+  [-1, 0, 1],
+  [1, 0, 1],
+  [-1, -1, 1.4142],
+  [1, -1, 1.4142],
+  [-1, 1, 1.4142],
+  [1, 1, 1.4142],
+];
+
+// Reused scratch for that flood, keyed by flat cell index: a monotonic stamp id
+// marks the cells this call has already queued, so nothing is allocated per tick
+// and the buffer never needs clearing between calls. Same trick as blast.ts's
+// visited buffer.
+let smokeStamp: Int32Array | null = null;
+let smokeStampW = 0;
+let smokeStampH = 0;
+let smokeStampId = 0;
+
+/** Fetch the flood's visited buffer (reallocating on a grid resize) and advance
+ *  to a fresh stamp id for this call. */
+function nextSmokeStamp(ctx: SimContext): Int32Array {
+  if (!smokeStamp || smokeStampW !== ctx.width || smokeStampH !== ctx.height) {
+    smokeStampW = ctx.width;
+    smokeStampH = ctx.height;
+    smokeStamp = new Int32Array(smokeStampW * smokeStampH); // all zero; ids start at 1
+    smokeStampId = 0;
+  }
+  smokeStampId++;
+  if (smokeStampId >= 0x7fffffff) {
+    smokeStamp.fill(0);
+    smokeStampId = 1;
+  }
+  return smokeStamp;
+}
+
+/** True if the smoke front can travel *through* this cell: open air, or gas it can
+ *  mingle with — which crucially includes the Smoke it laid down on earlier ticks,
+ *  or a venting canister's own cloud would wall its front in after one tick. Any
+ *  matter (solid, powder, liquid) stops the front. */
+function smokePassable(ctx: SimContext, x: number, y: number): boolean {
+  const id = ctx.get(x, y);
+  return id === EMPTY || getMaterial(id).phase === Phase.Gas;
+}
+
 /**
- * Seed Smoke across a disc of `radius` cells centred on (ox,oy), each open cell
- * taking a puff with probability `density`. Written as a bounded scan with a
- * per-cell roll — the same shape spawnDrumDebris uses — so the cloud is evenly
- * dense over the disc and the randomness runs through the sim's own seam
- * (ctx.chance) rather than a private Math.random. `density` 1 fills every open
- * cell at once.
+ * Seed Smoke outward from (ox,oy) up to `radius` cells, each open cell reached
+ * taking a puff with probability `density`. `density` 1 fills every open cell at
+ * once.
+ *
+ * This is a FLOOD, not a radial scan, and that distinction is the whole point:
+ * smoke has to travel to where it ends up, so a solid wall stops it and shelters
+ * what's behind. A plain "every empty cell within r" scan (what this used to be)
+ * let a canister sealed in a box fill the room outside it, and let one on the far
+ * side of a wall smoke straight through it. The front spreads only through open
+ * air and existing gas (see smokePassable), so it rounds corners, threads gaps in
+ * a sand pile, and pours out of a container's mouth instead of ignoring it — the
+ * same geodesic treatment the Woofer's shockwave gets, for the same reason.
  *
  * Both of the smoke bomb's stages are this one call with different numbers: a
- * small disc at the nozzle for the fuse-stage wisp, a large one around the whole
- * body for the discharge. Cost is bounded by the disc's bounding box, so even the
- * full-density rupture is one pass over a few thousand cells.
+ * small radius at the nozzle for the fuse-stage wisp, a large one around the whole
+ * body for the discharge. Cost is bounded by the reachable area within `radius`,
+ * so even the full-density rupture is one pass over a few thousand cells.
  */
 function puffDisc(
   ctx: SimContext,
@@ -2268,18 +2325,53 @@ function puffDisc(
   density: number,
 ): void {
   if (density <= 0 || radius <= 0) return;
-  const r2 = radius * radius;
-  const x0 = Math.floor(ox - radius);
-  const x1 = Math.ceil(ox + radius);
-  const y0 = Math.floor(oy - radius);
-  const y1 = Math.ceil(oy + radius);
-  for (let cy = y0; cy < y1; cy++) {
-    for (let cx = x0; cx < x1; cx++) {
-      const dx = cx + 0.5 - ox;
-      const dy = cy + 0.5 - oy;
-      if (dx * dx + dy * dy > r2) continue;
-      if (density < 1 && !ctx.chance(density)) continue;
-      puffSmoke(ctx, cx, cy);
+  const w = ctx.width;
+  const h = ctx.height;
+  const cx0 = Math.floor(ox);
+  const cy0 = Math.floor(oy);
+  const stamp = nextSmokeStamp(ctx);
+  const id_s = smokeStampId;
+  const qx: number[] = [];
+  const qy: number[] = [];
+  const qb: number[] = [];
+
+  // Seed from the source cell and its 8 neighbours, so a canister whose own centre
+  // cell happens to hold matter (half-buried, or resting with its midpoint inside
+  // the ground) still vents from whatever open cell it touches instead of going
+  // silent. A canister with no open cell at all is genuinely smothered and emits
+  // nothing, which is the right answer.
+  const seed = (sx: number, sy: number): void => {
+    if (!ctx.inBounds(sx, sy)) return;
+    const idx = sy * w + sx;
+    if (stamp[idx] === id_s || !smokePassable(ctx, sx, sy)) return;
+    stamp[idx] = id_s;
+    qx.push(sx);
+    qy.push(sy);
+    qb.push(radius);
+  };
+  seed(cx0, cy0);
+  for (const [dx, dy] of SMOKE_STEPS) seed(cx0 + dx, cy0 + dy);
+
+  let head = 0;
+  while (head < qx.length) {
+    const x = qx[head];
+    const y = qy[head];
+    const budget = qb[head];
+    head++;
+    if (density >= 1 || ctx.chance(density)) puffSmoke(ctx, x, y);
+    for (let i = 0; i < SMOKE_STEPS.length; i++) {
+      const nx = x + SMOKE_STEPS[i][0];
+      const ny = y + SMOKE_STEPS[i][1];
+      const left = budget - SMOKE_STEPS[i][2];
+      if (left < 0) continue;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+      const nidx = ny * w + nx;
+      if (stamp[nidx] === id_s) continue;
+      if (!smokePassable(ctx, nx, ny)) continue; // matter stops the front and shelters what's behind
+      stamp[nidx] = id_s;
+      qx.push(nx);
+      qy.push(ny);
+      qb.push(left);
     }
   }
 }
@@ -2297,7 +2389,7 @@ function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
  *      Sustained external heat (fire, lava, the 가열 brush) cooks the charge off
  *      early and opens the vent now, cutting the rest of the fuse.
  *   2. VENT — the canister pours out a dense cloud every tick while `ventTicks`
- *      runs down, and is dropped when it hits 0 (소멸).
+ *      runs down (2.5s worth), and is dropped when it hits 0 (소멸).
  * Returns true to keep the canister, false once it's spent.
  */
 function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean {
