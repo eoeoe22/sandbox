@@ -9,6 +9,7 @@ import { BLUE_FLAME } from './blueflame';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
 import { BLAST, detonate, type DetonateOptions } from './blast';
+import { launchEmber } from './ember';
 
 // Shaped Charge (성형작약) — a directional penetrator: instead of the ordinary
 // round crater, it fires a long, narrow jet ONE way (먼로 효과), reaching several
@@ -78,10 +79,23 @@ const JET_COST_MUL: ReadonlyArray<readonly number[]> = [
   [S, S, B, F, B, D, B, D], // right
 ];
 
+/** Unit jet vector for each direction code (indexed by CHARGE_*). */
+const DIRV: ReadonlyArray<readonly [number, number]> = [
+  [0, -1], // up
+  [0, 1], // down
+  [-1, 0], // left
+  [1, 0], // right
+];
+
 /** Yield a cell contributes when another explosive's mass survey sweeps it in
  *  (sympathetic detonation inside a TNT stack, say) — deliberately modest: the
  *  charge's punch lives in its own aimed jet, not in fattening a round blast. */
 const SYMPATHETIC_YIELD = 6;
+
+/** Chance a forward rim cell of the bore throws a spall Ember (matches the
+ *  default rim chance an ordinary blast uses). Forward faces only — see the
+ *  rimHandler in detonateJet. */
+const SPALL_EMBER_CHANCE = 0.55;
 
 // Stable like a demolition device should be: hotter than TNT's 240 before
 // radiant heat alone cooks it off, so it survives near a fire long enough to
@@ -90,19 +104,33 @@ const AUTOIGNITE_TEMP = 300;
 
 /** Fire the aimed jet from (x,y): one soloSource detonation whose costMul is
  *  picked by the cell's own aux direction. `pierceProof` is what lets the jet
- *  defeat 방폭 solids (Diamond, Obsidian) — soloSource carries the default
- *  destructive power, comfortably above every finite durability. `pressure`
- *  off keeps the cut surgical: no concussion ring shoving the surroundings —
- *  the charge's identity is that everything OUTSIDE the bore stays put. */
+ *  defeat 방폭 solids (Diamond, Obsidian; the `jetProof` uranium family stays
+ *  immune) — soloSource carries the default destructive power, comfortably
+ *  above every finite durability. The charge's identity is that everything
+ *  OUTSIDE the bore stays put, enforced twice: `pressure` off (no concussion
+ *  ring shoving the surroundings) and a custom rimHandler that throws spall
+ *  Embers only from rim faces pointing along the jet — the exit hole sprays
+ *  hot fragments downrange, while the bore's flanks and the charge's back stay
+ *  quiet instead of the default rim seasoning them with fire. seedYield is 0
+ *  like the other fixed-reach soloSource blasts (napalm/cluster): with
+ *  `opts.reach` set it's never read. */
 function detonateJet(sim: SimContext, x: number, y: number): void {
+  const dir = sim.getAux(x, y) & DIR_MASK;
+  const [jx, jy] = DIRV[dir];
   const opts: DetonateOptions = {
     soloSource: true,
     reach: JET_REACH,
-    costMul: JET_COST_MUL[sim.getAux(x, y) & DIR_MASK],
+    costMul: JET_COST_MUL[dir],
     pierceProof: true,
     pressure: false,
+    rimHandler: (s, rx, ry, dx, dy) => {
+      // Forward faces only: the rim's outward normal must have a component
+      // along the jet direction. A lateral (perpendicular) or backward rim
+      // cell throws nothing.
+      if (dx * jx + dy * jy > 0 && s.chance(SPALL_EMBER_CHANCE)) launchEmber(s, rx, ry, dx, dy);
+    },
   };
-  detonate(sim, x, y, JET_REACH, opts);
+  detonate(sim, x, y, 0, opts);
 }
 
 /** The electric-appliance hook (see Material.directPulse): a pulse reaching any

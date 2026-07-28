@@ -73,6 +73,7 @@ export const U238 = register({
   density: 1000,
   category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
+  jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { conductivity: 0.5 },
   // Duller, more metallic olive than U235's brighter yellow-green, brightening as
   // it heats toward meltdown.

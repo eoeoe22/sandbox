@@ -282,15 +282,17 @@ function cellPower(id: number): number {
  *  Loose matter never blocks — a weak blast shoves it aside and passes through.
  *  A `pierceProof` blast (the Shaped Charge's focused jet — see
  *  DetonateOptions.pierceProof) ignores the 방폭 `explosionProof` tag and meets
- *  such a solid on the ordinary power-vs-durability axis instead; only the
- *  boundary Wall and truly `indestructible` matter (Clone) still stop it.
+ *  such a solid on the ordinary power-vs-durability axis instead. Still always
+ *  stopped: the boundary Wall, truly `indestructible` matter (Clone), and a
+ *  `jetProof` 방폭 (the uranium family — their immunity is a systemic invariant,
+ *  not armor; see Material.jetProof).
  *  (The other force that gets past Diamond is a critical uranium's Nuclear Ray —
  *  see heatray.ts — which isn't a blast at all.) */
 function blocksBlast(id: number, power: number, pierceProof: boolean): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
   if (m.isWall === true || m.indestructible === true) return true;
-  if (m.explosionProof === true && !pierceProof) return true;
+  if (m.explosionProof === true && (!pierceProof || m.jetProof === true)) return true;
   return m.phase === Phase.Solid && !isShockLoose(id) && durabilityOf(id) > power;
 }
 
@@ -586,9 +588,11 @@ export interface DetonateOptions {
   /** The blast front pierces 방폭 (`explosionProof`) solids — Diamond, Obsidian —
    *  instead of being stopped by the tag, meeting them on the ordinary
    *  power-vs-durability axis like any other solid (the Shaped Charge's focused
-   *  jet — 먼로 효과). The boundary Wall and truly `indestructible` matter
-   *  (Clone) still always stop it. Default false: every ordinary blast keeps
-   *  being shadowed by blast-proof solids. */
+   *  jet — 먼로 효과). Still always stopped by the boundary Wall, truly
+   *  `indestructible` matter (Clone), and a `jetProof` 방폭 (the uranium family,
+   *  whose immunity is a reactor-containment invariant, not armor — see
+   *  Material.jetProof). Default false: every ordinary blast keeps being
+   *  shadowed by blast-proof solids. */
   pierceProof?: boolean;
   /**
    * Handler run for every cell the front reaches, *replacing* the default

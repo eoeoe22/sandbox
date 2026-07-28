@@ -41,6 +41,7 @@ export const NUKE_WASTE = register({
   density: 6,
   category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
+  jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { init: WARM_TEMP, conductivity: 0.3 },
   // Faintly glows a warmer sickly green as its decay heat builds, cooling to a
   // dull olive when something has drawn the warmth out of it.

@@ -82,6 +82,7 @@ export const MOLTEN_U238 = register({
   density: 10, // as dense as Molten U235 — sinks through everything liquid
   category: 'radioactive',
   explosionProof: true, // 방폭 — see uranium.ts
+  jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   viscosity: 0.5,
   thermal: { init: MOLTEN_U238_TEMP, conductivity: 0.5 },
   // Glows warm olive-green from the freeze point up to its molten init temp, so a

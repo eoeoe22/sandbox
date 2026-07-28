@@ -158,6 +158,18 @@ export interface Material {
    */
   explosionProof?: boolean;
   /**
+   * 관통 제트마저 막는 방폭 — an `explosionProof` material that stays immune even
+   * to a `pierceProof` blast (the Shaped Charge's armor-piercing jet, which
+   * ordinarily defeats 방폭 armor like Diamond/Obsidian — see
+   * DetonateOptions.pierceProof in blast.ts). The uranium family declares it:
+   * their 방폭 isn't armor but a *systemic invariant* — every uranium-series
+   * material is immune to explosions so reactor containment can only be breached
+   * by a critical mass's own Nuclear Ray, never by stacking charges against it
+   * (see uranium.ts). Only meaningful alongside `explosionProof`; omitted ⇒ the
+   * armor reading (a pierceProof jet gets through).
+   */
+  jetProof?: boolean;
+  /**
    * Marks a material that detonates rather than merely burning. When one is
    * triggered, `detonate` (blast.ts) surveys the whole *connected mass* of
    * explosive cells and sets it off as a single crater whose reach scales with
