@@ -1,3 +1,9 @@
+<script lang="ts" module>
+  // Shared across every Modal instance (see the per-instance registration
+  // below): the currently open dialogs, oldest first.
+  const openModals: object[] = [];
+</script>
+
 <script lang="ts">
   // A centered overlay dialog, portaled to <body> so it escapes the sidebar's
   // `backdrop-filter` containing block and `overflow` clipping (the same reason
@@ -22,7 +28,26 @@
 
   let { open, title, icon, onclose, children }: Props = $props();
 
+
   let dialogEl = $state<HTMLDivElement | null>(null);
+
+  // Every open Modal listens on `window` for Escape and Tab, so with one modal
+  // stacked over another (the snapshot load options over the save/load list)
+  // both would fire on a single Escape and close the pair. This module-level
+  // stack — oldest first — makes only the topmost dialog respond, so Escape
+  // peels one layer at a time and the focus trap belongs to the dialog the user
+  // is actually looking at. A unique token per instance keeps it correct when
+  // two modals mount in the same tick.
+  const token = {};
+  $effect(() => {
+    if (!open) return;
+    openModals.push(token);
+    return () => {
+      const i = openModals.indexOf(token);
+      if (i !== -1) openModals.splice(i, 1);
+    };
+  });
+  const isTopmost = (): boolean => openModals[openModals.length - 1] === token;
 
   function portal(node: HTMLElement) {
     document.body.appendChild(node);
@@ -62,7 +87,7 @@
   });
 
   function onKeydown(e: KeyboardEvent): void {
-    if (!open) return;
+    if (!open || !isTopmost()) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       onclose();

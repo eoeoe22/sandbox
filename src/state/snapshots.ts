@@ -1,13 +1,11 @@
 import type { Grid } from '../game/engine/Grid';
 import { serializeWorld, deserializeWorld, type PersistedWorld } from './persistence';
-import { fitWorld } from './snapshotFit';
 import {
   buildSnapshotFile,
   parseSnapshotFile,
   fileNameFromTitle,
   SNAPSHOT_FILE_EXT,
 } from './snapshotFile';
-import { SNAPSHOT_FIT_DEFAULT, type SnapshotFit } from '../game/config';
 
 /**
  * Named snapshot save/load — user-created slots that capture the whole sandbox
@@ -288,24 +286,18 @@ export function registerGridForSnapshots(
 }
 
 /**
- * Apply a saved snapshot to the live grid: load its envelope by id and resize
- * the current grid from it (bottom-left anchored, same rule as a window
- * resize), so a world saved at a different size is remapped onto the current
- * sandbox. Returns true on success. The live grid's own resolution is kept; the
- * snapshot's content is fitted into it. Free objects (balls, drums) are cleared
- * first — snapshots don't serialize the object layer, so leaving the current
- * session's objects on top of loaded cells would mix two unrelated scenes.
+ * Put an already-placed world (exactly the live grid's size — what `fitWorld`
+ * returns) onto the canvas. Split out from `applySnapshot` so the load modal can
+ * apply the very world it previewed rather than recomputing it, which is what
+ * makes "what you see is what you get" true rather than approximately true.
+ *
+ * Free objects (balls, drums) are cleared first — snapshots don't serialize the
+ * object layer, so leaving the current session's objects on top of loaded cells
+ * would mix two unrelated scenes.
  */
-export function applySnapshot(id: string, fit: SnapshotFit = SNAPSHOT_FIT_DEFAULT): boolean {
+export function applyWorld(world: PersistedWorld): boolean {
   if (!liveGrid) return false;
-  const loaded = loadSnapshot(id);
-  if (!loaded) return false;
-  // Resample first when the snapshot's grid doesn't match this sandbox (see
-  // snapshotFit). Under `crop` this is a pass-through and `resizeFrom` does its
-  // usual bottom-left copy; under `fit`/`stretch` the world already arrives at
-  // the target size, so the copy below is exact.
-  const world = fitWorld(loaded, liveGrid.width, liveGrid.height, fit);
-  liveGrid.objects.length = 0; // snapshot doesn't carry objects — start clean
+  liveGrid.objects.length = 0;
   liveGrid.resizeFrom(
     liveGrid.width,
     liveGrid.height,

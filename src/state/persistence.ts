@@ -115,6 +115,20 @@ const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 const HEAT_RATE_MODES: readonly HeatRateMode[] = ['absolute', 'relative'];
 const SNAPSHOT_FIT_VALUES: readonly SnapshotFit[] = SNAPSHOT_FITS;
+/** Mode names from the first version of the snapshot-fit setting, before the
+ *  load modal replaced the three fixed modes with auto/manual/simple. `stretch`
+ *  has no like-for-like successor — it maps to `manual`, where filling both axes
+ *  is one preset button away. */
+const LEGACY_SNAPSHOT_FITS: Record<string, SnapshotFit> = {
+  fit: 'auto',
+  crop: 'simple',
+  stretch: 'manual',
+};
+
+function parseSnapshotFit(v: unknown): SnapshotFit {
+  if (typeof v === 'string' && v in LEGACY_SNAPSHOT_FITS) return LEGACY_SNAPSHOT_FITS[v];
+  return oneOf(v, SNAPSHOT_FIT_VALUES, $snapshotFit.get());
+}
 
 /** Palette-material ids the blend editor can actually offer, so a restored blend
  *  can't reference a material with no matching <option> (it validates to exactly
@@ -247,7 +261,7 @@ function hydrateSettings(): void {
   $cellScale.set(oneOf(s.cellScale, CELL_SCALES, $cellScale.get()));
   if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
   $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
-  $snapshotFit.set(oneOf(s.snapshotFit, SNAPSHOT_FIT_VALUES, $snapshotFit.get()));
+  $snapshotFit.set(parseSnapshotFit(s.snapshotFit));
   $bottomDeadzone.set(
     clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
   );

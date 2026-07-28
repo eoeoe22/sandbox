@@ -308,22 +308,9 @@ export const ko = {
     galleryTooltip: '갤러리 보기',
     listTooltip: '목록 보기',
     empty: '저장된 스냅샷이 없습니다. 현재 샌드박스 상태를 저장하거나, 파일을 불러와 보세요.',
-    hint: '저장 스냅샷은 브라우저 로컬에 보관됩니다. 화면 크기가 달라도 현재 캔버스에 맞춰 불러오며, 맞추는 방식은 위에서 고를 수 있습니다.',
+    hint: '저장 스냅샷은 브라우저 로컬에 보관됩니다. 불러오기를 누르면 미리보기 창이 열려, 크기가 다른 장면을 현재 캔버스에 어떻게 앉힐지 직접 고를 수 있습니다.',
 
     // --- File export / import ---
-    fitGroup: '불러올 때 맞추는 방식',
-    fitLabel: '맞춤',
-    fit: {
-      fit: '비율 유지',
-      fitTooltip:
-        '종횡비를 유지한 채 전체가 들어가도록 축소/확대합니다. 잘리는 부분 없이 다 보이고, 남는 여백은 빈칸입니다. 많이 축소하면 셀이 합쳐지므로 얇은 구조(1칸 전선 등)는 끊길 수 있습니다.',
-      stretch: '꽉 채우기',
-      stretchTooltip:
-        '가로·세로를 각각 늘려 캔버스를 빈틈없이 채웁니다. 여백은 없지만 화면비가 다르면 그림이 찌그러집니다.',
-      crop: '원본 크기',
-      cropTooltip:
-        '셀 크기를 그대로 두고 캔버스 밖은 잘라냅니다 (왼쪽 아래 기준). 들어오는 영역은 원본 그대로 보존됩니다.',
-    },
     exportTooltip: '파일로 내보내기',
     exportAria: '"{name}" 파일로 내보내기',
     exported: '"{name}" 내보냄',
@@ -336,6 +323,35 @@ export const ko = {
     importReadFailed: '파일을 읽지 못했습니다',
     importLimit: '저장 한도(50개) 초과 — 기존 스냅샷을 삭제하세요',
     importFailed: '불러오기 실패 (저장 공간이 부족합니다)',
+  },
+
+  // --- Snapshot load options (preview modal) ---
+  load: {
+    title: '불러오기 옵션',
+    previewAria: '미리보기 — 끌거나 방향키로 장면을 옮깁니다',
+    modeGroup: '스냅샷을 맞추는 방식',
+    mode: {
+      auto: '자동 맞춤',
+      autoTooltip:
+        '종횡비를 유지한 채 전체가 들어가도록 압축하거나 확대합니다. 잘리는 곳 없이 다 보이고, 남는 자리는 빈칸입니다.',
+      manual: '수동',
+      manualTooltip:
+        '배율을 직접 정하고 장면을 원하는 위치로 끌어 놓습니다. 캔버스 밖으로 나간 부분은 잘립니다.',
+      simple: '원본 크기',
+      simpleTooltip:
+        '크기를 바꾸지 않습니다. 캔버스를 넘치는 부분은 잘라내고, 모자라는 부분은 빈칸으로 둡니다.',
+    },
+    scale: '배율',
+    scaleX: '가로',
+    scaleY: '세로',
+    linkAxes: '비율 고정',
+    presetAuto: '맞춤',
+    presetOriginal: '원본',
+    presetFill: '꽉 채우기',
+    manualHint:
+      '미리보기를 끌어서 장면을 옮깁니다 (방향키로 미세 조정, Shift를 누르면 10칸씩). 많이 축소하면 셀이 합쳐지므로 1칸짜리 전선 같은 얇은 구조는 끊길 수 있습니다.',
+    cancel: '취소',
+    confirm: '불러오기',
   },
 
   // --- Language selector ---

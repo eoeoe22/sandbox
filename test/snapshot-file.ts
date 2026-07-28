@@ -7,12 +7,14 @@
  *      every way a file can be wrong (not JSON, not ours, a newer container
  *      version, a corrupt payload, a remote-URL thumbnail) is rejected rather
  *      than half-imported.
- *   2. Fit — `fitWorld` lands the scene inside the target grid under each mode:
- *      `fit` preserves the aspect ratio and keeps the whole scene, `stretch`
- *      fills the target exactly, `crop` is a pass-through, and the per-cell
- *      state planes (`aux`, `overlay`) stay coherent with the id that won each
- *      resampled cell — a Spark's conductor id must never end up on a cell that
- *      resampled to Sand.
+ *   2. Fit — a snapshot lands inside the target grid the way the placement says:
+ *      `auto` preserves the aspect ratio and keeps the whole scene, `simple` is a
+ *      1:1 drop that crops the overflow and leaves the shortfall empty, a manual
+ *      placement crops and stretches on demand, and the per-cell state planes
+ *      (`aux`, `overlay`) stay coherent with the id that won each resampled cell
+ *      — a Spark's conductor id must never end up on a cell that resampled to
+ *      Sand. The load modal's preview clips through the same `sceneClip`, so
+ *      "what you see is what you get" is a property the harness can check.
  *
  * Run: `node test/run-snapshot-file.mjs`.
  */
@@ -25,7 +27,16 @@ import {
   SNAPSHOT_FILE_EXT,
   SNAPSHOT_FILE_FORMAT,
 } from '../src/state/snapshotFile';
-import { fitWorld } from '../src/state/snapshotFit';
+import {
+  fitWorld,
+  resampleScene,
+  placeScene,
+  autoPlacement,
+  centered,
+  clampPlacement,
+  sceneClip,
+  SCALE_MAX,
+} from '../src/state/snapshotFit';
 import { EMPTY } from '../src/game/engine/types';
 import { SAND } from '../src/game/materials/sand';
 import { WATER } from '../src/game/materials/water';
@@ -194,57 +205,138 @@ check('filename is bounded', fileNameFromTitle('x'.repeat(300)).length === 60);
 check('extension is the agreed one', SNAPSHOT_FILE_EXT === '.psbx.json');
 
 // ---------------------------------------------------------------------------
-// 2. Fit
+// 2. Fit / placement
 // ---------------------------------------------------------------------------
 
 const src = deserializeWorld(JSON.parse(world));
 if (!src) {
   check('scene deserializes for fit checks', false);
 } else {
-  // crop is a pass-through: the caller's resizeFrom implements it, so fitWorld
-  // must hand back the identical object rather than resampling behind its back.
-  check('crop returns the source untouched', fitWorld(src, 64, 40, 'crop') === src);
-  check('a same-size fit is a pass-through', fitWorld(src, src.w, src.h, 'fit') === src);
+  const SW = src.w;
+  const SH = src.h;
 
-  // stretch fills the target exactly.
-  const stretched = fitWorld(src, 60, 40, 'stretch');
+  // A 1:1 resample must be free — the caller gets the same object back, which is
+  // what makes "loaded on the machine that saved it" and `simple` cost nothing.
+  check('a same-size resample is a pass-through', resampleScene(src, SW, SH) === src);
   check(
-    'stretch lands at the target size',
-    stretched.w === 60 && stretched.h === 40 && stretched.cells.length === 2400,
+    'a same-size, zero-offset placement is a pass-through',
+    placeScene(src, SW, SH, 0, 0) === src,
   );
 
-  // fit keeps the aspect ratio: the source is 24×16 (3:2), so into a 60×40
-  // target (also 3:2) it fills exactly; into a 60×60 target it occupies 60×40
-  // and leaves the top empty.
-  const tall = fitWorld(src, 60, 60, 'fit');
-  check('fit lands at the target size', tall.w === 60 && tall.h === 60);
+  // `simple` is 1:1: no rescale, crop the overflow, leave the shortfall empty.
+  const simple = autoPlacement(SW, SH, 60, 40, 'simple');
+  check('simple does not rescale', simple.cw === SW && simple.ch === SH);
+  const simpleOut = fitWorld(src, 60, 40, simple);
+  check('simple lands at the target size', simpleOut.w === 60 && simpleOut.h === 40);
+  // Bottom-aligned, so the snapshot's floor is still the canvas floor, and the
+  // cells that do land are byte-identical to the source (no resampling at all).
+  let identical = true;
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const di = (simple.offY + y) * 60 + simple.offX + x;
+      if (simpleOut.cells[di] !== src.cells[y * SW + x]) identical = false;
+    }
+  }
+  check('simple copies cells 1:1', identical);
+  // And into a canvas smaller than the scene, the overflow is cut rather than
+  // squeezed — the placement is still 1:1.
+  const cropped = fitWorld(src, 12, 8, autoPlacement(SW, SH, 12, 8, 'simple'));
+  check('simple crops instead of scaling', cropped.w === 12 && cropped.h === 8);
+
+  // `auto` keeps the aspect ratio: the source is 24×16 (3:2), so into a 60×60
+  // target it occupies 60×40 and leaves the top empty.
+  const autoP = autoPlacement(SW, SH, 60, 60, 'auto');
+  check('auto preserves the aspect ratio', autoP.cw === 60 && autoP.ch === 40);
+  const tall = fitWorld(src, 60, 60, autoP);
+  check('auto lands at the target size', tall.w === 60 && tall.h === 60);
   let topEmpty = true;
   for (let i = 0; i < 60 * 19; i++) if (tall.cells[i] !== EMPTY) topEmpty = false;
-  check('fit leaves the margin above the scene empty', topEmpty);
+  check('auto leaves the margin above the scene empty', topEmpty);
   // The floor must stay a floor — gravity points down, so the scene is aligned
   // to the bottom rather than centred vertically.
   let floorSolid = true;
   for (let x = 0; x < 60; x++) if (tall.cells[59 * 60 + x] !== WALL.id) floorSolid = false;
-  check('fit keeps the floor on the floor', floorSolid);
+  check('auto keeps the floor on the floor', floorSolid);
 
   // Upscaling must not invent materials: every id present afterwards was present
   // before (nearest-neighbour, no interpolation between ids).
   const before = new Set(Array.from(src.cells));
-  const after = new Set(Array.from(tall.cells));
   check(
-    'fit invents no new materials',
-    Array.from(after).every((id) => before.has(id)),
+    'auto invents no new materials',
+    Array.from(new Set(Array.from(tall.cells))).every((id) => before.has(id)),
   );
 
   // Downscaling roughly halves each axis. Content must still be there — a scene
   // that resamples to nothing is the failure mode this whole path exists to
   // avoid.
-  const small = fitWorld(src, 12, 8, 'fit');
+  const small = fitWorld(src, 12, 8, autoPlacement(SW, SH, 12, 8, 'auto'));
   check('downscale keeps the target size', small.w === 12 && small.h === 8);
   check(
     'downscale keeps material',
     small.cells.some((id) => id !== EMPTY),
   );
+
+  // A manual placement can fill both axes independently (the old "stretch"), and
+  // can hang off any edge — the clip has to hold on all four sides, including
+  // negative offsets, without throwing or wrapping a row.
+  const filled = fitWorld(src, 60, 40, centered(60, 40, 60, 40));
+  check('manual fill lands at the target size', filled.w === 60 && filled.h === 40);
+  for (const [label, off] of [
+    ['off the left', { offX: -40, offY: 0 }],
+    ['off the top', { offX: 0, offY: -30 }],
+    ['off the right', { offX: 55, offY: 0 }],
+    ['off the bottom', { offX: 0, offY: 35 }],
+    ['fully outside', { offX: -500, offY: -500 }],
+  ] as const) {
+    let threw = false;
+    let out: ReturnType<typeof fitWorld> | null = null;
+    try {
+      out = fitWorld(src, 60, 40, { cw: SW, ch: SH, offX: off.offX, offY: off.offY });
+    } catch {
+      threw = true;
+    }
+    check(`a placement ${label} clips cleanly`, !threw && out?.cells.length === 2400);
+  }
+  // Entirely outside means an empty canvas, not a wrapped one.
+  const gone = fitWorld(src, 60, 40, { cw: SW, ch: SH, offX: -500, offY: -500 });
+  check(
+    'a fully-outside placement leaves the canvas empty',
+    gone.cells.every((id) => id === EMPTY),
+  );
+
+  // The scale ceiling is what stops a stray drag from asking for a billion-cell
+  // resample.
+  const huge = clampPlacement({ cw: SW * 1000, ch: SH * 1000, offX: 0, offY: 0 }, SW, SH);
+  check('an over-large scale is clamped', huge.cw === SW * SCALE_MAX && huge.ch === SH * SCALE_MAX);
+  const tiny = clampPlacement({ cw: 0, ch: -5, offX: 0, offY: 0 }, SW, SH);
+  check('a degenerate scale is clamped to one cell', tiny.cw === 1 && tiny.ch === 1);
+
+  // The load modal draws its preview by walking `sceneClip` and colouring the
+  // cells inside it. If that rectangle ever disagreed with what `placeScene`
+  // actually writes, the preview would be a polite lie — so pin them together:
+  // every cell inside the clip matches the scene, every cell outside is empty.
+  for (const p of [
+    { cw: SW, ch: SH, offX: 3, offY: 2 },
+    { cw: 40, ch: 30, offX: -7, offY: -4 },
+    { cw: 90, ch: 70, offX: -10, offY: -20 },
+  ]) {
+    const scene = resampleScene(src, p.cw, p.ch);
+    const out = placeScene(scene, 60, 40, p.offX, p.offY);
+    const clip = sceneClip(scene.w, scene.h, 60, 40, p.offX, p.offY);
+    let agrees = true;
+    const inside = new Set<number>();
+    for (let sy = clip.sy0; sy < clip.sy1; sy++) {
+      for (let sx = clip.sx0; sx < clip.sx1; sx++) {
+        const di = (sy + p.offY) * 60 + p.offX + sx;
+        inside.add(di);
+        if (out.cells[di] !== scene.cells[sy * scene.w + sx]) agrees = false;
+      }
+    }
+    for (let i = 0; agrees && i < out.cells.length; i++) {
+      if (!inside.has(i) && out.cells[i] !== EMPTY) agrees = false;
+    }
+    check(`preview clip matches the applied world (${p.cw}×${p.ch} @ ${p.offX},${p.offY})`, agrees);
+  }
 
   // Per-cell state must stay attached to the id it belongs to: aux/overlay are
   // copied from one representative source cell, never blended, so a state word
@@ -252,7 +344,8 @@ if (!src) {
   for (const [label, out] of [
     ['upscale', tall],
     ['downscale', small],
-    ['stretch', stretched],
+    ['manual fill', filled],
+    ['simple', simpleOut],
   ] as const) {
     let coherent = true;
     for (let i = 0; i < out.cells.length; i++) {
@@ -269,6 +362,12 @@ if (!src) {
     }
     check(`${label} keeps per-cell state coherent`, coherent);
   }
+
+  // Degenerate grids: a 1×1 source and a 1×1 destination both have to survive
+  // the partition math (this is where floor/ceil index tricks usually break).
+  const oneByOne = { w: 1, h: 1, cells: new Uint8Array([WALL.id]), temp: new Float32Array([20]) };
+  check('a 1x1 source upscales', resampleScene(oneByOne, 8, 8).cells.every((id) => id === WALL.id));
+  check('a source downscales to 1x1', resampleScene(src, 1, 1).cells.length === 1);
 }
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`);

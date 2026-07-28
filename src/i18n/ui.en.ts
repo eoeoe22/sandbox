@@ -311,22 +311,9 @@ export const en = {
     galleryTooltip: 'Gallery view',
     listTooltip: 'List view',
     empty: 'No saved snapshots. Save the current sandbox state, or import a file.',
-    hint: 'Saved snapshots are kept locally in the browser. They load onto the current canvas even if the screen size differs — pick how above.',
+    hint: 'Saved snapshots are kept locally in the browser. Loading opens a preview where you choose how a differently-sized scene lands on the current canvas.',
 
     // --- File export / import ---
-    fitGroup: 'Fit mode when loading',
-    fitLabel: 'Fit',
-    fit: {
-      fit: 'Scale to fit',
-      fitTooltip:
-        'Scale the whole scene to fit, keeping its aspect ratio. Nothing is cut off; leftover area stays empty. Heavy downscaling merges cells, so thin structures (a 1-cell wire) can break.',
-      stretch: 'Stretch',
-      stretchTooltip:
-        'Stretch each axis to fill the canvas edge to edge. No empty margin, but a different aspect ratio distorts the scene.',
-      crop: 'Original size',
-      cropTooltip:
-        "Keep the original cell size and cut off whatever doesn't fit (anchored bottom-left). Pixel-exact for the part that fits.",
-    },
     exportTooltip: 'Export to a file',
     exportAria: 'Export "{name}" to a file',
     exported: '"{name}" exported',
@@ -339,6 +326,35 @@ export const en = {
     importReadFailed: 'Could not read the file',
     importLimit: 'Save limit (50) exceeded — delete an existing snapshot',
     importFailed: 'Import failed (storage is full)',
+  },
+
+  // --- Snapshot load options (preview modal) ---
+  load: {
+    title: 'Load options',
+    previewAria: 'Preview — drag, or use the arrow keys, to move the scene',
+    modeGroup: 'How the snapshot is fitted',
+    mode: {
+      auto: 'Auto fit',
+      autoTooltip:
+        'Scale the scene up or down to fit, keeping its aspect ratio. Nothing is cut off; leftover area stays empty.',
+      manual: 'Manual',
+      manualTooltip:
+        'Set the scale yourself and drag the scene where you want it. Anything past the canvas edge is cut off.',
+      simple: 'Original size',
+      simpleTooltip:
+        'No scaling. Whatever overflows the canvas is cut off, and wherever the scene falls short the difference stays empty.',
+    },
+    scale: 'Scale',
+    scaleX: 'Width',
+    scaleY: 'Height',
+    linkAxes: 'Keep aspect ratio',
+    presetAuto: 'Fit',
+    presetOriginal: 'Original',
+    presetFill: 'Fill',
+    manualHint:
+      'Drag the preview to move the scene (arrow keys nudge it; hold Shift for 10 cells at a time). Heavy downscaling merges cells, so thin structures such as a 1-cell wire can break.',
+    cancel: 'Cancel',
+    confirm: 'Load',
   },
 
   // --- Language selector ---

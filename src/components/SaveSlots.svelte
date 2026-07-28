@@ -7,7 +7,8 @@
   import {
     listSnapshots,
     saveLiveSnapshot,
-    applySnapshot,
+    loadSnapshot,
+    applyWorld,
     deleteSnapshot,
     updateSnapshot,
     exportSnapshot,
@@ -20,8 +21,10 @@
     SNAPSHOT_FILE_EXT,
     SNAPSHOT_FILE_MAX_BYTES,
   } from '../state/snapshotFile';
-  import { $snapshotFit as snapshotFit } from '../state/store';
-  import { SNAPSHOT_FITS, type SnapshotFit } from '../game/config';
+  import { $gridDims as gridDims } from '../state/store';
+  import type { PersistedWorld } from '../state/persistence';
+  import Modal from './Modal.svelte';
+  import SnapshotLoad from './SnapshotLoad.svelte';
   import { t } from '../i18n';
 
   /** Longest description the inputs accept — mirrors MAX_DESC_LEN in the store. */
@@ -47,6 +50,10 @@
   let fileInput = $state<HTMLInputElement | null>(null);
   // True while a snapshot file is dragged over the panel (drop target hint).
   let dragOver = $state(false);
+  // The snapshot whose load options are open. Loading is a two-step action: the
+  // sizes rarely match, so the user picks how it lands (and sees a preview)
+  // before anything replaces what's on the canvas.
+  let pending = $state<{ name: string; world: PersistedWorld } | null>(null);
 
   function refresh(): void {
     snapshots = listSnapshots();
@@ -97,8 +104,19 @@
     refresh();
   }
 
-  function handleLoad(id: string): void {
-    const ok = applySnapshot(id, $snapshotFit);
+  /** Open the load options for a snapshot. Nothing is applied yet. */
+  function handleLoad(s: SnapshotMeta): void {
+    const world = loadSnapshot(s.id);
+    if (!world) {
+      showFlash(t('save.loadFailed'), true);
+      return;
+    }
+    pending = { name: s.name, world };
+  }
+
+  function handleConfirmLoad(placed: PersistedWorld): void {
+    pending = null;
+    const ok = applyWorld(placed);
     showFlash(ok ? t('save.loadOk') : t('save.loadFailed'), !ok);
   }
 
@@ -197,13 +215,6 @@
     }
   }
 
-  function fitLabel(mode: SnapshotFit): string {
-    return t(`save.fit.${mode}`);
-  }
-  function fitTooltip(mode: SnapshotFit): string {
-    return t(`save.fit.${mode}Tooltip`);
-  }
-
   // Focus + select the edit-name input as soon as it mounts, so the user can
   // start typing without an extra click.
   function autofocus(node: HTMLInputElement): void {
@@ -284,19 +295,6 @@
       aria-hidden="true"
     />
 
-    <label class="fit" title={fitTooltip($snapshotFit)}>
-      <span class="fit-label">{t('save.fitLabel')}</span>
-      <select
-        aria-label={t('save.fitGroup')}
-        value={$snapshotFit}
-        onchange={(e) => snapshotFit.set(e.currentTarget.value as SnapshotFit)}
-      >
-        {#each SNAPSHOT_FITS as mode (mode)}
-          <option value={mode} title={fitTooltip(mode)}>{fitLabel(mode)}</option>
-        {/each}
-      </select>
-    </label>
-
     {#if snapshots.length > 0}
       <div class="view-toggle" role="radiogroup" aria-label={t('save.viewToggleGroup')}>
         <button
@@ -341,7 +339,7 @@
               <div class="card-overlay">
                 <button
                   class="mini"
-                  onclick={() => handleLoad(s.id)}
+                  onclick={() => handleLoad(s)}
                   aria-label={t('save.loadAria', { name: s.name })}
                   title={t('save.loadTooltip')}
                 >
@@ -491,7 +489,7 @@
               <div class="row-actions">
                 <button
                   class="mini"
-                  onclick={() => handleLoad(s.id)}
+                  onclick={() => handleLoad(s)}
                   aria-label={t('save.loadAria', { name: s.name })}
                   title={t('save.loadTooltip')}
                 >
@@ -533,6 +531,26 @@
     {t('save.hint')}
   </p>
 </div>
+
+<!-- Stacked over the save/load list. Modal tracks which dialog is topmost, so
+     Escape closes this one first and leaves the list open behind it. -->
+<Modal
+  open={pending !== null}
+  title={t('load.title')}
+  icon="bi-aspect-ratio"
+  onclose={() => (pending = null)}
+>
+  {#if pending}
+    <SnapshotLoad
+      world={pending.world}
+      name={pending.name}
+      dstW={$gridDims.w}
+      dstH={$gridDims.h}
+      onconfirm={handleConfirmLoad}
+      oncancel={() => (pending = null)}
+    />
+  {/if}
+</Modal>
 
 <style>
   .snapshots {
@@ -587,7 +605,7 @@
     color: #ffa0a0;
   }
 
-  /* File import + fit mode + view toggle, on one wrapping row. */
+  /* File import + view toggle, on one wrapping row. */
   .toolbar {
     display: flex;
     align-items: center;
@@ -606,30 +624,6 @@
     opacity: 0;
     pointer-events: none;
   }
-  .fit {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11px;
-    color: #8a8a96;
-  }
-  .fit-label {
-    white-space: nowrap;
-  }
-  .fit select {
-    padding: 5px 6px;
-    border: 1px solid #2a2a33;
-    border-radius: 6px;
-    background: #14141a;
-    color: #e8e8ee;
-    font: inherit;
-    font-size: 12px;
-  }
-  .fit select:focus {
-    outline: none;
-    border-color: #6ea8fe;
-  }
-
   /* Name + description + confirm, shown in place of a card/row while editing. */
   .edit-form {
     display: flex;
