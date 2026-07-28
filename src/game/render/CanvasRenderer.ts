@@ -141,6 +141,21 @@ const MAGNET_RING_GAP = 3; // geodesic cells between successive contour rings
 // must add/drop that body's rings the same tick — see the fingerprint in
 // drawMagnetFields); only the surrounding solids ride this period.
 const MAGNET_REBUILD_TICKS = 8;
+// The rings *breathe*: the whole contour set slides out and back by a fraction of
+// a cell on a fixed wall-clock cycle, so a powered magnet reads as live rather
+// than as a decal — without turning into the outward-racing wavefront the Woofer
+// uses (the field is a steady grip, not an event). Amplitude is deliberately under
+// one ring gap: at ±0.6 cell the bands visibly drift in and out while every ring
+// stays where it belongs.
+//
+// It is baked, not computed per frame: `rebuildMagnetRings` extracts the contour
+// pixels once per phase and the draw path just picks the phase, so animating costs
+// one array index per frame rather than a fresh distance-field scan. Wall-clock
+// driven (not tick driven) so the breathing keeps its 0.5s period at any sim speed
+// and keeps going while the sandbox is paused.
+const MAGNET_ANIM_PERIOD_MS = 500;
+const MAGNET_ANIM_PHASES = 8;
+const MAGNET_ANIM_AMP = 0.6; // cells the bands slide out and back
 
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
@@ -346,7 +361,7 @@ export class CanvasRenderer implements Renderer {
    *  only by the bodies and the solids around them, which change on user
    *  timescales — without the cache a steadily powered magnet would re-run
    *  Dijkstra (and reallocate its field) every tick forever. */
-  private magnetPixels: number[] = [];
+  private magnetPixels: number[][] = Array.from({ length: MAGNET_ANIM_PHASES }, () => []);
   /** Grid.tick the magnetPixels cache was built at (-1 = never). */
   private magnetRingsTick = -1;
   /** Fingerprint of the powered-body cell membership the cache was built from
@@ -571,7 +586,7 @@ export class CanvasRenderer implements Renderer {
     this.shocks.length = 0;
     // Same hazard for the cached Electromagnet field rings; rebuilt next frame
     // from whatever Grid.magnetFields then holds.
-    this.magnetPixels.length = 0;
+    for (const phase of this.magnetPixels) phase.length = 0;
     this.magnetRingsTick = -1;
     this.magnetRingsSig = 0;
   }
@@ -1004,7 +1019,13 @@ export class CanvasRenderer implements Renderer {
     if (heat) return; // thermal camera: keep the cache warm, draw nothing
     const buf = this.buf32;
     const cells = grid.cells;
-    const pix = this.magnetPixels;
+    // Which baked phase this frame shows — a full cycle every MAGNET_ANIM_PERIOD_MS
+    // of real time, so the breathing is independent of frame rate, sim speed and
+    // pause state (see the MAGNET_ANIM_* notes).
+    const phase =
+      Math.floor((performance.now() / MAGNET_ANIM_PERIOD_MS) * MAGNET_ANIM_PHASES) %
+      MAGNET_ANIM_PHASES;
+    const pix = this.magnetPixels[phase];
     for (let i = 0; i < pix.length; i++) {
       const gi = pix[i];
       if (cells[gi] === EMPTY) buf[gi] = MAGNET_SHADE; // air-only paint
@@ -1040,7 +1061,7 @@ export class CanvasRenderer implements Renderer {
     grid: Grid,
     q: { bx: number[]; by: number[]; reach: number }[],
   ): void {
-    this.magnetPixels.length = 0;
+    for (const phase of this.magnetPixels) phase.length = 0;
     if (q.length === 0) return;
     const w = grid.width;
     const gap = MAGNET_RING_GAP;
@@ -1103,33 +1124,42 @@ export class CanvasRenderer implements Renderer {
       const K = Math.max(1, Math.floor(m.maxR / gap)); // ring count (bands 1..K)
       const dist = m.dist;
       const bw = m.bw;
-      for (let ly = 0; ly < m.bh; ly++) {
-        const row = ly * bw;
-        for (let lx = 0; lx < bw; lx++) {
-          const d = dist[row + lx];
-          if (d >= SHOCK_INF) continue; // unreachable — shadowed or past the rim
-          const b = (d / gap) | 0;
-          if (b < 1 || b > K) continue; // band 0 hugs the body; no ring there
-          // Ring = the band's inner boundary: some 4-neighbour is in a nearer
-          // band. floor(nd/gap) < b ⟺ nd < b·gap, so no per-neighbour floor —
-          // and an SHOCK_INF neighbour can never read as nearer.
-          const t = b * gap;
-          const on =
-            (lx > 0 && dist[row + lx - 1] < t) ||
-            (lx < bw - 1 && dist[row + lx + 1] < t) ||
-            (ly > 0 && dist[row - bw + lx] < t) ||
-            (ly < m.bh - 1 && dist[row + bw + lx] < t);
-          if (!on) continue;
-          const gx = m.x0 + lx;
-          const gy = m.y0 + ly;
-          // Static positional dither thins the outer rings (fade with distance).
-          const fade = K > 1 ? (b - 1) / (K - 1) : 0;
-          if (fade > 0.75) {
-            if ((gx + gy) % 3) continue;
-          } else if (fade > 0.45) {
-            if ((gx + gy) & 1) continue;
+      // Bake one contour set per animation phase: the bands are cut at
+      // `b·gap + off` instead of `b·gap`, so the whole ring set slides out and back
+      // as `off` sweeps a sine over the phases (see the MAGNET_ANIM_* notes). The
+      // distance field is shared by all of them — only this extraction repeats, and
+      // only when the rings are rebuilt at all.
+      for (let phase = 0; phase < MAGNET_ANIM_PHASES; phase++) {
+        const off = MAGNET_ANIM_AMP * Math.sin((2 * Math.PI * phase) / MAGNET_ANIM_PHASES);
+        const out = this.magnetPixels[phase];
+        for (let ly = 0; ly < m.bh; ly++) {
+          const row = ly * bw;
+          for (let lx = 0; lx < bw; lx++) {
+            const d = dist[row + lx];
+            if (d >= SHOCK_INF) continue; // unreachable — shadowed or past the rim
+            const b = ((d - off) / gap) | 0;
+            if (b < 1 || b > K) continue; // band 0 hugs the body; no ring there
+            // Ring = the band's inner boundary: some 4-neighbour is in a nearer
+            // band. floor((nd-off)/gap) < b ⟺ nd < b·gap + off, so no per-neighbour
+            // floor — and an SHOCK_INF neighbour can never read as nearer.
+            const t = b * gap + off;
+            const on =
+              (lx > 0 && dist[row + lx - 1] < t) ||
+              (lx < bw - 1 && dist[row + lx + 1] < t) ||
+              (ly > 0 && dist[row - bw + lx] < t) ||
+              (ly < m.bh - 1 && dist[row + bw + lx] < t);
+            if (!on) continue;
+            const gx = m.x0 + lx;
+            const gy = m.y0 + ly;
+            // Static positional dither thins the outer rings (fade with distance).
+            const fade = K > 1 ? (b - 1) / (K - 1) : 0;
+            if (fade > 0.75) {
+              if ((gx + gy) % 3) continue;
+            } else if (fade > 0.45) {
+              if ((gx + gy) & 1) continue;
+            }
+            out.push(gy * w + gx);
           }
-          this.magnetPixels.push(gy * w + gx);
         }
       }
     }

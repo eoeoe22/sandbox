@@ -2,6 +2,7 @@ import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
 import { getMaterial } from '../materials/registry';
 import { DIR8 } from './directions';
+import { BodyFlood } from './deviceBody';
 import { SMOKE } from '../materials/smoke';
 import {
   AMBIENT_TEMP,
@@ -162,35 +163,32 @@ export class SimContext {
    * steam is passing through a solid turbine block, its generated pulse walks
    * the whole connected turbine body to reach conductors on the outer faces;
    * without this memo every steam-carrying cell of the block would re-flood the
-   * entire body (O(N²) on a steam-soaked block — its primary use case).
-   * `turbineFlooded` holds the cell indices already covered by a flood this
-   * tick, so each connected body floods at most once per tick (O(N)); it is
-   * cleared whenever `turbineFloodTick` falls behind the current `tick`, so it
-   * self-resets without a per-step allocation. Sim-local (each Simulation has
-   * its own context), so parallel worlds/tests can't cross-contaminate.
+   * entire body (O(N²) on a steam-soaked block — its primary use case). The memo
+   * holds the cell indices already covered by a flood this tick, so each
+   * connected body floods at most once per tick (O(N)), and self-resets on the
+   * first touch of a later tick without a per-step allocation (see BodyFlood).
+   * Sim-local (each Simulation has its own context), so parallel worlds/tests
+   * can't cross-contaminate.
    */
-  turbineFloodTick = -1;
-  turbineFlooded: Set<number> = new Set();
+  readonly turbineFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Woofer's body-flood (materials/woofer.ts) — the
-   * mirror image of `turbineFlooded` above (Turbine floods outward, Woofer
+   * mirror image of `turbineFlood` above (Turbine floods outward, Woofer
    * floods inward). When an external pulse (a direct Battery contact or a
    * relayed Spark) reaches any face of a connected Woofer body, the whole
    * body fires its shockwave at once; this memo keeps a body touched from
    * several directions/sources in the same tick from re-flooding (and
-   * re-firing) once per entry point. Cleared whenever `wooferFloodTick`
-   * falls behind the current `tick`. Sim-local, same reasoning as
-   * `turbineFlooded`.
+   * re-firing) once per entry point. Sim-local, same reasoning as
+   * `turbineFlood`.
    */
-  wooferFloodTick = -1;
-  wooferFlooded: Set<number> = new Set();
+  readonly wooferFlood = new BodyFlood();
 
   /**
    * Per-tick queue of every cell a Woofer's shockwave fired from this tick
-   * (populated by `wooferBodyPulse`, materials/woofer.ts; shares the same
-   * `wooferFloodTick` lazy-reset guard above since both are cleared together
-   * at the start of the same flood). Consumed once by `stepObjects`
+   * (populated by `wooferBodyPulse`, materials/woofer.ts; cleared on the same
+   * lazy tick rollover as `wooferFlood` above, which reports it — see
+   * `BodyFlood.begin` — since both belong to the same flood). Consumed once by `stepObjects`
    * (engine/objects.ts) after the CA scan to shove nearby free rigid bodies
    * — see `applyWooferKnockback` there.
    *
@@ -223,7 +221,7 @@ export class SimContext {
    * `shockRollTick` falls behind the current `tick`.
    *
    * Sim-local rather than module state in blast.ts, same reasoning as
-   * `wooferFlooded`: two Simulations over identically-sized grids run the same
+   * `wooferFlood`: two Simulations over identically-sized grids run the same
    * tick numbers, so a module-level buffer keyed by tick would let one sim's rolls
    * suppress the other's (and break the lockstep-determinism harness).
    */
@@ -232,47 +230,41 @@ export class SimContext {
 
   /**
    * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
-   * `wooferFlooded` above (both are one-way "outside → inside" electric sinks that
+   * `wooferFlood` above (both are one-way "outside → inside" electric sinks that
    * flood the whole connected body from any powered face). When a pulse reaches
    * any face of a connected fan body, every cell's powered countdown is refreshed
    * at once; this memo keeps a body touched from several faces/sources in the same
-   * tick from re-flooding once per entry point. Cleared whenever `fanFloodTick`
-   * falls behind the current `tick`. Sim-local, same reasoning as `wooferFlooded`.
+   * tick from re-flooding once per entry point. Sim-local, same reasoning as
+   * `wooferFlood`.
    */
-  fanFloodTick = -1;
-  fanFlooded: Set<number> = new Set();
+  readonly fanFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Laser's body-flood (materials/laser.ts) — identical in
-   * shape and purpose to `fanFlooded` above: a powered Laser is a one-way
+   * shape and purpose to `fanFlood` above: a powered Laser is a one-way
    * "outside → inside" electric sink whose whole connected body lights up from any
    * powered face, and this keeps a body touched from several faces/sources in the
-   * same tick from re-flooding once per entry point. Cleared whenever
-   * `laserFloodTick` falls behind the current `tick`. Sim-local.
+   * same tick from re-flooding once per entry point. Sim-local.
    */
-  laserFloodTick = -1;
-  laserFlooded: Set<number> = new Set();
+  readonly laserFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Pump's body-flood (materials/pump.ts) — identical in
-   * shape and purpose to `fanFlooded`/`laserFlooded` above: a powered Pump is a
+   * shape and purpose to `fanFlood`/`laserFlood` above: a powered Pump is a
    * one-way "outside → inside" electric sink whose whole connected body spins up
    * from any powered face, and this keeps a body touched from several
-   * faces/sources in the same tick from re-flooding once per entry point. Cleared
-   * whenever `pumpFloodTick` falls behind the current `tick`. Sim-local.
+   * faces/sources in the same tick from re-flooding once per entry point.
+   * Sim-local.
    */
-  pumpFloodTick = -1;
-  pumpFlooded: Set<number> = new Set();
+  readonly pumpFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Electromagnet's body-flood (materials/electromagnet.ts)
-   * — the same one-way "outside → inside" electric sink as `fanFlooded` above,
+   * — the same one-way "outside → inside" electric sink as `fanFlood` above,
    * refreshing the whole connected magnet's powered countdown from any powered
-   * face. Cleared whenever `magnetFloodTick` falls behind the current `tick`.
-   * Sim-local.
+   * face. Sim-local.
    */
-  magnetFloodTick = -1;
-  magnetFlooded: Set<number> = new Set();
+  readonly magnetFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Electromagnet's *attraction field*, which is a separate
@@ -282,12 +274,80 @@ export class SimContext {
    * sweep out of the body's own outline, like the Woofer's geodesic wavefront —
    * so the first body cell the scan reaches does the work and records every cell
    * of that body here, letting the rest of the body no-op instead of re-sweeping
-   * the same field once per cell (O(N²) on a big magnet). Cleared whenever
-   * `magnetFieldTick` falls behind the current `tick`. Sim-local, same reasoning
-   * as `wooferFlooded`.
+   * the same field once per cell (O(N²) on a big magnet). Sim-local, same
+   * reasoning as `wooferFlood`.
    */
-  magnetFieldTick = -1;
-  magnetFielded: Set<number> = new Set();
+  readonly magnetField = new BodyFlood();
+
+  /**
+   * Cells whose occupant a live magnet moved or held this tick and last tick — the
+   * field's **gravity override** (자력 영향 시 중력 오버라이드).
+   *
+   * A magnet's pull runs inside the magnet cell's own update, which the CA scan may
+   * reach long after the grain it is gripping. Without this, a grain under a magnet
+   * took its own gravity step on every tick the scan reached it first and was
+   * yanked back on the next — the visible shiver on a magnet's underside. Marking
+   * the grain moved only settles the *rest* of the current tick; this carries the
+   * grip into the next one, where `Simulation.updateCell` skips the held cell's own
+   * update entirely (no fall, no crawl) and leaves it to the magnet, which pulls it
+   * exactly one cell closer. Matter the field grips therefore moves only as the
+   * field moves it — which is also what already made a held clump stop reacting
+   * (see the header note in electromagnet.ts on holding).
+   *
+   * Two tick-keyed maps rather than one: the stamp has to survive into the next
+   * tick (that's the whole point), so the previous tick's is kept and rolled over
+   * lazily on first touch of a new tick. A magnet that loses power stops stamping,
+   * so its grains resume falling one tick later. Sim-local, same reasoning as
+   * `wooferFlood`.
+   *
+   * Each entry records *what* was gripped, not just where. A grip is a claim on a
+   * grain, but the only handle a CA has on a grain is the cell it sits in, and a
+   * cell can change hands between ticks — the player erases the filing and paints
+   * something else into it, or another grain arrives. Storing the material id and
+   * requiring it to match means a grip can only ever apply to the same kind of
+   * matter it was taken out on; anything else in that cell behaves normally
+   * (a cell that changes from Metal Powder to Water, or to Iron Ore, is not held).
+   * A grain of the *same* material moving into the cell is indistinguishable from
+   * the one that was there, and is left held for that one tick — harmless, since a
+   * live magnet grips it on the same tick anyway.
+   */
+  private magnetHoldTick = -1;
+  private magnetHoldCur: Map<number, number> = new Map();
+  private magnetHoldPrev: Map<number, number> = new Map();
+
+  /** Roll the hold sets over if they're still holding an earlier tick's state. */
+  private rollMagnetHold(): void {
+    if (this.magnetHoldTick === this.tick) return;
+    const stale = this.magnetHoldPrev;
+    this.magnetHoldPrev = this.magnetHoldCur;
+    this.magnetHoldCur = stale;
+    stale.clear();
+    this.magnetHoldTick = this.tick;
+  }
+
+  /** Claim (x,y)'s occupant for the magnetic field: it skips its own update next
+   *  tick, so gravity can't fight the pull (see the field note above). The claim is
+   *  recorded against whatever material is in the cell right now, and only that
+   *  material can redeem it. */
+  holdMagnetically(x: number, y: number): void {
+    this.rollMagnetHold();
+    const i = y * this.grid.width + x;
+    this.magnetHoldCur.set(i, this.grid.cells[i]);
+  }
+
+  /** Whether any magnet is currently gripping anything — the cheap gate
+   *  `Simulation.updateCell` tests before paying for a lookup, so a world with no
+   *  powered magnet never touches this at all. */
+  get magnetGripping(): boolean {
+    this.rollMagnetHold();
+    return this.magnetHoldCur.size > 0 || this.magnetHoldPrev.size > 0;
+  }
+
+  /** Is the cell at flat index `i`, holding material `id`, gripped by a magnet this
+   *  tick or the last one? False when the cell has changed hands since (see above). */
+  isMagnetHeld(i: number, id: number): boolean {
+    return this.magnetHoldCur.get(i) === id || this.magnetHoldPrev.get(i) === id;
+  }
 
   /**
    * True once any Fan has stamped the wind field this tick (see setWind / Grid.wind).

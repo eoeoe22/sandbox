@@ -1,8 +1,8 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
+import { floodDeviceBody } from '../engine/deviceBody';
 
 // Pump (펌프) — a porous machine block that moves LIQUID and POWDER against
 // gravity. Gravity, a Conveyor and a Fan's gust were the only ways to move
@@ -43,9 +43,11 @@ import type { SimContext } from '../engine/SimContext';
 // (`Material.directPulse` = `energizePumpBody`), and every pulse source — a
 // Battery/LFP Battery/Turbine in contact or a Spark relayed down a wire —
 // dispatches it through the shared `reactToPulse` (spark.ts). Current reaching any
-// face floods the connected pump body (4-connected) and refreshes a *powered
-// countdown* on every cell at once, generous enough (POWERED_TICKS) to bridge the
-// quiet ticks between a Battery's periodic pulses so the flow doesn't stutter.
+// face floods the connected pump body (4-connected, via the shared
+// `floodDeviceBody` — 전기 세기에 관계없이 연결 부위 전역 즉시 활성화, see
+// engine/deviceBody.ts) and refreshes a *powered countdown* on every cell at once,
+// generous enough (POWERED_TICKS) to bridge the quiet ticks between a Battery's
+// periodic pulses so the flow doesn't stutter.
 //
 // Like the Electromagnet — and unlike the Fan/Laser — the pump has no direction to
 // record, so its whole `aux` byte is the countdown and the renderer draws
@@ -57,12 +59,6 @@ import type { SimContext } from '../engine/SimContext';
  *  Electromagnet; the whole aux byte is the countdown here, so there's no packing
  *  limit to respect. */
 const POWERED_TICKS = 24;
-
-/** Backstop on how far one flood walks the connected pump body in a single pass —
- *  mirrors the Fan/Laser/Turbine/Woofer MAX_BODY so a giant pump wall can't make
- *  one pulse unbounded (a larger body is covered across several capped floods a
- *  tick, each memoized in SimContext.pumpFlooded). */
-const MAX_BODY = 256;
 
 /** How far down the intake reaches through the column of matter standing under
  *  the pump's foot to take its cell (see `sourceY`). Long enough for a tank worth
@@ -279,44 +275,21 @@ function updatePump(x: number, y: number, sim: SimContext): void {
 }
 
 /**
- * Deliver a power pulse to the connected pump body containing (sx,sy): flood it
- * through pump cells (4-connected) and refresh every cell's powered countdown to
- * POWERED_TICKS. A one-way sink — a pulse only ever *arrives* here (see the
- * header) — so power reaching any face energizes the whole structure. Memoized per
- * tick via SimContext.pumpFlooded so a body touched from several faces/sources in
- * one tick still floods exactly once. Called from the pulse sources (battery.ts,
- * spark.ts) via the shared reactToPulse, the same way the Fan's, Laser's and
- * Electromagnet's body pulses are.
+ * Deliver a power pulse to the connected pump body containing (sx,sy): flood the
+ * whole thing through pump cells (4-connected, `floodDeviceBody`) and refresh
+ * every cell's powered countdown to POWERED_TICKS. A one-way sink — a pulse only
+ * ever *arrives* here (see the header) — so power reaching any face spins up the
+ * entire structure at once, at full effect whatever strength the arriving pulse
+ * had left. Memoized per tick via SimContext.pumpFlood so a body touched from
+ * several faces/sources in one tick still floods exactly once. Called from the
+ * pulse sources (battery.ts, spark.ts) via the shared reactToPulse, the same way
+ * the Fan's, Laser's and Electromagnet's body pulses are.
  */
 export function energizePumpBody(sim: SimContext, sx: number, sy: number): void {
-  if (sim.tick !== sim.pumpFloodTick) {
-    sim.pumpFloodTick = sim.tick;
-    sim.pumpFlooded.clear();
-  }
-  const w = sim.width;
-  const startIdx = sy * w + sx;
-  if (sim.pumpFlooded.has(startIdx)) return;
-
-  const seen = new Set<number>([startIdx]);
-  const stack: number[] = [sx, sy];
-  let count = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
-    const cy = stack.pop()!;
-    const cx = stack.pop()!;
-    count++;
-    sim.pumpFlooded.add(cy * w + cx);
+  floodDeviceBody(sim, sx, sy, PUMP.id, sim.pumpFlood, (x, y) => {
     // The whole aux byte is the countdown — a pump has no direction to preserve.
-    sim.setAux(cx, cy, POWERED_TICKS);
-    for (const [dx, dy] of DIR4) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== PUMP.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k) || sim.pumpFlooded.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
-  }
+    sim.setAux(x, y, POWERED_TICKS);
+  });
 }
 
 export const PUMP = register({

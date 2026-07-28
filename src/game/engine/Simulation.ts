@@ -42,6 +42,9 @@ export class Simulation {
   private lifeP: Float32Array;
   /** What a decaying life-tagged material turns into, per id (default Empty). */
   private lifeInto: Uint8Array;
+  /** 1 for a `Material.magnetic` id — the only occupants an Electromagnet's grip
+   *  applies to, checked before honouring a hold (see updateCell). */
+  private magneticId: Uint8Array;
   /** Rolling cursor into the background tint field, so each tick drifts a
    *  different 1/STRIDE slice of it (see driftBackground). */
   private bgCursor = 0;
@@ -52,7 +55,9 @@ export class Simulation {
     this.cond = new Float32Array(256).fill(DEFAULT_CONDUCTIVITY);
     this.lifeP = new Float32Array(256);
     this.lifeInto = new Uint8Array(256);
+    this.magneticId = new Uint8Array(256);
     for (const m of allMaterials()) {
+      if (m.magnetic) this.magneticId[m.id] = 1;
       this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
       if (m.life) {
         // Memoryless decay: P(decay this tick) = 1/ticks gives a mean lifetime of
@@ -489,8 +494,20 @@ export class Simulation {
   private updateCell(x: number, y: number): void {
     const g = this.grid;
     const i = g.idx(x, y);
-    if (!g.moved[i]) {
-      const id = g.cells[i];
+    // A cell a live Electromagnet is gripping skips its own turn entirely — the
+    // field's gravity override (see SimContext.isMagnetHeld). It doesn't fall,
+    // crawl or react; the magnet moves it, one cell along the field, when the
+    // magnet's own cell is scanned. Gated on `magnetGripping` so a world without a
+    // powered magnet pays a single boolean for it. The `magneticId` test is the
+    // cheap half of "is this grip actually this cell's": only magnetic matter is
+    // ever gripped, so anything else skips the lookup entirely; `isMagnetHeld` then
+    // checks the grip was taken out on this very material, since a cell can change
+    // hands between ticks — the player erases the held filing and paints something
+    // else in, or another grain arrives (see SimContext's note).
+    const id = g.cells[i];
+    const held =
+      this.magneticId[id] === 1 && this.ctx.magnetGripping && this.ctx.isMagnetHeld(i, id);
+    if (!g.moved[i] && !held) {
       if (id !== EMPTY) {
         // Generalized lifetime (Material.life): a memoryless per-tick decay into
         // its successor material. A cell that decays this tick is done — it skips
