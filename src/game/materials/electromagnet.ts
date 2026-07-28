@@ -17,9 +17,11 @@ import type { SimContext } from '../engine/SimContext';
 //
 // ## The field
 //
-// The pull is a breadth-first sweep out of the magnet body's own outline (the
-// same geodesic-distance idea the Woofer's shockwave uses, see woofer.ts), not a
-// radius from a point. Two consequences fall out of that and both are wanted:
+// The pull is a geodesic (octile) shortest-path sweep out of the magnet body's own
+// outline — the same distance field the Woofer's shockwave and the renderer's own
+// 자기력선 rings use — not a radius from a point (see `pullField` for why the
+// metric is octile and not hop count). Two consequences fall out of that and both
+// are wanted:
 //
 //   • **Solids block it.** The sweep only spreads through matter it could pull
 //     something *through* — air, gas, liquid, powder, crawlers — so a structural
@@ -108,20 +110,21 @@ const REACH = 10;
 const MAX_FIELD_CELLS = 65536;
 
 // ── Sweep scratch ────────────────────────────────────────────────────────────
-// Reused across sweeps to keep a per-tick pull from allocating three containers
-// per magnet (the field runs EVERY tick the countdown is live, unlike the flood,
-// which only runs on a pulse). Safe as module state precisely because it never
-// outlives a single synchronous `pullField` call: it is cleared on entry and read
-// only before returning, so two Simulations sharing this module can't leak state
-// into each other the way a tick-keyed cache would (see SimContext.wooferFlood's
-// note on exactly that hazard).
 /** The sweep works over a *local field box* — the body's bounding box grown by
  *  REACH, clipped to the grid — indexed li = (y-ly0)*lbw + (x-lx0). Flat typed
- *  arrays over that box rather than Maps keyed by cell: this runs every tick a
- *  magnet is powered, and the hash containers it replaced cost about twice the
- *  whole sweep. The arrays are module scratch, grown on demand and never cleared:
- *  a per-sweep generation stamp says which entries belong to the current sweep, so
- *  a sweep costs its own cells and not the box's area.
+ *  arrays over that box rather than Maps keyed by cell, because this runs EVERY
+ *  tick a magnet is powered (unlike the power flood, which only runs on a pulse),
+ *  so nothing here should allocate or hash per cell. They are module scratch,
+ *  grown on demand and never cleared: a per-sweep generation stamp says which
+ *  entries belong to the current sweep, so a sweep costs its own cells and not the
+ *  box's area.
+ *
+ *  Worth being straight about what this bought: it pays for *part* of the octile
+ *  Dijkstra that replaced the old hop-count BFS, not all of it. Interleaved
+ *  measurement against the BFS (medians of 3 rounds): a 60×3 bar 0.64 → 0.84
+ *  ms/tick, a 20×20 block 0.58 → 0.68, an 8×8 0.24 → 0.29. The heap's push/pop and
+ *  re-relaxation are simply more work than a queue, and correct pull directions are
+ *  what that buys (see `pullField`).
  *
  *  Safe as module state for the same reason the old containers were: nothing here
  *  outlives a single synchronous `pullField` call — the generation is bumped on
@@ -326,6 +329,7 @@ function pullField(
   const relax = (x: number, y: number, d: number, par: number): void => {
     if (d > REACH || x < lx0 || x > lx1 || y < ly0 || y > ly1) return;
     const li = (y - ly0) * lbw + (x - lx0);
+    if (fSettled[li] === fGen) return; // already final — Dijkstra can't improve it
     if (fStamp[li] === fGen) {
       if (fDist[li] <= d) return; // already on a path at least as short
     } else {
