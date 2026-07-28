@@ -130,6 +130,16 @@ const SHOCK_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // the field shows through as itself, visibly being tugged.
 const MAGNET_SHADE = rgb(159, 168, 255); // single flat periwinkle — 단색
 const MAGNET_RING_GAP = 3; // geodesic cells between successive contour rings
+// Sim ticks between distance-field rebuilds while a magnet stays powered. The
+// rings only change when the *solids* around the body change (matter the field
+// passes through never shapes them), and solids change on user timescales, not
+// per tick — so a steadily powered magnet must not re-run Dijkstra every tick
+// the way a naive tick-keyed cache would (the sweep allocates its field and
+// heap fresh each build). At 8 ticks a wall drawn into the field re-shadows the
+// rings within ~a quarter second, well under noticing, while the rebuild cost
+// drops to noise. Body-count changes still rebuild immediately (power-off must
+// drop rings the same tick), and shape-only edits to a body ride this period.
+const MAGNET_REBUILD_TICKS = 8;
 
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
@@ -326,11 +336,12 @@ export class CanvasRenderer implements Renderer {
   }[] = [];
   /** Live Electromagnet field rings — one distance field per powered magnet body
    *  (same drawable shape the Woofer shockwaves use), rebuilt from
-   *  Grid.magnetFields when the sim tick advances and repainted every rendered
-   *  frame. Cached across frames because the effect is static while the sim
-   *  is (multiple frames render per tick, and a paused sim renders many): the
-   *  Dijkstra runs once per tick per body, not once per frame. `age` is unused
-   *  here (the rings don't animate). */
+   *  Grid.magnetFields when the body count changes or MAGNET_REBUILD_TICKS of
+   *  sim time pass, and repainted every rendered frame. Cached across both
+   *  frames and ticks because the rings are shaped only by the body and the
+   *  solids around it, which change on user timescales — without the cache a
+   *  steadily powered magnet would re-run Dijkstra (and reallocate its field)
+   *  every tick forever. `age` is unused here (the rings don't animate). */
   private magnetRings: {
     dist: Float64Array;
     x0: number;
@@ -951,15 +962,28 @@ export class CanvasRenderer implements Renderer {
    * the field fades with distance in pure pixel art; everything is the one flat
    * MAGNET_SHADE (단색). The list is read, not drained — the sim re-stamps it
    * every powered tick and clears it when power lapses — and the distance
-   * fields are rebuilt only when the sim tick advances (or the body count
-   * changes), then repainted each frame: a paused sim keeps its rings without
-   * re-running Dijkstra per frame. Painted on empty air only, so matter in the
-   * field shows through as itself; skipped entirely in the thermal camera.
+   * fields are rebuilt only when the body count changes or every
+   * MAGNET_REBUILD_TICKS of sim time (see the constant for why not per tick),
+   * then repainted each frame: both a paused sim and a steadily powered one
+   * keep their rings without re-running Dijkstra. Painted on empty air only,
+   * so matter in the field shows through as itself; skipped entirely in the
+   * thermal camera.
    */
   private drawMagnetFields(grid: Grid, heat: boolean): void {
     const q = grid.magnetFields;
     if (q.length === 0 && this.magnetRings.length === 0) return;
-    if (grid.tick !== this.magnetRingsTick || q.length !== this.magnetRings.length) {
+    // Rebuild the distance fields only when the body count changes (a magnet
+    // powered on/off — rings must appear/vanish that same tick) or every
+    // MAGNET_REBUILD_TICKS of sim time (solids drawn into the field re-shadow
+    // it on that cadence; see the constant). A paused sim never advances the
+    // tick, so it repaints from cache indefinitely; a tick that moved
+    // *backwards* (a reset/load rewound the sim clock) also rebuilds, since
+    // the elapsed-ticks test can't be trusted across it.
+    if (
+      q.length !== this.magnetRings.length ||
+      grid.tick - this.magnetRingsTick >= MAGNET_REBUILD_TICKS ||
+      grid.tick < this.magnetRingsTick
+    ) {
       this.magnetRings.length = 0;
       for (const f of q) {
         const field = this.buildShockField(grid, f.bx, f.by, f.reach);
