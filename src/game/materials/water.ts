@@ -7,6 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
 import { ICE } from './ice';
 import { SNOW } from './snow';
+import { lavaTouching } from './lava';
 
 // Liquid: falls and spreads sideways to find its level (updateLiquid). Lighter
 // than sand, so sand displaces it. Water also flashes to Steam once the
@@ -107,6 +108,17 @@ function updateWater(x: number, y: number, sim: SimContext): void {
 
   const t = sim.getTemp(x, y);
   if (t >= WATER_BOIL_TEMP) {
+    if (lavaTouching(x, y, sim)) {
+      // Touching Lava head-on: this cell is the heat sink for an Obsidian
+      // quench, and the quench turns it to Steam itself (see lava.ts). Boiling
+      // here instead would just be a race against the neighboring lava cell's
+      // turn in the same tick's scan — and a race it wins or loses purely by
+      // direction, so water on one side of a lava body would make Obsidian and
+      // water on the other side never would. Yield the cell to the quench; it
+      // costs at most one tick, after which the neighbor is no longer Lava and
+      // this boils exactly as it always has.
+      return;
+    }
     if (burningPetroleumAdjacent(x, y, sim)) {
       sim.setTemp(x, y, WATER_SURFACE_CAP);
     } else {
