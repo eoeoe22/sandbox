@@ -10,7 +10,10 @@ import { LAVA } from './lava';
 // instead of insulating the molten lava beneath — which also means Stone
 // sitting against Lava (or otherwise heated past STONE_MELT_TEMP) eventually
 // melts back into Lava itself, mirroring Lava's own freeze-to-Stone reaction.
-const STONE_MELT_TEMP = 1100;
+// Exported because Obsidian (obsidian.ts) deliberately melts at *exactly* the
+// same point — sharing the constant instead of copying the number keeps the two
+// rocks from silently drifting apart if this is ever retuned.
+export const STONE_MELT_TEMP = 1100;
 
 function updateStone(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= STONE_MELT_TEMP) {

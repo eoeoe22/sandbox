@@ -8,6 +8,7 @@ import { WALL } from './wall';
 import { SAND } from './sand';
 import { WATER } from './water';
 import { STONE } from './stone';
+import { OBSIDIAN } from './obsidian';
 import { SALTWATER } from './saltwater';
 import { SMOKE } from './smoke';
 import { SALT } from './salt';
@@ -127,6 +128,7 @@ export {
   SAND,
   WATER,
   STONE,
+  OBSIDIAN,
   SALTWATER,
   SMOKE,
   SALT,
@@ -276,6 +278,7 @@ export const MATERIALS = [
   SAND,
   WATER,
   STONE,
+  OBSIDIAN,
   SALTWATER,
   SUGAR_WATER,
   SMOKE,
