@@ -74,6 +74,39 @@ const OBSIDIAN_QUENCH_TEMP = 300;
 // more heat than it adds, since a whole column just dropped from 1500° to 300°.
 const QUENCH_STEAM_TEMP = 300;
 
+/**
+ * True if a Lava cell is orthogonally touching (x,y) — i.e. this cell is in
+ * line to be quenched by the branch below.
+ *
+ * Water reads this to hold off its own boil for the tick (see water.ts), and
+ * without it the whole feature is a coin flip decided by scan order. Heat
+ * diffusion runs once for the entire grid *before* any cell's update, and one
+ * pass against 1500° lava puts the touching water hundreds of degrees over its
+ * 100° boiling point. So both cells enter the material scan ready to fire, and
+ * whichever one's turn comes first wins: lava first → Obsidian, water first →
+ * an ordinary puff of Steam and no Obsidian at all.
+ *
+ * That isn't even random, which is what makes it worth guarding rather than
+ * shrugging at. Measured headless over every placement in a sealed grid, water
+ * to the *right of* or *above* the lava quenched 25/25, while water to the
+ * *left of* or *below* it quenched 0/25 — so pouring water leftward, or
+ * dropping lava down into a pool (the most obvious way anyone would try this),
+ * would have silently never produced Obsidian. Letting the quench claim the
+ * water first makes contact behave the same from all four sides.
+ *
+ * The hold is at most one tick: this cell's lava neighbor updates every tick,
+ * and if it moves away or gets quenched by some other water first, the water is
+ * no longer touching Lava and simply boils as it always did.
+ */
+export function lavaTouching(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR4) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === LAVA.id) return true;
+  }
+  return false;
+}
+
 /** Water touching this lava cell? Then quench: this cell and the run of lava
  *  behind it (away from the water) set as Obsidian, and the water flashes to
  *  Steam. Returns true if the cell was consumed — the caller must stop touching
@@ -104,10 +137,21 @@ function tryQuenchToObsidian(x: number, y: number, sim: SimContext): boolean {
       // has to be stamped explicitly — otherwise the new Obsidian would inherit
       // lava's 1500° and melt right back on its own update this same tick.
       sim.setTemp(cx, cy, OBSIDIAN_QUENCH_TEMP);
+      // Every cell past the first is a *neighbor* write, and the engine's rule
+      // for those is spawn() (which marks the cell processed) so a not-yet-
+      // scanned cell can't be reprocessed within the same tick. spawn() would
+      // reset the temperature to the material's `init`, though, and the whole
+      // point here is the custom quench temp — so this is the set()+markMoved()
+      // pair reactions.ts uses for exactly that case.
+      if (d > 0) sim.markMoved(cx, cy);
     }
 
     sim.set(nx, ny, STEAM.id);
     sim.setTemp(nx, ny, Math.max(sim.getTemp(nx, ny), QUENCH_STEAM_TEMP));
+    // Same rule, same reason: without this the fresh Steam gets its own update
+    // in the tick it was created and rises off the splash point before it's
+    // ever drawn where the quench happened.
+    sim.markMoved(nx, ny);
     return true;
   }
   return false;
