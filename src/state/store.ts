@@ -16,6 +16,7 @@ import {
   HEAT_RATE_MODE_DEFAULT,
   HEAT_ABS_RATE_DEFAULT,
   HEAT_REL_RATE_DEFAULT,
+  SNAPSHOT_FIT_DEFAULT,
 } from '../game/config';
 import type {
   SimSpeed,
@@ -24,6 +25,7 @@ import type {
   CellScale,
   GridDivision,
   HeatRateMode,
+  SnapshotFit,
 } from '../game/config';
 import type { BorderMode } from '../game/engine/types';
 import type { InspectStats } from '../game/engine/brushTools';
@@ -295,6 +297,13 @@ export const $favorites = atom<number[]>([]);
  */
 export const $recentMaterials = atom<number[]>([]);
 
+/**
+ * How a loaded snapshot is fitted onto the current sandbox when the sizes differ
+ * (see SNAPSHOT_FITS). Sticky across sessions: a user on a phone loading shared
+ * scenes wants the same answer every time, not a per-load decision.
+ */
+export const $snapshotFit = atom<SnapshotFit>(SNAPSHOT_FIT_DEFAULT);
+
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
@@ -369,4 +378,5 @@ export const resetSettings = (): void => {
   $heatOverlay.set(false);
   $gridDivision.set(GRID_DIVISION_DEFAULT);
   $bottomDeadzone.set(BOTTOM_DEADZONE_DEFAULT);
+  $snapshotFit.set(SNAPSHOT_FIT_DEFAULT);
 };

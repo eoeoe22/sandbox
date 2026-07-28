@@ -415,3 +415,22 @@ export const FIRE_SMOKE_CHANCE = 0.3;
  */
 export const BLEND_MAX_SLOTS = 3;
 export const BLEND_RATIO_STEP = 5;
+
+/**
+ * How a saved snapshot is fitted onto the live canvas when the two grids don't
+ * match. Every user runs a different aspect ratio and resolution, so a shared
+ * save is almost never the size of the sandbox it lands in.
+ *
+ * - `fit`     — rescale preserving the aspect ratio so the whole scene is
+ *               visible, horizontally centered and floor-aligned (leftover area
+ *               stays empty). The default: nothing the author built is lost.
+ * - `stretch` — rescale each axis independently to fill the canvas edge to edge.
+ *               No empty margin, but a different aspect ratio distorts the scene.
+ * - `crop`    — no rescale at all. Cells keep their original size and the part
+ *               that doesn't fit is cut off (bottom-left anchored, the same rule
+ *               a window resize uses). Pixel-exact for the region that fits.
+ */
+export type SnapshotFit = 'fit' | 'stretch' | 'crop';
+/** Selectable fit modes, in the order the load UI shows them. */
+export const SNAPSHOT_FITS: readonly SnapshotFit[] = ['fit', 'stretch', 'crop'];
+export const SNAPSHOT_FIT_DEFAULT: SnapshotFit = 'fit';

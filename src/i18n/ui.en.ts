@@ -290,6 +290,7 @@ export const en = {
   // --- Save slots ---
   save: {
     namePlaceholder: 'Save name (blank for auto)',
+    descPlaceholder: 'Description (optional)',
     saveAria: 'Save the current canvas',
     save: 'Save',
     limitExceeded: 'Save limit (50) exceeded — delete an existing snapshot',
@@ -298,19 +299,46 @@ export const en = {
     loadOk: 'Load complete',
     loadFailed: 'Load failed',
     loadTooltip: 'Load',
-    renameTooltip: 'Rename',
+    renameTooltip: 'Edit name / description',
     deleteTooltip: 'Delete',
     deleteConfirm: 'Delete "{name}"?',
     deleted: '"{name}" deleted',
-    renameFailed: 'Rename failed (storage is full)',
+    renameFailed: 'Save failed (storage is full)',
     loadAria: 'Load "{name}"',
-    renameAria: 'Rename "{name}"',
+    renameAria: 'Edit "{name}"',
     deleteAria: 'Delete "{name}"',
     viewToggleGroup: 'Snapshot view mode',
     galleryTooltip: 'Gallery view',
     listTooltip: 'List view',
-    empty: 'No saved snapshots. Save the current sandbox state.',
-    hint: 'Saved snapshots are kept locally in the browser. They load onto the current canvas even if the screen size differs.',
+    empty: 'No saved snapshots. Save the current sandbox state, or import a file.',
+    hint: 'Saved snapshots are kept locally in the browser. They load onto the current canvas even if the screen size differs — pick how above.',
+
+    // --- File export / import ---
+    fitGroup: 'Fit mode when loading',
+    fitLabel: 'Fit',
+    fit: {
+      fit: 'Scale to fit',
+      fitTooltip:
+        'Scale the whole scene to fit, keeping its aspect ratio. Nothing is cut off; leftover area stays empty. Heavy downscaling merges cells, so thin structures (a 1-cell wire) can break.',
+      stretch: 'Stretch',
+      stretchTooltip:
+        'Stretch each axis to fill the canvas edge to edge. No empty margin, but a different aspect ratio distorts the scene.',
+      crop: 'Original size',
+      cropTooltip:
+        "Keep the original cell size and cut off whatever doesn't fit (anchored bottom-left). Pixel-exact for the part that fits.",
+    },
+    exportTooltip: 'Export to a file',
+    exportAria: 'Export "{name}" to a file',
+    exported: '"{name}" exported',
+    exportFailed: 'Export failed',
+    import: 'Import file',
+    importTooltip: 'Add a .psbx.json snapshot file to the list (the canvas is not touched)',
+    imported: '"{name}" added to the list',
+    importInvalid: 'Not a snapshot file (or it is corrupt)',
+    importTooBig: 'File is too large',
+    importReadFailed: 'Could not read the file',
+    importLimit: 'Save limit (50) exceeded — delete an existing snapshot',
+    importFailed: 'Import failed (storage is full)',
   },
 
   // --- Language selector ---
