@@ -304,6 +304,10 @@ export class CanvasRenderer implements Renderer {
    *  the ordinary single-colour material (Firework Burst — see
    *  Material.auxPalette). */
   private auxPalette: (Uint32Array | null)[];
+  /** id → the fixed colour set each PARTICLE picks from by its own `tint` byte,
+   *  or null for the ordinary single-colour material (Fireworks — see
+   *  Material.tintPalette). */
+  private tintPalette: (Uint32Array | null)[];
   /** id → freezing point; a cell of a `freeze` material at/below this temperature
    *  is drawn frosted (see Material.freeze). -Infinity for materials that never
    *  freeze, so the per-cell `temp <= freezeTemp` test never matches them. */
@@ -446,6 +450,7 @@ export class CanvasRenderer implements Renderer {
     this.varyMode = new Uint8Array(256);
     this.renderAsAux = new Uint8Array(256);
     this.auxPalette = new Array(256).fill(null);
+    this.tintPalette = new Array(256).fill(null);
     this.freezeTemp = new Float32Array(256).fill(-Infinity);
     this.frost = new Uint32Array(256);
     this.hasLattice = new Uint8Array(256);
@@ -471,6 +476,7 @@ export class CanvasRenderer implements Renderer {
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
         if (m.auxPalette) this.auxPalette[i] = Uint32Array.from(m.auxPalette);
+        if (m.tintPalette) this.tintPalette[i] = Uint32Array.from(m.tintPalette);
         if (m.packedTemp) this.packed[i] = 1;
         if (m.overlayTemp !== undefined) this.overlayTemp[i] = m.overlayTemp;
         if (m.lattice !== undefined) {
@@ -645,6 +651,7 @@ export class CanvasRenderer implements Renderer {
     const mode = this.varyMode;
     const asAux = this.renderAsAux;
     const auxPal = this.auxPalette;
+    const tintPal = this.tintPalette;
     const freezeTemp = this.freezeTemp;
     const frost = this.frost;
     const hasLat = this.hasLattice;
@@ -726,8 +733,21 @@ export class CanvasRenderer implements Renderer {
       // whole volley of differently-coloured flowers (see Material.auxPalette).
       // The modulo means a stale/garbage aux still lands on a real colour rather
       // than reading past the array.
+      const tintPal3 = tintPal[id];
       if (pal8) {
         c = pal8[auxArr[i] % pal8.length];
+      } else if (tintPal3) {
+        // A multi-coloured *particle* material (Fireworks): each grain draws the
+        // palette entry its own stable tint byte names, so a pile is a speckle of
+        // genuinely different colours instead of one hue at different brightnesses
+        // (see Material.tintPalette). The ordinary brightness grain rides on top of
+        // the chosen colour, exactly as it does over the checkerboard branch below.
+        // Indexing by `% n` rather than banding the byte keeps the colour
+        // uncorrelated with the `liquidOverlap` split read off the same byte.
+        const t = tintArr[i];
+        c = tintPal3[t % tintPal3.length];
+        const amp = vary[id];
+        if (amp !== 0) c = CanvasRenderer.tinted(c, ((t - TINT_NEUTRAL) * amp) >> 7);
       } else if (arrow[id]) {
         // A directional-arrow material (Conveyor) draws a chevron pointing the way
         // its aux byte says it runs, so the belt's travel direction is visible. The

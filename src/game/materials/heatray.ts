@@ -32,8 +32,9 @@ import { DIAMOND } from './diamond';
 //     `Material.lightPulse`) CONVERTS it: the beam is swallowed on contact and
 //     the material's hook runs instead of any heating, so the struck cell stays
 //     cold while the panel pushes a Spark into whatever conductor touches it.
-//     Checked before the absorb/reflect branch, so a new light-driven material
-//     opts in with that one tag and nothing here changes.
+//     Checked before the opaque-solid absorb/reflect branch (but after the gas and
+//     liquid ones, which no solid ever reaches), so a new light-driven SOLID opts
+//     in with that one tag and nothing here changes.
 //   • Reflective metals (Mercury, Iron, Heatpipe, Gallium, Liquid Gallium — any
 //     material flagged `laserReflective`) are MIRRORS: the beam reflects off them
 //     cleanly (정반사, no scatter), so a metal surface aims the beam. New shiny

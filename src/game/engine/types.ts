@@ -285,6 +285,30 @@ export interface Material {
    */
   shockLoose?: boolean;
   /**
+   * 물질이 아님 — an *effect* cell rather than matter (a firework's coloured
+   * flower), which a blast front passes straight over as if it weren't there: it
+   * is neither destroyed, nor flashed, nor shoved aside as Debris, and it simply
+   * keeps running its own lifetime. This is the tagged form of the treatment
+   * blast.ts already hard-codes for its own shockwave flash and for a Debris
+   * fragment in flight — both cases where "resolving" the cell is meaningless
+   * because there's no matter there to resolve.
+   *
+   * Distinct from `explosionProof`, which is about *armor*: a 방폭 solid STOPS the
+   * front and shadows what's behind it, whereas a `blastInert` cell is transparent
+   * to it — the front flows through and keeps going.
+   *
+   * The load-bearing part is the *shove*: a fragment carries its origin material
+   * in `aux`, which for an effect cell either means nothing or (for an
+   * `auxPalette` material) collides with the aux meaning it already has. Tagging
+   * is also strictly safer than the alternative of making the cell trivially
+   * destructible: routing an effect cell through the destroy path leaves a real
+   * `BLAST` flash behind, which decays into stray Fire and reads as a detonation
+   * trigger to every charge that watches for an adjacent flash — so a
+   * *non-destructive* pulse (a Woofer's) could set off a stockpile it must never
+   * be able to reach.
+   */
+  blastInert?: boolean;
+  /**
    * 충격파 노출 시 사망 확률, 0..1 — the chance that a shockwave too weak to *break*
    * this material kills the cell outright anyway, leaving `blastDeathId` behind
    * instead of flinging it (a Termite's fragile body being crushed by the pressure
@@ -516,6 +540,27 @@ export interface Material {
    * aux value as an opaque index. Omit for an ordinary single-colour material.
    */
   auxPalette?: readonly number[];
+  /**
+   * Draw each *particle* in one of a fixed set of colors, picked by its own stable
+   * `tint` byte (`tintPalette[tint % tintPalette.length]`) instead of the
+   * material's `color` — so a pile of it is a speckle of genuinely different
+   * colors rather than one hue at different brightnesses, which is all
+   * `colorVary` can express. The Fireworks powder uses it (coral red / grey /
+   * light ivory).
+   *
+   * `tint` is the right plane for this and `aux` is not: it's seeded once when a
+   * grain is created, never re-rolled, and travels with the grain on every swap
+   * (see game/tint.ts), so a grain keeps its color for life while `aux` would be
+   * cleared by the next `spawn` and is already spoken for by half the roster.
+   * Indexing by `tint % n` (rather than banding the byte) also keeps the color
+   * uncorrelated with the other per-grain decision read off the same byte — the
+   * `liquidOverlap` threshold split.
+   *
+   * `colorVary` still applies on top, so grains of one palette color keep a
+   * little brightness grain. Purely a rendering hint; the simulation never reads
+   * it. Two readings of one byte can't coexist, so don't set this with `glow`.
+   */
+  tintPalette?: readonly number[];
   /**
    * Draw a photovoltaic cell grid (Solar Panel): rectangular cells of the base
    * `color` separated by thin `lattice`-coloured seams — a seam on every 5th

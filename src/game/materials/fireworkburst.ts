@@ -56,16 +56,17 @@ export const FIREWORK_BURST = register({
   // The cell's colour comes from its aux index, not from `color`.
   auxPalette: BURST_COLORS,
   // A firework flower is LIGHT, not matter — the same category as the shockwave
-  // flash blast.ts already refuses to shove (see its `prevId === BLAST.id` case).
-  // Durability 0 puts it under every blast's destructive power, so a blast washing
-  // over one always *destroys* it (leaving its own flash) instead of taking the
-  // "too tough to break, fling it as Debris" path. Without this a weak blast
-  // (Gunpowder-class, power 6 < the gas default 15) turns a flower into a Debris
-  // fragment carrying this material's id in `aux` — and that aux word is then two
-  // things at once: a carried material id to the fragment, a colour index to this
-  // material. The fragment drew a wrong colour and landed as a colour-0 flower,
-  // its original colour lost. Neither state is reachable now.
-  durability: 0,
+  // flash and the in-flight Debris fragment that blast.ts already passes straight
+  // over. So a blast neither destroys, flashes nor shoves it; it just keeps fading
+  // on its own timer (see Material.blastInert).
+  //
+  // The shove is the part that matters. Without this, a weak blast (Gunpowder
+  // class, power 6, under the gas default durability of 15) turned a flower into a
+  // Debris fragment carrying this material's id in `aux` — and that one aux word
+  // then meant two contradictory things at once: a carried material id to the
+  // fragment, a colour index to this material. The fragment drew a wrong colour and
+  // landed as a colour-0 flower with its own colour lost.
+  blastInert: true,
   // Inert to heat: a firework flower is light, not a heat source, and its cells
   // shouldn't warm what they wash over.
   thermal: { conductivity: 0 },

@@ -531,21 +531,30 @@ export const SMOKE_BOMB_SPAWN_SPIN = 0.06;
 export const SMOKE_BOMB_FUSE_TICKS = Math.round(4 * SIM_HZ_AT_1X);
 /** How long the heavy discharge lasts before the spent canister vanishes (1초). */
 export const SMOKE_BOMB_VENT_TICKS = Math.round(1 * SIM_HZ_AT_1X);
-/** Per-tick chance the fuse-stage nozzle puffs one Smoke cell. Deliberately well
- *  under 1: the first four seconds are meant to read as a thin wisp marking where
- *  the canister landed (소량의 연기), so the discharge that follows is a clear step
- *  change rather than more of the same. */
-const SMOKE_BOMB_TRICKLE_CHANCE = 0.35;
+// Both stages seed Smoke over a disc (see puffDisc); they differ only in where
+// that disc sits, how wide it is and how densely it fills. The numbers are sized
+// so the two stages read as different *events*, not as one turned up: the fuse
+// wisp is a marker, the discharge is a wall of smoke.
+/** Radius (cells) of the wisp the fuse-stage nozzle puffs into. Small and fixed —
+ *  it should read as a stream leaving the nozzle, not as a cloud. */
+const SMOKE_BOMB_TRICKLE_RADIUS = 2.5;
+/** Per-cell, per-tick fill chance of that wisp — across its ~20-cell disc, about
+ *  two new cells a tick. The first four seconds are meant to be a thin plume
+ *  marking where the canister landed (소량의 연기), so the discharge that follows
+ *  is a clear step change rather than more of the same. */
+const SMOKE_BOMB_TRICKLE_DENSITY = 0.1;
 /** Per-cell, per-tick chance the open vent seeds a Smoke cell somewhere in its
- *  cloud radius. Across the ~520-cell disc below that's ~65 new cells a tick, so
- *  one second of discharge blankets the canister's surroundings many times over
- *  (대량의 연기) even as the cloud rises and thins. Occupied cells are simply
- *  skipped, so a bomb wedged in a crevice vents through whatever gaps it has. */
-const SMOKE_BOMB_VENT_DENSITY = 0.13;
-/** Radius (in cells, as a multiple of the body's own reach) the discharge scatters
- *  its cells over — a puff that erupts around the whole canister rather than
- *  streaming from the nozzle the way the fuse-stage trickle does. */
-const SMOKE_BOMB_VENT_SPREAD = 2.6;
+ *  cloud radius. Across the ~2800-cell disc below that's ~600 new cells a tick,
+ *  and it keeps that up for a full second while the cloud rises and spreads well
+ *  past the seeding disc — a canister genuinely blankets its surroundings
+ *  (대량의 연기). Occupied cells are simply skipped, so a bomb wedged in a crevice
+ *  vents through whatever gaps it has. */
+const SMOKE_BOMB_VENT_DENSITY = 0.22;
+/** Radius the discharge scatters over, as a multiple of the body's own reach
+ *  (≈5 cells) — so a ~30-cell radius, a cloud tens of cells across before the gas
+ *  starts drifting on its own. It erupts around the whole canister rather than
+ *  streaming from the nozzle the way the fuse-stage wisp does. */
+const SMOKE_BOMB_VENT_SPREAD = 6;
 /** Footprint/reservoir temperature (°) at/above which external heat cooks the
  *  charge off early, cutting the fuse short and opening the vent now. Set at the
  *  rubber ball's scorch point (300°) rather than the dynamite's 1100°: a smoke
@@ -2233,39 +2242,52 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
  *  there. spawn() marks the cell moved, so a fresh puff isn't re-processed the
  *  same tick. Silently skipped on an occupied cell — a bomb buried in sand vents
  *  through whatever gaps it has rather than carving them. */
-function puffSmoke(ctx: SimContext, x: number, y: number): void {
-  const cx = Math.floor(x);
-  const cy = Math.floor(y);
+function puffSmoke(ctx: SimContext, cx: number, cy: number): void {
   if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) return;
   ctx.spawn(cx, cy, SMOKE.id);
 }
 
 /**
- * The heavy discharge: seed Smoke across the disc around the whole canister (not
- * just its nozzle — a venting or ruptured can gushes from everywhere at once),
- * each open cell taking a puff with probability `density`. Written as a footprint
- * scan with a per-cell roll, the same shape spawnDrumDebris uses, so the cloud is
- * evenly dense over the disc and the randomness runs through the sim's own seam
+ * Seed Smoke across a disc of `radius` cells centred on (ox,oy), each open cell
+ * taking a puff with probability `density`. Written as a bounded scan with a
+ * per-cell roll — the same shape spawnDrumDebris uses — so the cloud is evenly
+ * dense over the disc and the randomness runs through the sim's own seam
  * (ctx.chance) rather than a private Math.random. `density` 1 fills every open
- * cell at once — the burst a destroyed canister lets go.
+ * cell at once.
+ *
+ * Both of the smoke bomb's stages are this one call with different numbers: a
+ * small disc at the nozzle for the fuse-stage wisp, a large one around the whole
+ * body for the discharge. Cost is bounded by the disc's bounding box, so even the
+ * full-density rupture is one pass over a few thousand cells.
  */
-function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
-  if (density <= 0) return;
-  const spread = bodyReach(o) * SMOKE_BOMB_VENT_SPREAD;
-  const s2 = spread * spread;
-  const x0 = Math.floor(o.x - spread);
-  const x1 = Math.ceil(o.x + spread);
-  const y0 = Math.floor(o.y - spread);
-  const y1 = Math.ceil(o.y + spread);
+function puffDisc(
+  ctx: SimContext,
+  ox: number,
+  oy: number,
+  radius: number,
+  density: number,
+): void {
+  if (density <= 0 || radius <= 0) return;
+  const r2 = radius * radius;
+  const x0 = Math.floor(ox - radius);
+  const x1 = Math.ceil(ox + radius);
+  const y0 = Math.floor(oy - radius);
+  const y1 = Math.ceil(oy + radius);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
-      const dx = cx + 0.5 - o.x;
-      const dy = cy + 0.5 - o.y;
-      if (dx * dx + dy * dy > s2) continue;
+      const dx = cx + 0.5 - ox;
+      const dy = cy + 0.5 - oy;
+      if (dx * dx + dy * dy > r2) continue;
       if (density < 1 && !ctx.chance(density)) continue;
       puffSmoke(ctx, cx, cy);
     }
   }
+}
+
+/** The heavy discharge: a dense puff over the whole canister's cloud radius (not
+ *  just its nozzle — a venting or ruptured can gushes from everywhere at once). */
+function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
+  puffDisc(ctx, o.x, o.y, bodyReach(o) * SMOKE_BOMB_VENT_SPREAD, density);
 }
 
 /**
@@ -2292,11 +2314,15 @@ function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean 
       // A wisp from the nozzle, which sits just past the cap along the canister's
       // long axis and so tracks the right end however the can has tumbled — the
       // same tip the dynamite's fuse flame uses.
-      if (ctx.chance(SMOKE_BOMB_TRICKLE_CHANCE)) {
-        const [ux, uy] = capsuleAxis(o);
-        const reach = o.halfLength + o.radius + 0.5;
-        puffSmoke(ctx, o.x - ux * reach, o.y - uy * reach);
-      }
+      const [ux, uy] = capsuleAxis(o);
+      const reach = o.halfLength + o.radius + 0.5;
+      puffDisc(
+        ctx,
+        o.x - ux * reach,
+        o.y - uy * reach,
+        SMOKE_BOMB_TRICKLE_RADIUS,
+        SMOKE_BOMB_TRICKLE_DENSITY,
+      );
       return true;
     }
     o.ventTicks = SMOKE_BOMB_VENT_TICKS; // fuse spent (or cooked off) — open the vent

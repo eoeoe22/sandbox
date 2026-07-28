@@ -306,6 +306,16 @@ function isShockLoose(id: number): boolean {
   return id !== EMPTY && getMaterial(id).shockLoose === true;
 }
 
+/** True if the cell is an *effect* rather than matter (`Material.blastInert` — a
+ *  firework's coloured flower), which the blast passes straight over: not
+ *  destroyed, not flashed, not shoved. The tagged form of the treatment this file
+ *  already hard-codes for its own flash and for in-flight Debris. Consulted by
+ *  both the crater flood (defaultCell) and the pressure ring, so the tag means the
+ *  same thing to every part of a detonation. */
+function isBlastInert(id: number): boolean {
+  return id !== EMPTY && getMaterial(id).blastInert === true;
+}
+
 /** A shockwave that can't *break* a material may still kill it outright — the
  *  `shockDeathChance` roll (a Termite crushed by the passing pressure wave), which
  *  leaves its `blastDeathId` residue instead of the cell being shoved. Returns
@@ -437,6 +447,13 @@ function defaultCell(
   // whose "carried material" is Debris itself, while flashing it would delete
   // the mass it carries. Leave it flying.
   if (prevId === DEBRIS.id) return;
+  // An effect cell (a firework's flower — `Material.blastInert`) is likewise not
+  // matter to resolve: the front passes straight over it and it keeps fading on
+  // its own timer. Deliberately NOT flashed: a flash is a real BLAST cell, which
+  // decays to stray Fire and reads as a detonation trigger to every charge
+  // watching for an adjacent flash — so flashing effect cells would let even a
+  // power-0, strictly non-destructive pulse (a Woofer's) set off a stockpile.
+  if (m.blastInert) return;
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume; a material
     // that drops residue when destroyed (Termite→Sawdust, Nanobot→Metal Powder)
@@ -925,7 +942,8 @@ function pressureRing(
     // can be seeded as the wave's own origin).
     if (
       (phase === Phase.Powder || phase === Phase.Liquid || isShockLoose(id)) &&
-      !shadowsPressure(id)
+      !shadowsPressure(id) &&
+      !isBlastInert(id)
     ) {
       // A fragile body caught in the wave may simply be killed by it, leaving its
       // residue — rolled before (and independently of) the shove chance, so
