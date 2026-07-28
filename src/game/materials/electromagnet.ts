@@ -273,8 +273,10 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   const w = sim.width;
   if (sim.magnetFielded.has(y * w + x)) return;
 
-  // Walk the connected body (4-connected, like every other appliance's body walk),
-  // recording its cells and bounding box, and claim all of it for this tick.
+  // Walk the connected *powered* body (4-connected, like every other appliance's
+  // body walk — but gated to cells whose countdown is live, see the neighbor
+  // guard below), recording its cells and bounding box, and claim the walked
+  // chunk for this tick.
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
