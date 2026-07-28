@@ -94,8 +94,13 @@ const QUENCH_STEAM_TEMP = 300;
  * would have silently never produced Obsidian. Letting the quench claim the
  * water first makes contact behave the same from all four sides.
  *
- * The hold is at most one tick: this cell's lava neighbor updates every tick,
- * and if it moves away or gets quenched by some other water first, the water is
+ * The hold always resolves, and quickly — it can't strand a water cell in a hot
+ * un-boiling limbo. A lava cell quenches at most one of its water neighbors per
+ * tick, but it also turns to Obsidian doing so, so it can never skip the same
+ * water twice. Each adjacent Lava cell therefore either quenches this water or
+ * stops being Lava within a tick, which bounds the wait by how many Lava cells
+ * touch it — one tick in the ordinary single-neighbor case, two in the
+ * multi-neighbor case (measured). Whenever the last of them is gone the water is
  * no longer touching Lava and simply boils as it always did.
  */
 export function lavaTouching(x: number, y: number, sim: SimContext): boolean {
