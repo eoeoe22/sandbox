@@ -438,6 +438,17 @@ export interface Material {
    */
   windArrow?: boolean;
   /**
+   * Draw a solid 4-directional TRIANGLE (in the `lattice` color, over the base
+   * `color`) pointing the way the cell's `aux` byte says it faces — the low 2
+   * bits are the direction, same codes as `windArrow` (0 up / 1 down / 2 left /
+   * 3 right). Where `windArrow` draws a thin chevron line (Fan/Laser), this
+   * tiles filled arrowhead triangles — the Shaped Charge uses it so its liner
+   * cone (성형작약의 원뿔 라이너) reads as ▶-shaped wedges aimed down the jet
+   * axis. Purely a rendering hint the simulation never reads; omit for an
+   * ordinary material.
+   */
+  triArrow?: boolean;
+  /**
    * Draw horizontal coil windings (in the `lattice` color, over the base `color`)
    * that brighten while the cell's `aux` byte is non-zero — the Electromagnet,
    * whose whole aux byte is its powered countdown (see materials/electromagnet.ts).

@@ -8,7 +8,7 @@ import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { MOLTEN_METAL } from './moltenmetal';
 import { MOLTEN_GLASS } from './moltenglass';
-import { BLAST, detonate, type DetonateOptions } from './blast';
+import { BLAST, detonate, flashCell, type DetonateOptions } from './blast';
 import { launchEmber } from './ember';
 
 // Shaped Charge (성형작약) — a directional penetrator: instead of the ordinary
@@ -22,21 +22,24 @@ import { launchEmber } from './ember';
 // Which way it fires is chosen at placement time by the direction you *drag*
 // the brush (Fan/Laser/Conveyor 방식 — 상하좌우 4방향), recorded in the low 2
 // bits of each cell's `aux` word (it shares the Fan's placement path and
-// direction codes; see PointerPainter). The renderer's `windArrow` chevron
-// points the muzzle, so a placed charge reads at a glance.
+// direction codes; see PointerPainter). The renderer's `triArrow` pattern —
+// filled triangles pointing the muzzle, the liner cone made visible — shows a
+// placed charge's aim at a glance.
 //
 // The directionality itself is pure wiring of an existing seam: the blast
 // flood's per-direction cost multipliers (DetonateOptions.costMul) stretch the
 // budget far forward and choke it sideways/backward, so one detonate() call
-// carves a spear-shaped bore instead of a disc. Each cell detonates
-// `soloSource` with a FIXED reach — a shaped charge is a machined device whose
-// penetration depth is a property of the charge, not of how many you piled up.
-// Cells of a multi-cell charge caught inside a neighbor's jet are consumed by
-// it (the flash claims them); survivors beside/behind the jet see the adjacent
-// flash and fire their OWN jet a tick later, so a vertical stack facing right
-// fires a broad array of parallel jets — a cutting charge — rather than one
-// pooled blob. Wired into another explosive's connected mass it still
-// contributes a small sympathetic yield (blastYield) to that round blast.
+// carves a spear-shaped bore instead of a disc. Penetration is proportional to
+// the charge's LENGTH along the jet axis (장약 길이 비례 관통): a trigger
+// touching any cell of a contiguous same-facing column fires ONE `soloSource`
+// jet from the column's front face, its reach scaled by the column's depth (up
+// to MAX_JET_CELLS) while the bore width stays fixed — stack deeper for a
+// deeper hole. Cells stacked BESIDE the column instead chain off the adjacent
+// flash a tick later and fire their OWN columns' jets, so a wide block facing
+// right fires an array of parallel bores — a cutting charge — rather than one
+// pooled blob: depth buys penetration, width buys coverage. Wired into another
+// explosive's connected mass it still contributes a small sympathetic yield
+// (blastYield) to that round blast.
 //
 // Triggers: an adjacent flame/blast or enough radiant heat, like TNT — and a
 // deterministic electric detonator via the `directPulse` appliance hook rather
@@ -56,11 +59,21 @@ export const CHARGE_RIGHT = 3;
  *  has no countdown, so the chevron just stays at its lattice colour). */
 const DIR_MASK = 0b11;
 
-// The jet's raw reach budget, spent against the per-direction costs below (the
-// global 2/3 blast scale applies on top — see blast.ts BLAST_REACH_SCALE). At
-// 36 the jet bores ~24 cells straight ahead: ~2.6× a lone C4's effective
-// radius, squarely in the 기획's "정면 반경 2~3배".
+// The raw reach budget ONE cell of charge contributes, spent against the
+// per-direction costs below (the global 2/3 blast scale applies on top — see
+// blast.ts BLAST_REACH_SCALE). At 36 a lone cell bores ~24 cells straight
+// ahead: ~2.6× a lone C4's effective radius, squarely in the 기획's "정면 반경
+// 2~3배". Penetration scales with the charge's LENGTH along the jet axis
+// (장약 길이 비례 관통): a contiguous same-facing column of N cells fires one
+// jet of N× this budget from its front face — see detonateJet's column walk.
 const JET_REACH = 36;
+
+/** Cap on how many stacked cells lengthen one jet (a 5-deep column bores ~120
+ *  effective cells — most of a screen). A column longer than the cap isn't
+ *  wasted: the cells behind the counted block survive the jet's tiny backward
+ *  reach, see the adjacent flash next tick, and fire a follow-up jet of their
+ *  own from the same spot — a double-tap, not a dud. Playtest knob. */
+const MAX_JET_CELLS = 5;
 
 // Per-direction cost multipliers (>1 = shorter that way). Forward is free,
 // the forward diagonals are dear enough that the bore tapers to a spear point,
@@ -102,25 +115,68 @@ const SPALL_EMBER_CHANCE = 0.55;
 // be triggered on purpose.
 const AUTOIGNITE_TEMP = 300;
 
-/** Fire the aimed jet from (x,y): one soloSource detonation whose costMul is
- *  picked by the cell's own aux direction. `pierceProof` is what lets the jet
- *  defeat 방폭 solids (Diamond, Obsidian; the `jetProof` uranium family stays
- *  immune) — soloSource carries the default destructive power, comfortably
- *  above every finite durability. The charge's identity is that everything
- *  OUTSIDE the bore stays put, enforced twice: `pressure` off (no concussion
- *  ring shoving the surroundings) and a custom rimHandler that throws spall
- *  Embers only from rim faces pointing along the jet — the exit hole sprays
- *  hot fragments downrange, while the bore's flanks and the charge's back stay
- *  quiet instead of the default rim seasoning them with fire. seedYield is 0
- *  like the other fixed-reach soloSource blasts (napalm/cluster): with
- *  `opts.reach` set it's never read. */
+/** True if (x,y) is a Shaped Charge cell facing direction `dir` — the test for
+ *  membership in an aligned column (see detonateJet). */
+function isAlignedCharge(sim: SimContext, x: number, y: number, dir: number): boolean {
+  return (
+    sim.inBounds(x, y) &&
+    sim.get(x, y) === SHAPED_CHARGE.id &&
+    (sim.getAux(x, y) & DIR_MASK) === dir
+  );
+}
+
+/** Fire the aimed jet for the charge COLUMN through (x,y): walk the contiguous
+ *  run of same-facing charge cells along the jet axis, and fire ONE soloSource
+ *  detonation from the column's FRONT cell with reach scaled by the column's
+ *  length (장약 길이 비례 관통 — up to MAX_JET_CELLS; the counted cells behind
+ *  the muzzle are consumed into the same flash). Cells stacked BESIDE the
+ *  column (a wide block) aren't part of it — they chain off the flash next
+ *  tick and fire their own columns' jets, so width buys parallel bores while
+ *  depth buys one deeper bore.
+ *
+ *  `pierceProof` is what lets the jet defeat 방폭 solids (Diamond, Obsidian;
+ *  the `jetProof` uranium family stays immune) — soloSource carries the
+ *  default destructive power, comfortably above every finite durability. The
+ *  charge's identity is that everything OUTSIDE the bore stays put, enforced
+ *  twice: `pressure` off (no concussion ring shoving the surroundings) and a
+ *  custom rimHandler that throws spall Embers only from rim faces pointing
+ *  along the jet — the exit hole sprays hot fragments downrange, while the
+ *  bore's flanks and the charge's back stay quiet instead of the default rim
+ *  seasoning them with fire. seedYield is 0 like the other fixed-reach
+ *  soloSource blasts (napalm/cluster): with `opts.reach` set it's never read. */
 function detonateJet(sim: SimContext, x: number, y: number): void {
   const dir = sim.getAux(x, y) & DIR_MASK;
   const [jx, jy] = DIRV[dir];
+  // Walk forward to the column's true front — the muzzle: the jet always exits
+  // the charge's front face no matter which cell the trigger touched.
+  let fx = x;
+  let fy = y;
+  while (isAlignedCharge(sim, fx + jx, fy + jy, dir)) {
+    fx += jx;
+    fy += jy;
+  }
+  // Count backward from the muzzle (the trigger cell is on this walk by
+  // construction — it's in the same contiguous run), consuming each counted
+  // cell behind the muzzle into the shared flash. flashCell marks them moved,
+  // so none re-triggers its own jet this tick; anything beyond the cap stays
+  // a live charge and follows up next tick off the adjacent flash.
+  let n = 1;
+  let bx = fx;
+  let by = fy;
+  while (n < MAX_JET_CELLS && isAlignedCharge(sim, bx - jx, by - jy, dir)) {
+    bx -= jx;
+    by -= jy;
+    n++;
+    flashCell(sim, bx, by);
+  }
+  // Scale the reach budget by the column length, and every NON-forward cost by
+  // the same factor, so a longer charge bores DEEPER at the same bore width —
+  // sides/back stay "거의 0" instead of fattening with n (a 5-deep column
+  // would otherwise scratch ~13 cells sideways instead of ~3).
   const opts: DetonateOptions = {
     soloSource: true,
-    reach: JET_REACH,
-    costMul: JET_COST_MUL[dir],
+    reach: JET_REACH * n,
+    costMul: n === 1 ? JET_COST_MUL[dir] : JET_COST_MUL[dir].map((c) => (c === F ? F : c * n)),
     pierceProof: true,
     pressure: false,
     rimHandler: (s, rx, ry, dx, dy) => {
@@ -130,7 +186,7 @@ function detonateJet(sim: SimContext, x: number, y: number): void {
       if (dx * jx + dy * jy > 0 && s.chance(SPALL_EMBER_CHANCE)) launchEmber(s, rx, ry, dx, dy);
     },
   };
-  detonate(sim, x, y, 0, opts);
+  detonate(sim, fx, fy, 0, opts);
 }
 
 /** The electric-appliance hook (see Material.directPulse): a pulse reaching any
@@ -174,11 +230,12 @@ export const SHAPED_CHARGE = register({
   id: 127,
   name: 'Shaped Charge',
   phase: Phase.Solid,
-  // Olive-drab casing with a copper liner chevron pointing the muzzle (the
-  // renderer's windArrow path, shared with Fan/Laser).
+  // Olive-drab casing with copper liner-cone triangles pointing the muzzle
+  // (the renderer's triArrow path — filled ▶ wedges along the jet axis, where
+  // Fan/Laser draw a thin chevron line).
   color: rgb(96, 104, 72),
   lattice: rgb(228, 148, 64),
-  windArrow: true,
+  triArrow: true,
   density: 1000,
   explosive: true,
   blastYield: SYMPATHETIC_YIELD,

@@ -260,6 +260,10 @@ export class CanvasRenderer implements Renderer {
    *  the low 2 bits the blow direction and the rest a powered countdown that
    *  brightens the chevron (Fan — see Material.windArrow). */
   private windArrow: Uint8Array;
+  /** id → 1 if the material draws solid 4-directional triangles from its aux byte
+   *  — filled arrowheads pointing the low-2-bit direction, the Shaped Charge's
+   *  liner cone (see Material.triArrow). */
+  private triArrow: Uint8Array;
   /** id → 1 if the material draws horizontal coil windings that brighten while its
    *  aux byte is non-zero (Electromagnet — see Material.coilPattern). */
   private coilPattern: Uint8Array;
@@ -363,6 +367,7 @@ export class CanvasRenderer implements Renderer {
     this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
+    this.triArrow = new Uint8Array(256);
     this.coilPattern = new Uint8Array(256);
     this.stripePattern = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
@@ -387,6 +392,7 @@ export class CanvasRenderer implements Renderer {
         if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
+        if (m.triArrow) this.triArrow[i] = 1;
         if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.stripePattern) this.stripePattern[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
@@ -551,6 +557,7 @@ export class CanvasRenderer implements Renderer {
     const batPat = this.batteryPattern;
     const arrow = this.arrow;
     const windArrow = this.windArrow;
+    const triArrow = this.triArrow;
     const coilPattern = this.coilPattern;
     const stripePattern = this.stripePattern;
     const packed = this.packed;
@@ -644,6 +651,31 @@ export class CanvasRenderer implements Renderer {
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (triArrow[id]) {
+        // A Shaped Charge draws solid arrowhead triangles pointing its jet
+        // direction (aux low 2 bits, same codes as the Fan's chevron) — the
+        // liner cone made visible. Each 4-cell tile along the axis is a filled
+        // ▶: the base spans the full 4 cells across at the tail, the middle two
+        // lanes run 3 cells toward the tip, so repeats read as nested wedges.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const dir = auxArr[i] & 0b11;
+        let on: boolean;
+        if (dir >= 2) {
+          // left (2) / right (3): triangle runs along x; y picks the lane —
+          // middle two lanes reach 3 cells, edge lanes only the 1-cell base.
+          const f = y & 3;
+          const d = f === 1 || f === 2 ? 0 : 1;
+          const t = x & 3;
+          on = (dir === 3 ? t : 3 - t) <= 2 - 2 * d;
+        } else {
+          // up (0) / down (1): the same shape folded the other way.
+          const f = x & 3;
+          const d = f === 1 || f === 2 ? 0 : 1;
+          const t = y & 3;
+          on = (dir === 1 ? t : 3 - t) <= 2 - 2 * d;
+        }
+        c = on ? latCol[id] : pal[id];
       } else if (coilPattern[id]) {
         // An Electromagnet draws copper windings around a dark core: two lit rows
         // out of every four (a period-4 stripe in the `lattice` colour), so a bar
