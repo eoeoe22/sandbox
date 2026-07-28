@@ -122,6 +122,48 @@ const SHOCK_C8 = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
 // a block draws only when its (blockX&3,blockY&3) threshold is below the fade level.
 const SHOCK_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
+// ── Electromagnet field rings (전자석 자기력선 이펙트) ────────────────────────
+// A powered magnet body (Grid.magnetFields, re-stamped every powered tick) is
+// wrapped in *static* contour rings — 등고선 of the same geodesic distance field
+// the Woofer's wavefront uses (buildShockField: seeded on the body's own outline,
+// blocked by solids) — so the rings hug the body's real shape, a wall visibly
+// shadows the field, and their outer edge sits exactly at the pull's true reach.
+// Unlike the wind streaks and the shockwave the rings don't animate: the field
+// is a steady grip, so the effect is a steady picture — rings pop in when power
+// arrives and vanish when it lapses, nothing more. One flat colour (단색) rather
+// than the reference effect's blue ramp, with the outer rings thinned by a
+// static positional dither so the field reads as fading out with distance while
+// staying crisp single-shade pixel art. Drawn on empty air only — matter inside
+// the field shows through as itself, visibly being tugged.
+const MAGNET_SHADE = rgb(159, 168, 255); // single flat periwinkle — 단색
+const MAGNET_RING_GAP = 3; // geodesic cells between successive contour rings
+// Sim ticks between distance-field rebuilds while a magnet stays powered. The
+// rings only change when the *solids* around the body change (matter the field
+// passes through never shapes them), and solids change on user timescales, not
+// per tick — so a steadily powered magnet must not re-run Dijkstra every tick
+// the way a naive tick-keyed cache would (the sweep allocates its field and
+// heap fresh each build). At 8 ticks a wall drawn into the field re-shadows the
+// rings within ~a quarter second, well under noticing, while the rebuild cost
+// drops to noise. Membership changes still rebuild immediately (power-on/off
+// must add/drop that body's rings the same tick — see the fingerprint in
+// drawMagnetFields); only the surrounding solids ride this period.
+const MAGNET_REBUILD_TICKS = 8;
+// The rings *breathe*: the whole contour set slides out and back by a fraction of
+// a cell on a fixed wall-clock cycle, so a powered magnet reads as live rather
+// than as a decal — without turning into the outward-racing wavefront the Woofer
+// uses (the field is a steady grip, not an event). Amplitude is deliberately under
+// one ring gap: at ±0.6 cell the bands visibly drift in and out while every ring
+// stays where it belongs.
+//
+// It is baked, not computed per frame: `rebuildMagnetRings` extracts the contour
+// pixels once per phase and the draw path just picks the phase, so animating costs
+// one array index per frame rather than a fresh distance-field scan. Wall-clock
+// driven (not tick driven) so the breathing keeps its 0.5s period at any sim speed
+// and keeps going while the sandbox is paused.
+const MAGNET_ANIM_PERIOD_MS = 500;
+const MAGNET_ANIM_PHASES = 8;
+const MAGNET_ANIM_AMP = 0.6; // cells the bands slide out and back
+
 /** Cheap deterministic hash of two integers → [0, 1). Gives every streak slot its
  *  own stable random spawn offset and lifecycle phase without any per-cell state. */
 function windHash01(a: number, b: number): number {
@@ -319,6 +361,23 @@ export class CanvasRenderer implements Renderer {
     maxR: number;
     age: number;
   }[] = [];
+  /** Live Electromagnet field rings, baked down to the flat indices of their
+   *  candidate pixels (band boundaries with the static dither already applied
+   *  — see rebuildMagnetRings). The per-frame draw just walks this list and
+   *  paints every index still holding empty air, so a frame costs O(ring
+   *  pixels), not O(field bbox × bodies) — the distance fields themselves are
+   *  discarded right after extraction. Rebuilt when the powered-body cell
+   *  membership changes (magnetRingsSig) or every MAGNET_REBUILD_TICKS of sim
+   *  time; cached across both frames and ticks because the rings are shaped
+   *  only by the bodies and the solids around them, which change on user
+   *  timescales — without the cache a steadily powered magnet would re-run
+   *  Dijkstra (and reallocate its field) every tick forever. */
+  private magnetPixels: number[][] = Array.from({ length: MAGNET_ANIM_PHASES }, () => []);
+  /** Grid.tick the magnetPixels cache was built at (-1 = never). */
+  private magnetRingsTick = -1;
+  /** Fingerprint of the powered-body cell membership the cache was built from
+   *  (see drawMagnetFields). 0 = built from no bodies / never built. */
+  private magnetRingsSig = 0;
   /** id → 1 if the material's `temp` holds packed non-thermal state, not a real
    *  degree reading (see Material.packedTemp) — the heat overlay draws such a cell
    *  as background rather than colouring garbage packed values as white-hot. */
@@ -538,6 +597,11 @@ export class CanvasRenderer implements Renderer {
     // Drop any in-flight Woofer shockwaves — their distance fields hold absolute
     // coordinates for the old dimensions, which would paint into the wrong cells.
     this.shocks.length = 0;
+    // Same hazard for the cached Electromagnet field rings; rebuilt next frame
+    // from whatever Grid.magnetFields then holds.
+    for (const phase of this.magnetPixels) phase.length = 0;
+    this.magnetRingsTick = -1;
+    this.magnetRingsSig = 0;
   }
 
   render(grid: Grid): void {
@@ -903,6 +967,9 @@ export class CanvasRenderer implements Renderer {
     this.windMaxX = bxMax;
     this.windMinY = byMin;
     this.windMaxY = byMax;
+    // Electromagnet field rings: static contour lines around each powered magnet,
+    // drawn over the finished cell image on empty air only (see drawMagnetFields).
+    this.drawMagnetFields(grid, heat);
     // Woofer shockwaves: an expanding pixel wavefront drawn over the finished cell
     // image (behind matter, through translucent liquid) before it's blitted.
     this.drawShockwaves(grid, heat);
@@ -935,6 +1002,206 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * Draw the live Electromagnet field rings (see Grid.magnetFields and the
+   * MAGNET_* constants). The entries are clustered and turned into geodesic
+   * distance fields whose contour lines become a baked pixel list (see
+   * rebuildMagnetRings for the construction); this per-frame path only decides
+   * *whether* to rebuild and then paints the list — every cached index still
+   * holding empty air gets the one flat MAGNET_SHADE (단색), so matter in the
+   * field shows through as itself. The entry list is read, not drained — the
+   * sim re-stamps it every powered tick and clears it when power lapses — and
+   * the rebuild fires only when the powered bodies' cell membership actually
+   * changes (fingerprint below) or every MAGNET_REBUILD_TICKS of sim time
+   * (see the constant for why not per tick): both a paused sim and a steadily
+   * powered one keep their rings without re-running Dijkstra. Skipped entirely
+   * in the thermal camera.
+   */
+  private drawMagnetFields(grid: Grid, heat: boolean): void {
+    const q = grid.magnetFields;
+    if (q.length === 0 && this.magnetRingsSig === 0) return;
+    const w = grid.width;
+    // Fingerprint the powered bodies' cell membership: a plain sum of per-cell
+    // hashes, so it's independent of entry order and of where each body walk
+    // started (the scan direction alternates every tick, so keying on entry
+    // order or head cells would churn the cache each tick). Unlike a bare body
+    // count this catches one magnet losing power the same tick another gains
+    // it, and shape edits at constant count. Forced non-zero for a live set so
+    // it can never collide with the "cache is empty" sentinel (0).
+    let sig = 0;
+    for (const f of q) {
+      const fbx = f.bx;
+      const fby = f.by;
+      for (let i = 0; i < fbx.length; i++) {
+        sig = (sig + Math.imul(fby[i] * w + fbx[i] + 1, 0x9e3779b1)) | 0;
+      }
+    }
+    if (q.length > 0 && sig === 0) sig = 1;
+    // Rebuild when the membership changed (power on/off must add/drop that
+    // body's rings the same tick) or every MAGNET_REBUILD_TICKS of sim time
+    // (solids drawn into the field re-shadow it on that cadence; see the
+    // constant). A paused sim repaints from cache indefinitely; a tick that
+    // moved *backwards* (a rewound sim clock) also rebuilds, since the
+    // elapsed-ticks test can't be trusted across it.
+    if (
+      sig !== this.magnetRingsSig ||
+      (q.length > 0 &&
+        (grid.tick - this.magnetRingsTick >= MAGNET_REBUILD_TICKS ||
+          grid.tick < this.magnetRingsTick))
+    ) {
+      this.rebuildMagnetRings(grid, q);
+      this.magnetRingsSig = sig;
+      this.magnetRingsTick = grid.tick;
+    }
+    if (heat) return; // thermal camera: keep the cache warm, draw nothing
+    const buf = this.buf32;
+    const cells = grid.cells;
+    // Which baked phase this frame shows — a full cycle every MAGNET_ANIM_PERIOD_MS
+    // of real time, so the breathing is independent of frame rate, sim speed and
+    // pause state (see the MAGNET_ANIM_* notes).
+    const phase =
+      Math.floor((performance.now() / MAGNET_ANIM_PERIOD_MS) * MAGNET_ANIM_PHASES) %
+      MAGNET_ANIM_PHASES;
+    const pix = this.magnetPixels[phase];
+    for (let i = 0; i < pix.length; i++) {
+      const gi = pix[i];
+      if (cells[gi] === EMPTY) buf[gi] = MAGNET_SHADE; // air-only paint
+    }
+  }
+
+  /**
+   * Rebuild the magnet ring pixel list from this tick's powered bodies. A body
+   * bigger than the sim's per-sweep cap arrives as SEVERAL entries (one per
+   * capped body walk — see MAX_BODY in materials/electromagnet.ts), so the
+   * entries are first clustered: any whose reach-padded bounding boxes touch
+   * merge into one seed set and get ONE distance field between them. Without
+   * this a big painted magnet blob stacked a full overlapping ring set per
+   * chunk — visibly doubled lines and a Dijkstra per chunk per rebuild (the
+   * user-reported 중첩/렉). Merging also means two independent magnets whose
+   * fields meet share one coherent contour set (rings wrap the pair, exactly
+   * how the reference effect contours a multi-blob mask) instead of
+   * cross-hatching each other.
+   *
+   * Each cluster then runs the shared geodesic field build (buildShockField —
+   * seeded on the body cells, blocked by solids, bounded to the pull's reach)
+   * and its rings are the field's contour lines: a cell lights when its
+   * distance band has a strictly nearer 4-neighbour, i.e. it sits on the inner
+   * boundary of its band — the reference 자기력선 construction, one ring every
+   * MAGNET_RING_GAP cells. Outer rings are thinned by a static positional
+   * dither (checkerboard, then 1-in-3) so the field fades with distance in
+   * pure pixel art. Surviving pixels are appended to magnetPixels as flat
+   * indices and the field is discarded — the per-frame draw only needs the
+   * indices (occupancy is re-checked there, so matter drifting through the
+   * field masks rings without a rebuild).
+   */
+  private rebuildMagnetRings(
+    grid: Grid,
+    q: { bx: number[]; by: number[]; reach: number }[],
+  ): void {
+    for (const phase of this.magnetPixels) phase.length = 0;
+    if (q.length === 0) return;
+    const w = grid.width;
+    const gap = MAGNET_RING_GAP;
+    // Greedy fixpoint clustering on the entries' bboxes. Entry counts are tiny
+    // (one per ≤MAX_BODY chunk of powered magnet), so O(n²) passes are cheap.
+    const clusters = q.map((f, qi) => {
+      let minX = f.bx[0];
+      let maxX = f.bx[0];
+      let minY = f.by[0];
+      let maxY = f.by[0];
+      for (let i = 1; i < f.bx.length; i++) {
+        if (f.bx[i] < minX) minX = f.bx[i];
+        if (f.bx[i] > maxX) maxX = f.bx[i];
+        if (f.by[i] < minY) minY = f.by[i];
+        if (f.by[i] > maxY) maxY = f.by[i];
+      }
+      return { minX, minY, maxX, maxY, reach: f.reach, members: [qi] };
+    });
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (let a = 0; a < clusters.length; a++) {
+        for (let b = a + 1; b < clusters.length; b++) {
+          const A = clusters[a];
+          const B = clusters[b];
+          // Fields extend `reach` past each box, so the ring sets can only
+          // overlap when the boxes come within the two reaches of each other.
+          const pad = A.reach + B.reach;
+          if (
+            B.minX - A.maxX > pad ||
+            A.minX - B.maxX > pad ||
+            B.minY - A.maxY > pad ||
+            A.minY - B.maxY > pad
+          ) {
+            continue;
+          }
+          if (B.minX < A.minX) A.minX = B.minX;
+          if (B.maxX > A.maxX) A.maxX = B.maxX;
+          if (B.minY < A.minY) A.minY = B.minY;
+          if (B.maxY > A.maxY) A.maxY = B.maxY;
+          if (B.reach > A.reach) A.reach = B.reach;
+          A.members.push(...B.members);
+          clusters.splice(b, 1);
+          changed = true;
+          b--;
+        }
+      }
+    }
+    for (const cl of clusters) {
+      const cbx: number[] = [];
+      const cby: number[] = [];
+      for (const qi of cl.members) {
+        const f = q[qi];
+        for (let i = 0; i < f.bx.length; i++) {
+          cbx.push(f.bx[i]);
+          cby.push(f.by[i]);
+        }
+      }
+      const m = this.buildShockField(grid, cbx, cby, cl.reach);
+      if (!m) continue;
+      const K = Math.max(1, Math.floor(m.maxR / gap)); // ring count (bands 1..K)
+      const dist = m.dist;
+      const bw = m.bw;
+      // Bake one contour set per animation phase: the bands are cut at
+      // `b·gap + off` instead of `b·gap`, so the whole ring set slides out and back
+      // as `off` sweeps a sine over the phases (see the MAGNET_ANIM_* notes). The
+      // distance field is shared by all of them — only this extraction repeats, and
+      // only when the rings are rebuilt at all.
+      for (let phase = 0; phase < MAGNET_ANIM_PHASES; phase++) {
+        const off = MAGNET_ANIM_AMP * Math.sin((2 * Math.PI * phase) / MAGNET_ANIM_PHASES);
+        const out = this.magnetPixels[phase];
+        for (let ly = 0; ly < m.bh; ly++) {
+          const row = ly * bw;
+          for (let lx = 0; lx < bw; lx++) {
+            const d = dist[row + lx];
+            if (d >= SHOCK_INF) continue; // unreachable — shadowed or past the rim
+            const b = ((d - off) / gap) | 0;
+            if (b < 1 || b > K) continue; // band 0 hugs the body; no ring there
+            // Ring = the band's inner boundary: some 4-neighbour is in a nearer
+            // band. floor((nd-off)/gap) < b ⟺ nd < b·gap + off, so no per-neighbour
+            // floor — and an SHOCK_INF neighbour can never read as nearer.
+            const t = b * gap + off;
+            const on =
+              (lx > 0 && dist[row + lx - 1] < t) ||
+              (lx < bw - 1 && dist[row + lx + 1] < t) ||
+              (ly > 0 && dist[row - bw + lx] < t) ||
+              (ly < m.bh - 1 && dist[row + bw + lx] < t);
+            if (!on) continue;
+            const gx = m.x0 + lx;
+            const gy = m.y0 + ly;
+            // Static positional dither thins the outer rings (fade with distance).
+            const fade = K > 1 ? (b - 1) / (K - 1) : 0;
+            if (fade > 0.75) {
+              if ((gx + gy) % 3) continue;
+            } else if (fade > 0.45) {
+              if ((gx + gy) & 1) continue;
+            }
+            out.push(gy * w + gx);
+          }
+        }
+      }
+    }
   }
 
   /**

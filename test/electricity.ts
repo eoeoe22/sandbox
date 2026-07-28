@@ -22,7 +22,14 @@ import { Simulation } from '../src/game/engine/Simulation';
 import { serializeWorld, deserializeWorld } from '../src/state/persistence';
 import { FULL_STRENGTH, packSpark, conductorClass, SPARK } from '../src/game/materials/spark';
 import { getMaterial, allMaterials } from '../src/game/materials/registry';
+import type { Material } from '../src/game/engine/types';
 import { WALL } from '../src/game/materials/wall';
+import { BATTERY, PULSE_PERIOD } from '../src/game/materials/battery';
+import { FAN } from '../src/game/materials/fan';
+import { LASER } from '../src/game/materials/laser';
+import { PUMP } from '../src/game/materials/pump';
+import { ELECTROMAGNET } from '../src/game/materials/electromagnet';
+import { WOOFER } from '../src/game/materials/woofer';
 import { WATER } from '../src/game/materials/water';
 import { SALTWATER } from '../src/game/materials/saltwater';
 import { ACID } from '../src/game/materials/acid';
@@ -182,6 +189,174 @@ check('iron runs the whole wire (zero loss)', ironReach > 150, `${ironReach} cel
     'legacy aux keeps its value',
     back?.aux?.[5 * 20 + 5] === 3,
     `${back?.aux?.[5 * 20 + 5]}`,
+  );
+}
+
+// --- 4. electric devices: 전기 세기에 관계없이 연결 부위 전역 즉시 활성화 -------
+// The device category's activation contract (see engine/deviceBody.ts): a pulse
+// reaching ANY face of a connected device body activates ALL of it, in that same
+// tick, at full effect whatever strength the pulse had left. Both halves used to
+// be broken by the same 256-cell cap every device carried: a big machine only ran
+// near the wire, and — since each pulse restarted the walk from the same entry
+// cell — its far side never ran at all, which reads in game as power fading with
+// distance through the machine.
+//
+// A device's body is 20×20 = 400 cells here, comfortably past that old cap, so a
+// regression to any per-flood cell limit shows up as "powered < total".
+
+/** One device kind's probe: how to tell an activated cell of it apart from an
+ *  idle one. Fan/Laser pack a direction into the low 2 bits and count down in the
+ *  rest; Pump/Electromagnet use the whole aux as the countdown; the Woofer stamps
+ *  no cell state at all (it fires a shockwave and is done), so its activation is
+ *  read from the body-flood memo the pulse filled. Unpacked with literals rather
+ *  than by importing each material's constants, same reasoning as the class-field
+ *  checks above: these assertions pin the behavior, they don't restate it. */
+interface DeviceProbe {
+  mat: Material;
+  activated: (sim: Simulation, grid: Grid, x: number, y: number) => boolean;
+  /** Activation "level" of one cell, for the strength-independence check. */
+  level: (grid: Grid, x: number, y: number) => number;
+}
+const timerAboveDir = (grid: Grid, x: number, y: number): number => grid.getAux(x, y) >> 2;
+const wholeAux = (grid: Grid, x: number, y: number): number => grid.getAux(x, y);
+const DEVICE_PROBES: DeviceProbe[] = [
+  { mat: FAN, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
+  { mat: LASER, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
+  { mat: PUMP, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
+  { mat: ELECTROMAGNET, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
+  {
+    mat: WOOFER,
+    activated: (_s, g, x, y) => wavefront(g).has(y * g.width + x),
+    level: () => 0, // no per-cell state to grade — a thump is a thump
+  },
+];
+
+/** Which cells took part in the last shockwave this world emitted. The Woofer
+ *  stamps no per-cell state, so its activation is read off the wavefront it hands
+ *  the renderer, which is grown from every cell the flood actually reached (see
+ *  woofer.ts / Grid.shockwaves) — the honest record of how much of the cabinet
+ *  thumped. Cached per grid so probing 400 cells doesn't rebuild it 400 times. */
+let wavefrontGrid: Grid | null = null;
+let wavefrontSet = new Set<number>();
+function wavefront(grid: Grid): Set<number> {
+  if (wavefrontGrid !== grid) {
+    wavefrontGrid = grid;
+    wavefrontSet = new Set<number>();
+    for (const wave of grid.shockwaves) {
+      for (let i = 0; i < wave.bx.length; i++) {
+        wavefrontSet.add(wave.by[i] * grid.width + wave.bx[i]);
+      }
+    }
+  }
+  return wavefrontSet;
+}
+
+const BLOCK = 20; // 400-cell body: past the 256-cell cap devices used to carry
+const BLOCK_X = 5;
+const BLOCK_Y = 5;
+
+/** A world holding one BLOCK×BLOCK body of `matId` with a bare wire cell tucked
+ *  against its top-left corner, ready to be seeded with a pulse of any strength. */
+function deviceScene(matId: number): { grid: Grid; sim: Simulation } {
+  const grid = new Grid(BLOCK_X + BLOCK + 6, BLOCK_Y + BLOCK + 6);
+  const sim = new Simulation(grid);
+  for (let dy = 0; dy < BLOCK; dy++) {
+    for (let dx = 0; dx < BLOCK; dx++) grid.set(BLOCK_X + dx, BLOCK_Y + dy, matId);
+  }
+  return { grid, sim };
+}
+
+/** Energize the corner of a device body with a single pulse of `strength`,
+ *  delivered the way the game does it — an Iron wire cell touching one corner,
+ *  carrying a Spark, whose own arc phase dispatches through spark.ts's shared
+ *  `reactToPulse` into the device's `directPulse` hook. Returns how many of the
+ *  body's cells came up, and the range of activation levels across them. */
+function pulseCorner(
+  probe: DeviceProbe,
+  strength: number,
+): { powered: number; total: number; minLevel: number; maxLevel: number } {
+  const { grid, sim } = deviceScene(probe.mat.id);
+  grid.set(BLOCK_X - 1, BLOCK_Y, IRON.id);
+  grid.set(BLOCK_X - 1, BLOCK_Y, SPARK.id);
+  grid.setAux(BLOCK_X - 1, BLOCK_Y, packSpark(strength, conductorClass(IRON.id)));
+  sim.step();
+
+  let powered = 0;
+  let minLevel = Infinity;
+  let maxLevel = -Infinity;
+  for (let dy = 0; dy < BLOCK; dy++) {
+    for (let dx = 0; dx < BLOCK; dx++) {
+      const x = BLOCK_X + dx;
+      const y = BLOCK_Y + dy;
+      if (probe.activated(sim, grid, x, y)) powered++;
+      const lv = probe.level(grid, x, y);
+      minLevel = Math.min(minLevel, lv);
+      maxLevel = Math.max(maxLevel, lv);
+    }
+  }
+  return { powered, total: BLOCK * BLOCK, minLevel, maxLevel };
+}
+
+{
+  // Every electric device that accepts power must be probed here, so adding one
+  // without extending this harness fails loudly instead of going unguarded.
+  const declared = allMaterials()
+    .filter((m) => m.directPulse && m.category === 'electric')
+    .map((m) => m.name)
+    .sort();
+  const probed = DEVICE_PROBES.map((p) => p.mat.name).sort();
+  check(
+    'every electric device with a power hook is covered here',
+    declared.join() === probed.join(),
+    `declared [${declared.join(', ')}] vs probed [${probed.join(', ')}]`,
+  );
+
+  for (const probe of DEVICE_PROBES) {
+    // 연결 부위 전역: one corner contact brings the whole body up, this tick.
+    const full = pulseCorner(probe, FULL_STRENGTH);
+    check(
+      `${probe.mat.name}: one contact activates the whole connected body`,
+      full.powered === full.total,
+      `${full.powered}/${full.total} cells`,
+    );
+    // 전기 세기에 관계없이: the weakest pulse the packing can express (1 — one more
+    // cell of any lossy medium and it would have died on the way) does exactly the
+    // same thing, to exactly the same degree. Nothing on this side of the wire
+    // reads strength, so a machine at the far end of a long brine run behaves like
+    // one bolted to the battery.
+    const faint = pulseCorner(probe, 1);
+    check(
+      `${probe.mat.name}: a strength-1 pulse activates it identically`,
+      faint.powered === full.powered &&
+        faint.minLevel === full.minLevel &&
+        faint.maxLevel === full.maxLevel,
+      `${faint.powered}/${faint.total} cells, level ${faint.minLevel}..${faint.maxLevel} ` +
+        `vs ${full.minLevel}..${full.maxLevel} at full strength`,
+    );
+  }
+}
+
+// --- 4b. end to end: a battery bolted to a big machine runs all of it ----------
+// The same contract through the real source path (battery beat → shared pulseCell
+// → device hook) and at a size no build would reach: 900 cells, 3.5× the old cap.
+{
+  const side = 30;
+  const grid = new Grid(side + 8, side + 8);
+  const sim = new Simulation(grid);
+  for (let dy = 0; dy < side; dy++) {
+    for (let dx = 0; dx < side; dx++) grid.set(4 + dx, 4 + dy, FAN.id);
+  }
+  grid.set(3, 4, BATTERY.id); // one terminal against a single corner cell
+  for (let t = 0; t < PULSE_PERIOD + 3; t++) sim.step();
+
+  let powered = 0;
+  for (let dy = 0; dy < side; dy++) {
+    for (let dx = 0; dx < side; dx++) if (grid.getAux(4 + dx, 4 + dy) >> 2 > 0) powered++;
+  }
+  check(
+    'a battery on one corner spins up a 900-cell fan wall entirely',
+    powered === side * side,
+    `${powered}/${side * side} cells`,
   );
 }
 

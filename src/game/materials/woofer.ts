@@ -1,8 +1,8 @@
 import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
+import { floodDeviceBody } from '../engine/deviceBody';
 import { detonate } from './blast';
 
 // Woofer (우퍼) — an electric appliance, not a charge: plug a Battery/LFP
@@ -95,11 +95,13 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
 // A future device that wants this same shape (external trigger → whole
 // connected body reacts as one, never conducts further) copies points 1–2
 // verbatim: skip `conductive`, register a `directPulse` hook (so no pulse source
-// needs editing — the shared dispatch already routes to it), and memoize the
-// flood per tick via a dedicated SimContext field (see `wooferFlooded`/
-// `wooferFloodTick` there, modeled directly on Turbine's own `turbineFlooded`/
-// `turbineFloodTick`) so a body touched from several directions/sources in one
-// tick still fires exactly once instead of re-flooding per entry point.
+// needs editing — the shared dispatch already routes to it), and run the body
+// walk through the shared `floodDeviceBody` (engine/deviceBody.ts) with its own
+// `BodyFlood` memo field on SimContext (see `wooferFlood` there), which covers
+// the whole connected body in one pass and keeps a body touched from several
+// directions/sources in one tick from firing more than once. That helper is also
+// where the category's two activation rules live — 전기 세기 무관, 연결 부위 전역
+// 즉시 — so a new device inherits both by construction.
 //
 // ── Reaching the free-object layer (독립 오브젝트) without a BLAST cell ──────
 // Ordinary explosives push a rubber ball/drum/dynamite by leaving BLAST flash
@@ -118,10 +120,19 @@ function wooferPulse(sim: SimContext, x: number, y: number): void {
 // future device can reuse for any object-layer effect that shouldn't ride on
 // a real (and semantically loaded) material id.
 
-/** Backstop on how far one flood walks the connected Woofer body in a single
- *  pass (mirrors Turbine's own MAX_BODY) — a giant cabinet can't make one
- *  pulse unbounded. */
-const MAX_BODY = 256;
+/** Ceiling on how many cells one firing actually *pulses* from — the Woofer's
+ *  answer to "the whole body activates, but a body cell's effect is expensive".
+ *
+ *  Activation itself is uncapped, like every other electric device's (see
+ *  engine/deviceBody.ts): a pulse floods the entire connected cabinet, and the
+ *  wavefront is always grown from the full body outline. What's bounded is the
+ *  number of `detonate` sweeps that firing runs, since each one costs a disc of
+ *  ~`SHOCK_VIS_REACH`² cells and neighbouring sources push very nearly the same
+ *  matter. Up to this many cells every cell pulses (so every cabinet anyone
+ *  actually builds behaves exactly as before); past it the sources are thinned
+ *  onto a square lattice, the identical trade the 충격파 브러시 makes for a big
+ *  footprint (see `fireShockwave` and BRUSH_SOURCE_SPACING). */
+const MAX_SOURCES = 256;
 
 /** Roll the per-tick Woofer bookkeeping over to `sim.tick` if it's still holding
  *  a previous tick's state: the body-flood memo and the object-knockback event
@@ -129,9 +140,7 @@ const MAX_BODY = 256;
  *  nothing. Shared by the material's own body flood and the 충격파 브러시 (see
  *  `fireShockwave`), which both append to that same queue. */
 function beginWooferTick(sim: SimContext): void {
-  if (sim.tick === sim.wooferFloodTick) return;
-  sim.wooferFloodTick = sim.tick;
-  sim.wooferFlooded.clear();
+  if (!sim.wooferFlood.begin(sim)) return;
   sim.wooferPulseX.length = 0;
   sim.wooferPulseY.length = 0;
 }
@@ -167,62 +176,62 @@ function firePulseAt(sim: SimContext, x: number, y: number): void {
 const BRUSH_SOURCE_SPACING = Math.max(1, Math.round(SHOCK_VIS_REACH / 4));
 
 /** Hard ceiling on how many source cells one 충격파 브러시 firing pulses from —
- *  the footprint's answer to `MAX_BODY`, and deliberately the same number, so a
+ *  the footprint's answer to `MAX_SOURCES`, and deliberately the same number, so a
  *  brush firing can never cost more than the giant cabinet the material already
- *  tolerates. Past `MAX_BODY × BRUSH_SOURCE_SPACING²` (~1k cells — so every brush
- *  footprint clears it, and only a 영역 selection ever hits the cap) the lattice
- *  is coarsened beyond BRUSH_SOURCE_SPACING to stay under it, which walks the rim
- *  shortfall described above back up as the selection grows. The push stays at
- *  least *interior*-solid (spacing within one pulse's own reach) up to
- *  `MAX_BODY × SHOCK_VIS_REACH²` ≈ 16k cells, about a 128×128 selection; a larger
- *  one still thumps everywhere, but as a lattice of overlapping discs with
+ *  tolerates. Past `MAX_SOURCES × BRUSH_SOURCE_SPACING²` (~1k cells — so every
+ *  brush footprint clears it, and only a 영역 selection ever hits the cap) the
+ *  lattice is coarsened beyond BRUSH_SOURCE_SPACING to stay under it, which walks
+ *  the rim shortfall described above back up as the selection grows. The push stays
+ *  at least *interior*-solid (spacing within one pulse's own reach) up to
+ *  `MAX_SOURCES × SHOCK_VIS_REACH²` ≈ 16k cells, about a 128×128 selection; a
+ *  larger one still thumps everywhere, but as a lattice of overlapping discs with
  *  thinning pockets between them rather than one solid wall of push — the
- *  deliberate trade for bounded work, exactly as `MAX_BODY` trades away the far
- *  side of an enormous cabinet. The *visual* wavefront is never thinned: it's
- *  always grown from the full footprint. */
-const BRUSH_MAX_SOURCES = MAX_BODY;
+ *  deliberate trade for bounded work, exactly as an enormous cabinet's own sources
+ *  are thinned. The *visual* wavefront is never thinned: it's always grown from the
+ *  full footprint. */
+const BRUSH_MAX_SOURCES = MAX_SOURCES;
 
-/** Flood the connected Woofer body (4-connected, like Turbine's own body
- *  walk) starting at (sx,sy) and fire every cell's pulse in the same event —
- *  "전기가 즉시 전역 확산" (the whole cabinet thumps together). Memoized per
- *  tick via `SimContext.wooferFlooded` so a body reached from several
- *  directions/sources this tick still fires exactly once. */
+/** Flood the *whole* connected Woofer body (4-connected, the shared
+ *  `floodDeviceBody` every electric device's activation uses) starting at (sx,sy)
+ *  and thump it as one event — "전기 세기에 관계없이 연결 부위 전역 즉시 활성화":
+ *  a pulse touching any face fires the entire cabinet in the tick it lands,
+ *  however weak the pulse that arrived. Memoized per tick via
+ *  `SimContext.wooferFlood` so a body reached from several directions/sources this
+ *  tick still fires exactly once.
+ *
+ *  Only the *count of pulse sources* is bounded (MAX_SOURCES): every cabinet worth
+ *  building pulses from every one of its cells, while a cell-for-cell firing from
+ *  an enormous wall — each cell a full `detonate` sweep — is thinned onto a square
+ *  lattice, exactly as the 충격파 브러시 thins a large footprint. The wavefront and
+ *  the activation are never thinned. */
 export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
   beginWooferTick(sim);
-  const w = sim.width;
-  const startIdx = sy * w + sx;
-  if (sim.wooferFlooded.has(startIdx)) return;
-
-  const seen = new Set<number>([startIdx]);
-  const stack: number[] = [sx, sy];
-  // Collect this flood's cells so the effect can honestly reflect the pulse's reach:
-  // the shockwave fires from *every* body cell (wooferPulse below), so its true
-  // extent is the body dilated by the reach — not a fixed radius from one point.
-  // We hand the whole cell set to the renderer, which grows the wavefront out of
-  // the body's own outline (see CanvasRenderer's distance-field ring).
+  // Collect the body's cells so the effect can honestly reflect the pulse's reach:
+  // the shockwave fires from body cells (wooferPulse below), so its true extent is
+  // the body dilated by the reach — not a fixed radius from one point. We hand the
+  // whole cell set to the renderer, which grows the wavefront out of the body's own
+  // outline (see CanvasRenderer's distance-field ring).
   const bx: number[] = [];
   const by: number[] = [];
-  while (stack.length > 0 && bx.length < MAX_BODY) {
-    const y = stack.pop()!;
-    const x = stack.pop()!;
+  const fired = floodDeviceBody(sim, sx, sy, WOOFER.id, sim.wooferFlood, (x, y) => {
     bx.push(x);
     by.push(y);
-    sim.wooferFlooded.add(y * w + x);
-    firePulseAt(sim, x, y);
-    for (const [dx, dy] of DIR4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== WOOFER.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k) || sim.wooferFlooded.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
+  });
+  if (!fired || bx.length === 0) return; // already thumped this tick
+
+  // Fire the pulses only after the body is fully known, so the lattice below can be
+  // sized from the real cell count (and so a pulse's own effects can't perturb the
+  // walk). `step` is 1 — every cell fires — for anything up to MAX_SOURCES cells.
+  const step = Math.max(1, Math.ceil(Math.sqrt(bx.length / MAX_SOURCES)));
+  const ax = bx[0];
+  const ay = by[0];
+  for (let i = 0; i < bx.length; i++) {
+    if ((bx[i] - ax) % step === 0 && (by[i] - ay) % step === 0) firePulseAt(sim, bx[i], by[i]);
   }
   // One expanding-wavefront VFX per firing body (a background effect the renderer
   // animates out of the body's own outline and draws behind matter — see
   // Grid.shockwaves / CanvasRenderer).
-  if (bx.length > 0) sim.emitShockwave(bx, by, SHOCK_VIS_REACH);
+  sim.emitShockwave(bx, by, SHOCK_VIS_REACH);
 }
 
 /**
@@ -263,7 +272,7 @@ export function wooferBodyPulse(sim: SimContext, sx: number, sy: number): void {
  * together. Grid cells are shoved per pulse regardless (that's the immediate
  * `detonate` above), so none of this touches matter, only free objects.
  *
- * Deliberately does NOT consult `sim.wooferFlooded`: that memo answers "has this
+ * Deliberately does NOT consult `sim.wooferFlood`: that memo answers "has this
  * connected body already thumped this tick", which a free-floating footprint has
  * no identity in. The brush does its own rate limiting instead (see
  * PointerPainter's shock gate), so a held brush thumps on a battery-like cadence
