@@ -39,10 +39,54 @@ export interface SnapshotPlacement {
 
 /** Widest/narrowest the manual scale control may go, as a multiple of the
  *  snapshot's original cell size. Wide enough to blow a small sketch up across a
- *  monitor or squeeze an ultrawide scene onto a phone, bounded so a stray drag
- *  can't ask for a billion-cell resample. */
+ *  monitor or squeeze an ultrawide scene onto a phone. */
 export const SCALE_MIN = 0.125;
 export const SCALE_MAX = 8;
+
+/** Hard ceiling on the resampled scene's cell count, so a scale nobody sane
+ *  would ask for can't try to allocate its way out of memory. Both axes at
+ *  `SCALE_MAX` is 64× the source area — on a full-size snapshot that's tens of
+ *  millions of cells across five typed arrays. Matched to `MAX_SAVED_CELLS`
+ *  (persistence), the bound a *loaded* world already lives under. */
+export const MAX_SCENE_CELLS = 4_000_000;
+
+/**
+ * The largest scene this source may be resampled to, per axis.
+ *
+ * `SCALE_MAX` bounds how far the manual control can blow the source up, but the
+ * destination is a floor on that bound: a 16×16 sketch loaded into a 360×203
+ * sandbox has to be allowed to reach 360×203, or "채우기" couldn't fill and
+ * automatic fit couldn't fit. The destination is itself capped (MAX_CELLS), so
+ * this stays bounded.
+ */
+function maxScene(srcW: number, srcH: number, dstW: number, dstH: number): [number, number] {
+  return [
+    Math.max(1, Math.round(srcW * SCALE_MAX), dstW),
+    Math.max(1, Math.round(srcH * SCALE_MAX), dstH),
+  ];
+}
+
+/** Round a requested scene size and hold it under both the per-axis ceiling and
+ *  the total-cell ceiling. The area cap scales the pair down together, so an
+ *  over-large request loses size but keeps its aspect ratio. */
+function clampSize(
+  cw: number,
+  ch: number,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): [number, number] {
+  const [maxW, maxH] = maxScene(srcW, srcH, dstW, dstH);
+  let w = Math.min(maxW, Math.max(1, Math.round(cw)));
+  let h = Math.min(maxH, Math.max(1, Math.round(ch)));
+  if (w * h > MAX_SCENE_CELLS) {
+    const k = Math.sqrt(MAX_SCENE_CELLS / (w * h));
+    w = Math.max(1, Math.floor(w * k));
+    h = Math.max(1, Math.floor(h * k));
+  }
+  return [w, h];
+}
 
 /**
  * The placement a non-manual mode produces for this source/destination pair.
@@ -66,39 +110,57 @@ export function autoPlacement(
   dstH: number,
   mode: SnapshotFit,
 ): SnapshotPlacement {
-  let cw: number;
-  let ch: number;
-  if (mode === 'simple') {
-    cw = srcW;
-    ch = srcH;
-  } else {
-    const scale = Math.min(dstW / srcW, dstH / srcH);
-    cw = Math.max(1, Math.round(srcW * scale));
-    ch = Math.max(1, Math.round(srcH * scale));
-  }
-  return centered(cw, ch, dstW, dstH);
+  if (mode === 'simple') return centered(srcW, srcH, dstW, dstH, srcW, srcH);
+  const scale = Math.min(dstW / srcW, dstH / srcH);
+  return centered(srcW * scale, srcH * scale, dstW, dstH, srcW, srcH);
 }
 
-/** Center a scene of `cw × ch` horizontally and sit it on the floor. */
+/**
+ * Center a scene of `cw × ch` horizontally and sit it on the floor.
+ *
+ * The size is clamped *before* the offsets are derived, which is the whole point
+ * of taking the source dimensions: deriving offsets from a size the resampler
+ * then refuses to build leaves the scene anchored to a rectangle that doesn't
+ * exist — it lands in the corner instead of centered on the floor.
+ */
 export function centered(
   cw: number,
   ch: number,
   dstW: number,
   dstH: number,
+  srcW: number,
+  srcH: number,
 ): SnapshotPlacement {
-  return { cw, ch, offX: Math.round((dstW - cw) / 2), offY: dstH - ch };
+  const [w, h] = clampSize(cw, ch, srcW, srcH, dstW, dstH);
+  return { cw: w, ch: h, offX: Math.round((dstW - w) / 2), offY: dstH - h };
 }
 
-/** Clamp a placement to something the resampler can actually build: at least one
- *  cell per axis, and no larger than the scale ceiling allows. */
-export function clampPlacement(p: SnapshotPlacement, srcW: number, srcH: number): SnapshotPlacement {
-  const maxW = Math.max(1, Math.round(srcW * SCALE_MAX));
-  const maxH = Math.max(1, Math.round(srcH * SCALE_MAX));
+/**
+ * Clamp a placement to something the resampler can actually build. Callers that
+ * build a placement go through `centered`, so this is the last line of defense —
+ * for a hand-built placement, or one carried over from a differently-sized
+ * destination.
+ *
+ * When the ceiling does bite, the scene is shrunk **around its own center**
+ * rather than around its top-left corner, so an over-large placement degrades
+ * into a smaller version of itself in roughly the same spot instead of jumping
+ * to the origin.
+ */
+export function clampPlacement(
+  p: SnapshotPlacement,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): SnapshotPlacement {
+  const [cw, ch] = clampSize(p.cw, p.ch, srcW, srcH, dstW, dstH);
+  const rw = Math.round(p.cw);
+  const rh = Math.round(p.ch);
   return {
-    cw: Math.min(maxW, Math.max(1, Math.round(p.cw))),
-    ch: Math.min(maxH, Math.max(1, Math.round(p.ch))),
-    offX: Math.round(p.offX),
-    offY: Math.round(p.offY),
+    cw,
+    ch,
+    offX: Math.round(cw === rw ? p.offX : p.offX + (rw - cw) / 2),
+    offY: Math.round(ch === rh ? p.offY : p.offY + (rh - ch) / 2),
   };
 }
 
@@ -271,6 +333,6 @@ export function fitWorld(
   dstH: number,
   placement: SnapshotPlacement,
 ): PersistedWorld {
-  const p = clampPlacement(placement, src.w, src.h);
+  const p = clampPlacement(placement, src.w, src.h, dstW, dstH);
   return placeScene(resampleScene(src, p.cw, p.ch), dstW, dstH, p.offX, p.offY);
 }

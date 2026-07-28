@@ -36,6 +36,7 @@ import {
   clampPlacement,
   sceneClip,
   SCALE_MAX,
+  MAX_SCENE_CELLS,
 } from '../src/state/snapshotFit';
 import { EMPTY } from '../src/game/engine/types';
 import { SAND } from '../src/game/materials/sand';
@@ -279,7 +280,7 @@ if (!src) {
   // A manual placement can fill both axes independently (the old "stretch"), and
   // can hang off any edge — the clip has to hold on all four sides, including
   // negative offsets, without throwing or wrapping a row.
-  const filled = fitWorld(src, 60, 40, centered(60, 40, 60, 40));
+  const filled = fitWorld(src, 60, 40, centered(60, 40, 60, 40, SW, SH));
   check('manual fill lands at the target size', filled.w === 60 && filled.h === 40);
   for (const [label, off] of [
     ['off the left', { offX: -40, offY: 0 }],
@@ -305,11 +306,53 @@ if (!src) {
   );
 
   // The scale ceiling is what stops a stray drag from asking for a billion-cell
-  // resample.
-  const huge = clampPlacement({ cw: SW * 1000, ch: SH * 1000, offX: 0, offY: 0 }, SW, SH);
+  // resample: per axis, and (because both axes at the ceiling is 64× the source
+  // area) on the total too.
+  const huge = clampPlacement({ cw: SW * 1000, ch: SH * 1000, offX: 0, offY: 0 }, SW, SH, 60, 40);
   check('an over-large scale is clamped', huge.cw === SW * SCALE_MAX && huge.ch === SH * SCALE_MAX);
-  const tiny = clampPlacement({ cw: 0, ch: -5, offX: 0, offY: 0 }, SW, SH);
+  const vast = clampPlacement(
+    { cw: 5000, ch: 5000, offX: 0, offY: 0 },
+    5000,
+    5000,
+    60,
+    40,
+  );
+  check('the total scene area is capped', vast.cw * vast.ch <= MAX_SCENE_CELLS);
+  check(
+    'the area cap keeps the aspect ratio',
+    Math.abs(vast.cw / vast.ch - 1) < 0.01,
+    `${vast.cw}x${vast.ch}`,
+  );
+  const tiny = clampPlacement({ cw: 0, ch: -5, offX: 0, offY: 0 }, SW, SH, 60, 40);
   check('a degenerate scale is clamped to one cell', tiny.cw === 1 && tiny.ch === 1);
+
+  // The ceiling must never quietly detach a placement from its anchor. Offsets
+  // are derived from the size the resampler will actually build, so a scene the
+  // ceiling shrinks still sits centred on the floor rather than in the corner —
+  // the failure mode that made the 채우기 preset stop filling anything.
+  //
+  // A small snapshot loaded into a much larger sandbox is the everyday case: the
+  // destination has to be reachable even though it's far past SCALE_MAX of the
+  // source, or neither "fill" nor automatic fit could do their job.
+  const tinySrc = { w: 16, h: 16 };
+  const fill = centered(360, 203, 360, 203, tinySrc.w, tinySrc.h);
+  check('the fill preset really fills', fill.cw === 360 && fill.ch === 203);
+  check('the fill preset sits on the floor', fill.offY + fill.ch === 203);
+  const bigAuto = autoPlacement(20, 30, 2000, 2000, 'auto');
+  check('a large upscale still fits the height', bigAuto.ch === 2000);
+  check('a large upscale still sits on the floor', bigAuto.offY + bigAuto.ch === 2000);
+  check(
+    'a large upscale stays horizontally centred',
+    bigAuto.offX === Math.round((2000 - bigAuto.cw) / 2),
+  );
+  // And when the ceiling does bite (a hand-built placement), it shrinks around
+  // the scene's own centre instead of pinning it to the origin.
+  const shrunk = clampPlacement({ cw: 4000, ch: 4000, offX: -1000, offY: -1000 }, 10, 10, 60, 40);
+  check(
+    'the ceiling shrinks a placement around its centre',
+    shrunk.offX + shrunk.cw / 2 === 1000 && shrunk.offY + shrunk.ch / 2 === 1000,
+    `${shrunk.offX},${shrunk.offY} ${shrunk.cw}x${shrunk.ch}`,
+  );
 
   // The load modal draws its preview by walking `sceneClip` and colouring the
   // cells inside it. If that rectangle ever disagreed with what `placeScene`

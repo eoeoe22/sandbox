@@ -68,10 +68,10 @@
   // dragging the preview re-blits a cached buffer instead of re-voting every
   // cell — the difference between a smooth drag and a stuttering one on a large
   // world.
-  let cache: { cw: number; ch: number; scene: PersistedWorld } | null = null;
+  let cache: { src: PersistedWorld; cw: number; ch: number; scene: PersistedWorld } | null = null;
   function scene(cw: number, ch: number): PersistedWorld {
-    if (!cache || cache.cw !== cw || cache.ch !== ch) {
-      cache = { cw, ch, scene: resampleScene(world, cw, ch) };
+    if (!cache || cache.src !== world || cache.cw !== cw || cache.ch !== ch) {
+      cache = { src: world, cw, ch, scene: resampleScene(world, cw, ch) };
     }
     return cache.scene;
   }
@@ -101,7 +101,7 @@
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const p = clampPlacement(placement, world.w, world.h);
+    const p = clampPlacement(placement, world.w, world.h, dstW, dstH);
     const sc = scene(p.cw, p.ch);
 
     const img = ctx.createImageData(dstW, dstH);
@@ -120,9 +120,33 @@
     ctx.putImageData(img, 0, 0);
   }
 
-  // Repaint whenever the placement (or the canvas element) changes.
+  // The live grid can change size under the modal — a window resize moves it —
+  // and the canvas element's width/height attributes follow, which blanks the
+  // bitmap. Re-derive the placement for the destination that now exists rather
+  // than keeping offsets that referred to one that doesn't: `manual` keeps the
+  // scale the user dialled in and gets re-anchored, the other two are re-derived
+  // from their definition.
+  let lastDst = untrack(() => ({ w: dstW, h: dstH }));
+  $effect(() => {
+    const w = dstW;
+    const h = dstH;
+    if (w === lastDst.w && h === lastDst.h) return;
+    lastDst = { w, h };
+    untrack(() => {
+      placement =
+        mode === 'manual'
+          ? centered(placement.cw, placement.ch, w, h, world.w, world.h)
+          : autoPlacement(world.w, world.h, w, h, mode);
+    });
+  });
+
+  // Repaint whenever the placement, the destination size, or the canvas element
+  // changes — `draw()` reads all three, but it runs inside a rAF callback, so
+  // they have to be touched here to be tracked.
   $effect(() => {
     void placement;
+    void dstW;
+    void dstH;
     void canvasEl;
     schedule();
     return () => {
@@ -162,6 +186,8 @@
       { cw, ch, offX: Math.round(cx - cw / 2), offY: Math.round(cy - ch / 2) },
       world.w,
       world.h,
+      dstW,
+      dstH,
     );
   }
 
@@ -170,7 +196,7 @@
     goManual();
     placement =
       kind === 'fill'
-        ? centered(dstW, dstH, dstW, dstH)
+        ? centered(dstW, dstH, dstW, dstH, world.w, world.h)
         : autoPlacement(world.w, world.h, dstW, dstH, kind === 'one' ? 'simple' : 'auto');
   }
 
@@ -222,7 +248,7 @@
   }
 
   function confirm(): void {
-    const p = clampPlacement(placement, world.w, world.h);
+    const p = clampPlacement(placement, world.w, world.h, dstW, dstH);
     onconfirm(placeScene(scene(p.cw, p.ch), dstW, dstH, p.offX, p.offY));
   }
 
