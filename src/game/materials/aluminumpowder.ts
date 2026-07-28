@@ -30,14 +30,14 @@ import { THERMITE } from './thermite';
 // 2800°, which is the whole point: lighting the aluminum alone gets you a torch,
 // mixing it with rust first gets you a cutting charge.
 //
-// It is deliberately NOT `magnetic` (aluminum isn't ferrous), which makes it the
-// first *ferrous-looking* dust an Electromagnet refuses: every other steel-grey
-// powder in the palette — Metal Powder, Rust Powder, Iron Ore — answers the
-// field, so a mixed heap of metal dust can now actually be sorted, the iron
-// grains marching off and the aluminum staying put. (It is not the only
-// non-magnetic metal powder — Sodium never carried the tag either — but Sodium
-// is a soft alkali metal that reads and behaves nothing like iron filings, so
-// nobody was ever tempted to sweep a magnet over it.)
+// It is deliberately NOT `magnetic` (aluminum isn't ferrous), which is what
+// makes it the first powder an Electromagnet can sort *other metal dust* from:
+// every iron-bearing powder in the palette — Metal Powder, Rust Powder, Iron
+// Ore — answers the field, so until now sweeping a magnet over a heap only ever
+// separated metal from non-metal. Now the iron grains march off and the aluminum
+// stays put. (It is not the only non-magnetic metal powder — Sodium never
+// carried the tag either — but Sodium is a soft alkali metal nobody was going to
+// mistake for iron filings in the first place.)
 const SPEC: Combustible = {
   // Between Coal Powder (0.035) and Wood (0.06): a metal dust front creeps
   // rather than races — it took real heat to start and it doesn't hurry.
@@ -72,16 +72,23 @@ const MIX_CHANCE = 0.25;
 // black-powder helper: reactions.ts checks `tempMax` against the cell that
 // *declares* the rule only, so this gates the aluminum grain, never its rust
 // partner (gunpowdermix.ts, checking both sides itself, has no such gap). A
-// scorching rust grain touching a still-cold aluminum grain can therefore be
-// pulled into Thermite. Measured, the window is small and self-closing: with a
-// rust bed at 600° under cold aluminum, only 14 of 200 ticks had any aluminum
-// left under the gate before conduction lifted it past too (6 of 200 at 1400°),
-// and the conversion is roughly halved against an ambient pile. Past 1200° the
-// rust melts out from under the recipe entirely and nothing converts at all.
-// The outcome where it does fire is the sensible one rather than a glitch: the
-// Thermite it produces inherits that heat, lands above its own 900°
-// autoignition, and lights on the spot — which is what mixing aluminum into
-// red-hot iron oxide ought to do.
+// hot rust grain touching a still-cold aluminum grain can therefore be pulled
+// into Thermite. Two things keep that from mattering.
+//
+// First it is self-closing, because the gate the rule *does* check is on the
+// cell being heated: conduction lifts the aluminum past 150° within a few ticks
+// of meeting a hot neighbour, and the rule stops firing. Measured with a 600°
+// rust bed under cold aluminum, some aluminum was left under the gate for only
+// 14 of 200 ticks, and conversion came out roughly half an ambient pile's.
+//
+// Second, the band where it can fire at all is narrow and its outcomes are both
+// sensible. Rust Powder melts at 1200°, so above that it is Slag/Molten Iron Ore
+// before this rule ever sees it and nothing converts — measured at a 1400° bed,
+// zero Thermite. That leaves 150°–1200° on the rust side, and Thermite born
+// anywhere in it behaves correctly: below its own 900° autoignition it is simply
+// warm Thermite, which is exactly what thermite is until something lights it,
+// and from 900° to 1200° it is born already alight — which is what mixing
+// aluminum into red-hot iron oxide ought to do.
 const MIX_MAX_TEMP = 150;
 
 export const ALUMINUM_POWDER = register({
