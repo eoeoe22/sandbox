@@ -81,14 +81,17 @@ const MIX_CHANCE = 0.25;
 // rust bed under cold aluminum, some aluminum was left under the gate for only
 // 14 of 200 ticks, and conversion came out roughly half an ambient pile's.
 //
-// Second, the band where it can fire at all is narrow and its outcomes are both
-// sensible. Rust Powder melts at 1200°, so above that it is Slag/Molten Iron Ore
-// before this rule ever sees it and nothing converts — measured at a 1400° bed,
-// zero Thermite. That leaves 150°–1200° on the rust side, and Thermite born
-// anywhere in it behaves correctly: below its own 900° autoignition it is simply
-// warm Thermite, which is exactly what thermite is until something lights it,
-// and from 900° to 1200° it is born already alight — which is what mixing
-// aluminum into red-hot iron oxide ought to do.
+// Second, every outcome it can produce is a sensible one. The rust side has no
+// floor at all — being ungated is the whole point of this note, and the ordinary
+// recipe is two ambient grains — but it does have a ceiling: Rust Powder melts at
+// 1200°, so above that it is Slag/Molten Iron Ore before this rule ever sees it
+// and nothing converts (measured at a 1400° bed, zero Thermite). So the rust
+// partner is anywhere from ambient to just under 1200°, the Thermite inherits
+// whatever that was, and both halves of that range read correctly: below
+// Thermite's own 900° autoignition it is inert powder, which is exactly what
+// thermite is until something lights it, and from 900° to 1200° it is born
+// already alight — which is what mixing aluminum into red-hot iron oxide ought
+// to do.
 const MIX_MAX_TEMP = 150;
 
 export const ALUMINUM_POWDER = register({
