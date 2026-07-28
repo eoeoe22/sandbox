@@ -654,27 +654,25 @@ export class CanvasRenderer implements Renderer {
       } else if (triArrow[id]) {
         // A Shaped Charge draws solid arrowhead triangles pointing its jet
         // direction (aux low 2 bits, same codes as the Fan's chevron) — the
-        // liner cone made visible. Each 4-cell tile along the axis is a filled
-        // ▶: the base spans the full 4 cells across at the tail, the middle two
-        // lanes run 3 cells toward the tip, so repeats read as nested wedges.
+        // liner cone made visible. The tile is 6 cells ACROSS the jet axis by 4
+        // ALONG it: the cross-axis position picks a lane whose fill runs 1, 2,
+        // 3, 3, 2, 1 cells toward the tip, so each side steps in exactly one
+        // cell per lane — a real triangle rather than a stubby wedge. The 4th
+        // cell along the axis is always blank, leaving a clean gap column
+        // between repeats so a block reads as ▶▶▶ instead of one filled slab.
         const x = i % w;
         const y = (i / w) | 0;
         const dir = auxArr[i] & 0b11;
-        let on: boolean;
-        if (dir >= 2) {
-          // left (2) / right (3): triangle runs along x; y picks the lane —
-          // middle two lanes reach 3 cells, edge lanes only the 1-cell base.
-          const f = y & 3;
-          const d = f === 1 || f === 2 ? 0 : 1;
-          const t = x & 3;
-          on = (dir === 3 ? t : 3 - t) <= 2 - 2 * d;
-        } else {
-          // up (0) / down (1): the same shape folded the other way.
-          const f = x & 3;
-          const d = f === 1 || f === 2 ? 0 : 1;
-          const t = y & 3;
-          on = (dir === 1 ? t : 3 - t) <= 2 - 2 * d;
-        }
+        // Lane index across the axis → how far this lane fills toward the tip
+        // (0,1,2,2,1,0), and the position along the axis measured from the
+        // triangle's flat base (so the tip points the jet way).
+        const lane = (dir >= 2 ? y : x) % 6;
+        const taper = lane < 3 ? lane : 5 - lane;
+        const along = (dir >= 2 ? x : y) % 4;
+        // dir 1 (down) / 3 (right) grow with the coordinate; 0 (up) / 2 (left)
+        // grow against it, so the base sits on the trailing side either way.
+        const t = dir === 1 || dir === 3 ? along : 3 - along;
+        const on = t <= taper;
         c = on ? latCol[id] : pal[id];
       } else if (coilPattern[id]) {
         // An Electromagnet draws copper windings around a dark core: two lit rows

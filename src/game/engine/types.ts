@@ -442,9 +442,10 @@ export interface Material {
    * `color`) pointing the way the cell's `aux` byte says it faces — the low 2
    * bits are the direction, same codes as `windArrow` (0 up / 1 down / 2 left /
    * 3 right). Where `windArrow` draws a thin chevron line (Fan/Laser), this
-   * tiles filled arrowhead triangles — the Shaped Charge uses it so its liner
-   * cone (성형작약의 원뿔 라이너) reads as ▶-shaped wedges aimed down the jet
-   * axis. Purely a rendering hint the simulation never reads; omit for an
+   * tiles filled triangles 6 cells across the axis by 3 deep along it, each
+   * side stepping in one cell per lane — the Shaped Charge uses it so its liner
+   * cone (성형작약의 원뿔 라이너) reads as ▶-shaped arrowheads aimed down the
+   * jet axis. Purely a rendering hint the simulation never reads; omit for an
    * ordinary material.
    */
   triArrow?: boolean;
