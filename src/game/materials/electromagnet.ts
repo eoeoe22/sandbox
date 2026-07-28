@@ -304,6 +304,11 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
     }
   }
 
+  // Publish the live body for the renderer's contour-ring effect (자기력선) —
+  // re-stamped every powered tick alongside the pull itself, so the rings appear
+  // and vanish exactly with the field (see Grid.magnetFields).
+  sim.emitMagnetField(bx, by, REACH);
+
   pullField(sim, bx, by, minX, minY, maxX, maxY);
 }
 

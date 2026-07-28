@@ -415,6 +415,17 @@ export class SimContext {
     this.grid.shockwaves.push({ bx, by, reach });
   }
 
+  /** Publish one powered Electromagnet body's live attraction field for the
+   *  renderer's contour-ring effect (자기력선): `bx,by` are the body's cell
+   *  coordinates and `reach` how far its pull extends. Re-stamped every powered
+   *  tick (the list is cleared at each step's start — see Grid.magnetFields), so
+   *  unlike the Woofer's one-shot shockwave the rings persist exactly as long as
+   *  the field does. Purely cosmetic: the pull itself rides pullField's sweep
+   *  (materials/electromagnet.ts); the CA and object layers never read this. */
+  emitMagnetField(bx: number[], by: number[], reach: number): void {
+    this.grid.magnetFields.push({ bx, by, reach });
+  }
+
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or
    *  EMPTY when nothing is overlapped (see Grid.overlay). A material rule can
    *  read this to react to a fluid passing through it — the Turbine makes power

@@ -138,6 +138,12 @@ export class Simulation {
       g.wind.fill(0);
       this.ctx.windStamped = false;
     }
+    // Likewise drop last tick's live Electromagnet fields before powered magnets
+    // re-stamp them in the scan below (ctx.emitMagnetField) — so the renderer's
+    // field rings track exactly the current tick's powered bodies and vanish the
+    // instant a magnet's countdown lapses. Already lazy: a no-magnet world holds
+    // an empty list and this is a no-op.
+    if (g.magnetFields.length > 0) g.magnetFields.length = 0;
     // Alternate the cross-gravity scan direction each tick to avoid a drift bias.
     const flip = (this.tick++ & 1) === 0;
 
