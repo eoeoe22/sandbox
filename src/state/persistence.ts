@@ -21,6 +21,7 @@ import {
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
+  $snapshotFit,
   type BrushShape,
   type BrushMode,
   type Tool,
@@ -53,8 +54,9 @@ import {
   HEAT_ABS_RATE_MAX,
   HEAT_REL_RATE_MIN,
   HEAT_REL_RATE_MAX,
+  SNAPSHOT_FITS,
 } from '../game/config';
-import type { SimSpeed, SmokeLevel, HeatRateMode } from '../game/config';
+import type { SimSpeed, SmokeLevel, HeatRateMode, SnapshotFit } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
 
@@ -112,6 +114,21 @@ const TOOLS: readonly Tool[] = [
 const BORDER_MODES: readonly BorderMode[] = ['wall', 'void'];
 const SIM_SPEED_VALUES: readonly SimSpeed[] = SIM_SPEEDS;
 const HEAT_RATE_MODES: readonly HeatRateMode[] = ['absolute', 'relative'];
+const SNAPSHOT_FIT_VALUES: readonly SnapshotFit[] = SNAPSHOT_FITS;
+/** Mode names from the first version of the snapshot-fit setting, before the
+ *  load modal replaced the three fixed modes with auto/manual/simple. `stretch`
+ *  has no like-for-like successor — it maps to `manual`, where filling both axes
+ *  is one preset button away. */
+const LEGACY_SNAPSHOT_FITS: Record<string, SnapshotFit> = {
+  fit: 'auto',
+  crop: 'simple',
+  stretch: 'manual',
+};
+
+function parseSnapshotFit(v: unknown): SnapshotFit {
+  if (typeof v === 'string' && v in LEGACY_SNAPSHOT_FITS) return LEGACY_SNAPSHOT_FITS[v];
+  return oneOf(v, SNAPSHOT_FIT_VALUES, $snapshotFit.get());
+}
 
 /** Palette-material ids the blend editor can actually offer, so a restored blend
  *  can't reference a material with no matching <option> (it validates to exactly
@@ -244,6 +261,7 @@ function hydrateSettings(): void {
   $cellScale.set(oneOf(s.cellScale, CELL_SCALES, $cellScale.get()));
   if (typeof s.heatOverlay === 'boolean') $heatOverlay.set(s.heatOverlay);
   $gridDivision.set(oneOf(s.gridDivision, GRID_DIVISIONS, $gridDivision.get()));
+  $snapshotFit.set(parseSnapshotFit(s.snapshotFit));
   $bottomDeadzone.set(
     clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
   );
@@ -282,6 +300,7 @@ function saveSettings(): void {
       cellScale: $cellScale.get(),
       heatOverlay: $heatOverlay.get(),
       gridDivision: $gridDivision.get(),
+      snapshotFit: $snapshotFit.get(),
       bottomDeadzone: $bottomDeadzone.get(),
       favorites: $favorites.get(),
       recentMaterials: $recentMaterials.get(),
@@ -343,6 +362,7 @@ export function initSettingsPersistence(): void {
   $cellScale.listen(schedule);
   $heatOverlay.listen(schedule);
   $gridDivision.listen(schedule);
+  $snapshotFit.listen(schedule);
   $bottomDeadzone.listen(schedule);
   $favorites.listen(schedule);
   $recentMaterials.listen(schedule);

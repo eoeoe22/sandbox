@@ -287,6 +287,7 @@ export const ko = {
   // --- Save slots ---
   save: {
     namePlaceholder: '저장할 이름 (비우면 자동)',
+    descPlaceholder: '설명 (선택)',
     saveAria: '현재 캔버스 저장',
     save: '저장',
     limitExceeded: '저장 한도(50개) 초과 — 기존 스냅샷을 삭제하세요',
@@ -295,19 +296,62 @@ export const ko = {
     loadOk: '불러오기 완료',
     loadFailed: '불러오기 실패',
     loadTooltip: '불러오기',
-    renameTooltip: '이름 변경',
+    renameTooltip: '이름 · 설명 수정',
     deleteTooltip: '삭제',
     deleteConfirm: '"{name}" 삭제할까요?',
     deleted: '"{name}" 삭제됨',
-    renameFailed: '이름 변경 실패 (저장 공간 부족)',
+    renameFailed: '수정 실패 (저장 공간 부족)',
     loadAria: '"{name}" 불러오기',
-    renameAria: '"{name}" 이름 변경',
+    renameAria: '"{name}" 이름 · 설명 수정',
     deleteAria: '"{name}" 삭제',
     viewToggleGroup: '스냅샷 보기 방식',
     galleryTooltip: '갤러리 보기',
     listTooltip: '목록 보기',
-    empty: '저장된 스냅샷이 없습니다. 현재 샌드박스 상태를 저장해 보세요.',
-    hint: '저장 스냅샷은 브라우저 로컬에 보관됩니다. 화면 크기가 달라도 현재 캔버스에 맞춰 불러옵니다.',
+    empty: '저장된 스냅샷이 없습니다. 현재 샌드박스 상태를 저장하거나, 파일을 불러와 보세요.',
+    hint: '저장 스냅샷은 브라우저 로컬에 보관됩니다. 불러오기를 누르면 미리보기 창이 열려, 크기가 다른 장면을 현재 캔버스에 어떻게 앉힐지 직접 고를 수 있습니다.',
+
+    // --- File export / import ---
+    exportTooltip: '파일로 내보내기',
+    exportAria: '"{name}" 파일로 내보내기',
+    exported: '"{name}" 내보냄',
+    exportFailed: '내보내기 실패',
+    import: '파일 불러오기',
+    importTooltip: '.psbx.json 스냅샷 파일을 목록에 추가합니다 (캔버스는 그대로)',
+    imported: '"{name}" 목록에 추가됨',
+    importInvalid: '스냅샷 파일이 아니거나 손상되었습니다',
+    importTooBig: '파일이 너무 큽니다',
+    importReadFailed: '파일을 읽지 못했습니다',
+    importLimit: '저장 한도(50개) 초과 — 기존 스냅샷을 삭제하세요',
+    importFailed: '불러오기 실패 (저장 공간이 부족합니다)',
+  },
+
+  // --- Snapshot load options (preview modal) ---
+  load: {
+    title: '불러오기 옵션',
+    previewAria: '미리보기 — 끌거나 방향키로 장면을 옮깁니다',
+    modeGroup: '스냅샷을 맞추는 방식',
+    mode: {
+      auto: '자동 맞춤',
+      autoTooltip:
+        '종횡비를 유지한 채 전체가 들어가도록 압축하거나 확대합니다. 잘리는 곳 없이 다 보이고, 남는 자리는 빈칸입니다.',
+      manual: '수동',
+      manualTooltip:
+        '배율을 직접 정하고 장면을 원하는 위치로 끌어 놓습니다. 캔버스 밖으로 나간 부분은 잘립니다.',
+      simple: '원본 크기',
+      simpleTooltip:
+        '크기를 바꾸지 않습니다. 캔버스를 넘치는 부분은 잘라내고, 모자라는 부분은 빈칸으로 둡니다.',
+    },
+    scale: '배율',
+    scaleX: '가로',
+    scaleY: '세로',
+    linkAxes: '비율 고정',
+    presetAuto: '맞춤',
+    presetOriginal: '원본',
+    presetFill: '꽉 채우기',
+    manualHint:
+      '미리보기를 끌어서 장면을 옮깁니다 (방향키로 미세 조정, Shift를 누르면 10칸씩). 많이 축소하면 셀이 합쳐지므로 1칸짜리 전선 같은 얇은 구조는 끊길 수 있습니다.',
+    cancel: '취소',
+    confirm: '불러오기',
   },
 
   // --- Language selector ---

@@ -415,3 +415,24 @@ export const FIRE_SMOKE_CHANCE = 0.3;
  */
 export const BLEND_MAX_SLOTS = 3;
 export const BLEND_RATIO_STEP = 5;
+
+/**
+ * How a saved snapshot is fitted onto the live canvas when the two grids don't
+ * match. Every user runs a different aspect ratio and resolution, so a shared
+ * save is almost never the size of the sandbox it lands in — the load modal asks
+ * which of these to use and previews the answer before applying it.
+ *
+ * - `auto`   — scale to fit, aspect preserved: compressed or enlarged so the
+ *              whole scene is visible, leftover area left empty. The default.
+ * - `manual` — the user dials the scale (linked or per-axis) and drags the scene
+ *              around, cropping and stretching by hand.
+ * - `simple` — no scaling at all. Whatever overflows the canvas is cut, and
+ *              wherever the scene falls short the difference stays empty.
+ *
+ * The mode only picks the *starting* placement; `SnapshotPlacement`
+ * (state/snapshotFit) is what actually gets applied.
+ */
+export type SnapshotFit = 'auto' | 'manual' | 'simple';
+/** Selectable fit modes, in the order the load modal shows them. */
+export const SNAPSHOT_FITS: readonly SnapshotFit[] = ['auto', 'manual', 'simple'];
+export const SNAPSHOT_FIT_DEFAULT: SnapshotFit = 'auto';

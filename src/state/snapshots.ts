@@ -1,5 +1,11 @@
 import type { Grid } from '../game/engine/Grid';
 import { serializeWorld, deserializeWorld, type PersistedWorld } from './persistence';
+import {
+  buildSnapshotFile,
+  parseSnapshotFile,
+  fileNameFromTitle,
+  SNAPSHOT_FILE_EXT,
+} from './snapshotFile';
 
 /**
  * Named snapshot save/load — user-created slots that capture the whole sandbox
@@ -15,9 +21,12 @@ import { serializeWorld, deserializeWorld, type PersistedWorld } from './persist
 const SNAPSHOT_KEY = 'particle-sandbox:snapshots:v1';
 /** Upper bound on snapshot count so a runaway loop or quota issue can't fill
  *  storage indefinitely. Generous for real use; the UI lists them all. */
-const MAX_SNAPSHOTS = 50;
+export const MAX_SNAPSHOTS = 50;
 /** Cap a single name's length so the stored index stays small. */
 const MAX_NAME_LEN = 40;
+/** Cap the free-text description. Long enough for "산성비 실험, 우측 스위치를
+ *  켜면 시작" — this is a caption, not a manual. */
+const MAX_DESC_LEN = 200;
 /** Thumbnail target width in CSS px (aspect preserved). Small enough to keep a
  *  stored JPEG data URL in the ~5–10KB range, so 50 snapshots add a bounded
  *  cost on top of the world envelopes. */
@@ -55,6 +64,9 @@ export interface SnapshotMeta {
   id: string;
   /** User-visible name (or an auto-generated fallback). */
   name: string;
+  /** Short free-text note about the scene — what it is, how to play with it.
+   *  Absent on snapshots saved before descriptions existed. */
+  desc?: string;
   /** Creation timestamp (ms epoch). */
   createdAt: number;
   /** Grid dimensions at save time (for a quick "fits / will rescale" hint). */
@@ -79,6 +91,7 @@ function isRecord(v: unknown): v is SnapshotRecord {
   return (
     typeof r.id === 'string' &&
     typeof r.name === 'string' &&
+    (r.desc === undefined || typeof r.desc === 'string') &&
     typeof r.createdAt === 'number' &&
     typeof r.w === 'number' &&
     typeof r.h === 'number' &&
@@ -162,15 +175,22 @@ export function captureThumbnail(
  * `thumb` (a JPEG data URL from `captureThumbnail`) is stored for the gallery
  * preview; pass ''/omit to save without one.
  */
-export function saveSnapshot(grid: Grid, name: string, thumb = ''): SnapshotMeta | null {
+export function saveSnapshot(
+  grid: Grid,
+  name: string,
+  desc = '',
+  thumb = '',
+): SnapshotMeta | null {
   if (!storageAvailable()) return null;
   const list = loadRecords();
   if (list.length >= MAX_SNAPSHOTS) return null;
   const trimmed = name.trim().slice(0, MAX_NAME_LEN);
   const finalName = trimmed || `Save ${list.length + 1}`;
+  const trimmedDesc = desc.trim().slice(0, MAX_DESC_LEN);
   const record: SnapshotRecord = {
     id: genId(),
     name: finalName,
+    ...(trimmedDesc ? { desc: trimmedDesc } : {}),
     createdAt: Date.now(),
     w: grid.width,
     h: grid.height,
@@ -183,13 +203,21 @@ export function saveSnapshot(grid: Grid, name: string, thumb = ''): SnapshotMeta
   return meta;
 }
 
-/** Rename a snapshot by id. Returns true on success. */
-export function renameSnapshot(id: string, name: string): boolean {
+/**
+ * Edit a snapshot's name and description in place. An all-whitespace name keeps
+ * the existing one (a slot with no name is worse than a stale one); an empty
+ * description clears the field. Returns true on success.
+ */
+export function updateSnapshot(id: string, name: string, desc: string): boolean {
   if (!storageAvailable()) return false;
   const list = loadRecords();
   const idx = list.findIndex((r) => r.id === id);
   if (idx === -1) return false;
-  list[idx].name = name.trim().slice(0, MAX_NAME_LEN) || list[idx].name;
+  const rec = list[idx];
+  rec.name = name.trim().slice(0, MAX_NAME_LEN) || rec.name;
+  const trimmedDesc = desc.trim().slice(0, MAX_DESC_LEN);
+  if (trimmedDesc) rec.desc = trimmedDesc;
+  else delete rec.desc;
   return saveRecords(list);
 }
 
@@ -258,19 +286,18 @@ export function registerGridForSnapshots(
 }
 
 /**
- * Apply a saved snapshot to the live grid: load its envelope by id and resize
- * the current grid from it (bottom-left anchored, same rule as a window
- * resize), so a world saved at a different size is remapped onto the current
- * sandbox. Returns true on success. The live grid's own resolution is kept; the
- * snapshot's content is fitted into it. Free objects (balls, drums) are cleared
- * first — snapshots don't serialize the object layer, so leaving the current
- * session's objects on top of loaded cells would mix two unrelated scenes.
+ * Put an already-placed world (exactly the live grid's size — what `fitWorld`
+ * returns) onto the canvas. Split out from `applySnapshot` so the load modal can
+ * apply the very world it previewed rather than recomputing it, which is what
+ * makes "what you see is what you get" true rather than approximately true.
+ *
+ * Free objects (balls, drums) are cleared first — snapshots don't serialize the
+ * object layer, so leaving the current session's objects on top of loaded cells
+ * would mix two unrelated scenes.
  */
-export function applySnapshot(id: string): boolean {
+export function applyWorld(world: PersistedWorld): boolean {
   if (!liveGrid) return false;
-  const world = loadSnapshot(id);
-  if (!world) return false;
-  liveGrid.objects.length = 0; // snapshot doesn't carry objects — start clean
+  liveGrid.objects.length = 0;
   liveGrid.resizeFrom(
     liveGrid.width,
     liveGrid.height,
@@ -293,8 +320,78 @@ export function applySnapshot(id: string): boolean {
  * in device pixels); if no callback is registered or capture fails, the
  * snapshot is still saved without one. Returns the new meta, or null.
  */
-export function saveLiveSnapshot(name: string): SnapshotMeta | null {
+export function saveLiveSnapshot(name: string, desc = ''): SnapshotMeta | null {
   if (!liveGrid) return null;
   const thumb = captureThumb ? captureThumb() : '';
-  return saveSnapshot(liveGrid, name, thumb);
+  return saveSnapshot(liveGrid, name, desc, thumb);
+}
+
+// ---------------------------------------------------------------------------
+// File export / import
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a saved snapshot as a downloadable file (see snapshotFile for the
+ * container). The filename carries the title — that's what makes a shared file
+ * self-describing in a downloads folder — and the description travels inside.
+ * Returns null when the id is unknown or storage is unavailable.
+ */
+export function exportSnapshot(id: string): { filename: string; text: string } | null {
+  if (!storageAvailable()) return null;
+  const rec = loadRecords().find((r) => r.id === id);
+  if (!rec) return null;
+  return {
+    filename: `${fileNameFromTitle(rec.name)}${SNAPSHOT_FILE_EXT}`,
+    text: buildSnapshotFile({
+      title: rec.name,
+      description: rec.desc ?? '',
+      createdAt: rec.createdAt,
+      w: rec.w,
+      h: rec.h,
+      thumb: rec.thumb,
+      world: rec.world,
+    }),
+  };
+}
+
+/** Why an import didn't produce a snapshot, so the UI can say something useful
+ *  instead of a bare "failed". */
+export type ImportError = 'storage' | 'limit' | 'invalid' | 'write';
+
+/**
+ * Add a snapshot file's contents to the local list. Deliberately does *not*
+ * touch the canvas: an import shouldn't blow away whatever the user is in the
+ * middle of building — the new entry just appears in the list, to be loaded when
+ * they choose. A fresh id is assigned (so re-importing the same file twice gives
+ * two independent slots rather than clobbering one), while the title,
+ * description, thumbnail and original creation time come from the file.
+ *
+ * `fallbackName` is used when the file carries no title (e.g. the dropped
+ * filename), so the entry is never nameless.
+ */
+export function importSnapshotFromText(
+  text: string,
+  fallbackName = '',
+): { meta: SnapshotMeta } | { error: ImportError } {
+  if (!storageAvailable()) return { error: 'storage' };
+  const parsed = parseSnapshotFile(text);
+  if (!parsed) return { error: 'invalid' };
+  const list = loadRecords();
+  if (list.length >= MAX_SNAPSHOTS) return { error: 'limit' };
+  const name =
+    parsed.title || fallbackName.trim().slice(0, MAX_NAME_LEN) || `Import ${list.length + 1}`;
+  const record: SnapshotRecord = {
+    id: genId(),
+    name,
+    ...(parsed.description ? { desc: parsed.description } : {}),
+    createdAt: parsed.createdAt,
+    w: parsed.w,
+    h: parsed.h,
+    world: parsed.world,
+    ...(parsed.thumb ? { thumb: parsed.thumb } : {}),
+  };
+  list.push(record);
+  if (!saveRecords(list)) return { error: 'write' };
+  const { world: _w, ...meta } = record;
+  return { meta };
 }

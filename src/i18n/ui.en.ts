@@ -290,6 +290,7 @@ export const en = {
   // --- Save slots ---
   save: {
     namePlaceholder: 'Save name (blank for auto)',
+    descPlaceholder: 'Description (optional)',
     saveAria: 'Save the current canvas',
     save: 'Save',
     limitExceeded: 'Save limit (50) exceeded — delete an existing snapshot',
@@ -298,19 +299,62 @@ export const en = {
     loadOk: 'Load complete',
     loadFailed: 'Load failed',
     loadTooltip: 'Load',
-    renameTooltip: 'Rename',
+    renameTooltip: 'Edit name / description',
     deleteTooltip: 'Delete',
     deleteConfirm: 'Delete "{name}"?',
     deleted: '"{name}" deleted',
-    renameFailed: 'Rename failed (storage is full)',
+    renameFailed: 'Save failed (storage is full)',
     loadAria: 'Load "{name}"',
-    renameAria: 'Rename "{name}"',
+    renameAria: 'Edit "{name}"',
     deleteAria: 'Delete "{name}"',
     viewToggleGroup: 'Snapshot view mode',
     galleryTooltip: 'Gallery view',
     listTooltip: 'List view',
-    empty: 'No saved snapshots. Save the current sandbox state.',
-    hint: 'Saved snapshots are kept locally in the browser. They load onto the current canvas even if the screen size differs.',
+    empty: 'No saved snapshots. Save the current sandbox state, or import a file.',
+    hint: 'Saved snapshots are kept locally in the browser. Loading opens a preview where you choose how a differently-sized scene lands on the current canvas.',
+
+    // --- File export / import ---
+    exportTooltip: 'Export to a file',
+    exportAria: 'Export "{name}" to a file',
+    exported: '"{name}" exported',
+    exportFailed: 'Export failed',
+    import: 'Import file',
+    importTooltip: 'Add a .psbx.json snapshot file to the list (the canvas is not touched)',
+    imported: '"{name}" added to the list',
+    importInvalid: 'Not a snapshot file (or it is corrupt)',
+    importTooBig: 'File is too large',
+    importReadFailed: 'Could not read the file',
+    importLimit: 'Save limit (50) exceeded — delete an existing snapshot',
+    importFailed: 'Import failed (storage is full)',
+  },
+
+  // --- Snapshot load options (preview modal) ---
+  load: {
+    title: 'Load options',
+    previewAria: 'Preview — drag, or use the arrow keys, to move the scene',
+    modeGroup: 'How the snapshot is fitted',
+    mode: {
+      auto: 'Auto fit',
+      autoTooltip:
+        'Scale the scene up or down to fit, keeping its aspect ratio. Nothing is cut off; leftover area stays empty.',
+      manual: 'Manual',
+      manualTooltip:
+        'Set the scale yourself and drag the scene where you want it. Anything past the canvas edge is cut off.',
+      simple: 'Original size',
+      simpleTooltip:
+        'No scaling. Whatever overflows the canvas is cut off, and wherever the scene falls short the difference stays empty.',
+    },
+    scale: 'Scale',
+    scaleX: 'Width',
+    scaleY: 'Height',
+    linkAxes: 'Keep aspect ratio',
+    presetAuto: 'Fit',
+    presetOriginal: 'Original',
+    presetFill: 'Fill',
+    manualHint:
+      'Drag the preview to move the scene (arrow keys nudge it; hold Shift for 10 cells at a time). Heavy downscaling merges cells, so thin structures such as a 1-cell wire can break.',
+    cancel: 'Cancel',
+    confirm: 'Load',
   },
 
   // --- Language selector ---
