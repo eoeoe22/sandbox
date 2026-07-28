@@ -1,8 +1,8 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
+import { floodDeviceBody } from '../engine/deviceBody';
 import { emitHeatRay } from './heatray';
 
 // Laser (레이저) — an electric emitter that turns power into a beam of Heat Rays
@@ -17,9 +17,11 @@ import { emitHeatRay } from './heatray';
 // (`Material.directPulse` = `energizeLaserBody`), and every pulse source — a
 // Battery/LFP Battery/Turbine in contact or a Spark relayed down a wire —
 // dispatches it through the shared `reactToPulse` (spark.ts). Current reaching any
-// face floods the whole connected laser body (4-connected) and stamps a *powered
-// countdown* onto every cell at once, so the emitter fires while the countdown
-// lives and spins down a beat after power is cut.
+// face floods the whole connected laser body (4-connected, via the shared
+// `floodDeviceBody` — 전기 세기에 관계없이 연결 부위 전역 즉시 활성화, see
+// engine/deviceBody.ts) and stamps a *powered countdown* onto every cell at once,
+// so the emitter fires while the countdown lives and spins down a beat after power
+// is cut.
 //
 // The countdown is what keeps the beam from strobing. The engine's electricity is
 // pulsed — a Battery injects a Spark only every PULSE_PERIOD ticks, so a beam that
@@ -56,12 +58,6 @@ const DIRV: ReadonlyArray<readonly [number, number]> = [
  *  field (aux >> 2, ≤ 63). Matches the Fan. */
 const POWERED_TICKS = 24;
 
-/** Backstop on how far one flood walks the connected laser body in a single pass —
- *  mirrors the Fan/Turbine/Woofer MAX_BODY so a giant emitter array can't make one
- *  pulse unbounded (a larger body is covered across several capped floods a tick,
- *  each memoized in SimContext.laserFlooded). */
-const MAX_BODY = 256;
-
 function updateLaser(x: number, y: number, sim: SimContext): void {
   const aux = sim.getAux(x, y);
   const timer = aux >> 2;
@@ -77,43 +73,20 @@ function updateLaser(x: number, y: number, sim: SimContext): void {
 }
 
 /**
- * Deliver a power pulse to the connected laser body containing (sx,sy): flood it
- * through laser cells (4-connected) and refresh every cell's powered countdown to
- * POWERED_TICKS, keeping each cell's own direction bits. A one-way sink — a pulse
- * only ever *arrives* here (see the header) — so power reaching any face energizes
- * the whole structure. Memoized per tick via SimContext.laserFlooded so a body
- * touched from several faces/sources in one tick still floods exactly once. Called
- * from the pulse sources (battery.ts, spark.ts) via the shared reactToPulse, the
- * same way the Fan's body pulse is.
+ * Deliver a power pulse to the connected laser body containing (sx,sy): flood the
+ * whole thing through laser cells (4-connected, `floodDeviceBody`) and refresh
+ * every cell's powered countdown to POWERED_TICKS, keeping each cell's own
+ * direction bits. A one-way sink — a pulse only ever *arrives* here (see the
+ * header) — so power reaching any face lights the entire emitter array at once,
+ * at full effect whatever strength the arriving pulse had left. Memoized per tick
+ * via SimContext.laserFlood so a body touched from several faces/sources in one
+ * tick still floods exactly once. Called from the pulse sources (battery.ts,
+ * spark.ts) via the shared reactToPulse, the same way the Fan's body pulse is.
  */
 export function energizeLaserBody(sim: SimContext, sx: number, sy: number): void {
-  if (sim.tick !== sim.laserFloodTick) {
-    sim.laserFloodTick = sim.tick;
-    sim.laserFlooded.clear();
-  }
-  const w = sim.width;
-  const startIdx = sy * w + sx;
-  if (sim.laserFlooded.has(startIdx)) return;
-
-  const seen = new Set<number>([startIdx]);
-  const stack: number[] = [sx, sy];
-  let count = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
-    const cy = stack.pop()!;
-    const cx = stack.pop()!;
-    count++;
-    sim.laserFlooded.add(cy * w + cx);
-    sim.setAux(cx, cy, (POWERED_TICKS << 2) | (sim.getAux(cx, cy) & DIR_MASK));
-    for (const [dx, dy] of DIR4) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== LASER.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k) || sim.laserFlooded.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
-  }
+  floodDeviceBody(sim, sx, sy, LASER.id, sim.laserFlood, (x, y) => {
+    sim.setAux(x, y, (POWERED_TICKS << 2) | (sim.getAux(x, y) & DIR_MASK));
+  });
 }
 
 export const LASER = register({

@@ -5,6 +5,7 @@
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — 아키텍처 & 스택: 개요·스택·디렉터리 구조·스레딩·배포/PR 프리뷰.
 - [FEATURES.md](./FEATURES.md) — 기능(UI·UX·편의): 화면비·경계 모드·HUD·브러시·컨트롤 UI·저장/복원·속도·연기·중력·오버레이·검색·즐겨찾기 등.
 - [PHYSICS.md](./PHYSICS.md) — 물리·엔진 시스템: 열전도·어는점·밀도 변위·색상 틴트·물리 엔진 고도화 1~3차·전기(스파크) 패킹과 `aux` 16비트 확장.
+- [ELECTRICITY.md](./ELECTRICITY.md) — 전기 계통(장치 쪽): 전기 장치 카테고리의 공용 활성화 규약 — **전기 세기에 관계없이 연결 부위 전역 즉시 활성화**, 공용 몸체 플러드(`engine/deviceBody.ts`)와 틱당 1회 memo, 새 장치 추가 절차, 검증 하네스. 배선 쪽(도체·펄스 세기 패킹)은 PHYSICS.md.
 - [MATERIALS.md](./MATERIALS.md) — 물질 도감: 전체 물질과 핵심 상호작용 카탈로그(카테고리별 표·상호작용 사슬).
 - [MATERIAL-SYSTEMS.md](./MATERIAL-SYSTEMS.md) — 물질군·시스템 노트: 물질군 도입 라운드의 엔진/인프라 설계 노트(공용 헬퍼·데이터 태그·크로스-물질 메커니즘)와 플레이 가이드 링크.
 - [OBJECTS.md](./OBJECTS.md) — 독립 오브젝트 시스템: 고무공·드럼통·다이너마이트, 오브젝트 물리/상호작용/브러시 연동.

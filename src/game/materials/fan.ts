@@ -1,9 +1,9 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import { AMBIENT_TEMP } from '../config';
 import type { SimContext } from '../engine/SimContext';
+import { floodDeviceBody } from '../engine/deviceBody';
 import { TERMITE } from './termite';
 import { NANOBOT } from './nanobot';
 
@@ -20,10 +20,12 @@ import { NANOBOT } from './nanobot';
 // Battery/LFP Battery/Turbine in direct contact or a Spark relayed down a wire —
 // dispatches a non-conductor neighbor through the shared `reactToPulse`
 // (spark.ts), which fires that hook. It floods the whole connected fan body
-// (4-connected, like the Turbine/Woofer body walk) and stamps a *powered
-// countdown* onto every cell at once. So current reaching any
-// one face powers the entire connected structure (내부에서는 연결된 부분 전역
-// 전도), and it only ever *consumes* power, never conducts it onward.
+// (4-connected, via the shared `floodDeviceBody` every device uses) and stamps a
+// *powered countdown* onto every cell at once — all of it, in the tick the pulse
+// lands, whatever strength that pulse had left (see engine/deviceBody.ts). So
+// current reaching any one face powers the entire connected structure
+// (전기 세기에 관계없이 연결 부위 전역 즉시 활성화), and it only ever *consumes*
+// power, never conducts it onward.
 //
 // The powered countdown is what keeps the gust from strobing. A Battery pulses
 // only periodically (every PULSE_PERIOD ticks — see battery.ts), so if the wind
@@ -94,12 +96,6 @@ const GAS_PUSH_SPREAD = 0.4;
  *  cell. Only ever fills an empty cell ahead, so it never overruns a blocker or
  *  compresses a column. */
 const WIND_PUSH_BOOST = 0.5;
-
-/** Backstop on how far one flood walks the connected fan body in a single pass —
- *  mirrors the Turbine/Woofer MAX_BODY so a giant fan wall can't make one pulse
- *  unbounded (a larger body is covered across several capped floods a tick, each
- *  memoized in SimContext.fanFlooded). */
-const MAX_BODY = 256;
 
 /** A cell the wind shoves one step downwind: loose matter — powder, liquid, or a
  *  gas. Gases are pushed here too (기체를 제대로 밀어냄): left to their own update
@@ -279,43 +275,21 @@ function updateFan(x: number, y: number, sim: SimContext): void {
 }
 
 /**
- * Deliver a power pulse to the connected fan body containing (sx,sy): flood it
- * through fan cells (4-connected) and refresh every cell's powered countdown to
- * POWERED_TICKS, keeping each cell's own direction bits. The one-way sink — a
- * pulse only ever *arrives* here, never leaves (see the header note) — so this
- * is inherently "outside → inside": power reaching any face energizes the whole
- * structure. Memoized per tick via SimContext.fanFlooded so a body touched from
- * several faces/sources in one tick still floods exactly once. Called from the
- * pulse sources (battery.ts, spark.ts), the same way the Woofer's body pulse is.
+ * Deliver a power pulse to the connected fan body containing (sx,sy): flood the
+ * whole thing through fan cells (4-connected, `floodDeviceBody`) and refresh
+ * every cell's powered countdown to POWERED_TICKS, keeping each cell's own
+ * direction bits. The one-way sink — a pulse only ever *arrives* here, never
+ * leaves (see the header note) — so this is inherently "outside → inside": power
+ * reaching any face spins up the whole structure at once, at full effect
+ * whatever strength the arriving pulse had left. Memoized per tick via
+ * SimContext.fanFlood so a body touched from several faces/sources in one tick
+ * still floods exactly once. Called from the pulse sources (battery.ts,
+ * spark.ts), the same way the Woofer's body pulse is.
  */
 export function energizeFanBody(sim: SimContext, sx: number, sy: number): void {
-  if (sim.tick !== sim.fanFloodTick) {
-    sim.fanFloodTick = sim.tick;
-    sim.fanFlooded.clear();
-  }
-  const w = sim.width;
-  const startIdx = sy * w + sx;
-  if (sim.fanFlooded.has(startIdx)) return;
-
-  const seen = new Set<number>([startIdx]);
-  const stack: number[] = [sx, sy];
-  let count = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
-    const y = stack.pop()!;
-    const x = stack.pop()!;
-    count++;
-    sim.fanFlooded.add(y * w + x);
+  floodDeviceBody(sim, sx, sy, FAN.id, sim.fanFlood, (x, y) => {
     sim.setAux(x, y, (POWERED_TICKS << 2) | (sim.getAux(x, y) & DIR_MASK));
-    for (const [dx, dy] of DIR4) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== FAN.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k) || sim.fanFlooded.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
-  }
+  });
 }
 
 export const FAN = register({

@@ -1,7 +1,8 @@
 import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4, DIR8 } from '../engine/directions';
+import { DIR8 } from '../engine/directions';
+import { floodDeviceBody } from '../engine/deviceBody';
 import type { SimContext } from '../engine/SimContext';
 
 // Electromagnet (전자석) — an electric appliance that PULLS. Every force in the
@@ -57,9 +58,11 @@ import type { SimContext } from '../engine/SimContext';
 // handful of slots left), just a `Material.directPulse` hook, so a Battery/LFP
 // Battery/Turbine in contact or a Spark relayed down a wire all energize it
 // through the one shared dispatch (`reactToPulse`) with no per-source special
-// casing. A pulse floods the connected body and refreshes a powered countdown
-// generous enough to bridge the quiet ticks between a Battery's periodic pulses,
-// so the field holds steadily instead of strobing its grip on and off.
+// casing. A pulse floods the whole connected body (`floodDeviceBody` — 전기 세기에
+// 관계없이 연결 부위 전역 즉시 활성화, see engine/deviceBody.ts) and refreshes a
+// powered countdown generous enough to bridge the quiet ticks between a Battery's
+// periodic pulses, so the field holds steadily instead of strobing its grip on and
+// off.
 //
 // Unlike the Fan and Laser the magnet has no direction, so its whole `aux` byte is
 // the countdown and the renderer draws brightening coil windings rather than a
@@ -77,16 +80,16 @@ const POWERED_TICKS = 24;
  *  world-wide vacuum. */
 const REACH = 10;
 
-/** Backstop on how far one flood walks the connected magnet body in a single pass
- *  — mirrors the Fan/Laser/Turbine/Woofer MAX_BODY so a giant magnet wall can't
- *  make one pulse unbounded (a larger body is covered across several capped floods
- *  a tick, each memoized in SimContext.magnetFlooded). */
-const MAX_BODY = 256;
-
 /** Ceiling on how many cells one field sweep visits. A REACH-10 field around an
  *  ordinary magnet is a few hundred cells; the cap only bites for a long bar
  *  magnet in open air, where it trims the far end of the field rather than letting
- *  one tick's sweep grow with the body. Same trade as MAX_BODY. */
+ *  one tick's sweep grow with the body.
+ *
+ *  Note what this caps and what it doesn't: the *field* (an effect swept through
+ *  open space every tick the countdown is live), never the magnet's activation.
+ *  The body itself — which cells are powered, and which cells the field is grown
+ *  out of — is always walked in full (see `floodDeviceBody`, engine/deviceBody.ts:
+ *  전기 세기에 관계없이 연결 부위 전역 즉시 활성화). */
 const MAX_FIELD = 1024;
 
 // ── Sweep scratch ────────────────────────────────────────────────────────────
@@ -95,7 +98,7 @@ const MAX_FIELD = 1024;
 // which only runs on a pulse). Safe as module state precisely because it never
 // outlives a single synchronous `pullField` call: it is cleared on entry and read
 // only before returning, so two Simulations sharing this module can't leak state
-// into each other the way a tick-keyed cache would (see SimContext.wooferFlooded's
+// into each other the way a tick-keyed cache would (see SimContext.wooferFlood's
 // note on exactly that hazard).
 /** Swept cell → the flat index of the cell it was reached from (-1 = the magnet
  *  body itself, i.e. this cell is a clinging position). */
@@ -257,7 +260,7 @@ function pullField(
  * One magnet cell's tick. The countdown is per-cell (every cell of the body was
  * refreshed together by the last pulse), but the *field* belongs to the body as a
  * whole, so only the first cell of a given body to be scanned this tick sweeps it
- * — the rest find themselves already recorded in `SimContext.magnetFielded` and
+ * — the rest find themselves already recorded in `SimContext.magnetField` and
  * just spin their own countdown down. Without that memo an N-cell magnet would
  * sweep the same field N times a tick.
  */
@@ -266,86 +269,45 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   if (timer <= 0) return; // idle until a pulse energizes the body
   sim.setAux(x, y, timer - 1);
 
-  if (sim.tick !== sim.magnetFieldTick) {
-    sim.magnetFieldTick = sim.tick;
-    sim.magnetFielded.clear();
-  }
-  const w = sim.width;
-  if (sim.magnetFielded.has(y * w + x)) return;
-
-  // Walk the connected body (4-connected, like every other appliance's body walk),
-  // recording its cells and bounding box, and claim all of it for this tick.
+  // Walk the connected body in full (4-connected, the shared `floodDeviceBody`
+  // every device's activation uses), recording its cells and bounding box, and
+  // claiming all of it for this tick — so the field is grown out of the magnet's
+  // whole outline, not just the corner of it nearest the scan.
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
   let minY = y;
   let maxX = x;
   let maxY = y;
-  const seen = new Set<number>([y * w + x]);
-  const stack: number[] = [x, y];
-  while (stack.length > 0 && bx.length < MAX_BODY) {
-    const cy = stack.pop()!;
-    const cx = stack.pop()!;
+  const swept = floodDeviceBody(sim, x, y, ELECTROMAGNET.id, sim.magnetField, (cx, cy) => {
     bx.push(cx);
     by.push(cy);
-    sim.magnetFielded.add(cy * w + cx);
     if (cx < minX) minX = cx;
     if (cx > maxX) maxX = cx;
     if (cy < minY) minY = cy;
     if (cy > maxY) maxY = cy;
-    for (const [dx, dy] of DIR4) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== ELECTROMAGNET.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
-  }
+  });
+  if (!swept) return; // another cell of this body already swept the field this tick
 
   pullField(sim, bx, by, minX, minY, maxX, maxY);
 }
 
 /**
- * Deliver a power pulse to the connected magnet body containing (sx,sy): flood it
- * through magnet cells (4-connected) and refresh every cell's powered countdown to
- * POWERED_TICKS. A one-way sink — a pulse only ever *arrives* here (see the
- * header) — so power reaching any face energizes the whole magnet. Memoized per
- * tick via SimContext.magnetFlooded so a body touched from several faces/sources
- * in one tick still floods exactly once. Called from the pulse sources
- * (battery.ts, spark.ts) via the shared reactToPulse, the same way the Fan's,
- * Laser's and Pump's body pulses are.
+ * Deliver a power pulse to the connected magnet body containing (sx,sy): flood the
+ * whole thing through magnet cells (4-connected, `floodDeviceBody`) and refresh
+ * every cell's powered countdown to POWERED_TICKS. A one-way sink — a pulse only
+ * ever *arrives* here (see the header) — so power reaching any face energizes the
+ * entire magnet at once, at full effect whatever strength the arriving pulse had
+ * left. Memoized per tick via SimContext.magnetFlood so a body touched from
+ * several faces/sources in one tick still floods exactly once. Called from the
+ * pulse sources (battery.ts, spark.ts) via the shared reactToPulse, the same way
+ * the Fan's, Laser's and Pump's body pulses are.
  */
 export function energizeElectromagnetBody(sim: SimContext, sx: number, sy: number): void {
-  if (sim.tick !== sim.magnetFloodTick) {
-    sim.magnetFloodTick = sim.tick;
-    sim.magnetFlooded.clear();
-  }
-  const w = sim.width;
-  const startIdx = sy * w + sx;
-  if (sim.magnetFlooded.has(startIdx)) return;
-
-  const seen = new Set<number>([startIdx]);
-  const stack: number[] = [sx, sy];
-  let count = 0;
-  while (stack.length > 0 && count < MAX_BODY) {
-    const cy = stack.pop()!;
-    const cx = stack.pop()!;
-    count++;
-    sim.magnetFlooded.add(cy * w + cx);
+  floodDeviceBody(sim, sx, sy, ELECTROMAGNET.id, sim.magnetFlood, (x, y) => {
     // The whole aux byte is the countdown — a magnet has no direction to preserve.
-    sim.setAux(cx, cy, POWERED_TICKS);
-    for (const [dx, dy] of DIR4) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== ELECTROMAGNET.id) continue;
-      const k = ny * w + nx;
-      if (seen.has(k) || sim.magnetFlooded.has(k)) continue;
-      seen.add(k);
-      stack.push(nx, ny);
-    }
-  }
+    sim.setAux(x, y, POWERED_TICKS);
+  });
 }
 
 export const ELECTROMAGNET = register({
