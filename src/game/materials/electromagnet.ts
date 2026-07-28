@@ -256,6 +256,20 @@ function pullField(
   }
 }
 
+/** True if this body cell touches anything that isn't the magnet itself — the only
+ *  cells a field sweep can seed from (see `pullField`'s seeding round and the note
+ *  in updateElectromagnet). In-bounds is required both ways: an off-grid neighbor
+ *  is nothing to seed into, so a cell hard against the world edge is "interior" as
+ *  far as that edge is concerned. */
+function isBodySurface(sim: SimContext, x: number, y: number): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) !== ELECTROMAGNET.id) return true;
+  }
+  return false;
+}
+
 /**
  * One magnet cell's tick. The countdown is per-cell (every cell of the body was
  * refreshed together by the last pulse), but the *field* belongs to the body as a
@@ -270,9 +284,21 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   sim.setAux(x, y, timer - 1);
 
   // Walk the connected body in full (4-connected, the shared `floodDeviceBody`
-  // every device's activation uses), recording its cells and bounding box, and
-  // claiming all of it for this tick — so the field is grown out of the magnet's
-  // whole outline, not just the corner of it nearest the scan.
+  // every device's activation uses), recording its bounding box and its *surface*
+  // cells, and claiming all of it for this tick — so the field is grown out of the
+  // magnet's whole outline, not just the corner of it nearest the scan.
+  //
+  // Only surface cells are collected because only they can seed anything: pullField
+  // seeds by trying each body cell's 8 neighbors, and a neighbor that is itself
+  // magnet is never field-passable, so an interior cell's whole seeding round is
+  // rejected. Handing over the interior anyway made a solid block pay 8 dead
+  // enqueues per cell — the dominant cost of a big magnet's tick, and one it paid
+  // every tick it was powered (the pre-existing 256-cell cap didn't help: the cells
+  // it left unclaimed each started their own capped walk and their own sweep). A
+  // 300×300 block drops from 90,000 seeds to ~1,200 this way, with the swept field
+  // — and so the pull — bit-identical. The bounding box is still taken over every
+  // cell (its extremes are surface cells regardless, but this way the box can't
+  // drift if the surface rule is ever narrowed).
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
@@ -280,12 +306,13 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   let maxX = x;
   let maxY = y;
   const swept = floodDeviceBody(sim, x, y, ELECTROMAGNET.id, sim.magnetField, (cx, cy) => {
-    bx.push(cx);
-    by.push(cy);
     if (cx < minX) minX = cx;
     if (cx > maxX) maxX = cx;
     if (cy < minY) minY = cy;
     if (cy > maxY) maxY = cy;
+    if (!isBodySurface(sim, cx, cy)) return;
+    bx.push(cx);
+    by.push(cy);
   });
   if (!swept) return; // another cell of this body already swept the field this tick
 
