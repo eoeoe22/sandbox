@@ -12,7 +12,8 @@ import {
   SMOKE_BOMB_SPRITE_W,
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
-import type { DrumFill } from '../engine/objects';
+import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
+import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -1515,11 +1516,11 @@ export class CanvasRenderer implements Renderer {
    * render image; the simulation's cell buffer is never touched.
    *
    * `heat` mirrors the cell layer's thermal-camera mode: when on, every body is
-   * still rasterized in its own silhouette (ball disc / drum or dynamite sprite
-   * shape) but recolored flat by `heatColor(o.temp)` instead of its normal sprite
-   * colors, exactly like an occupied cell is recolored by `temp[i]` — so a body's
-   * own heat reservoir (SimObject/SimCapsule/SimDynamite.temp) reads on the
-   * overlay the same way a cell's does.
+   * still rasterized in its own silhouette (ball disc / wooden-box, drum, dynamite
+   * or smoke-bomb sprite shape) but recolored flat by `heatColor(o.temp)` instead
+   * of its normal sprite colors, exactly like an occupied cell is recolored by
+   * `temp[i]` — so a body's own heat reservoir (SimBody.temp) reads on the overlay
+   * the same way a cell's does.
    */
   private rasterizeObjects(grid: Grid, heat: boolean): void {
     const buf = this.objBuf32;
@@ -1530,6 +1531,7 @@ export class CanvasRenderer implements Renderer {
     for (const o of grid.objects) {
       const heatColor = heat ? this.heatColor(o.temp) : null;
       if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor);
+      else if (o.kind === 'woodbox') this.rasterizeWoodBox(buf, w, h, s, o, heatColor);
       else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
       else if (o.kind === 'smokebomb')
         this.rasterizeCapsuleSprite(
@@ -1577,6 +1579,56 @@ export class CanvasRenderer implements Renderer {
         const dx = (sx + 0.5) / s - o.x;
         const d2 = dx * dx + dy * dy;
         if (d2 <= r2) buf[row + sx] = d2 >= rin2 ? borderColor : fillColor;
+      }
+    }
+  }
+
+  /**
+   * Rasterize one wooden box (the crate or one of its shards) into the overlay:
+   * its pixel-art sprite, axis-aligned, sampled per sub-pixel. Unlike the capsule
+   * bodies below there is no rotation to undo — a wooden box is a disc body with
+   * no orientation on purpose (a box that spun would roll away like a barrel; see
+   * engine/objects.ts SimWoodBox) — so this is the same nearest-neighbor sample
+   * with the rotation dropped, mapping the sprite onto the body's own display box
+   * (2·halfW × 2·halfH cells, which is where that box comes from in the first
+   * place: the art's pixel box scaled into cells).
+   *
+   * `heatColor`, when given (heat overlay on), replaces every opaque sprite pixel
+   * with that one flat color, keeping the crate's silhouette but recoloring it by
+   * temperature — the same treatment every other body gets.
+   */
+  private rasterizeWoodBox(
+    buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
+    o: SimWoodBox,
+    heatColor: number | null = null,
+  ): void {
+    const art = WOOD_BOX_SPRITES[o.part];
+    let x0 = Math.floor((o.x - o.halfW) * s);
+    let x1 = Math.ceil((o.x + o.halfW) * s);
+    let y0 = Math.floor((o.y - o.halfH) * s);
+    let y1 = Math.ceil((o.y + o.halfH) * s);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    // Sprite pixels per grid cell along each axis (display box → sprite box).
+    const sxScale = art.w / (2 * o.halfW);
+    const syScale = art.h / (2 * o.halfH);
+    for (let sy = y0; sy < y1; sy++) {
+      const wy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
+      const row = sy * w;
+      const spy = art.h * 0.5 + wy * syScale;
+      if (spy < 0 || spy >= art.h) continue;
+      const srow = (spy | 0) * art.w;
+      for (let sx = x0; sx < x1; sx++) {
+        const wx = (sx + 0.5) / s - o.x;
+        const spx = art.w * 0.5 + wx * sxScale;
+        if (spx < 0 || spx >= art.w) continue;
+        const color = art.pixels[srow + (spx | 0)];
+        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent
       }
     }
   }

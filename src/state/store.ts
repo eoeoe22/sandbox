@@ -128,10 +128,19 @@ export const $areaSelect = atom<boolean>(false);
  * drums share one capsule and differ only in what they spill when destroyed —
  * or a 다이너마이트 stick, whose lit fuse counts down to a two-zone blast, or a
  * 연막탄 canister, which trickles smoke for four seconds and then dumps a dense
- * cloud for one before it's spent).
+ * cloud for one before it's spent, or a 나무 상자 crate, which burns and breaks
+ * apart into three shards). Only the whole crate is listed — its three shards are
+ * spawned by breaking one, never by the palette.
  * See MaterialPalette and PointerPainter.
  */
-export type ObjectKind = 'ball' | 'drum' | 'oildrum' | 'aciddrum' | 'dynamite' | 'smokebomb';
+export type ObjectKind =
+  | 'ball'
+  | 'drum'
+  | 'oildrum'
+  | 'aciddrum'
+  | 'dynamite'
+  | 'smokebomb'
+  | 'crate';
 export const $selectedObject = atom<ObjectKind>('ball');
 
 // Object display names now live in src/i18n/materials.ts (objectLabelsEn /

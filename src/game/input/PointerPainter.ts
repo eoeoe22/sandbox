@@ -47,6 +47,8 @@ import {
   createDrum,
   createDynamite,
   createSmokeBomb,
+  createWoodBox,
+  isDiscBody,
   pickBody,
   distanceToBody,
   bodyReach,
@@ -431,7 +433,7 @@ export class PointerPainter {
 
   /** Shove every matching free object — a random jostle with a slight outward
    *  push from (cx,cy), so stirring scatters/ejects bodies the way it disperses
-   *  cells. Drums/dynamite also get a random spin. Skips a held body (the drag
+   *  cells. Capsule bodies also get a random spin. Skips a held body (the drag
    *  owns it) and any body already moving fast, so repeated stamps don't
    *  accumulate to a rocket. Shared by the circular 섞기 brush and the
    *  rectangular 영역 mix, each supplying its own geometry test and push center. */
@@ -444,8 +446,9 @@ export class PointerPainter {
       const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
       o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
-      // Any capsule body (drum or dynamite) also gets a random spin; a ball doesn't rotate.
-      if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
+      // Any capsule body (drum, dynamite, smoke bomb) also gets a random spin; a
+      // disc body (ball, wooden box) has no orientation to spin.
+      if (!isDiscBody(o)) o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
   }
 
@@ -587,6 +590,11 @@ export class PointerPainter {
     } else if (kind === 'smokebomb') {
       // 연막탄: dropped already burning — a wisp of smoke now, the dense cloud in four seconds.
       this.grid.objects.push(createSmokeBomb(cx + 0.5, cy + 0.5));
+    } else if (kind === 'crate') {
+      // 나무 상자: the whole crate, cold and unlit. Only the crate is spawnable —
+      // its three shards exist solely as the wreckage of one being broken, so
+      // there is deliberately no palette entry (and no branch here) for them.
+      this.grid.objects.push(createWoodBox(cx + 0.5, cy + 0.5));
     } else {
       const r = Math.max(2, $brushSize.get());
       // Nudge each spawn a random sliver left/right (수직 쌓임 방지): clicking
