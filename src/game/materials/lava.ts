@@ -28,7 +28,7 @@ import { OBSIDIAN } from './obsidian';
 // in range stays molten exactly as before.)
 //
 // That slow crust is the *cooling* path. Lava that touches Water head-on takes
-// a second, much faster path instead: it quenches to Obsidian two cells deep on
+// a second, much faster path instead: it quenches to Obsidian four cells deep on
 // the spot (see tryQuenchToObsidian below), which is what a water splash on a
 // lava lake now produces rather than a gradual grey skin.
 const IGNITE_CHANCE = 0.15;
@@ -47,21 +47,23 @@ const LAVA_FREEZE_TEMP = 560;
 // Obsidian (see obsidian.ts). Minecraft's water+lava recipe, and by far the
 // most fun way to get the game's one buildable blast-proof block.
 //
-// The quench reaches TWO cells in from the contact face (접촉 부위에서 2칸
-// 깊이): the lava cell actually touching the water, plus the lava cell directly
-// behind it along the same direction. One tick of contact therefore lays down a
-// two-thick shell rather than a one-cell skin, so a single splash gives you a
-// wall you can actually build with instead of a film that the pool immediately
-// re-melts. Deeper lava is untouched — it has to be reached by its own contact
-// with water (or with the next splash) to set.
-const OBSIDIAN_QUENCH_DEPTH = 2;
+// The quench reaches FOUR cells in from the contact face (접촉 부위에서 4칸
+// 깊이): the lava cell actually touching the water, plus the three lava cells
+// lined up directly behind it along the same direction. One tick of contact
+// therefore lays down a four-thick slab rather than a skin, so a single splash
+// gives you a wall with real substance instead of a film the pool immediately
+// re-melts — and a thick slab is what makes the material survivable at all,
+// since only the innermost layer is exposed to the molten pool while the outer
+// three are free to keep shedding heat. Deeper lava is untouched: it has to be
+// reached by its own contact with water (or by the next splash) to set.
+const OBSIDIAN_QUENCH_DEPTH = 4;
 
 // The temperature the quenched cells are left at. It has to be *well* below
-// Obsidian's 1100° melting point, not just below it: the depth-2 cell is still
-// touching molten 1500° lava on its far side, and conduction starts pulling it
-// back up the moment it forms. Leaving it this cold gives the fresh shell the
-// headroom to survive that (and to keep drawing heat out of the pool behind it)
-// instead of melting straight back into the lava it just came from.
+// Obsidian's 1100° melting point, not just below it: the innermost quenched
+// cell is still touching molten 1500° lava on its far side, and conduction
+// starts pulling it back up the moment it forms. Leaving it this cold gives the
+// fresh slab the headroom to survive that (and to keep drawing heat out of the
+// pool behind it) instead of melting straight back into the lava it came from.
 const OBSIDIAN_QUENCH_TEMP = 300;
 
 // The water doesn't survive the exchange — it's the heat sink that made the
@@ -69,16 +71,17 @@ const OBSIDIAN_QUENCH_TEMP = 300;
 // is what keeps one puddle from converting an unbounded amount of lava; cf.
 // Cement curing on the water that sets it). The steam is left hot to read as a
 // proper quench flash rather than a lukewarm cloud; the swap still removes far
-// more heat than it adds, since two cells just dropped from 1500° to 300°.
+// more heat than it adds, since a whole column just dropped from 1500° to 300°.
 const QUENCH_STEAM_TEMP = 300;
 
-/** Water touching this lava cell? Then quench: this cell and the one behind it
- *  (away from the water) set as Obsidian, and the water flashes to Steam.
- *  Returns true if the cell was consumed — the caller must stop touching it.
+/** Water touching this lava cell? Then quench: this cell and the run of lava
+ *  behind it (away from the water) set as Obsidian, and the water flashes to
+ *  Steam. Returns true if the cell was consumed — the caller must stop touching
+ *  it.
  *
  *  DIR4, not DIR8, and that matters for more than pedantry about what "직접
  *  접촉" means: the quench walks *inward along the contact direction*, so a
- *  diagonal match would drive the two-cell shell off at 45° and, worse, would
+ *  diagonal match would drive the slab off at 45° and, worse, would
  *  let a lava cell one to the side reach up and claim the water first (scan
  *  order runs left to right), leaving the shell visibly offset from the splash
  *  that made it. Face contact only keeps the slab square under the water. */
