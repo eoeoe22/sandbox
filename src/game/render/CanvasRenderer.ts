@@ -73,6 +73,13 @@ const WIND_HALO = WIND_CURL_H;
 // reveals/retracts this length so the curl draws in progressively.
 const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - WIND_HOOK_IN;
 
+// Tiling of the `triArrow` liner triangles (Shaped Charge — see the render loop).
+// The triangle itself is 6 cells across the jet axis and 3 deep along it; each
+// period is 2 cells larger on both counts, so the extra cells become the gutter
+// that keeps neighbouring arrowheads from touching side-to-side or nose-to-tail.
+const TRI_SPAN = 8; // cells across the axis per triangle (6 drawn + 2 side gutter)
+const TRI_STEP = 5; // cells along the axis per triangle (3 drawn + 2 front gutter)
+
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
   return v - Math.floor(v);
@@ -302,6 +309,10 @@ export class CanvasRenderer implements Renderer {
    *  the low 2 bits the blow direction and the rest a powered countdown that
    *  brightens the chevron (Fan — see Material.windArrow). */
   private windArrow: Uint8Array;
+  /** id → 1 if the material draws solid 4-directional triangles from its aux byte
+   *  — filled arrowheads pointing the low-2-bit direction, the Shaped Charge's
+   *  liner cone (see Material.triArrow). */
+  private triArrow: Uint8Array;
   /** id → 1 if the material draws horizontal coil windings that brighten while its
    *  aux byte is non-zero (Electromagnet — see Material.coilPattern). */
   private coilPattern: Uint8Array;
@@ -422,6 +433,7 @@ export class CanvasRenderer implements Renderer {
     this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
     this.windArrow = new Uint8Array(256);
+    this.triArrow = new Uint8Array(256);
     this.coilPattern = new Uint8Array(256);
     this.stripePattern = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
@@ -446,6 +458,7 @@ export class CanvasRenderer implements Renderer {
         if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
         if (m.windArrow) this.windArrow[i] = 1;
+        if (m.triArrow) this.triArrow[i] = 1;
         if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.stripePattern) this.stripePattern[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
@@ -615,6 +628,7 @@ export class CanvasRenderer implements Renderer {
     const batPat = this.batteryPattern;
     const arrow = this.arrow;
     const windArrow = this.windArrow;
+    const triArrow = this.triArrow;
     const coilPattern = this.coilPattern;
     const stripePattern = this.stripePattern;
     const packed = this.packed;
@@ -708,6 +722,31 @@ export class CanvasRenderer implements Renderer {
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
         c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (triArrow[id]) {
+        // A Shaped Charge draws solid arrowhead triangles pointing its jet
+        // direction (aux low 2 bits, same codes as the Fan's chevron) — the
+        // liner cone made visible. Each triangle is 6 cells ACROSS the jet axis
+        // by 3 deep ALONG it, filling 1,2,3,3,2,1 cells so every side steps in
+        // exactly one cell per lane (a real triangle rather than a stubby
+        // wedge). The tile is bigger than the triangle on both counts —
+        // TRI_SPAN = 6+2 across, TRI_STEP = 3+2 along — so neighbours never
+        // touch: a painted block reads as separated arrowheads with clear
+        // gutters between rows and columns, not one filled slab.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const dir = auxArr[i] & 0b11;
+        // Lane across the axis: lanes 1..6 form the triangle (fill 1,2,3,3,2,1
+        // toward the tip), lanes 0 and 7 are the side gutter.
+        const lane = (dir >= 2 ? y : x) % TRI_SPAN;
+        const l = lane - 1;
+        // Position along the axis, measured from the triangle's flat base so
+        // the tip points the jet way: dir 1 (down) / 3 (right) grow with the
+        // coordinate, 0 (up) / 2 (left) grow against it. Positions past the
+        // deepest lane (3..4) are the front/back gutter.
+        const along = (dir >= 2 ? x : y) % TRI_STEP;
+        const t = dir === 1 || dir === 3 ? along : TRI_STEP - 1 - along;
+        const on = l >= 0 && l < 6 && t <= (l < 3 ? l : 5 - l);
+        c = on ? latCol[id] : pal[id];
       } else if (coilPattern[id]) {
         // An Electromagnet draws copper windings around a dark core: two lit rows
         // out of every four (a period-4 stripe in the `lattice` colour), so a bar

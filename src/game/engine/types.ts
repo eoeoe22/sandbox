@@ -158,6 +158,18 @@ export interface Material {
    */
   explosionProof?: boolean;
   /**
+   * 관통 제트마저 막는 방폭 — an `explosionProof` material that stays immune even
+   * to a `pierceProof` blast (the Shaped Charge's armor-piercing jet, which
+   * ordinarily defeats 방폭 armor like Diamond/Obsidian — see
+   * DetonateOptions.pierceProof in blast.ts). The uranium family declares it:
+   * their 방폭 isn't armor but a *systemic invariant* — every uranium-series
+   * material is immune to explosions so reactor containment can only be breached
+   * by a critical mass's own Nuclear Ray, never by stacking charges against it
+   * (see uranium.ts). Only meaningful alongside `explosionProof`; omitted ⇒ the
+   * armor reading (a pierceProof jet gets through).
+   */
+  jetProof?: boolean;
+  /**
    * Marks a material that detonates rather than merely burning. When one is
    * triggered, `detonate` (blast.ts) surveys the whole *connected mass* of
    * explosive cells and sets it off as a single crater whose reach scales with
@@ -425,6 +437,19 @@ export interface Material {
    * for an ordinary material.
    */
   windArrow?: boolean;
+  /**
+   * Draw a solid 4-directional TRIANGLE (in the `lattice` color, over the base
+   * `color`) pointing the way the cell's `aux` byte says it faces — the low 2
+   * bits are the direction, same codes as `windArrow` (0 up / 1 down / 2 left /
+   * 3 right). Where `windArrow` draws a thin chevron line (Fan/Laser), this
+   * tiles filled triangles 6 cells across the axis by 3 deep along it, each
+   * side stepping in one cell per lane and separated by a 2-cell gutter on
+   * every side — the Shaped Charge uses it so its liner cone (성형작약의 원뿔
+   * 라이너) reads as distinct ▶-shaped arrowheads aimed down the jet axis.
+   * Purely a rendering hint the simulation never reads; omit for an ordinary
+   * material.
+   */
+  triArrow?: boolean;
   /**
    * Draw horizontal coil windings (in the `lattice` color, over the base `color`)
    * that brighten while the cell's `aux` byte is non-zero — the Electromagnet,

@@ -89,6 +89,10 @@ export const URANIUM = register({
   // Nuclear Ray though (nuclearray.ts checks isWall/indestructible only), so the ray
   // still melts a struck deposit exactly as before.
   explosionProof: true,
+  // ...and jetProof: even the Shaped Charge's armor-piercing jet (which defeats
+  // Diamond/Obsidian via DetonateOptions.pierceProof) can't breach the uranium
+  // series — this immunity is the containment invariant above, not armor.
+  jetProof: true,
   thermal: { conductivity: 0.5 },
   glow: { min: AMBIENT_TEMP, max: MELT_TEMP, cool: rgb(70, 90, 30) },
   update: updateUranium,
