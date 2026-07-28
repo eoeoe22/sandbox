@@ -292,13 +292,18 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   // seeds by trying each body cell's 8 neighbors, and a neighbor that is itself
   // magnet is never field-passable, so an interior cell's whole seeding round is
   // rejected. Handing over the interior anyway made a solid block pay 8 dead
-  // enqueues per cell — the dominant cost of a big magnet's tick, and one it paid
-  // every tick it was powered (the pre-existing 256-cell cap didn't help: the cells
-  // it left unclaimed each started their own capped walk and their own sweep). A
-  // 300×300 block drops from 90,000 seeds to ~1,200 this way, with the swept field
-  // — and so the pull — bit-identical. The bounding box is still taken over every
-  // cell (its extremes are surface cells regardless, but this way the box can't
-  // drift if the surface rule is ever narrowed).
+  // enqueues per cell. That matters here more than for any other device: the magnet
+  // is the one whose body walk runs EVERY tick it's powered (the field pulls every
+  // tick), not once per pulse — so now that a pulse genuinely lights the whole body,
+  // the whole body is what gets walked, every tick. Measured on a 300×300 block:
+  // 90,000 seeds → ~1,200, 61.7 → 45.4 ms/tick, with the swept field — and so the
+  // pull — bit-identical. (For scale, the old 256-cell cap "cost" 58.1 ms/tick on
+  // the same block while powering only 512 of its 90,000 cells, and 4.9 *seconds*
+  // when several faces were fed at once, because every cell the cap left unclaimed
+  // restarted its own capped walk and its own sweep. The cap bought no speed; it
+  // just stopped the machine from working. See docs/ELECTRICITY.md.) The bounding
+  // box is still taken over every cell (its extremes are surface cells regardless,
+  // but this way the box can't drift if the surface rule is ever narrowed).
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
