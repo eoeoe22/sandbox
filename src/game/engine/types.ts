@@ -549,9 +549,14 @@ export interface Material {
    * light ivory).
    *
    * `tint` is the right plane for this and `aux` is not: it's seeded once when a
-   * grain is created, never re-rolled, and travels with the grain on every swap
-   * (see game/tint.ts), so a grain keeps its color for life while `aux` would be
-   * cleared by the next `spawn` and is already spoken for by half the roster.
+   * grain is created, never re-rolled in place, and travels with the grain on
+   * every swap (see game/tint.ts), so a resting or sliding grain holds its color
+   * — while `aux` would be cleared by the next `spawn` and is already spoken for
+   * by half the roster. A grain that is genuinely *re-created* does re-roll: a
+   * blast shove turns it into a Debris fragment and back, and a world reload
+   * reseeds every tint. That's the same treatment every powder's brightness
+   * speckle already gets, so the palette color is exactly as persistent as the
+   * variation it replaces — no more, no less.
    * Indexing by `tint % n` (rather than banding the byte) also keeps the color
    * uncorrelated with the other per-grain decision read off the same byte — the
    * `liquidOverlap` threshold split.

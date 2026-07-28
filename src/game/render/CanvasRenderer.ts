@@ -744,10 +744,17 @@ export class CanvasRenderer implements Renderer {
         // the chosen colour, exactly as it does over the checkerboard branch below.
         // Indexing by `% n` rather than banding the byte keeps the colour
         // uncorrelated with the `liquidOverlap` split read off the same byte.
-        const t = tintArr[i];
-        c = tintPal3[t % tintPal3.length];
+        c = tintPal3[tintArr[i] % tintPal3.length];
         const amp = vary[id];
-        if (amp !== 0) c = CanvasRenderer.tinted(c, ((t - TINT_NEUTRAL) * amp) >> 7);
+        if (amp !== 0) {
+          // The COLOUR is per-particle by definition, so it always reads tintArr.
+          // The brightness offset on top is the ordinary one, so it takes the
+          // material's own vary source like every sibling branch — otherwise a
+          // future liquid-phase tintPalette material would shade itself from a
+          // plane it doesn't use.
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+        }
       } else if (arrow[id]) {
         // A directional-arrow material (Conveyor) draws a chevron pointing the way
         // its aux byte says it runs, so the belt's travel direction is visible. The

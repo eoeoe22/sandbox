@@ -58,11 +58,14 @@ const DESTRUCTIVE_POWER = 6;
 const STAR_RIM_CHANCE = 0.32;
 
 /** The three tones a grain of this powder can be — coral red, grey, light ivory
- *  (코랄레드 + 회색 + 연한 아이보리). Each grain picks one for life from its own
- *  stable `tint` byte (see Material.tintPalette), so a poured tube reads as a
- *  speckled festive mix rather than the single flat hue every other powder is:
- *  `colorVary` can only nudge one colour's brightness, and the point here is
- *  actual different colours. The ordinary brightness grain still rides on top. */
+ *  (코랄레드 + 회색 + 연한 아이보리). Each grain picks one from its own `tint` byte
+ *  (see Material.tintPalette) and holds it while it sits and slides, so a poured
+ *  tube reads as a speckled festive mix rather than the single flat hue every
+ *  other powder is: `colorVary` can only nudge one colour's brightness, and the
+ *  point here is actual different colours. A grain re-rolls only when it's
+ *  genuinely re-created (shoved into a Debris fragment and back, or reloaded from
+ *  a save) — exactly as every powder's brightness speckle already does. The
+ *  ordinary brightness grain still rides on top. */
 const GRAIN_COLORS: readonly number[] = [
   rgb(0xf2, 0x6b, 0x55), // coral red
   rgb(0x9b, 0x9e, 0xa6), // grey
@@ -141,7 +144,8 @@ export const FIREWORKS = register({
   // coral red is the mix's identity colour, and it reads apart from Gunpowder's
   // near-black at a glance.
   color: GRAIN_COLORS[0],
-  // Per-grain colour: coral red / grey / light ivory, fixed for each grain's life.
+  // Per-grain colour: coral red / grey / light ivory, held for as long as the
+  // grain itself lasts (see GRAIN_COLORS).
   tintPalette: GRAIN_COLORS,
   // Between Gunpowder (3.8) and the mineral powders: a pressed shell composition
   // is a shade denser than loose black powder, and it still sinks in water so a
