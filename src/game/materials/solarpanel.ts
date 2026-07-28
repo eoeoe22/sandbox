@@ -75,9 +75,14 @@ import { pulseCell } from './spark';
  */
 function solarPulse(sim: SimContext, x: number, y: number): void {
   floodDeviceBody(sim, x, y, SOLAR_PANEL.id, sim.solarFlood, (bx, by) => {
-    for (const [dx, dy] of DIR8) {
-      const nx = bx + dx;
-      const ny = by + dy;
+    // Indexed rather than `for (const [dx, dy] of DIR8)`: this runs eight times
+    // for every cell of the array, every tick the light is on (a powered Laser
+    // emits each tick), and the iterator's per-step array destructuring is
+    // measurable at that count — see the flood-cost note in engine/deviceBody.ts.
+    for (let i = 0; i < DIR8.length; i++) {
+      const d = DIR8[i];
+      const nx = bx + d[0];
+      const ny = by + d[1];
       if (!sim.inBounds(nx, ny)) continue;
       if (sim.get(nx, ny) === SOLAR_PANEL.id) continue; // inside; the flood has it
       pulseCell(sim, nx, ny);

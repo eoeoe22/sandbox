@@ -591,6 +591,61 @@ function farLeadReached(barId: number): boolean {
   );
 }
 
+// --- 8. Device floods survive a sandbox resize --------------------------------
+// `BodyFlood` (engine/deviceBody.ts) memoizes "this body already flooded this
+// tick" in a grid-sized stamp buffer rather than a Set. That buffer has to be
+// reallocated when the sandbox is resized in place — Game.ts does exactly that on
+// a window/layout change — or the flood indexes a buffer sized for the old grid
+// and its dedupe silently stops working past the end of it.
+//
+// The body is therefore anchored to the grid's TOP-RIGHT corner, not the origin:
+// a cell's flat index is y*width + x, so a body in the bottom-left keeps small
+// indices that stay inside even a stale buffer, and the check passes whether or
+// not the reallocation happens. Measured with the reallocation deliberately
+// disabled: a bottom-left body reports a clean 100/100 (the check is useless),
+// while this top-right one does not.
+
+{
+  const grid = new Grid(40, 30);
+  const sim = new Simulation(grid);
+  // 10×10 fan block in the top-right corner, battery terminal against its left face
+  const bx = (): number => grid.width - 15;
+  const by = (): number => grid.height - 15;
+  const powered = (): number => {
+    let n = 0;
+    for (let x = bx(); x < bx() + 10; x++) {
+      for (let y = by(); y < by() + 10; y++) {
+        if (grid.get(x, y) === FAN.id && grid.getAux(x, y) >> 2 > 0) n++;
+      }
+    }
+    return n;
+  };
+  const runAt = (w: number, h: number): number => {
+    if (w !== grid.width || h !== grid.height) grid.resize(w, h);
+    for (let x = 0; x < grid.width; x++) for (let y = 0; y < grid.height; y++) grid.set(x, y, 0);
+    for (let x = bx(); x < bx() + 10; x++) {
+      for (let y = by(); y < by() + 10; y++) grid.set(x, y, FAN.id);
+    }
+    grid.set(bx() - 1, by(), BATTERY.id);
+    for (let t = 0; t < 30; t++) sim.step();
+    return powered();
+  };
+
+  const before = runAt(40, 30);
+  const grown = runAt(60, 45);
+  const shrunk = runAt(24, 20);
+  check(
+    'a device body still floods after the sandbox grows',
+    before === 100 && grown === 100,
+    `${before}/100 before, ${grown}/100 after`,
+  );
+  check(
+    'and after it shrinks',
+    shrunk === 100,
+    `${shrunk}/100 fan cells`,
+  );
+}
+
 console.log(
   failed === 0 ? '\nOK — electricity packing intact.' : `\n${failed} check(s) FAILED.`,
 );
