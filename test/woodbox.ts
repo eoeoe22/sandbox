@@ -71,6 +71,55 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   check('crate at rest is still', Math.hypot(crate.vx, crate.vy) < 0.05, `|v|=${Math.hypot(crate.vx, crate.vy).toFixed(4)}`);
   check('crate does not drift sideways', Math.abs(crate.x - 50) < 0.01, `x=${crate.x.toFixed(3)}`);
   check('crate survives on its own', grid.objects.length === 1);
+  check('a crate dropped straight down stays square', Math.abs(crate.angle) < 1e-3,
+    `angle=${crate.angle.toFixed(4)}`);
+}
+
+// 1b. Contact torque: a crate shoved along the ground actually spins (the whole
+//     point of making it a rotating body), and squares back up once it stops.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const crate = createWoodBox(30, 63);
+  grid.objects.push(crate);
+  for (let t = 0; t < 40; t++) sim.step(); // land first
+  crate.vx = 5;
+  let peakSpin = 0;
+  let spunBy = 0;
+  for (let t = 0; t < 60; t++) {
+    sim.step();
+    peakSpin = Math.max(peakSpin, Math.abs(crate.angularVelocity));
+    spunBy = Math.max(spunBy, Math.abs(crate.angle));
+  }
+  check('friction spins a shoved crate (contact torque)', peakSpin > 0.01,
+    `peak |w|=${peakSpin.toFixed(4)} rad/tick`);
+  check('the crate visibly rotates as it goes', spunBy > 0.1, `turned ${spunBy.toFixed(3)} rad`);
+  for (let t = 0; t < 400; t++) sim.step(); // let it roll to a stop
+  const QUARTER = Math.PI / 2;
+  const offSquare = Math.abs(crate.angle - Math.round(crate.angle / QUARTER) * QUARTER);
+  check('a settled crate eases back to square', offSquare < 1e-3,
+    `off-square by ${offSquare.toFixed(5)} rad`);
+}
+
+// 1c. A crate rolls DOWN a slope rather than sitting on it — torque, not friction
+//     alone, is what makes that happen.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let i = 0; i < 60; i++) // a 45° ramp descending to the right
+    for (let y = 30 + i; y < 90; y++) grid.cells[grid.idx(20 + i, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(30, 25);
+  grid.objects.push(crate);
+  const x0 = crate.x;
+  let spun = 0;
+  for (let t = 0; t < 200; t++) {
+    sim.step();
+    spun = Math.max(spun, Math.abs(crate.angularVelocity));
+    if (!grid.objects.includes(crate as SimBody)) break;
+  }
+  check('a crate on a slope runs downhill', crate.x > x0 + 3, `x ${x0.toFixed(1)} → ${crate.x.toFixed(1)}`);
+  check('and spins while it does', spun > 0.01, `peak |w|=${spun.toFixed(4)}`);
 }
 
 // 2. Timber floats: density 1.4 vs Water 3 ⇒ well under half submerged.
@@ -83,9 +132,12 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   const crate = createWoodBox(50, 30);
   grid.objects.push(crate);
   for (let t = 0; t < 400; t++) sim.step();
-  const submerged = crate.y + crate.r - 50;
-  check('crate floats on water', crate.y + crate.r < 90 && submerged > 0 && submerged < 2 * crate.r,
-    `submerged=${submerged.toFixed(2)} of ${(2 * crate.r).toFixed(1)} cells`);
+  const submerged = crate.y + crate.radius - 50;
+  check(
+    'crate floats on water',
+    crate.y + crate.radius < 90 && submerged > 0 && submerged < 2 * crate.radius,
+    `submerged=${submerged.toFixed(2)} of ${(2 * crate.radius).toFixed(1)} cells`,
+  );
 }
 
 // 3. Heat sets it alight, and it burns down into exactly three shards which then
@@ -131,6 +183,10 @@ const boxes = (grid: Grid): SimWoodBox[] =>
     JSON.stringify(parts));
   check('shards inherit the fire', boxes(grid).every((b) => b.burnTicks > 0));
   check('shards scatter outward', boxes(grid).some((b) => Math.hypot(b.vx, b.vy) > 0.5));
+  check('shards tumble (each gets its own spin)',
+    boxes(grid).every((b) => b.angularVelocity !== 0) &&
+      new Set(boxes(grid).map((b) => b.angularVelocity)).size === 3,
+    boxes(grid).map((b) => b.angularVelocity.toFixed(4)).join(' '));
 }
 
 // 4. Broken by force (a crush) rather than by fire: still three shards, unlit.

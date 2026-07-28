@@ -1534,8 +1534,9 @@ export class CanvasRenderer implements Renderer {
       else if (o.kind === 'woodbox') this.rasterizeWoodBox(buf, w, h, s, o, heatColor);
       else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
       else if (o.kind === 'smokebomb')
-        this.rasterizeCapsuleSprite(
-          buf, w, h, s, o, SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H, heatColor,
+        this.rasterizeSprite(
+          buf, w, h, s, o, o.radius, o.halfLength + o.radius,
+          SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H, heatColor,
         );
       else this.rasterizeDrum(buf, w, h, s, o, heatColor);
     }
@@ -1584,18 +1585,12 @@ export class CanvasRenderer implements Renderer {
   }
 
   /**
-   * Rasterize one wooden box (the crate or one of its shards) into the overlay:
-   * its pixel-art sprite, axis-aligned, sampled per sub-pixel. Unlike the capsule
-   * bodies below there is no rotation to undo — a wooden box is a disc body with
-   * no orientation on purpose (a box that spun would roll away like a barrel; see
-   * engine/objects.ts SimWoodBox) — so this is the same nearest-neighbor sample
-   * with the rotation dropped, mapping the sprite onto the body's own display box
-   * (2·halfW × 2·halfH cells, which is where that box comes from in the first
-   * place: the art's pixel box scaled into cells).
-   *
-   * `heatColor`, when given (heat overlay on), replaces every opaque sprite pixel
-   * with that one flat color, keeping the crate's silhouette but recoloring it by
-   * temperature — the same treatment every other body gets.
+   * Rasterize one wooden box (the crate or one of its shards). Same rotating
+   * sprite pass every capsule body uses — a wooden box IS a capsule body (a
+   * degenerate one, `halfLength` 0), so it tumbles and its art tumbles with it.
+   * The one thing it can't share is the half-extents: every other body derives
+   * its display box from its collision capsule, while a box's sprite is a genuine
+   * rectangle that differs per part, so it passes `halfW`/`halfH` explicitly.
    */
   private rasterizeWoodBox(
     buf: Uint32Array,
@@ -1606,31 +1601,9 @@ export class CanvasRenderer implements Renderer {
     heatColor: number | null = null,
   ): void {
     const art = WOOD_BOX_SPRITES[o.part];
-    let x0 = Math.floor((o.x - o.halfW) * s);
-    let x1 = Math.ceil((o.x + o.halfW) * s);
-    let y0 = Math.floor((o.y - o.halfH) * s);
-    let y1 = Math.ceil((o.y + o.halfH) * s);
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > w) x1 = w;
-    if (y1 > h) y1 = h;
-    // Sprite pixels per grid cell along each axis (display box → sprite box).
-    const sxScale = art.w / (2 * o.halfW);
-    const syScale = art.h / (2 * o.halfH);
-    for (let sy = y0; sy < y1; sy++) {
-      const wy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
-      const row = sy * w;
-      const spy = art.h * 0.5 + wy * syScale;
-      if (spy < 0 || spy >= art.h) continue;
-      const srow = (spy | 0) * art.w;
-      for (let sx = x0; sx < x1; sx++) {
-        const wx = (sx + 0.5) / s - o.x;
-        const spx = art.w * 0.5 + wx * sxScale;
-        if (spx < 0 || spx >= art.w) continue;
-        const color = art.pixels[srow + (spx | 0)];
-        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent
-      }
-    }
+    this.rasterizeSprite(
+      buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor,
+    );
   }
 
   /**
@@ -1641,39 +1614,42 @@ export class CanvasRenderer implements Renderer {
    * and write that pixel's color (skipping transparent ones). Nearest-neighbor, no
    * anti-aliasing.
    *
-   * The sprite's pixel box maps onto the physics capsule's box (2·radius wide ×
-   * 2·(halfLength+radius) tall), so display and collision agree — which is also
-   * why each sprite is authored at that aspect. At OBJECT_SCALE = 2 the sprites
-   * are sized to sample near their native resolution.
+   * `halfW`/`halfL` are the display box's half-extents in cells. Every capsule
+   * body passes its own capsule box (2·radius wide × 2·(halfLength+radius) tall),
+   * so display and collision agree — which is also why each of those sprites is
+   * authored at that aspect; the wooden box, whose art is a true rectangle,
+   * passes its own. At OBJECT_SCALE = 2 the sprites sample near native resolution.
    *
    * `heatColor`, when given (heat overlay on), replaces every opaque sprite pixel
    * with that one flat color, keeping the body's silhouette (and rotation) but
    * recoloring it by temperature instead of its own art.
    *
-   * Every capsule body draws through this one routine — the drum (which picks its
-   * sprite by fill), the dynamite (which then adds a procedural fuse nub) and the
-   * smoke bomb — so a fourth capsule object needs only its sprite, not another
-   * copy of this loop.
+   * Every rotating body draws through this one routine — the drum (which picks its
+   * sprite by fill), the dynamite (which then adds a procedural fuse nub), the
+   * smoke bomb and the wooden box — so a new one needs only its sprite, not
+   * another copy of this loop.
    */
-  private rasterizeCapsuleSprite(
+  private rasterizeSprite(
     buf: Uint32Array,
     w: number,
     h: number,
     s: number,
-    o: { x: number; y: number; angle: number; halfLength: number; radius: number },
+    o: { x: number; y: number; angle: number },
+    halfW: number,
+    halfL: number,
     sprite: Uint32Array,
     spriteW: number,
     spriteH: number,
     heatColor: number | null = null,
   ): void {
-    const halfW = o.radius; // half the body's short (width) extent, in cells
-    const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
-    // Bounding box that contains the body at any rotation (a circle of the long
-    // half-extent), clamped to the overlay.
-    let x0 = Math.floor((o.x - halfL) * s);
-    let x1 = Math.ceil((o.x + halfL) * s);
-    let y0 = Math.floor((o.y - halfL) * s);
-    let y1 = Math.ceil((o.y + halfL) * s);
+    // Bounding box that contains the sprite RECTANGLE at any rotation: the circle
+    // through its corners, hypot(halfW, halfL) — not halfL, which would clip the
+    // corners of a diagonally-oriented body. Clamped to the overlay.
+    const reach = Math.hypot(halfW, halfL);
+    let x0 = Math.floor((o.x - reach) * s);
+    let x1 = Math.ceil((o.x + reach) * s);
+    let y0 = Math.floor((o.y - reach) * s);
+    let y1 = Math.ceil((o.y + reach) * s);
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > w) x1 = w;
@@ -1720,7 +1696,10 @@ export class CanvasRenderer implements Renderer {
     heatColor: number | null = null,
   ): void {
     const sprite = drumSpriteFor(o.fill);
-    this.rasterizeCapsuleSprite(buf, w, h, s, o, sprite, DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor);
+    this.rasterizeSprite(
+      buf, w, h, s, o, o.radius, o.halfLength + o.radius,
+      sprite, DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor,
+    );
   }
 
   /**
@@ -1750,7 +1729,9 @@ export class CanvasRenderer implements Renderer {
   ): void {
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
     // Body: the shared rotate-sample pass with the stick sprite.
-    this.rasterizeCapsuleSprite(buf, w, h, s, o, DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, heatColor);
+    this.rasterizeSprite(
+      buf, w, h, s, o, o.radius, halfL, DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, heatColor,
+    );
     // A short dark fuse-cord nub past the top cap, along the stick's (rotated) long
     // axis. angle 0 ⇒ axis (0,1) and the fuse points up (−axis); it rotates with
     // the stick. The flame is real Fire particles the engine spawns at the tip.

@@ -308,16 +308,28 @@ export interface SimSmokeBomb {
 export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
 
 /**
- * A wooden box — the crate, or one of the three shards it breaks into. It is a
- * *disc* body like the rubber ball (a point medial segment, no orientation), NOT
- * a capsule, and that is deliberate: a crate is a box, and a box that spins would
- * roll away like a barrel. Held upright, the inscribed disc is an unusually good
- * stand-in for an axis-aligned box on an axis-aligned grid — the box's bottom
- * edge is tangent to the disc, so a crate rests exactly flush on flat ground,
- * stacks flush on another crate, and sits flush against a wall. It carries
- * `halfW`/`halfH` alongside `r` because its sprite is (unlike the ball's disc)
- * rectangular: `r` is what the world collides with, `halfW`×`halfH` is the box
- * the sprite is drawn into.
+ * A wooden box — the crate, or one of the three shards it breaks into. Like the
+ * drum, the dynamite and the smoke bomb it is a **capsule body with 1-axis
+ * rotation**, so contact torque (r × J) spins it: a crate shoved along the ground
+ * tips and tumbles, one landing on a slope rolls down it, a blast sends the
+ * shards spinning off. Its capsule is the degenerate one — `halfLength` 0, i.e.
+ * the medial "segment" is a single point — so the shape it collides with is a
+ * plain disc inscribed in its own box. Rotation therefore changes what the box
+ * LOOKS like without changing what it collides with, which is what lets a square
+ * reuse the whole capsule machinery unchanged.
+ *
+ * That inscribed disc is a deliberately good fit for an upright box on an
+ * axis-aligned grid: the box's edges are tangent to it, so a crate at rest at 0°
+ * sits exactly flush on flat ground, stacks flush on another crate, and sits
+ * flush against a wall. A box resting at an odd angle would instead poke its
+ * corners through the floor, which is why a settled box is eased back upright
+ * (see settleWoodBoxUpright) — it tumbles freely while it's moving and squares up
+ * once it has stopped.
+ *
+ * `halfW`/`halfH` are carried alongside `radius` because the sprite is (unlike
+ * every other body's) genuinely rectangular and different per part: `radius` is
+ * what the world collides with, `halfW`×`halfH` is the box the sprite is drawn
+ * into and rotated within.
  *
  * The genuinely new ingredient over the earlier bodies is that it *burns*
  * (가연성). Sustained heat sets it alight; while alight it emits real Fire
@@ -334,14 +346,24 @@ export interface SimWoodBox {
   /** Velocity (cells/tick). */
   vx: number;
   vy: number;
+  /** Orientation in radians. 0 = upright, the way the sprite is drawn. */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque (see SimCapsule). */
+  angularVelocity: number;
+  /** Always 0 — a box's medial segment is a point, so its capsule is a disc. Kept
+   *  so the body is assignable to CapsuleBody and reuses the capsule routines. */
+  halfLength: number;
   /** Collision radius (cells) — the disc inscribed in the display box below. */
-  r: number;
+  radius: number;
   /** Half-extents of the *display* box (cells): the sprite is drawn into
-   *  2·halfW × 2·halfH, axis-aligned. Never used by physics. */
+   *  2·halfW × 2·halfH and rotated by `angle`. Never used by physics. */
   halfW: number;
   halfH: number;
   /** Mass — buoyancy and collision response. */
   mass: number;
+  /** Rotational inertia of the real rectangle (not of the collision disc), so a
+   *  long shard is harder to spin end-over-end than a compact one. */
+  momentOfInertia: number;
   /** Coefficient of restitution (0..1) — timber thuds, it doesn't bounce. */
   restitution: number;
   /** Consecutive ticks the body has sampled at/above its ignition point. Time-
@@ -360,39 +382,9 @@ export interface SimWoodBox {
   held?: boolean;
 }
 
-/** Anything in the object layer: discs (balls, wooden boxes) and capsules (drums,
- *  dynamite, smoke bombs) share one array on the Grid, discriminated by `kind`. */
+/** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
+ *  smoke bombs, wooden boxes) share one array on the Grid, discriminated by `kind`. */
 export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox;
-
-/** The bodies with no orientation — a disc: their medial "segment" is a single
- *  point, they carry no angle, and a contact torque can't spin them. The rubber
- *  ball and every part of the wooden box. */
-export type SimDisc = SimObject | SimWoodBox;
-
-/** Is this body a disc (no rotation)? The one branch the shared body-generic
- *  geometry, the pair solver and the knockbacks need, since everything else in
- *  the array is a rotating capsule. */
-export function isDiscBody(o: SimBody): o is SimDisc {
-  return o.kind === 'ball' || o.kind === 'woodbox';
-}
-
-/**
- * The physics-only fields every disc body shares: a center, a velocity, a radius
- * and the two response scalars. The disc collision / buoyancy / integration
- * routines (deepestDiscContact, resolveDiscCollision, sampleMediumDisc, stepDisc)
- * operate through this structural type, so the rubber ball and the wooden box
- * reuse them with no per-kind branch — the capsule family's CapsuleBody below is
- * the exact analogue.
- */
-type DiscBody = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  r: number;
-  mass: number;
-  restitution: number;
-};
 
 /**
  * The physics-only fields every capsule body shares — a medial segment of
@@ -749,6 +741,19 @@ const WOOD_BOX_SAWDUST_CHANCE = 0.5;
  *  visibly scatter instead of settling in a neat stack of the box they were. */
 const WOOD_BOX_SHATTER_SPEED = 1.4;
 const WOOD_BOX_SHATTER_LIFT = 0.6;
+/** Max magnitude (rad/tick) of the random spin each shard is kicked with as the
+ *  crate bursts, on top of the spin its own outward throw earns from contact.
+ *  Splinters tumble; they don't sail out flat. Comfortably under the mix brush's
+ *  0.15 so the burst reads as debris rather than as a blender. */
+const WOOD_BOX_SHATTER_SPIN = 0.09;
+/** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both
+ *  barely spinning and barely moving, so nothing that is still tumbling, rolling
+ *  or flying is ever squared up mid-flight. */
+const WOOD_BOX_SETTLE_SPIN = 0.02;
+const WOOD_BOX_SETTLE_SPEED = 0.25;
+/** Fraction of the remaining tilt a settled box sheds per tick — a visible ease
+ *  onto square (a few tenths of a second), not a snap. */
+const WOOD_BOX_SETTLE_RATE = 0.12;
 /** The three shards a crate breaks into, in sprite draw order. */
 const WOOD_BOX_PIECES: readonly WoodBoxPart[] = ['piece1', 'piece2', 'piece3'];
 
@@ -773,7 +778,15 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
   // The INSCRIBED disc: with it, the box's nearest edge is tangent to the circle,
   // so an axis-aligned contact (resting on flat ground, stacked on another crate,
   // pushed up against a wall) puts the sprite exactly flush against the surface.
-  const r = halfW < halfH ? halfW : halfH;
+  const radius = halfW < halfH ? halfW : halfH;
+  // Mass follows the COLLISION disc's area, because that same disc is the
+  // footprint buoyancy samples — pairing them is what makes the density ratio
+  // (timber 1.4 vs Water 3) come out as the submerged fraction it should.
+  const mass = WOOD_BOX_DENSITY * Math.PI * radius * radius;
+  // Inertia, though, follows the REAL rectangle (I = m(w² + h²)/12), not the
+  // disc: how hard a shard is to spin should depend on how long it actually is.
+  const w = 2 * halfW;
+  const h = 2 * halfH;
   return {
     kind: 'woodbox',
     part,
@@ -781,15 +794,46 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
     y,
     vx: 0,
     vy: 0,
-    r,
+    angle: 0,
+    angularVelocity: 0,
+    halfLength: 0, // a box's medial segment is a point: the capsule is a disc
+    radius,
     halfW,
     halfH,
-    mass: WOOD_BOX_DENSITY * Math.PI * r * r,
+    mass,
+    momentOfInertia: (mass * (w * w + h * h)) / 12,
     restitution: WOOD_BOX_RESTITUTION,
     heatTicks: 0,
     temp: AMBIENT_TEMP,
     burnTicks: 0,
   };
+}
+
+/**
+ * Ease a settled wooden box back to square. A box collides as a DISC, so nothing
+ * in the contact solve prefers one orientation over another — a crate that rolls
+ * to a stop stops at whatever angle it happened to reach, and then its corners
+ * (which stick out past the collision disc by up to √2−1 of its half-width) hang
+ * through the floor it's resting on. So once a box has actually come to rest —
+ * barely translating AND barely spinning — its angle is eased toward the nearest
+ * quarter turn, a fraction of the remaining tilt per tick.
+ *
+ * The gates matter: this never touches a box that is still moving, so tumbling,
+ * rolling down a slope and being flung by a blast all play out in full. It only
+ * decides how the box looks *after* it has stopped. Delete this call to have
+ * boxes keep whatever angle they land at.
+ */
+function settleWoodBoxUpright(o: SimWoodBox): void {
+  if (Math.abs(o.angularVelocity) > WOOD_BOX_SETTLE_SPIN) return;
+  if (Math.hypot(o.vx, o.vy) > WOOD_BOX_SETTLE_SPEED) return;
+  const QUARTER_TURN = Math.PI / 2;
+  const target = Math.round(o.angle / QUARTER_TURN) * QUARTER_TURN;
+  const tilt = target - o.angle;
+  if (Math.abs(tilt) < 1e-4) {
+    o.angle = target;
+    return;
+  }
+  o.angle += tilt * WOOD_BOX_SETTLE_RATE;
 }
 
 /**
@@ -895,7 +939,7 @@ interface Contact {
  * neighbor in the normal direction is solid, or a corner contact where either
  * orthogonal neighbor is solid. What survives are only exposed surfaces.
  */
-function deepestDiscContact(o: DiscBody, ctx: SimContext): Contact | null {
+function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
   const r = o.r;
   const x0 = Math.floor(o.x - r);
   const x1 = Math.floor(o.x + r);
@@ -1006,9 +1050,9 @@ function deepestDiscContact(o: DiscBody, ctx: SimContext): Contact | null {
  * few times so an object wedged into a corner is separated from both faces. A
  * very small rebound is damped to rest so a settled ball doesn't jitter.
  */
-function resolveDiscCollision(o: DiscBody, ctx: SimContext): void {
+function resolveGridCollision(o: SimObject, ctx: SimContext): void {
   for (let iter = 0; iter < 3; iter++) {
-    const c = deepestDiscContact(o, ctx);
+    const c = deepestContact(o, ctx);
     if (!c) break;
     o.x += c.nx * c.pen;
     o.y += c.ny * c.pen;
@@ -1028,14 +1072,14 @@ function resolveDiscCollision(o: DiscBody, ctx: SimContext): void {
 }
 
 /**
- * Sample the medium the disc's footprint sits in — for buoyancy (liquid) and
+ * Sample the medium the circle's footprint sits in — for buoyancy (liquid) and
  * granular penetration (powder). Walk the cells whose center is inside the circle
  * (the same footprint the renderer fills) and bucket them: non-frozen liquid adds
  * its density (the Archimedes term) and a submerged count; powder adds a count.
  * Returns those plus the total footprint cell count (for the drag fractions).
  * Read-only: neither buoyancy nor penetration disturbs the sampled cells.
  */
-function sampleMediumDisc(o: DiscBody, ctx: SimContext): {
+function sampleMedium(o: SimObject, ctx: SimContext): {
   liquidDensity: number;
   liquidCells: number;
   powderCells: number;
@@ -1083,7 +1127,7 @@ function sampleMediumDisc(o: DiscBody, ctx: SimContext): {
  * with the fragment count/speed scaled to the entry speed and capped small. The
  * only place the object layer writes fluid cells; everywhere else it reads.
  */
-function spawnSplash(o: DiscBody, ctx: SimContext, entrySpeed: number): void {
+function spawnSplash(o: SimObject, ctx: SimContext, entrySpeed: number): void {
   const r = o.r;
   const n = Math.min(SPLASH_MAX_DROPLETS, 2 + Math.floor(entrySpeed));
   const outB = Math.min(3, entrySpeed * 0.6); // launchDebris speed budget
@@ -1122,7 +1166,7 @@ function spawnSplash(o: DiscBody, ctx: SimContext, entrySpeed: number): void {
  * carrying their own powder, then rain back down as a little crater rim. Fires
  * only on the impact tick; the resting penetration below never moves grains.
  */
-function spawnPowderScatter(o: DiscBody, ctx: SimContext, entrySpeed: number): void {
+function spawnPowderScatter(o: SimObject, ctx: SimContext, entrySpeed: number): void {
   const r = o.r;
   const n = Math.min(POWDER_SCATTER_MAX, 1 + Math.floor(entrySpeed / 2));
   const outB = Math.min(1.5, entrySpeed * 0.35); // weaker than a splash's budget
@@ -1151,14 +1195,12 @@ function spawnPowderScatter(o: DiscBody, ctx: SimContext, entrySpeed: number): v
 }
 
 /**
- * Advance one disc body (a rubber ball, a wooden crate or one of its shards) a
- * tick: gravity → buoyancy/drag → integrate position in collision-safe substeps
- * (resolving against the solid grid after each) → discrete surface-entry
- * splash/scatter. `ax,ay` is the pre-scaled gravity acceleration for this tick
- * (computed once by the caller). Kinds differ only in what the *triggers* do to
- * them afterwards; the motion is one shared path.
+ * Advance one rubber ball a tick: gravity → buoyancy/drag → integrate position
+ * in collision-safe substeps (resolving against the solid grid after each) →
+ * discrete surface-entry splash/scatter. `ax,ay` is the pre-scaled gravity
+ * acceleration for this tick (computed once by the caller).
  */
-function stepDisc(o: DiscBody, ctx: SimContext, ax: number, ay: number, s: number): void {
+function stepBall(o: SimObject, ctx: SimContext, ax: number, ay: number, s: number): void {
   // Gravity (gated by the world's gravity strength, so weightless mode holds
   // objects in the air just like it holds powders).
   o.vx += ax;
@@ -1169,7 +1211,7 @@ function stepDisc(o: DiscBody, ctx: SimContext, ax: number, ay: number, s: numbe
   // fluid (rubber ball vs. water) nets upward and floats, settling where the
   // submerged fraction balances the density ratio. Drag (scaled by how much of
   // the footprint is actually in fluid) damps the bob and sideways drift.
-  const ms = sampleMediumDisc(o, ctx);
+  const ms = sampleMedium(o, ctx);
   const footprint = ms.footprint || 1;
   if (ms.liquidDensity > 0) {
     const ab = (ms.liquidDensity * OBJECT_GRAVITY * s) / o.mass;
@@ -1213,7 +1255,7 @@ function stepDisc(o: DiscBody, ctx: SimContext, ax: number, ay: number, s: numbe
     const dt = Math.min(remaining, MAX_SUBSTEP / speed);
     o.x += o.vx * dt;
     o.y += o.vy * dt;
-    resolveDiscCollision(o, ctx);
+    resolveGridCollision(o, ctx);
     remaining -= dt;
   }
   // Surface-entry scatter: a discrete edge event, detected statelessly by
@@ -1223,7 +1265,7 @@ function stepDisc(o: DiscBody, ctx: SimContext, ax: number, ay: number, s: numbe
   // extra per-object state). Water throws a splash; powder throws a weaker
   // grain scatter (물보다 약하게).
   if (enteredLiquid || enteredPowder) {
-    const after = sampleMediumDisc(o, ctx);
+    const after = sampleMedium(o, ctx);
     if (enteredLiquid && after.liquidCells > 0) spawnSplash(o, ctx, entrySpeed);
     else if (enteredPowder && after.powderCells > 0) spawnPowderScatter(o, ctx, entrySpeed);
   }
@@ -1296,20 +1338,20 @@ function closestOnSegment(
 
 /** The cap radius of any body (ball radius or drum cap radius). */
 export function bodyRadius(o: SimBody): number {
-  return isDiscBody(o) ? o.r : o.radius;
+  return o.kind === 'ball' ? o.r : o.radius;
 }
 
 /** The body's medial segment endpoints [ax,ay,bx,by]. A ball's segment is its
  *  center twice (a point); a drum's is its capsule axis. */
 function bodyEnds(o: SimBody): [number, number, number, number] {
-  if (isDiscBody(o)) return [o.x, o.y, o.x, o.y];
+  if (o.kind === 'ball') return [o.x, o.y, o.x, o.y];
   return capsuleEnds(o);
 }
 
 /** Half-extent from center to the farthest point of the body — the radius of the
  *  smallest circle covering it. Used to size scan/pick bounding boxes. */
 export function bodyReach(o: SimBody): number {
-  return isDiscBody(o) ? o.r : o.halfLength + o.radius;
+  return o.kind === 'ball' ? o.r : o.halfLength + o.radius;
 }
 
 /** Inverse mass — 0 while held (the pointer pins it as an immovable anchor, so
@@ -1320,7 +1362,7 @@ function invMassOf(o: SimBody): number {
 
 /** Inverse rotational inertia — 0 for a ball (no rotation) and for any held body. */
 function invInertiaOf(o: SimBody): number {
-  return o.held || isDiscBody(o) ? 0 : 1 / o.momentOfInertia;
+  return o.held || o.kind === 'ball' ? 0 : 1 / o.momentOfInertia;
 }
 
 /** Shortest distance from point (px,py) to the body's solid shape (0 if inside).
@@ -2086,7 +2128,7 @@ function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
   }
   // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
   // Any capsule body (drum or dynamite) spins; a ball has no rotation.
-  if (!isDiscBody(o)) o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
+  if (o.kind !== 'ball') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -2136,7 +2178,7 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  if (!isDiscBody(o)) o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
+  if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -2185,7 +2227,7 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  if (!isDiscBody(o)) o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
+  if (o.kind !== 'ball') o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -2236,8 +2278,8 @@ function resolvePair(a: SimBody, b: SimBody): void {
   const rbx = px - b.x;
   const rby = py - b.y;
   // Any capsule body (drum or dynamite) carries spin; a ball's ω is always 0.
-  const wA = !isDiscBody(a) ? a.angularVelocity : 0;
-  const wB = !isDiscBody(b) ? b.angularVelocity : 0;
+  const wA = a.kind !== 'ball' ? a.angularVelocity : 0;
+  const wB = b.kind !== 'ball' ? b.angularVelocity : 0;
   // Contact velocities (v + ω×r, ω×r = ω·(−r_y, r_x)), relative B−A.
   const vrx = b.vx - wB * rby - (a.vx - wA * ray);
   const vry = b.vy + wB * rbx - (a.vy + wA * rax);
@@ -2253,14 +2295,14 @@ function resolvePair(a: SimBody, b: SimBody): void {
   a.vy -= jn * ny * imA;
   b.vx += jn * nx * imB;
   b.vy += jn * ny * imB;
-  if (!isDiscBody(a)) a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
-  if (!isDiscBody(b)) b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
+  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
+  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
   // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
   // relative velocity — the torque source that lets one body spin another.
   const tx = -ny;
   const ty = nx;
-  const wA2 = !isDiscBody(a) ? a.angularVelocity : 0;
-  const wB2 = !isDiscBody(b) ? b.angularVelocity : 0;
+  const wA2 = a.kind !== 'ball' ? a.angularVelocity : 0;
+  const wB2 = b.kind !== 'ball' ? b.angularVelocity : 0;
   const vrx2 = b.vx - wB2 * rby - (a.vx - wA2 * ray);
   const vry2 = b.vy + wB2 * rbx - (a.vy + wA2 * rax);
   const vt = vrx2 * tx + vry2 * ty;
@@ -2275,8 +2317,8 @@ function resolvePair(a: SimBody, b: SimBody): void {
   a.vy -= jt * ty * imA;
   b.vx += jt * tx * imB;
   b.vy += jt * ty * imB;
-  if (!isDiscBody(a)) a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
-  if (!isDiscBody(b)) b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
+  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
+  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
 }
 
 /** Restitution of any body (ball or drum). */
@@ -2688,7 +2730,7 @@ function randSigned(ctx: SimContext): number {
  * the rest of the engine already treats a frozen cell as structure, not fluid.
  */
 function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
-  const r = o.r;
+  const r = o.radius;
   const r2 = r * r;
   const x0 = Math.floor(o.x - r);
   const x1 = Math.ceil(o.x + r);
@@ -2728,7 +2770,7 @@ function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
  * read-only over matter it didn't put there).
  */
 function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
-  const r = o.r;
+  const r = o.radius;
   const r2 = r * r;
   const x0 = Math.floor(o.x - r);
   const x1 = Math.ceil(o.x + r);
@@ -2755,7 +2797,7 @@ function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
  * is read-only over terrain.
  */
 function spawnSawdust(o: SimWoodBox, ctx: SimContext): void {
-  const r = o.r;
+  const r = o.radius;
   const r2 = r * r;
   const x0 = Math.floor(o.x - r);
   const x1 = Math.ceil(o.x + r);
@@ -2797,19 +2839,29 @@ function breakWoodBox(o: SimWoodBox, ctx: SimContext, spawn: SimBody[], alight: 
     spawnSawdust(o, ctx);
     return;
   }
+  // Each shard's slot inside the crate, carried out through the crate's own
+  // rotation so a box that broke while tumbling scatters along the axis it was
+  // actually lying on rather than along the screen's.
+  const cos = Math.cos(o.angle);
+  const sin = Math.sin(o.angle);
   for (const part of WOOD_BOX_PIECES) {
     const art = WOOD_BOX_SPRITES[part];
-    const px = o.x + art.ox * WOOD_BOX_CELLS_PER_PX;
-    const py = o.y + art.oy * WOOD_BOX_CELLS_PER_PX;
+    const lx = art.ox * WOOD_BOX_CELLS_PER_PX;
+    const ly = art.oy * WOOD_BOX_CELLS_PER_PX;
+    const dx = lx * cos + ly * sin;
+    const dy = -lx * sin + ly * cos;
+    const px = o.x + dx;
+    const py = o.y + dy;
     const piece = createWoodBox(px, py, part);
+    piece.angle = o.angle; // it starts as the part of the crate it just was
     // Outward from the crate's centre, plus a lift against gravity so the shards
     // pop up out of the wreckage instead of sliding out of it.
-    const dx = px - o.x;
-    const dy = py - o.y;
     const d = Math.hypot(dx, dy) || 1;
     const kick = WOOD_BOX_SHATTER_SPEED;
     piece.vx = o.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * WOOD_BOX_SHATTER_LIFT;
     piece.vy = o.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * WOOD_BOX_SHATTER_LIFT;
+    // Splinters tumble: the crate's own spin plus a random kick of its own.
+    piece.angularVelocity = o.angularVelocity + randSigned(ctx) * WOOD_BOX_SHATTER_SPIN;
     piece.temp = o.temp;
     if (alight) piece.burnTicks = woodBoxBurnTicks(part);
     spawn.push(piece);
@@ -2990,8 +3042,13 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);
-    if (isDiscBody(o)) stepDisc(o, ctx, ax, ay, s);
+    if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
     else stepCapsule(o, ctx, ax, ay, s);
+    // A settled box squares up: it collides as a disc, so the contact solve has no
+    // orientation to prefer and a stopped crate would otherwise rest at whatever
+    // angle it happened to reach, corners hanging through the floor. Gated on the
+    // body having actually stopped, so tumbling and rolling are untouched.
+    if (o.kind === 'woodbox') settleWoodBoxUpright(o);
   }
   // Phase B — resolve collisions between bodies (fully interactive layer).
   resolveObjectPairs(objects);
@@ -3001,7 +3058,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
     if (o.held) continue;
-    if (isDiscBody(o)) resolveDiscCollision(o, ctx);
+    if (o.kind === 'ball') resolveGridCollision(o, ctx);
     else resolveCapsuleCollision(o, ctx);
   }
   // Phase C — terminal triggers, then compact out any body destroyed this tick. A

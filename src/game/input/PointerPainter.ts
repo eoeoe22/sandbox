@@ -48,7 +48,6 @@ import {
   createDynamite,
   createSmokeBomb,
   createWoodBox,
-  isDiscBody,
   pickBody,
   distanceToBody,
   bodyReach,
@@ -446,9 +445,9 @@ export class PointerPainter {
       const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
       o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
-      // Any capsule body (drum, dynamite, smoke bomb) also gets a random spin; a
-      // disc body (ball, wooden box) has no orientation to spin.
-      if (!isDiscBody(o)) o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
+      // Any capsule body (drum, dynamite, smoke bomb, wooden box) also gets a
+      // random spin; a ball has no orientation to spin.
+      if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
   }
 
