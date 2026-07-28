@@ -45,13 +45,13 @@ function fillRect(
 function buildSprite(): Uint32Array {
   const buf = new Uint32Array(SMOKE_BOMB_SPRITE_W * SMOKE_BOMB_SPRITE_H); // 0 = transparent
 
-  // Pull ring (safety pin), hanging off the left of the cap: a black ring…
+  // Pull ring (safety pin), hanging off the left of the cap — a solid dark ring.
+  // The reference art shows the steel wire through its middle as a light plus,
+  // but at this size that plus was the loudest thing in the top-left corner and
+  // read as a stray icon rather than as a pin, so the ring is left solid.
   fillRect(buf, 1, 0, 3, 1, BLACK);
   fillRect(buf, 0, 1, 5, 3, BLACK);
   fillRect(buf, 1, 4, 3, 1, BLACK);
-  // …with the steel wire showing through its middle as a plus.
-  fillRect(buf, 2, 1, 1, 3, STEEL);
-  fillRect(buf, 1, 2, 3, 1, STEEL);
 
   // Cap and safety lever (outline): the wide cap on top, stepping down into the
   // narrow lever that runs the length of the can's right side.
