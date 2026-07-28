@@ -123,6 +123,7 @@ import { PUMP } from './pump';
 import { ELECTROMAGNET } from './electromagnet';
 import { SULFUR } from './sulfur';
 import { SALTPETER } from './saltpeter';
+import { ALUMINUM_POWDER } from './aluminumpowder';
 
 export {
   EMPTY_MAT,
@@ -245,6 +246,7 @@ export {
   ELECTROMAGNET,
   SULFUR,
   SALTPETER,
+  ALUMINUM_POWDER,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -367,6 +369,7 @@ export const MATERIALS = [
   COAL_POWDER,
   METAL_POWDER,
   RUST_POWDER,
+  ALUMINUM_POWDER,
   LIMESTONE,
   SLAG,
   HEATPIPE,
