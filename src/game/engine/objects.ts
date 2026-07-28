@@ -245,7 +245,7 @@ export interface SimDynamite {
  * A smoke bomb — a capsule body (it shares the drum/dynamite segment+radius
  * physics and 1-axis rotation, so it tumbles and rolls) that is a *smoke source*
  * rather than an explosive. Thrown, it immediately starts trickling a wisp of
- * Smoke from its nozzle; four seconds later the canister lets go and pours out a
+ * Smoke from around itself; four seconds later the canister lets go and pours out a
  * dense cloud for two and a half seconds, and then it is spent and gone (소환 시
  * 소량의 연기를 뿜다가 4초 후 대량의 연기를 2.5초간 발산 → 소멸).
  *
@@ -537,11 +537,12 @@ export const SMOKE_BOMB_VENT_TICKS = Math.round(2.5 * SIM_HZ_AT_1X);
 // that disc sits, how wide it is and how densely it fills. The numbers are sized
 // so the two stages read as different *events*, not as one turned up: the fuse
 // wisp is a marker, the discharge is a wall of smoke.
-/** Radius (cells) of the wisp the fuse-stage nozzle puffs into. Small and fixed —
- *  it should read as a stream leaving the nozzle, not as a cloud. */
-const SMOKE_BOMB_TRICKLE_RADIUS = 2.5;
-/** Per-cell, per-tick fill chance of that wisp — across its ~20-cell disc, about
- *  two new cells a tick. The first four seconds are meant to be a thin plume
+/** How far the fuse-stage wisp reaches from the canister. Small and fixed — it
+ *  should read as a thin plume seeping off the can, not as a cloud. Sized a little
+ *  past the body's own half-height so the wisp clears the sprite instead of being
+ *  drawn entirely behind it. */
+const SMOKE_BOMB_TRICKLE_RADIUS = 6.5;
+/** Per-cell, per-tick fill chance of that wisp — a couple of new cells a tick. The first four seconds are meant to be a thin plume
  *  marking where the canister landed (소량의 연기), so the discharge that follows
  *  is a clear step change rather than more of the same. */
 const SMOKE_BOMB_TRICKLE_DENSITY = 0.1;
@@ -555,7 +556,7 @@ const SMOKE_BOMB_VENT_DENSITY = 0.22;
 /** How far the discharge's front travels, as a multiple of the body's own reach
  *  (≈5 cells) — so ~30 cells of travel, a cloud tens of cells across before the gas
  *  starts drifting on its own. It erupts around the whole canister rather than
- *  streaming from the nozzle the way the fuse-stage wisp does. */
+ *  a thin plume the way the fuse-stage wisp does. */
 const SMOKE_BOMB_VENT_SPREAD = 6;
 /** Footprint/reservoir temperature (°) at/above which external heat cooks the
  *  charge off early, cutting the fuse short and opening the vent now. Set at the
@@ -2337,8 +2338,8 @@ function smokePassable(ctx: SimContext, x: number, y: number): boolean {
  * gets, for the same reason. Only *structure* stops it.
  *
  * Both of the smoke bomb's stages are this one call with different numbers: a
- * small radius at the nozzle for the fuse-stage wisp, a large one around the whole
- * body for the discharge. Cost is bounded by the reachable area within `radius`,
+ * small radius for the fuse-stage wisp, a large one for the discharge — both
+ * anchored on the canister itself. Cost is bounded by the reachable area within `radius`,
  * so even the full-density rupture is one pass over a few thousand cells.
  */
 function puffDisc(
@@ -2359,22 +2360,19 @@ function puffDisc(
   const qy: number[] = [];
   const qb: number[] = [];
 
-  // Seed from the source cell and its 8 neighbours, so a canister whose own centre
-  // cell happens to hold matter (half-buried, or resting with its midpoint inside
-  // the ground) still vents from whatever open cell it touches instead of going
-  // silent. A canister with no open cell at all is genuinely smothered and emits
-  // nothing, which is the right answer.
-  const seed = (sx: number, sy: number): void => {
-    if (!ctx.inBounds(sx, sy)) return;
-    const idx = sy * w + sx;
-    if (stamp[idx] === id_s || !smokePassable(ctx, sx, sy)) return;
-    stamp[idx] = id_s;
-    qx.push(sx);
-    qy.push(sy);
-    qb.push(radius);
-  };
-  seed(cx0, cy0);
-  for (const [dx, dy] of SMOKE_STEPS) seed(cx0 + dx, cy0 + dy);
+  // Seed the source cell and ONLY the source cell. Seeding its neighbours as a
+  // fallback (for a source whose own cell is occupied) is what let the front hop a
+  // 1-cell wall: a source sitting against a wall has a neighbour on the *far*
+  // side, and starting there put smoke outside a sealed room. The fallback also
+  // isn't needed any more — matter is passable now (see smokePassable), so the
+  // only thing that can occupy the source cell is solid structure, and a body
+  // can't come to rest inside that (collision resolution pushes it out). A source
+  // genuinely walled in emits nothing, which is the right answer.
+  if (!ctx.inBounds(cx0, cy0) || !smokePassable(ctx, cx0, cy0)) return;
+  stamp[cy0 * w + cx0] = id_s;
+  qx.push(cx0);
+  qy.push(cy0);
+  qb.push(radius);
 
   let head = 0;
   while (head < qx.length) {
@@ -2384,14 +2382,28 @@ function puffDisc(
     head++;
     if (density >= 1 || ctx.chance(density)) puffSmoke(ctx, x, y);
     for (let i = 0; i < SMOKE_STEPS.length; i++) {
-      const nx = x + SMOKE_STEPS[i][0];
-      const ny = y + SMOKE_STEPS[i][1];
+      const dx = SMOKE_STEPS[i][0];
+      const dy = SMOKE_STEPS[i][1];
+      const nx = x + dx;
+      const ny = y + dy;
       const left = budget - SMOKE_STEPS[i][2];
       if (left < 0) continue;
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_s) continue;
       if (!smokePassable(ctx, nx, ny)) continue; // structure stops the front and shelters what's behind
+      // No corner-cutting: a diagonal step needs at least one of its two flanking
+      // orthogonal cells open, so the front can't squeeze through the point where
+      // two solids merely touch at a corner. Without this the wall guarantee is
+      // only true for orthogonally-contiguous walls — smoke poured straight
+      // through any 1-cell-thick 45° wall or ramp (an ordinary thing to build),
+      // because every step crossing such a wall has BOTH flanks inside it.
+      // "At least one" rather than "both" is deliberate: it still lets the front
+      // round an ordinary convex corner, which is the behaviour that makes a
+      // cloud pour out of a doorway.
+      if (dx !== 0 && dy !== 0 && !smokePassable(ctx, x + dx, y) && !smokePassable(ctx, x, y + dy)) {
+        continue;
+      }
       stamp[nidx] = id_s;
       qx.push(nx);
       qy.push(ny);
@@ -2401,7 +2413,7 @@ function puffDisc(
 }
 
 /** The heavy discharge: a dense puff over the whole canister's cloud radius (not
- *  just its nozzle — a venting or ruptured can gushes from everywhere at once). */
+ *  just a thin plume — a venting or ruptured can gushes from everywhere at once). */
 function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
   puffDisc(ctx, o.x, o.y, bodyReach(o) * SMOKE_BOMB_VENT_SPREAD, density);
 }
@@ -2409,7 +2421,7 @@ function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
 /**
  * Per-tick lifecycle for a smoke bomb, after this tick's heat conduction (called
  * from evaluateTriggers with the resolved `heat`). Two stages and nothing else:
- *   1. FUSE — a thin wisp trickles from the nozzle while `fuseTicks` runs down.
+ *   1. FUSE — a thin wisp seeps off the canister while `fuseTicks` runs down.
  *      Sustained external heat (fire, lava, the 가열 brush) cooks the charge off
  *      early and opens the vent now, cutting the rest of the fuse.
  *   2. VENT — the canister pours out a dense cloud every tick while `ventTicks`
@@ -2427,18 +2439,13 @@ function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean 
     }
     if (o.fuseTicks > 0) {
       o.fuseTicks--;
-      // A wisp from the nozzle, which sits just past the cap along the canister's
-      // long axis and so tracks the right end however the can has tumbled — the
-      // same tip the dynamite's fuse flame uses.
-      const [ux, uy] = capsuleAxis(o);
-      const reach = o.halfLength + o.radius + 0.5;
-      puffDisc(
-        ctx,
-        o.x - ux * reach,
-        o.y - uy * reach,
-        SMOKE_BOMB_TRICKLE_RADIUS,
-        SMOKE_BOMB_TRICKLE_DENSITY,
-      );
+      // A wisp seeping from around the canister. Deliberately anchored at the
+      // BODY, not at the nozzle tip: the tip sits 5.5 cells off-centre along the
+      // capsule's axis, and a canister lying against a wall can point it straight
+      // *into* (or through) that wall — which put the wisp on the far side of a
+      // sealed room. The body centre is always the canister's actual location, so
+      // the plume can only ever start where the canister really is.
+      puffDisc(ctx, o.x, o.y, SMOKE_BOMB_TRICKLE_RADIUS, SMOKE_BOMB_TRICKLE_DENSITY);
       return true;
     }
     o.ventTicks = SMOKE_BOMB_VENT_TICKS; // fuse spent (or cooked off) — open the vent
