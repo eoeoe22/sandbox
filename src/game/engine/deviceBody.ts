@@ -56,9 +56,9 @@ import type { SimContext } from './SimContext';
  * panel got body-wide conduction). Measured on a lit square array, flood cost per
  * tick over an inert-stone control of the same size: 10,000 cells 2.92 → 1.42 ms,
  * 19,600 cells 6.07 → 3.44 ms. (The panel's own emission loop was the other half;
- * with both, 0.9 ms and 2.0 ms — see solarpanel.ts. The largest array a 360×203
- * world holds now costs ~6% of a 30 Hz tick instead of ~18%.) Same walk, same
- * order, same results; only the bookkeeping changed.
+ * with both, 0.9 ms and 2.0 ms — see solarpanel.ts. At 36,100 cells, about the
+ * largest square a 360×203 world holds, the pair is 11.3 → 3.9 ms: ~34% → ~12% of
+ * a 30 Hz tick.) Same walk, same order, same results; only the bookkeeping changed.
  *
  * The buffer is allocated on first use and re-allocated if the grid is resized,
  * so a world with no electromagnet in it never pays for the electromagnet's memo.

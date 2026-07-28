@@ -604,6 +604,14 @@ function farLeadReached(barId: number): boolean {
 // not the reallocation happens. Measured with the reallocation deliberately
 // disabled: a bottom-left body reports a clean 100/100 (the check is useless),
 // while this top-right one does not.
+//
+// The steps are wrapped because the regression's failure mode is a *throw*, not a
+// wrong number: a write past the end of a stale Int32Array is a silent no-op in
+// JS, so a cell whose flat index falls beyond the old buffer can never be marked,
+// gets re-pushed onto the walk stack forever, and `Array.push` eventually throws
+// `RangeError: Invalid array length` from deep inside the battery's update. Left
+// bare that aborts the whole harness process, which reads like a broken test
+// rather than a caught regression; caught, it prints a normal FAIL line.
 
 {
   const grid = new Grid(40, 30);
@@ -631,9 +639,19 @@ function farLeadReached(barId: number): boolean {
     return powered();
   };
 
-  const before = runAt(40, 30);
-  const grown = runAt(60, 45);
-  const shrunk = runAt(24, 20);
+  /** Run one size, reporting a throw as -1 rather than letting it escape. */
+  const tryRunAt = (w: number, h: number): number => {
+    try {
+      return runAt(w, h);
+    } catch (e) {
+      console.log(`      (threw: ${e instanceof Error ? e.message : String(e)})`);
+      return -1;
+    }
+  };
+
+  const before = tryRunAt(40, 30);
+  const grown = tryRunAt(60, 45);
+  const shrunk = tryRunAt(24, 20);
   check(
     'a device body still floods after the sandbox grows',
     before === 100 && grown === 100,
