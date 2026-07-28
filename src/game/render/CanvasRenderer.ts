@@ -705,12 +705,22 @@ export class CanvasRenderer implements Renderer {
       let id = cells[i];
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
       // flung grain wears its own material's color instead of the carrier's.
+      let carried = false;
       if (asAux[id]) {
-        const carried = auxArr[i];
-        if (carried !== 0) id = carried;
+        const carriedId = auxArr[i];
+        if (carriedId !== 0) {
+          id = carriedId;
+          carried = true;
+        }
       }
       let c: number;
-      const pal8 = auxPal[id];
+      // `renderAsAux` and `auxPalette` are two mutually exclusive readings of the
+      // SAME aux word — "this is the material id I'm carrying" vs. "this is my own
+      // colour index" — so a carrier cell must never be handed to the palette
+      // branch below: it would index the palette with a material id and paint a
+      // real-looking but wrong colour. On a carrier the remapped id only chooses
+      // the *branch*; the aux word still belongs to the carrier.
+      const pal8 = carried ? null : auxPal[id];
       // A multi-coloured material (Firework Burst) draws the entry of its fixed
       // palette that the cell's own aux value names, so one material paints a
       // whole volley of differently-coloured flowers (see Material.auxPalette).
