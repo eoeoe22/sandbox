@@ -28,6 +28,13 @@ import { DIAMOND } from './diamond';
 //     a thick pane: a beam cell carries the pane it sits on in its own `aux` byte
 //     and puts it right back when it moves off (see updateHeatRay), so the glass is
 //     never actually disturbed — a 가루/액체 겹침-style share of the cell.
+//   • A PHOTOVOLTAIC material (Solar Panel — anything declaring
+//     `Material.lightPulse`) CONVERTS it: the beam is swallowed on contact and
+//     the material's hook runs instead of any heating, so the struck cell stays
+//     cold while the panel pushes a Spark into whatever conductor touches it.
+//     Checked before the opaque-solid absorb/reflect branch (but after the gas and
+//     liquid ones, which no solid ever reaches), so a new light-driven SOLID opts
+//     in with that one tag and nothing here changes.
 //   • Reflective metals (Mercury, Iron, Heatpipe, Gallium, Liquid Gallium — any
 //     material flagged `laserReflective`) are MIRRORS: the beam reflects off them
 //     cleanly (정반사, no scatter), so a metal surface aims the beam. New shiny
@@ -462,6 +469,17 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       wx = nx;
       wy = ny;
       continue;
+    }
+
+    // 광전 효과: a material that *converts* the light (a Solar Panel — see
+    // Material.lightPulse) fires its hook and swallows the beam whole. Checked
+    // before the ordinary absorption below so it deposits NO heat at all: the
+    // photons leave as electricity, not as warmth, which is the whole point of a
+    // panel that can sit in a laser without cooking.
+    if (m.lightPulse) {
+      m.lightPulse(sim, nx, ny);
+      restoreCell(sim, x, y, hostId);
+      return;
     }
 
     // Opaque solid/powder/wall: no destruction. Heat the impact, then mostly die

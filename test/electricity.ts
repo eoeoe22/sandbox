@@ -34,6 +34,11 @@ import { WATER } from '../src/game/materials/water';
 import { SALTWATER } from '../src/game/materials/saltwater';
 import { ACID } from '../src/game/materials/acid';
 import { IRON } from '../src/game/materials/iron';
+import { STONE } from '../src/game/materials/stone';
+import { WIRE } from '../src/game/materials/wire';
+import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
+import { emitHeatRay } from '../src/game/materials/heatray';
+import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials'; // register all materials (side effect)
 
 // Pin the sim's randomness high so every `sim.chance(p)` with p < 1 comes out
@@ -357,6 +362,305 @@ function pulseCorner(
     'a battery on one corner spins up a 900-cell fan wall entirely',
     powered === side * side,
     `${powered}/${side * side} cells`,
+  );
+}
+
+// --- 5. Wire: 피복 — carries the full run, leaks into nothing -------------------
+// Wire's promise is *containment*, not reach: a pulse riding it must never cross
+// into a bare conductor touching the cable (see Material.insulated), while still
+// reaching the far end at no loss and still powering the machine it's wired to.
+//
+// The scene sandwiches the cable: a full row of Iron above it and a full row of
+// Water below, sealed in a Wall channel so the liquid row can't flow (the same
+// trick `reach` uses). If the jacket leaks even once, the neighbouring rows show
+// a Spark. The control run swaps the cable for bare Iron and must leak, which is
+// what proves the scene is actually capable of detecting a leak.
+
+/** Run a pulse down a `coreId` cable flanked by an Iron row and a Water row, and
+ *  report how far the pulse got along the core and whether either flanking row
+ *  ever carried a Spark. */
+function leakScene(coreId: number, len = 60): { coreReach: number; leaked: boolean } {
+  const grid = new Grid(len, 5);
+  const sim = new Simulation(grid);
+  for (let x = 0; x < len; x++) {
+    grid.set(x, 0, WALL.id);
+    grid.set(x, 1, IRON.id); // bare metal clipped along the top of the run
+    grid.set(x, 2, coreId); // the cable under test
+    grid.set(x, 3, WATER.id); // a puddle the run passes through
+    grid.set(x, 4, WALL.id);
+  }
+  for (let y = 1; y <= 3; y++) {
+    grid.set(0, y, WALL.id); // cap both ends so nothing drains out sideways
+    grid.set(len - 1, y, WALL.id);
+  }
+  grid.set(1, 2, SPARK.id);
+  grid.setAux(1, 2, packSpark(FULL_STRENGTH, conductorClass(coreId)));
+
+  let coreReach = 1;
+  let leaked = false;
+  for (let t = 0; t < len + 20; t++) {
+    sim.step();
+    for (let x = 0; x < len; x++) {
+      if (grid.get(x, 2) === SPARK.id && x > coreReach) coreReach = x;
+      if (grid.get(x, 1) === SPARK.id || grid.get(x, 3) === SPARK.id) leaked = true;
+    }
+  }
+  return { coreReach: coreReach - 1, leaked };
+}
+
+{
+  const wire = leakScene(WIRE.id);
+  const bare = leakScene(IRON.id);
+  check(
+    'a Wire pulse never crosses into the iron/water touching it',
+    !wire.leaked,
+    wire.leaked ? 'a flanking row carried a spark' : 'no leak in 60 cells of contact',
+  );
+  check(
+    'the same scene DOES leak for a bare conductor (the check can fail)',
+    bare.leaked,
+    `${bare.leaked}`,
+  );
+  check(
+    'a Wire still carries the pulse the whole run (zero loss)',
+    wire.coreReach > 50,
+    `${wire.coreReach} cells`,
+  );
+
+  // …and the pulse still gets *out* where it's supposed to: into the machine at
+  // the end of the cable. A device is a one-way sink (it consumes the pulse rather
+  // than relaying it), which is exactly why the jacket doesn't have to stop it.
+  const len = 40;
+  const grid = new Grid(len + 8, 6);
+  const sim = new Simulation(grid);
+  for (let x = 2; x < 2 + len; x++) grid.set(x, 2, WIRE.id);
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) grid.set(2 + len + dx, 1 + dy, FAN.id);
+  }
+  grid.set(2, 2, SPARK.id);
+  grid.setAux(2, 2, packSpark(FULL_STRENGTH, conductorClass(WIRE.id)));
+  for (let t = 0; t < len + 10; t++) sim.step();
+  let fanCells = 0;
+  let powered = 0;
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) {
+      fanCells++;
+      if (grid.getAux(2 + len + dx, 1 + dy) >> 2 > 0) powered++;
+    }
+  }
+  check(
+    'a Wire run still powers the device at its far end',
+    powered === fanCells,
+    `${powered}/${fanCells} fan cells`,
+  );
+}
+
+// --- 6. Solar Panel: light in, electricity out, no heat ------------------------
+// The panel's contract has two halves, and both are easy to break silently: a
+// Heat Ray striking it must (a) leave it COLD — the beam is converted, not
+// absorbed as heat, so the `lightPulse` branch has to run before heatray.ts's
+// ordinary impact heating — and (b) push a pulse into the conductor touching it.
+// The control fires the same beam at a Stone wall, which must cook, proving the
+// beam really is arriving.
+
+/** Fire one Heat Ray rightward down a corridor into a wall of `targetId` at x=20,
+ *  with an Iron lead bolted to the wall's back face. Returns the wall's peak
+ *  temperature and whether the lead ever carried a Spark. */
+function beamScene(targetId: number): { maxTemp: number; sparked: boolean } {
+  const grid = new Grid(30, 9);
+  const sim = new Simulation(grid);
+  for (let y = 1; y < 8; y++) {
+    grid.set(20, y, targetId);
+    grid.set(21, y, IRON.id);
+  }
+  emitHeatRay(sim.context, 3, 4, 1, 0);
+  let maxTemp = -Infinity;
+  let sparked = false;
+  for (let t = 0; t < 20; t++) {
+    sim.step();
+    for (let y = 1; y < 8; y++) {
+      if (grid.get(20, y) === targetId) maxTemp = Math.max(maxTemp, grid.getTemp(20, y));
+      if (grid.get(21, y) === SPARK.id) sparked = true;
+    }
+  }
+  return { maxTemp, sparked };
+}
+
+{
+  const panel = beamScene(SOLAR_PANEL.id);
+  const stone = beamScene(STONE.id);
+  check(
+    'a Heat Ray on a Solar Panel emits a Spark into the conductor behind it',
+    panel.sparked,
+    `${panel.sparked}`,
+  );
+  check(
+    'a Heat Ray does NOT heat the Solar Panel it strikes',
+    panel.maxTemp < AMBIENT_TEMP + 10,
+    `peak ${panel.maxTemp.toFixed(1)}° (ambient ${AMBIENT_TEMP}°)`,
+  );
+  check(
+    'the same beam DOES cook an ordinary wall (the check can fail)',
+    stone.maxTemp > AMBIENT_TEMP + 50,
+    `peak ${stone.maxTemp.toFixed(1)}°`,
+  );
+  check(
+    'and an ordinary wall emits no Spark (the panel is doing the work)',
+    !stone.sparked,
+    `${stone.sparked}`,
+  );
+}
+
+// --- 7. Solar Panel: one-way body conduction ----------------------------------
+// A panel array is its own busbar, and the direction matters:
+//   • 내부 → 내부 / 내부 → 외부 — light landing anywhere conducts through the whole
+//     connected slab in that tick, so a lead clipped to the *far* end fires. This
+//     is easy to lose silently: drop the flood back to "pulse my own eight
+//     neighbours" and a panel still works when you aim at the lead, which is
+//     exactly where anyone testing by hand would aim.
+//   • 외부 → 내부 — a panel is not a conductor and not an appliance, so current on
+//     a wire touching one must NOT cross it. Tagging the panel `conductive` (or
+//     giving it a `directPulse`) to "make wiring easier" would turn every array
+//     into free cable and break this.
+// Both scenes are a long bar with an Iron lead at each end, so the two directions
+// are the same geometry driven from opposite sides, and both have a control that
+// must come out the other way.
+
+/** Lay a horizontal bar of `barId` along y=4 from x=10 to x=40 with an Iron lead
+ *  at each end, cut by a 1-cell `gapId` plug at x=25 when `gap` is set. */
+function panelBar(barId: number, gap: boolean, gapId = STONE.id): { grid: Grid; sim: Simulation } {
+  const grid = new Grid(46, 9);
+  const sim = new Simulation(grid);
+  for (let x = 10; x <= 40; x++) grid.set(x, 4, barId);
+  if (gap) grid.set(25, 4, gapId);
+  grid.set(9, 4, IRON.id); // near lead (the light/pulse end)
+  grid.set(41, 4, IRON.id); // far lead, 31 cells away
+  return { grid, sim };
+}
+
+/** Fire a Heat Ray straight down onto the bar's left end and report whether the
+ *  FAR lead ever carried a Spark — i.e. whether the array conducted internally end
+ *  to end. Aimed from above rather than along the row so the near lead isn't in
+ *  the beam's way: the point of the check is that the light lands *nowhere near*
+ *  the lead that fires. */
+function farLeadLit(barId: number, gap: boolean): boolean {
+  const { grid, sim } = panelBar(barId, gap);
+  emitHeatRay(sim.context, 12, 0, 0, 1);
+  let lit = false;
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (grid.get(41, 4) === SPARK.id) lit = true;
+  }
+  return lit;
+}
+
+/** Put a live pulse on the NEAR lead and report whether it ever reached the far
+ *  one — i.e. whether current got *into* and across the bar. */
+function farLeadReached(barId: number): boolean {
+  const { grid, sim } = panelBar(barId, false);
+  grid.set(9, 4, SPARK.id);
+  grid.setAux(9, 4, packSpark(FULL_STRENGTH, conductorClass(IRON.id)));
+  let reached = false;
+  for (let t = 0; t < 60; t++) {
+    sim.step();
+    if (grid.get(41, 4) === SPARK.id) reached = true;
+  }
+  return reached;
+}
+
+{
+  check(
+    'light on one end of a Solar Panel array powers a lead at the other end',
+    farLeadLit(SOLAR_PANEL.id, false),
+    '29 cells from the lit cell',
+  );
+  check(
+    'a panel array cut in two does NOT carry it across the break (the check can fail)',
+    !farLeadLit(SOLAR_PANEL.id, true),
+    'severed at x=25',
+  );
+  check(
+    'current on a wire touching a panel never crosses it (외부 → 내부 차단)',
+    !farLeadReached(SOLAR_PANEL.id),
+    'panel bar between two iron leads',
+  );
+  check(
+    'the same run DOES cross a bar of real conductor (the check can fail)',
+    farLeadReached(IRON.id),
+    'iron bar between two iron leads',
+  );
+}
+
+// --- 8. Device floods survive a sandbox resize --------------------------------
+// `BodyFlood` (engine/deviceBody.ts) memoizes "this body already flooded this
+// tick" in a grid-sized stamp buffer rather than a Set. That buffer has to be
+// reallocated when the sandbox is resized in place — Game.ts does exactly that on
+// a window/layout change — or the flood indexes a buffer sized for the old grid
+// and its dedupe silently stops working past the end of it.
+//
+// The body is therefore anchored to the grid's TOP-RIGHT corner, not the origin:
+// a cell's flat index is y*width + x, so a body in the bottom-left keeps small
+// indices that stay inside even a stale buffer, and the check passes whether or
+// not the reallocation happens. Measured with the reallocation deliberately
+// disabled: a bottom-left body reports a clean 100/100 (the check is useless),
+// while this top-right one does not.
+//
+// The steps are wrapped because the regression's failure mode is a *throw*, not a
+// wrong number: a write past the end of a stale Int32Array is a silent no-op in
+// JS, so a cell whose flat index falls beyond the old buffer can never be marked,
+// gets re-pushed onto the walk stack forever, and `Array.push` eventually throws
+// `RangeError: Invalid array length` from deep inside the battery's update. Left
+// bare that aborts the whole harness process, which reads like a broken test
+// rather than a caught regression; caught, it prints a normal FAIL line.
+
+{
+  const grid = new Grid(40, 30);
+  const sim = new Simulation(grid);
+  // 10×10 fan block in the top-right corner, battery terminal against its left face
+  const bx = (): number => grid.width - 15;
+  const by = (): number => grid.height - 15;
+  const powered = (): number => {
+    let n = 0;
+    for (let x = bx(); x < bx() + 10; x++) {
+      for (let y = by(); y < by() + 10; y++) {
+        if (grid.get(x, y) === FAN.id && grid.getAux(x, y) >> 2 > 0) n++;
+      }
+    }
+    return n;
+  };
+  const runAt = (w: number, h: number): number => {
+    if (w !== grid.width || h !== grid.height) grid.resize(w, h);
+    for (let x = 0; x < grid.width; x++) for (let y = 0; y < grid.height; y++) grid.set(x, y, 0);
+    for (let x = bx(); x < bx() + 10; x++) {
+      for (let y = by(); y < by() + 10; y++) grid.set(x, y, FAN.id);
+    }
+    grid.set(bx() - 1, by(), BATTERY.id);
+    for (let t = 0; t < 30; t++) sim.step();
+    return powered();
+  };
+
+  /** Run one size, reporting a throw as -1 rather than letting it escape. */
+  const tryRunAt = (w: number, h: number): number => {
+    try {
+      return runAt(w, h);
+    } catch (e) {
+      console.log(`      (threw: ${e instanceof Error ? e.message : String(e)})`);
+      return -1;
+    }
+  };
+
+  const before = tryRunAt(40, 30);
+  const grown = tryRunAt(60, 45);
+  const shrunk = tryRunAt(24, 20);
+  check(
+    'a device body still floods after the sandbox grows',
+    before === 100 && grown === 100,
+    `${before}/100 before, ${grown}/100 after`,
+  );
+  check(
+    'and after it shrinks',
+    shrunk === 100,
+    `${shrunk}/100 fan cells`,
   );
 }
 

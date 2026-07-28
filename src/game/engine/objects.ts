@@ -14,6 +14,7 @@ import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
+import { SMOKE } from '../materials/smoke';
 import { VOID } from '../materials/void';
 
 /**
@@ -240,18 +241,72 @@ export interface SimDynamite {
   held?: boolean;
 }
 
-/** Anything in the object layer: circles (balls) and capsules (drums, dynamite)
- *  share one array on the Grid, discriminated by `kind`. */
-export type SimBody = SimObject | SimCapsule | SimDynamite;
+/**
+ * A smoke bomb — a capsule body (it shares the drum/dynamite segment+radius
+ * physics and 1-axis rotation, so it tumbles and rolls) that is a *smoke source*
+ * rather than an explosive. Thrown, it immediately starts trickling a wisp of
+ * Smoke from around itself; four seconds later the canister lets go and pours out a
+ * dense cloud for two and a half seconds, and then it is spent and gone (소환 시
+ * 소량의 연기를 뿜다가 4초 후 대량의 연기를 2.5초간 발산 → 소멸).
+ *
+ * That's the whole lifecycle, and the two counters below are all the state it
+ * takes: `fuseTicks` runs the quiet trickle down, then `ventTicks` runs the
+ * discharge down, then the body is dropped. Nothing about it detonates — it
+ * carries no blast at all, which is exactly what distinguishes it from the
+ * dynamite it otherwise resembles structurally.
+ */
+export interface SimSmokeBomb {
+  kind: 'smokebomb';
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation of the long axis in radians (0 = upright, nozzle pointing up). */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque. */
+  angularVelocity: number;
+  /** Half the straight segment between the two round caps (cells). */
+  halfLength: number;
+  /** Cap radius (cells). */
+  radius: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia (see SimCapsule). */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — a steel canister barely bounces. */
+  restitution: number;
+  /** Consecutive ticks the footprint has sampled above the cook-off threshold, so
+   *  a stray hot pixel doesn't pop it early — only sustained heat does. */
+  heatTicks: number;
+  /** The canister's own heat reservoir (°) — see SimObject.temp. The 가열 brush
+   *  writes it, so heating one (even in mid-air) sets the charge off early. */
+  temp: number;
+  /** Ticks left of the quiet trickle before the heavy discharge starts. Reaching
+   *  0 — or a sustained bath of heat — opens the vent. */
+  fuseTicks: number;
+  /** Ticks left of the heavy discharge. 0 while still on the fuse; set the moment
+   *  the vent opens, and the body is dropped when it runs back down to 0. */
+  ventTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its physics
+   *  and its countdown alike are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
+/** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
+ *  smoke bombs) share one array on the Grid, discriminated by `kind`. */
+export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb;
 
 /**
  * The physics-only fields every capsule body shares — a medial segment of
  * half-length `halfLength` with cap radius `radius`, plus 1-axis rotation. The
  * capsule collision / buoyancy / integration routines (capsuleEnds,
  * deepestCapsuleContact, resolveCapsuleCollision, sampleMediumCapsule, stepCapsule)
- * operate through this structural type, so both the drum and the dynamite reuse
- * them with no per-kind branch — only the sprite and the destroy/trigger rules
- * differ by kind. SimCapsule and SimDynamite are both assignable to it.
+ * operate through this structural type, so the drum, the dynamite and the smoke
+ * bomb all reuse them with no per-kind branch — only the sprite and the
+ * destroy/trigger rules differ by kind. SimCapsule, SimDynamite and SimSmokeBomb
+ * are all assignable to it.
  */
 type CapsuleBody = {
   x: number;
@@ -453,6 +508,101 @@ export function createDynamite(
     temp: AMBIENT_TEMP,
     lit: true,
     fuseTicks,
+  };
+}
+
+/**
+ * Smoke-bomb defaults. A small steel canister — denser than Water (3) so it sinks,
+ * barely bouncy. Its capsule box (2·radius wide × 2·(halfLength+radius) tall =
+ * 6.5 × 10 cells) matches the 13×20 sprite's aspect, so display and collision
+ * agree exactly as they do for the drum and the dynamite.
+ */
+export const SMOKE_BOMB_RADIUS = 3.25;
+export const SMOKE_BOMB_HALF_LENGTH = 1.75;
+export const SMOKE_BOMB_DENSITY = 3.2;
+export const SMOKE_BOMB_RESTITUTION = 0.25;
+/** Max magnitude (rad/tick) of the small random spin a freshly-placed canister
+ *  spawns with, so it topples off its cap to one side instead of balancing —
+ *  the same gentle nudge the dynamite gets (see DYNAMITE_SPAWN_SPIN). */
+export const SMOKE_BOMB_SPAWN_SPIN = 0.06;
+/** How long the quiet trickle lasts before the canister lets go (기획: 4초). Sized
+ *  in *seconds* at the default sim rate, like the dynamite's fuse, so a faster or
+ *  slower sandbox scales the wall-clock delay along with everything else. */
+export const SMOKE_BOMB_FUSE_TICKS = Math.round(4 * SIM_HZ_AT_1X);
+/** How long the heavy discharge lasts before the spent canister vanishes (기획:
+ *  연기 생성 시간 2.5초). Sized in seconds like the fuse, so the sandbox's speed
+ *  dial scales it too. */
+export const SMOKE_BOMB_VENT_TICKS = Math.round(2.5 * SIM_HZ_AT_1X);
+// Both stages seed Smoke over a disc (see puffDisc); they differ only in where
+// that disc sits, how wide it is and how densely it fills. The numbers are sized
+// so the two stages read as different *events*, not as one turned up: the fuse
+// wisp is a marker, the discharge is a wall of smoke.
+/** How far the fuse-stage wisp reaches from the canister. Small and fixed — it
+ *  should read as a thin plume seeping off the can, not as a cloud. Sized a little
+ *  past the body's own half-height so the wisp clears the sprite instead of being
+ *  drawn entirely behind it. */
+const SMOKE_BOMB_TRICKLE_RADIUS = 6.5;
+/** Per-cell, per-tick fill chance of that wisp — a couple of new cells a tick. The first four seconds are meant to be a thin plume
+ *  marking where the canister landed (소량의 연기), so the discharge that follows
+ *  is a clear step change rather than more of the same. */
+const SMOKE_BOMB_TRICKLE_DENSITY = 0.1;
+/** Per-cell, per-tick chance the open vent seeds a Smoke cell somewhere in its
+ *  cloud radius, and it keeps that up for 2.5 seconds while the cloud rises and
+ *  spreads well past the area it was seeded into — a canister genuinely blankets
+ *  its surroundings (대량의 연기). Only cells the front can actually REACH are
+ *  seeded (see puffDisc), so a bomb wedged in a crevice vents through the gaps it
+ *  has and a bomb behind a wall doesn't smoke through it. */
+const SMOKE_BOMB_VENT_DENSITY = 0.22;
+/** How far the discharge's front travels, as a multiple of the body's own reach
+ *  (≈5 cells) — so ~30 cells of travel, a cloud tens of cells across before the gas
+ *  starts drifting on its own. It erupts around the whole canister rather than
+ *  a thin plume the way the fuse-stage wisp does. */
+const SMOKE_BOMB_VENT_SPREAD = 6;
+/** Footprint/reservoir temperature (°) at/above which external heat cooks the
+ *  charge off early, cutting the fuse short and opening the vent now. Set at the
+ *  rubber ball's scorch point (300°) rather than the dynamite's 1100°: a smoke
+ *  composition is meant to be *lit*, so any real fire should set one off, and
+ *  there's no blast for an early trigger to make dangerous. */
+export const SMOKE_BOMB_IGNITE_TEMP = 300;
+/** Sustained ticks above SMOKE_BOMB_IGNITE_TEMP before the early trigger fires, so
+ *  a single hot splash doesn't pop it. */
+const SMOKE_BOMB_HEAT_TICKS = 5;
+
+/**
+ * Build a smoke bomb centered at (x,y), at rest and upright with its fuse already
+ * running, plus the same weak random spin the dynamite spawns with so it topples
+ * to one side. Mass and moment of inertia follow the shared capsule formulas.
+ */
+export function createSmokeBomb(
+  x: number,
+  y: number,
+  radius = SMOKE_BOMB_RADIUS,
+  halfLength = SMOKE_BOMB_HALF_LENGTH,
+): SimSmokeBomb {
+  const r = radius > 1 ? radius : 1;
+  const l = halfLength > 0 ? halfLength : 0;
+  const area = 4 * r * l + Math.PI * r * r;
+  const mass = SMOKE_BOMB_DENSITY * area;
+  const w = 2 * r;
+  const h = 2 * (l + r);
+  const momentOfInertia = (mass * (w * w + h * h)) / 12;
+  return {
+    kind: 'smokebomb',
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: (Math.random() * 2 - 1) * SMOKE_BOMB_SPAWN_SPIN,
+    halfLength: l,
+    radius: r,
+    mass,
+    momentOfInertia,
+    restitution: SMOKE_BOMB_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    fuseTicks: SMOKE_BOMB_FUSE_TICKS,
+    ventTicks: 0,
   };
 }
 
@@ -2089,10 +2239,238 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   return true;
 }
 
+/** Place one Smoke cell at (x,y) if that cell is open. Smoke is a gas the CA
+ *  already knows how to move (it rises, diffuses and fades on its own timer), so
+ *  the canister's whole job is seeding cells and letting the grid take it from
+ *  there. spawn() marks the cell moved, so a fresh puff isn't re-processed the
+ *  same tick. Silently skipped on an occupied cell — a bomb buried in sand vents
+ *  through whatever gaps it has rather than carving them. */
+function puffSmoke(ctx: SimContext, cx: number, cy: number): void {
+  if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) return;
+  ctx.spawn(cx, cy, SMOKE.id);
+}
+
+// Chamfer step costs for the smoke flood below, so the cloud grows as a round
+// front rather than a diamond (a diagonal step is ~√2 orthogonal ones) — the same
+// metric blast.ts uses for its crater.
+const SMOKE_STEPS: ReadonlyArray<readonly [number, number, number]> = [
+  [0, -1, 1],
+  [0, 1, 1],
+  [-1, 0, 1],
+  [1, 0, 1],
+  [-1, -1, 1.4142],
+  [1, -1, 1.4142],
+  [-1, 1, 1.4142],
+  [1, 1, 1.4142],
+];
+
+// Reused scratch for that flood, keyed by flat cell index: a monotonic stamp id
+// marks the cells this call has already queued, so nothing is allocated per tick
+// and the buffer never needs clearing between calls. Same trick as blast.ts's
+// visited buffer.
+let smokeStamp: Int32Array | null = null;
+let smokeStampW = 0;
+let smokeStampH = 0;
+let smokeStampId = 0;
+
+/** Fetch the flood's visited buffer (reallocating on a grid resize) and advance
+ *  to a fresh stamp id for this call. */
+function nextSmokeStamp(ctx: SimContext): Int32Array {
+  if (!smokeStamp || smokeStampW !== ctx.width || smokeStampH !== ctx.height) {
+    smokeStampW = ctx.width;
+    smokeStampH = ctx.height;
+    smokeStamp = new Int32Array(smokeStampW * smokeStampH); // all zero; ids start at 1
+    smokeStampId = 0;
+  }
+  smokeStampId++;
+  if (smokeStampId >= 0x7fffffff) {
+    smokeStamp.fill(0);
+    smokeStampId = 1;
+  }
+  return smokeStamp;
+}
+
+/**
+ * True if the smoke front can travel *through* this cell. Only *structure* stops
+ * smoke — a wall, a stone block, a machine. Everything loose it seeps through:
+ *
+ *   - other gas, which crucially includes the Smoke it laid down on earlier ticks
+ *     (otherwise a venting canister's own cloud walls its front in after a tick);
+ *   - powder, because a sand bed is grains with gaps between them, not a seal;
+ *   - liquid, so a canister dropped in a pond still sends its plume up through
+ *     the water instead of going silent — but only while it's actually *liquid*.
+ *     A frozen one (`SimContext.isFrozen`: a `freeze` material at or below its
+ *     point) is a block of ice, and every other system in the engine already
+ *     treats it as structure — movement refuses to displace it, and the object
+ *     layer's own `solidLike` bounces bodies off it. Smoke is no different: an
+ *     ice wall shelters what's behind it exactly like a stone one, so freezing a
+ *     pond over is a real way to seal a room (언 액체가 고체 벽으로 취급되지 않던
+ *     문제). It thaws back to a passable pond the moment it warms up;
+ *   - a `porous` solid (Mesh, Turbine, Pump), which is built to let fluids pass
+ *     through as if it weren't there — the engine's own overlap rule already says
+ *     such a host admits a gas.
+ *
+ * Passing through is NOT the same as filling: `puffSmoke` still only ever writes
+ * into an empty cell, so the front travels through water and sand but only leaves
+ * smoke where smoke can actually be (액체·가루는 차단이 아니되 겹침 가능한 곳에만 생성).
+ * A submerged canister's plume therefore surfaces and blooms in the air above,
+ * and a buried one fills the pockets in the bed and the space over it, rather
+ * than either of them being smothered outright.
+ *
+ * Deliberately not written into the 겹침 (overlay) slot of a host that could take
+ * it: SimContext's movement seam is the sole enforcer of the (host, overlay)
+ * invariant (see its `canHostOverlap` note), and the object layer is read-only
+ * over the grid apart from the discrete spawns it already makes.
+ */
+function smokePassable(ctx: SimContext, x: number, y: number): boolean {
+  const id = ctx.get(x, y);
+  if (id === EMPTY) return true;
+  const m = getMaterial(id);
+  if (m.phase === Phase.Solid) return m.porous === true;
+  // Frozen liquid is ice: a wall, not a pond. Gated on the material even being
+  // freezable so the common cell (air, gas, water, a grain of sand) doesn't pay
+  // for the temperature read.
+  return m.freeze === undefined || !ctx.isFrozen(x, y);
+}
+
+/**
+ * Seed Smoke outward from (ox,oy) up to `radius` cells, each open cell reached
+ * taking a puff with probability `density`. `density` 1 fills every open cell at
+ * once.
+ *
+ * This is a FLOOD, not a radial scan, and that distinction is the whole point:
+ * smoke has to travel to where it ends up, so a solid wall stops it and shelters
+ * what's behind. A plain "every empty cell within r" scan (what this used to be)
+ * let a canister sealed in a box fill the room outside it, and let one on the far
+ * side of a wall smoke straight through it. The front spreads only through open
+ * air, loose matter and existing gas (see smokePassable), so it rounds corners,
+ * seeps through a sand bed or a pond, and pours out of a container's mouth
+ * instead of ignoring it — the same geodesic treatment the Woofer's shockwave
+ * gets, for the same reason. Only *structure* stops it.
+ *
+ * Both of the smoke bomb's stages are this one call with different numbers: a
+ * small radius for the fuse-stage wisp, a large one for the discharge — both
+ * anchored on the canister itself. Cost is bounded by the reachable area within `radius`,
+ * so even the full-density rupture is one pass over a few thousand cells.
+ */
+function puffDisc(
+  ctx: SimContext,
+  ox: number,
+  oy: number,
+  radius: number,
+  density: number,
+): void {
+  if (density <= 0 || radius <= 0) return;
+  const w = ctx.width;
+  const h = ctx.height;
+  const cx0 = Math.floor(ox);
+  const cy0 = Math.floor(oy);
+  const stamp = nextSmokeStamp(ctx);
+  const id_s = smokeStampId;
+  const qx: number[] = [];
+  const qy: number[] = [];
+  const qb: number[] = [];
+
+  // Seed the source cell and ONLY the source cell. Seeding its neighbours as a
+  // fallback (for a source whose own cell is occupied) is what let the front hop a
+  // 1-cell wall: a source sitting against a wall has a neighbour on the *far*
+  // side, and starting there put smoke outside a sealed room. The fallback also
+  // isn't needed any more — matter is passable now (see smokePassable), so the
+  // only thing that can occupy the source cell is solid structure, and a body
+  // can't come to rest inside that (collision resolution pushes it out). A source
+  // genuinely walled in emits nothing, which is the right answer.
+  if (!ctx.inBounds(cx0, cy0) || !smokePassable(ctx, cx0, cy0)) return;
+  stamp[cy0 * w + cx0] = id_s;
+  qx.push(cx0);
+  qy.push(cy0);
+  qb.push(radius);
+
+  let head = 0;
+  while (head < qx.length) {
+    const x = qx[head];
+    const y = qy[head];
+    const budget = qb[head];
+    head++;
+    if (density >= 1 || ctx.chance(density)) puffSmoke(ctx, x, y);
+    for (let i = 0; i < SMOKE_STEPS.length; i++) {
+      const dx = SMOKE_STEPS[i][0];
+      const dy = SMOKE_STEPS[i][1];
+      const nx = x + dx;
+      const ny = y + dy;
+      const left = budget - SMOKE_STEPS[i][2];
+      if (left < 0) continue;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+      const nidx = ny * w + nx;
+      if (stamp[nidx] === id_s) continue;
+      if (!smokePassable(ctx, nx, ny)) continue; // structure stops the front and shelters what's behind
+      // No corner-cutting: a diagonal step needs at least one of its two flanking
+      // orthogonal cells open, so the front can't squeeze through the point where
+      // two solids merely touch at a corner. Without this the wall guarantee is
+      // only true for orthogonally-contiguous walls — smoke poured straight
+      // through any 1-cell-thick 45° wall or ramp (an ordinary thing to build),
+      // because every step crossing such a wall has BOTH flanks inside it.
+      // "At least one" rather than "both" is deliberate: it still lets the front
+      // round an ordinary convex corner, which is the behaviour that makes a
+      // cloud pour out of a doorway.
+      if (dx !== 0 && dy !== 0 && !smokePassable(ctx, x + dx, y) && !smokePassable(ctx, x, y + dy)) {
+        continue;
+      }
+      stamp[nidx] = id_s;
+      qx.push(nx);
+      qy.push(ny);
+      qb.push(left);
+    }
+  }
+}
+
+/** The heavy discharge: a dense puff over the whole canister's cloud radius (not
+ *  just a thin plume — a venting or ruptured can gushes from everywhere at once). */
+function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
+  puffDisc(ctx, o.x, o.y, bodyReach(o) * SMOKE_BOMB_VENT_SPREAD, density);
+}
+
+/**
+ * Per-tick lifecycle for a smoke bomb, after this tick's heat conduction (called
+ * from evaluateTriggers with the resolved `heat`). Two stages and nothing else:
+ *   1. FUSE — a thin wisp seeps off the canister while `fuseTicks` runs down.
+ *      Sustained external heat (fire, lava, the 가열 brush) cooks the charge off
+ *      early and opens the vent now, cutting the rest of the fuse.
+ *   2. VENT — the canister pours out a dense cloud every tick while `ventTicks`
+ *      runs down (2.5s worth), and is dropped when it hits 0 (소멸).
+ * Returns true to keep the canister, false once it's spent.
+ */
+function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean {
+  if (o.ventTicks <= 0) {
+    // --- Stage 1: the fuse. ---
+    if (heat >= SMOKE_BOMB_IGNITE_TEMP) {
+      o.heatTicks++;
+      if (o.heatTicks >= SMOKE_BOMB_HEAT_TICKS) o.fuseTicks = 0; // cooked off early
+    } else if (o.heatTicks > 0) {
+      o.heatTicks--;
+    }
+    if (o.fuseTicks > 0) {
+      o.fuseTicks--;
+      // A wisp seeping from around the canister. Deliberately anchored at the
+      // BODY, not at the nozzle tip: the tip sits 5.5 cells off-centre along the
+      // capsule's axis, and a canister lying against a wall can point it straight
+      // *into* (or through) that wall — which put the wisp on the far side of a
+      // sealed room. The body centre is always the canister's actual location, so
+      // the plume can only ever start where the canister really is.
+      puffDisc(ctx, o.x, o.y, SMOKE_BOMB_TRICKLE_RADIUS, SMOKE_BOMB_TRICKLE_DENSITY);
+      return true;
+    }
+    o.ventTicks = SMOKE_BOMB_VENT_TICKS; // fuse spent (or cooked off) — open the vent
+  }
+  // --- Stage 2: the discharge. ---
+  ventSmoke(o, ctx, SMOKE_BOMB_VENT_DENSITY);
+  return --o.ventTicks > 0;
+}
+
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
  *  scattered Metal Powder and, if it was carrying anything, gushes its contents
  *  (원유/산) across the wreckage; a stick of dynamite detonates (a knock or a
- *  passing blast sets it off — chain reactions); a rubber ball leaves nothing. */
+ *  passing blast sets it off — chain reactions); a smoke bomb's canister ruptures
+ *  and dumps its whole remaining charge at once; a rubber ball leaves nothing. */
 function destroyByproduct(o: SimBody, ctx: SimContext): void {
   if (o.kind === 'drum') {
     spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
@@ -2100,6 +2478,10 @@ function destroyByproduct(o: SimBody, ctx: SimContext): void {
     o.state = 'destroyed';
   } else if (o.kind === 'dynamite') {
     detonateDynamite(o, ctx);
+  } else if (o.kind === 'smokebomb') {
+    // Blown open rather than burned down: the charge that would have vented over a
+    // whole second goes up at once, filling the cloud disc in a single tick.
+    ventSmoke(o, ctx, 1);
   }
 }
 
@@ -2143,6 +2525,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // A dynamite stick has its own terminal logic (fuse countdown + heat cook-off +
   // tip interactions); it never melts or burns away like a drum/ball.
   if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
+  // A smoke bomb likewise runs its own two-stage countdown (trickle → discharge →
+  // spent) rather than melting or burning.
+  if (o.kind === 'smokebomb') return stepSmokeBomb(o, ctx, heat);
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;

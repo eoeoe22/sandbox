@@ -7,6 +7,11 @@ import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
+import {
+  SMOKE_BOMB_SPRITE,
+  SMOKE_BOMB_SPRITE_W,
+  SMOKE_BOMB_SPRITE_H,
+} from './smokeBombSprite';
 import type { DrumFill } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -79,6 +84,22 @@ const WIND_TOTAL = WIND_BODY + 2 * WIND_CURL_H + 2 * WIND_HOOK - WIND_CURL_IN - 
 // that keeps neighbouring arrowheads from touching side-to-side or nose-to-tail.
 const TRI_SPAN = 8; // cells across the axis per triangle (6 drawn + 2 side gutter)
 const TRI_STEP = 5; // cells along the axis per triangle (3 drawn + 2 front gutter)
+
+// Tiling of the `solarPattern` photovoltaic cell grid (Solar Panel — see the
+// render loop). Each period is one cell of the panel plus the seam after it, so a
+// drawn cell is 3 wide × 5 tall with a 1-cell seam on its right and bottom edges.
+//
+// The reference art's cells are 4×7 (aspect 0.571); these are the next size down
+// that still reads as the same tall portrait cell (0.600) — the seam is a whole
+// grid cell wide and can't shrink with them, so the pattern can only step through
+// integer sizes, and 3×5 is the closest one below 4×7 (2×3 would be 0.667 and
+// mostly seam). Smaller matters because the pattern is drawn in *world* cells,
+// not screen pixels: at 4×7 a panel had to be ~20 cells across before the grid
+// was legible at all, and anything hand-drawn just looked like flat blue with a
+// stray line through it. At 3×5 a panel four cells wide already shows its
+// structure (비율 유지하며 격자 무늬 사이즈 줄이기).
+const SOLAR_CELL_W = 4; // columns per panel cell (3 drawn + 1 seam)
+const SOLAR_CELL_H = 6; // rows per panel cell (5 drawn + 1 seam)
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -288,6 +309,14 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the cell is drawn as the material named by its `aux` byte instead
    *  of its own color (Debris renders as the material it carries). */
   private renderAsAux: Uint8Array;
+  /** id → the fixed colour set a cell picks from by its `aux` value, or null for
+   *  the ordinary single-colour material (Firework Burst — see
+   *  Material.auxPalette). */
+  private auxPalette: (Uint32Array | null)[];
+  /** id → the fixed colour set each PARTICLE picks from by its own `tint` byte,
+   *  or null for the ordinary single-colour material (Fireworks — see
+   *  Material.tintPalette). */
+  private tintPalette: (Uint32Array | null)[];
   /** id → freezing point; a cell of a `freeze` material at/below this temperature
    *  is drawn frosted (see Material.freeze). -Infinity for materials that never
    *  freeze, so the per-cell `temp <= freezeTemp` test never matches them. */
@@ -319,6 +348,10 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws vertical channel stripes that brighten while its
    *  aux byte is non-zero (Pump — see Material.stripePattern). */
   private stripePattern: Uint8Array;
+  /** id → 1 if the material draws the photovoltaic cell grid — base-coloured cells
+   *  separated by `lattice`-coloured seams (Solar Panel — see
+   *  Material.solarPattern). */
+  private solarPattern: Uint8Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -425,6 +458,8 @@ export class CanvasRenderer implements Renderer {
     this.vary = new Uint8Array(256);
     this.varyMode = new Uint8Array(256);
     this.renderAsAux = new Uint8Array(256);
+    this.auxPalette = new Array(256).fill(null);
+    this.tintPalette = new Array(256).fill(null);
     this.freezeTemp = new Float32Array(256).fill(-Infinity);
     this.frost = new Uint32Array(256);
     this.hasLattice = new Uint8Array(256);
@@ -436,6 +471,7 @@ export class CanvasRenderer implements Renderer {
     this.triArrow = new Uint8Array(256);
     this.coilPattern = new Uint8Array(256);
     this.stripePattern = new Uint8Array(256);
+    this.solarPattern = new Uint8Array(256);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -448,6 +484,8 @@ export class CanvasRenderer implements Renderer {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
+        if (m.auxPalette) this.auxPalette[i] = Uint32Array.from(m.auxPalette);
+        if (m.tintPalette) this.tintPalette[i] = Uint32Array.from(m.tintPalette);
         if (m.packedTemp) this.packed[i] = 1;
         if (m.overlayTemp !== undefined) this.overlayTemp[i] = m.overlayTemp;
         if (m.lattice !== undefined) {
@@ -461,6 +499,7 @@ export class CanvasRenderer implements Renderer {
         if (m.triArrow) this.triArrow[i] = 1;
         if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.stripePattern) this.stripePattern[i] = 1;
+        if (m.solarPattern) this.solarPattern[i] = 1;
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
@@ -620,6 +659,8 @@ export class CanvasRenderer implements Renderer {
     const vary = this.vary;
     const mode = this.varyMode;
     const asAux = this.renderAsAux;
+    const auxPal = this.auxPalette;
+    const tintPal = this.tintPalette;
     const freezeTemp = this.freezeTemp;
     const frost = this.frost;
     const hasLat = this.hasLattice;
@@ -631,6 +672,7 @@ export class CanvasRenderer implements Renderer {
     const triArrow = this.triArrow;
     const coilPattern = this.coilPattern;
     const stripePattern = this.stripePattern;
+    const solarPattern = this.solarPattern;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -679,16 +721,54 @@ export class CanvasRenderer implements Renderer {
       let id = cells[i];
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
       // flung grain wears its own material's color instead of the carrier's.
+      let carried = false;
       if (asAux[id]) {
-        const carried = auxArr[i];
-        if (carried !== 0) id = carried;
+        const carriedId = auxArr[i];
+        if (carriedId !== 0) {
+          id = carriedId;
+          carried = true;
+        }
       }
       let c: number;
-      // A directional-arrow material (Conveyor) draws a chevron pointing the way
-      // its aux byte says it runs, so the belt's travel direction is visible. The
-      // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
-      // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
-      if (arrow[id]) {
+      // `renderAsAux` and `auxPalette` are two mutually exclusive readings of the
+      // SAME aux word — "this is the material id I'm carrying" vs. "this is my own
+      // colour index" — so a carrier cell must never be handed to the palette
+      // branch below: it would index the palette with a material id and paint a
+      // real-looking but wrong colour. On a carrier the remapped id only chooses
+      // the *branch*; the aux word still belongs to the carrier.
+      const pal8 = carried ? null : auxPal[id];
+      // A multi-coloured material (Firework Burst) draws the entry of its fixed
+      // palette that the cell's own aux value names, so one material paints a
+      // whole volley of differently-coloured flowers (see Material.auxPalette).
+      // The modulo means a stale/garbage aux still lands on a real colour rather
+      // than reading past the array.
+      const tintPal3 = tintPal[id];
+      if (pal8) {
+        c = pal8[auxArr[i] % pal8.length];
+      } else if (tintPal3) {
+        // A multi-coloured *particle* material (Fireworks): each grain draws the
+        // palette entry its own stable tint byte names, so a pile is a speckle of
+        // genuinely different colours instead of one hue at different brightnesses
+        // (see Material.tintPalette). The ordinary brightness grain rides on top of
+        // the chosen colour, exactly as it does over the checkerboard branch below.
+        // Indexing by `% n` rather than banding the byte keeps the colour
+        // uncorrelated with the `liquidOverlap` split read off the same byte.
+        c = tintPal3[tintArr[i] % tintPal3.length];
+        const amp = vary[id];
+        if (amp !== 0) {
+          // The COLOUR is per-particle by definition, so it always reads tintArr.
+          // The brightness offset on top is the ordinary one, so it takes the
+          // material's own vary source like every sibling branch — otherwise a
+          // future liquid-phase tintPalette material would shade itself from a
+          // plane it doesn't use.
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+        }
+      } else if (arrow[id]) {
+        // A directional-arrow material (Conveyor) draws a chevron pointing the way
+        // its aux byte says it runs, so the belt's travel direction is visible. The
+        // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
+        // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
         const x = i % w;
         const y = (i / w) | 0;
         const fold = y & 2 ? 3 - (y & 3) : y & 3; // y%4 → 0,1,1,0
@@ -771,6 +851,21 @@ export class CanvasRenderer implements Renderer {
         const x = i % w;
         const a = auxArr[i];
         c = x % 3 === 1 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+      } else if (solarPattern[id]) {
+        // A Solar Panel draws its photovoltaic cell grid: rectangular cells of the
+        // base colour separated by thin `lattice`-coloured seams — a seam on every
+        // 4th column and every 6th row, so each cell reads 3 wide × 5 tall (the
+        // reference art's proportions, scaled down — see SOLAR_CELL_W). Positional
+        // (tied to x/y, not to the particle) like
+        // the Mesh weave, so however you drag the brush the seams line up into one
+        // continuous array rather than restarting per stroke. The panel has no
+        // powered state to show — it's a source, not a sink — so unlike the Pump's
+        // stripes nothing here brightens.
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = x % SOLAR_CELL_W === SOLAR_CELL_W - 1 || y % SOLAR_CELL_H === SOLAR_CELL_H - 1
+          ? latCol[id]
+          : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
@@ -1436,6 +1531,10 @@ export class CanvasRenderer implements Renderer {
       const heatColor = heat ? this.heatColor(o.temp) : null;
       if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor);
       else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
+      else if (o.kind === 'smokebomb')
+        this.rasterizeCapsuleSprite(
+          buf, w, h, s, o, SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H, heatColor,
+        );
       else this.rasterizeDrum(buf, w, h, s, o, heatColor);
     }
   }
@@ -1483,18 +1582,76 @@ export class CanvasRenderer implements Renderer {
   }
 
   /**
-   * Rasterize one drum into the overlay: rotate the pixel-art sprite by the
-   * capsule's `angle` and sample it per sub-pixel. For each sub-pixel in the
-   * drum's bounding box we take its center's vector from the drum center (in grid
+   * Rasterize one capsule body's pixel-art sprite into the overlay, rotated by the
+   * body's `angle` and sampled per sub-pixel. For each sub-pixel in the body's
+   * bounding box we take its center's vector from the body center (in grid
    * coords), un-rotate it into the sprite's upright frame, map to a sprite pixel,
    * and write that pixel's color (skipping transparent ones). Nearest-neighbor, no
-   * anti-aliasing. The sprite's 24×32 box maps onto the physics capsule's box
-   * (2·radius wide × 2·(halfLength+radius) tall), so display and collision agree;
-   * at OBJECT_SCALE = 2 the 12×16-cell drum samples the sprite near its native
-   * 24×32 resolution. `heatColor`, when given (heat overlay on), replaces every
-   * opaque sprite pixel with that one flat color, keeping the drum's silhouette
-   * (and rotation) but recoloring it by temperature instead of its fill tint.
+   * anti-aliasing.
+   *
+   * The sprite's pixel box maps onto the physics capsule's box (2·radius wide ×
+   * 2·(halfLength+radius) tall), so display and collision agree — which is also
+   * why each sprite is authored at that aspect. At OBJECT_SCALE = 2 the sprites
+   * are sized to sample near their native resolution.
+   *
+   * `heatColor`, when given (heat overlay on), replaces every opaque sprite pixel
+   * with that one flat color, keeping the body's silhouette (and rotation) but
+   * recoloring it by temperature instead of its own art.
+   *
+   * Every capsule body draws through this one routine — the drum (which picks its
+   * sprite by fill), the dynamite (which then adds a procedural fuse nub) and the
+   * smoke bomb — so a fourth capsule object needs only its sprite, not another
+   * copy of this loop.
    */
+  private rasterizeCapsuleSprite(
+    buf: Uint32Array,
+    w: number,
+    h: number,
+    s: number,
+    o: { x: number; y: number; angle: number; halfLength: number; radius: number },
+    sprite: Uint32Array,
+    spriteW: number,
+    spriteH: number,
+    heatColor: number | null = null,
+  ): void {
+    const halfW = o.radius; // half the body's short (width) extent, in cells
+    const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
+    // Bounding box that contains the body at any rotation (a circle of the long
+    // half-extent), clamped to the overlay.
+    let x0 = Math.floor((o.x - halfL) * s);
+    let x1 = Math.ceil((o.x + halfL) * s);
+    let y0 = Math.floor((o.y - halfL) * s);
+    let y1 = Math.ceil((o.y + halfL) * s);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > w) x1 = w;
+    if (y1 > h) y1 = h;
+    const cos = Math.cos(o.angle);
+    const sin = Math.sin(o.angle);
+    // Sprite-pixels per grid cell along each local axis (display box → sprite box).
+    const sxScale = spriteW / (2 * halfW);
+    const syScale = spriteH / (2 * halfL);
+    for (let sy = y0; sy < y1; sy++) {
+      const wy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
+      const row = sy * w;
+      for (let sx = x0; sx < x1; sx++) {
+        const wx = (sx + 0.5) / s - o.x;
+        // Un-rotate into the body's local frame: local-x across width (unit
+        // (cos,−sin)), local-y along length (unit (sin,cos)).
+        const lx = wx * cos - wy * sin;
+        const ly = wx * sin + wy * cos;
+        // Local coords → sprite pixel (sprite center at its box center).
+        const spx = spriteW * 0.5 + lx * sxScale;
+        const spy = spriteH * 0.5 + ly * syScale;
+        if (spx < 0 || spx >= spriteW || spy < 0 || spy >= spriteH) continue;
+        const color = sprite[(spy | 0) * spriteW + (spx | 0)];
+        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent sprite pixel
+      }
+    }
+  }
+
+  /** Rasterize one drum: the shared capsule-sprite pass with the sprite its `fill`
+   *  selects (the body tint varies by fill; the shape is shared). */
   private rasterizeDrum(
     buf: Uint32Array,
     w: number,
@@ -1510,42 +1667,8 @@ export class CanvasRenderer implements Renderer {
     },
     heatColor: number | null = null,
   ): void {
-    const sprite = drumSpriteFor(o.fill); // body tint varies by fill; shape shared
-    const halfW = o.radius; // half the drum's short (width) extent, in cells
-    const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
-    // Bounding box that contains the drum at any rotation (a circle of the long
-    // half-extent), clamped to the overlay.
-    const reach = halfL;
-    let x0 = Math.floor((o.x - reach) * s);
-    let x1 = Math.ceil((o.x + reach) * s);
-    let y0 = Math.floor((o.y - reach) * s);
-    let y1 = Math.ceil((o.y + reach) * s);
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > w) x1 = w;
-    if (y1 > h) y1 = h;
-    const cos = Math.cos(o.angle);
-    const sin = Math.sin(o.angle);
-    // Sprite-pixels per grid cell along each local axis (display box → sprite box).
-    const sxScale = DRUM_SPRITE_W / (2 * halfW);
-    const syScale = DRUM_SPRITE_H / (2 * halfL);
-    for (let sy = y0; sy < y1; sy++) {
-      const wy = (sy + 0.5) / s - o.y; // sub-pixel center, in grid coords
-      const row = sy * w;
-      for (let sx = x0; sx < x1; sx++) {
-        const wx = (sx + 0.5) / s - o.x;
-        // Un-rotate into the drum's local frame: local-x across width (unit
-        // (cos,−sin)), local-y along length (unit (sin,cos)).
-        const lx = wx * cos - wy * sin;
-        const ly = wx * sin + wy * cos;
-        // Local coords → sprite pixel (sprite center at its box center).
-        const spx = DRUM_SPRITE_W * 0.5 + lx * sxScale;
-        const spy = DRUM_SPRITE_H * 0.5 + ly * syScale;
-        if (spx < 0 || spx >= DRUM_SPRITE_W || spy < 0 || spy >= DRUM_SPRITE_H) continue;
-        const color = sprite[(spy | 0) * DRUM_SPRITE_W + (spx | 0)];
-        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent sprite pixel
-      }
-    }
+    const sprite = drumSpriteFor(o.fill);
+    this.rasterizeCapsuleSprite(buf, w, h, s, o, sprite, DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor);
   }
 
   /**
@@ -1573,35 +1696,9 @@ export class CanvasRenderer implements Renderer {
     },
     heatColor: number | null = null,
   ): void {
-    const halfW = o.radius; // half the stick's short (width) extent, in cells
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
-    // Body: rotate-sample the stick sprite within the rotation-invariant bbox.
-    let x0 = Math.floor((o.x - halfL) * s);
-    let x1 = Math.ceil((o.x + halfL) * s);
-    let y0 = Math.floor((o.y - halfL) * s);
-    let y1 = Math.ceil((o.y + halfL) * s);
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > w) x1 = w;
-    if (y1 > h) y1 = h;
-    const cos = Math.cos(o.angle);
-    const sin = Math.sin(o.angle);
-    const sxScale = DYN_SPRITE_W / (2 * halfW);
-    const syScale = DYN_SPRITE_H / (2 * halfL);
-    for (let sy = y0; sy < y1; sy++) {
-      const wy = (sy + 0.5) / s - o.y;
-      const row = sy * w;
-      for (let sx = x0; sx < x1; sx++) {
-        const wx = (sx + 0.5) / s - o.x;
-        const lx = wx * cos - wy * sin;
-        const ly = wx * sin + wy * cos;
-        const spx = DYN_SPRITE_W * 0.5 + lx * sxScale;
-        const spy = DYN_SPRITE_H * 0.5 + ly * syScale;
-        if (spx < 0 || spx >= DYN_SPRITE_W || spy < 0 || spy >= DYN_SPRITE_H) continue;
-        const color = DYN_SPRITE[(spy | 0) * DYN_SPRITE_W + (spx | 0)];
-        if (color !== 0) buf[row + sx] = heatColor ?? color;
-      }
-    }
+    // Body: the shared rotate-sample pass with the stick sprite.
+    this.rasterizeCapsuleSprite(buf, w, h, s, o, DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, heatColor);
     // A short dark fuse-cord nub past the top cap, along the stick's (rotated) long
     // axis. angle 0 ⇒ axis (0,1) and the fuse points up (−axis); it rotates with
     // the stick. The flame is real Fire particles the engine spawns at the tip.

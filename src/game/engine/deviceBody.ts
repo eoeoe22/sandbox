@@ -41,22 +41,57 @@ import type { SimContext } from './SimContext';
  * same tick numbers, so module state keyed by tick would let one world's floods
  * suppress the other's and break the lockstep-determinism harness).
  *
- * Holds the flat cell indices covered by a flood this tick and self-resets the
- * first time it's touched in a later tick, so a tick with no activity for that
- * device costs nothing.
+ * Marks the cells covered by a flood this tick and self-resets the first time
+ * it's touched in a later tick, so a tick with no activity for that device costs
+ * nothing.
+ *
+ * The marks live in a **stamp buffer**, not a Set: one grid-sized Int32Array
+ * holding, per cell, the id of the last flood generation that touched it, so
+ * "marked?" is an array compare and the per-tick reset is a counter bump rather
+ * than clearing a container. That matters because a flood is O(body) *per tick*
+ * for as long as its trigger keeps arriving, and one trigger does arrive every
+ * single tick: a powered Laser emits a Heat Ray each tick, so a beam parked on a
+ * Solar Panel array re-floods it every tick (every other device is pulsed by a
+ * Battery on its 12-tick cadence, which is why this only started to bite when the
+ * panel got body-wide conduction). Measured on a lit square array, flood cost per
+ * tick over an inert-stone control of the same size: 10,000 cells 2.92 → 1.42 ms,
+ * 19,600 cells 6.07 → 3.44 ms. (The panel's own emission loop was the other half;
+ * with both, 0.9 ms and 2.0 ms — see solarpanel.ts. At 36,100 cells, about the
+ * largest square a 360×203 world holds, the pair is 11.3 → 3.9 ms: ~34% → ~12% of
+ * a 30 Hz tick.) Same walk, same order, same results; only the bookkeeping changed.
+ *
+ * The buffer is allocated on first use and re-allocated if the grid is resized,
+ * so a world with no electromagnet in it never pays for the electromagnet's memo.
  */
 export class BodyFlood {
   private tick = -1;
-  /** Flat cell indices (y*width + x) flooded this tick. */
-  readonly cells: Set<number> = new Set();
+  /** Cell → the `mark` of the last flood that covered it (0 = never). */
+  private stamp = new Int32Array(0);
+  /** This tick's flood generation. Bumped once per tick instead of clearing. */
+  private mark = 0;
 
   /** Roll the memo over to the sim's current tick if it's stale. Returns true
    *  when it just rolled (the caller may have its own per-tick state to clear
    *  in the same breath — see woofer.ts's knockback queue). */
   begin(sim: SimContext): boolean {
+    const n = sim.width * sim.height;
+    if (this.stamp.length !== n) {
+      // First use, or the sandbox was resized. Force a roll below as well: a
+      // fresh buffer is all zeros, and `mark` 0 would read as "every cell is
+      // already marked".
+      this.stamp = new Int32Array(n);
+      this.mark = 0;
+      this.tick = -1;
+    }
     if (this.tick === sim.tick) return false;
     this.tick = sim.tick;
-    this.cells.clear();
+    this.mark++;
+    if (this.mark >= 0x7fffffff) {
+      // ~2 billion ticks away (over a year of wall-clock at 30 Hz), but a
+      // wrapped counter would silently report stale cells as flooded.
+      this.stamp.fill(0);
+      this.mark = 1;
+    }
     return true;
   }
 
@@ -64,7 +99,15 @@ export class BodyFlood {
    *  been called for the current tick (every caller floods through
    *  `floodDeviceBody`, or calls `begin` itself first). */
   has(sim: SimContext, x: number, y: number): boolean {
-    return this.cells.has(y * sim.width + x);
+    return this.marked(y * sim.width + x);
+  }
+
+  /** Flat-index forms of the same question, used by the walk itself. */
+  marked(i: number): boolean {
+    return this.stamp[i] === this.mark;
+  }
+  setMarked(i: number): void {
+    this.stamp[i] = this.mark;
   }
 }
 
@@ -103,13 +146,13 @@ export function floodDeviceBody(
   memo.begin(sim);
   const w = sim.width;
   const start = sy * w + sx;
-  if (memo.cells.has(start)) return false;
+  if (memo.marked(start)) return false;
 
   // The memo doubles as the walk's own visited set: a flood always covers a
   // whole body now, so "already flooded this tick" and "already queued by this
   // walk" are the same question, and marking at push time keeps a cell from
   // being stacked twice by two neighbors.
-  memo.cells.add(start);
+  memo.setMarked(start);
   const stack: number[] = [sx, sy];
   while (stack.length > 0) {
     const y = stack.pop()!;
@@ -121,8 +164,8 @@ export function floodDeviceBody(
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== bodyId) continue;
       if (canWalk !== undefined && !canWalk(nx, ny)) continue;
       const k = ny * w + nx;
-      if (memo.cells.has(k)) continue;
-      memo.cells.add(k);
+      if (memo.marked(k)) continue;
+      memo.setMarked(k);
       stack.push(nx, ny);
     }
   }

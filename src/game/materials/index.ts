@@ -125,6 +125,11 @@ import { ELECTROMAGNET } from './electromagnet';
 import { SULFUR } from './sulfur';
 import { SALTPETER } from './saltpeter';
 import { ALUMINUM_POWDER } from './aluminumpowder';
+import { FIREWORKS } from './fireworks';
+import { FIREWORK_STAR } from './fireworkstar';
+import { FIREWORK_BURST } from './fireworkburst';
+import { WIRE } from './wire';
+import { SOLAR_PANEL } from './solarpanel';
 
 export {
   EMPTY_MAT,
@@ -249,6 +254,11 @@ export {
   SULFUR,
   SALTPETER,
   ALUMINUM_POWDER,
+  FIREWORKS,
+  FIREWORK_STAR,
+  FIREWORK_BURST,
+  WIRE,
+  SOLAR_PANEL,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -277,6 +287,13 @@ export {
  *   • BUBBLE — the air bubble only Soapy Water produces (see bubble.ts); it rises
  *     and pops back to soapy water, so hand-placed in open air it just pops at
  *     once.
+ *   • FIREWORK_STAR — a Fireworks charge's submunition (see fireworkstar.ts),
+ *     launched with a real velocity and a colour rolled at launch, like the
+ *     Cluster shell's Bomblet. Painted by hand it would open its flower on the
+ *     spot.
+ *   • FIREWORK_BURST — the coloured flower a star opens into (fireworkburst.ts).
+ *     It only ever exists as that product: its colour lives in the `aux` a star
+ *     stamps, so one placed by brush would be a colour-0 cell that fades at once.
  *
  *  The Fan's gust is deliberately NOT a material at all: it's a transient wind
  *  *field* (Grid.wind) the Fan stamps and the renderer/object layer read, so there
@@ -298,6 +315,7 @@ export const MATERIALS = [
   ACID,
   ACID_VAPOR,
   GUNPOWDER,
+  FIREWORKS,
   SULFUR,
   SALTPETER,
   NITRO,
@@ -331,6 +349,8 @@ export const MATERIALS = [
   BATTERY,
   LFP_BATTERY,
   NICHROME,
+  WIRE,
+  SOLAR_PANEL,
   WOOFER,
   FAN,
   LASER,

@@ -8,6 +8,11 @@
 // `preserveAspectRatio` fits it), rather than a hand-approximated swatch.
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
+import {
+  SMOKE_BOMB_SPRITE,
+  SMOKE_BOMB_SPRITE_W,
+  SMOKE_BOMB_SPRITE_H,
+} from './smokeBombSprite';
 import type { DrumFill } from '../engine/objects';
 import type { ObjectKind } from '../../state/store';
 
@@ -77,6 +82,15 @@ const dynamiteSvg = pixelSvg(
     spriteRects(DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, 0, FUSE_LEN),
 );
 
+// The smoke bomb: the canister sprite straight through, with nothing drawn around
+// it — its smoke is real Smoke particles the engine spawns in-world (like the
+// dynamite's flame), so the static preview is the can alone.
+const smokeBombSvg = pixelSvg(
+  SMOKE_BOMB_SPRITE_W,
+  SMOKE_BOMB_SPRITE_H,
+  spriteRects(SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H),
+);
+
 // The rubber ball: a flat red disc with a thin dark rim, mirroring rasterizeBall
 // (BALL_COLOR / BALL_BORDER_COLOR). A vector circle here (not pixel rects) — the
 // in-world ball is a rasterized disc, and a smooth circle reads truer at this
@@ -98,6 +112,7 @@ const OBJECT_SVG: Record<ObjectKind, string> = {
   oildrum: drumSvg('oil'),
   aciddrum: drumSvg('acid'),
   dynamite: dynamiteSvg,
+  smokebomb: smokeBombSvg,
 };
 
 /** SVG markup for an object kind's palette preview — inject with Svelte `{@html}`.
