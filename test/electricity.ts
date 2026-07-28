@@ -511,6 +511,86 @@ function beamScene(targetId: number): { maxTemp: number; sparked: boolean } {
   );
 }
 
+// --- 7. Solar Panel: one-way body conduction ----------------------------------
+// A panel array is its own busbar, and the direction matters:
+//   • 내부 → 내부 / 내부 → 외부 — light landing anywhere conducts through the whole
+//     connected slab in that tick, so a lead clipped to the *far* end fires. This
+//     is easy to lose silently: drop the flood back to "pulse my own eight
+//     neighbours" and a panel still works when you aim at the lead, which is
+//     exactly where anyone testing by hand would aim.
+//   • 외부 → 내부 — a panel is not a conductor and not an appliance, so current on
+//     a wire touching one must NOT cross it. Tagging the panel `conductive` (or
+//     giving it a `directPulse`) to "make wiring easier" would turn every array
+//     into free cable and break this.
+// Both scenes are a long bar with an Iron lead at each end, so the two directions
+// are the same geometry driven from opposite sides, and both have a control that
+// must come out the other way.
+
+/** Lay a horizontal bar of `barId` along y=4 from x=10 to x=40 with an Iron lead
+ *  at each end, cut by a 1-cell `gapId` plug at x=25 when `gap` is set. */
+function panelBar(barId: number, gap: boolean, gapId = STONE.id): { grid: Grid; sim: Simulation } {
+  const grid = new Grid(46, 9);
+  const sim = new Simulation(grid);
+  for (let x = 10; x <= 40; x++) grid.set(x, 4, barId);
+  if (gap) grid.set(25, 4, gapId);
+  grid.set(9, 4, IRON.id); // near lead (the light/pulse end)
+  grid.set(41, 4, IRON.id); // far lead, 31 cells away
+  return { grid, sim };
+}
+
+/** Fire a Heat Ray straight down onto the bar's left end and report whether the
+ *  FAR lead ever carried a Spark — i.e. whether the array conducted internally end
+ *  to end. Aimed from above rather than along the row so the near lead isn't in
+ *  the beam's way: the point of the check is that the light lands *nowhere near*
+ *  the lead that fires. */
+function farLeadLit(barId: number, gap: boolean): boolean {
+  const { grid, sim } = panelBar(barId, gap);
+  emitHeatRay(sim.context, 12, 0, 0, 1);
+  let lit = false;
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (grid.get(41, 4) === SPARK.id) lit = true;
+  }
+  return lit;
+}
+
+/** Put a live pulse on the NEAR lead and report whether it ever reached the far
+ *  one — i.e. whether current got *into* and across the bar. */
+function farLeadReached(barId: number): boolean {
+  const { grid, sim } = panelBar(barId, false);
+  grid.set(9, 4, SPARK.id);
+  grid.setAux(9, 4, packSpark(FULL_STRENGTH, conductorClass(IRON.id)));
+  let reached = false;
+  for (let t = 0; t < 60; t++) {
+    sim.step();
+    if (grid.get(41, 4) === SPARK.id) reached = true;
+  }
+  return reached;
+}
+
+{
+  check(
+    'light on one end of a Solar Panel array powers a lead at the other end',
+    farLeadLit(SOLAR_PANEL.id, false),
+    '29 cells from the lit cell',
+  );
+  check(
+    'a panel array cut in two does NOT carry it across the break (the check can fail)',
+    !farLeadLit(SOLAR_PANEL.id, true),
+    'severed at x=25',
+  );
+  check(
+    'current on a wire touching a panel never crosses it (외부 → 내부 차단)',
+    !farLeadReached(SOLAR_PANEL.id),
+    'panel bar between two iron leads',
+  );
+  check(
+    'the same run DOES cross a bar of real conductor (the check can fail)',
+    farLeadReached(IRON.id),
+    'iron bar between two iron leads',
+  );
+}
+
 console.log(
   failed === 0 ? '\nOK — electricity packing intact.' : `\n${failed} check(s) FAILED.`,
 );

@@ -87,10 +87,19 @@ const TRI_STEP = 5; // cells along the axis per triangle (3 drawn + 2 front gutt
 
 // Tiling of the `solarPattern` photovoltaic cell grid (Solar Panel — see the
 // render loop). Each period is one cell of the panel plus the seam after it, so a
-// drawn cell is 4 wide × 7 tall with a 1-cell seam on its right and bottom edges
-// — the proportions of the panel's reference art.
-const SOLAR_CELL_W = 5; // columns per panel cell (4 drawn + 1 seam)
-const SOLAR_CELL_H = 8; // rows per panel cell (7 drawn + 1 seam)
+// drawn cell is 3 wide × 5 tall with a 1-cell seam on its right and bottom edges.
+//
+// The reference art's cells are 4×7 (aspect 0.571); these are the next size down
+// that still reads as the same tall portrait cell (0.600) — the seam is a whole
+// grid cell wide and can't shrink with them, so the pattern can only step through
+// integer sizes, and 3×5 is the closest one below 4×7 (2×3 would be 0.667 and
+// mostly seam). Smaller matters because the pattern is drawn in *world* cells,
+// not screen pixels: at 4×7 a panel had to be ~20 cells across before the grid
+// was legible at all, and anything hand-drawn just looked like flat blue with a
+// stray line through it. At 3×5 a panel four cells wide already shows its
+// structure (비율 유지하며 격자 무늬 사이즈 줄이기).
+const SOLAR_CELL_W = 4; // columns per panel cell (3 drawn + 1 seam)
+const SOLAR_CELL_H = 6; // rows per panel cell (5 drawn + 1 seam)
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -845,8 +854,9 @@ export class CanvasRenderer implements Renderer {
       } else if (solarPattern[id]) {
         // A Solar Panel draws its photovoltaic cell grid: rectangular cells of the
         // base colour separated by thin `lattice`-coloured seams — a seam on every
-        // 5th column and every 8th row, so each cell reads 4 wide × 7 tall like the
-        // panel's reference art. Positional (tied to x/y, not to the particle) like
+        // 4th column and every 6th row, so each cell reads 3 wide × 5 tall (the
+        // reference art's proportions, scaled down — see SOLAR_CELL_W). Positional
+        // (tied to x/y, not to the particle) like
         // the Mesh weave, so however you drag the brush the seams line up into one
         // continuous array rather than restarting per stroke. The panel has no
         // powered state to show — it's a source, not a sink — so unlike the Pump's

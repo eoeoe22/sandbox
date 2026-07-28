@@ -2298,7 +2298,14 @@ function nextSmokeStamp(ctx: SimContext): Int32Array {
  *     (otherwise a venting canister's own cloud walls its front in after a tick);
  *   - powder, because a sand bed is grains with gaps between them, not a seal;
  *   - liquid, so a canister dropped in a pond still sends its plume up through
- *     the water instead of going silent;
+ *     the water instead of going silent — but only while it's actually *liquid*.
+ *     A frozen one (`SimContext.isFrozen`: a `freeze` material at or below its
+ *     point) is a block of ice, and every other system in the engine already
+ *     treats it as structure — movement refuses to displace it, and the object
+ *     layer's own `solidLike` bounces bodies off it. Smoke is no different: an
+ *     ice wall shelters what's behind it exactly like a stone one, so freezing a
+ *     pond over is a real way to seal a room (언 액체가 고체 벽으로 취급되지 않던
+ *     문제). It thaws back to a passable pond the moment it warms up;
  *   - a `porous` solid (Mesh, Turbine, Pump), which is built to let fluids pass
  *     through as if it weren't there — the engine's own overlap rule already says
  *     such a host admits a gas.
@@ -2319,7 +2326,11 @@ function smokePassable(ctx: SimContext, x: number, y: number): boolean {
   const id = ctx.get(x, y);
   if (id === EMPTY) return true;
   const m = getMaterial(id);
-  return m.phase !== Phase.Solid || m.porous === true;
+  if (m.phase === Phase.Solid) return m.porous === true;
+  // Frozen liquid is ice: a wall, not a pond. Gated on the material even being
+  // freezable so the common cell (air, gas, water, a grain of sand) doesn't pay
+  // for the temperature read.
+  return m.freeze === undefined || !ctx.isFrozen(x, y);
 }
 
 /**

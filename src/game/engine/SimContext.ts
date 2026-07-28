@@ -259,6 +259,18 @@ export class SimContext {
   readonly pumpFlood = new BodyFlood();
 
   /**
+   * Per-tick memo for the Solar Panel's body-flood (materials/solarpanel.ts) —
+   * the same shape as the sinks above, pointed the other way. A panel is a
+   * *source*: light landing anywhere on an array conducts through the whole
+   * connected body at once and emits from all of it (내부 → 내부, 내부 → 외부),
+   * while nothing outside can flood *in* (외부 → 내부 차단 — the panel is neither
+   * `conductive` nor a `directPulse` device, so no pulse has a way in). This memo
+   * is what makes a beam parked on a big array cost one O(N) pass per tick
+   * instead of one per lit cell. Sim-local, same reasoning as `wooferFlood`.
+   */
+  readonly solarFlood = new BodyFlood();
+
+  /**
    * Per-tick memo for the Electromagnet's body-flood (materials/electromagnet.ts)
    * — the same one-way "outside → inside" electric sink as `fanFlood` above,
    * refreshing the whole connected magnet's powered countdown from any powered

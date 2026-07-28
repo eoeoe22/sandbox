@@ -2,6 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
+import { floodDeviceBody } from '../engine/deviceBody';
 import type { SimContext } from '../engine/SimContext';
 import { pulseCell } from './spark';
 
@@ -11,20 +12,31 @@ import { pulseCell } from './spark';
 // converts the light instead of soaking it, and fires a pulse into every conductor
 // touching it (열선 접촉 시 가열되지 않고 인접 도체에 Spark 방출).
 //
-// It's the light-side counterpart of the Battery: a *source*, not a sink. So it's
-// deliberately NOT `conductive` — a panel array must not double as free wiring —
-// and it declares no `directPulse` either, because nothing powers a panel; the sun
-// (a Heat Ray) does. Its one hook is `lightPulse`, which heatray.ts fires on the
-// struck cell in place of heating it, and which absorbs the beam (no reflection,
-// no pass-through: the photons are spent).
+// It's the light-side counterpart of the Battery: a *source*, not a sink. Its one
+// hook is `lightPulse`, which heatray.ts fires on the struck cell in place of
+// heating it, and which absorbs the beam (no reflection, no pass-through: the
+// photons are spent).
+//
+// **Current flows one way through a panel: 내부 → 내부, 내부 → 외부, and never
+// 외부 → 내부.** The array is its own busbar — light landing anywhere on it
+// conducts through the whole connected slab instantly and emits from every edge
+// of it (see solarPulse) — but nothing outside can push current *into* it. That
+// asymmetry is not a special case bolted on; it falls out of what the panel
+// declares. It is deliberately NOT `conductive`, so a spark on a neighbouring wire
+// has no cell here to hop into (spark.ts only hands off to conductors) and an
+// array can't double as free wiring; and it declares no `directPulse`, so the
+// device path — the one-way "outside → inside" sink every appliance uses — has no
+// hook to call either (a pulse touching a panel face simply does nothing). The
+// internal conduction rides `floodDeviceBody`, the same shared body-walk those
+// appliances use, just driven by light instead of by a wire.
 //
 // Emission goes through `pulseCell` (spark.ts) — the same single "what does a
 // pulse do to this cell" rule a Battery terminal, a Turbine face and the 전기
 // 브러시 all use. So a panel energizes a conductor (Wire, Iron, brine, …) into a
 // travelling Spark and, on a machine bolted straight to its face, fires that
 // device's own hook exactly as a battery in direct contact would. Adding the panel
-// therefore needed no change in any device or conductor: it just calls the shared
-// rule.
+// therefore needed no change in any device or conductor: both halves of it are
+// shared engine seams — `floodDeviceBody` inward, `pulseCell` outward.
 //
 // Rate limiting is free and physical: a conductor is refractory for a few ticks
 // after a pulse passes (spark.ts), so a beam parked on a panel doesn't machine-gun
@@ -32,24 +44,45 @@ import { pulseCell } from './spark';
 // "the panel is in full sun" should look like.
 
 /**
- * A Heat Ray struck this panel cell: pulse every neighbour. The beam is consumed
- * by the caller (heatray.ts) and, crucially, deposits no heat — that skip is what
- * `lightPulse` means (see Material.lightPulse).
+ * A Heat Ray struck this panel cell: energize the whole array. The beam is
+ * consumed by the caller (heatray.ts) and, crucially, deposits no heat — that skip
+ * is what `lightPulse` means (see Material.lightPulse).
  *
- * Per struck cell, not per body: there's no flood here and none is wanted. A panel
- * is a collector, so what it produces should scale with how much of it is actually
- * lit — a beam grazing one corner of a big array powers that corner's leads, and
- * lighting the whole face lights the whole face. (Contrast the appliances, whose
- * `directPulse` deliberately floods the entire connected body from one contact:
- * those are sinks answering "is it on?", which is a yes/no.)
+ * 패널 내 전역 즉시 전기 전도 — one flood covers the entire 4-connected slab in the
+ * tick the light lands, and every cell of it pulses its own neighbours. So where
+ * you aim doesn't decide where the power comes out: hit any corner of an array and
+ * the lead clipped to the opposite edge fires the same tick, which is what makes a
+ * panel usable as a roof with the wiring run wherever it's convenient. (An array
+ * used to be a bag of independent cells, each lighting only its own eight
+ * neighbours, so a beam had to be walked across the whole face to power a wire on
+ * the far side — legible as physics, tedious as a build.)
+ *
+ * Emission is per body cell but the *work* is bounded per tick, not per lit cell:
+ * `sim.solarFlood` memoizes the walk, so a wide beam covering forty cells of one
+ * array still costs a single O(N) pass, and later strikes in the same tick return
+ * immediately. That memo is also what keeps output binary rather than additive —
+ * a fully lit panel emits once per tick, exactly like one lit in a single spot,
+ * matching how every conductor is refractory for a few ticks after a pulse anyway
+ * (spark.ts). Full sun drives the wire at the wire's own maximum cadence.
+ *
+ * Only *outward* emission goes through `pulseCell` (spark.ts) — the shared "what
+ * does a pulse do to this cell" rule a Battery terminal, a Turbine face and the
+ * 전기 브러시 all use — so a panel energizes a conductor (Wire, Iron, brine, …)
+ * into a travelling Spark and fires the hook of a machine bolted to its face,
+ * exactly as a battery in contact would. Panel cells are skipped on the way out:
+ * the body already conducted internally via the flood, and `pulseCell` would find
+ * nothing to do on one anyway (that no-op is 외부 → 내부 차단, see the note above).
  */
 function solarPulse(sim: SimContext, x: number, y: number): void {
-  for (const [dx, dy] of DIR8) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    pulseCell(sim, nx, ny);
-  }
+  floodDeviceBody(sim, x, y, SOLAR_PANEL.id, sim.solarFlood, (bx, by) => {
+    for (const [dx, dy] of DIR8) {
+      const nx = bx + dx;
+      const ny = by + dy;
+      if (!sim.inBounds(nx, ny)) continue;
+      if (sim.get(nx, ny) === SOLAR_PANEL.id) continue; // inside; the flood has it
+      pulseCell(sim, nx, ny);
+    }
+  });
 }
 
 export const SOLAR_PANEL = register({
