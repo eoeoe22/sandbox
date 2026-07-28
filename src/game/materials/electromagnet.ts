@@ -283,10 +283,23 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   if (timer <= 0) return; // idle until a pulse energizes the body
   sim.setAux(x, y, timer - 1);
 
-  // Walk the connected body in full (4-connected, the shared `floodDeviceBody`
-  // every device's activation uses), recording its bounding box and its *surface*
-  // cells, and claiming all of it for this tick — so the field is grown out of the
-  // magnet's whole outline, not just the corner of it nearest the scan.
+  // Walk the connected *powered* body in full (4-connected, the shared
+  // `floodDeviceBody` every device's activation uses), recording its bounding box
+  // and its *surface* cells, and claiming all of it for this tick — so the field is
+  // grown out of the magnet's whole outline, not just the corner of it nearest the
+  // scan.
+  //
+  // Powered-only (the `canWalk` guard) is kept from the field-line effect's own
+  // walk, with half its reason retired: it was there both to make the *chunks* a
+  // capped walk breaks a big body into a stable partition, and to keep dead magnet
+  // from seeding a pull it isn't making. There are no chunks any more — the walk is
+  // uncapped, so a powered body is swept whole, once, every tick, and the
+  // renderer's membership fingerprint can't churn with scan direction because
+  // there's nothing to partition. The second reason stands on its own: a stretch no
+  // pulse has reached yet (a freshly painted extension) is not part of this
+  // magnet's field until the next beat powers it. The other old guard (skip cells
+  // an earlier walk claimed this tick) is now the memo's own job — `floodDeviceBody`
+  // marks at push time, so its memo *is* the walk's visited set.
   //
   // Only surface cells are collected because only they can seed anything: pullField
   // seeds by trying each body cell's 8 neighbors, and a neighbor that is itself
@@ -304,22 +317,45 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   // just stopped the machine from working. See docs/ELECTRICITY.md.) The bounding
   // box is still taken over every cell (its extremes are surface cells regardless,
   // but this way the box can't drift if the surface rule is ever narrowed).
+  //
+  // The surface set is also all the *renderer* needs for the 자기력선 rings below:
+  // buildShockField seeds distance 0 on exactly the cells it's handed and expands
+  // only through non-solid cells, so an interior magnet cell can only ever be a
+  // seed that goes nowhere and lands in band 0, which draws no ring. Same picture,
+  // and the per-frame membership fingerprint gets shorter with it.
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
   let minY = y;
   let maxX = x;
   let maxY = y;
-  const swept = floodDeviceBody(sim, x, y, ELECTROMAGNET.id, sim.magnetField, (cx, cy) => {
-    if (cx < minX) minX = cx;
-    if (cx > maxX) maxX = cx;
-    if (cy < minY) minY = cy;
-    if (cy > maxY) maxY = cy;
-    if (!isBodySurface(sim, cx, cy)) return;
-    bx.push(cx);
-    by.push(cy);
-  });
+  const swept = floodDeviceBody(
+    sim,
+    x,
+    y,
+    ELECTROMAGNET.id,
+    sim.magnetField,
+    (cx, cy) => {
+      if (cx < minX) minX = cx;
+      if (cx > maxX) maxX = cx;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
+      if (!isBodySurface(sim, cx, cy)) return;
+      bx.push(cx);
+      by.push(cy);
+    },
+    (cx, cy) => sim.getAux(cx, cy) > 0, // powered cells only — see the note above
+  );
   if (!swept) return; // another cell of this body already swept the field this tick
+
+  // Publish the live body for the renderer's contour-ring effect (자기력선) —
+  // re-stamped every powered tick alongside the pull itself, so the rings appear
+  // and vanish exactly with the field (see Grid.magnetFields). Skipped when the
+  // surface set came back empty, which needs a magnet with no non-magnet neighbor
+  // anywhere — a body filling the whole board. There is no outline to grow rings
+  // from in that case, and an empty entry would hand the renderer's clustering an
+  // undefined first cell.
+  if (bx.length > 0) sim.emitMagnetField(bx, by, REACH);
 
   pullField(sim, bx, by, minX, minY, maxX, maxY);
 }

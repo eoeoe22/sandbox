@@ -82,6 +82,14 @@ export class BodyFlood {
  * `visit` may freely write to the cells it's handed (that's the point — stamping
  * a powered countdown, firing an effect); it must not turn body cells into some
  * other material, since the walk reads `sim.get` as it goes.
+ *
+ * `canWalk`, when given, narrows the walk to the cells it accepts — the body is
+ * still "everything 4-connected", but only through cells that pass. The seed cell
+ * is the caller's own and is never tested. This is for a pass that acts on part of
+ * a body rather than powering it: the Electromagnet's per-tick field sweep walks
+ * only *powered* cells, so a freshly painted extension that no pulse has reached
+ * yet doesn't seed a pull the magnet isn't making. Activation itself never passes
+ * one — powering a device is always the whole connected body.
  */
 export function floodDeviceBody(
   sim: SimContext,
@@ -90,6 +98,7 @@ export function floodDeviceBody(
   bodyId: number,
   memo: BodyFlood,
   visit: (x: number, y: number) => void,
+  canWalk?: (x: number, y: number) => boolean,
 ): boolean {
   memo.begin(sim);
   const w = sim.width;
@@ -110,6 +119,7 @@ export function floodDeviceBody(
       const nx = x + dx;
       const ny = y + dy;
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== bodyId) continue;
+      if (canWalk !== undefined && !canWalk(nx, ny)) continue;
       const k = ny * w + nx;
       if (memo.cells.has(k)) continue;
       memo.cells.add(k);

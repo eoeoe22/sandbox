@@ -154,6 +154,23 @@ export class Grid {
   shockwaves: { bx: number[]; by: number[]; reach: number }[] = [];
 
   /**
+   * Powered Electromagnet bodies this tick (materials/electromagnet.ts) — the
+   * magnet's transient VFX channel, sitting between the Fan's wind field (a
+   * continuous per-cell stamp) and the Woofer's shockwave queue (a one-shot
+   * event): each entry is one connected magnet body whose attraction field is
+   * live, re-stamped every powered tick and cleared at the start of every step
+   * (see Simulation.step), so it reflects exactly the current tick's live
+   * fields and vanishes the instant the power lapses. `bx,by` are the body's
+   * own cell coordinates and `reach` how far its pull extends. The renderer
+   * draws static contour rings (자기력선) around the body from a distance field
+   * seeded on these cells and blocked by solids — honest to the sweep that
+   * does the actual pulling, which solids shadow the same way. Never read by
+   * the CA or the object layer; purely cosmetic. Runtime-only; not carried on
+   * resize (re-stamped next tick).
+   */
+  magnetFields: { bx: number[]; by: number[]; reach: number }[] = [];
+
+  /**
    * Free rigid objects (the 독립 오브젝트 layer): bodies with their own
    * position/velocity/physics, living *beside* the cell grid rather than in it
    * (see engine/objects.ts). Stepped by Simulation as a pass separate from the
@@ -277,6 +294,7 @@ export class Grid {
     this.tint.fill(0);
     this.wind.fill(0); // wipe the transient wind field so no gust flashes over a cleared board
     this.shockwaves.length = 0; // drop any queued Woofer shockwave VFX with the board
+    this.magnetFields.length = 0; // and any live magnet field rings — no magnets remain
     this.objects.length = 0; // free objects live beside the grid; clear them too
     // Nothing is occupied now, so no tile needs scanning next tick.
     this.dirty.rebuild(this.cells, this.overlay, this.width, this.height);
@@ -369,6 +387,7 @@ export class Grid {
     this.bgTint = nextBgTint;
     this.wind = new Uint8Array(this.size); // transient — recomputed each tick, no copy
     this.shockwaves.length = 0; // in-flight rings hold absolute coords the remap would misplace
+    this.magnetFields.length = 0; // same absolute-coord hazard; re-stamped next powered tick
     // Re-tile for the new dimensions and re-arm every tile holding kept content,
     // so the active-tile scan resumes correctly after a resize/load.
     const wasEnabled = this.dirty.enabled;
