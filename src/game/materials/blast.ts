@@ -280,12 +280,17 @@ function cellPower(id: number): number {
  *  Always the indestructible boundary Wall and blast-proof solids (Diamond); and,
  *  for a blast too weak to break it, any *solid* whose durability exceeds `power`.
  *  Loose matter never blocks — a weak blast shoves it aside and passes through.
- *  (The one force that gets past Diamond is a critical uranium's Nuclear Ray — see
- *  heatray.ts — which isn't a blast at all.) */
-function blocksBlast(id: number, power: number): boolean {
+ *  A `pierceProof` blast (the Shaped Charge's focused jet — see
+ *  DetonateOptions.pierceProof) ignores the 방폭 `explosionProof` tag and meets
+ *  such a solid on the ordinary power-vs-durability axis instead; only the
+ *  boundary Wall and truly `indestructible` matter (Clone) still stop it.
+ *  (The other force that gets past Diamond is a critical uranium's Nuclear Ray —
+ *  see heatray.ts — which isn't a blast at all.) */
+function blocksBlast(id: number, power: number, pierceProof: boolean): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
-  if (m.isWall === true || m.explosionProof === true || m.indestructible === true) return true;
+  if (m.isWall === true || m.indestructible === true) return true;
+  if (m.explosionProof === true && !pierceProof) return true;
   return m.phase === Phase.Solid && !isShockLoose(id) && durabilityOf(id) > power;
 }
 
@@ -578,6 +583,13 @@ export interface DetonateOptions {
    *  >1 shortens the reach that way, <1 lengthens it — a directional/shaped
    *  blast. Omit for the default round disc. */
   costMul?: readonly number[];
+  /** The blast front pierces 방폭 (`explosionProof`) solids — Diamond, Obsidian —
+   *  instead of being stopped by the tag, meeting them on the ordinary
+   *  power-vs-durability axis like any other solid (the Shaped Charge's focused
+   *  jet — 먼로 효과). The boundary Wall and truly `indestructible` matter
+   *  (Clone) still always stop it. Default false: every ordinary blast keeps
+   *  being shadowed by blast-proof solids. */
+  pierceProof?: boolean;
   /**
    * Handler run for every cell the front reaches, *replacing* the default
    * shockwave-flash placement. Receives the cell's previous id, the inward blast
@@ -723,6 +735,7 @@ export function detonate(
 
   const onCell = opts.onCell;
   const costMul = opts.costMul;
+  const pierceProof = opts.pierceProof === true;
   const callCap =
     opts.maxCells !== undefined && opts.maxCells < MAX_DETONATE_CELLS
       ? opts.maxCells
@@ -785,7 +798,7 @@ export function detonate(
       // solid caught here (Glass) still crazes into its shattered form (Broken
       // Glass) under the shock even as it shadows — see shatterFragile.
       const blockedId = sim.get(nx, ny);
-      if (blocksBlast(blockedId, power)) {
+      if (blocksBlast(blockedId, power, pierceProof)) {
         shatterFragile(sim, nidx, nx, ny, blockedId, stamp, id_d);
         continue;
       }

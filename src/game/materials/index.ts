@@ -84,6 +84,7 @@ import { BOMBLET } from './bomblet';
 import { NAPALM } from './napalm';
 import { NAPALM_GEL } from './napalmgel';
 import { C4 } from './c4';
+import { SHAPED_CHARGE } from './shapedcharge';
 import { SODA } from './soda';
 import { NICHROME } from './nichrome';
 import { LFP_BATTERY } from './lfpbattery';
@@ -206,6 +207,7 @@ export {
   NAPALM,
   NAPALM_GEL,
   C4,
+  SHAPED_CHARGE,
   SODA,
   NICHROME,
   LFP_BATTERY,
@@ -359,6 +361,7 @@ export const MATERIALS = [
   CLUSTER,
   NAPALM,
   C4,
+  SHAPED_CHARGE,
   MOLTEN_SALT,
   DIAMOND,
   ASH,
