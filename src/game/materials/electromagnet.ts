@@ -80,17 +80,32 @@ const POWERED_TICKS = 24;
  *  world-wide vacuum. */
 const REACH = 10;
 
-/** Ceiling on how many cells one field sweep visits. A REACH-10 field around an
- *  ordinary magnet is a few hundred cells; the cap only bites for a long bar
- *  magnet in open air, where it trims the far end of the field rather than letting
- *  one tick's sweep grow with the body.
+/** Absolute backstop on how many cells one field sweep visits — a runaway guard,
+ *  not a tuning knob. The real budget is per-magnet: the box the field can occupy
+ *  at all, i.e. the body's bounding box grown by REACH on every side (see
+ *  `pullField`). That is exactly the region the 자기력선 rings are drawn in, so the
+ *  pull now covers everything the effect promises.
  *
- *  Note what this caps and what it doesn't: the *field* (an effect swept through
- *  open space every tick the countdown is live), never the magnet's activation.
- *  The body itself — which cells are powered, and which cells the field is grown
- *  out of — is always walked in full (see `floodDeviceBody`, engine/deviceBody.ts:
- *  전기 세기에 관계없이 연결 부위 전역 즉시 활성화). */
-const MAX_FIELD = 1024;
+ *  It used to be a flat 1024 cells, which quietly made the magnet *narrower than
+ *  its own halo* as soon as a body got big: the sweep is nearest-first, so the
+ *  cells it dropped were the far ones — the outer rings. Measured against the
+ *  ring region (geodesic REACH from the body, the renderer's own field): a 20×20
+ *  block lost 38 of its outermost cells, a 40×6 bar 136, and a 60×3 bar 456 —
+ *  39% of the drawn halo, with nothing at all pulling past 6 cells at the far end
+ *  of the bar. Long bars are exactly the shape a 자력 선별기 wants, so the flat cap
+ *  was hitting the build it was most needed for.
+ *
+ *  The sweep only ever enqueues *passable* cells, so the box budget doesn't turn
+ *  into box-sized work: a solid 300×300 magnet's box is 320×320, but the air band
+ *  it can actually walk is ~12k cells. This ceiling only bounds the pathological
+ *  end (a board-spanning magnet in open air).
+ *
+ *  Note what any of this caps and what it doesn't: the *field* (an effect swept
+ *  through open space every tick the countdown is live), never the magnet's
+ *  activation. The body itself — which cells are powered, and which cells the field
+ *  is grown out of — is always walked in full (see `floodDeviceBody`,
+ *  engine/deviceBody.ts: 전기 세기에 관계없이 연결 부위 전역 즉시 활성화). */
+const MAX_FIELD_CELLS = 65536;
 
 // ── Sweep scratch ────────────────────────────────────────────────────────────
 // Reused across sweeps to keep a per-tick pull from allocating three containers
@@ -188,9 +203,19 @@ function pullField(
     return ox * ox + oy * oy > REACH * REACH;
   };
 
+  // This sweep's cell budget: the box the field can occupy at all (the body's own
+  // box grown by REACH on every side), which is exactly the region the rings are
+  // drawn in — so the pull reaches everywhere the halo says it does, whatever the
+  // body's size or shape. Only passable cells are ever enqueued, so this bounds
+  // the *region*, not the work. MAX_FIELD_CELLS is the runaway backstop.
+  const budget = Math.min(
+    MAX_FIELD_CELLS,
+    (maxX - minX + 1 + 2 * REACH) * (maxY - minY + 1 + 2 * REACH),
+  );
+
   /** Enqueue (x,y) at depth `d`, reached from flat index `from` (-1 = the body). */
   const enqueue = (x: number, y: number, d: number, from: number): void => {
-    if (sweptX.length >= MAX_FIELD || !sim.inBounds(x, y)) return;
+    if (sweptX.length >= budget || !sim.inBounds(x, y)) return;
     const k = y * w + x;
     if (visited.has(k)) return;
     if (outsideReach(x, y) || !isFieldPassable(sim, x, y)) return;
