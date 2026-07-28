@@ -115,13 +115,89 @@ const MAX_FIELD_CELLS = 65536;
 // only before returning, so two Simulations sharing this module can't leak state
 // into each other the way a tick-keyed cache would (see SimContext.wooferFlood's
 // note on exactly that hazard).
-/** Swept cell → the flat index of the cell it was reached from (-1 = the magnet
- *  body itself, i.e. this cell is a clinging position). */
-const visited = new Map<number, number>();
-/** Swept cells in breadth-first (nearest-first) order, with their step depth. */
+/** The sweep works over a *local field box* — the body's bounding box grown by
+ *  REACH, clipped to the grid — indexed li = (y-ly0)*lbw + (x-lx0). Flat typed
+ *  arrays over that box rather than Maps keyed by cell: this runs every tick a
+ *  magnet is powered, and the hash containers it replaced cost about twice the
+ *  whole sweep. The arrays are module scratch, grown on demand and never cleared:
+ *  a per-sweep generation stamp says which entries belong to the current sweep, so
+ *  a sweep costs its own cells and not the box's area.
+ *
+ *  Safe as module state for the same reason the old containers were: nothing here
+ *  outlives a single synchronous `pullField` call — the generation is bumped on
+ *  entry and every read is gated on it — so two Simulations sharing this module
+ *  can't leak state into each other the way a tick-keyed cache would (see
+ *  SimContext.wooferFlood's note on exactly that hazard). */
+let fDist = new Float64Array(0);
+/** Predecessor on the shortest path back to the magnet, as a local index
+ *  (-1 = the body itself, i.e. this cell is a clinging position). */
+let fPar = new Int32Array(0);
+/** Generation this cell was given a distance in. */
+let fStamp = new Uint32Array(0);
+/** Generation this cell was settled (popped at its final distance) in. */
+let fSettled = new Uint32Array(0);
+let fGen = 0;
+
+/** Swept cells in nearest-first (settled) order — the order the pull walks them. */
 const sweptX: number[] = [];
 const sweptY: number[] = [];
-const sweptD: number[] = [];
+/** Binary min-heap over pending local indices (parallel key/index arrays), so the
+ *  sweep settles cells in true distance order rather than hop order. */
+const heapD: number[] = [];
+const heapI: number[] = [];
+
+/** Diagonal step cost — the sweep measures the same octile distance the renderer's
+ *  ring field does (CanvasRenderer.buildShockField), so what pulls and what is
+ *  drawn are the same set of cells by construction. */
+const DIAG = Math.SQRT2;
+
+function heapPush(d: number, i: number): void {
+  let c = heapD.length;
+  heapD.push(d);
+  heapI.push(i);
+  while (c > 0) {
+    const par = (c - 1) >> 1;
+    if (heapD[par] <= heapD[c]) break;
+    const td = heapD[par];
+    heapD[par] = heapD[c];
+    heapD[c] = td;
+    const ti = heapI[par];
+    heapI[par] = heapI[c];
+    heapI[c] = ti;
+    c = par;
+  }
+}
+
+/** Pop the nearest pending cell's local index, or -1 when the heap is empty. */
+function heapPop(): number {
+  const n = heapD.length;
+  if (n === 0) return -1;
+  const top = heapI[0];
+  const lastD = heapD.pop()!;
+  const lastI = heapI.pop()!;
+  if (heapD.length > 0) {
+    heapD[0] = lastD;
+    heapI[0] = lastI;
+    let par = 0;
+    const len = heapD.length;
+    for (;;) {
+      const l = 2 * par + 1;
+      const r = l + 1;
+      let m = par;
+      if (l < len && heapD[l] < heapD[m]) m = l;
+      if (r < len && heapD[r] < heapD[m]) m = r;
+      if (m === par) break;
+      const td = heapD[par];
+      heapD[par] = heapD[m];
+      heapD[m] = td;
+      const ti = heapI[par];
+      heapI[par] = heapI[m];
+      heapI[m] = ti;
+      par = m;
+    }
+  }
+  return top;
+}
 
 /** True if the field spreads *through* this cell: air, or any matter loose enough
  *  that a grain could be dragged through it — gas, liquid, powder, and the
@@ -174,12 +250,33 @@ function acceptsPull(sim: SimContext, x: number, y: number): boolean {
 /**
  * Sweep the field around one connected magnet body and pull everything
  * ferromagnetic in it one cell closer (or hold it, if it can't get closer). See
- * the header for why it's a breadth-first sweep and not a radius.
+ * the header for why it's a sweep out of the body's outline and not a radius.
  *
- * `bx`/`by` are the body's cells and `minX..maxY` its bounding box; the field's
- * outer boundary is that box grown by REACH (Euclidean distance to the box, so an
- * elongated magnet gets an elongated field with rounded ends rather than a circle
- * centred on nothing in particular).
+ * The sweep is a **geodesic (octile) shortest-path field**: a Dijkstra out of every
+ * body cell at once, one unit per orthogonal step and √2 per diagonal, cut off at
+ * REACH and blocked by structural solids. Two things fall out of measuring distance
+ * that way rather than in hops, and both are the point:
+ *
+ *   • **A grain is pulled toward the nearest part of the magnet, along the straight
+ *     line to it.** Counting hops made every direction within the diagonal cone
+ *     equally near, so the predecessor a cell recorded was whichever neighbour the
+ *     queue happened to reach it from — systematically a diagonal one. Matter under
+ *     a flat face crabbed sideways up a 45° staircase instead of rising straight
+ *     into it (자기력선이 평행한 곳에서도 45도로만 붙던 문제), and a grain beside a
+ *     tall face slid *down* along it. With octile costs the shortest path from a
+ *     cell straight below a face is straight up (5 beats 1·√2+4), so the pull is
+ *     perpendicular to a flat face and diagonal only where the geometry really is.
+ *   • **The pull covers exactly what the 자기력선 rings draw**, since the renderer's
+ *     ring field is the same octile Dijkstra (CanvasRenderer.buildShockField). The
+ *     old hop metric reached cells at off-diagonal angles that no ring was drawn in
+ *     (measured: 33 of 1091 candidates around an 8×8 body), which is now impossible
+ *     by construction rather than by tuning.
+ *
+ * Following the predecessor chain still walks *around* obstacles — that's what a
+ * geodesic field is — so the field bending around a corner is unchanged.
+ *
+ * `bx`/`by` are the body's surface cells and `minX..maxY` its bounding box (used
+ * only to size the sweep's budget).
  */
 function pullField(
   sim: SimContext,
@@ -190,56 +287,80 @@ function pullField(
   maxX: number,
   maxY: number,
 ): void {
-  const w = sim.width;
-  visited.clear();
+  // The local field box: the body's box grown by REACH (all the field can occupy),
+  // clipped to the grid. Everything below is indexed inside it.
+  const lx0 = Math.max(0, minX - REACH);
+  const ly0 = Math.max(0, minY - REACH);
+  const lx1 = Math.min(sim.width - 1, maxX + REACH);
+  const ly1 = Math.min(sim.height - 1, maxY + REACH);
+  const lbw = lx1 - lx0 + 1;
+  const lbh = ly1 - ly0 + 1;
+  const need = lbw * lbh;
+  if (fDist.length < need) {
+    fDist = new Float64Array(need);
+    fPar = new Int32Array(need);
+    fStamp = new Uint32Array(need);
+    fSettled = new Uint32Array(need);
+    fGen = 0; // fresh arrays read as generation 0 everywhere
+  }
+  if (fGen === 0xffffffff) {
+    fStamp.fill(0);
+    fSettled.fill(0);
+    fGen = 0;
+  }
+  fGen++;
   sweptX.length = 0;
   sweptY.length = 0;
-  sweptD.length = 0;
+  heapD.length = 0;
+  heapI.length = 0;
 
-  /** Euclidean distance from (x,y) to the body's bounding box, 0 inside it. */
-  const outsideReach = (x: number, y: number): boolean => {
-    const ox = x < minX ? minX - x : x > maxX ? x - maxX : 0;
-    const oy = y < minY ? minY - y : y > maxY ? y - maxY : 0;
-    return ox * ox + oy * oy > REACH * REACH;
-  };
+  // This sweep's cell budget: the box the field can occupy at all, which is exactly
+  // the region the rings are drawn in — so the pull reaches everywhere the halo says
+  // it does, whatever the body's size or shape. Only passable cells are ever taken,
+  // so this bounds the *region*, not the work. MAX_FIELD_CELLS is the runaway
+  // backstop.
+  const budget = Math.min(MAX_FIELD_CELLS, need);
+  let taken = 0;
 
-  // This sweep's cell budget: the box the field can occupy at all (the body's own
-  // box grown by REACH on every side), which is exactly the region the rings are
-  // drawn in — so the pull reaches everywhere the halo says it does, whatever the
-  // body's size or shape. Only passable cells are ever enqueued, so this bounds
-  // the *region*, not the work. MAX_FIELD_CELLS is the runaway backstop.
-  const budget = Math.min(
-    MAX_FIELD_CELLS,
-    (maxX - minX + 1 + 2 * REACH) * (maxY - minY + 1 + 2 * REACH),
-  );
-
-  /** Enqueue (x,y) at depth `d`, reached from flat index `from` (-1 = the body). */
-  const enqueue = (x: number, y: number, d: number, from: number): void => {
-    if (sweptX.length >= budget || !sim.inBounds(x, y)) return;
-    const k = y * w + x;
-    if (visited.has(k)) return;
-    if (outsideReach(x, y) || !isFieldPassable(sim, x, y)) return;
-    visited.set(k, from);
-    sweptX.push(x);
-    sweptY.push(y);
-    sweptD.push(d);
+  /** Relax (x,y) to distance `d` reached from local index `par` (-1 = the body). */
+  const relax = (x: number, y: number, d: number, par: number): void => {
+    if (d > REACH || x < lx0 || x > lx1 || y < ly0 || y > ly1) return;
+    const li = (y - ly0) * lbw + (x - lx0);
+    if (fStamp[li] === fGen) {
+      if (fDist[li] <= d) return; // already on a path at least as short
+    } else {
+      if (taken >= budget || !isFieldPassable(sim, x, y)) return;
+      fStamp[li] = fGen;
+      taken++;
+    }
+    fDist[li] = d;
+    fPar[li] = par;
+    heapPush(d, li);
   };
 
   // Seed: every cell touching the body (8-connected, so a grain sitting on a
-  // corner clings too) is at depth 1 and its "path back" is the magnet itself.
+  // corner clings too) starts one step out, and its "path back" is the magnet
+  // itself. A diagonal touch really is √2 away, which is what keeps a corner from
+  // out-pulling the flat face beside it.
   for (let i = 0; i < bx.length; i++) {
-    for (const [dx, dy] of DIR8) enqueue(bx[i] + dx, by[i] + dy, 1, -1);
+    for (const [dx, dy] of DIR8) relax(bx[i] + dx, by[i] + dy, dx && dy ? DIAG : 1, -1);
   }
 
-  // Grow the field outward. Nearest-first ordering is what the pull below relies
-  // on, so this must stay a queue (breadth-first), not a stack.
-  for (let head = 0; head < sweptX.length; head++) {
-    const d = sweptD[head];
+  // Settle the field outward, nearest first — the order the pull below relies on.
+  // A cell can sit in the heap more than once (re-relaxed onto a shorter path);
+  // only its final, settled visit is recorded and walks its neighbours.
+  for (;;) {
+    const li = heapPop();
+    if (li < 0) break;
+    if (fSettled[li] === fGen) continue;
+    fSettled[li] = fGen;
+    const x = lx0 + (li % lbw);
+    const y = ly0 + ((li / lbw) | 0);
+    sweptX.push(x);
+    sweptY.push(y);
+    const d = fDist[li];
     if (d >= REACH) continue;
-    const x = sweptX[head];
-    const y = sweptY[head];
-    const from = y * w + x;
-    for (const [dx, dy] of DIR8) enqueue(x + dx, y + dy, d + 1, from);
+    for (const [dx, dy] of DIR8) relax(x + dx, y + dy, d + (dx && dy ? DIAG : 1), li);
   }
 
   // Pull, nearest-first: the grain in front vacates before the one behind it steps
@@ -250,24 +371,21 @@ function pullField(
     if (!isPullable(sim, cx, cy)) continue;
     // How many cells the grain travels along the field path this tick. Normally
     // one — but a grain that has ALREADY resolved its own motion this scan gets
-    // two, and that second step is not a speed boost, it's the scan-order
-    // correction that makes the magnet work at all. The CA scans in the gravity
-    // direction first, so everything *below* a magnet takes its own gravity step
-    // before the magnet's cell is ever reached: pull it one cell and it has fallen
-    // one and risen one, hovering forever a cell above the floor instead of
-    // climbing. Spending the extra step there measures the pull from where the
-    // grain started the tick rather than from where gravity left it, so the field
-    // gains exactly one cell per tick from every direction — and a grain that fell
-    // off the magnet's face is put straight back onto it, which is what makes a
-    // clump *cling* rather than shiver.
+    // two, so the pull is measured from where the grain started the tick rather
+    // than from where something else left it. With the field's own gravity override
+    // (see `holdMagnetically` below) that is no longer the common case it was
+    // written for — matter in a live field doesn't take a gravity step of its own
+    // any more — but a grain shoved by a gust or a blast still arrives here already
+    // moved, and this is what puts it straight back on the magnet.
     let steps = sim.hasMoved(cx, cy) ? 2 : 1;
     while (steps-- > 0) {
-      const from = visited.get(cy * w + cx);
-      // undefined can't happen (every position walked here was swept), and -1 means
-      // the grain is already against the magnet — either way there's nowhere closer.
-      if (from === undefined || from < 0) break;
-      const tx = from % w;
-      const ty = (from / w) | 0;
+      const li = (cy - ly0) * lbw + (cx - lx0);
+      const par = fPar[li];
+      // A settled cell always has a predecessor; -1 means the grain is already
+      // against the magnet — either way there is nowhere closer to go.
+      if (fStamp[li] !== fGen || par < 0) break;
+      const tx = lx0 + (par % lbw);
+      const ty = ly0 + ((par / lbw) | 0);
       if (!acceptsPull(sim, tx, ty)) break; // blocked by the clump in front
       // swap carries the grain's temp/aux/tint (and marks both ends moved), so a
       // red-hot filing arrives still hot.
@@ -275,9 +393,15 @@ function pullField(
       cx = tx;
       cy = ty;
     }
-    // Hold it wherever it ended up, so the clump doesn't slide off the magnet on
-    // the next tick's gravity turn (see the header on holding).
+    // Hold it wherever it ended up: `markMoved` keeps the rest of *this* tick's
+    // scan off it, and `holdMagnetically` carries that over to the next tick, where
+    // it overrides the grain's own gravity step before the magnet has even been
+    // scanned (see SimContext.isMagnetHeld / Simulation.updateCell). Without the
+    // second one the grain falls a cell on every tick the scan reaches it first and
+    // is yanked back on the next — the shiver on a magnet's underside
+    // (떨어지려는 철가루와 당기는 자력이 충돌해 흔들리던 문제).
     sim.markMoved(cx, cy);
+    sim.holdMagnetically(cx, cy);
   }
 }
 

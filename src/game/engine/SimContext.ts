@@ -280,6 +280,61 @@ export class SimContext {
   readonly magnetField = new BodyFlood();
 
   /**
+   * Cells whose occupant a live magnet moved or held this tick and last tick — the
+   * field's **gravity override** (자력 영향 시 중력 오버라이드).
+   *
+   * A magnet's pull runs inside the magnet cell's own update, which the CA scan may
+   * reach long after the grain it is gripping. Without this, a grain under a magnet
+   * took its own gravity step on every tick the scan reached it first and was
+   * yanked back on the next — the visible shiver on a magnet's underside. Marking
+   * the grain moved only settles the *rest* of the current tick; this carries the
+   * grip into the next one, where `Simulation.updateCell` skips the held cell's own
+   * update entirely (no fall, no crawl) and leaves it to the magnet, which pulls it
+   * exactly one cell closer. Matter the field grips therefore moves only as the
+   * field moves it — which is also what already made a held clump stop reacting
+   * (see the header note in electromagnet.ts on holding).
+   *
+   * Two tick-keyed sets rather than one: the stamp has to survive into the next
+   * tick (that's the whole point), so the previous tick's set is kept and rolled
+   * over lazily on first touch of a new tick. A magnet that loses power stops
+   * stamping, so its grains resume falling one tick later. Sim-local, same
+   * reasoning as `wooferFlood`.
+   */
+  private magnetHoldTick = -1;
+  private magnetHoldCur: Set<number> = new Set();
+  private magnetHoldPrev: Set<number> = new Set();
+
+  /** Roll the hold sets over if they're still holding an earlier tick's state. */
+  private rollMagnetHold(): void {
+    if (this.magnetHoldTick === this.tick) return;
+    const stale = this.magnetHoldPrev;
+    this.magnetHoldPrev = this.magnetHoldCur;
+    this.magnetHoldCur = stale;
+    stale.clear();
+    this.magnetHoldTick = this.tick;
+  }
+
+  /** Claim (x,y)'s occupant for the magnetic field: it skips its own update next
+   *  tick, so gravity can't fight the pull (see the field note above). */
+  holdMagnetically(x: number, y: number): void {
+    this.rollMagnetHold();
+    this.magnetHoldCur.add(y * this.grid.width + x);
+  }
+
+  /** Whether any magnet is currently gripping anything — the cheap gate
+   *  `Simulation.updateCell` tests before paying for a lookup, so a world with no
+   *  powered magnet never touches this at all. */
+  get magnetGripping(): boolean {
+    this.rollMagnetHold();
+    return this.magnetHoldCur.size > 0 || this.magnetHoldPrev.size > 0;
+  }
+
+  /** Is the cell at flat index `i` held by a magnet this tick or the last one? */
+  isMagnetHeld(i: number): boolean {
+    return this.magnetHoldCur.has(i) || this.magnetHoldPrev.has(i);
+  }
+
+  /**
    * True once any Fan has stamped the wind field this tick (see setWind / Grid.wind).
    * Simulation.step reads it to clear the field lazily — only when a fan actually
    * wrote to it last tick — so a world with no fans never pays for the fill. Reset

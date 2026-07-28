@@ -489,7 +489,13 @@ export class Simulation {
   private updateCell(x: number, y: number): void {
     const g = this.grid;
     const i = g.idx(x, y);
-    if (!g.moved[i]) {
+    // A cell a live Electromagnet is gripping skips its own turn entirely — the
+    // field's gravity override (see SimContext.isMagnetHeld). It doesn't fall,
+    // crawl or react; the magnet moves it, one cell along the field, when the
+    // magnet's own cell is scanned. Gated on `magnetGripping` so a world without a
+    // powered magnet pays a single boolean for it.
+    const held = this.ctx.magnetGripping && this.ctx.isMagnetHeld(i);
+    if (!g.moved[i] && !held) {
       const id = g.cells[i];
       if (id !== EMPTY) {
         // Generalized lifetime (Material.life): a memoryless per-tick decay into
