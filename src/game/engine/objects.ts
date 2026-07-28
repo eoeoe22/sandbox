@@ -2289,13 +2289,36 @@ function nextSmokeStamp(ctx: SimContext): Int32Array {
   return smokeStamp;
 }
 
-/** True if the smoke front can travel *through* this cell: open air, or gas it can
- *  mingle with — which crucially includes the Smoke it laid down on earlier ticks,
- *  or a venting canister's own cloud would wall its front in after one tick. Any
- *  matter (solid, powder, liquid) stops the front. */
+/**
+ * True if the smoke front can travel *through* this cell. Only *structure* stops
+ * smoke — a wall, a stone block, a machine. Everything loose it seeps through:
+ *
+ *   - other gas, which crucially includes the Smoke it laid down on earlier ticks
+ *     (otherwise a venting canister's own cloud walls its front in after a tick);
+ *   - powder, because a sand bed is grains with gaps between them, not a seal;
+ *   - liquid, so a canister dropped in a pond still sends its plume up through
+ *     the water instead of going silent;
+ *   - a `porous` solid (Mesh, Turbine, Pump), which is built to let fluids pass
+ *     through as if it weren't there — the engine's own overlap rule already says
+ *     such a host admits a gas.
+ *
+ * Passing through is NOT the same as filling: `puffSmoke` still only ever writes
+ * into an empty cell, so the front travels through water and sand but only leaves
+ * smoke where smoke can actually be (액체·가루는 차단이 아니되 겹침 가능한 곳에만 생성).
+ * A submerged canister's plume therefore surfaces and blooms in the air above,
+ * and a buried one fills the pockets in the bed and the space over it, rather
+ * than either of them being smothered outright.
+ *
+ * Deliberately not written into the 겹침 (overlay) slot of a host that could take
+ * it: SimContext's movement seam is the sole enforcer of the (host, overlay)
+ * invariant (see its `canHostOverlap` note), and the object layer is read-only
+ * over the grid apart from the discrete spawns it already makes.
+ */
 function smokePassable(ctx: SimContext, x: number, y: number): boolean {
   const id = ctx.get(x, y);
-  return id === EMPTY || getMaterial(id).phase === Phase.Gas;
+  if (id === EMPTY) return true;
+  const m = getMaterial(id);
+  return m.phase !== Phase.Solid || m.porous === true;
 }
 
 /**
@@ -2308,9 +2331,10 @@ function smokePassable(ctx: SimContext, x: number, y: number): boolean {
  * what's behind. A plain "every empty cell within r" scan (what this used to be)
  * let a canister sealed in a box fill the room outside it, and let one on the far
  * side of a wall smoke straight through it. The front spreads only through open
- * air and existing gas (see smokePassable), so it rounds corners, threads gaps in
- * a sand pile, and pours out of a container's mouth instead of ignoring it — the
- * same geodesic treatment the Woofer's shockwave gets, for the same reason.
+ * air, loose matter and existing gas (see smokePassable), so it rounds corners,
+ * seeps through a sand bed or a pond, and pours out of a container's mouth
+ * instead of ignoring it — the same geodesic treatment the Woofer's shockwave
+ * gets, for the same reason. Only *structure* stops it.
  *
  * Both of the smoke bomb's stages are this one call with different numbers: a
  * small radius at the nozzle for the fuse-stage wisp, a large one around the whole
@@ -2367,7 +2391,7 @@ function puffDisc(
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_s) continue;
-      if (!smokePassable(ctx, nx, ny)) continue; // matter stops the front and shelters what's behind
+      if (!smokePassable(ctx, nx, ny)) continue; // structure stops the front and shelters what's behind
       stamp[nidx] = id_s;
       qx.push(nx);
       qy.push(ny);
