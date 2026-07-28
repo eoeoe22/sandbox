@@ -17,6 +17,7 @@ import { OXYGEN } from './oxygen';
 import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { ACID_SLIME } from './acidslime';
+import { WIRE } from './wire';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -49,6 +50,12 @@ import { ACID_SLIME } from './acidslime';
 //     acidic cousin aside), but no longer a dead end — a pulse carries a good
 //     stretch into a blob (on par with fresh Water) and genuinely carries on
 //     through (see below) rather than just reacting on contact.
+//   • Wire — a metal core in an insulating jacket: zero loss like the metals, but
+//     the only conductor that doesn't *leak*. A pulse on Wire hands off to Wire
+//     alone, never to a bare conductor beside it, so a cable crosses a water tank
+//     or an iron frame without electrifying it; it still reaches the appliance or
+//     charge at the end of the run, since those consume the pulse rather than
+//     relaying it. One tag, `Material.insulated`, read in the hand-off below.
 //
 // Class and strength used to fight over a single 8-bit `aux`, which made "add a
 // conductor" a zero-sum trade against "how far does current reach": the 8th
@@ -117,6 +124,7 @@ const CONDUCTOR_IDS = [
   ACID_SLIME.id,
   GALLIUM.id,
   LIQUID_GALLIUM.id,
+  WIRE.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
 // resistance, and the lever for "how far does current reach". At FULL_STRENGTH 63:
@@ -137,7 +145,11 @@ const CONDUCTOR_IDS = [
 // (…, GALLIUM 0, LIQUID GALLIUM 0) — both are metals (solid & molten Gallium),
 // so they conduct at the engine's floor exactly like Iron/Mercury: a pulse runs
 // full strength end to end through a Gallium wire or puddle.
-const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0];
+// (…, WIRE 0) — an insulated cable with a metal core, so it runs a pulse the
+// whole length of a cable at the engine's floor exactly like Iron. Its jacket
+// costs reach nothing; what it changes is *sideways* leakage, not distance (see
+// Material.insulated and the hand-off in updateSpark).
+const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // word, with class 0 reserved for "no conductor" (classes 1..CLASS_MASK = 1..255).
@@ -149,6 +161,15 @@ const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0];
 if (CONDUCTOR_IDS.length > CLASS_MASK) {
   throw new Error(
     `Too many spark conductors (${CONDUCTOR_IDS.length}) for a ${CLASS_BITS}-bit class field (max ${CLASS_MASK}).`,
+  );
+}
+// The two tables are indexed by the same (class − 1), so a conductor appended to
+// one and not the other reads `undefined` as its loss — `strength - undefined` is
+// NaN, `NaN > 0` is false, and the new conductor silently refuses to pass a pulse
+// at all. Fail at load instead of shipping a wire that quietly doesn't conduct.
+if (CONDUCTOR_LOSS.length !== CONDUCTOR_IDS.length) {
+  throw new Error(
+    `CONDUCTOR_LOSS has ${CONDUCTOR_LOSS.length} entries for ${CONDUCTOR_IDS.length} conductors — they must line up.`,
   );
 }
 
@@ -300,6 +321,12 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   const aux = sim.getAux(x, y);
   const myClass = aux & CLASS_MASK;
   const strength = aux >> CLASS_BITS;
+  // The conductor this pulse is riding, and whether that conductor's jacket keeps
+  // the current in (Wire — see Material.insulated). An insulated pulse hands off
+  // only to more of the same conductor; it still reaches appliances and charges
+  // below, which consume the pulse rather than spreading it.
+  const myConductorId = myClass === 0 ? EMPTY : classToId(myClass);
+  const insulated = myClass !== 0 && getMaterial(myConductorId).insulated === true;
 
   let arced = false;
   for (const [dx, dy] of DIR8) {
@@ -310,6 +337,13 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     if (nid === EMPTY) continue;
     const m = getMaterial(nid);
     if (m.conductive && sim.getAux(nx, ny) === 0) {
+      // 피복: a pulse riding an insulated cable never crosses into a *different*
+      // conductor — the puddle it runs through, the iron frame it's clipped to —
+      // only into more of the same cable. The check is on the conductor being
+      // entered, so it's one-way by construction: a bare Iron pulse still feeds a
+      // Wire it touches (that's how a cable gets power), it just can't get back
+      // out that way.
+      if (insulated && nid !== myConductorId) continue;
       // Hand the pulse on, losing strength for the medium it's entering. If the
       // pulse would arrive dead (or the conductor isn't one we can revert to),
       // it simply stops here — that decay is what makes current fade out in

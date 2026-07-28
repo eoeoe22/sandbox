@@ -54,6 +54,21 @@ export interface Material {
    */
   conductive?: boolean;
   /**
+   * 피복 전선 — a `conductive` material whose insulation keeps the current *in*.
+   * A Spark travelling on this conductor only ever hands the pulse on to another
+   * cell of the SAME material; it never energizes a bare conductor beside it
+   * (Water, Iron, brine, …), so a cable can be run straight through a puddle or
+   * bolted onto a steel wall without electrifying it. What it still does deliver
+   * to is the thing at the end of the run: an appliance (`directPulse`) or an
+   * explosive charge, both of which are one-way sinks that consume the pulse
+   * rather than spreading it (전선 → 장치). The gate is deliberately one-way:
+   * current may flow *into* the wire from a bare conductor or a battery terminal
+   * (that's how you feed it), it just can't flow back out into one. Read only by
+   * spark.ts's hand-off; omitted ⇒ an ordinary bare conductor that energizes
+   * every conductive neighbor.
+   */
+  insulated?: boolean;
+  /**
    * Electric-appliance sink: a hook fired when a live electric pulse reaches a
    * cell of this material — whether from a power source in *direct contact*
    * (Battery/LFP Battery `injectPulses`, Turbine `energizeNeighbors`) or from a
@@ -74,6 +89,18 @@ export interface Material {
    * device worked off a Battery but not a Turbine).
    */
   directPulse?: (sim: SimContext, x: number, y: number) => void;
+  /**
+   * 광전 효과 — a hook fired when a Heat Ray beam *strikes* a cell of this
+   * material (see heatray.ts). It is the light-side mirror of `directPulse`: the
+   * beam is absorbed by the cell (it neither reflects nor passes on) and, crucially,
+   * deposits NO heat — the material converts the light instead of soaking it, which
+   * is what lets a Solar Panel sit in a laser without cooking. What the hook does
+   * with it is the material's business; the panel pulses its adjacent conductors.
+   * Checked before the ordinary opaque-solid absorption, so declaring it alone is
+   * enough to opt a material out of beam heating. Omitted ⇒ the beam heats the cell
+   * as usual.
+   */
+  lightPulse?: (sim: SimContext, x: number, y: number) => void;
   /**
    * 자성 — ferromagnetic matter a powered Electromagnet's field pulls toward
    * itself (see materials/electromagnet.ts). A pure data tag: the magnet reads it
@@ -478,6 +505,26 @@ export interface Material {
    * rendering hint — the simulation still treats the cell as this material.
    */
   renderAsAux?: boolean;
+  /**
+   * Render this cell in one of a fixed set of colors, picked by its `aux` value
+   * (`auxPalette[aux % auxPalette.length]`) instead of the material's own
+   * `color` — a *per-cell* color that isn't a brightness nudge of one base tone
+   * the way `colorVary` is. The Firework Burst uses it: a shell's stars each roll
+   * one palette entry at launch and stamp it into every cell of the burst they
+   * open, so one volley paints half a dozen differently-coloured flowers out of a
+   * single material. Purely a rendering hint; the simulation only ever reads the
+   * aux value as an opaque index. Omit for an ordinary single-colour material.
+   */
+  auxPalette?: readonly number[];
+  /**
+   * Draw a photovoltaic cell grid (Solar Panel): rectangular cells of the base
+   * `color` separated by thin `lattice`-coloured seams — a seam on every 5th
+   * column and every 8th row, so each cell reads 4 wide × 7 tall like the panel's
+   * reference art. Positional (tied to x/y, not to the particle) like the Mesh
+   * weave, so a painted array lines up into one continuous panel however it's
+   * drawn. Purely a rendering hint the simulation never reads.
+   */
+  solarPattern?: boolean;
   /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound

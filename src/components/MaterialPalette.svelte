@@ -48,6 +48,7 @@
     'oildrum',
     'aciddrum',
     'dynamite',
+    'smokebomb',
   ];
   const OBJECT_ITEMS = $derived.by<{ key: ObjectKind; label: string }[]>(() => {
     void $locale;

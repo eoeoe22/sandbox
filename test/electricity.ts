@@ -34,6 +34,11 @@ import { WATER } from '../src/game/materials/water';
 import { SALTWATER } from '../src/game/materials/saltwater';
 import { ACID } from '../src/game/materials/acid';
 import { IRON } from '../src/game/materials/iron';
+import { STONE } from '../src/game/materials/stone';
+import { WIRE } from '../src/game/materials/wire';
+import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
+import { emitHeatRay } from '../src/game/materials/heatray';
+import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials'; // register all materials (side effect)
 
 // Pin the sim's randomness high so every `sim.chance(p)` with p < 1 comes out
@@ -357,6 +362,152 @@ function pulseCorner(
     'a battery on one corner spins up a 900-cell fan wall entirely',
     powered === side * side,
     `${powered}/${side * side} cells`,
+  );
+}
+
+// --- 5. Wire: 피복 — carries the full run, leaks into nothing -------------------
+// Wire's promise is *containment*, not reach: a pulse riding it must never cross
+// into a bare conductor touching the cable (see Material.insulated), while still
+// reaching the far end at no loss and still powering the machine it's wired to.
+//
+// The scene sandwiches the cable: a full row of Iron above it and a full row of
+// Water below, sealed in a Wall channel so the liquid row can't flow (the same
+// trick `reach` uses). If the jacket leaks even once, the neighbouring rows show
+// a Spark. The control run swaps the cable for bare Iron and must leak, which is
+// what proves the scene is actually capable of detecting a leak.
+
+/** Run a pulse down a `coreId` cable flanked by an Iron row and a Water row, and
+ *  report how far the pulse got along the core and whether either flanking row
+ *  ever carried a Spark. */
+function leakScene(coreId: number, len = 60): { coreReach: number; leaked: boolean } {
+  const grid = new Grid(len, 5);
+  const sim = new Simulation(grid);
+  for (let x = 0; x < len; x++) {
+    grid.set(x, 0, WALL.id);
+    grid.set(x, 1, IRON.id); // bare metal clipped along the top of the run
+    grid.set(x, 2, coreId); // the cable under test
+    grid.set(x, 3, WATER.id); // a puddle the run passes through
+    grid.set(x, 4, WALL.id);
+  }
+  for (let y = 1; y <= 3; y++) {
+    grid.set(0, y, WALL.id); // cap both ends so nothing drains out sideways
+    grid.set(len - 1, y, WALL.id);
+  }
+  grid.set(1, 2, SPARK.id);
+  grid.setAux(1, 2, packSpark(FULL_STRENGTH, conductorClass(coreId)));
+
+  let coreReach = 1;
+  let leaked = false;
+  for (let t = 0; t < len + 20; t++) {
+    sim.step();
+    for (let x = 0; x < len; x++) {
+      if (grid.get(x, 2) === SPARK.id && x > coreReach) coreReach = x;
+      if (grid.get(x, 1) === SPARK.id || grid.get(x, 3) === SPARK.id) leaked = true;
+    }
+  }
+  return { coreReach: coreReach - 1, leaked };
+}
+
+{
+  const wire = leakScene(WIRE.id);
+  const bare = leakScene(IRON.id);
+  check(
+    'a Wire pulse never crosses into the iron/water touching it',
+    !wire.leaked,
+    wire.leaked ? 'a flanking row carried a spark' : 'no leak in 60 cells of contact',
+  );
+  check(
+    'the same scene DOES leak for a bare conductor (the check can fail)',
+    bare.leaked,
+    `${bare.leaked}`,
+  );
+  check(
+    'a Wire still carries the pulse the whole run (zero loss)',
+    wire.coreReach > 50,
+    `${wire.coreReach} cells`,
+  );
+
+  // …and the pulse still gets *out* where it's supposed to: into the machine at
+  // the end of the cable. A device is a one-way sink (it consumes the pulse rather
+  // than relaying it), which is exactly why the jacket doesn't have to stop it.
+  const len = 40;
+  const grid = new Grid(len + 8, 6);
+  const sim = new Simulation(grid);
+  for (let x = 2; x < 2 + len; x++) grid.set(x, 2, WIRE.id);
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) grid.set(2 + len + dx, 1 + dy, FAN.id);
+  }
+  grid.set(2, 2, SPARK.id);
+  grid.setAux(2, 2, packSpark(FULL_STRENGTH, conductorClass(WIRE.id)));
+  for (let t = 0; t < len + 10; t++) sim.step();
+  let fanCells = 0;
+  let powered = 0;
+  for (let dy = 0; dy < 4; dy++) {
+    for (let dx = 0; dx < 4; dx++) {
+      fanCells++;
+      if (grid.getAux(2 + len + dx, 1 + dy) >> 2 > 0) powered++;
+    }
+  }
+  check(
+    'a Wire run still powers the device at its far end',
+    powered === fanCells,
+    `${powered}/${fanCells} fan cells`,
+  );
+}
+
+// --- 6. Solar Panel: light in, electricity out, no heat ------------------------
+// The panel's contract has two halves, and both are easy to break silently: a
+// Heat Ray striking it must (a) leave it COLD — the beam is converted, not
+// absorbed as heat, so the `lightPulse` branch has to run before heatray.ts's
+// ordinary impact heating — and (b) push a pulse into the conductor touching it.
+// The control fires the same beam at a Stone wall, which must cook, proving the
+// beam really is arriving.
+
+/** Fire one Heat Ray rightward down a corridor into a wall of `targetId` at x=20,
+ *  with an Iron lead bolted to the wall's back face. Returns the wall's peak
+ *  temperature and whether the lead ever carried a Spark. */
+function beamScene(targetId: number): { maxTemp: number; sparked: boolean } {
+  const grid = new Grid(30, 9);
+  const sim = new Simulation(grid);
+  for (let y = 1; y < 8; y++) {
+    grid.set(20, y, targetId);
+    grid.set(21, y, IRON.id);
+  }
+  emitHeatRay(sim.context, 3, 4, 1, 0);
+  let maxTemp = -Infinity;
+  let sparked = false;
+  for (let t = 0; t < 20; t++) {
+    sim.step();
+    for (let y = 1; y < 8; y++) {
+      if (grid.get(20, y) === targetId) maxTemp = Math.max(maxTemp, grid.getTemp(20, y));
+      if (grid.get(21, y) === SPARK.id) sparked = true;
+    }
+  }
+  return { maxTemp, sparked };
+}
+
+{
+  const panel = beamScene(SOLAR_PANEL.id);
+  const stone = beamScene(STONE.id);
+  check(
+    'a Heat Ray on a Solar Panel emits a Spark into the conductor behind it',
+    panel.sparked,
+    `${panel.sparked}`,
+  );
+  check(
+    'a Heat Ray does NOT heat the Solar Panel it strikes',
+    panel.maxTemp < AMBIENT_TEMP + 10,
+    `peak ${panel.maxTemp.toFixed(1)}° (ambient ${AMBIENT_TEMP}°)`,
+  );
+  check(
+    'the same beam DOES cook an ordinary wall (the check can fail)',
+    stone.maxTemp > AMBIENT_TEMP + 50,
+    `peak ${stone.maxTemp.toFixed(1)}°`,
+  );
+  check(
+    'and an ordinary wall emits no Spark (the panel is doing the work)',
+    !stone.sparked,
+    `${stone.sparked}`,
   );
 }
 

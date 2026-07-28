@@ -60,6 +60,7 @@ export const objectLabelsEn: Record<ObjectKind, string> = {
   oildrum: 'Crude Oil Drum',
   aciddrum: 'Acid Drum',
   dynamite: 'Dynamite',
+  smokebomb: 'Smoke Bomb',
 };
 
 export const objectLabelsKo: Record<ObjectKind, string> = {
@@ -68,6 +69,7 @@ export const objectLabelsKo: Record<ObjectKind, string> = {
   oildrum: '원유 드럼통',
   aciddrum: '산 드럼통',
   dynamite: '다이너마이트',
+  smokebomb: '연막탄',
 };
 
 // --- Material names ---------------------------------------------------------
@@ -201,4 +203,9 @@ export const materialNamesKo: Record<number, string> = {
   126: '초석',
   127: '성형작약',
   128: '알루미늄 가루',
+  129: '불꽃놀이 화약',
+  130: '불꽃 자탄',
+  131: '불꽃',
+  132: '전선',
+  133: '태양광 패널',
 };

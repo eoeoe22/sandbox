@@ -5,10 +5,10 @@
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — 아키텍처 & 스택: 개요·스택·디렉터리 구조·스레딩·배포/PR 프리뷰.
 - [FEATURES.md](./FEATURES.md) — 기능(UI·UX·편의): 화면비·경계 모드·HUD·브러시·컨트롤 UI·저장/복원·속도·연기·중력·오버레이·검색·즐겨찾기 등.
 - [PHYSICS.md](./PHYSICS.md) — 물리·엔진 시스템: 열전도·어는점·밀도 변위·색상 틴트·물리 엔진 고도화 1~3차·전기(스파크) 패킹과 `aux` 16비트 확장.
-- [ELECTRICITY.md](./ELECTRICITY.md) — 전기 계통(장치 쪽): 전기 장치 카테고리의 공용 활성화 규약 — **전기 세기에 관계없이 연결 부위 전역 즉시 활성화**, 공용 몸체 플러드(`engine/deviceBody.ts`)와 틱당 1회 memo, 새 장치 추가 절차, 검증 하네스. 배선 쪽(도체·펄스 세기 패킹)은 PHYSICS.md.
+- [ELECTRICITY.md](./ELECTRICITY.md) — 전기 계통(장치 쪽): 전기 장치 카테고리의 공용 활성화 규약 — **전기 세기에 관계없이 연결 부위 전역 즉시 활성화**, 공용 몸체 플러드(`engine/deviceBody.ts`)와 틱당 1회 memo, 새 장치 추가 절차, 검증 하네스. **전선(`insulated` — 옆으로 안 새는 배선)과 태양광 패널(`lightPulse` — 빛으로 발전)** 절도 여기. 배선 쪽(도체·펄스 세기 패킹)은 PHYSICS.md.
 - [MATERIALS.md](./MATERIALS.md) — 물질 도감: 전체 물질과 핵심 상호작용 카탈로그(카테고리별 표·상호작용 사슬).
 - [MATERIAL-SYSTEMS.md](./MATERIAL-SYSTEMS.md) — 물질군·시스템 노트: 물질군 도입 라운드의 엔진/인프라 설계 노트(공용 헬퍼·데이터 태그·크로스-물질 메커니즘)와 플레이 가이드 링크.
-- [OBJECTS.md](./OBJECTS.md) — 독립 오브젝트 시스템: 고무공·드럼통·다이너마이트, 오브젝트 물리/상호작용/브러시 연동.
+- [OBJECTS.md](./OBJECTS.md) — 독립 오브젝트 시스템: 고무공·드럼통·다이너마이트·연막탄, 오브젝트 물리/상호작용/브러시 연동.
 - [I18N.md](./I18N.md) — 다국어(i18n): 한국어/영어 전환, 번역 테이블 구조, 카테고리 키 규칙, 새 문자열·물질·객체 번역 추가 방법.
 - [WASM-ENGINE-PORTING.md](./WASM-ENGINE-PORTING.md) — 성능·이식 계획 + 착수 기록: WASM/멀티스레드 핵심 엔진 포팅 로드맵(측정→오프메인스레드→수치 커널 WASM→조건부 CA 스캔). **Phase 2 첫 커널(열확산 `diffuseHeat`)이 Rust/WASM으로 착수 완료**(§9) — 비트 동일 골든 테스트 + JS 폴백. 물질 89개는 워커 안 JS로 유지(포팅 부채 0)라는 결론은 그대로. 커널 빌드/구조는 [`wasm/README.md`](../wasm/README.md).
 - [PWA.md](./PWA.md) — PWA·오프라인 지원: 매니페스트/아이콘/서비스 워커 구성과

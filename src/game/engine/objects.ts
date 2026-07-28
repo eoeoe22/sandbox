@@ -14,6 +14,7 @@ import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
+import { SMOKE } from '../materials/smoke';
 import { VOID } from '../materials/void';
 
 /**
@@ -240,18 +241,72 @@ export interface SimDynamite {
   held?: boolean;
 }
 
-/** Anything in the object layer: circles (balls) and capsules (drums, dynamite)
- *  share one array on the Grid, discriminated by `kind`. */
-export type SimBody = SimObject | SimCapsule | SimDynamite;
+/**
+ * A smoke bomb — a capsule body (it shares the drum/dynamite segment+radius
+ * physics and 1-axis rotation, so it tumbles and rolls) that is a *smoke source*
+ * rather than an explosive. Thrown, it immediately starts trickling a wisp of
+ * Smoke from its nozzle; four seconds later the canister lets go and pours out a
+ * dense cloud for one second, and then it is spent and gone (소환 시 소량의 연기를
+ * 뿜다가 4초 후 대량의 연기를 1초간 발산 → 소멸).
+ *
+ * That's the whole lifecycle, and the two counters below are all the state it
+ * takes: `fuseTicks` runs the quiet trickle down, then `ventTicks` runs the
+ * discharge down, then the body is dropped. Nothing about it detonates — it
+ * carries no blast at all, which is exactly what distinguishes it from the
+ * dynamite it otherwise resembles structurally.
+ */
+export interface SimSmokeBomb {
+  kind: 'smokebomb';
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation of the long axis in radians (0 = upright, nozzle pointing up). */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque. */
+  angularVelocity: number;
+  /** Half the straight segment between the two round caps (cells). */
+  halfLength: number;
+  /** Cap radius (cells). */
+  radius: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia (see SimCapsule). */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — a steel canister barely bounces. */
+  restitution: number;
+  /** Consecutive ticks the footprint has sampled above the cook-off threshold, so
+   *  a stray hot pixel doesn't pop it early — only sustained heat does. */
+  heatTicks: number;
+  /** The canister's own heat reservoir (°) — see SimObject.temp. The 가열 brush
+   *  writes it, so heating one (even in mid-air) sets the charge off early. */
+  temp: number;
+  /** Ticks left of the quiet trickle before the heavy discharge starts. Reaching
+   *  0 — or a sustained bath of heat — opens the vent. */
+  fuseTicks: number;
+  /** Ticks left of the heavy discharge. 0 while still on the fuse; set the moment
+   *  the vent opens, and the body is dropped when it runs back down to 0. */
+  ventTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its physics
+   *  and its countdown alike are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
+/** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
+ *  smoke bombs) share one array on the Grid, discriminated by `kind`. */
+export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb;
 
 /**
  * The physics-only fields every capsule body shares — a medial segment of
  * half-length `halfLength` with cap radius `radius`, plus 1-axis rotation. The
  * capsule collision / buoyancy / integration routines (capsuleEnds,
  * deepestCapsuleContact, resolveCapsuleCollision, sampleMediumCapsule, stepCapsule)
- * operate through this structural type, so both the drum and the dynamite reuse
- * them with no per-kind branch — only the sprite and the destroy/trigger rules
- * differ by kind. SimCapsule and SimDynamite are both assignable to it.
+ * operate through this structural type, so the drum, the dynamite and the smoke
+ * bomb all reuse them with no per-kind branch — only the sprite and the
+ * destroy/trigger rules differ by kind. SimCapsule, SimDynamite and SimSmokeBomb
+ * are all assignable to it.
  */
 type CapsuleBody = {
   x: number;
@@ -453,6 +508,89 @@ export function createDynamite(
     temp: AMBIENT_TEMP,
     lit: true,
     fuseTicks,
+  };
+}
+
+/**
+ * Smoke-bomb defaults. A small steel canister — denser than Water (3) so it sinks,
+ * barely bouncy. Its capsule box (2·radius wide × 2·(halfLength+radius) tall =
+ * 6.5 × 10 cells) matches the 13×20 sprite's aspect, so display and collision
+ * agree exactly as they do for the drum and the dynamite.
+ */
+export const SMOKE_BOMB_RADIUS = 3.25;
+export const SMOKE_BOMB_HALF_LENGTH = 1.75;
+export const SMOKE_BOMB_DENSITY = 3.2;
+export const SMOKE_BOMB_RESTITUTION = 0.25;
+/** Max magnitude (rad/tick) of the small random spin a freshly-placed canister
+ *  spawns with, so it topples off its cap to one side instead of balancing —
+ *  the same gentle nudge the dynamite gets (see DYNAMITE_SPAWN_SPIN). */
+export const SMOKE_BOMB_SPAWN_SPIN = 0.06;
+/** How long the quiet trickle lasts before the canister lets go (기획: 4초). Sized
+ *  in *seconds* at the default sim rate, like the dynamite's fuse, so a faster or
+ *  slower sandbox scales the wall-clock delay along with everything else. */
+export const SMOKE_BOMB_FUSE_TICKS = Math.round(4 * SIM_HZ_AT_1X);
+/** How long the heavy discharge lasts before the spent canister vanishes (1초). */
+export const SMOKE_BOMB_VENT_TICKS = Math.round(1 * SIM_HZ_AT_1X);
+/** Per-tick chance the fuse-stage nozzle puffs one Smoke cell. Deliberately well
+ *  under 1: the first four seconds are meant to read as a thin wisp marking where
+ *  the canister landed (소량의 연기), so the discharge that follows is a clear step
+ *  change rather than more of the same. */
+const SMOKE_BOMB_TRICKLE_CHANCE = 0.35;
+/** Per-cell, per-tick chance the open vent seeds a Smoke cell somewhere in its
+ *  cloud radius. Across the ~520-cell disc below that's ~65 new cells a tick, so
+ *  one second of discharge blankets the canister's surroundings many times over
+ *  (대량의 연기) even as the cloud rises and thins. Occupied cells are simply
+ *  skipped, so a bomb wedged in a crevice vents through whatever gaps it has. */
+const SMOKE_BOMB_VENT_DENSITY = 0.13;
+/** Radius (in cells, as a multiple of the body's own reach) the discharge scatters
+ *  its cells over — a puff that erupts around the whole canister rather than
+ *  streaming from the nozzle the way the fuse-stage trickle does. */
+const SMOKE_BOMB_VENT_SPREAD = 2.6;
+/** Footprint/reservoir temperature (°) at/above which external heat cooks the
+ *  charge off early, cutting the fuse short and opening the vent now. Set at the
+ *  rubber ball's scorch point (300°) rather than the dynamite's 1100°: a smoke
+ *  composition is meant to be *lit*, so any real fire should set one off, and
+ *  there's no blast for an early trigger to make dangerous. */
+export const SMOKE_BOMB_IGNITE_TEMP = 300;
+/** Sustained ticks above SMOKE_BOMB_IGNITE_TEMP before the early trigger fires, so
+ *  a single hot splash doesn't pop it. */
+const SMOKE_BOMB_HEAT_TICKS = 5;
+
+/**
+ * Build a smoke bomb centered at (x,y), at rest and upright with its fuse already
+ * running, plus the same weak random spin the dynamite spawns with so it topples
+ * to one side. Mass and moment of inertia follow the shared capsule formulas.
+ */
+export function createSmokeBomb(
+  x: number,
+  y: number,
+  radius = SMOKE_BOMB_RADIUS,
+  halfLength = SMOKE_BOMB_HALF_LENGTH,
+): SimSmokeBomb {
+  const r = radius > 1 ? radius : 1;
+  const l = halfLength > 0 ? halfLength : 0;
+  const area = 4 * r * l + Math.PI * r * r;
+  const mass = SMOKE_BOMB_DENSITY * area;
+  const w = 2 * r;
+  const h = 2 * (l + r);
+  const momentOfInertia = (mass * (w * w + h * h)) / 12;
+  return {
+    kind: 'smokebomb',
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: (Math.random() * 2 - 1) * SMOKE_BOMB_SPAWN_SPIN,
+    halfLength: l,
+    radius: r,
+    mass,
+    momentOfInertia,
+    restitution: SMOKE_BOMB_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    fuseTicks: SMOKE_BOMB_FUSE_TICKS,
+    ventTicks: 0,
   };
 }
 
@@ -2089,10 +2227,90 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   return true;
 }
 
+/** Place one Smoke cell at (x,y) if that cell is open. Smoke is a gas the CA
+ *  already knows how to move (it rises, diffuses and fades on its own timer), so
+ *  the canister's whole job is seeding cells and letting the grid take it from
+ *  there. spawn() marks the cell moved, so a fresh puff isn't re-processed the
+ *  same tick. Silently skipped on an occupied cell — a bomb buried in sand vents
+ *  through whatever gaps it has rather than carving them. */
+function puffSmoke(ctx: SimContext, x: number, y: number): void {
+  const cx = Math.floor(x);
+  const cy = Math.floor(y);
+  if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) return;
+  ctx.spawn(cx, cy, SMOKE.id);
+}
+
+/**
+ * The heavy discharge: seed Smoke across the disc around the whole canister (not
+ * just its nozzle — a venting or ruptured can gushes from everywhere at once),
+ * each open cell taking a puff with probability `density`. Written as a footprint
+ * scan with a per-cell roll, the same shape spawnDrumDebris uses, so the cloud is
+ * evenly dense over the disc and the randomness runs through the sim's own seam
+ * (ctx.chance) rather than a private Math.random. `density` 1 fills every open
+ * cell at once — the burst a destroyed canister lets go.
+ */
+function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
+  if (density <= 0) return;
+  const spread = bodyReach(o) * SMOKE_BOMB_VENT_SPREAD;
+  const s2 = spread * spread;
+  const x0 = Math.floor(o.x - spread);
+  const x1 = Math.ceil(o.x + spread);
+  const y0 = Math.floor(o.y - spread);
+  const y1 = Math.ceil(o.y + spread);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      const dx = cx + 0.5 - o.x;
+      const dy = cy + 0.5 - o.y;
+      if (dx * dx + dy * dy > s2) continue;
+      if (density < 1 && !ctx.chance(density)) continue;
+      puffSmoke(ctx, cx, cy);
+    }
+  }
+}
+
+/**
+ * Per-tick lifecycle for a smoke bomb, after this tick's heat conduction (called
+ * from evaluateTriggers with the resolved `heat`). Two stages and nothing else:
+ *   1. FUSE — a thin wisp trickles from the nozzle while `fuseTicks` runs down.
+ *      Sustained external heat (fire, lava, the 가열 brush) cooks the charge off
+ *      early and opens the vent now, cutting the rest of the fuse.
+ *   2. VENT — the canister pours out a dense cloud every tick while `ventTicks`
+ *      runs down, and is dropped when it hits 0 (소멸).
+ * Returns true to keep the canister, false once it's spent.
+ */
+function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean {
+  if (o.ventTicks <= 0) {
+    // --- Stage 1: the fuse. ---
+    if (heat >= SMOKE_BOMB_IGNITE_TEMP) {
+      o.heatTicks++;
+      if (o.heatTicks >= SMOKE_BOMB_HEAT_TICKS) o.fuseTicks = 0; // cooked off early
+    } else if (o.heatTicks > 0) {
+      o.heatTicks--;
+    }
+    if (o.fuseTicks > 0) {
+      o.fuseTicks--;
+      // A wisp from the nozzle, which sits just past the cap along the canister's
+      // long axis and so tracks the right end however the can has tumbled — the
+      // same tip the dynamite's fuse flame uses.
+      if (ctx.chance(SMOKE_BOMB_TRICKLE_CHANCE)) {
+        const [ux, uy] = capsuleAxis(o);
+        const reach = o.halfLength + o.radius + 0.5;
+        puffSmoke(ctx, o.x - ux * reach, o.y - uy * reach);
+      }
+      return true;
+    }
+    o.ventTicks = SMOKE_BOMB_VENT_TICKS; // fuse spent (or cooked off) — open the vent
+  }
+  // --- Stage 2: the discharge. ---
+  ventSmoke(o, ctx, SMOKE_BOMB_VENT_DENSITY);
+  return --o.ventTicks > 0;
+}
+
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
  *  scattered Metal Powder and, if it was carrying anything, gushes its contents
  *  (원유/산) across the wreckage; a stick of dynamite detonates (a knock or a
- *  passing blast sets it off — chain reactions); a rubber ball leaves nothing. */
+ *  passing blast sets it off — chain reactions); a smoke bomb's canister ruptures
+ *  and dumps its whole remaining charge at once; a rubber ball leaves nothing. */
 function destroyByproduct(o: SimBody, ctx: SimContext): void {
   if (o.kind === 'drum') {
     spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
@@ -2100,6 +2318,10 @@ function destroyByproduct(o: SimBody, ctx: SimContext): void {
     o.state = 'destroyed';
   } else if (o.kind === 'dynamite') {
     detonateDynamite(o, ctx);
+  } else if (o.kind === 'smokebomb') {
+    // Blown open rather than burned down: the charge that would have vented over a
+    // whole second goes up at once, filling the cloud disc in a single tick.
+    ventSmoke(o, ctx, 1);
   }
 }
 
@@ -2143,6 +2365,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // A dynamite stick has its own terminal logic (fuse countdown + heat cook-off +
   // tip interactions); it never melts or burns away like a drum/ball.
   if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
+  // A smoke bomb likewise runs its own two-stage countdown (trickle → discharge →
+  // spent) rather than melting or burning.
+  if (o.kind === 'smokebomb') return stepSmokeBomb(o, ctx, heat);
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
