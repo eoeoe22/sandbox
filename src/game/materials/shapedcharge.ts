@@ -155,11 +155,12 @@ function detonateJet(sim: SimContext, x: number, y: number): void {
     fx += jx;
     fy += jy;
   }
-  // Count backward from the muzzle (the trigger cell is on this walk by
-  // construction — it's in the same contiguous run), consuming each counted
-  // cell behind the muzzle into the shared flash. flashCell marks them moved,
-  // so none re-triggers its own jet this tick; anything beyond the cap stays
-  // a live charge and follows up next tick off the adjacent flash.
+  // Count backward from the muzzle, consuming each counted cell behind it
+  // into the shared flash. flashCell marks them moved, so none re-triggers its
+  // own jet this tick. Anything beyond the cap stays a live charge — including
+  // the trigger cell itself when it sits deeper than the cap behind the muzzle
+  // — and follows up next tick off the adjacent flash, one cap-sized chunk per
+  // tick until the column is spent.
   let n = 1;
   let bx = fx;
   let by = fy;
@@ -172,11 +173,15 @@ function detonateJet(sim: SimContext, x: number, y: number): void {
   // Scale the reach budget by the column length, and every NON-forward cost by
   // the same factor, so a longer charge bores DEEPER at the same bore width —
   // sides/back stay "거의 0" instead of fattening with n (a 5-deep column
-  // would otherwise scratch ~13 cells sideways instead of ~3).
+  // would otherwise scratch ~13 cells sideways instead of ~3). The forward
+  // entry is picked by INDEX: NEIGHBORS orders the four orthogonals
+  // [up, down, left, right] exactly like the direction codes, so the forward
+  // index IS `dir` (robust even if a future tuning pass sets some other
+  // multiplier to 1).
   const opts: DetonateOptions = {
     soloSource: true,
     reach: JET_REACH * n,
-    costMul: n === 1 ? JET_COST_MUL[dir] : JET_COST_MUL[dir].map((c) => (c === F ? F : c * n)),
+    costMul: n === 1 ? JET_COST_MUL[dir] : JET_COST_MUL[dir].map((c, i) => (i === dir ? c : c * n)),
     pierceProof: true,
     pressure: false,
     rimHandler: (s, rx, ry, dx, dy) => {
