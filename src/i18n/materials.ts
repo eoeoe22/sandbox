@@ -197,4 +197,6 @@ export const materialNamesKo: Record<number, string> = {
   122: '펌프',
   123: '전자석',
   124: '흑요석',
+  125: '황',
+  126: '초석',
 };

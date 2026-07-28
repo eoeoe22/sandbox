@@ -121,6 +121,8 @@ import { LIQUID_GALLIUM } from './liquidgallium';
 import { MERCURY_VAPOR } from './mercuryvapor';
 import { PUMP } from './pump';
 import { ELECTROMAGNET } from './electromagnet';
+import { SULFUR } from './sulfur';
+import { SALTPETER } from './saltpeter';
 
 export {
   EMPTY_MAT,
@@ -241,6 +243,8 @@ export {
   MERCURY_VAPOR,
   PUMP,
   ELECTROMAGNET,
+  SULFUR,
+  SALTPETER,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -290,6 +294,8 @@ export const MATERIALS = [
   ACID,
   ACID_VAPOR,
   GUNPOWDER,
+  SULFUR,
+  SALTPETER,
   NITRO,
   BLAST,
   BLUE_FLAME,
