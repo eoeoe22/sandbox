@@ -31,9 +31,13 @@ import { THERMITE } from './thermite';
 // mixing it with rust first gets you a cutting charge.
 //
 // It is deliberately NOT `magnetic` (aluminum isn't ferrous), which makes it the
-// first powder an Electromagnet *can't* pick up — so a heap of mixed metal dust
-// can now actually be sorted: sweep the field over it and the iron/rust grains
-// leave, the aluminum stays.
+// first *ferrous-looking* dust an Electromagnet refuses: every other steel-grey
+// powder in the palette — Metal Powder, Rust Powder, Iron Ore — answers the
+// field, so a mixed heap of metal dust can now actually be sorted, the iron
+// grains marching off and the aluminum staying put. (It is not the only
+// non-magnetic metal powder — Sodium never carried the tag either — but Sodium
+// is a soft alkali metal that reads and behaves nothing like iron filings, so
+// nobody was ever tempted to sweep a magnet over it.)
 const SPEC: Combustible = {
   // Between Coal Powder (0.035) and Wood (0.06): a metal dust front creeps
   // rather than races — it took real heat to start and it doesn't hurry.
@@ -43,7 +47,7 @@ const SPEC: Combustible = {
   // grain nearby. (Flame in direct contact still lights it at `burnChance`
   // above, as it does every fuel — see tryBurn.)
   autoIgniteTemp: 1000,
-  // The hottest ordinary fuel here — past Iron (1200°), Glass (1250°) and
+  // The hottest ordinary fuel here — past Iron (1200°), Glass (1150°) and
   // Stone (1100°), so burning aluminum genuinely melts what it rests on. Kept
   // just under Blue Flame / `OXY_MAX_PIN` (1800°) so the oxygen forced-draught
   // boost in combustion.ts still *raises* the pin instead of clamping it down.
@@ -61,8 +65,23 @@ function updateAluminumPowder(x: number, y: number, sim: SimContext): void {
 const MIX_CHANCE = 0.25;
 // …and the same 150° cold gate. Mixing is *grinding*, not reacting: a pile
 // that's already hot enough to be doing something on its own should do that
-// instead. The margin here is enormous (this powder autoignites at 1000°, Rust
-// Powder doesn't melt until 1538°), so the recipe can never pre-empt the burn.
+// instead. The margin is enormous (this powder autoignites at 1000°, Rust Powder
+// melts at IRON_MELT_TEMP 1200°), so the recipe can never pre-empt either.
+//
+// One asymmetry worth naming, because it differs from the hand-rolled
+// black-powder helper: reactions.ts checks `tempMax` against the cell that
+// *declares* the rule only, so this gates the aluminum grain, never its rust
+// partner (gunpowdermix.ts, checking both sides itself, has no such gap). A
+// scorching rust grain touching a still-cold aluminum grain can therefore be
+// pulled into Thermite. Measured, the window is small and self-closing: with a
+// rust bed at 600° under cold aluminum, only 14 of 200 ticks had any aluminum
+// left under the gate before conduction lifted it past too (6 of 200 at 1400°),
+// and the conversion is roughly halved against an ambient pile. Past 1200° the
+// rust melts out from under the recipe entirely and nothing converts at all.
+// The outcome where it does fire is the sensible one rather than a glitch: the
+// Thermite it produces inherits that heat, lands above its own 900°
+// autoignition, and lights on the spot — which is what mixing aluminum into
+// red-hot iron oxide ought to do.
 const MIX_MAX_TEMP = 150;
 
 export const ALUMINUM_POWDER = register({
