@@ -273,8 +273,10 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
   const w = sim.width;
   if (sim.magnetFielded.has(y * w + x)) return;
 
-  // Walk the connected body (4-connected, like every other appliance's body walk),
-  // recording its cells and bounding box, and claim all of it for this tick.
+  // Walk the connected *powered* body (4-connected, like every other appliance's
+  // body walk — but gated to cells whose countdown is live, see the neighbor
+  // guard below), recording its cells and bounding box, and claim the walked
+  // chunk for this tick.
   const bx: number[] = [];
   const by: number[] = [];
   let minX = x;
@@ -298,11 +300,37 @@ function updateElectromagnet(x: number, y: number, sim: SimContext): void {
       const ny = cy + dy;
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== ELECTROMAGNET.id) continue;
       const k = ny * w + nx;
-      if (seen.has(k)) continue;
+      // Two guards beyond this walk's own `seen`, both there so the chunks a
+      // large body is broken into are a *stable partition* rather than an
+      // accident of where the CA scan happened to enter the body this tick:
+      //   • `magnetFielded` — skip cells an earlier capped walk already
+      //     claimed this tick (the same double-guard the power flood uses with
+      //     magnetFlooded below). Without it each successive chunk's DFS
+      //     re-treads its predecessors' cells, and when the scan direction
+      //     opposes the walk's fixed DIR4 bias — every other tick — a long bar
+      //     shatters into hundreds of mostly-duplicate chunks (measured: a
+      //     2000-cell bar swept as 1745 chunks / ~447k pushes).
+      //   • `getAux > 0` — walk only *powered* cells. An unpowered stretch of
+      //     magnet (a body bigger than one pulse's capped flood, or freshly
+      //     painted extensions) used to be dragged into whichever chunk
+      //     reached it first, so the walked set — and with it the pull seeds
+      //     and the emitted field — depended on the walk's start cell and
+      //     flip-flopped with the alternating scan. Powered-only, the chunk
+      //     union is exactly the powered cell set no matter how the partition
+      //     falls, and dead magnet doesn't seed a pull it isn't making.
+      // Together: chunk count stays ceil(powered/MAX_BODY), each powered cell
+      // is swept once, and the renderer's membership fingerprint over the
+      // emitted entries holds still across scan directions.
+      if (seen.has(k) || sim.magnetFielded.has(k) || sim.getAux(nx, ny) <= 0) continue;
       seen.add(k);
       stack.push(nx, ny);
     }
   }
+
+  // Publish the live body for the renderer's contour-ring effect (자기력선) —
+  // re-stamped every powered tick alongside the pull itself, so the rings appear
+  // and vanish exactly with the field (see Grid.magnetFields).
+  sim.emitMagnetField(bx, by, REACH);
 
   pullField(sim, bx, by, minX, minY, maxX, maxY);
 }
