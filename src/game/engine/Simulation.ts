@@ -498,14 +498,15 @@ export class Simulation {
     // field's gravity override (see SimContext.isMagnetHeld). It doesn't fall,
     // crawl or react; the magnet moves it, one cell along the field, when the
     // magnet's own cell is scanned. Gated on `magnetGripping` so a world without a
-    // powered magnet pays a single boolean for it, and on the occupant still being
-    // magnetic: the grip is stamped per *cell*, and a cell can change hands between
-    // ticks (the player erases the held grain and paints water into it) — without
-    // this the newcomer would inherit a grip meant for something else and hang in
-    // the air for a tick.
+    // powered magnet pays a single boolean for it. The `magneticId` test is the
+    // cheap half of "is this grip actually this cell's": only magnetic matter is
+    // ever gripped, so anything else skips the lookup entirely; `isMagnetHeld` then
+    // checks the grip was taken out on this very material, since a cell can change
+    // hands between ticks — the player erases the held filing and paints something
+    // else in, or another grain arrives (see SimContext's note).
     const id = g.cells[i];
     const held =
-      this.magneticId[id] === 1 && this.ctx.magnetGripping && this.ctx.isMagnetHeld(i);
+      this.magneticId[id] === 1 && this.ctx.magnetGripping && this.ctx.isMagnetHeld(i, id);
     if (!g.moved[i] && !held) {
       if (id !== EMPTY) {
         // Generalized lifetime (Material.life): a memoryless per-tick decay into

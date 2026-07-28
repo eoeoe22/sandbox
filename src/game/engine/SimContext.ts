@@ -294,15 +294,26 @@ export class SimContext {
    * field moves it — which is also what already made a held clump stop reacting
    * (see the header note in electromagnet.ts on holding).
    *
-   * Two tick-keyed sets rather than one: the stamp has to survive into the next
-   * tick (that's the whole point), so the previous tick's set is kept and rolled
-   * over lazily on first touch of a new tick. A magnet that loses power stops
-   * stamping, so its grains resume falling one tick later. Sim-local, same
-   * reasoning as `wooferFlood`.
+   * Two tick-keyed maps rather than one: the stamp has to survive into the next
+   * tick (that's the whole point), so the previous tick's is kept and rolled over
+   * lazily on first touch of a new tick. A magnet that loses power stops stamping,
+   * so its grains resume falling one tick later. Sim-local, same reasoning as
+   * `wooferFlood`.
+   *
+   * Each entry records *what* was gripped, not just where. A grip is a claim on a
+   * grain, but the only handle a CA has on a grain is the cell it sits in, and a
+   * cell can change hands between ticks — the player erases the filing and paints
+   * something else into it, or another grain arrives. Storing the material id and
+   * requiring it to match means a grip can only ever apply to the same kind of
+   * matter it was taken out on; anything else in that cell behaves normally
+   * (a cell that changes from Metal Powder to Water, or to Iron Ore, is not held).
+   * A grain of the *same* material moving into the cell is indistinguishable from
+   * the one that was there, and is left held for that one tick — harmless, since a
+   * live magnet grips it on the same tick anyway.
    */
   private magnetHoldTick = -1;
-  private magnetHoldCur: Set<number> = new Set();
-  private magnetHoldPrev: Set<number> = new Set();
+  private magnetHoldCur: Map<number, number> = new Map();
+  private magnetHoldPrev: Map<number, number> = new Map();
 
   /** Roll the hold sets over if they're still holding an earlier tick's state. */
   private rollMagnetHold(): void {
@@ -315,10 +326,13 @@ export class SimContext {
   }
 
   /** Claim (x,y)'s occupant for the magnetic field: it skips its own update next
-   *  tick, so gravity can't fight the pull (see the field note above). */
+   *  tick, so gravity can't fight the pull (see the field note above). The claim is
+   *  recorded against whatever material is in the cell right now, and only that
+   *  material can redeem it. */
   holdMagnetically(x: number, y: number): void {
     this.rollMagnetHold();
-    this.magnetHoldCur.add(y * this.grid.width + x);
+    const i = y * this.grid.width + x;
+    this.magnetHoldCur.set(i, this.grid.cells[i]);
   }
 
   /** Whether any magnet is currently gripping anything — the cheap gate
@@ -329,9 +343,10 @@ export class SimContext {
     return this.magnetHoldCur.size > 0 || this.magnetHoldPrev.size > 0;
   }
 
-  /** Is the cell at flat index `i` held by a magnet this tick or the last one? */
-  isMagnetHeld(i: number): boolean {
-    return this.magnetHoldCur.has(i) || this.magnetHoldPrev.has(i);
+  /** Is the cell at flat index `i`, holding material `id`, gripped by a magnet this
+   *  tick or the last one? False when the cell has changed hands since (see above). */
+  isMagnetHeld(i: number, id: number): boolean {
+    return this.magnetHoldCur.get(i) === id || this.magnetHoldPrev.get(i) === id;
   }
 
   /**
