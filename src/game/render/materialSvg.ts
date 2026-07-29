@@ -36,7 +36,7 @@
 import { EMPTY, Phase, type Material } from '../engine/types';
 import { getMaterial } from '../materials/registry';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
-import { tinted, buildGlow, shade } from './color';
+import { hex, tinted, buildGlow, shade } from './color';
 import { spritePaths, pixelSvg } from './spriteSvg';
 
 /**
@@ -308,12 +308,9 @@ function patchSvg(buf: Uint32Array, n: number): string {
   }
   const sparse = new Uint32Array(buf.length);
   for (let i = 0; i < buf.length; i++) sparse[i] = buf[i] === bg ? 0 : buf[i];
-  // The background rect is written by hand rather than through spriteRects
-  // because it spans the whole tile as one shape, not N one-row runs.
-  const r = bg & 0xff;
-  const g = (bg >> 8) & 0xff;
-  const b = (bg >> 16) & 0xff;
-  const bgHex = '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+  // The background rect is written by hand rather than through spritePaths
+  // because it spans the whole tile as one shape, not n one-row runs.
+  const bgHex = hex(bg);
   return pixelSvg(
     n,
     n,

@@ -23,7 +23,14 @@
 //   • The size budget. The palette's search view has no virtualization, so all
 //     126 icons can be in the DOM at once.
 
-// Must come before anything that could build an icon.
+// Written above the imports for emphasis, but note that is NOT what sequences it:
+// ES modules evaluate their whole import graph before any of the importing
+// module's own top-level statements, wherever those statements appear in the
+// file. This override therefore runs *after* the registry is populated, and it
+// is safe only because nothing in that graph builds an icon at module-evaluation
+// time (materialSvgFor is lazy and memoized on first call). `check`ing that the
+// trap is still armed at the first icon build, below, is what actually holds the
+// guarantee — don't rely on the line position here.
 const REAL_RANDOM = Math.random;
 Math.random = () => {
   throw new Error('material icon generation must be deterministic (no Math.random)');
@@ -42,6 +49,22 @@ function check(name: string, ok: boolean, detail = ''): void {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
   if (!ok) failures++;
 }
+
+/** Run a check whose subject may be malformed enough to throw while being read.
+ *  Without this a single unparseable icon aborts the process at whichever check
+ *  touches it first, and every check after that never runs — so a one-line
+ *  regression reports as one failure instead of the dozen it actually caused. */
+function checkThrows(name: string, body: () => void): void {
+  try {
+    body();
+  } catch (e) {
+    check(name, false, (e as Error).message);
+  }
+}
+
+// Nothing has built an icon yet — every generator call in this file comes after
+// this point, so the trap above is provably in force for all of them.
+check('the no-random trap is armed before the first icon is built', Math.random !== REAL_RANDOM);
 
 const byName = (name: string): Material => {
   const m = (MATERIALS as readonly Material[]).find((x) => x.name === name);
@@ -98,7 +121,53 @@ function ascii(m: Material): string {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Golden tiles — one per pattern family, in the renderer's branch order.
+// 1. Every palette material produces structurally sane markup.
+//    Runs before the goldens so a broken emitter reports as one structural
+//    failure rather than as eight mangled pictures.
+// ---------------------------------------------------------------------------
+
+const all = MATERIALS as readonly Material[];
+let worstBytes = 0;
+let worstName = '';
+let totalBytes = 0;
+let badMarkup: string[] = [];
+let notFullBleed: string[] = [];
+
+for (const m of all) {
+  const svg = materialSvgFor(m);
+  totalBytes += svg.length;
+  if (svg.length > worstBytes) {
+    worstBytes = svg.length;
+    worstName = m.name;
+  }
+  // Nothing document-scoped: these strings are injected with {@html} and the
+  // same one can appear several times in one document at once.
+  if (/\bid=|<defs|<style|url\(|<script|<image|<use\b/.test(svg)) badMarkup.push(m.name);
+  // Full-bleed: the swatch is a filled tile, so a transparent hole would show the
+  // chip's background through — and that background changes when the chip is
+  // selected, which would make the icon shift colour on click. Asserted against
+  // the emitted markup, not against raster()'s reconstruction: raster() seeds the
+  // whole grid from the background rect before overlaying paths, so it fabricates
+  // full coverage by construction and could never observe a gap.
+  const vb = /viewBox="0 0 (\d+) \d+"/.exec(svg);
+  const n = vb ? vb[1] : '?';
+  if (!svg.includes(`<rect x="0" y="0" width="${n}" height="${n}" fill="#`)) notFullBleed.push(m.name);
+  if (/fill="none"|fill-opacity|opacity=/.test(svg)) notFullBleed.push(`${m.name} (see-through fill)`);
+  try {
+    raster(svg);
+  } catch (e) {
+    badMarkup.push(`${m.name}: ${(e as Error).message}`);
+  }
+}
+
+check('every palette material has an icon', all.length > 0 && all.every((m) => materialSvgFor(m).length > 0), `${all.length} materials`);
+check('no document-scoped names in any icon', badMarkup.length === 0, badMarkup.join(', '));
+check('every icon paints its whole tile opaquely', notFullBleed.length === 0, notFullBleed.join(', '));
+check('largest icon stays under 4 KB', worstBytes < 4096, `${worstName} ${worstBytes}B`);
+check('all icons together stay under 250 KB', totalBytes < 250_000, `${(totalBytes / 1024) | 0} KB for ${all.length}`);
+
+// ---------------------------------------------------------------------------
+// 2. Golden tiles — one per pattern family, in the renderer's branch order.
 //
 // Each of these materials also carries `lattice` (except the batteries), so a
 // checkerboard appearing in any of them means the branch chain was reordered.
@@ -208,8 +277,10 @@ const GOLDEN: Record<string, string> = {
 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
-  const got = ascii(byName(name));
-  check(`${name} tile matches its golden`, got === want, got === want ? '' : '\n' + got);
+  checkThrows(`${name} tile matches its golden`, () => {
+    const got = ascii(byName(name));
+    check(`${name} tile matches its golden`, got === want, got === want ? '' : '\n' + got);
+  });
 }
 
 // The batteries' pattern colour is the renderer's literal flat black, not a
@@ -218,44 +289,6 @@ for (const [name, want] of Object.entries(GOLDEN)) {
   const { grid: g } = raster(materialSvgFor(byName('Lithium Battery')));
   check('battery staircase is flat black', g.includes('#000000'), [...new Set(g)].join(' '));
 }
-
-// ---------------------------------------------------------------------------
-// 2. Every palette material produces a sane icon.
-// ---------------------------------------------------------------------------
-
-const all = MATERIALS as readonly Material[];
-let worstBytes = 0;
-let worstName = '';
-let totalBytes = 0;
-let badMarkup: string[] = [];
-let notFullBleed: string[] = [];
-
-for (const m of all) {
-  const svg = materialSvgFor(m);
-  totalBytes += svg.length;
-  if (svg.length > worstBytes) {
-    worstBytes = svg.length;
-    worstName = m.name;
-  }
-  // Nothing document-scoped: these strings are injected with {@html} and the
-  // same one can appear several times in one document at once.
-  if (/\bid=|<defs|<style|url\(|<script|<image|<use\b/.test(svg)) badMarkup.push(m.name);
-  // Full-bleed: the swatch is a filled tile, so a transparent hole would show
-  // the chip's background through — and the chip's background changes when it is
-  // selected, which would make the icon shift on click.
-  try {
-    const { grid: g } = raster(svg);
-    if (g.some((c) => !/^#[0-9a-f]{6}$/.test(c))) notFullBleed.push(m.name);
-  } catch (e) {
-    badMarkup.push(`${m.name}: ${(e as Error).message}`);
-  }
-}
-
-check('every palette material has an icon', all.length > 0 && all.every((m) => materialSvgFor(m).length > 0), `${all.length} materials`);
-check('no document-scoped names in any icon', badMarkup.length === 0, badMarkup.join(', '));
-check('every icon covers its whole tile', notFullBleed.length === 0, notFullBleed.join(', '));
-check('largest icon stays under 4 KB', worstBytes < 4096, `${worstName} ${worstBytes}B`);
-check('all icons together stay under 250 KB', totalBytes < 250_000, `${(totalBytes / 1024) | 0} KB for ${all.length}`);
 
 // ---------------------------------------------------------------------------
 // 3. Flat stays flat; textured stays textured.
@@ -282,6 +315,12 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
   let violations: string[] = [];
   for (const m of all) {
     const amp = varyAmplitude(m);
+    // Skip every branch that puts a second colour on the tile: those cells are a
+    // different base, so measuring their deviation from `m.color` is meaningless.
+    // `amp === 0` covers the remaining hint branches (arrow/windArrow/triArrow/
+    // coil/stripe/solar/battery) because every material carrying one of those is
+    // a flat Solid today — if one ever pairs a hint with a `colorVary`, this
+    // check will start reporting it rather than silently skipping it.
     if (amp === 0 || m.glow || m.auxPalette || m.tintPalette || m.checker2x2 || m.lattice) continue;
     const base = m.color;
     const br = base & 0xff;

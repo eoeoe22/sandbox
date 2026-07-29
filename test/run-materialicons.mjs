@@ -1,5 +1,5 @@
-// Bundles and runs the wooden-box behavioural harness (test/materialicons.ts) under
-// Node, stubbing the browser-only `?url` wasm import exactly like
+// Bundles and runs the material palette icon harness (test/materialicons.ts)
+// under Node, stubbing the browser-only `?url` wasm import exactly like
 // run-active-tiles.mjs does. Run: `node test/run-materialicons.mjs`.
 import { build } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
