@@ -38,6 +38,13 @@ import { getMaterial } from '../materials/registry';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { hex, tinted, buildGlow, shade } from './color';
 import { spritePaths, pixelSvg } from './spriteSvg';
+import { HAND_ICONS } from './handIcons';
+
+/** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
+ *  Unlike the derived patches, 24 is not a pixel-alignment choice — the drawing
+ *  is a silhouette rather than a repeating tile, so it survives the 18 CSS px
+ *  swatch's 0.75× reduction without needing cells to land on whole pixels. */
+const HAND_ICON_CELLS = 24;
 
 /**
  * Patch edge, in cells. 9 is chosen so the icon lands on whole device pixels at
@@ -335,23 +342,65 @@ function patchSvg(buf: Uint32Array, n: number): string {
   );
 }
 
-/** id → generated markup. Memoized at module scope, not inside a component: the
- *  palette's category and search lists are `$derived.by`, so they re-run on every
- *  locale switch and every keystroke — building 126 icons per keystroke would be
- *  a real cost, building them once is free. */
+/** id → markup. Memoized at module scope, not inside a component: the palette's
+ *  category and search lists are `$derived.by`, so they re-run on every locale
+ *  switch and every keystroke — building 126 icons per keystroke would be a real
+ *  cost, building them once is free. */
 const CACHE = new Map<number, string>();
 
 /**
+ * The icon this module *derives*, ignoring any hand-drawn art.
+ *
+ * Separate from `materialSvgFor` so the harness can keep pinning the branch
+ * chain for materials that now ship hand art: Solar Panel is one of the golden
+ * tiles precisely because its `solarPattern` branch needs pinning, and that
+ * stays true after a drawn icon takes over its chip.
+ */
+export function generatedSvgFor(m: Material): string {
+  const { buf, n } = patchFor(m);
+  return patchSvg(buf, n);
+}
+
+/** A material's name → the key its hand-drawn file is stored under. Mirrors
+ *  `iconKey` in scripts/icon-svg.mjs, which names the files. */
+function iconKey(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
  * SVG markup for a material's palette swatch — inject with Svelte `{@html}`.
- * The string is built from the material registry and this module's own
- * arithmetic (no user input), and contains only `<rect>`s.
+ *
+ * Hand-drawn art wins where it exists; everything else is derived from the
+ * renderer's own branch chain. The override is a thin top layer by design —
+ * a material needs hand art only when its identity is an idea rather than a
+ * colour or a texture (Void, Clone, …), or when the derived tile came out
+ * wrong. Adding a `.svg` to temp/material-icons/ and rebuilding the module is
+ * the whole wiring; nothing in the material's own definition changes.
+ *
+ * The string is built from the material registry, this module's arithmetic, and
+ * checked-in art that `scripts/icon-svg.mjs` has validated — no user input — and
+ * contains only `<rect>`s.
  */
 export function materialSvgFor(m: Material): string {
   let svg = CACHE.get(m.id);
   if (svg === undefined) {
-    const { buf, n } = patchFor(m);
-    svg = patchSvg(buf, n);
+    const hand = HAND_ICONS[iconKey(m.name)];
+    // Hand art is authored at 24 cells and already normalized to bare rects; it
+    // only needs the same wrapper the derived tiles get, so both size and
+    // rasterize identically in the palette.
+    svg = hand ? pixelSvg(HAND_ICON_CELLS, HAND_ICON_CELLS, hand, 'mat-svg') : generatedSvgFor(m);
     CACHE.set(m.id, svg);
   }
   return svg;
+}
+
+/** Whether `m`'s chip comes from a checked-in drawing rather than the chain. */
+export function hasHandIcon(m: Material): boolean {
+  return HAND_ICONS[iconKey(m.name)] !== undefined;
+}
+
+/** Every hand-icon key that ships, for the harness to reconcile against the
+ *  palette — a file whose name matches no material would silently never draw. */
+export function handIconKeys(): readonly string[] {
+  return Object.keys(HAND_ICONS);
 }

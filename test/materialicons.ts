@@ -37,7 +37,13 @@ Math.random = () => {
 };
 
 import { MATERIALS } from '../src/game/materials/index';
-import { materialSvgFor, GAS_CLOUD_ROWS } from '../src/game/render/materialSvg';
+import {
+  materialSvgFor,
+  generatedSvgFor,
+  hasHandIcon,
+  handIconKeys,
+  GAS_CLOUD_ROWS,
+} from '../src/game/render/materialSvg';
 import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
@@ -76,16 +82,27 @@ const byName = (name: string): Material => {
   return m;
 };
 
-/** Rasterize a generated icon back to a grid of `#rrggbb`, which also proves the
- *  emitted markup is exactly the full-tile background rect plus per-colour run
- *  paths it claims to be. */
+/** Rasterize an icon back to a grid of `#rrggbb`, which also proves the emitted
+ *  markup is only the shapes it claims to be.
+ *
+ *  Handles both kinds the palette ships: a derived tile (one full-tile rect plus
+ *  per-colour run paths) and a hand-drawn one (a full-tile rect plus plain
+ *  rects). Keeping one rasterizer means every structural check below applies to
+ *  both without knowing which it is looking at. */
 function raster(svg: string): { grid: string[]; n: number } {
   const vb = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
   if (!vb || vb[1] !== vb[2]) throw new Error('icon viewBox is not square: ' + svg.slice(0, 120));
   const n = +vb[1];
-  const bg = new RegExp(`<rect x="0" y="0" width="${n}" height="${n}" fill="(#[0-9a-f]{6})"/>`).exec(svg);
-  if (!bg) throw new Error('icon has no full-tile background rect: ' + svg.slice(0, 120));
-  const grid: string[] = new Array(n * n).fill(bg[1]);
+  const rects = [...svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="(#[0-9a-f]{6})"\/>/g)];
+  const bg = rects[0];
+  if (!bg || +bg[1] !== 0 || +bg[2] !== 0 || +bg[3] !== n || +bg[4] !== n)
+    throw new Error('icon does not open with a full-tile background rect: ' + svg.slice(0, 120));
+  const grid: string[] = new Array(n * n).fill(bg[5]);
+  for (const r of rects.slice(1)) {
+    const [x, y, w, h] = [+r[1], +r[2], +r[3], +r[4]];
+    if (x + w > n || y + h > n) throw new Error('rect leaves the tile: ' + r[0]);
+    for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) grid[j * n + i] = r[5];
+  }
   let painted = 0;
   for (const pm of svg.matchAll(/<path fill="(#[0-9a-f]{6})" d="([^"]+)"\/>/g)) {
     for (const seg of pm[2].matchAll(/M(\d+) (\d+)h(\d+)v1h-(\d+)z/g)) {
@@ -97,9 +114,9 @@ function raster(svg: string): { grid: string[]; n: number } {
       painted += run;
     }
   }
-  // Everything else in the markup must be one of those two shapes.
-  const shapes = (svg.match(/<(rect|path|circle|polygon|g)\b/g) ?? []).length;
-  const accounted = 1 + (svg.match(/<path /g) ?? []).length;
+  // Every shape in the markup must be one this loop actually accounted for.
+  const shapes = (svg.match(/<(rect|path|circle|polygon|ellipse|g)\b/g) ?? []).length;
+  const accounted = rects.length + (svg.match(/<path /g) ?? []).length;
   if (shapes !== accounted) throw new Error('unexpected shape element in icon');
   if (painted > n * n) throw new Error('paths overlap');
   return { grid, n };
@@ -109,7 +126,9 @@ function raster(svg: string): { grid: string[]; n: number } {
  *  pattern here is the material's own `color`, since the pattern is always the
  *  minority of cells — and `o` = the pattern colour. */
 function ascii(m: Material): string {
-  const svg = materialSvgFor(m);
+  // Reads the generator directly. Solar Panel's chip is hand-drawn art now, but
+  // its `solarPattern` branch is still live and still what this golden pins.
+  const svg = generatedSvgFor(m);
   const { grid: g, n } = raster(svg);
   const bg = new RegExp(`width="${n}" height="${n}" fill="(#[0-9a-f]{6})"`).exec(svg)![1];
   if (bg !== hex(m.color)) throw new Error(`${m.name}: pattern outweighs its base colour`);
@@ -291,7 +310,7 @@ for (const [name, want] of Object.entries(GOLDEN)) {
 // The batteries' pattern colour is the renderer's literal flat black, not a
 // shade of the base — a regression to `lattice` would be invisible in ASCII.
 checkThrows('battery staircase is flat black', () => {
-  const { grid: g } = raster(materialSvgFor(byName('Lithium Battery')));
+  const { grid: g } = raster(generatedSvgFor(byName('Lithium Battery')));
   check('battery staircase is flat black', g.includes('#000000'), [...new Set(g)].join(' '));
 });
 
@@ -300,7 +319,7 @@ checkThrows('battery staircase is flat black', () => {
 // ---------------------------------------------------------------------------
 
 /** Distinct colours in a material's icon. */
-const tones = (m: Material): number => new Set(raster(materialSvgFor(m)).grid).size;
+const tones = (m: Material): number => new Set(raster(generatedSvgFor(m)).grid).size;
 
 for (const name of ['Stone', 'Iron', 'Wall', 'Mercury', 'Liquid Gallium']) {
   const label = `${name} is drawn flat`;
@@ -310,7 +329,7 @@ for (const name of ['Stone', 'Iron', 'Wall', 'Mercury', 'Liquid Gallium']) {
   });
 }
 checkThrows('a flat material costs one shape', () => {
-  check('a flat material costs one shape', materialSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
+  check('a flat material costs one shape', generatedSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
 });
 
 for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
@@ -340,7 +359,7 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
     // Per material rather than around the sweep: one unreadable icon must not
     // hide the amplitudes of the ninety-odd that come after it.
     try {
-      for (const c of new Set(raster(materialSvgFor(m)).grid)) {
+      for (const c of new Set(raster(generatedSvgFor(m)).grid)) {
         const d = parseInt(c.slice(1, 3), 16) - br;
         // The channel clamps at 0/255, so only an *unclamped* overshoot is a bug.
         if (Math.abs(d) > amp && br + d > 0 && br + d < 255) violations.push(`${m.name} ${d} vs ±${amp}`);
@@ -358,7 +377,7 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
 // (22) is *higher* than Sand's (18), so a naive icon would get this backwards.
 checkThrows('a liquid shimmers less than a powder', () => {
   const spread = (m: Material): number => {
-    const cs = [...new Set(raster(materialSvgFor(m)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
+    const cs = [...new Set(raster(generatedSvgFor(m)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
     return Math.max(...cs) - Math.min(...cs);
   };
   const sand = spread(byName('Sand'));
@@ -379,7 +398,7 @@ for (const name of ['Lava', 'Molten Metal', 'Slag']) {
   const label = `${name} shows a heat ramp, hot at the top`;
   checkThrows(label, () => {
     const m = byName(name);
-    const { grid: g, n } = raster(materialSvgFor(m));
+    const { grid: g, n } = raster(generatedSvgFor(m));
     const lum = (c: string) =>
       parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11;
     const topRow = g.slice(0, n).reduce((a, c) => a + lum(c), 0) / n;
@@ -418,7 +437,7 @@ for (const name of ['Steam', 'Smoke', 'Chlorine']) {
   const label = `${name} is a solid-filled cloud`;
   checkThrows(label, () => {
     const m = byName(name);
-    const svg = materialSvgFor(m);
+    const svg = generatedSvgFor(m);
     const { grid: g, n } = raster(svg);
     check(`${name} uses the finer gas grid`, n === 18, `${n} cells`);
     // The cloud is the material's own colour; everything outside it is the board.
@@ -448,7 +467,7 @@ check('every GAS_CLOUD row is as wide as the cloud is tall',
 // is actually behind a gas cell in play, not an invented dark.
 checkThrows('the gas surround is the board background', () => {
   check('the gas surround is the board background',
-    new Set(raster(materialSvgFor(byName('Steam'))).grid).has(hex(getMaterial(EMPTY).color)));
+    new Set(raster(generatedSvgFor(byName('Steam'))).grid).has(hex(getMaterial(EMPTY).color)));
 });
 
 // A gas that DOES carry a grain (none ship today, but the branch guards for it)
@@ -459,17 +478,72 @@ checkThrows('the gas cloud only claims flat gases', () => {
     all.every((m) => !(m.phase === Phase.Gas && varyAmplitude(m) > 0) || tones(m) > 2));
 });
 checkThrows('a glowing gas still takes the glow branch', () => {
-  check('a glowing gas still takes the glow branch', raster(materialSvgFor(byName('Blast'))).n === 9);
+  check('a glowing gas still takes the glow branch', raster(generatedSvgFor(byName('Blast'))).n === 9);
 });
 
 // ---------------------------------------------------------------------------
-// 5. The two palette-array materials show their palette, not one colour.
+// 5. The hand-drawn override layer.
+//
+// Eleven materials whose identity is an idea rather than a colour or a texture
+// ship a checked-in drawing instead of a derived tile. What matters here is that
+// the layer is a thin cap: it replaces the chip and nothing else, the derived
+// tile underneath is still built and still correct, and a drawing whose filename
+// matches no material never silently disappears.
+// ---------------------------------------------------------------------------
+
+checkThrows('hand-drawn icons replace the chip', () => {
+  const hand = all.filter(hasHandIcon);
+  check('some materials ship hand-drawn art', hand.length > 0, `${hand.length} of ${all.length}`);
+
+  // Every key must name a real palette material. A typo'd filename would build
+  // into the module, pass every other check, and simply never be drawn.
+  const names = new Set(all.map((m) => m.name.toLowerCase().replace(/\s+/g, '-')));
+  const orphans = handIconKeys().filter((k) => !names.has(k));
+  check('every hand icon names a real palette material', orphans.length === 0, orphans.join(', '));
+
+  const wrong = hand.filter((m) => raster(materialSvgFor(m)).n !== 24);
+  check('hand icons are drawn on the 24-cell tile', wrong.length === 0, wrong.map((m) => m.name).join(', '));
+
+  // The override really is what the palette gets — not the derived tile.
+  const notOverridden = hand.filter((m) => materialSvgFor(m) === generatedSvgFor(m));
+  check('the override actually wins over the derived tile', notOverridden.length === 0,
+    notOverridden.map((m) => m.name).join(', '));
+
+  // …and it wins for nobody else.
+  const stolen = all.filter((m) => !hasHandIcon(m) && materialSvgFor(m) !== generatedSvgFor(m));
+  check('materials without art still get the derived tile', stolen.length === 0,
+    stolen.map((m) => m.name).join(', '));
+});
+
+// Solar Panel is the case that motivated splitting the two functions: its chip is
+// hand art now, but `solarPattern` is still a live renderer branch, so the golden
+// above must keep testing it. This is what would break if someone "simplified"
+// generatedSvgFor away.
+checkThrows('a hand-drawn material still derives its tile underneath', () => {
+  const sp = byName('Solar Panel');
+  check('Solar Panel ships hand art', hasHandIcon(sp));
+  check('…and its solarPattern tile is still derived', raster(generatedSvgFor(sp)).n === 9);
+});
+
+// Hand art is authored against the material's registered colour, so a chip that
+// no longer resembles its material would be a mis-filed drawing.
+checkThrows('hand art is built on its material\'s own colour', () => {
+  const off: string[] = [];
+  for (const m of all.filter(hasHandIcon)) {
+    const bg = /<rect x="0" y="0" width="24" height="24" fill="(#[0-9a-f]{6})"\/>/.exec(materialSvgFor(m));
+    if (bg?.[1] !== hex(m.color)) off.push(`${m.name} ${bg?.[1]} vs ${hex(m.color)}`);
+  }
+  check('every hand icon opens on its material colour', off.length === 0, off.join(', '));
+});
+
+// ---------------------------------------------------------------------------
+// 6. The two palette-array materials show their palette, not one colour.
 // ---------------------------------------------------------------------------
 
 checkThrows('Fireworks speckles all three palette colours', () => {
   const fw = byName('Fireworks');
   const hues = new Set(
-    raster(materialSvgFor(fw)).grid.map((c) => {
+    raster(generatedSvgFor(fw)).grid.map((c) => {
       // Collapse brightness so only the underlying palette entry remains.
       const r = parseInt(c.slice(1, 3), 16);
       const g = parseInt(c.slice(3, 5), 16);
@@ -483,7 +557,7 @@ checkThrows('Fireworks speckles all three palette colours', () => {
 
 checkThrows('Seed sprouts green at the top, dormant brown at the base', () => {
   const seed = byName('Seed');
-  const { grid: g, n } = raster(materialSvgFor(seed));
+  const { grid: g, n } = raster(generatedSvgFor(seed));
   const green = (c: string) => parseInt(c.slice(3, 5), 16) - parseInt(c.slice(1, 3), 16);
   const top = g.slice(0, n).reduce((a, c) => a + green(c), 0) / n;
   const bot = g.slice(n * (n - 1)).reduce((a, c) => a + green(c), 0) / n;
