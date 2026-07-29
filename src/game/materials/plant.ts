@@ -38,6 +38,11 @@ import { tryBurn, type Combustible } from './combustion';
 //   • Nothing grows into a spot that already has more than CROWD_LIMIT plant
 //     neighbours, which is what keeps branches thin and stops two shoots that
 //     drift together from merging back into a slab.
+//   • A tip that has run out of vigour becomes a BUD, and a bud leafs: it fills
+//     the open cells around it with foliage that never grows or branches itself.
+//     Branches alone are a bare frame — the leaf clusters on their ends are what
+//     make the plant read as full. Leaves may bunch against more neighbours than
+//     a branch may (LEAF_CROWD), and stop on their own once they have.
 //   • A bud that is still well watered occasionally drops a SEED — the plant's
 //     own way of spreading (see seed.ts), closing the Water → Dirt → Seed →
 //     Plant loop.
@@ -97,9 +102,9 @@ const GEN_MASK = 0b111;
 const INIT_BIT = 1 << 15;
 // Fork depth. Deep and short beats shallow and long: with only three forks and
 // long runs between them a plant came out as a handful of long crooked limbs —
-// more legs than foliage. Five forks with a run of 1-3 cells between them gives
+// more legs than foliage. Six forks with a run of 1-3 cells between them gives
 // the same height out of many more twigs, which is what reads as a bush.
-const MAX_GEN = 5;
+const MAX_GEN = 6;
 
 /** Moisture a fresh sprout (a germinated Seed) starts with, so it can climb out
  *  of the soil straight away before its roots have topped up. */
@@ -117,12 +122,19 @@ const SOIL_MOISTURE = 76; // what damp ground alone sustains — enough for a mo
 // spent its vigour as one long bare stalk with a token Y on top. At 4 the
 // gradient reaches roughly twice as far and the crown actually fills in, while
 // the cap it puts on height (moisture / WICK_STEP cells from water) is still
-// what stops a plant climbing forever.
-const WICK_STEP = 4;
+// what stops a plant climbing forever. At 3 the outermost twigs can still afford
+// to fork, which is where the difference between a bush and a bare frame is.
+const WICK_STEP = 3;
 const DECAY_CHANCE = 0.5; // chance of losing 1 moisture per tick
 const GROW_CHANCE = 0.09; // how often a tip attempts to advance
-const GROW_COST = 14; // moisture a tip spends to put out one new cell
-const BRANCH_COST = 38; // a fork puts out two cells and needs real reserves
+const GROW_COST = 12; // moisture a tip spends to put out one new cell
+const BRANCH_COST = 30; // a fork puts out two cells and needs real reserves
+const LEAF_COST = 9; // …and a leaf is the cheapest thing a plant makes
+const LEAF_CHANCE = 0.05; // how often a spent bud puts out another leaf
+// Leaves may sit against more neighbours than a growing branch may: branches
+// have to stay thin or the plant fills in as a slab, but foliage is *supposed*
+// to bunch up. This split is what puts leafy clusters on the ends of bare twigs.
+const LEAF_CROWD = 4;
 const TURN_CHANCE = 0.3; // chance a tip's heading wanders one step
 const SHOOT_CHANCE = 0.0025; // chance an exposed, wet stem puts out a new shoot
 const SEED_CHANCE = 0.004; // chance a well-fed bud sets a seed
@@ -249,6 +261,26 @@ function sprout(
 ): void {
   sim.spawn(tx, ty, PLANT.id); // marks moved → the new cell waits for next tick
   sim.setAux(tx, ty, pack(m - WICK_STEP, true, dir, seg, gen));
+}
+
+/** Reservoir-sample one empty neighbour of (x,y) that foliage may take — looser
+ *  than canGrowInto, so a bud can bunch leaves where a branch couldn't go. */
+function pickLeafSpot(x: number, y: number, sim: SimContext): boolean {
+  let count = 0;
+  let found = false;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny) || !sim.isEmpty(nx, ny)) continue;
+    if (plantNeighbours(nx, ny, sim) > LEAF_CROWD) continue;
+    count++;
+    if (sim.randInt(count) === 0) {
+      growX = nx;
+      growY = ny;
+      found = true;
+    }
+  }
+  return found;
 }
 
 /** Reservoir-sample one random empty neighbour of (x,y) into growX/growY. */
@@ -395,6 +427,16 @@ function growTip(x: number, y: number, sim: SimContext, a: number): number {
   if (m >= SEED_COST && sim.chance(SEED_CHANCE) && pickEmpty(x, y, sim)) {
     sim.spawn(growX, growY, SEED.id);
     return withMoist(a, m - SEED_COST);
+  }
+
+  // Otherwise it leafs, filling the space around itself with foliage. A leaf is
+  // spent growth: no vigour, no segment, never a tip, so it neither grows nor
+  // shoots — it just sits there being green. The crowd rule stops the cluster
+  // when the bud is properly surrounded.
+  if (m >= LEAF_COST && sim.chance(LEAF_CHANCE) && pickLeafSpot(x, y, sim)) {
+    sim.spawn(growX, growY, PLANT.id);
+    sim.setAux(growX, growY, pack(m - WICK_STEP, false, dirOf(a), 0, 0));
+    return withMoist(a, m - LEAF_COST);
   }
   return a;
 }

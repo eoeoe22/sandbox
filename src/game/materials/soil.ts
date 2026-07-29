@@ -1,3 +1,4 @@
+import { EMPTY } from '../engine/types';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { DIRT } from './dirt';
@@ -19,7 +20,8 @@ import { ASH } from './ash';
 // broken — you did everything right and nothing happened.
 //
 // So the ground counts as damp when, straight down from the cell, within
-// ROOT_REACH cells and without leaving the soil, there is any of:
+// ROOT_REACH cells and without leaving the soil (bar one cell of slack for a
+// cavity — see GAP_ALLOWANCE), there is any of:
 //   • standing fresh Water or Mud (a real source — roots consume it), or
 //   • loose ground that has soaked water into its pores (a damp bed — a trickle
 //     that isn't consumed; it drains on its own soon enough).
@@ -40,6 +42,13 @@ export function isFreshWater(id: number): boolean {
  *  enough to find what a poured bucket drains down to in a hand-drawn bed. */
 export const ROOT_REACH = 10;
 
+/** How many empty cells the path down may cross. Ground moves: wet Dirt turns to
+ *  Mud and Mud oozes, so the cell under a plant can slump away and leave it
+ *  standing over a cavity — and with a strict "soil all the way down" rule that
+ *  plant starves on a bed that is still soaking wet, for reasons nothing on
+ *  screen explains. One cell of slack lets roots bridge that. */
+const GAP_ALLOWANCE = 1;
+
 /** Whether the cell findMoisture() last landed on is a source that can actually
  *  be drunk down (standing Water/Mud) or merely damp ground (a soaked grain,
  *  which is left alone). Module scratch rather than an allocated result tuple —
@@ -53,6 +62,7 @@ export let moistDrinkable = false;
  * ground; `moistDrinkable` says which of the two kinds it is.
  */
 export function findMoisture(x: number, y: number, sim: SimContext, reach: number): number {
+  let gaps = 0;
   for (let d = 1; d <= reach; d++) {
     const ny = y + d;
     if (!sim.inBounds(x, ny)) return -1;
@@ -61,7 +71,12 @@ export function findMoisture(x: number, y: number, sim: SimContext, reach: numbe
       moistDrinkable = true;
       return ny;
     }
-    if (!isSoil(id)) return -1; // rock or open air — the root path ends here
+    if (id === EMPTY) {
+      // A cavity the ground left behind (see GAP_ALLOWANCE) — cross it once.
+      if (++gaps > GAP_ALLOWANCE) return -1;
+      continue;
+    }
+    if (!isSoil(id)) return -1; // rock — the root path ends here
     if (sim.getOverlay(x, ny) === WATER.id) {
       moistDrinkable = false; // damp ground: a trickle, not a puddle to drink
       return ny;
