@@ -201,37 +201,88 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 
 ---
 
-## 7. 물질 팔레트 아이콘에만 적용되는 추가 규칙
+## 7. 물질 팔레트 아이콘
 
-오브젝트가 아니라 **물질** 아이콘을 만들 때는 위 규칙에 더해:
+### 7.0 먼저 — 대부분은 이미 자동 생성된다
 
-- **캔버스와 같은 공식을 재생한다.** 물질의 인게임 질감은 전부
-  `src/game/tint.ts` + `CanvasRenderer`의 분기 사슬에서 나온다. 아이콘이 눈대중
-  근사를 하면 팔레트와 캔버스가 따로 논다. 진폭은 `varyAmplitude(m)`,
-  모드는 `varyMode(m)`, 밝기 오프셋은 `d = ((src - 128) * amp) >> 7` 뒤
-  채널별 클램프(`CanvasRenderer.ts:928-935, 553`).
-- **`Math.random()` 금지.** 캔버스의 틴트는 셀에 저장된 바이트라 아이콘이
-  읽을 수 없다. 대신 `(id, x, y)`의 **순수 해시**로 0..255를 합성해 같은 공식에
-  넣는다. 랜덤을 쓰면 같은 물질 칩이 플라이아웃과 검색 결과에서 다르게 보인다.
-- **읽히는 크기가 셋이다**: 팔레트 스와치 18×18, 피커 트리거 16×16, 돋보기
-  11×11 CSS px. 11px에서 진흙이 되는 패턴은 실패다. 타일 주기는 아이콘 한 변에
-  최소 2회는 반복돼야 한다.
-- **엔진이 이미 그리는 타일 패턴은 1:1로 재생**한다. 눈대중 금지:
-  `lattice` = `(x^y)&1`, `checker2x2` = `((x>>1)^(y>>1))&1`,
-  `batteryPattern` = 4×5 타일 계단
-  (`px===1&&(py===1||py===2) || px===2&&(py===2||py===3)`, 패턴 픽셀은
-  하드 블랙 `0xff000000`), `solarPattern` = `x%4===3 || y%6===5`.
-  ⚠️ `types.ts`의 `batteryPattern` 주석은 "14x14"라고 적혀 있지만 **문서 버그**다;
-  렌더러 구현(`CanvasRenderer.ts:899-910`)이 정답이다.
-- **`glow` 물질**은 base color 하나로는 정체가 드러나지 않는다.
-  `shade()`가 `cool → color`로 보간하는 램프 자체를 아이콘에 보여준다
-  (`CanvasRenderer.ts:585`, `buildGlow` `:568`).
-- **`freeze` 서리 상태는 아이콘에서 무시**하고(팔레트는 따뜻한 상태만 보여준다)
-  그 생략을 문서에 적는다. 13종이 해당된다.
-- 배경(빈 칸) 색은 `rgb(16, 16, 22)` (`materials/empty.ts:11`) — 어두운 물질
-  아이콘의 대비를 볼 때 이 색을 기준으로 판단한다.
+`src/game/render/materialSvg.ts`가 `CanvasRenderer.render()`의 분기 사슬을 그대로
+재생해 **팔레트 126종 중 99종의 아이콘을 만든다.** 손으로 그리기 전에 그 물질이
+이미 패턴을 갖고 있는지 확인할 것 — 스페클·격자·셰브런·배터리 계단·열 램프·구름은
+전부 생성물이고, 손으로 덧그리면 캔버스와 어긋난다.
 
-세부 설계와 물질별 분류는 **[docs/MATERIAL-ICONS.md](../../../docs/MATERIAL-ICONS.md)** 참고.
+**손그림이 필요한 건 인월드에서도 실제로 평면 한 색인 물질**(평면 고체 25 +
+수은/액체 갈륨)과, 생성 결과가 어색하다고 판정된 소수(태양광 패널)뿐이다.
+전수 분류는 [docs/MATERIAL-ICONS.md](../../../docs/MATERIAL-ICONS.md) §4.
+
+생성기를 고칠 때의 규칙(손그림이 아니라 코드를 건드릴 때):
+
+- **캔버스와 같은 공식을 재생한다.** 진폭은 `varyAmplitude(m)`, 모드는
+  `varyMode(m)`, 밝기 오프셋은 `d = ((src - 128) * amp) >> 7` 뒤 채널별 클램프.
+  셰이딩 함수(`tinted` / `frosted` / `buildGlow` / `shade`)는 `render/color.ts`에
+  있고 **렌더러와 아이콘이 같은 구현을 공유**한다 — 복사하지 말 것.
+- **분기 순서가 곧 동작이다.** Fan은 `lattice`이면서 `windArrow`, Diamond는
+  `lattice`이면서 `checker2x2`다. 먼저 걸리는 분기만 그리고, 그런 물질의
+  `lattice`는 두 번째 톤을 공급할 뿐이다. 재정렬하면 전기 탭 절반이 조용히
+  체커보드가 된다.
+- **`Math.random()` 금지.** 캔버스의 틴트는 셀에 저장된 바이트라 아이콘이 읽을 수
+  없다. `(id, x, y)`의 순수 해시로 합성한다.
+- **패치 크기는 픽셀 정렬로 정한다.** 기본 9(18 CSS px에서 셀당 정확히 2 device px
+  @DPR1 / 4 @DPR2), 기체만 18(1px / 2px). 12는 DPR 1에서 네 행마다 한 행이 날아간다.
+- **`freeze` 서리는 재생하지 않는다.** 팔레트는 따뜻한 상태만 보여준다.
+- 검증은 `npm run test:materialicons`.
+
+### 7.1 손그림 SVG — 파일 규격 (하드 스펙)
+
+| 항목 | 값 |
+|---|---|
+| `viewBox` | `0 0 24 24` — **정사각 고정** |
+| 도형 | `<rect>`만. 좌표·크기 **정수**, `fill="#rrggbb"` |
+| 행 병합 | 같은 색 가로 런은 rect 하나 (`spriteRects`가 내는 형식과 동일) |
+| 투명 | **금지.** 576셀 전부 칠한다 — 맨 위에 `<rect x="0" y="0" width="24" height="24" fill="#기본색"/>` 한 줄 깔고 시작 |
+| 금지 | `id` / `<defs>` / `<style>` / `<filter>` / `url(#…)` / 그라디언트 / `<text>` / `<image>` / 외부 참조 |
+| 파일명 | 물질 영문명 kebab-case — `blue-flame.svg`, `dry-ice.svg` |
+| 드롭 위치 | `temp/material-icons/` (영구 위치로 옮겨 배선하는 건 코드 쪽 일) |
+| 크기 | rect 200개 / 6 KB 이하 |
+
+`<svg>` 태그의 `width` / `height` / `shape-rendering`은 **미리보기 편의용이라
+상관없다** — 소비 측은 `<rect>` 목록만 읽고 래퍼를 다시 씌운다. 기존
+`temp/*.svg`가 쓰는 `width="384" height="384" viewBox="0 0 24 24"
+shape-rendering="crispEdges"` 그대로 두면 된다(24 × 16배 확대).
+
+**금지 목록의 이유.** 이 문자열들은 Svelte `{@html}`로 주입되고, **같은 물질의 같은
+문자열이 한 문서에 동시에 여러 번** 살아 있을 수 있다(플라이아웃 + 즐겨찾기 + 검색
+결과). `id`나 `url(#…)` 같은 문서 스코프 이름은 자기 복제본과 충돌한다. `<style>`은
+더 나쁘다 — 인라인 SVG 안의 스타일 규칙은 **문서 전체로 샌다.** 그라디언트가 필요하면
+rect 3~5장을 겹쳐 계단으로 만든다(하우스 스타일과도 맞는다).
+`test/materialicons.ts`가 이 금지를 강제한다.
+
+**투명 금지의 이유.** 물질 스와치는 오브젝트 칩과 달리 **테두리가 있는 채워진
+타일**이다(`.swatch.mat`). 빈 셀이 있으면 칩 배경이 비치는데, 칩 배경은 선택 시
+`#1b1b22` → `#232b3a`로 바뀐다 — 클릭할 때마다 아이콘 색이 변하게 된다.
+
+### 7.2 손그림 SVG — 그리기 지침
+
+§4의 하우스 스타일에 더해:
+
+- **읽히는 크기는 18 CSS px.** 24 → 18은 0.75배 축소다. **최소 특징 두께 2유닛** —
+  1유닛 선은 축소에서 사라질 수 있다. 실루엣 외곽선도 2유닛으로.
+- **기본색이 지배해야 한다.** 대략 타일의 60% 이상은 등록된 `Material.color` 계열로.
+  색으로 물질을 외운 사람이 못 알아보면 개선이 아니라 개악이다.
+- **색은 4~5개까지**, 면당 명암 3톤 이하. 입체감은 그라디언트가 아니라 띠/이음매로.
+- **순백/순흑 큰 면적 금지** — 어두운 UI에서 튄다. `#0d0d12` / `#e8e8ee` 쪽으로.
+- **글자·숫자·기호 금지** — 18px에서 안 읽히고 i18n과도 싸운다.
+- **장면이 아니라 물질을 그린다.** §4의 "절대 그리지 않는 것"이 그대로 적용된다 —
+  불꽃·연기는 실제 CA 파티클이지 아트가 아니다.
+
+**대비 참조값**: 칩 배경 `#1b1b22`(선택 시 `#232b3a`), 스와치 테두리
+`rgba(255,255,255,.15)` 1px + `border-radius: 4px`, 캔버스 판 배경 `#101016`
+(`materials/empty.ts`).
+
+### 7.3 돋보기 11×11은 제외
+
+`InspectPanel`의 11px 스와치는 **의도적으로 단색을 유지한다.** 18px에서 읽히는
+패턴이 11px에서는 진흙이 되고, 그 행에는 물질 이름이 이미 나란히 붙어 있어
+스와치가 식별을 떠맡지 않는다. 여기에 패턴을 넣지 말 것.
 
 ---
 
@@ -249,6 +300,16 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 - [ ] `npm run check` 통과 (`Record<...>` 누락은 여기서만 잡힌다)
 - [ ] 브라우저 확인은 **직접 하지 않고 유저에게 요청** (CLAUDE.md)
 
+물질 손그림 아이콘이면 위 대신 §7.1/§7.2 기준으로:
+
+- [ ] 자동 생성이 이미 그 물질을 처리하고 있지 않은지 확인했다 (§7.0)
+- [ ] `viewBox="0 0 24 24"`, `<rect>`만, 정수 좌표, `#rrggbb`
+- [ ] 전체 배경 rect를 먼저 깔아 투명 셀이 하나도 없다
+- [ ] `id` / `<defs>` / `<style>` / `url(#…)` / 그라디언트 없음
+- [ ] 최소 특징 두께 2유닛, 18px로 줄여서 읽히는지 확인
+- [ ] 기본색이 타일의 60% 이상
+- [ ] `npm run test:materialicons` 통과
+
 ## 9. 읽을 파일
 
 | 파일 | 무엇의 표준인가 |
@@ -257,8 +318,11 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 | `src/game/render/woodenBoxSprite.ts` | 형식 B(ASCII 행) + 아트가 물리를 유도 |
 | `src/game/render/drumSprite.ts` | 공유 실루엣 + 색 스왑 변형 |
 | `src/game/render/smokeBombSprite.ts` | 그리기 순서, 읽힘 우선 결정 |
-| `src/game/render/objectSvg.ts` | 팔레트 SVG 생성(`spriteRects`/`pixelSvg`) |
-| `src/game/render/color.ts` | `rgb()` / `toCss()` |
+| `src/game/render/objectSvg.ts` | 오브젝트 팔레트 프리뷰 |
+| `src/game/render/spriteSvg.ts` | 공유 SVG 내보내기(`spriteRects`/`spritePaths`/`pixelSvg`) |
+| `src/game/render/materialSvg.ts` | 물질 아이콘 생성기 — 분기 사슬 재생의 표준 |
+| `src/game/render/color.ts` | `rgb()` / `toCss()` / `hex()` + 공유 셰이딩 |
 | `src/game/tint.ts` | 물질 질감 공식의 단일 진실 공급원 |
 | `docs/OBJECTS.md` | 오브젝트 레이어 전체 설계 기록 |
+| `docs/MATERIAL-ICONS.md` | 물질 아이콘 전체 설계·분류·손그림 대상 |
 | `temp/*.svg` | 디자인 핸드오프 원본(런타임 미사용) |

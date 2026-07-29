@@ -50,7 +50,8 @@ import { spritePaths, pixelSvg } from './spriteSvg';
  */
 const N = 9;
 
-/** The patch edge, for harnesses that rasterize a generated icon back to cells. */
+/** The default patch edge (a flat gas uses GAS_N instead — see GAS_CLOUD). A
+ *  harness should read the generated `viewBox` rather than assume either. */
 export const MATERIAL_ICON_CELLS = N;
 
 /** The renderer's tile constants, mirrored (see CanvasRenderer). */
@@ -73,12 +74,53 @@ const GLOW_ICON_FLOOR = 0.45;
  *  rather than as molten material. */
 const GLOW_ICON_MOTTLE = 0.09;
 
-/** Fraction of a gas icon's cells painted at the bottom row (the top row is
- *  fully covered). A gas is a flat colour per cell in-world, but you never see a
- *  solid slab of one — you see scattered cells with the board showing between
- *  them. A filled rectangle would read as a solid; this dissolve is what a gas
- *  actually looks like in play. */
-const GAS_FLOOR_COVERAGE = 0.4;
+/**
+ * A gas draws as a solid-filled cloud silhouette rather than as a filled square.
+ *
+ * A gas cell is one flat colour in-world, so a square would be the literal
+ * reading — but it would also be indistinguishable from a solid of the same
+ * colour, which is the whole problem this feature exists to fix. The first
+ * attempt scattered the cells instead (dense at the top, thinning downward,
+ * mirroring how a gas actually looks in play), and it read as damage: holes
+ * punched at random rather than a shape. So the tile keeps the dissolve's idea —
+ * a gas is a body of vapour floating on the board, not a brick — and drops its
+ * execution: one clean puff, filled solid, with the board's own background
+ * around it.
+ *
+ * Authored as ASCII rather than generated from circles so that what ships is
+ * what someone read and approved, and so `test/materialicons.ts` can golden it
+ * directly. `#` is the gas, `.` is the board behind it.
+ */
+const GAS_CLOUD = [
+  '.......#####......',
+  '.....########.....',
+  '....##########....',
+  '...############...',
+  '..##############..',
+  '.################.',
+  '.################.',
+  '##################',
+  '##################',
+  '##################',
+  '##################',
+  '##################',
+  '.################.',
+  '.################.',
+  '.################.',
+  '.################.',
+  '..##############..',
+  '..................',
+];
+
+/**
+ * Gases use a finer patch than everything else — the 9-cell grid that carries a
+ * lattice or a chevron perfectly well cannot draw a curve, and a cloud rendered
+ * at 9×9 is a lump. 18 keeps the pixel alignment that picked 9 in the first
+ * place: at the palette's 18 CSS px swatch a cell is exactly 1 device px at
+ * DPR 1 and 2 at DPR 2. The tile is two flat colours, so it costs less markup
+ * than a 9×9 speckle despite having four times the cells.
+ */
+const GAS_N = GAS_CLOUD.length;
 
 /**
  * Pure 32-bit mix of (id, x, y) → a byte in 0..255. Stands in for the random
@@ -124,16 +166,6 @@ function grain(m: Material, c: number, x: number, y: number): number {
   return tinted(c, ((tintSrc(m, x, y) - TINT_NEUTRAL) * amp) >> 7);
 }
 
-/** Linear blend of two packed colours, `t` of `other` (icon-only — used for the
- *  gas dissolve, which has no in-world counterpart to share code with). */
-function blend(a: number, b: number, t: number): number {
-  const it = 1 - t;
-  const r = (((a & 0xff) * it + (b & 0xff) * t) | 0) & 0xff;
-  const g = ((((a >> 8) & 0xff) * it + ((b >> 8) & 0xff) * t) | 0) & 0xff;
-  const bl = ((((a >> 16) & 0xff) * it + ((b >> 16) & 0xff) * t) | 0) & 0xff;
-  return (0xff000000 | (bl << 16) | (g << 8) | r) >>> 0;
-}
-
 /**
  * Fill an N×N patch with the colour the renderer would give each cell.
  *
@@ -144,11 +176,22 @@ function blend(a: number, b: number, t: number): number {
  * on those is just supplying the second tone. Reordering these would quietly
  * change what half the electric category looks like.
  */
-function patchFor(m: Material): Uint32Array {
-  const buf = new Uint32Array(N * N);
+function patchFor(m: Material): { buf: Uint32Array; n: number } {
   const base = m.color;
   const lat = m.lattice ?? base;
 
+  // A flat gas is the one material kind drawn as a shape rather than as a field,
+  // so it gets its own finer grid and skips the branch chain entirely.
+  if (m.phase === Phase.Gas && varyAmplitude(m) === 0 && !m.glow && !m.auxPalette && !m.tintPalette) {
+    const board = getMaterial(EMPTY).color;
+    const buf = new Uint32Array(GAS_N * GAS_N);
+    for (let y = 0; y < GAS_N; y++)
+      for (let x = 0; x < GAS_N; x++)
+        buf[y * GAS_N + x] = GAS_CLOUD[y][x] === '#' ? base : board;
+    return { buf, n: GAS_N };
+  }
+
+  const buf = new Uint32Array(N * N);
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       let c: number;
@@ -229,16 +272,6 @@ function patchFor(m: Material): Uint32Array {
         if (f < 0) f = 0;
         else if (f > 1) f = 1;
         c = grain(m, shade(buildGlow(m.glow, base), m.glow.min + f * span), x, y);
-      } else if (m.phase === Phase.Gas && varyAmplitude(m) === 0) {
-        // A gas cell is one flat colour in-world, but a gas never occupies solid
-        // ground: what you see is scattered cells with the board between them. A
-        // filled rectangle would read as a solid block of the same colour, so the
-        // icon dissolves downward into the board's own background — the shape of
-        // a cloud rather than a brick.
-        const down = y / (N - 1);
-        const coverage = 1 - down * (1 - GAS_FLOOR_COVERAGE);
-        const lit = hash8(m.id, x, y) < coverage * 255;
-        c = lit ? base : blend(base, getMaterial(EMPTY).color, 0.82);
       } else {
         // Everything else: the base colour, with the per-particle brightness
         // grain if the material has one (powders, liquids, the tinted solids).
@@ -251,7 +284,7 @@ function patchFor(m: Material): Uint32Array {
       buf[y * N + x] = c;
     }
   }
-  return buf;
+  return { buf, n: N };
 }
 
 /**
@@ -262,7 +295,7 @@ function patchFor(m: Material): Uint32Array {
  * hoisting, so it pays for all 81 cells — which is why the rest goes out as
  * per-colour paths rather than per-run rects (see spritePaths).
  */
-function patchSvg(buf: Uint32Array): string {
+function patchSvg(buf: Uint32Array, n: number): string {
   const counts = new Map<number, number>();
   for (const c of buf) counts.set(c, (counts.get(c) ?? 0) + 1);
   let bg = buf[0];
@@ -282,9 +315,9 @@ function patchSvg(buf: Uint32Array): string {
   const b = (bg >> 16) & 0xff;
   const bgHex = '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
   return pixelSvg(
-    N,
-    N,
-    `<rect x="0" y="0" width="${N}" height="${N}" fill="${bgHex}"/>` + spritePaths(sparse, N, N),
+    n,
+    n,
+    `<rect x="0" y="0" width="${n}" height="${n}" fill="${bgHex}"/>` + spritePaths(sparse, n, n),
     'mat-svg',
   );
 }
@@ -303,7 +336,8 @@ const CACHE = new Map<number, string>();
 export function materialSvgFor(m: Material): string {
   let svg = CACHE.get(m.id);
   if (svg === undefined) {
-    svg = patchSvg(patchFor(m));
+    const { buf, n } = patchFor(m);
+    svg = patchSvg(buf, n);
     CACHE.set(m.id, svg);
   }
   return svg;

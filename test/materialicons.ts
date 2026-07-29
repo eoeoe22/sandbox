@@ -32,7 +32,8 @@ Math.random = () => {
 import { MATERIALS } from '../src/game/materials/index';
 import { materialSvgFor, MATERIAL_ICON_CELLS as N } from '../src/game/render/materialSvg';
 import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
-import { Phase, type Material } from '../src/game/engine/types';
+import { EMPTY, Phase, type Material } from '../src/game/engine/types';
+import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import '../src/game/materials';
 
@@ -51,10 +52,13 @@ const byName = (name: string): Material => {
 /** Rasterize a generated icon back to a grid of `#rrggbb`, which also proves the
  *  emitted markup is exactly the full-tile background rect plus per-colour run
  *  paths it claims to be. */
-function raster(svg: string): string[] {
-  const bg = new RegExp(`<rect x="0" y="0" width="${N}" height="${N}" fill="(#[0-9a-f]{6})"/>`).exec(svg);
+function raster(svg: string): { grid: string[]; n: number } {
+  const vb = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
+  if (!vb || vb[1] !== vb[2]) throw new Error('icon viewBox is not square: ' + svg.slice(0, 120));
+  const n = +vb[1];
+  const bg = new RegExp(`<rect x="0" y="0" width="${n}" height="${n}" fill="(#[0-9a-f]{6})"/>`).exec(svg);
   if (!bg) throw new Error('icon has no full-tile background rect: ' + svg.slice(0, 120));
-  const grid: string[] = new Array(N * N).fill(bg[1]);
+  const grid: string[] = new Array(n * n).fill(bg[1]);
   let painted = 0;
   for (const pm of svg.matchAll(/<path fill="(#[0-9a-f]{6})" d="([^"]+)"\/>/g)) {
     for (const seg of pm[2].matchAll(/M(\d+) (\d+)h(\d+)v1h-(\d+)z/g)) {
@@ -62,7 +66,7 @@ function raster(svg: string): string[] {
       const y = +seg[2];
       const run = +seg[3];
       if (+seg[4] !== run) throw new Error('malformed run in path data');
-      for (let k = 0; k < run; k++) grid[y * N + x + k] = pm[1];
+      for (let k = 0; k < run; k++) grid[y * n + x + k] = pm[1];
       painted += run;
     }
   }
@@ -70,8 +74,8 @@ function raster(svg: string): string[] {
   const shapes = (svg.match(/<(rect|path|circle|polygon|g)\b/g) ?? []).length;
   const accounted = 1 + (svg.match(/<path /g) ?? []).length;
   if (shapes !== accounted) throw new Error('unexpected shape element in icon');
-  if (painted > N * N) throw new Error('paths overlap');
-  return grid;
+  if (painted > n * n) throw new Error('paths overlap');
+  return { grid, n };
 }
 
 /** A two-tone tile as ASCII: `.` = the tile's background rect — which for every
@@ -79,15 +83,15 @@ function raster(svg: string): string[] {
  *  minority of cells — and `o` = the pattern colour. */
 function ascii(m: Material): string {
   const svg = materialSvgFor(m);
-  const g = raster(svg);
-  const bg = new RegExp(`width="${N}" height="${N}" fill="(#[0-9a-f]{6})"`).exec(svg)![1];
+  const { grid: g, n } = raster(svg);
+  const bg = new RegExp(`width="${n}" height="${n}" fill="(#[0-9a-f]{6})"`).exec(svg)![1];
   if (bg !== hex(m.color)) throw new Error(`${m.name}: pattern outweighs its base colour`);
   const tones = new Set(g);
   if (tones.size !== 2) throw new Error(`${m.name} is not two-tone (${tones.size} colours)`);
   const rows: string[] = [];
-  for (let y = 0; y < N; y++) {
+  for (let y = 0; y < n; y++) {
     let row = '';
-    for (let x = 0; x < N; x++) row += g[y * N + x] === bg ? '.' : 'o';
+    for (let x = 0; x < n; x++) row += g[y * n + x] === bg ? '.' : 'o';
     rows.push(row);
   }
   return rows.join('\n');
@@ -211,7 +215,7 @@ for (const [name, want] of Object.entries(GOLDEN)) {
 // The batteries' pattern colour is the renderer's literal flat black, not a
 // shade of the base — a regression to `lattice` would be invisible in ASCII.
 {
-  const g = raster(materialSvgFor(byName('Lithium Battery')));
+  const { grid: g } = raster(materialSvgFor(byName('Lithium Battery')));
   check('battery staircase is flat black', g.includes('#000000'), [...new Set(g)].join(' '));
 }
 
@@ -240,7 +244,7 @@ for (const m of all) {
   // the chip's background through — and the chip's background changes when it is
   // selected, which would make the icon shift on click.
   try {
-    const g = raster(svg);
+    const { grid: g } = raster(svg);
     if (g.some((c) => !/^#[0-9a-f]{6}$/.test(c))) notFullBleed.push(m.name);
   } catch (e) {
     badMarkup.push(`${m.name}: ${(e as Error).message}`);
@@ -258,7 +262,7 @@ check('all icons together stay under 250 KB', totalBytes < 250_000, `${(totalByt
 // ---------------------------------------------------------------------------
 
 /** Distinct colours in a material's icon. */
-const tones = (m: Material): number => new Set(raster(materialSvgFor(m))).size;
+const tones = (m: Material): number => new Set(raster(materialSvgFor(m)).grid).size;
 
 for (const name of ['Stone', 'Iron', 'Wall', 'Mercury', 'Liquid Gallium']) {
   const m = byName(name);
@@ -281,7 +285,7 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
     if (amp === 0 || m.glow || m.auxPalette || m.tintPalette || m.checker2x2 || m.lattice) continue;
     const base = m.color;
     const br = base & 0xff;
-    for (const c of new Set(raster(materialSvgFor(m)))) {
+    for (const c of new Set(raster(materialSvgFor(m)).grid)) {
       const d = parseInt(c.slice(1, 3), 16) - br;
       // The channel clamps at 0/255, so only an *unclamped* overshoot is a bug.
       if (Math.abs(d) > amp && br + d > 0 && br + d < 255) violations.push(`${m.name} ${d} vs ±${amp}`);
@@ -296,7 +300,7 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
 // (22) is *higher* than Sand's (18), so a naive icon would get this backwards.
 {
   const spread = (m: Material): number => {
-    const cs = [...new Set(raster(materialSvgFor(m)))].map((c) => parseInt(c.slice(1, 3), 16));
+    const cs = [...new Set(raster(materialSvgFor(m)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
     return Math.max(...cs) - Math.min(...cs);
   };
   const sand = spread(byName('Sand'));
@@ -315,29 +319,70 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
 
 for (const name of ['Lava', 'Molten Metal', 'Slag']) {
   const m = byName(name);
-  const g = raster(materialSvgFor(m));
+  const { grid: g, n } = raster(materialSvgFor(m));
   const lum = (c: string) =>
     parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11;
-  const topRow = g.slice(0, N).reduce((a, c) => a + lum(c), 0) / N;
-  const botRow = g.slice(N * (N - 1)).reduce((a, c) => a + lum(c), 0) / N;
+  const topRow = g.slice(0, n).reduce((a, c) => a + lum(c), 0) / n;
+  const botRow = g.slice(n * (n - 1)).reduce((a, c) => a + lum(c), 0) / n;
   check(`${name} shows a heat ramp, hot at the top`, topRow > botRow + 8, `${topRow | 0} vs ${botRow | 0}`);
   check(`…and never cools past its ramp floor`, tones(m) > 4, `${tones(m)} tones`);
 }
 
+// A flat gas is drawn as a solid-filled cloud silhouette on the board's own
+// background, on a finer 18-cell grid than everything else. The first attempt
+// scattered cells instead and read as damage rather than as a shape, so the
+// golden here is the whole point of the branch — see GAS_CLOUD.
+const GAS_GOLDEN = [
+  '.......ooooo......',
+  '.....oooooooo.....',
+  '....oooooooooo....',
+  '...oooooooooooo...',
+  '..oooooooooooooo..',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
+  'oooooooooooooooooo',
+  'oooooooooooooooooo',
+  'oooooooooooooooooo',
+  'oooooooooooooooooo',
+  'oooooooooooooooooo',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
+  '..oooooooooooooo..',
+  '..................',
+].join('\n');
+
 for (const name of ['Steam', 'Smoke', 'Chlorine']) {
   const m = byName(name);
-  const g = raster(materialSvgFor(m));
-  const base = `#${(m.color & 0xff).toString(16).padStart(2, '0')}`;
-  const lit = (row: number) =>
-    g.slice(row * N, row * N + N).filter((c) => c.startsWith(base)).length;
-  check(`${name} dissolves downward like a cloud`, lit(0) > lit(N - 1), `${lit(0)} → ${lit(N - 1)} cells`);
+  const svg = materialSvgFor(m);
+  const { grid: g, n } = raster(svg);
+  check(`${name} uses the finer gas grid`, n === 18, `${n} cells`);
+  // The cloud is the material's own colour; everything outside it is the board.
+  const board = [...new Set(g)].find((c) => c !== hex(m.color));
+  const rows: string[] = [];
+  for (let y = 0; y < n; y++) {
+    let row = '';
+    for (let x = 0; x < n; x++) row += g[y * n + x] === board ? '.' : 'o';
+    rows.push(row);
+  }
+  const got = rows.join('\n');
+  check(`${name} is a solid-filled cloud`, got === GAS_GOLDEN, got === GAS_GOLDEN ? '' : '\n' + got);
+  check(`…filled with no holes in it`, new Set(g).size === 2, `${new Set(g).size} colours`);
   check(`…and is a Gas with no grain of its own`, m.phase === Phase.Gas && varyAmplitude(m) === 0);
 }
 
+// The board showing around the puff is the eraser's colour — the same thing that
+// is actually behind a gas cell in play, not an invented dark.
+check('the gas surround is the board background',
+  new Set(raster(materialSvgFor(byName('Steam'))).grid).has(hex(getMaterial(EMPTY).color)));
+
 // A gas that DOES carry a grain (none ship today, but the branch guards for it)
-// must fall through to the speckle rather than the dissolve.
-check('the gas dissolve only claims flat gases',
+// must fall through to the speckle rather than the cloud, and Blast — a Gas with
+// a `glow` ramp — must still take the glow branch.
+check('the gas cloud only claims flat gases',
   all.every((m) => !(m.phase === Phase.Gas && varyAmplitude(m) > 0) || tones(m) > 2));
+check('a glowing gas still takes the glow branch', raster(materialSvgFor(byName('Blast'))).n === 9);
 
 // ---------------------------------------------------------------------------
 // 5. The two palette-array materials show their palette, not one colour.
@@ -346,7 +391,7 @@ check('the gas dissolve only claims flat gases',
 {
   const fw = byName('Fireworks');
   const hues = new Set(
-    raster(materialSvgFor(fw)).map((c) => {
+    raster(materialSvgFor(fw)).grid.map((c) => {
       // Collapse brightness so only the underlying palette entry remains.
       const r = parseInt(c.slice(1, 3), 16);
       const g = parseInt(c.slice(3, 5), 16);
@@ -358,10 +403,10 @@ check('the gas dissolve only claims flat gases',
   check('Fireworks speckles all three palette colours', hues.size >= 3, `${hues.size} hues`);
 
   const seed = byName('Seed');
-  const g = raster(materialSvgFor(seed));
+  const { grid: g, n } = raster(materialSvgFor(seed));
   const green = (c: string) => parseInt(c.slice(3, 5), 16) - parseInt(c.slice(1, 3), 16);
-  const top = g.slice(0, N).reduce((a, c) => a + green(c), 0) / N;
-  const bot = g.slice(N * (N - 1)).reduce((a, c) => a + green(c), 0) / N;
+  const top = g.slice(0, n).reduce((a, c) => a + green(c), 0) / n;
+  const bot = g.slice(n * (n - 1)).reduce((a, c) => a + green(c), 0) / n;
   check('Seed sprouts green at the top, dormant brown at the base', top > bot + 10, `${top | 0} vs ${bot | 0}`);
 }
 
