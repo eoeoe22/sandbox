@@ -130,6 +130,9 @@ import { FIREWORK_STAR } from './fireworkstar';
 import { FIREWORK_BURST } from './fireworkburst';
 import { WIRE } from './wire';
 import { SOLAR_PANEL } from './solarpanel';
+import { MOLTEN_ALUMINUM } from './moltenaluminum';
+import { ALUMINUM } from './aluminum';
+import { FLASH_POWDER } from './flashpowder';
 
 export {
   EMPTY_MAT,
@@ -259,6 +262,9 @@ export {
   FIREWORK_BURST,
   WIRE,
   SOLAR_PANEL,
+  MOLTEN_ALUMINUM,
+  ALUMINUM,
+  FLASH_POWDER,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -315,6 +321,7 @@ export const MATERIALS = [
   ACID,
   ACID_VAPOR,
   GUNPOWDER,
+  FLASH_POWDER,
   FIREWORKS,
   SULFUR,
   SALTPETER,
@@ -335,9 +342,11 @@ export const MATERIALS = [
   WOOD,
   SAWDUST,
   IRON,
+  ALUMINUM,
   RUST,
   GALLIUM,
   MOLTEN_METAL,
+  MOLTEN_ALUMINUM,
   MOLTEN_GLASS,
   BROKEN_GLASS,
   GLASS,

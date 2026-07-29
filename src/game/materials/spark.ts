@@ -18,6 +18,7 @@ import { NICHROME, nichromeJouleHeat } from './nichrome';
 import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { ACID_SLIME } from './acidslime';
 import { WIRE } from './wire';
+import { ALUMINUM } from './aluminum';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -125,6 +126,7 @@ const CONDUCTOR_IDS = [
   GALLIUM.id,
   LIQUID_GALLIUM.id,
   WIRE.id,
+  ALUMINUM.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
 // resistance, and the lever for "how far does current reach". At FULL_STRENGTH 63:
@@ -149,7 +151,12 @@ const CONDUCTOR_IDS = [
 // whole length of a cable at the engine's floor exactly like Iron. Its jacket
 // costs reach nothing; what it changes is *sideways* leakage, not distance (see
 // Material.insulated and the hand-off in updateSpark).
-const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0];
+// (…, ALUMINUM 0) — cast metal, so the engine's floor like every other metal
+// here: a pulse runs the full length of an aluminum bar. Real transmission
+// lines are aluminum rather than copper, so a lossless run is the honest
+// reading; what makes it different from Iron isn't reach but that you can pour
+// it out of a fire (see aluminum.ts) instead of smelting ore for it.
+const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // word, with class 0 reserved for "no conductor" (classes 1..CLASS_MASK = 1..255).

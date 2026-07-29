@@ -210,4 +210,7 @@ export const materialNamesKo: Record<number, string> = {
   131: '불꽃',
   132: '전선',
   133: '태양광 패널',
+  135: '녹은 알루미늄',
+  136: '알루미늄',
+  137: '섬광화약',
 };
