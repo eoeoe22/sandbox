@@ -19,7 +19,9 @@
     "test:aluminum": "node test/run-aluminum.mjs",
     "test:plantcoral": "node test/run-plantcoral.mjs",
     "test:plastic": "node test/run-plastic.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:plastic"
+    "test:magnetobjects": "node test/run-magnetobjects.mjs",
+    "test:smokebomb": "node test/run-smokebomb.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

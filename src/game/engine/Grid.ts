@@ -164,8 +164,11 @@ export class Grid {
    * own cell coordinates and `reach` how far its pull extends. The renderer
    * draws static contour rings (자기력선) around the body from a distance field
    * seeded on these cells and blocked by solids — honest to the sweep that
-   * does the actual pulling, which solids shadow the same way. Never read by
-   * the CA or the object layer; purely cosmetic. Runtime-only; not carried on
+   * does the actual pulling, which solids shadow the same way. Read by the
+   * OBJECT layer too, and that is not cosmetic: a free body (a drum, a smoke
+   * canister) owns no grid cell for the magnet's own sweep to find, so
+   * stepObjects pulls it by reading this list instead (see objects.ts
+   * applyMagnetPull). Never read by the CA. Runtime-only; not carried on
    * resize (re-stamped next tick).
    */
   magnetFields: { bx: number[]; by: number[]; reach: number }[] = [];

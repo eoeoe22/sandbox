@@ -87,6 +87,17 @@
   `petroleumvapor.ts`·`ethylene.ts`·`polyethylene.ts`나
   중합 온도/발열 상수를 건드리면 이걸 돌릴 것.
 
+- **전자석 ↔ 오브젝트 인력** — `npm run test:magnetobjects` (`test/magnetobjects.ts`). 통전된
+  전자석이 **강철 바디만**(드럼통 전 종류·연막탄 캔) 끌어당겨 슬래브에 매달고 놓지 않는 것,
+  고무공·나무 상자·다이너마이트는 건드리지 않는 것, 무전원·석재 차폐·사거리 밖에서는 전혀
+  당기지 않는 것을 지킨다. `objects.ts`의 `applyMagnetPull`이나 `Grid.magnetFields` 발행을
+  건드리면 이걸 돌릴 것.
+
+- **연막탄 수중 연기** — `npm run test:smokebomb` (`test/smokebomb.ts`). 잠긴 연막탄이 **액체
+  속에서도** 연기를 내는 것(도화선·분출 단계 모두), 그 연기가 액체를 **위로 밀어낼 뿐 삭제하지
+  않는 것**(물 총량 완전 보존), 언 액체와 밀폐된 만수 수조에서는 생기지 않는 것, 공기 중
+  동작 무회귀를 지킨다. `objects.ts`의 `puffSmoke`/`displaceLiquidUp`을 건드리면 이걸 돌릴 것.
+
 - **활성 타일 스캔 동등성** — `npm run test:active-tiles` (기존). `npm test`는
   위 검사들과 스냅샷 파일·열 커널 골든 테스트를 함께 돌린다(열 커널은 `wasm/` Rust 빌드 산출물이
   있어야 하므로, 그게 없는 환경에선 개별 스크립트로 돌릴 것).
