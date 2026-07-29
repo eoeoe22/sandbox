@@ -274,5 +274,103 @@ const boxes = (grid: Grid): SimWoodBox[] =>
     JSON.stringify(parts) === JSON.stringify(['piece1', 'piece2', 'piece3']), JSON.stringify(parts));
 }
 
+// 9. Smashing into solid at speed. A hard enough arrival destroys the box the
+//    same way anything else does — but an ordinary drop, and a fast SLIDE along
+//    the ground, must not.
+{
+  const { grid, sim } = makeWorld(100, 400);
+  floor(grid, 380);
+  const crate = createWoodBox(50, 20);
+  grid.objects.push(crate);
+  let smashedAt = -1;
+  let peakSpeed = 0;
+  for (let t = 1; t <= 300; t++) {
+    peakSpeed = Math.max(peakSpeed, Math.hypot(crate.vx, crate.vy));
+    sim.step();
+    if (smashedAt < 0 && !grid.objects.includes(crate as SimBody)) smashedAt = t;
+  }
+  const parts = boxes(grid).map((b) => b.part).sort();
+  check('a long fall onto solid smashes the crate', smashedAt > 0,
+    `tick ${smashedAt}, arrived at ~${peakSpeed.toFixed(1)} cells/tick`);
+  check('and it leaves the same 3 shards',
+    JSON.stringify(parts) === JSON.stringify(['piece1', 'piece2', 'piece3']), JSON.stringify(parts));
+}
+{
+  // A crate hurled sideways into a wall.
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  for (let y = 0; y < 70; y++) // a wall down the right-hand side
+    for (let x = 80; x < 84; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(40, 40);
+  crate.vx = 14;
+  grid.objects.push(crate);
+  let smashed = false;
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) { smashed = true; break; }
+  }
+  check('a crate hurled into a wall bursts', smashed);
+  check('into its 3 shards',
+    JSON.stringify(boxes(grid).map((b) => b.part).sort()) ===
+      JSON.stringify(['piece1', 'piece2', 'piece3']));
+}
+{
+  // The same hurl, but a shard: nothing left to break into, so Sawdust.
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  for (let y = 0; y < 70; y++)
+    for (let x = 80; x < 84; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const shard = createWoodBox(40, 40, 'piece3');
+  shard.vx = 14;
+  grid.objects.push(shard);
+  let smashed = false;
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (!grid.objects.includes(shard as SimBody)) { smashed = true; break; }
+  }
+  for (let t = 0; t < 200; t++) sim.step(); // let the shavings land
+  check('a shard hurled into a wall bursts too', smashed);
+  check('and leaves Sawdust, not more objects',
+    grid.objects.length === 0 && count(grid, SAWDUST) > 0,
+    `${grid.objects.length} objects, ${count(grid, SAWDUST)} sawdust`);
+}
+{
+  // Not a crash: an ordinary drop, and a crate racing along flat ground. The test
+  // measures ARRIVAL speed at a surface, not raw velocity — a box tearing along a
+  // floor is moving fast but is never closing on it.
+  const { grid, sim } = makeWorld(400, 100);
+  floor(grid, 70);
+  const dropped = createWoodBox(20, 30); // ~34 cells of fall ⇒ well under the threshold
+  const raced = createWoodBox(60, 63);
+  grid.objects.push(dropped, raced);
+  for (let t = 0; t < 60; t++) sim.step();
+  raced.vx = 20; // tearing along the floor, but never INTO it
+  let travelled = 0;
+  for (let t = 0; t < 12; t++) {
+    sim.step(); // stops well short of the far wall, which WOULD be a real crash
+    travelled = raced.x - 60;
+  }
+  check('an ordinary drop does not smash', grid.objects.includes(dropped as SimBody));
+  check('nor does racing along flat ground',
+    grid.objects.includes(raced as SimBody), `travelled ${travelled.toFixed(0)} cells`);
+}
+{
+  // The world's own border counts as the wall it is: a box hurled into the edge
+  // of a `wall`-bordered sandbox smashes on it like any other solid.
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const crate = createWoodBox(60, 40);
+  crate.vx = 16;
+  grid.objects.push(crate);
+  let smashed = false;
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) { smashed = true; break; }
+  }
+  check('the world border wall smashes it too', smashed);
+}
+
 console.log(failures === 0 ? '\nAll wooden-box checks passed.' : `\n${failures} check(s) FAILED.`);
 if (failures > 0) process.exit(1);

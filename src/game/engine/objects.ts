@@ -746,6 +746,23 @@ const WOOD_BOX_SHATTER_LIFT = 0.6;
  *  Splinters tumble; they don't sail out flat. Comfortably under the mix brush's
  *  0.15 so the burst reads as debris rather than as a blender. */
 const WOOD_BOX_SHATTER_SPIN = 0.09;
+/**
+ * Normal closing speed (cells/tick) at which meeting a wall or any solid stops
+ * being a landing and becomes a CRASH: the box is destroyed on impact (매우 빠른
+ * 속도로 벽/고체에 부딪히면 파괴). Measured as the speed the body actually arrived
+ * at the surface with — the contact solve's own closing speed — not as a raw
+ * velocity, so a box skimming *along* a wall or rolling fast over flat ground is
+ * never mistaken for one slamming into it.
+ *
+ * Set well above every routine way a box gets moving, so the sandbox's ordinary
+ * shoves can't shatter one: free-fall reaches this only after ~160 cells of drop
+ * (v = √(h/2) at OBJECT_GRAVITY), and a blast's knockback floor (7), a Woofer's
+ * (6) and a Fan's wind (3.75) are all below it. What does reach it is a genuine
+ * hurl — flinging a box with the 보기 모드 drag, or dropping one from the top of a
+ * tall world. Crashing yields the same wreckage as any other break: a crate bursts
+ * into its three shards, a shard into Sawdust.
+ */
+export const WOOD_BOX_SMASH_SPEED = 9;
 /** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both
  *  barely spinning and barely moving, so nothing that is still tumbling, rolling
  *  or flying is ever squared up mid-flight. */
@@ -1555,17 +1572,25 @@ function deepestCapsuleContact(o: CapsuleBody, ctx: SimContext): CapsuleContact 
  * a Coulomb-clamped tangential (friction) part; BOTH feed `angularVelocity`
  * through the torque r × J (r = contact − center). Friction at an off-center
  * contact is exactly what turns a drop into a roll — the piece the earlier
- * capsule attempt lacked. Returns true if any contact was resolved (grounded),
- * so the caller can apply rolling resistance.
+ * capsule attempt lacked.
+ *
+ * Returns HOW HARD the body met the grid: the largest normal closing speed it
+ * resolved (cells/tick), 0 if it was touching but not closing (resting on the
+ * floor), and −1 if it wasn't touching the grid at all. The caller reads `>= 0`
+ * as "grounded" for rolling resistance, and the magnitude as impact hardness —
+ * which is what lets a wooden box tell a landing from a crash (see
+ * WOOD_BOX_SMASH_SPEED). The FIRST iteration's closing speed is the real one:
+ * later iterations see a velocity the earlier impulse already reflected, so the
+ * running max is naturally the speed the body actually arrived at.
  */
-function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
+function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): number {
   const invMass = 1 / o.mass;
   const invI = 1 / o.momentOfInertia;
-  let grounded = false;
+  let impact = -1;
   for (let iter = 0; iter < 4; iter++) {
     const c = deepestCapsuleContact(o, ctx);
     if (!c) break;
-    grounded = true;
+    if (impact < 0) impact = 0; // in contact — at minimum, grounded
     // Positional correction along the contact normal.
     o.x += c.nx * c.pen;
     o.y += c.ny * c.pen;
@@ -1577,6 +1602,7 @@ function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
     const vpy = o.vy + o.angularVelocity * rx;
     const vn = vpx * c.nx + vpy * c.ny;
     if (vn >= 0) continue; // separating — no impulse
+    if (-vn > impact) impact = -vn; // hardest closing speed seen this call
     // Slow contacts don't bounce (kills gravity-driven micro-bounce at rest).
     const e = -vn < CAPSULE_REST_EPS ? 0 : o.restitution;
     // Normal impulse: jn = −(1+e)·v_n / (1/m + (r×n)²/I).
@@ -1602,7 +1628,7 @@ function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
     o.vy += jt * ty * invMass;
     o.angularVelocity += invI * (rx * (jt * ty) - ry * (jt * tx));
   }
-  return grounded;
+  return impact;
 }
 
 /**
@@ -1859,8 +1885,10 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
  * position and contact torque folded into the collision resolve. Object-object
  * collisions and the terminal-state triggers (blast/heat/crush) are evaluated
  * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
+ * Returns the hardest normal closing speed it resolved against the grid this tick
+ * (0 if it never met it), which is what a wooden box's smash test reads.
  */
-function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s: number): void {
+function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s: number): number {
   o.vx += ax;
   o.vy += ay;
   const ms = sampleMediumCapsule(o, ctx);
@@ -1891,6 +1919,7 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   let remaining = 1;
   let guard = 0;
   let grounded = false;
+  let impact = 0; // hardest normal closing speed against the grid this tick
   while (remaining > 1e-4 && guard++ < 64) {
     const speed = Math.hypot(o.vx, o.vy) + Math.abs(o.angularVelocity) * reach;
     if (speed < 1e-6) break;
@@ -1905,7 +1934,9 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
     // rotated opposite to its rolling direction (rolled right but spun as if going
     // left), which read as "rolling the wrong way" on a slope.
     o.angle -= o.angularVelocity * dt;
-    if (resolveCapsuleCollision(o, ctx)) grounded = true;
+    const hit = resolveCapsuleCollision(o, ctx);
+    if (hit >= 0) grounded = true;
+    if (hit > impact) impact = hit;
     remaining -= dt;
   }
   // Rolling resistance: a grounded drum sheds a little spin (and a matching sliver
@@ -1920,6 +1951,7 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   // wrap; the modulo handles any number of turns in a tick).
   const TWO_PI = 2 * Math.PI;
   o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
+  return impact;
 }
 
 // ── Object-object collision, blast knockback, and crush ─────────────────────
@@ -3002,7 +3034,8 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
 /**
  * Advance every free object one tick in three phases: (A) each body's own physics
  * — a near-miss blast (or a Woofer's shockwave — see applyWooferKnockback) shoves
- * it, then gravity/buoyancy/grid-collision integration — skipped while the
+ * it, then gravity/buoyancy/grid-collision integration, and a wooden box that met
+ * the grid at smashing speed is marked doomed — skipped while the
  * pointer holds it; (B) resolve collisions *between* bodies so
  * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
  * crush) and compact out anything destroyed this tick. Run at the end of
@@ -3042,13 +3075,25 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);
-    if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
-    else stepCapsule(o, ctx, ax, ay, s);
+    if (o.kind === 'ball') {
+      stepBall(o, ctx, ax, ay, s);
+      continue;
+    }
+    const impact = stepCapsule(o, ctx, ax, ay, s);
+    if (o.kind !== 'woodbox') continue;
+    // Timber that meets a wall hard enough doesn't bounce, it bursts (매우 빠른
+    // 속도로 벽/고체에 부딪히면 파괴). Queued as doomed rather than destroyed here so
+    // it takes the one shared byproduct path in phase C — the crate into its three
+    // shards, a shard into Sawdust, carrying its fire over if it was alight.
+    if (impact >= WOOD_BOX_SMASH_SPEED) {
+      doomed.add(o);
+      continue;
+    }
     // A settled box squares up: it collides as a disc, so the contact solve has no
     // orientation to prefer and a stopped crate would otherwise rest at whatever
     // angle it happened to reach, corners hanging through the floor. Gated on the
     // body having actually stopped, so tumbling and rolling are untouched.
-    if (o.kind === 'woodbox') settleWoodBoxUpright(o);
+    settleWoodBoxUpright(o);
   }
   // Phase B — resolve collisions between bodies (fully interactive layer).
   resolveObjectPairs(objects);
