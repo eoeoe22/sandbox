@@ -213,5 +213,5 @@ export const materialNamesKo: Record<number, string> = {
   136: '알루미늄',
   137: '섬광화약',
   138: '섬광',
-  139: '녹은 알루미늄',
+  143: '녹은 알루미늄',
 };
