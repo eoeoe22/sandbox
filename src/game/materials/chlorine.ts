@@ -10,11 +10,12 @@ import { YEAST } from './yeast';
 import { SEED } from './seed';
 import { SLIME } from './slime';
 import { TERMITE } from './termite';
+import { CORAL } from './coral';
 
 // Chlorine (염소가스) — a heavy, sickly yellow-green poison gas. Like CO₂ it's
 // denser than air, so it slumps and pools along the floor (see updateHeavyGas),
 // but where CO₂ merely suffocates, Chlorine *kills*: any living thing it touches —
-// Plant, Virus, Yeast, Seed, Slime — withers to nothing. It creeps into low
+// Plant, Virus, Yeast, Seed, Slime, Coral — withers to nothing. It creeps into low
 // ground and wipes out a garden or an infection from below, the classic "gas the
 // trench" horror. It's otherwise inert and slowly disperses back into air.
 //
@@ -31,7 +32,10 @@ function isLiving(id: number): boolean {
     id === YEAST.id ||
     id === SEED.id ||
     id === SLIME.id ||
-    id === TERMITE.id
+    id === TERMITE.id ||
+    // Living coral polyps go the same way; the bleached skeleton they leave is
+    // dead rock and stays put (see coral.ts / bleachedcoral.ts).
+    id === CORAL.id
   );
 }
 
