@@ -6,6 +6,7 @@ import type { SimContext } from '../engine/SimContext';
 import { GALLIUM } from './gallium';
 import { ALUMINUM } from './aluminum';
 import { ALUMINUM_POWDER } from './aluminumpowder';
+import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 
 // Liquid Gallium — the molten counterpart to solid Gallium, but at a
 // theatrically low temperature: Gallium's whole party trick is that it melts
@@ -53,6 +54,26 @@ const GALLIUM_FREEZE_TEMP = 28;
 // visibly eats away over a beat or two rather than a bar vanishing at once.
 const ALUMINUM_EMBRITTLE_CHANCE = 0.03;
 
+// The *other* half of the same real phenomenon, and the reason the first half
+// is only a demolition trick: what gallium actually destroys is the passivating
+// oxide film, and aluminum without that film is a different material. So the
+// same puddle, applied to the powder instead of the bar, doesn't crumble
+// anything — it **activates** it, and the dust starts tearing hydrogen out of
+// any water it touches (see activatedaluminum.ts).
+//
+// Structurally it is the embrittlement rule again — `otherBecomes` transforms
+// the aluminum, `produce` is omitted so this cell is untouched — and that is
+// what makes gallium a genuine catalyst here rather than a consumable: one drop
+// converts a whole heap, exactly as it does in the demonstrations this comes
+// from. It also means the two rules read as one behaviour with two targets:
+// 갈륨은 알루미늄의 산화막을 벗긴다 — 덩어리에 하면 부서지고, 가루에 하면 물과
+// 반응하는 연료가 된다.
+//
+// Slower than the embrittlement (0.03): activation is the film dissolving into
+// the grain rather than a wall giving way, and a heap converts grain by grain
+// over a beat or two so a player can watch the colour change spread.
+const ALUMINUM_ACTIVATE_CHANCE = 0.02;
+
 function updateLiquidGallium(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again
   // (a moving conductor, exactly like Mercury).
@@ -95,6 +116,16 @@ export const LIQUID_GALLIUM = register({
       with: ALUMINUM.id,
       otherBecomes: ALUMINUM_POWDER.id,
       probability: ALUMINUM_EMBRITTLE_CHANCE,
+    },
+    // …and the powder it leaves behind (or any other) is activated by the same
+    // drop, on the same one-sided terms — see ALUMINUM_ACTIVATE_CHANCE above.
+    // Declared on this side for the same import-graph reason the embrittlement
+    // rule is: the aluminum modules never import gallium, so there is no edge
+    // coming back and no module-scope mutual dependency to get wrong.
+    {
+      with: ALUMINUM_POWDER.id,
+      otherBecomes: ACTIVATED_ALUMINUM.id,
+      probability: ALUMINUM_ACTIVATE_CHANCE,
     },
   ],
   update: updateLiquidGallium,

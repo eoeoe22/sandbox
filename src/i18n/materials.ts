@@ -221,4 +221,6 @@ export const materialNamesKo: Record<number, string> = {
   140: '촉매',
   141: '폴리에틸렌',
   143: '녹은 알루미늄',
+  144: '활성 알루미늄',
+  145: '암모날',
 };

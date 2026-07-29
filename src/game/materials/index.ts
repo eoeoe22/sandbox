@@ -139,6 +139,8 @@ import { FLASH } from './flash';
 import { ETHYLENE } from './ethylene';
 import { CATALYST } from './catalyst';
 import { POLYETHYLENE } from './polyethylene';
+import { ACTIVATED_ALUMINUM } from './activatedaluminum';
+import { AMMONAL } from './ammonal';
 
 export {
   EMPTY_MAT,
@@ -277,6 +279,8 @@ export {
   ETHYLENE,
   CATALYST,
   POLYETHYLENE,
+  ACTIVATED_ALUMINUM,
+  AMMONAL,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -337,6 +341,7 @@ export const MATERIALS = [
   ACID_VAPOR,
   GUNPOWDER,
   FLASH_POWDER,
+  AMMONAL,
   FIREWORKS,
   SULFUR,
   SALTPETER,
@@ -420,6 +425,7 @@ export const MATERIALS = [
   METAL_POWDER,
   RUST_POWDER,
   ALUMINUM_POWDER,
+  ACTIVATED_ALUMINUM,
   LIMESTONE,
   SLAG,
   HEATPIPE,
