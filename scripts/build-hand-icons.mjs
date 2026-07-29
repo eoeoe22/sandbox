@@ -36,6 +36,13 @@ for (const d of all) {
     console.error(`${d.name}: 확장자는 소문자 '.svg' 여야 한다.`);
     process.exit(1);
   }
+  // 심볼릭 링크의 Dirent 는 isFile() 도 isDirectory() 도 false 라, 아래 filter 에서
+  // 한마디 없이 빠진다 — 이름 검사조차 못 거친다. 폴더·대문자 확장자와 같은
+  // 부류의 실패라 같이 막는다.
+  if (d.isSymbolicLink()) {
+    console.error(`${d.name}: 심볼릭 링크는 읽지 않는다 — 실제 파일을 둘 것.`);
+    process.exit(1);
+  }
 }
 
 const files = all.filter((d) => d.isFile() && d.name.endsWith('.svg')).map((d) => d.name).sort();

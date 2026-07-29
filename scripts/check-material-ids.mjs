@@ -16,7 +16,7 @@
 //   node scripts/check-material-ids.mjs
 // Exits 0 when all ids are unique, 1 (with a report) when any id collides.
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -106,4 +106,17 @@ function main() {
 
 // 직접 실행일 때만 검사한다. `build-hand-icons.mjs` 가 collectMaterials 를
 // 가져다 쓰는데, import 만으로 id 검사가 돌면서 결과를 찍으면 혼란스럽다.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+//
+// 양쪽을 realpath 로 맞춘 뒤 비교한다. `import.meta.url` 은 이미 realpath 인데
+// `process.argv[1]` 은 입력된 문자열 그대로라, 심볼릭 링크를 통해 부르면 둘이
+// 영영 안 맞는다 — 그러면 검사가 조용히 통째로 건너뛰어지고 중복 id 가 그대로
+// 나간다. 이 가드의 실패는 아무 신호가 없으므로 여기서 정확히 맞춘다.
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+if (invokedDirectly()) main();
