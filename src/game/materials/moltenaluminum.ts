@@ -62,10 +62,14 @@ function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
 }
 
 export const MOLTEN_ALUMINUM = register({
-  // 134 is deliberately skipped — it's claimed by a material being added on a
-  // parallel branch, so leaving the gap keeps the two from colliding when both
-  // land (npm run check:material-ids enforces uniqueness at build time).
-  id: 135,
+  // Out of order on purpose: 134 and 135 are both claimed by materials being
+  // added on parallel branches, so this one sits past the rest of its own round
+  // (Aluminum 136, Flash Powder 137, Flash 138) rather than at the head of it.
+  // Ids are stable identifiers, not an ordering — save files and the spark
+  // conductor table index by them — so leaving the gaps is what keeps the
+  // branches from colliding when they land (npm run check:material-ids enforces
+  // uniqueness at build time).
+  id: 139,
   name: 'Molten Aluminum',
   phase: Phase.Liquid,
   // The fully-molten end of the glow ramp: warm, bright silver — a mirror-like
