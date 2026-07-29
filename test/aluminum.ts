@@ -721,9 +721,12 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   // put a submerged grain near that gate has already flashed to Steam around it —
   // and dust in steam is a genuinely different (and legitimately explosive)
   // situation, so the run would end up measuring that instead. Lava is the one
-  // liquid here that stays liquid at these temperatures, and it doubles as an
-  // igniter, so it exercises *both* trigger branches (self temperature and
-  // `igniterAdjacent`) at once.
+  // liquid here that stays liquid at these temperatures — and it is itself an
+  // igniter, which is what makes it a *decisive* control rather than merely a
+  // valid one: the suspension gate is the only thing standing between these
+  // grains and an instant flash, so if it ever stops excluding liquids the
+  // `igniterAdjacent` branch fires on the very first tick. (It is not reached
+  // while the gate holds — `isSuspended` short-circuits first.)
   //
   // What the grains must do instead is what they always did: catch and burn
   // slowly, at `burnChance` 0.05, from the flame in contact. So a few ticks in,
