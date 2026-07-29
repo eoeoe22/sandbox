@@ -312,8 +312,14 @@ const raw = readFileSync(process.argv[2], 'utf8');
 const s = raw.replace(/<!--[\s\S]*?-->/g, '');
 // 요소는 허용 목록으로 본다 — 금지 목록은 <circle>·<path>처럼 빠뜨린 것을
 // 통과시킨다. 자기닫는 <g/>가 새는 것도 이 방식이면 없다.
-for (const t of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g))
-  if (t[1] !== 'svg' && t[1] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[1] + '>');
+let opens = 0;
+for (const t of s.matchAll(/<(\/?)([a-zA-Z][\w:-]*)/g)) {
+  if (t[2] !== 'svg' && t[2] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[2] + '>');
+  if (t[2] === 'svg' && !t[1]) opens++;
+}
+// 중첩 <svg>는 자체 viewBox로 배율이 바뀌어, 안의 rect가 좌표와 다른 크기로
+// 그려진다. 허용 목록만으로는 안 걸리므로 루트 하나임을 따로 못박는다.
+if (opens !== 1) throw new Error(`<svg>가 ${opens}개 — 루트 하나여야 함`);
 const bad = /\bid=|\bclass=|\bstyle=|url\(|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(s);
 if (bad) throw new Error('금지 요소: ' + bad[0]);
 if (!/viewBox="0 0 24 24"/.test(s)) throw new Error('viewBox가 0 0 24 24 가 아님');
@@ -324,7 +330,13 @@ let rects = 0;
 let overlap = 0;
 for (const m of s.matchAll(/<rect\s+([^>]*?)\s*\/>/g)) {
   rects++;
-  const a = Object.fromEntries([...m[1].matchAll(/(\w[\w-]*)="([^"]*)"/g)].map((k) => [k[1], k[2]]));
+  const a = {};
+  // 중복 속성은 조용히 덮어쓰면 안 된다 — 브라우저는 첫 값을 쓰고 뒤를 버리는데,
+  // 마지막 값만 남기면 검사기가 실제로 그려지는 색과 다른 색을 보게 된다.
+  for (const [, k, v] of m[1].matchAll(/([\w-]+)\s*=\s*"([^"]*)"/g)) {
+    if (k in a) throw new Error(`속성 ${k} 중복 — 브라우저는 첫 값만 쓴다: ` + m[0]);
+    a[k] = v;
+  }
   const keys = Object.keys(a).sort().join(',');
   if (keys !== 'fill,height,width,x,y')
     throw new Error('rect 속성이 x/y/width/height/fill 이 아님(값은 큰따옴표로): ' + m[0]);
@@ -333,6 +345,10 @@ for (const m of s.matchAll(/<rect\s+([^>]*?)\s*\/>/g)) {
   if (![x, y, w, h].every(Number.isInteger) || w < 1 || h < 1 || x < 0 || y < 0)
     throw new Error('좌표/크기 오류: ' + m[0]);
   if (x + w > 24 || y + h > 24) throw new Error('타일 밖으로 나감: ' + m[0]);
+  // 총 도포량이 576이어도 배경 rect 없이 조각을 이어 붙인 것일 수 있다. 규격은
+  // 맨 앞 한 장이 타일 전체를 덮을 것을 요구하므로 그것부터 본다.
+  if (rects === 1 && !(x === 0 && y === 0 && w === 24 && h === 24))
+    throw new Error('첫 rect가 24×24 배경이 아님: ' + m[0]);
   colors.add(a.fill);
   for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) cells.add(j * 24 + i);
   // 배경 rect를 뺀 실제 도포 면적. Set이라 겹쳐도 중복으로 세지 않는다.

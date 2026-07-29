@@ -37,7 +37,7 @@ Math.random = () => {
 };
 
 import { MATERIALS } from '../src/game/materials/index';
-import { materialSvgFor } from '../src/game/render/materialSvg';
+import { materialSvgFor, GAS_CLOUD_ROWS } from '../src/game/render/materialSvg';
 import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
@@ -435,6 +435,14 @@ for (const name of ['Steam', 'Smoke', 'Chlorine']) {
     check(`…and is a Gas with no grain of its own`, m.phase === Phase.Gas && varyAmplitude(m) === 0);
   });
 }
+
+// The cloud's width is derived from its row count, so a row of any other length
+// is indexed past its end and silently reads as background. A short row of `#`
+// would change the golden above; a short all-`.` row would not, which is why the
+// literal is measured directly here rather than only through what it draws.
+check('every GAS_CLOUD row is as wide as the cloud is tall',
+  GAS_CLOUD_ROWS.every((r) => r.length === GAS_CLOUD_ROWS.length),
+  `${GAS_CLOUD_ROWS.length} rows, widths ${[...new Set(GAS_CLOUD_ROWS.map((r) => r.length))].join('/')}`);
 
 // The board showing around the puff is the eraser's colour — the same thing that
 // is actually behind a gas cell in play, not an invented dark.

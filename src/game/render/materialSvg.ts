@@ -122,12 +122,21 @@ const GAS_CLOUD = [
  */
 const GAS_N = GAS_CLOUD.length;
 
-// GAS_N is derived from the row *count*, so a row that is not equally wide would
-// be indexed past its end and read as background — a hole in the cloud. A short
-// row of `#` shows up in the golden, but a short all-`.` row is invisible there,
-// so pin the invariant next to the hand-edited literal instead of relying on it.
-for (const row of GAS_CLOUD)
-  if (row.length !== GAS_N) throw new Error(`GAS_CLOUD rows must be ${GAS_N} wide: "${row}"`);
+/** Exported for `test/materialicons.ts` only.
+ *
+ *  `GAS_N` comes from the row *count*, so a row that is not equally wide gets
+ *  indexed past its end and reads as background — a hole in the cloud. A short
+ *  row of `#` would show up in the golden tile, but a short all-`.` row is
+ *  invisible there, so the invariant needs pinning somewhere.
+ *
+ *  It is pinned in the harness rather than by a module-load throw here: this
+ *  module is imported by the palette components and therefore ships to the
+ *  browser, where a throw at import time would take the whole page down over a
+ *  malformed string constant. The build happens to prerender these components
+ *  and would have caught it, but that is a side effect of `client:load`, not a
+ *  contract — and the blast radius if it ever changed is far worse than the
+ *  failure this guards against. */
+export const GAS_CLOUD_ROWS: readonly string[] = GAS_CLOUD;
 
 /**
  * Pure 32-bit mix of (id, x, y) → a byte in 0..255. Stands in for the random
