@@ -130,6 +130,10 @@ import { FIREWORK_STAR } from './fireworkstar';
 import { FIREWORK_BURST } from './fireworkburst';
 import { WIRE } from './wire';
 import { SOLAR_PANEL } from './solarpanel';
+import { MOLTEN_ALUMINUM } from './moltenaluminum';
+import { ALUMINUM } from './aluminum';
+import { FLASH_POWDER } from './flashpowder';
+import { FLASH } from './flash';
 
 export {
   EMPTY_MAT,
@@ -259,6 +263,10 @@ export {
   FIREWORK_BURST,
   WIRE,
   SOLAR_PANEL,
+  MOLTEN_ALUMINUM,
+  ALUMINUM,
+  FLASH_POWDER,
+  FLASH,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -294,6 +302,9 @@ export {
  *   • FIREWORK_BURST — the coloured flower a star opens into (fireworkburst.ts).
  *     It only ever exists as that product: its colour lives in the `aux` a star
  *     stamps, so one placed by brush would be a colour-0 cell that fades at once.
+ *   • FLASH — the white light a Flash Powder detonation fills its reach with
+ *     (flash.ts), the same kind of thing as the shockwave flash it replaces.
+ *     Hand-placed it would be a lone motionless white dot that blinks out.
  *
  *  The Fan's gust is deliberately NOT a material at all: it's a transient wind
  *  *field* (Grid.wind) the Fan stamps and the renderer/object layer read, so there
@@ -315,6 +326,7 @@ export const MATERIALS = [
   ACID,
   ACID_VAPOR,
   GUNPOWDER,
+  FLASH_POWDER,
   FIREWORKS,
   SULFUR,
   SALTPETER,
@@ -335,9 +347,11 @@ export const MATERIALS = [
   WOOD,
   SAWDUST,
   IRON,
+  ALUMINUM,
   RUST,
   GALLIUM,
   MOLTEN_METAL,
+  MOLTEN_ALUMINUM,
   MOLTEN_GLASS,
   BROKEN_GLASS,
   GLASS,
