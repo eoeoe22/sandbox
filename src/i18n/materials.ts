@@ -61,6 +61,7 @@ export const objectLabelsEn: Record<ObjectKind, string> = {
   aciddrum: 'Acid Drum',
   dynamite: 'Dynamite',
   smokebomb: 'Smoke Bomb',
+  crate: 'Wooden Crate',
 };
 
 export const objectLabelsKo: Record<ObjectKind, string> = {
@@ -70,6 +71,7 @@ export const objectLabelsKo: Record<ObjectKind, string> = {
   aciddrum: '산 드럼통',
   dynamite: '다이너마이트',
   smokebomb: '연막탄',
+  crate: '나무 상자',
 };
 
 // --- Material names ---------------------------------------------------------

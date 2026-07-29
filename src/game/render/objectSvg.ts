@@ -13,6 +13,7 @@ import {
   SMOKE_BOMB_SPRITE_W,
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
+import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import type { DrumFill } from '../engine/objects';
 import type { ObjectKind } from '../../state/store';
 
@@ -91,6 +92,17 @@ const smokeBombSvg = pixelSvg(
   spriteRects(SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H),
 );
 
+// The wooden crate: the whole box's sprite straight through — no extra art, the
+// crate carries no procedural flourish in-world either. The three shards it
+// breaks into are deliberately absent: they exist only as a broken crate's
+// wreckage (나무 상자를 부술 때만 소환), so they are not palette items to preview.
+const crateArt = WOOD_BOX_SPRITES.crate;
+const crateSvg = pixelSvg(
+  crateArt.w,
+  crateArt.h,
+  spriteRects(crateArt.pixels, crateArt.w, crateArt.h),
+);
+
 // The rubber ball: a flat red disc with a thin dark rim, mirroring rasterizeBall
 // (BALL_COLOR / BALL_BORDER_COLOR). A vector circle here (not pixel rects) — the
 // in-world ball is a rasterized disc, and a smooth circle reads truer at this
@@ -113,6 +125,7 @@ const OBJECT_SVG: Record<ObjectKind, string> = {
   aciddrum: drumSvg('acid'),
   dynamite: dynamiteSvg,
   smokebomb: smokeBombSvg,
+  crate: crateSvg,
 };
 
 /** SVG markup for an object kind's palette preview — inject with Svelte `{@html}`.

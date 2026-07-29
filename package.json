@@ -14,7 +14,8 @@
     "test:active-tiles": "node test/run-active-tiles.mjs",
     "test:electricity": "node test/run-electricity.mjs",
     "test:snapshot-file": "node test/run-snapshot-file.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file"
+    "test:woodbox": "node test/run-woodbox.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

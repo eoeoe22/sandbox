@@ -15,7 +15,9 @@ import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
 import { SMOKE } from '../materials/smoke';
+import { SAWDUST } from '../materials/sawdust';
 import { VOID } from '../materials/void';
+import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -294,9 +296,95 @@ export interface SimSmokeBomb {
   held?: boolean;
 }
 
+/**
+ * Which piece of the wooden box a body is. `crate` is the whole box — the only
+ * one the palette can spawn (나무 상자만 팔레트에서 소환 가능) — and the three
+ * `piece*` shards exist ONLY as the wreckage a crate leaves when it is broken
+ * (나무 상자를 부술 때만 소환). Kept as a field rather than as separate `kind`s for
+ * the same reason DrumFill is: every part runs one physics path and one
+ * flammability path, and only its size, its sprite and its destruction byproduct
+ * vary — the crate falls apart into the three shards, a shard crumbles to Sawdust.
+ */
+export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
+
+/**
+ * A wooden box — the crate, or one of the three shards it breaks into. Like the
+ * drum, the dynamite and the smoke bomb it is a **capsule body with 1-axis
+ * rotation**, so contact torque (r × J) spins it: a crate shoved along the ground
+ * tips and tumbles, one landing on a slope rolls down it, a blast sends the
+ * shards spinning off. Its capsule is the degenerate one — `halfLength` 0, i.e.
+ * the medial "segment" is a single point — so the shape it collides with is a
+ * plain disc inscribed in its own box. Rotation therefore changes what the box
+ * LOOKS like without changing what it collides with, which is what lets a square
+ * reuse the whole capsule machinery unchanged.
+ *
+ * That inscribed disc is a deliberately good fit for an upright box on an
+ * axis-aligned grid: the box's edges are tangent to it, so a crate at rest at 0°
+ * sits exactly flush on flat ground, stacks flush on another crate, and sits
+ * flush against a wall. A box resting at an odd angle would instead poke its
+ * corners through the floor, which is why a settled box is eased back upright
+ * (see settleWoodBoxUpright) — it tumbles freely while it's moving and squares up
+ * once it has stopped.
+ *
+ * `halfW`/`halfH` are carried alongside `radius` because the sprite is (unlike
+ * every other body's) genuinely rectangular and different per part: `radius` is
+ * what the world collides with, `halfW`×`halfH` is the box the sprite is drawn
+ * into and rotated within.
+ *
+ * The genuinely new ingredient over the earlier bodies is that it *burns*
+ * (가연성). Sustained heat sets it alight; while alight it emits real Fire
+ * particles into the grid and `burnTicks` counts down to collapse; a good soaking
+ * puts it out again.
+ */
+export interface SimWoodBox {
+  kind: 'woodbox';
+  /** Whole crate, or which shard of one (see WoodBoxPart). */
+  part: WoodBoxPart;
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation in radians. 0 = upright, the way the sprite is drawn. */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque (see SimCapsule). */
+  angularVelocity: number;
+  /** Always 0 — a box's medial segment is a point, so its capsule is a disc. Kept
+   *  so the body is assignable to CapsuleBody and reuses the capsule routines. */
+  halfLength: number;
+  /** Collision radius (cells) — the disc inscribed in the display box below. */
+  radius: number;
+  /** Half-extents of the *display* box (cells): the sprite is drawn into
+   *  2·halfW × 2·halfH and rotated by `angle`. Never used by physics. */
+  halfW: number;
+  halfH: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia of the real rectangle (not of the collision disc), so a
+   *  long shard is harder to spin end-over-end than a compact one. */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — timber thuds, it doesn't bounce. */
+  restitution: number;
+  /** Consecutive ticks the body has sampled at/above its ignition point. Time-
+   *  gated like every other body's heat trigger so a stray hot pixel doesn't set
+   *  a crate alight — only a sustained flame does. Reset once it catches. */
+  heatTicks: number;
+  /** The body's own heat reservoir (°) — see SimObject.temp. The 가열 brush writes
+   *  it, so a crate can be set alight in mid-air where the cell heat brush can't
+   *  reach. */
+  temp: number;
+  /** Ticks of fire left before the body burns through and collapses. 0 means it
+   *  isn't alight; set when it catches, cleared back to 0 if it's doused. */
+  burnTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its
+   *  physics and its fire alike are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
 /** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
- *  smoke bombs) share one array on the Grid, discriminated by `kind`. */
-export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb;
+ *  smoke bombs, wooden boxes) share one array on the Grid, discriminated by `kind`. */
+export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox;
 
 /**
  * The physics-only fields every capsule body shares — a medial segment of
@@ -604,6 +692,176 @@ export function createSmokeBomb(
     fuseTicks: SMOKE_BOMB_FUSE_TICKS,
     ventTicks: 0,
   };
+}
+
+/**
+ * Wooden-box defaults. Cells per sprite pixel matches the drum's 1:2 mapping
+ * (24×32 sprite ⇒ 12×16 cells), so the 24×24 crate is 12×12 cells — a solid,
+ * clearly-readable box, and each shard is whatever fraction of that its own art
+ * occupies. Timber is light (density well under Water's 3), so a crate and every
+ * shard of it FLOAT — a raft of crates is a real thing to build.
+ */
+export const WOOD_BOX_CELLS_PER_PX = 0.5;
+export const WOOD_BOX_DENSITY = 1.4;
+/** A wooden box thuds and stays put rather than bouncing. */
+export const WOOD_BOX_RESTITUTION = 0.15;
+/** Footprint/reservoir temperature (°) at/above which the timber catches fire.
+ *  Level with the Wood material's own autoignition point (500°, see
+ *  materials/wood.ts), so a crate ignites under exactly the conditions a wooden
+ *  beam does — ordinary Fire (1000°), Lava, embers and the 가열 브러시 all light
+ *  it, while a merely warm room never does. */
+export const WOOD_BOX_IGNITE_TEMP = 500;
+/** Sustained ticks at/above the ignition point before it actually catches, so a
+ *  single hot fleck brushing past doesn't set a crate alight. */
+const WOOD_BOX_IGNITE_TICKS = 5;
+/** How long the whole crate burns before it gives way, and how long a single
+ *  shard does. Sized in *seconds* at the default sim rate like the dynamite fuse
+ *  and the smoke bomb's stages, so the sandbox's speed dial scales the burn along
+ *  with everything else. The crate outlasts a shard — there's more of it — and the
+ *  two together make a burning crate a ~8-second event: it flames, falls apart
+ *  into three burning shards, and those crumble to Sawdust. */
+const WOOD_BOX_CRATE_BURN_TICKS = Math.round(5 * SIM_HZ_AT_1X);
+const WOOD_BOX_PIECE_BURN_TICKS = Math.round(3 * SIM_HZ_AT_1X);
+/** Per-cell, per-tick chance a burning body seeds a real Fire cell in an open
+ *  footprint cell. Like the dynamite's fuse flame, the fire is genuine Fire
+ *  particles rather than something painted on the sprite, so a burning crate
+ *  actually lights the wood pile it was stacked on. Small — a 113-cell crate
+ *  footprint puts out a couple of flames a tick, which the CA then carries. */
+const WOOD_BOX_FLAME_CHANCE = 0.02;
+/** Fraction of the footprint that has to be quenching matter (liquid, CO₂) for
+ *  the fire to go out. Above a stray splash, below the ~47% a floating crate is
+ *  submerged by — so dunking a burning crate really does save it. */
+const WOOD_BOX_DOUSE_FRAC = 0.25;
+/** Per-cell chance a shattered shard leaves a fling of Sawdust. Denser than the
+ *  drum's hollow-shell scatter (0.2): a shard is solid timber all the way
+ *  through, so it crumbles into a proper heap of shavings. */
+const WOOD_BOX_SAWDUST_CHANCE = 0.5;
+/** Outward speed (cells/tick) the three shards are thrown at as the crate comes
+ *  apart, plus the lift that pops them up out of the wreckage. Enough that they
+ *  visibly scatter instead of settling in a neat stack of the box they were. */
+const WOOD_BOX_SHATTER_SPEED = 1.4;
+const WOOD_BOX_SHATTER_LIFT = 0.6;
+/** Max magnitude (rad/tick) of the random spin each shard is kicked with as the
+ *  crate bursts, on top of the spin its own outward throw earns from contact.
+ *  Splinters tumble; they don't sail out flat. Comfortably under the mix brush's
+ *  0.15 so the burst reads as debris rather than as a blender. */
+const WOOD_BOX_SHATTER_SPIN = 0.09;
+/**
+ * Normal closing speed (cells/tick) at which meeting a wall or any solid stops
+ * being a landing and becomes a CRASH: the box is destroyed on impact (매우 빠른
+ * 속도로 벽/고체에 부딪히면 파괴). Measured as the speed the body actually arrived
+ * at the surface with — the contact solve's own closing speed — not as a raw
+ * velocity, so a box skimming *along* a wall or rolling fast over flat ground is
+ * never mistaken for one slamming into it.
+ *
+ * Set above every INDIVIDUAL shove the sandbox hands out, so no single ordinary
+ * force can shatter a box on its own: a blast's knockback floor (7), a Woofer's
+ * (6), a Fan's wind (3.75) and the 섞기 brush (gated at 4) are each below it, and
+ * free-fall reaches it only after ~160 cells of drop (v = √(h/2) at
+ * OBJECT_GRAVITY). What clears it is a genuine hurl — flinging a box with the
+ * 보기 모드 drag, or dropping one from the top of a tall world.
+ *
+ * Two shoves in the SAME tick can still combine past it, because each knockback
+ * sets a floor on its own direction rather than capping the total: a near-miss
+ * blast (7) plus a Woofer pulse (6) at right angles resolves to ~9.2. That is
+ * deliberate rather than a leak — an explosion that flings a crate into a wall
+ * hard enough to burst it is the behaviour you'd want. What the threshold does
+ * guarantee is the promise each source makes on its own: a Woofer alone can never
+ * break a box no matter how close (see applyWooferKnockback's 완전한 비파괴성),
+ * and neither can wind or a near miss.
+ *
+ * Crashing yields the same wreckage as any other break: a crate bursts into its
+ * three shards, a shard into Sawdust.
+ */
+export const WOOD_BOX_SMASH_SPEED = 9;
+/** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both
+ *  barely spinning and barely moving, so nothing that is still tumbling, rolling
+ *  or flying is ever squared up mid-flight. */
+const WOOD_BOX_SETTLE_SPIN = 0.02;
+const WOOD_BOX_SETTLE_SPEED = 0.25;
+/** Fraction of the remaining tilt a settled box sheds per tick — a visible ease
+ *  onto square (a few tenths of a second), not a snap. */
+const WOOD_BOX_SETTLE_RATE = 0.12;
+/** The three shards a crate breaks into, in sprite draw order. */
+const WOOD_BOX_PIECES: readonly WoodBoxPart[] = ['piece1', 'piece2', 'piece3'];
+
+/** How long this part burns once alight (ticks). */
+function woodBoxBurnTicks(part: WoodBoxPart): number {
+  return part === 'crate' ? WOOD_BOX_CRATE_BURN_TICKS : WOOD_BOX_PIECE_BURN_TICKS;
+}
+
+/**
+ * Build a wooden box centered at (x,y) — the whole crate by default, or one of
+ * the three shards. The body's size comes straight from that part's art (see
+ * render/woodenBoxSprite.ts): the sprite's pixel box scaled into cells is the
+ * display box, and the disc inscribed in it is what the world collides with, so
+ * the picture and the physics can't drift apart. Mass follows that disc's area ×
+ * the timber density, so the crate is heavier than any single shard of it.
+ * Spawned cold and unlit.
+ */
+export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate'): SimWoodBox {
+  const sprite = WOOD_BOX_SPRITES[part];
+  const halfW = (sprite.w * WOOD_BOX_CELLS_PER_PX) / 2;
+  const halfH = (sprite.h * WOOD_BOX_CELLS_PER_PX) / 2;
+  // The INSCRIBED disc: with it, the box's nearest edge is tangent to the circle,
+  // so an axis-aligned contact (resting on flat ground, stacked on another crate,
+  // pushed up against a wall) puts the sprite exactly flush against the surface.
+  const radius = halfW < halfH ? halfW : halfH;
+  // Mass follows the COLLISION disc's area, because that same disc is the
+  // footprint buoyancy samples — pairing them is what makes the density ratio
+  // (timber 1.4 vs Water 3) come out as the submerged fraction it should.
+  const mass = WOOD_BOX_DENSITY * Math.PI * radius * radius;
+  // Inertia, though, follows the REAL rectangle (I = m(w² + h²)/12), not the
+  // disc: how hard a shard is to spin should depend on how long it actually is.
+  const w = 2 * halfW;
+  const h = 2 * halfH;
+  return {
+    kind: 'woodbox',
+    part,
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: 0,
+    halfLength: 0, // a box's medial segment is a point: the capsule is a disc
+    radius,
+    halfW,
+    halfH,
+    mass,
+    momentOfInertia: (mass * (w * w + h * h)) / 12,
+    restitution: WOOD_BOX_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    burnTicks: 0,
+  };
+}
+
+/**
+ * Ease a settled wooden box back to square. A box collides as a DISC, so nothing
+ * in the contact solve prefers one orientation over another — a crate that rolls
+ * to a stop stops at whatever angle it happened to reach, and then its corners
+ * (which stick out past the collision disc by up to √2−1 of its half-width) hang
+ * through the floor it's resting on. So once a box has actually come to rest —
+ * barely translating AND barely spinning — its angle is eased toward the nearest
+ * quarter turn, a fraction of the remaining tilt per tick.
+ *
+ * The gates matter: this never touches a box that is still moving, so tumbling,
+ * rolling down a slope and being flung by a blast all play out in full. It only
+ * decides how the box looks *after* it has stopped. Delete this call to have
+ * boxes keep whatever angle they land at.
+ */
+function settleWoodBoxUpright(o: SimWoodBox): void {
+  if (Math.abs(o.angularVelocity) > WOOD_BOX_SETTLE_SPIN) return;
+  if (Math.hypot(o.vx, o.vy) > WOOD_BOX_SETTLE_SPEED) return;
+  const QUARTER_TURN = Math.PI / 2;
+  const target = Math.round(o.angle / QUARTER_TURN) * QUARTER_TURN;
+  const tilt = target - o.angle;
+  if (Math.abs(tilt) < 1e-4) {
+    o.angle = target;
+    return;
+  }
+  o.angle += tilt * WOOD_BOX_SETTLE_RATE;
 }
 
 /**
@@ -1325,17 +1583,25 @@ function deepestCapsuleContact(o: CapsuleBody, ctx: SimContext): CapsuleContact 
  * a Coulomb-clamped tangential (friction) part; BOTH feed `angularVelocity`
  * through the torque r × J (r = contact − center). Friction at an off-center
  * contact is exactly what turns a drop into a roll — the piece the earlier
- * capsule attempt lacked. Returns true if any contact was resolved (grounded),
- * so the caller can apply rolling resistance.
+ * capsule attempt lacked.
+ *
+ * Returns HOW HARD the body met the grid: the largest normal closing speed it
+ * resolved (cells/tick), 0 if it was touching but not closing (resting on the
+ * floor), and −1 if it wasn't touching the grid at all. The caller reads `>= 0`
+ * as "grounded" for rolling resistance, and the magnitude as impact hardness —
+ * which is what lets a wooden box tell a landing from a crash (see
+ * WOOD_BOX_SMASH_SPEED). The FIRST iteration's closing speed is the real one:
+ * later iterations see a velocity the earlier impulse already reflected, so the
+ * running max is naturally the speed the body actually arrived at.
  */
-function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
+function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): number {
   const invMass = 1 / o.mass;
   const invI = 1 / o.momentOfInertia;
-  let grounded = false;
+  let impact = -1;
   for (let iter = 0; iter < 4; iter++) {
     const c = deepestCapsuleContact(o, ctx);
     if (!c) break;
-    grounded = true;
+    if (impact < 0) impact = 0; // in contact — at minimum, grounded
     // Positional correction along the contact normal.
     o.x += c.nx * c.pen;
     o.y += c.ny * c.pen;
@@ -1347,6 +1613,7 @@ function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
     const vpy = o.vy + o.angularVelocity * rx;
     const vn = vpx * c.nx + vpy * c.ny;
     if (vn >= 0) continue; // separating — no impulse
+    if (-vn > impact) impact = -vn; // hardest closing speed seen this call
     // Slow contacts don't bounce (kills gravity-driven micro-bounce at rest).
     const e = -vn < CAPSULE_REST_EPS ? 0 : o.restitution;
     // Normal impulse: jn = −(1+e)·v_n / (1/m + (r×n)²/I).
@@ -1372,7 +1639,7 @@ function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): boolean {
     o.vy += jt * ty * invMass;
     o.angularVelocity += invI * (rx * (jt * ty) - ry * (jt * tx));
   }
-  return grounded;
+  return impact;
 }
 
 /**
@@ -1629,8 +1896,10 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
  * position and contact torque folded into the collision resolve. Object-object
  * collisions and the terminal-state triggers (blast/heat/crush) are evaluated
  * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
+ * Returns the hardest normal closing speed it resolved against the grid this tick
+ * (0 if it never met it), which is what a wooden box's smash test reads.
  */
-function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s: number): void {
+function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s: number): number {
   o.vx += ax;
   o.vy += ay;
   const ms = sampleMediumCapsule(o, ctx);
@@ -1661,6 +1930,7 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   let remaining = 1;
   let guard = 0;
   let grounded = false;
+  let impact = 0; // hardest normal closing speed against the grid this tick
   while (remaining > 1e-4 && guard++ < 64) {
     const speed = Math.hypot(o.vx, o.vy) + Math.abs(o.angularVelocity) * reach;
     if (speed < 1e-6) break;
@@ -1675,7 +1945,9 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
     // rotated opposite to its rolling direction (rolled right but spun as if going
     // left), which read as "rolling the wrong way" on a slope.
     o.angle -= o.angularVelocity * dt;
-    if (resolveCapsuleCollision(o, ctx)) grounded = true;
+    const hit = resolveCapsuleCollision(o, ctx);
+    if (hit >= 0) grounded = true;
+    if (hit > impact) impact = hit;
     remaining -= dt;
   }
   // Rolling resistance: a grounded drum sheds a little spin (and a matching sliver
@@ -1690,6 +1962,7 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   // wrap; the modulo handles any number of turns in a tick).
   const TWO_PI = 2 * Math.PI;
   o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
+  return impact;
 }
 
 // ── Object-object collision, blast knockback, and crush ─────────────────────
@@ -2466,13 +2739,232 @@ function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean 
   return --o.ventTicks > 0;
 }
 
+// ───────────────────── Wooden box: burning and breaking ─────────────────────
+//
+// The wooden box is the first *flammable* body (가연성). Everything above either
+// ignores fire (the drums melt) or is set off by it (the dynamite, the smoke
+// bomb); a crate instead catches, burns for a while as a real fire that spreads,
+// and then gives way. What it leaves behind is the other new idea: a crate does
+// not vanish when it breaks, it becomes THREE MORE BODIES — the three shards of
+// its own art — and each of those, broken in turn, crumbles into Sawdust cells on
+// the grid. So one click's worth of crate can end as a burning pile of shavings.
+
+/** Uniform float in [-1, 1), drawn through SimContext's randomness seam (which
+ *  offers only integers) rather than reaching for Math.random directly. */
+function randSigned(ctx: SimContext): number {
+  return ctx.randInt(2001) / 1000 - 1;
+}
+
+/**
+ * How much of the body's footprint is matter that puts a fire out, as a fraction
+ * of the footprint (so the test is size-independent — the same soaking douses a
+ * shard and the crate it came from). Read-only.
+ *
+ * Quenching matter is CO₂ / Liquid N₂ (the engine's named extinguishers, same
+ * pair the dynamite's fuse recognizes) or a non-frozen liquid that is genuinely
+ * capable of putting a fire out. That last qualifier does real work: a *liquid*
+ * is not automatically wet-blanket. A pool of Lava or Molten Metal is a liquid
+ * and would otherwise "douse" the crate floating on it — the exact opposite of
+ * what should happen — so a liquid only counts when it is cooler than the timber's
+ * own ignition point, and Gasoline/Oil/Alcohol are excluded outright for being
+ * fuel rather than water.
+ *
+ * Frozen liquid deliberately does NOT count either: a block of ice isn't wet, and
+ * the rest of the engine already treats a frozen cell as structure, not fluid.
+ */
+function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
+  const r = o.radius;
+  const r2 = r * r;
+  const x0 = Math.floor(o.x - r);
+  const x1 = Math.ceil(o.x + r);
+  const y0 = Math.floor(o.y - r);
+  const y1 = Math.ceil(o.y + r);
+  let footprint = 0;
+  let quench = 0;
+  for (let cy = y0; cy < y1; cy++) {
+    const dy = cy + 0.5 - o.y;
+    for (let cx = x0; cx < x1; cx++) {
+      const dx = cx + 0.5 - o.x;
+      if (dx * dx + dy * dy > r2) continue;
+      footprint++;
+      if (!ctx.inBounds(cx, cy)) continue;
+      const id = ctx.get(cx, cy);
+      if (id === EMPTY) continue;
+      if (id === CO2.id || id === LIQUID_NITROGEN.id) {
+        quench++;
+        continue;
+      }
+      const m = getMaterial(id);
+      if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) continue;
+      if (m.combustible === true || m.explosive === true) continue; // fuel, not water
+      if (ctx.getTemp(cx, cy) >= WOOD_BOX_IGNITE_TEMP) continue; // lava/molten metal: not a dousing
+      quench++;
+    }
+  }
+  return footprint > 0 ? quench / footprint : 0;
+}
+
+/**
+ * Throw real Fire cells off a burning body — the flame is genuine CA fire (the
+ * dynamite fuse's approach), not something drawn on the sprite, so it flickers,
+ * rises, heats what's above it and ignites whatever the crate was resting
+ * against. Seeded only into open footprint cells, so a crate buried in sand burns
+ * through whatever gaps it has instead of carving them (the object layer stays
+ * read-only over matter it didn't put there).
+ */
+function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
+  const r = o.radius;
+  const r2 = r * r;
+  const x0 = Math.floor(o.x - r);
+  const x1 = Math.ceil(o.x + r);
+  const y0 = Math.floor(o.y - r);
+  const y1 = Math.ceil(o.y + r);
+  for (let cy = y0; cy < y1; cy++) {
+    const dy = cy + 0.5 - o.y;
+    for (let cx = x0; cx < x1; cx++) {
+      const dx = cx + 0.5 - o.x;
+      if (dx * dx + dy * dy > r2) continue;
+      if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) continue;
+      if (!ctx.chance(WOOD_BOX_FLAME_CHANCE)) continue;
+      ctx.spawn(cx, cy, FIRE.id);
+    }
+  }
+}
+
+/**
+ * A shard crumbles: fling Sawdust (materials/sawdust.ts) from across its
+ * footprint, reusing the blast-fragment scatter so the shavings arc out and rain
+ * back down as a visible heap rather than the shard simply vanishing. Sawdust is
+ * itself combustible, so a shard that crumbles while alight leaves a pile the
+ * surrounding fire happily takes over. Solid cells are skipped — the object layer
+ * is read-only over terrain.
+ */
+function spawnSawdust(o: SimWoodBox, ctx: SimContext): void {
+  const r = o.radius;
+  const r2 = r * r;
+  const x0 = Math.floor(o.x - r);
+  const x1 = Math.ceil(o.x + r);
+  const y0 = Math.floor(o.y - r);
+  const y1 = Math.ceil(o.y + r);
+  for (let cy = y0; cy < y1; cy++) {
+    const dy = cy + 0.5 - o.y;
+    for (let cx = x0; cx < x1; cx++) {
+      const dx = cx + 0.5 - o.x;
+      if (dx * dx + dy * dy > r2) continue;
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (isSolidCell(cx, cy, ctx)) continue;
+      if (!ctx.chance(WOOD_BOX_SAWDUST_CHANCE)) continue;
+      launchDebris(ctx, cx, cy, SAWDUST.id, cx + 0.5 < o.x ? -1 : 1, -1, 1.5);
+    }
+  }
+}
+
+/**
+ * Break a wooden box, whatever broke it (fire burning through, a blast, a crush).
+ * This is the 2차 오브젝트 rule and the one place it lives:
+ *
+ *   - a CRATE comes apart into its three shards, each spawned at exactly the spot
+ *     it occupied inside the box (see WoodBoxSprite.ox/oy) and thrown outward from
+ *     the crate's centre with a little lift, so for the first instant the wreckage
+ *     still reads as the box that just burst. They inherit the crate's velocity and
+ *     its heat, and — if the crate was alight — they spawn already burning, which
+ *     is what makes a burning crate a chain rather than a single event. The shards
+ *     exist ONLY through this path: nothing else can create one (조각은 나무 상자를
+ *     부술 때만 소환).
+ *   - a SHARD has nothing left to break into, so it crumbles to Sawdust cells.
+ *
+ * New bodies go into `spawn` rather than straight into the live object array:
+ * stepObjects is compacting that array in place when this runs, so appending to
+ * it mid-pass would clobber the compaction. The caller appends them afterwards.
+ */
+function breakWoodBox(o: SimWoodBox, ctx: SimContext, spawn: SimBody[], alight: boolean): void {
+  if (o.part !== 'crate') {
+    spawnSawdust(o, ctx);
+    return;
+  }
+  // Each shard's slot inside the crate, carried out through the crate's own
+  // rotation so a box that broke while tumbling scatters along the axis it was
+  // actually lying on rather than along the screen's.
+  const cos = Math.cos(o.angle);
+  const sin = Math.sin(o.angle);
+  for (const part of WOOD_BOX_PIECES) {
+    const art = WOOD_BOX_SPRITES[part];
+    const lx = art.ox * WOOD_BOX_CELLS_PER_PX;
+    const ly = art.oy * WOOD_BOX_CELLS_PER_PX;
+    const dx = lx * cos + ly * sin;
+    const dy = -lx * sin + ly * cos;
+    const px = o.x + dx;
+    const py = o.y + dy;
+    const piece = createWoodBox(px, py, part);
+    piece.angle = o.angle; // it starts as the part of the crate it just was
+    // Outward from the crate's centre, plus a lift against gravity so the shards
+    // pop up out of the wreckage instead of sliding out of it.
+    const d = Math.hypot(dx, dy) || 1;
+    const kick = WOOD_BOX_SHATTER_SPEED;
+    piece.vx = o.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * WOOD_BOX_SHATTER_LIFT;
+    piece.vy = o.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * WOOD_BOX_SHATTER_LIFT;
+    // Splinters tumble: the crate's own spin plus a random kick of its own.
+    piece.angularVelocity = o.angularVelocity + randSigned(ctx) * WOOD_BOX_SHATTER_SPIN;
+    piece.temp = o.temp;
+    if (alight) piece.burnTicks = woodBoxBurnTicks(part);
+    spawn.push(piece);
+  }
+}
+
+/**
+ * Per-tick flammability for a wooden box, after this tick's heat conduction
+ * (called from evaluateTriggers with the resolved `heat`). Three states and
+ * nothing else:
+ *   1. NOT ALIGHT — sustained heat at/above the timber's ignition point sets it
+ *      burning; anything less lets the counter bleed back down.
+ *   2. ALIGHT — a good soaking (a pond, a poured bucket, CO₂ over a quarter of the
+ *      footprint) puts it straight back out, otherwise it throws real Fire cells
+ *      and its burn timer runs down.
+ *   3. BURNT THROUGH — the body gives way: a crate into its three shards, a shard
+ *      into Sawdust (see breakWoodBox).
+ * Returns true to keep the body, false once it has broken.
+ */
+function stepWoodBox(
+  o: SimWoodBox,
+  ctx: SimContext,
+  heat: number,
+  spawn: SimBody[],
+): boolean {
+  if (o.burnTicks <= 0) {
+    if (heat >= WOOD_BOX_IGNITE_TEMP) {
+      o.heatTicks++;
+      if (o.heatTicks >= WOOD_BOX_IGNITE_TICKS) {
+        o.heatTicks = 0;
+        o.burnTicks = woodBoxBurnTicks(o.part);
+      }
+    } else if (o.heatTicks > 0) {
+      o.heatTicks--;
+    }
+    if (o.burnTicks <= 0) return true;
+  }
+  if (woodBoxQuenchFrac(o, ctx) >= WOOD_BOX_DOUSE_FRAC) {
+    o.burnTicks = 0; // doused — back to plain, unlit timber (it can catch again)
+    return true;
+  }
+  emitWoodBoxFlames(o, ctx);
+  if (--o.burnTicks > 0) return true;
+  breakWoodBox(o, ctx, spawn, true);
+  return false;
+}
+
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
  *  scattered Metal Powder and, if it was carrying anything, gushes its contents
  *  (원유/산) across the wreckage; a stick of dynamite detonates (a knock or a
  *  passing blast sets it off — chain reactions); a smoke bomb's canister ruptures
- *  and dumps its whole remaining charge at once; a rubber ball leaves nothing. */
-function destroyByproduct(o: SimBody, ctx: SimContext): void {
-  if (o.kind === 'drum') {
+ *  and dumps its whole remaining charge at once; a wooden crate bursts into its
+ *  three shards (and a shard into Sawdust — see breakWoodBox), carrying its fire
+ *  over to the wreckage if it was burning; a rubber ball leaves nothing.
+ *  `spawn` collects any *bodies* the byproduct creates (only the crate makes
+ *  any); see breakWoodBox for why they aren't pushed straight into the live array. */
+function destroyByproduct(o: SimBody, ctx: SimContext, spawn: SimBody[]): void {
+  if (o.kind === 'woodbox') {
+    breakWoodBox(o, ctx, spawn, o.burnTicks > 0);
+  } else if (o.kind === 'drum') {
     spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
     spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
     o.state = 'destroyed';
@@ -2485,7 +2977,7 @@ function destroyByproduct(o: SimBody, ctx: SimContext): void {
   }
 }
 
-function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
+function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolean {
   // Void (특수 물질) swallows any body whole: deleted with NO byproduct — not a
   // 파괴/용해 judgement. Checked before every other trigger so a stick doesn't
   // explode (nor a drum shatter/spill) as it's drawn into the sink.
@@ -2501,7 +2993,7 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // are secondary to the phase-A doomed capture (covers a body knocked into a
   // lingering flash or into the beam's path).
   if (exp.blast || exp.heatRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
-    destroyByproduct(o, ctx);
+    destroyByproduct(o, ctx, spawn);
     return false; // ball: no byproduct
   }
   // The body's own heat reservoir relaxes toward its surroundings each tick
@@ -2528,6 +3020,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
   // A smoke bomb likewise runs its own two-stage countdown (trickle → discharge →
   // spent) rather than melting or burning.
   if (o.kind === 'smokebomb') return stepSmokeBomb(o, ctx, heat);
+  // A wooden box burns rather than melting: it catches, flames for a few seconds,
+  // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
+  if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);
   // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
@@ -2550,7 +3045,8 @@ function evaluateTriggers(o: SimBody, ctx: SimContext): boolean {
 /**
  * Advance every free object one tick in three phases: (A) each body's own physics
  * — a near-miss blast (or a Woofer's shockwave — see applyWooferKnockback) shoves
- * it, then gravity/buoyancy/grid-collision integration — skipped while the
+ * it, then gravity/buoyancy/grid-collision integration, and a wooden box that met
+ * the grid at smashing speed is marked doomed — skipped while the
  * pointer holds it; (B) resolve collisions *between* bodies so
  * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
  * crush) and compact out anything destroyed this tick. Run at the end of
@@ -2570,6 +3066,11 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   // near-miss blast has no footprint overlap here, so it falls through to the
   // knockback shove instead; the beam has no knockback to fall through to.)
   const doomed = new Set<SimBody>();
+  // Bodies a destruction spawns this tick (only the wooden crate does: it bursts
+  // into its three shards). Collected here and appended after phase C, because
+  // that phase compacts `objects` in place — appending mid-pass would clobber it,
+  // and a shard shouldn't be stepped in the same tick it was created anyway.
+  const spawned: SimBody[] = [];
   // Phase A — each body's own physics (a held body follows the cursor instead).
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
@@ -2585,8 +3086,25 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);
-    if (o.kind === 'ball') stepBall(o, ctx, ax, ay, s);
-    else stepCapsule(o, ctx, ax, ay, s);
+    if (o.kind === 'ball') {
+      stepBall(o, ctx, ax, ay, s);
+      continue;
+    }
+    const impact = stepCapsule(o, ctx, ax, ay, s);
+    if (o.kind !== 'woodbox') continue;
+    // Timber that meets a wall hard enough doesn't bounce, it bursts (매우 빠른
+    // 속도로 벽/고체에 부딪히면 파괴). Queued as doomed rather than destroyed here so
+    // it takes the one shared byproduct path in phase C — the crate into its three
+    // shards, a shard into Sawdust, carrying its fire over if it was alight.
+    if (impact >= WOOD_BOX_SMASH_SPEED) {
+      doomed.add(o);
+      continue;
+    }
+    // A settled box squares up: it collides as a disc, so the contact solve has no
+    // orientation to prefer and a stopped crate would otherwise rest at whatever
+    // angle it happened to reach, corners hanging through the floor. Gated on the
+    // body having actually stopped, so tumbling and rolling are untouched.
+    settleWoodBoxUpright(o);
   }
   // Phase B — resolve collisions between bodies (fully interactive layer).
   resolveObjectPairs(objects);
@@ -2611,10 +3129,11 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       // A blast or Nuclear Ray reached it this tick — spawn its byproduct, UNLESS
       // it's also being swallowed by Void, which deletes it cleanly (no
       // byproduct) and wins.
-      if (!footprintTouchesVoid(o, ctx)) destroyByproduct(o, ctx);
-    } else if (evaluateTriggers(o, ctx)) {
+      if (!footprintTouchesVoid(o, ctx)) destroyByproduct(o, ctx, spawned);
+    } else if (evaluateTriggers(o, ctx, spawned)) {
       objects[w++] = o;
     }
   }
   objects.length = w;
+  for (let i = 0; i < spawned.length; i++) objects.push(spawned[i]);
 }
