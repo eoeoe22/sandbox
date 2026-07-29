@@ -334,7 +334,7 @@ function hottestEthylene(grid: Grid): number {
   // write one (blast debris rides as a different id and lands via `spawn`, which
   // zeroes aux) — this stands in for a hand-edited save or a future system that
   // writes aux without gating on the cell's id. A material id in that slot reads
-  // unclamped as a 140-generation chain, far deeper than the cloud is wide, i.e.
+  // unclamped as a 141-generation chain, far deeper than the cloud is wide, i.e.
   // the whole cloud; the clamp in ethylene.ts is what stops it, and this is the
   // check that would catch its removal.
   const mangled = strayGrain(POLYETHYLENE.id);

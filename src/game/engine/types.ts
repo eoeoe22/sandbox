@@ -375,6 +375,22 @@ export interface Material {
    */
   overlayTemp?: number;
   /**
+   * `temp` on this material IS a real degree reading (unlike `packedTemp`), so
+   * the 돋보기 readout and the heat-overlay camera should show it — but it's
+   * decoration, not heat: the cell conducts nothing (`conductivity: 0`) and no
+   * consumer outside the heat field may treat it as a heat *source*. The
+   * Firework Burst is the case this exists for: a firework flower should read as
+   * the ~1200° flame it looks like rather than as room-temperature air, while
+   * still washing over a wooden box without setting it alight.
+   *
+   * Grid materials need no special handling — conduction is gated by the lower of
+   * the two cells' conductivities, so a 0 never warms a neighbour. The object
+   * layer is what has to opt out explicitly, since it reads raw cell
+   * temperatures: the body heat-exposure scan and the dynamite fuse tip both
+   * ignore a cell whose material sets this (engine/objects.ts).
+   */
+  decorTemp?: boolean;
+  /**
    * Optional temperature → color ramp for the renderer. The cell is drawn
    * interpolated from `cool` (at temperature `min`) up to the material's base
    * `color` (at `max` and above), so a hot material like Lava visibly darkens
@@ -582,7 +598,16 @@ export interface Material {
    * still drops under gravity — 점성 흐름 개선), only the lateral leveling and
    * diagonal creep, so honey/mud/slime ooze instead of racing flat like water.
    * 0 (or omitted) ⇒ frictionless flow (Water). Read by updateLiquid; ignored for
-   * non-liquids. Replaces the old per-material `chance(FLOW)` throttle.
+   * non-liquids.
+   *
+   * Because it never touches the fall, this tag alone can't make a liquid *ooze*
+   * — a very viscous liquid still drops at water speed and only refuses to
+   * flatten once it lands. A material that should crawl in every direction pairs
+   * it with the per-material `chance(FLOW_CHANCE)` gate around its own
+   * `updateLiquid` call, which throttles the whole movement step: Lava does this
+   * at 0.15, and Honey / Slime / Acid Slime follow it (see lava.ts, honey.ts,
+   * slime.ts). The two are complementary — the gate sets how *often* the liquid
+   * moves at all, `viscosity` how reluctantly it levels out when it does.
    */
   viscosity?: number;
   /**

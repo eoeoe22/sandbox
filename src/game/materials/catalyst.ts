@@ -20,7 +20,7 @@ import { rgb } from '../render/color';
 // the bed is usually the reactor's floor, so it's the path by which a water
 // jacket underneath actually pulls the polymerization exotherm back out.
 export const CATALYST = register({
-  id: 139,
+  id: 140,
   name: 'Catalyst',
   phase: Phase.Solid,
   color: rgb(120, 96, 142),

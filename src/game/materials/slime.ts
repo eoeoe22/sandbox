@@ -34,13 +34,15 @@ const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more slime
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
 
-// Thick, heavy goo doesn't drop like thin water: on a fraction of ticks it just
-// holds instead of moving, so a poured blob sinks and settles slowly rather than
-// splashing straight down (낙하 속도 ↓). Gates the whole movement step (fall +
-// spread) — the liquid mirror of updateGas's stall. Its `viscosity` already
-// throttles the lateral spread but NOT the straight fall (see updateLiquid), so
-// this is what actually slows the drop. Exported so Acid Slime falls identically.
-export const SLIME_FALL_STALL_CHANCE = 0.5;
+// Thick, heavy goo doesn't drop like thin water: the whole movement step (fall +
+// spread) only runs on a fraction of ticks, so a blob oozes and settles slowly
+// rather than splashing straight down (낙하 속도 ↓). Its `viscosity` throttles the
+// lateral spread but NOT the straight fall (see updateLiquid), so this gate is
+// what actually slows the drop — the same one Lava uses (lava.ts FLOW_CHANCE),
+// and at the same value: slime is the roster's thickest goo (viscosity 0.86, the
+// highest of any liquid), so it creeps at magma pace rather than the half-speed
+// stall it used to have. Exported so Acid Slime flows identically.
+export const SLIME_FLOW_CHANCE = 0.15;
 
 // Reach budget a Spark stamps on the one slime cell it seeds (see spark.ts), and
 // the whole aux state slime uses: a healthy cell reads 0, a front cell holds its
@@ -136,11 +138,11 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly, and a
-  // fall-stall throttles the drop itself: skip all movement on a fraction of ticks
-  // so a heavy blob sinks slowly, not like thin water (SLIME_FALL_STALL_CHANCE).
-  if (sim.chance(SLIME_FALL_STALL_CHANCE)) return;
-  updateLiquid(x, y, sim);
+  // Very viscous — the flow gate throttles all movement (fall included) to Lava's
+  // pace, and `viscosity` on top of that holds a wobbling mound instead of leveling
+  // flat. Everything above (feeding, melting, dissolving) still runs every tick;
+  // only the movement is gated, so a stalled blob keeps drinking and burning.
+  if (sim.chance(SLIME_FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
 
 export const SLIME = register({
@@ -152,7 +154,8 @@ export const SLIME = register({
   // it drinks the water around it.
   density: 4,
   category: 'life',
-  // Thick, gooey ooze — holds a mound instead of spreading flat.
+  // Thick, gooey ooze — holds a mound instead of spreading flat (the lateral half
+  // of its viscosity; SLIME_FLOW_CHANCE above is the half that slows the fall).
   viscosity: 0.86,
   // Springy goo: a glob flung by a blast/pressure wave bounces around energetically
   // (high coefficient of restitution) before it settles (see debris.ts 탄성).

@@ -46,7 +46,7 @@ function updatePolyethylene(x: number, y: number, sim: SimContext): void {
 }
 
 export const POLYETHYLENE = register({
-  id: 140,
+  id: 141,
   name: 'Polyethylene',
   phase: Phase.Powder,
   color: rgb(232, 234, 228),

@@ -157,7 +157,7 @@ function updateEthylene(x: number, y: number, sim: SimContext): void {
 }
 
 export const ETHYLENE = register({
-  id: 138,
+  id: 139,
   name: 'Ethylene',
   phase: Phase.Gas,
   color: rgb(170, 205, 200),
