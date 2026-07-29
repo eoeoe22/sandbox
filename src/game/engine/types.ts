@@ -403,9 +403,11 @@ export interface Material {
    * this material reads as a grainy/shimmering mass of slightly different shades
    * instead of a flat slab. Omit to inherit a sensible default by phase (powders
    * and liquids vary, everything else stays flat); set `0` to force a material
-   * flat. Powders re-roll their tint only while moving; liquids drift it slowly
-   * even at rest. Ignored for `glow` materials (they're shaded by temperature
-   * instead). See game/tint.ts and the renderer/Simulation.
+   * flat. A powder's tint byte is seeded once when the grain is created and then
+   * travels with it unchanged — it never re-rolls, moving or not; a liquid has no
+   * tint of its own and instead samples a positional background field that drifts
+   * slowly even at rest. Ignored for `glow` materials (they're shaded by
+   * temperature instead). See game/tint.ts and the renderer/Simulation.
    */
   colorVary?: number;
   /**
@@ -482,7 +484,9 @@ export interface Material {
    */
   checker2x2?: boolean;
   /**
-   * Draw a fixed 14x14 pixel-art battery pattern (Lithium Battery, LFP Battery).
+   * Draw a repeating battery pattern (Lithium Battery, LFP Battery): a 2-step
+   * diagonal staircase of flat black on a 4x5 tile, leaving a 1px border of the
+   * battery's own `color` around each pair of cells.
    */
   batteryPattern?: boolean;
   /**

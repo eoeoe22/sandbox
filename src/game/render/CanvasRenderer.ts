@@ -4,7 +4,7 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, Phase, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
-import { rgb } from './color';
+import { rgb, tinted, frosted, buildGlow, shade, type GlowRamp } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
 import {
@@ -275,17 +275,6 @@ const HEAT_STOPS: readonly [number, number, number, number][] = [
 ];
 
 /** Precomputed temperature→color ramp for a glowing material (see Material.glow). */
-interface GlowRamp {
-  min: number;
-  invRange: number;
-  // cool-end channels and the per-channel delta up to the hot (base) color.
-  cr: number;
-  cg: number;
-  cb: number;
-  dr: number;
-  dg: number;
-  db: number;
-}
 
 export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -480,7 +469,7 @@ export class CanvasRenderer implements Renderer {
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
-      if (m?.glow) this.glow[i] = CanvasRenderer.buildGlow(m.glow, m.color);
+      if (m?.glow) this.glow[i] = buildGlow(m.glow, m.color);
       if (m) {
         this.vary[i] = varyAmplitude(m);
         this.varyMode[i] = varyMode(m);
@@ -505,25 +494,10 @@ export class CanvasRenderer implements Renderer {
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
-          this.frost[i] = CanvasRenderer.frosted(m.color);
+          this.frost[i] = frosted(m.color);
         }
       }
     }
-  }
-
-  /** Blend a packed colour toward an icy white-blue, for rendering a frozen
-   *  liquid (see Material.freeze) as a frosted block distinct from its liquid
-   *  self. Keeps a little of the base hue so frozen oil still reads dark-frosty
-   *  and frozen mercury pale-frosty. */
-  private static frosted(base: number): number {
-    const fr = 210;
-    const fg = 232;
-    const fb = 248;
-    const mix = (c: number, f: number): number => ((c * 45 + f * 55) / 100) | 0;
-    const r = mix(base & 0xff, fr);
-    const g = mix((base >> 8) & 0xff, fg);
-    const b = mix((base >> 16) & 0xff, fb);
-    return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
   /** Blend a cell's rendered color toward its 겹침 overlap fluid's base color
@@ -546,50 +520,6 @@ export class CanvasRenderer implements Renderer {
     const g = ((((host >> 8) & 0xff) * it + ((other >> 8) & 0xff) * t) | 0) & 0xff;
     const b = ((((host >> 16) & 0xff) * it + ((other >> 16) & 0xff) * t) | 0) & 0xff;
     return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
-  }
-
-  /** Shift a packed 0xAABBGGRR color's brightness by `d` (per channel, clamped),
-   *  preserving alpha. Used to render each particle's individual tint. */
-  private static tinted(base: number, d: number): number {
-    let r = (base & 0xff) + d;
-    let g = ((base >> 8) & 0xff) + d;
-    let b = ((base >> 16) & 0xff) + d;
-    if (r < 0) r = 0;
-    else if (r > 255) r = 255;
-    if (g < 0) g = 0;
-    else if (g > 255) g = 255;
-    if (b < 0) b = 0;
-    else if (b > 255) b = 255;
-    return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
-  }
-
-  /** Split the cool and base (hot) colors into channels so the render loop can
-   *  lerp between them per cell without unpacking on every pixel. */
-  private static buildGlow(
-    glow: { min: number; max: number; cool: number },
-    hot: number,
-  ): GlowRamp {
-    return {
-      min: glow.min,
-      invRange: 1 / Math.max(1, glow.max - glow.min),
-      cr: glow.cool & 0xff,
-      cg: (glow.cool >> 8) & 0xff,
-      cb: (glow.cool >> 16) & 0xff,
-      dr: (hot & 0xff) - (glow.cool & 0xff),
-      dg: ((hot >> 8) & 0xff) - ((glow.cool >> 8) & 0xff),
-      db: ((hot >> 16) & 0xff) - ((glow.cool >> 16) & 0xff),
-    };
-  }
-
-  /** Interpolate a glow ramp at temperature `t` into a packed 0xAABBGGRR color. */
-  private static shade(g: GlowRamp, t: number): number {
-    let f = (t - g.min) * g.invRange;
-    if (f < 0) f = 0;
-    else if (f > 1) f = 1;
-    const r = (g.cr + g.dr * f) & 0xff;
-    const gr = (g.cg + g.dg * f) & 0xff;
-    const b = (g.cb + g.db * f) & 0xff;
-    return (0xff000000 | (b << 16) | (gr << 8) | r) >>> 0;
   }
 
   /** Build the temperature→colour lookup for the heat overlay by linearly
@@ -755,7 +685,7 @@ export class CanvasRenderer implements Renderer {
           // one flat block. Firework Burst, the other auxPalette material, is a
           // Gas with no variation (amp 0), so this is a no-op for it.
           const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
         }
       } else if (tintPal3) {
         // A multi-coloured *particle* material (Fireworks): each grain draws the
@@ -774,7 +704,7 @@ export class CanvasRenderer implements Renderer {
           // future liquid-phase tintPalette material would shade itself from a
           // plane it doesn't use.
           const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
         }
       } else if (arrow[id]) {
         // A directional-arrow material (Conveyor) draws a chevron pointing the way
@@ -813,7 +743,7 @@ export class CanvasRenderer implements Renderer {
         }
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
-        c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = on ? (a >> 2 ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (triArrow[id]) {
         // A Shaped Charge draws solid arrowhead triangles pointing its jet
         // direction (aux low 2 bits, same codes as the Fan's chevron) — the
@@ -851,7 +781,7 @@ export class CanvasRenderer implements Renderer {
         const y = (i / w) | 0;
         const band = y & 3;
         const a = auxArr[i];
-        c = band === 1 || band === 2 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = band === 1 || band === 2 ? (a ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (stripePattern[id]) {
         // A Pump draws vertical channel stripes — one lit column of every three,
         // in the `lattice` colour — so a block of it reads as open risers matter
@@ -862,7 +792,7 @@ export class CanvasRenderer implements Renderer {
         // stripes — the cue that it's lifting rather than just sieving.
         const x = i % w;
         const a = auxArr[i];
-        c = x % 3 === 1 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = x % 3 === 1 ? (a ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (solarPattern[id]) {
         // A Solar Panel draws its photovoltaic cell grid: rectangular cells of the
         // base colour separated by thin `lattice`-coloured seams — a seam on every
@@ -887,7 +817,7 @@ export class CanvasRenderer implements Renderer {
         if (amp !== 0) {
           const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(c, d);
+          c = tinted(c, d);
         }
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
@@ -909,12 +839,12 @@ export class CanvasRenderer implements Renderer {
           (px === 2 && (py === 2 || py === 3));
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
-        c = CanvasRenderer.shade(glow[id]!, temp[i]);
+        c = shade(glow[id]!, temp[i]);
         const amp = vary[id];
         if (amp !== 0) {
           const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(c, d);
+          c = tinted(c, d);
         }
       } else if (temp[i] <= freezeTemp[id]) {
         // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
@@ -931,7 +861,7 @@ export class CanvasRenderer implements Renderer {
           // Map the tint byte to a signed brightness offset in [-amp, +amp]:
           // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(pal[id], d);
+          c = tinted(pal[id], d);
         }
       }
       // Fan wind streaks: an animated low-res effect painted over the empty air of
