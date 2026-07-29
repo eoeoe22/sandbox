@@ -12,7 +12,7 @@
 // 검사 모드는 `npm run check:hand-icons` 로 묶여 있다. `.svg` 만 고치고 모듈을
 // 안 만들면 조용히 옛 그림이 계속 나가므로, 그 드리프트를 여기서 잡는다.
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { parseIconSvg } from './icon-svg.mjs';
+import { parseIconSvg, iconKey } from './icon-svg.mjs';
 
 const SRC = 'temp/material-icons';
 const OUT = 'src/game/render/handIcons.ts';
@@ -21,6 +21,16 @@ const files = readdirSync(SRC).filter((f) => f.endsWith('.svg')).sort();
 const entries = [];
 for (const f of files) {
   const key = f.replace(/\.svg$/, '');
+  // 파일명이 곧 배선 키다. 대문자가 섞이거나 공백이 남으면 `iconKey(m.name)` 과
+  // 영영 안 맞아서, 그림은 모듈에 실리는데 화면에는 절대 안 나온다 — 조용한
+  // 실패라 여기서 막는다. "실재하는 물질인가"까지는 물질 레지스트리가 필요해
+  // 여기서 못 보고, `test/materialicons.ts` 의 손그림 계층 검사가 본다.
+  if (key !== iconKey(key)) {
+    console.error(
+      `${f}: 파일명이 소문자 kebab-case 가 아니다 — '${iconKey(key)}.svg' 여야 배선된다.`,
+    );
+    process.exit(1);
+  }
   let r;
   try {
     r = parseIconSvg(readFileSync(`${SRC}/${f}`, 'utf8'));

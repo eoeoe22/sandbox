@@ -41,9 +41,15 @@ import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
 
 /** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
- *  Unlike the derived patches, 24 is not a pixel-alignment choice — the drawing
- *  is a silhouette rather than a repeating tile, so it survives the 18 CSS px
- *  swatch's 0.75× reduction without needing cells to land on whole pixels. */
+ *
+ *  Note that 24 does NOT divide the 18 CSS px swatch evenly — a cell is 0.75 px,
+ *  the same fractional case that made the 16 px picker trigger opt out of
+ *  `crispEdges`. The argument for leaving it is that a drawing is a silhouette
+ *  rather than a repeating tile, so a dropped row loses a little of one shape
+ *  instead of destroying a period; the brief's two-cell minimum feature size
+ *  exists to keep that true. That reasoning has not been checked against real
+ *  pixels, so if a drawing ever reads as ragged at 18 px, this is the first
+ *  thing to suspect. */
 const HAND_ICON_CELLS = 24;
 
 /**
