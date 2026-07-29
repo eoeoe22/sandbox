@@ -28,10 +28,12 @@ import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 //    away, Heatpipe is a late-game solid. Aluminum is *the* real-world mirror
 //    metal (every telescope mirror is aluminized), and a pour of it gives the
 //    laser toys a cheap, castable mirror for the first time.
-//  • Heat *resistance*: none. It melts at 660°, the lowest melting point of any
-//    structural solid in the game — under Stone (1100°), Glass (1150°) and Iron
-//    (1200°), and under a bare Fire's ~1000°. So an aluminum wall, mirror or
-//    bus bar slumps in the very fire that cast it. That is the cost: aluminum
+//  • Heat *resistance*: none. It melts at 660° — under Stone (1100°), Glass
+//    (1150°) and Iron (1200°), and under a bare Fire's ~1000°. That is the
+//    lowest melting point of any structural solid you'd actually *build* with;
+//    only Gallium goes lower (30°), and Gallium is the novelty that melts in
+//    your hand, not a material anyone raises a wall out of. So an aluminum
+//    wall, mirror or bus bar slumps in the very fire that cast it. Aluminum
 //    is the cheap metal you build with everywhere the heat can't reach.
 //
 // Deliberately not `magnetic` — aluminum isn't ferrous, exactly as its powder
