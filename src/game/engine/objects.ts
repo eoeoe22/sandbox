@@ -1748,7 +1748,10 @@ function scanBodyExposure(
       // so a footprint that is ALL packed cells yields maxTemp −Infinity, which
       // evaluateTriggers already handles like an out-of-world body (freeze the
       // reservoir, no conduction).
-      if (m !== null && m.packedTemp) continue;
+      // A `decorTemp` cell (the Firework Burst flower) is skipped for the
+      // opposite reason: its reading is real but purely cosmetic, so a volley
+      // bursting over a wooden box must not cook it (see Material.decorTemp).
+      if (m !== null && (m.packedTemp || m.decorTemp)) continue;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
     }
@@ -2477,7 +2480,11 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   const tcy = Math.floor(o.y - uy * reach);
   if (ctx.inBounds(tcx, tcy)) {
     const tipId = ctx.get(tcx, tcy);
-    const tipTemp = ctx.getTemp(tcx, tcy);
+    // A cosmetic reading is not a flame: a Firework Burst flower drifting across
+    // the fuse must neither re-light a dud nor otherwise count as heat, so it
+    // reads as plain ambient air here (see Material.decorTemp).
+    const tipTemp =
+      tipId !== EMPTY && getMaterial(tipId).decorTemp ? AMBIENT_TEMP : ctx.getTemp(tcx, tcy);
     if (fuseSnuffed(tipId, tipTemp)) {
       o.lit = false; // a dud — countdown PAUSED (fuseTicks kept); heat can still cook it off
     } else if (!o.lit && tipTemp >= FUSE_RELIGHT_TEMP) {
