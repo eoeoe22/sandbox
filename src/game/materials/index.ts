@@ -96,6 +96,8 @@ import { CO2 } from './co2';
 import { HYDROGEN_PEROXIDE } from './hydrogenperoxide';
 import { YEAST } from './yeast';
 import { SEED } from './seed';
+import { CORAL } from './coral';
+import { BLEACHED_CORAL } from './bleachedcoral';
 import { SLIME } from './slime';
 import { ACID_SLIME } from './acidslime';
 import { RESIN } from './resin';
@@ -229,6 +231,8 @@ export {
   HYDROGEN_PEROXIDE,
   YEAST,
   SEED,
+  CORAL,
+  BLEACHED_CORAL,
   SLIME,
   ACID_SLIME,
   RESIN,
@@ -424,6 +428,8 @@ export const MATERIALS = [
   AEROGEL,
   CONVEYOR,
   SEED,
+  CORAL,
+  BLEACHED_CORAL,
   YEAST,
   SLIME,
   ACID_SLIME,

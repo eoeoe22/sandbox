@@ -746,6 +746,17 @@ export class CanvasRenderer implements Renderer {
       const tintPal3 = tintPal[id];
       if (pal8) {
         c = pal8[auxArr[i] % pal8.length];
+        const amp = vary[id];
+        if (amp !== 0) {
+          // The ordinary brightness grain rides on top of the palette colour, the
+          // same way it does over the tintPalette branch below — otherwise a
+          // powder that uses `auxPalette` to show a *state* (a germinating Seed's
+          // progress) would lose the speckle every other powder has and read as
+          // one flat block. Firework Burst, the other auxPalette material, is a
+          // Gas with no variation (amp 0), so this is a no-op for it.
+          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+        }
       } else if (tintPal3) {
         // A multi-coloured *particle* material (Fireworks): each grain draws the
         // palette entry its own stable tint byte names, so a pile is a speckle of

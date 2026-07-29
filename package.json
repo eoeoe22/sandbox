@@ -17,7 +17,8 @@
     "test:woodbox": "node test/run-woodbox.mjs",
     "test:fireworks": "node test/run-fireworks.mjs",
     "test:aluminum": "node test/run-aluminum.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum"
+    "test:plantcoral": "node test/run-plantcoral.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
