@@ -309,6 +309,40 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
   );
 }
 
+// 5d. Leaves are spent growth and must stay that way. A leaf is packed with no
+//     vigour, no segment and no tip flag (plant.ts), which is what keeps foliage
+//     from growing branches of its own — and it is the only thing that does:
+//     a leaf that came out animate would turn every crown into a runaway thicket.
+//     That signature (no tip, seg 0, gen 0) belongs to leaves alone — a bud keeps
+//     its tip flag, and a stem that has forked keeps whatever vigour it had left —
+//     so the check is: find the leaves, then prove their structure never moves
+//     again. Only moisture may change; a leaf still drinks from the stem it hangs
+//     on and dries out with it.
+{
+  reseed();
+  const MOIST = 0x7f;
+  const TIP = 1 << 7;
+  const SEG = 0b11 << 10;
+  const GEN = 0b111 << 12;
+  const isLeaf = (a: number): boolean => (a & (TIP | SEG | GEN)) === 0;
+  const { grid, sim } = makeWorld(60, 60);
+  bed(grid);
+  for (const x of [15, 30, 45]) put(grid, x, 50, PLANT);
+  for (let t = 0; t < 4000; t++) sim.step();
+  const leaves: [number, number][] = [];
+  for (let i = 0; i < grid.cells.length; i++)
+    if (grid.cells[i] === PLANT && isLeaf(grid.aux[i])) leaves.push([i, grid.aux[i] & ~MOIST]);
+  for (let t = 0; t < 4000; t++) sim.step();
+  let moved = 0;
+  for (const l of leaves)
+    if (grid.cells[l[0]] !== PLANT || (grid.aux[l[0]] & ~MOIST) !== l[1]) moved++;
+  check(
+    'a leaf is inert: it never turns back into a growing tip',
+    leaves.length > 20 && moved === 0,
+    `${leaves.length} leaves, ${moved} changed structure`,
+  );
+}
+
 // 5b. A world saved before the growth rework stored a bare 0..250 moisture value
 //     in a plant cell's aux. Such a cell has to read as "no structure yet" and be
 //     re-initialised, not decode as an already-spent stem that can never grow.
