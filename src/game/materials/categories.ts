@@ -25,6 +25,7 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: 'fire', icon: 'bi-fire' },
   { key: 'smelt', icon: 'bi-hammer' },
   { key: 'oil', icon: 'bi-fuel-pump-fill' },
+  { key: 'polymer', icon: 'bi-hexagon-fill' },
   { key: 'explosive', icon: 'bi-asterisk' },
   { key: 'cooling', icon: 'bi-snow' },
   { key: 'electric', icon: 'bi-lightning-charge-fill' },

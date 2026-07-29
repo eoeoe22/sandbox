@@ -63,9 +63,10 @@ function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
 
 export const MOLTEN_ALUMINUM = register({
   // Out of order on purpose. 134 and 135 are taken by the Coral pair on a
-  // parallel branch, and 139..142 are held open for branches still in flight,
-  // so this melt sits past the rest of its own round (Aluminum 136, Flash
-  // Powder 137, Flash 138) rather than at the head of it. Ids are stable
+  // parallel branch, and 139..142 were held open for branches still in flight
+  // (139..141 have since landed as the polymer trio), so this melt sits past
+  // the rest of its own round (Aluminum 136, Flash Powder 137, Flash 138)
+  // rather than at the head of it. Ids are stable
   // identifiers, not an ordering — save files and spark.ts's conductor table
   // index by them — so a gap is never worth closing by renumbering; leaving
   // them open is what keeps concurrent branches from colliding (npm run

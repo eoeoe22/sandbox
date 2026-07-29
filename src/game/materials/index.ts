@@ -136,6 +136,9 @@ import { MOLTEN_ALUMINUM } from './moltenaluminum';
 import { ALUMINUM } from './aluminum';
 import { FLASH_POWDER } from './flashpowder';
 import { FLASH } from './flash';
+import { ETHYLENE } from './ethylene';
+import { CATALYST } from './catalyst';
+import { POLYETHYLENE } from './polyethylene';
 
 export {
   EMPTY_MAT,
@@ -271,6 +274,9 @@ export {
   ALUMINUM,
   FLASH_POWDER,
   FLASH,
+  ETHYLENE,
+  CATALYST,
+  POLYETHYLENE,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -347,6 +353,9 @@ export const MATERIALS = [
   KEROSENE,
   DIESEL,
   ASPHALT,
+  ETHYLENE,
+  CATALYST,
+  POLYETHYLENE,
   COAL,
   WOOD,
   SAWDUST,
