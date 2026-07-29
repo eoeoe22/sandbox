@@ -20,7 +20,9 @@ import { WATER } from './water';
 const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 360 };
 const DIFFUSE_CHANCE = 0.03;
 
-// True viscosity, the way Lava (and every molten liquid) does it: the whole
+// True viscosity, the way Lava does it (and most of the molten liquids with it —
+// Molten Metal, Molten Glass, Molten Iron Ore, Molten Salt; the corium melts and
+// Liquid Gallium deliberately run ungated so they flow like water): the whole
 // movement step — the straight fall included — only runs on a fraction of ticks,
 // so honey *oozes* downward instead of dropping at water speed. The `viscosity`
 // tag below can't do this on its own: by design it gates only the lateral
