@@ -63,13 +63,14 @@ export const MOLTEN_ALUMINUM = register({
   // The fully-molten end of the glow ramp: warm, bright silver — a mirror-like
   // liquid metal, not a glowing one (see the header note).
   color: rgb(232, 224, 208),
-  // Real molten aluminum (~2.4 g/cm³) is the lightest melt in the game and,
-  // like real aluminum, is lighter as a liquid than as a solid — so its own
-  // powder (4.6) sinks through it. Placed just under Lava (4.5) and Molten
-  // Glass (5), and well under Slag (5.75) / Molten Iron Ore (6.5) / Molten
-  // Metal (8), so a pour floats clear on top of every smelting liquid and on
-  // lava; still heavier than Water (3) and Molten Salt (4), so it sinks in a
-  // quench bath instead of skating on it.
+  // Real molten aluminum (~2.4 g/cm³) is the lightest of the game's *metal and
+  // mineral* melts and, like real aluminum, is lighter as a liquid than as a
+  // solid — so its own powder (4.6) sinks through it. Placed just under Lava
+  // (4.5) and Molten Glass (5), and well under Slag (5.75) / Molten Iron Ore
+  // (6.5) / Molten Metal (8), so a pour floats clear on top of every smelting
+  // liquid and on lava. It is not the lightest melt outright: Molten Salt (4)
+  // is lighter still, so aluminum sinks through a salt bath — and through
+  // Water (3), so it sinks in a quench instead of skating on it.
   density: 4.4,
   category: 'fire',
   // Runs nearly as freely as water (real molten aluminum is a thin, fluid melt,

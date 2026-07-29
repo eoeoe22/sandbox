@@ -156,8 +156,16 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
 {
   check('Aluminum is registered as a spark conductor', conductorClass(ALUMINUM.id) > 0,
     `class ${conductorClass(ALUMINUM.id)}`);
-  check('…and Iron/Wire classes are unchanged by the append',
-    conductorClass(IRON) === 1 && conductorClass(ALUMINUM.id) > conductorClass(IRON));
+  // Appending must leave every pre-existing class index exactly where it was —
+  // the packed aux values in old saves are indices into CONDUCTOR_IDS, so an
+  // insertion anywhere but the end silently rewires them (see spark.ts).
+  check('…appended at the end, so every existing conductor keeps its class',
+    conductorClass(IRON) === 1 &&
+      conductorClass(ID('Mercury')) === 2 &&
+      conductorClass(ID('Water')) === 3 &&
+      conductorClass(ID('Wire')) === 11 &&
+      conductorClass(ALUMINUM.id) === 12,
+    `Iron=${conductorClass(IRON)} Wire=${conductorClass(ID('Wire'))} Al=${conductorClass(ALUMINUM.id)}`);
   check('Aluminum is a laser mirror', ALUMINUM.laserReflective === true);
   check('Aluminum conducts heat better than Iron',
     (ALUMINUM.thermal?.conductivity ?? 0) > (getMaterial(IRON).thermal?.conductivity ?? 0));
@@ -268,9 +276,16 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     `${MOLTEN_ALUMINUM.thermal?.init}°`);
   check('…and its glow ramp bottoms out below the melt point (a visible set front)',
     (MOLTEN_ALUMINUM.glow?.min ?? Infinity) < ALUMINUM_MELT_TEMP);
-  check('…and it floats clear of every smelting liquid (density under Molten Glass)',
-    MOLTEN_ALUMINUM.density < getMaterial(ID('Molten Glass')).density);
-  check('…while still sinking in water', MOLTEN_ALUMINUM.density > getMaterial(WATER).density);
+  const floatsOver = ['Lava', 'Molten Glass', 'Slag', 'Molten Iron Ore', 'Molten Metal'];
+  check('…and it floats clear of lava and of every smelting liquid',
+    floatsOver.every((n) => MOLTEN_ALUMINUM.density < getMaterial(ID(n)).density),
+    floatsOver.map((n) => `${n} ${getMaterial(ID(n)).density}`).join(', '));
+  // Not the lightest melt outright, though — Molten Salt is lighter, so a pour
+  // sinks through a salt bath as well as through water (the docs say so too).
+  check('…but sinks in Molten Salt and in water',
+    MOLTEN_ALUMINUM.density > getMaterial(ID('Molten Salt')).density &&
+      MOLTEN_ALUMINUM.density > getMaterial(WATER).density,
+    `Al ${MOLTEN_ALUMINUM.density} vs salt ${getMaterial(ID('Molten Salt')).density}`);
   check('a fresh pour is not at room temperature',
     (MOLTEN_ALUMINUM.thermal?.init ?? AMBIENT_TEMP) > AMBIENT_TEMP);
 }
