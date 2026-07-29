@@ -53,13 +53,13 @@ function shapeOf(d) {
 // 빠져나갔다. `isFile()` 이 아닌 건 전부 여기서 걸린다.
 for (const d of all) {
   if (!d.isFile()) {
-    console.error(`${SRC}/${d.name}: 일반 파일이 아니라 읽지 않는다(${shapeOf(d)}) — 실제 .svg 파일을 둘 것.`);
+    console.error(`${SRC}/${d.name}: 일반 파일이 아니어서 읽지 않는다(${shapeOf(d)}) — 실제 .svg 파일을 둘 것.`);
     process.exit(1);
   }
   // 일반 파일이지만 `.SVG` 인 경우. 확장자가 소문자가 아니면 아래 filter 에서
   // 빠지므로, 무시하지 말고 알려 준다. 확장자가 아예 다른 파일(메모 등)은 통과.
   if (!d.name.endsWith('.svg') && /\.svg$/i.test(d.name)) {
-    console.error(`${d.name}: 확장자는 소문자 '.svg' 여야 한다.`);
+    console.error(`${SRC}/${d.name}: 확장자는 소문자 '.svg' 여야 한다.`);
     process.exit(1);
   }
 }
