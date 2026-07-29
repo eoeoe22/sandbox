@@ -38,8 +38,9 @@
  *      onto the feedstock or the product. Its predecessor asserted merely that
  *      one cell ever cracked, which stayed green while the other fifty-nine
  *      burned away; measuring recovery instead is what makes this check able to
- *      fail. The sim is unseeded, so the number moves run to run (12-18 of 20
- *      observed); the bar is a loose "does it run at all", not a tuning pin.
+ *      fail. The sim is unseeded, so the number moves run to run (12-19 of 20
+ *      seen over ~80 runs); the bar is a loose "does it run at all" — it passes
+ *      at 5 — so the quoted range is colour, not a threshold.
  *
  * Run: `node test/run-plastic.mjs`.
  */
@@ -203,11 +204,13 @@ function packedBed(w: number, h: number, code: number): { grid: Grid; sim: Simul
   // headroom under Gasoline's 400° autoignition, so the sample can't catch fire.
   //
   // 60×60, because tolerance has to be several sigma to be a pin rather than a
-  // coin flip. At this size n is 1800 per cut, and measured over 20 runs of the
-  // whole suite the sd is 0.0096 (naphtha) / 0.0112 (kerosene) / 0.0136 (diesel,
-  // the worst, since p(1-p) peaks toward the middle and diesel sits lowest). So
-  // ±0.06 buys 6.2 / 5.4 / 4.4 sigma. Worst deviation actually seen across 32
-  // suite runs was 0.037, and none failed.
+  // coin flip. At this size n is 1800 per cut, so the binomial sd is 0.0084 for
+  // naphtha (p=0.85) and 0.0116 for BOTH kerosene and diesel — p(1-p) is 0.24
+  // either way, since 0.6 and 0.4 sit the same distance from 0.5, so neither of
+  // those two is inherently the noisier row. That puts ±0.06 at roughly 7 sigma
+  // on naphtha and 5 on the other two. Sample sds across ~80 suite runs landed
+  // between 0.008 and 0.014 per cut, straddling those figures as expected, with
+  // a worst observed deviation of 0.037 and no failures.
   const yields: Record<number, number> = {};
   for (const code of [1, 2, 3]) {
     const { grid, sim } = packedBed(60, 60, code);
