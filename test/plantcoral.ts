@@ -352,22 +352,34 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
 //     puddle to keep it that way, and clear sky overhead. What must stop it is
 //     nothing but "a leaf has no vigour", and if that test ever goes, this is
 //     where it shows.
+//
+//     Which means the leaf has to still be *wet at the end*: roots drink a cell
+//     of water dry every ~145 ticks, so a wide, shallow pool would simply have
+//     its surface drop out of reach halfway through, and the back half of the
+//     run would prove nothing again. So the water is a tall walled column beside
+//     the leaf instead — drink the cell it touches and the one above falls in to
+//     replace it — and the check asserts the leaf's moisture at the finish
+//     rather than trusting that arithmetic.
 {
   reseed();
   const { grid, sim } = makeWorld(30, 40);
-  fill(grid, 0, 34, 29, 39, STONE);
-  fill(grid, 10, 32, 19, 33, WATER); // a walled puddle it can drink from forever
-  fill(grid, 0, 32, 9, 33, STONE);
-  fill(grid, 20, 32, 29, 33, STONE);
+  fill(grid, 0, 36, 29, 39, STONE);
+  fill(grid, 16, 32, 29, 35, STONE); // the ledge the leaf stands on…
+  fill(grid, 15, 32, 15, 35, STONE);
+  fill(grid, 8, 32, 11, 35, STONE);
+  fill(grid, 12, 4, 14, 35, WATER); // …and the standpipe it drinks from
+  fill(grid, 11, 4, 11, 31, STONE); // …sealed on both sides so none of it spills
+  fill(grid, 15, 4, 15, 30, STONE);
   put(grid, 15, 31, PLANT);
   // A leaf, packed the way plant.ts packs one: initialised, full of water, but
   // no tip flag, no segment and no vigour.
   grid.aux[grid.idx(15, 31)] = (1 << 15) | 0x7f;
   for (let t = 0; t < 6000; t++) sim.step();
+  const moist = grid.aux[grid.idx(15, 31)] & 0x7f;
   check(
     'a well-fed leaf under open sky still puts out nothing',
-    count(grid, PLANT) === 1,
-    `${count(grid, PLANT)} cells`,
+    count(grid, PLANT) === 1 && moist >= 30, // 30 = BRANCH_COST: still able to shoot
+    `${count(grid, PLANT)} cells, leaf moisture ${moist}, ${count(grid, WATER)} water left`,
   );
 }
 
