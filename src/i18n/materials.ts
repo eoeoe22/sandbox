@@ -26,6 +26,7 @@ export const categoryLabelsEn: Record<string, string> = {
   fire: 'Fire / Heat',
   smelt: 'Smelting',
   oil: 'Petroleum',
+  polymer: 'Polymer',
   explosive: 'Explosive',
   cooling: 'Cryo',
   electric: 'Electric',
@@ -43,6 +44,7 @@ export const categoryLabelsKo: Record<string, string> = {
   fire: '불·열',
   smelt: '제련',
   oil: '석유',
+  polymer: '고분자',
   explosive: '폭발',
   cooling: '냉각',
   electric: '전기',
@@ -210,4 +212,7 @@ export const materialNamesKo: Record<number, string> = {
   131: '불꽃',
   132: '전선',
   133: '태양광 패널',
+  138: '에틸렌',
+  139: '촉매',
+  140: '폴리에틸렌',
 };

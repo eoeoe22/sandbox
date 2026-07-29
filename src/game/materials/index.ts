@@ -130,6 +130,9 @@ import { FIREWORK_STAR } from './fireworkstar';
 import { FIREWORK_BURST } from './fireworkburst';
 import { WIRE } from './wire';
 import { SOLAR_PANEL } from './solarpanel';
+import { ETHYLENE } from './ethylene';
+import { CATALYST } from './catalyst';
+import { POLYETHYLENE } from './polyethylene';
 
 export {
   EMPTY_MAT,
@@ -259,6 +262,9 @@ export {
   FIREWORK_BURST,
   WIRE,
   SOLAR_PANEL,
+  ETHYLENE,
+  CATALYST,
+  POLYETHYLENE,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -331,6 +337,9 @@ export const MATERIALS = [
   KEROSENE,
   DIESEL,
   ASPHALT,
+  ETHYLENE,
+  CATALYST,
+  POLYETHYLENE,
   COAL,
   WOOD,
   SAWDUST,
