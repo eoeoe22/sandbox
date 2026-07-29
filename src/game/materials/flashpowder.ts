@@ -1,5 +1,5 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
@@ -9,6 +9,7 @@ import { SALTWATER } from './saltwater';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLAST, detonate } from './blast';
+import { flashLight } from './flash';
 
 // Flash Powder (섬광화약) — the aluminum line's answer to black powder, and the
 // palette's third crafting recipe: **Aluminum Powder + Saltpeter → Flash
@@ -43,6 +44,21 @@ import { BLAST, detonate } from './blast';
 //    So it cannot be stockpiled anywhere warm, and it is the wrong charge to
 //    carry through a scene that is already on fire.
 //
+// The light is its own material (flash.ts) rather than the ordinary shockwave
+// flash. That was the whole visual problem with the first version: the default
+// BLAST cell fades white → orange, so a charge whose entire identity is "it
+// breaks nothing, it just blinds you" looked exactly like a small bomb. The
+// `onCell` hook below repaints only the *open air* the front reaches — every
+// other cell keeps the default fate, so the physics (the loose-matter shove,
+// the solids that shadow it, the charge's own consumption) is untouched and
+// only what the eye sees changes.
+//
+// Air is also where the incendiary character lives. The default flash dusts a
+// crater with fire as it dies (SHELL_FIRE_CHANCE, 28%) and swapping the whole
+// disc for inert light would have quietly removed that, so a fraction of the
+// air cells take a lick of Fire instead of the flash. Well below the default so
+// the disc still reads white with sparks in it, not as a fireball.
+//
 // Like Gunpowder, a Water/Saltwater neighbour makes it wet and blocks
 // detonation for that tick (misfire) even with a trigger touching it — the
 // palette-wide convention for "적시면 무력화", and true of real flash powder,
@@ -56,6 +72,22 @@ const DESTRUCTIVE_POWER = 6;
 // Nitrate needs 300°, and every fuel needs more still), and low enough that
 // ordinary radiant heat from a nearby fire will find it.
 const AUTOIGNITE_TEMP = 200;
+// Per open-air cell, the chance the front leaves a lick of Fire there rather
+// than white light. Under half the default flash's own 28%, since here it is
+// the *only* source of fire in the disc (the light itself is inert) and a
+// flash charge should scatter sparks, not light a bonfire.
+const AIR_FIRE_CHANCE = 0.12;
+
+/** Repaint one cell the blast front reached. Only open air is ours: everything
+ *  else — the charge's own grains, the loose matter being shoved, the solids
+ *  shadowing the front — falls through to blast.ts's default handling, which is
+ *  what keeps this a purely visual override. Returning true claims the cell. */
+function paintFlash(sim: SimContext, x: number, y: number, prevId: number): boolean {
+  if (prevId !== EMPTY) return false;
+  if (sim.chance(AIR_FIRE_CHANCE)) sim.spawn(x, y, FIRE.id);
+  else flashLight(sim, x, y);
+  return true;
+}
 
 function updateFlashPowder(x: number, y: number, sim: SimContext): void {
   let wet = false;
@@ -78,7 +110,7 @@ function updateFlashPowder(x: number, y: number, sim: SimContext): void {
   }
 
   if (!wet && trigger) {
-    detonate(sim, x, y);
+    detonate(sim, x, y, undefined, { onCell: paintFlash });
     return;
   }
   updatePowder(x, y, sim);

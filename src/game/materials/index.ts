@@ -133,6 +133,7 @@ import { SOLAR_PANEL } from './solarpanel';
 import { MOLTEN_ALUMINUM } from './moltenaluminum';
 import { ALUMINUM } from './aluminum';
 import { FLASH_POWDER } from './flashpowder';
+import { FLASH } from './flash';
 
 export {
   EMPTY_MAT,
@@ -265,6 +266,7 @@ export {
   MOLTEN_ALUMINUM,
   ALUMINUM,
   FLASH_POWDER,
+  FLASH,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately

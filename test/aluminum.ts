@@ -24,6 +24,10 @@ import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
 import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from '../src/game/materials/moltenaluminum';
 import { ALUMINUM } from '../src/game/materials/aluminum';
 import { FLASH_POWDER } from '../src/game/materials/flashpowder';
+import { FLASH } from '../src/game/materials/flash';
+import { LIQUID_GALLIUM } from '../src/game/materials/liquidgallium';
+import { GALLIUM } from '../src/game/materials/gallium';
+import { BLAST } from '../src/game/materials/blast';
 import { THERMITE } from '../src/game/materials/thermite';
 import { RUST_POWDER } from '../src/game/materials/rustpowder';
 import { SALTPETER } from '../src/game/materials/saltpeter';
@@ -151,6 +155,36 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     `${count(g2, MOLTEN_ALUMINUM.id)} cells`);
 }
 
+// 3b. It is a *liquid*, not a puddle glued where it was poured: a pour on a
+//     flat floor spreads sideways and levels out. (The first version registered
+//     an `update` that never called updateLiquid, so a pool sat in a frozen
+//     column — it froze and cast correctly while never flowing at all.)
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  // A tall, narrow column poured onto flat stone. A liquid collapses into a
+  // wide shallow puddle; a stuck one keeps its column.
+  for (let y = 50; y < 59; y++) for (let x = 39; x <= 41; x++) paintHot(grid, x, y, MOLTEN_ALUMINUM.id, 800);
+  for (let t = 0; t < 60; t++) {
+    // Hold the floor hot so the run is testing flow, not freezing.
+    for (let x = 0; x < grid.width; x++) for (let y = 60; y < 63; y++) grid.setTemp(x, y, 800);
+    sim.step();
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      if (grid.get(x, y) !== MOLTEN_ALUMINUM.id) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  check('a molten pour falls to the floor', maxY === 59, `lowest cell at y=${maxY}`);
+  check('…and spreads sideways like a liquid', maxX - minX > 6, `spread ${maxX - minX + 1} cells wide`);
+}
+
 // 4. Cast Aluminum's payoffs: it is a registered spark conductor (so a pulse runs
 //    the full length of a bar) and it is a laser mirror.
 {
@@ -266,6 +300,82 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     count(grid, GLASS) + count(grid, ID('Broken Glass')) === glassBefore,
     `${count(grid, GLASS)} intact + ${count(grid, ID('Broken Glass'))} crazed / ${glassBefore}`);
   check('the charge itself is consumed', count(grid, FLASH_POWDER.id) === 0);
+}
+
+// 8b. …and what it *looks* like: the disc it fills is white Flash light, not the
+//     orange-fading shockwave flash every other charge leaves. That's the whole
+//     point of the material — a charge that breaks nothing must not read as a
+//     bomb. The physics override is deliberately air-only, so the solids it
+//     can't break are still shadowing it (checked above).
+{
+  const { grid, sim } = makeWorld(100, 100);
+  floor(grid, 80);
+  for (let x = 48; x < 52; x++) paintHot(grid, x, 79, FLASH_POWDER.id, 250);
+  sim.step();
+  const flash = count(grid, FLASH.id);
+  const blast = count(grid, BLAST.id);
+  // Reach 10, trimmed by blast.ts's global 2/3 scale and with the lower half of
+  // the disc buried in the floor — so a few dozen cells of open air is the whole
+  // visible flash.
+  check('the disc is filled with white Flash light', flash > 60, `${flash} cells`);
+  check('…and almost none of it is the orange shockwave flash', blast < flash / 8,
+    `${blast} blast vs ${flash} flash`);
+  check('Flash light never heats what it washes over (decorTemp)',
+    FLASH.decorTemp === true && FLASH.thermal?.conductivity === 0);
+  check('…and a blast passes straight over it rather than shoving it',
+    FLASH.blastInert === true);
+  // It must not be a detonation trigger itself — an effect cell that reads as
+  // one lets a charge set off a stockpile it should never reach (see woofer.ts).
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let x = 30; x < 34; x++) g2.set(x, 59, FLASH_POWDER.id);
+  for (let x = 28; x < 36; x++) g2.set(x, 58, FLASH.id);
+  s2.step();
+  check('Flash light alone does not set off a charge it touches',
+    count(g2, FLASH_POWDER.id) === 4, `${count(g2, FLASH_POWDER.id)}/4 left`);
+}
+
+// 8c. Liquid Gallium embrittles cast Aluminum into powder — and is not consumed
+//     doing it, so one drop keeps eating its way through a wall.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let y = 40; y < 59; y++) for (let x = 38; x <= 42; x++) grid.set(x, y, ALUMINUM.id);
+  const bar = count(grid, ALUMINUM.id);
+  for (let x = 38; x <= 42; x++) grid.set(x, 39, LIQUID_GALLIUM.id);
+  const gallium = count(grid, LIQUID_GALLIUM.id);
+  for (let t = 0; t < 200; t++) {
+    // Hold the puddle above its 28° set point. Ambient is 20°, so gallium left
+    // alone freezes within a few ticks and the run would be measuring the melt
+    // point rather than the embrittlement (that half is checked below).
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const id = grid.get(x, y);
+        if (id === LIQUID_GALLIUM.id || id === GALLIUM.id) grid.setTemp(x, y, 40);
+      }
+    }
+    sim.step();
+  }
+  check('liquid gallium crumbles cast Aluminum into Aluminum Powder',
+    count(grid, ALUMINUM.id) < bar && count(grid, ALUMINUM_POWDER.id) > 0,
+    `${bar - count(grid, ALUMINUM.id)} cells eaten → ${count(grid, ALUMINUM_POWDER.id)} powder`);
+  check('…without being consumed (one drop keeps eating)',
+    count(grid, LIQUID_GALLIUM.id) === gallium,
+    `${count(grid, LIQUID_GALLIUM.id)}/${gallium} drops left`);
+
+  // The off switch: solid Gallium is the same metal two degrees colder and does
+  // nothing, so chilling the puddle stops it mid-meal.
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let y = 40; y < 59; y++) for (let x = 38; x <= 42; x++) g2.set(x, y, ALUMINUM.id);
+  const bar2 = count(g2, ALUMINUM.id);
+  for (let x = 38; x <= 42; x++) g2.set(x, 39, GALLIUM.id);
+  for (let t = 0; t < 200; t++) {
+    for (let x = 38; x <= 42; x++) if (g2.get(x, 39) === GALLIUM.id) g2.setTemp(x, 39, 10);
+    s2.step();
+  }
+  check('…but frozen (solid) Gallium does not touch it', count(g2, ALUMINUM.id) === bar2,
+    `${count(g2, ALUMINUM.id)}/${bar2}`);
 }
 
 // 9. Molten Aluminum reads as a *metal* pour, not as fire: it never glows in the

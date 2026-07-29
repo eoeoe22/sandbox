@@ -1,6 +1,7 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
+import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ALUMINUM } from './aluminum';
 
@@ -51,6 +52,13 @@ function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
   // whether it lights what it touches is left to ordinary conduction rather
   // than a scripted roll. It sets fire to a wooden floor it is poured on; it
   // does not flash-ignite a room the way a crucible of iron does.
+
+  // …and then it flows, like the liquid it is. Molten Metal and Lava gate this
+  // behind a FLOW_CHANCE roll because they are thick, sluggish melts; molten
+  // aluminum is a thin one (real aluminum pours about as freely as water), so
+  // it runs every tick and its `viscosity` field alone supplies the small drag
+  // that keeps a pour reading as metal rather than a splash.
+  updateLiquid(x, y, sim);
 }
 
 export const MOLTEN_ALUMINUM = register({
