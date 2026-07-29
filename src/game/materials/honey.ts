@@ -30,8 +30,9 @@ const DIFFUSE_CHANCE = 0.03;
 //
 // Pinned to Resin's 0.18 — resin.ts tuned that value as "sticky and viscous,
 // like Honey", so honey matching it makes the comparison honest in both
-// directions. A shade looser than Lava's 0.15, which reads as the thickest thing
-// in the roster; honey is still thick enough to string a visible drip.
+// directions. A shade looser than Lava's 0.15 — not the roster's floor either
+// way (hot Slag creeps at 0.1 and softened Asphalt at 0.08), just thick enough
+// to string a visible drip instead of pouring.
 const FLOW_CHANCE = 0.18;
 
 function updateHoney(x: number, y: number, sim: SimContext): void {
