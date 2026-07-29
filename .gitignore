@@ -16,5 +16,9 @@ node_modules/
 .DS_Store
 npm-debug.log*
 
-# Claude Code local tooling scratch space (e.g. isolated agent worktrees)
-.claude/
+# Claude Code local tooling scratch space (e.g. isolated agent worktrees).
+# `.claude/skills/` is the exception — those are checked-in project documents
+# (see CLAUDE.md "# 스킬"), so exclude the directory's contents rather than the
+# directory itself, or git would never descend far enough to see the negation.
+.claude/*
+!.claude/skills/
