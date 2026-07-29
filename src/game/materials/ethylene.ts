@@ -11,28 +11,38 @@ import { POLYETHYLENE, CHAIN_GENERATIONS } from './polyethylene';
 import { igniterAdjacent } from './deflagrate';
 
 // Ethylene (에틸렌) — the monomer, and the middle link of the plastics line:
-// cracked out of superheated petroleum vapour in a furnace (see
-// petroleumvapor.ts), then polymerized on a catalyst bed into Polyethylene
-// resin. It is the follow-on challenge to fractional distillation, and the
-// reason it *is* a challenge is the temperature spread it demands: it is BORN
-// at 850°+ and can only be used below 200°, so a working plant has to hold a
-// cracker and a reactor at opposite ends of the thermometer at the same time.
+// cracked off petroleum vapour on a catalyst bed (see petroleumvapor.ts), then
+// polymerized on that same catalyst into Polyethylene resin.
 //
-// --- Why it doesn't just burn in the furnace ---------------------------------
+// Both halves of the line run on the one bed, and what separates them is
+// temperature — but only on the polymerization side. Cracking has no thermal
+// condition at all; polymerization has a 40~200° window. So a bed that is too
+// hot still cracks and simply stops setting, and monomer piles up as gas until
+// the bed is cooled. The player's job is therefore not to build a furnace and a
+// fridge at once (the old design, which asked for 850° and was unreachable —
+// see petroleumvapor.ts for the measurements that killed it); it is to keep the
+// bed cool enough to convert what it is already making.
+//
+// The staging that used to need a quench stage now falls out of the gradient on
+// its own: vapour boiled off a 260° pool cracks into 260° ethylene, which is
+// over the ceiling, so it drifts and cools before it sets — usually on a cooler
+// part of the same bed.
+//
+// --- Why it doesn't just burn on a hot bed -----------------------------------
 // Ethylene has NO autoignition point at all — unlike LPG (400°) it will sit in
-// a 1000° sealed furnace indefinitely without catching. That's deliberate and
-// it is also the honest reading: a cracking furnace is an oxygen-free tube, and
-// what it does to hydrocarbons at that temperature is crack them, not burn
-// them. The danger is still fully there, it's just gated on *contact*: a flame,
-// lava or molten metal touching the cloud flashes it over at once, cell to cell,
-// the same deflagration LPG does (shared igniter roster in deflagrate.ts). Vent
-// your reactor into an open flame and the whole cloud goes up; keep it sealed
-// and it's inert.
+// a 1000° sealed vessel indefinitely without catching. That's deliberate and it
+// is also the honest reading: a cracker is an oxygen-free tube, and what it does
+// to hydrocarbons is crack them, not burn them. The danger is still fully there,
+// it's just gated on *contact*: a flame, lava or molten metal touching the cloud
+// flashes it over at once, cell to cell, the same deflagration LPG does (shared
+// igniter roster in deflagrate.ts). Vent your reactor into an open flame and the
+// whole cloud goes up; keep it sealed and it's inert.
 //
 // What overheating does instead is COKE it: past COKE_TEMP the monomer breaks
-// down to sooty carbon (Ash) and the batch is simply lost. So the furnace has a
-// working band too — hot enough to crack, not so hot as to coke — and the
-// penalty for over-firing is a dead loss rather than an explosion.
+// down to sooty carbon (Ash) and the batch is simply lost. Nothing in the line
+// needs that much heat any more, so coking is no longer a working-band ceiling
+// the player has to respect — it is what happens if you park a cloud of monomer
+// in a smelter, and the penalty is a dead loss rather than an explosion.
 //
 // --- Polymerization ----------------------------------------------------------
 // A cell touching a Catalyst face (or an active resin grain, see below) and

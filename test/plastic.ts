@@ -4,16 +4,19 @@
  *
  * What it pins down, in the order the player meets it:
  *
- *   1. Cracking gate — Petroleum Vapor breaks down to Ethylene at 850° and NOT
- *      a degree below, so the "a bare fire can't do this, bring oxygen or coal"
- *      difficulty step is real and not an accident of tuning.
+ *   1. Cracking condition — Petroleum Vapor breaks down to Ethylene on contact
+ *      with a Catalyst face and on nothing else. Heat alone does nothing, at any
+ *      temperature. This replaced an 850° thermal gate that was unreachable in
+ *      play (the fume condensed and burned long before it could be heated — see
+ *      petroleumvapor.ts), so the "heat does nothing" half is a regression pin,
+ *      not a triviality.
  *   2. Cracking yield — the aux cut tag steers the Ethylene/Ash split, so
  *      naphtha really is the better feedstock and distilling properly pays.
- *   3. No autoignition — a cloud of Ethylene sealed in a 1000° furnace stays
+ *   3. No autoignition — a cloud of Ethylene sealed in a 1000° vessel stays
  *      Ethylene (it is oxygen-free in there), while a cloud touching a flame
- *      flashes over at once. Both halves matter: the first makes the cracker
- *      possible, the second keeps the gas dangerous.
- *   4. Coking — over-fire past 1250° and the monomer is lost as Ash.
+ *      flashes over at once. Both halves matter: the first keeps a hot bed
+ *      workable, the second keeps the gas dangerous.
+ *   4. Coking — park the monomer past 1250° and it is lost as Ash.
  *   5. Polymerization window — resin grows on a catalyst inside 40~200° and
  *      stops outside it at both ends.
  *   6. Exotherm and stall — an uncooled bed heats itself out of its own window
@@ -29,11 +32,14 @@
  *      gating on the cell's id) must not read back as a giant generation count.
  *      Verified to fail if the clamp is removed: the unclamped run converts all
  *      800 cells of the test cloud.
- *   9. The recipe works — a vapour charge in an iron chamber at the documented
- *      furnace temperature actually reaches 850° in tens of ticks, rather than
- *      the recipe being technically true but unusably slow. The sim is unseeded,
- *      so the tick count varies run to run (~30-60 observed); the check is a
- *      loose "minutes or never" guard, not a constant.
+ *   9. The plant actually runs — the documented build (a gasoline pool on a
+ *      heated floor, boiling up into a catalyst roof) returns a real FRACTION OF
+ *      ITS CHARGE as product, with heat written only onto the hotplate and never
+ *      onto the feedstock or the product. Its predecessor asserted merely that
+ *      one cell ever cracked, which stayed green while the other fifty-nine
+ *      burned away; measuring recovery instead is what makes this check able to
+ *      fail. The sim is unseeded, so the number moves run to run (13-15 of 20
+ *      observed); the bar is a loose "does it run at all", not a tuning pin.
  *
  * Run: `node test/run-plastic.mjs`.
  */
@@ -47,6 +53,8 @@ import { ASH } from '../src/game/materials/ash';
 import { FIRE } from '../src/game/materials/fire';
 import { WALL } from '../src/game/materials/wall';
 import { IRON } from '../src/game/materials/iron';
+import { GASOLINE } from '../src/game/materials/gasoline';
+import { AMBIENT_TEMP } from '../src/game/config';
 import { getMaterial } from '../src/game/materials/registry';
 import '../src/game/materials'; // register all materials (side effect)
 
@@ -118,33 +126,72 @@ function filled(w: number, h: number, id: number, aux = 0): { grid: Grid; sim: S
   return { grid, sim };
 }
 
-// --- 1. Cracking temperature gate --------------------------------------------
+/**
+ * A box whose cavity is horizontal channels of vapour separated by solid
+ * catalyst rows, so every vapour cell touches a catalyst face on two sides and
+ * cannot drift away from one. Isolates the cracking reaction from the question
+ * of whether gas happens to reach the bed.
+ */
+function packedBed(w: number, h: number, code: number): { grid: Grid; sim: Simulation } {
+  const { grid, sim } = box(w, h);
+  for (let y = 1; y <= h; y++) {
+    for (let x = 1; x <= w; x++) {
+      if (y % 2 === 1) {
+        grid.set(x, y, CATALYST.id);
+      } else {
+        grid.set(x, y, PETROLEUM_VAPOR.id);
+        grid.setAux(x, y, code);
+      }
+    }
+  }
+  return { grid, sim };
+}
+
+// --- 1. Cracking needs a catalyst, and needs nothing else ---------------------
 {
-  const cold = filled(8, 8, PETROLEUM_VAPOR.id, 1);
-  holdAt(cold.grid, cold.sim, 849, 200);
+  // Regression pin on the mechanic this line was rebuilt around. Cracking used
+  // to be a pure 850° thermal gate, and that gate was unreachable in play (see
+  // petroleumvapor.ts): the fume condensed and burned long before it could be
+  // heated. Heat alone must now do NOTHING, at any temperature — including well
+  // past the old threshold.
+  const hot = filled(8, 8, PETROLEUM_VAPOR.id, 1);
+  holdAt(hot.grid, hot.sim, 1000, 200);
   check(
-    'vapour below 850° never cracks',
-    count(cold.grid, ETHYLENE.id) === 0,
-    `${count(cold.grid, ETHYLENE.id)} ethylene at 849°`,
+    'heat alone never cracks vapour, however hot',
+    count(hot.grid, ETHYLENE.id) === 0,
+    `${count(hot.grid, ETHYLENE.id)} ethylene after 200 ticks at 1000°`,
   );
 
-  const hot = filled(8, 8, PETROLEUM_VAPOR.id, 1);
-  holdAt(hot.grid, hot.sim, 851, 5);
+  // ...and a catalyst alone must be enough, with no help from the thermometer.
+  // Held at ambient so this cannot be read as a warm-bed effect: 20° is the
+  // coldest a player can hand the bed, and it is below even the polymerization
+  // floor (40°), so the monomer produced here necessarily stays monomer. That
+  // is the point — cracking answers to the catalyst, polymerization answers to
+  // the catalyst AND the thermometer, and this separates the two.
+  const cold = packedBed(8, 8, 1);
+  holdAt(cold.grid, cold.sim, AMBIENT_TEMP, 200);
   check(
-    'vapour at 851° cracks',
-    count(hot.grid, PETROLEUM_VAPOR.id) === 0 && count(hot.grid, ETHYLENE.id) > 0,
-    `${count(hot.grid, ETHYLENE.id)} ethylene, ${count(hot.grid, PETROLEUM_VAPOR.id)} vapour left`,
+    'a catalyst cracks vapour at room temperature',
+    count(cold.grid, PETROLEUM_VAPOR.id) === 0 && count(cold.grid, ETHYLENE.id) > 0,
+    `${count(cold.grid, PETROLEUM_VAPOR.id)} vapour left, ` +
+      `${count(cold.grid, ETHYLENE.id)} ethylene, ${count(cold.grid, POLYETHYLENE.id)} resin`,
+  );
+  check(
+    'but it does not polymerize down there — the window floor still holds',
+    count(cold.grid, POLYETHYLENE.id) === 0,
+    `${count(cold.grid, POLYETHYLENE.id)} resin at ${AMBIENT_TEMP}°`,
   );
 }
 
 // --- 2. Yield by cut ----------------------------------------------------------
 {
-  // Big sample, one shot: every vapour cell cracks on the tick it is held at
-  // 851°, so the Ethylene:Ash split is a direct read of crackYield.
+  // Held at 300°: above the 200° polymerization ceiling, so the monomer stays
+  // monomer and the Ethylene:Ash split is a direct read of crackYield rather
+  // than something already half-converted to resin.
   const yields: Record<number, number> = {};
   for (const code of [1, 2, 3]) {
-    const { grid, sim } = filled(30, 30, PETROLEUM_VAPOR.id, code);
-    holdAt(grid, sim, 851, 1);
+    const { grid, sim } = packedBed(30, 30, code);
+    holdAt(grid, sim, 300, 200);
     const eth = count(grid, ETHYLENE.id);
     yields[code] = eth / (eth + count(grid, ASH.id));
   }
@@ -345,48 +392,61 @@ function hottestEthylene(grid: Grid): number {
   );
 }
 
-// --- 9. The recommended furnace actually gets there --------------------------
+// --- 9. The whole recipe, driven by real heat, actually returns product -------
 {
-  // The playability risk behind the whole cracker: Petroleum Vapor conducts
-  // badly (0.08), so "put a hot wall against it" could in principle take an
-  // absurd number of ticks to drag it to 850° — which would make the documented
-  // recipe a lie. So measure the recipe itself, end to end: an Iron chamber whose
-  // walls are held at 1050°, i.e. an ordinary fire with one cell of Oxygen on it
-  // (hot enough to crack, still under Iron's 1200° melt so the vessel survives).
+  // The check that would have caught the old design, and the reason it is
+  // written the way it is.
   //
-  // The assertion is deliberately loose — this is a "is it minutes or is it
-  // never" guard, not a tuning pin — but the measured number is printed so a
-  // future change that quietly makes the cracker ten times slower is visible.
-  const w = 6;
-  const h = 10;
+  // Its predecessor drove real heat too — an iron lining held at 1050°, vapour
+  // free to find its own temperature — but it asserted only that ONE cell ever
+  // became Ethylene, and then stopped the clock. That passes at 0% recovery: a
+  // cell or two cracks while the other fifty-nine condense to Gasoline, ignite
+  // at 400° in the hot vessel, and burn away. Measured on the old mechanic, a
+  // 60-cell charge with the lining pinned forever at 900°, 1050° and 1150°
+  // returned zero ethylene at every temperature, and the check was green for all
+  // of them.
+  //
+  // So this one asserts a FRACTION OF THE CHARGE RECOVERED, not first light, and
+  // it never writes a temperature onto the feedstock or the product — only onto
+  // the iron hotplate under the pool, which is the one thing a player's fire
+  // actually heats. Everything else has to follow from the sim.
+  //
+  // The build under test is the documented one: a pool of gasoline on a heated
+  // floor, boiling (reflux: 200° + 60) into vapour that rises into a catalyst
+  // roof. The hotplate sits at 300° — above the reflux point so the pool keeps
+  // delivering, below Gasoline's 400° autoignition so the vessel is not a
+  // firebox. Product is counted as monomer + resin together, since the roof is
+  // cool enough at the top for some of it to set on the spot.
+  const w = 10;
+  const h = 12;
   const { grid, sim } = box(w, h);
-  for (let y = 1; y <= h; y++) {
-    for (let x = 1; x <= w; x++) {
-      grid.set(x, y, PETROLEUM_VAPOR.id);
-      grid.setAux(x, y, 1);
-    }
+  const CHARGE = 20;
+  for (let y = h - 1; y <= h; y++) {
+    for (let x = 1; x <= w; x++) grid.set(x, y, GASOLINE.id);
   }
-  // Line the cavity with Iron and hold that lining at furnace temperature.
-  const wall: [number, number][] = [];
-  for (let x = 0; x < w + 2; x++) {
-    wall.push([x, 0], [x, h + 1]);
-  }
-  for (let y = 1; y <= h; y++) {
-    wall.push([0, y], [w + 1, y]);
-  }
-  for (const [x, y] of wall) grid.set(x, y, IRON.id);
+  // Catalyst roof, two rows under the lid, with a gap above the pool for the
+  // vapour to rise through.
+  for (let x = 1; x <= w; x++) grid.set(x, 1, CATALYST.id);
+  // Iron hotplate: the floor of the vessel, and the only cell we ever heat.
+  const plate: [number, number][] = [];
+  for (let x = 0; x < w + 2; x++) plate.push([x, h + 1]);
+  for (const [x, y] of plate) grid.set(x, y, IRON.id);
 
-  let ticks = 0;
-  const LIMIT = 3000;
-  while (ticks < LIMIT && count(grid, ETHYLENE.id) === 0) {
-    for (const [x, y] of wall) grid.setTemp(x, y, 1050);
+  const TICKS = 1200;
+  for (let t = 0; t < TICKS; t++) {
+    for (const [x, y] of plate) grid.setTemp(x, y, 300);
     sim.step();
-    ticks++;
   }
+  const product = count(grid, ETHYLENE.id) + count(grid, POLYETHYLENE.id);
+  // Loose on purpose — this is a "does the plant actually run" guard, not a
+  // tuning pin. But it is a real fraction, so a change that makes the line
+  // technically-true-but-useless again fails here instead of passing green.
   check(
-    'a 1050° iron chamber (fire + 1 oxygen) does crack its charge',
-    ticks < LIMIT,
-    `first ethylene at tick ${ticks}`,
+    'a heated gasoline pool under a catalyst roof returns real product',
+    product >= CHARGE * 0.25,
+    `${product} ethylene+resin from a ${CHARGE}-cell pool ` +
+      `(${count(grid, ETHYLENE.id)} monomer, ${count(grid, POLYETHYLENE.id)} resin, ` +
+      `${count(grid, GASOLINE.id)} gasoline left)`,
   );
 }
 
