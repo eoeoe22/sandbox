@@ -28,8 +28,10 @@ const DIFFUSE_CHANCE = 0.03;
 // like water and merely refusing to flatten once it landed. The two stack —
 // this sets how fast honey moves at all, `viscosity` how reluctantly it levels.
 //
-// Sits between Lava (0.15) and Resin (0.18, tuned as "sticky and viscous, like
-// Honey") — the sticky-liquid band, thick enough to string a visible drip.
+// Pinned to Resin's 0.18 — resin.ts tuned that value as "sticky and viscous,
+// like Honey", so honey matching it makes the comparison honest in both
+// directions. A shade looser than Lava's 0.15, which reads as the thickest thing
+// in the roster; honey is still thick enough to string a visible drip.
 const FLOW_CHANCE = 0.18;
 
 function updateHoney(x: number, y: number, sim: SimContext): void {
