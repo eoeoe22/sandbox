@@ -18,6 +18,8 @@
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
+import { createWoodBox } from '../src/game/engine/objects';
+import type { SimWoodBox } from '../src/game/engine/objects';
 import { AMBIENT_TEMP } from '../src/game/config';
 import { conductorClass } from '../src/game/materials/spark';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
@@ -88,6 +90,15 @@ function countWithOverlay(grid: Grid, id: number): number {
   let n = count(grid, id);
   for (let i = 0; i < grid.overlay.length; i++) if (grid.overlay[i] === id) n++;
   return n;
+}
+/** Stamp a Flash cell *with its real spawn temperature*. `Grid.set` writes the id
+ *  only — it does NOT apply `thermal.init` — so a hand-placed flash would sit at
+ *  room temperature and the checks below would prove nothing about the hot
+ *  reading they exist to test. (test/fireworks.ts's paintBurst does the same for
+ *  the same reason.) */
+function paintFlash(grid: Grid, x: number, y: number): void {
+  grid.set(x, y, FLASH.id);
+  grid.setTemp(x, y, FLASH.thermal?.init ?? AMBIENT_TEMP);
 }
 /** Paint a cell and hold it at a temperature (the way a hot bed of terrain would). */
 function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): void {
@@ -329,28 +340,59 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   check('the disc is filled with white Flash light', flash > 60, `${flash} cells`);
   check('…and almost none of it is the orange shockwave flash', blast < flash / 8,
     `${blast} blast vs ${flash} flash`);
-  // The next two are the same properties test/fireworks.ts pins for the firework
-  // flower, checked the same way — by *outcome*, not by reading the tag back.
-  // Asserting `FLASH.decorTemp === true` would keep passing even if the consumers
-  // of that tag (engine/objects.ts's body-exposure scan, the heat pass) stopped
-  // honouring it, which is exactly the regression worth catching.
+  // The next three are the same properties test/fireworks.ts pins for the
+  // firework flower, checked the same way — by *outcome*, not by reading the tag
+  // back. A property-only assertion (`FLASH.decorTemp === true`) keeps passing
+  // even if the consumers of the tag stop honouring it, which is the regression
+  // worth catching.
   {
     // A block of Wood buried in flash light, re-stamped every tick so the light
-    // is continuously present far longer than one real flash lives.
+    // is continuously present far longer than one real flash lives. This is the
+    // *grid* half of the rule, and it is `conductivity: 0` that carries it: heat
+    // exchange is gated by the lower of two cells' conductivities, so a 0 never
+    // warms a neighbour and Wood's own ignition check never sees the 3000°.
     const { grid: g, sim: s } = makeWorld();
     for (let y = 38; y <= 42; y++) for (let x = 38; x <= 42; x++) g.set(x, y, WOOD);
     let peak = -Infinity;
     for (let t = 0; t < 120; t++) {
       for (let y = 36; y <= 44; y++)
-        for (let x = 36; x <= 44; x++) if (g.get(x, y) === 0) g.set(x, y, FLASH.id);
+        for (let x = 36; x <= 44; x++) if (g.get(x, y) === 0) paintFlash(g, x, y);
       s.step();
       for (let y = 38; y <= 42; y++)
         for (let x = 38; x <= 42; x++)
           if (g.get(x, y) === WOOD) peak = Math.max(peak, g.getTemp(x, y));
     }
-    check('Flash light never heats what it washes over', peak < AMBIENT_TEMP + 1,
+    check('Flash light never heats the grid it washes over', peak < AMBIENT_TEMP + 1,
       `wood peaked at ${peak.toFixed(1)}°C`);
     check('…and never sets it alight', count(g, WOOD) === 25, `${count(g, WOOD)}/25 cells`);
+  }
+  {
+    // …and the *object* half, which is what `decorTemp` actually exists for. The
+    // object layer is the one consumer that reads raw cell temperatures rather
+    // than going through conduction (engine/objects.ts scanBodyExposure and the
+    // dynamite fuse tip), so conductivity 0 does not protect it — without the tag
+    // a crate engulfed in 3000° light would cook off and a snuffed fuse would
+    // relight. Only this scenario can catch that.
+    const { grid: g, sim: s } = makeWorld(100, 100);
+    floor(g, 70);
+    const crate = createWoodBox(50, 63) as SimWoodBox;
+    g.objects.push(crate);
+    for (let t = 0; t < 40; t++) s.step(); // let it land
+    check('a cold crate starts unlit', crate.burnTicks === 0);
+    let lit = false;
+    for (let t = 0; t < 300; t++) {
+      for (let y = 50; y <= 70; y++)
+        for (let x = 40; x <= 70; x++) if (g.get(x, y) === 0) paintFlash(g, x, y);
+      s.step();
+      if (crate.burnTicks > 0) lit = true;
+    }
+    check('a crate engulfed in Flash light never catches (decorTemp)', !lit);
+    check('…and is still there afterwards', g.objects.includes(crate));
+    // (The other decorTemp consumer, the dynamite fuse tip, is left to
+    // test/fireworks.ts — a Flash-based version of it turned out not to
+    // discriminate, so it would have been a check that claims more than it
+    // proves. The crate scenario above is verified to fail when the tag is
+    // removed, which is what makes it worth having.)
   }
   {
     // A field of flash light with a charge going off inside it: every cell must
@@ -359,7 +401,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     // FLASH would deposit stray flash cells wherever the fragments land.
     const { grid: g, sim: s } = makeWorld(100, 100);
     floor(g, 80);
-    for (let y = 70; y < 79; y++) for (let x = 40; x < 60; x++) g.set(x, y, FLASH.id);
+    for (let y = 70; y < 79; y++) for (let x = 40; x < 60; x++) paintFlash(g, x, y);
     const before = count(g, FLASH.id);
     for (let x = 49; x < 51; x++) paintHot(g, x, 79, FLASH_POWDER.id, 250);
     s.step();
@@ -374,7 +416,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   const { grid: g2, sim: s2 } = makeWorld();
   floor(g2, 60);
   for (let x = 30; x < 34; x++) g2.set(x, 59, FLASH_POWDER.id);
-  for (let x = 28; x < 36; x++) g2.set(x, 58, FLASH.id);
+  for (let x = 28; x < 36; x++) paintFlash(g2, x, 58);
   s2.step();
   check('Flash light alone does not set off a charge it touches',
     count(g2, FLASH_POWDER.id) === 4, `${count(g2, FLASH_POWDER.id)}/4 left`);

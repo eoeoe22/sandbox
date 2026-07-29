@@ -2073,14 +2073,17 @@ Aluminum Powder가 **테르밋 재료로만** 쓰이던 문제를 푼 라운드.
   것과 달리 **표적이 정확히 한 물질**이다. 확률 0.03/틱은 Acid의 부식률과 같은 급.
   - 반응 규칙을 **알루미늄 쪽이 아니라 갈륨 쪽에** 단 데는 임포트 그래프 이유도 있다.
     `reactions` 배열은 모듈 스코프에서 `.id`를 읽으므로 파트너 모듈이 **그 시점에 평가를
-    마쳤어야** 한다. `aluminum.ts`에서 선언했다면 거기에 `aluminumpowder.ts` 임포트를 **새로
-    추가**하게 되고, 그 순간 aluminum → aluminumpowder → moltenaluminum → aluminum **순환이
-    생겨** 초기화 전 바인딩을 읽을 위험이 열린다(지금은 aluminum.ts가 aluminumpowder.ts를
-    임포트하지 않아 그런 순환이 없다 — 즉 만들지 않은 것이지 피해 간 게 아니다).
-    `liquidgallium.ts` 쪽은 반대로 안전하다: 알루미늄 계열 어느 파일도 gallium/liquidgallium을
-    임포트하지 않아 **되돌아오는 간선이 없으므로**, 어느 진입 순서로 평가되든 알루미늄 두
-    모듈이 먼저 완료된 뒤에 이 배열이 평가된다(gallium ↔ liquidgallium 기존 순환은 함수
-    스코프 참조뿐이라 무관).
+    마쳤어야** 한다. 주의할 점은 **순환 자체는 위험하지 않다**는 것이다 — 위험한 건 순환 안의
+    누군가가 상대 모듈이 끝나기 전에 **모듈 스코프에서** 그 export를 읽는 경우뿐이고, 기존
+    aluminum ⇄ moltenaluminum 2-순환은 서로를 함수 안에서만 읽어 안전하다.
+    문제가 되는 건 **양쪽이 서로를 모듈 스코프에서 읽는 상호 의존**이다. `aluminum.ts`에서
+    이 규칙을 선언했다면 `with: LIQUID_GALLIUM.id`를 위해 `aluminum.ts → liquidgallium.ts`
+    간선이 필요한데, `liquidgallium.ts`는 이미 자기 `reactions` 배열에서 `ALUMINUM.id`를
+    모듈 스코프로 읽는다 — 즉 **두 모듈이 서로의 완료를 모듈 스코프에서 기다리는** 상태가 되어
+    진입 순서에 따라 한쪽이 초기화 전 바인딩을 읽는다.
+    지금처럼 갈륨 쪽에만 선언하면 그 상호 의존이 아예 생기지 않는다: 알루미늄 계열 어느 파일도
+    gallium/liquidgallium을 임포트하지 않아 **되돌아오는 간선이 없으므로**, 어느 진입 순서로
+    평가되든 알루미늄 두 모듈이 먼저 완료된 뒤에 이 배열이 평가된다.
 
 미채택 제안(갈륨 활성 알루미늄, 암모날, 산-알루미늄 수소 발생, 분진 폭발 등)은
 [MATERIAL-IDEAS.md](./MATERIAL-IDEAS.md)에 정리해 뒀다.
