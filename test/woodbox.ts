@@ -57,6 +57,19 @@ function count(grid: Grid, id: number): number {
 }
 const boxes = (grid: Grid): SimWoodBox[] =>
   grid.objects.filter((o): o is SimWoodBox => o.kind === 'woodbox');
+/** Horizontal spread of the Sawdust on the grid, in cells (0 if there is none) —
+ *  how far the shavings travelled, which is what tells a fling from a heap. */
+function sawdustSpread(grid: Grid): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < grid.cells.length; i++) {
+    if (grid.cells[i] !== SAWDUST) continue;
+    const x = i % grid.width;
+    if (x < lo) lo = x;
+    if (x > hi) hi = x;
+  }
+  return hi < lo ? 0 : hi - lo + 1;
+}
 
 // 1. A crate dropped on stone settles flush and stays put (no rattling, no roll).
 {
@@ -170,7 +183,9 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   check('shards leave Sawdust behind', count(grid, SAWDUST) > 0, `${count(grid, SAWDUST)} cells`);
 }
 
-// 3b. The shard census, checked the tick the crate breaks.
+// 3b. The shard census, checked the tick the crate burns through. A fire is not a
+//     blow, so the crate SLUMPS: three shards, in place, with no outward throw and
+//     no tumble of their own (불타서 부서질 땐 튀지 않음).
 {
   const { grid, sim } = makeWorld();
   floor(grid, 70);
@@ -182,8 +197,35 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   check('crate → piece1+piece2+piece3', JSON.stringify(parts) === JSON.stringify(['piece1', 'piece2', 'piece3']),
     JSON.stringify(parts));
   check('shards inherit the fire', boxes(grid).every((b) => b.burnTicks > 0));
-  check('shards scatter outward', boxes(grid).some((b) => Math.hypot(b.vx, b.vy) > 0.5));
-  check('shards tumble (each gets its own spin)',
+  // Measured against the crate's OWN velocity: a shard may only carry the motion
+  // the box already had, never a kick on top of it.
+  check('a burnt-through crate does NOT fling its shards',
+    boxes(grid).every((b) => Math.hypot(b.vx - crate.vx, b.vy - crate.vy) < 1e-9),
+    boxes(grid).map((b) => Math.hypot(b.vx - crate.vx, b.vy - crate.vy).toFixed(3)).join(' '));
+  check('and they get no spin kick either',
+    boxes(grid).every((b) => b.angularVelocity === crate.angularVelocity),
+    boxes(grid).map((b) => b.angularVelocity.toFixed(4)).join(' '));
+}
+
+// 3c. The same census for an IMPACT break: a crate slammed into a wall bursts, and
+//     THAT wreckage really is thrown — outward, each shard with its own spin.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  for (let y = 0; y < 70; y++) // a wall down the right-hand side
+    for (let x = 80; x < 84; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(40, 40);
+  crate.vx = 14;
+  grid.objects.push(crate);
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) break;
+  }
+  check('a smashed crate DOES fling its shards',
+    boxes(grid).some((b) => Math.hypot(b.vx - crate.vx, b.vy - crate.vy) > 0.5),
+    boxes(grid).map((b) => Math.hypot(b.vx - crate.vx, b.vy - crate.vy).toFixed(3)).join(' '));
+  check('and they tumble (each gets its own spin)',
     boxes(grid).every((b) => b.angularVelocity !== 0) &&
       new Set(boxes(grid).map((b) => b.angularVelocity)).size === 3,
     boxes(grid).map((b) => b.angularVelocity.toFixed(4)).join(' '));
@@ -203,9 +245,17 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   check('a crushed crate breaks into its 3 shards too',
     JSON.stringify(parts) === JSON.stringify(['piece1', 'piece2', 'piece3']), JSON.stringify(parts));
   check('shards of an unlit crate are unlit', boxes(grid).every((b) => b.burnTicks === 0));
+  // 끼임 is not a blow either: the box gives way where it is wedged.
+  check('a crushed crate does NOT fling its shards',
+    boxes(grid).every((b) => Math.hypot(b.vx, b.vy) < 0.5),
+    boxes(grid).map((b) => Math.hypot(b.vx, b.vy).toFixed(3)).join(' '));
+  check('nor spin them', boxes(grid).every((b) => b.angularVelocity === 0),
+    boxes(grid).map((b) => b.angularVelocity.toFixed(4)).join(' '));
 }
 
-// 5. A single shard, destroyed, leaves Sawdust and NOT more objects.
+// 5. A single shard, destroyed, leaves Sawdust and NOT more objects. Burnt through,
+//    the shavings are DEPOSITED where it stood rather than flung: they land in a
+//    heap under the shard, not sprayed across the floor.
 {
   const { grid, sim } = makeWorld();
   floor(grid, 70);
@@ -214,8 +264,31 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   shard.burnTicks = 1;
   sim.step();
   check('a shard leaves no further objects', grid.objects.length === 0, `${grid.objects.length} left`);
-  for (let t = 0; t < 200; t++) sim.step(); // let the flung shavings land
+  const spreadNow = sawdustSpread(grid);
+  check('a burnt shard drops its Sawdust in place',
+    spreadNow > 0 && spreadNow <= Math.ceil(shard.radius * 2) + 1,
+    `${spreadNow} cells wide, shard is ~${(shard.radius * 2).toFixed(1)}`);
+  for (let t = 0; t < 200; t++) sim.step(); // let the pile settle
   check('a shard crumbles to Sawdust', count(grid, SAWDUST) > 0, `${count(grid, SAWDUST)} cells`);
+}
+
+// 5b. The same shard, smashed instead of burnt: now the shavings really are flung,
+//     so they end up spread wider than the shard ever was.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const shard = createWoodBox(50, 60, 'piece2');
+  shard.vy = 14; // straight down into the floor, hard
+  grid.objects.push(shard);
+  for (let t = 0; t < 30; t++) {
+    sim.step();
+    if (grid.objects.length === 0) break;
+  }
+  for (let t = 0; t < 200; t++) sim.step(); // let the flung shavings land
+  const spread = sawdustSpread(grid);
+  check('a smashed shard sprays its Sawdust',
+    spread > Math.ceil(shard.radius * 2) + 1,
+    `${spread} cells wide, shard is ~${(shard.radius * 2).toFixed(1)}`);
 }
 
 // 6. Dunking a burning crate puts it out (and it can catch again afterwards).

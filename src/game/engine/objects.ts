@@ -732,19 +732,20 @@ const WOOD_BOX_FLAME_CHANCE = 0.02;
  *  the fire to go out. Above a stray splash, below the ~47% a floating crate is
  *  submerged by — so dunking a burning crate really does save it. */
 const WOOD_BOX_DOUSE_FRAC = 0.25;
-/** Per-cell chance a shattered shard leaves a fling of Sawdust. Denser than the
- *  drum's hollow-shell scatter (0.2): a shard is solid timber all the way
- *  through, so it crumbles into a proper heap of shavings. */
+/** Per-cell chance a shattered shard leaves Sawdust. Denser than the drum's
+ *  hollow-shell scatter (0.2): a shard is solid timber all the way through, so it
+ *  crumbles into a proper heap of shavings. */
 const WOOD_BOX_SAWDUST_CHANCE = 0.5;
 /** Outward speed (cells/tick) the three shards are thrown at as the crate comes
  *  apart, plus the lift that pops them up out of the wreckage. Enough that they
- *  visibly scatter instead of settling in a neat stack of the box they were. */
+ *  visibly scatter instead of settling in a neat stack of the box they were.
+ *  Applies to an IMPACT break only — see WoodBoxBreakCause. */
 const WOOD_BOX_SHATTER_SPEED = 1.4;
 const WOOD_BOX_SHATTER_LIFT = 0.6;
 /** Max magnitude (rad/tick) of the random spin each shard is kicked with as the
  *  crate bursts, on top of the spin its own outward throw earns from contact.
  *  Splinters tumble; they don't sail out flat. Comfortably under the mix brush's
- *  0.15 so the burst reads as debris rather than as a blender. */
+ *  0.15 so the burst reads as debris rather than as a blender. Impact break only. */
 const WOOD_BOX_SHATTER_SPIN = 0.09;
 /**
  * Normal closing speed (cells/tick) at which meeting a wall or any solid stops
@@ -770,8 +771,9 @@ const WOOD_BOX_SHATTER_SPIN = 0.09;
  * break a box no matter how close (see applyWooferKnockback's 완전한 비파괴성),
  * and neither can wind or a near miss.
  *
- * Crashing yields the same wreckage as any other break: a crate bursts into its
- * three shards, a shard into Sawdust.
+ * Crashing yields the same wreckage as any other break — a crate bursts into its
+ * three shards, a shard into Sawdust — and, being a blow, it is the case that
+ * throws that wreckage clear (see WoodBoxBreakCause).
  */
 export const WOOD_BOX_SMASH_SPEED = 9;
 /** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both
@@ -2839,14 +2841,36 @@ function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
 }
 
 /**
- * A shard crumbles: fling Sawdust (materials/sawdust.ts) from across its
- * footprint, reusing the blast-fragment scatter so the shavings arc out and rain
- * back down as a visible heap rather than the shard simply vanishing. Sawdust is
- * itself combustible, so a shard that crumbles while alight leaves a pile the
- * surrounding fire happily takes over. Solid cells are skipped — the object layer
- * is read-only over terrain.
+ * What broke a wooden box — and therefore whether the wreckage FLIES.
+ *
+ *   - 'impact' (충격): something hit it. A crash into a wall or the ground at
+ *     smashing speed, an explosion's direct hit, an Antimatter touch. There is a
+ *     real shock to pass on, so the crate's shards are thrown clear and a shard's
+ *     Sawdust is flung across the scene.
+ *   - 'collapse': nothing struck it — it simply gave way. It burnt through, it was
+ *     crushed/entombed in solid with nowhere to go, or a Nuclear Ray ate it away.
+ *     Wreckage from a collapse just DROPS where the body stood: the shards fall
+ *     apart in place carrying only the motion the crate already had, and the
+ *     shavings settle into a heap instead of spraying (불타거나 끼인 경우엔 튀지
+ *     않고 그냥 부서짐).
  */
-function spawnSawdust(o: SimWoodBox, ctx: SimContext): void {
+export type WoodBoxBreakCause = 'impact' | 'collapse';
+
+/**
+ * A shard crumbles to Sawdust (materials/sawdust.ts) across its footprint, so it
+ * leaves a visible heap of shavings rather than simply vanishing. Sawdust is itself
+ * combustible, so a shard that crumbles while alight leaves a pile the surrounding
+ * fire happily takes over.
+ *
+ * An IMPACT crumble reuses the blast-fragment scatter (launchDebris), so the
+ * shavings arc out and rain back down; it may take over any non-solid cell, the way
+ * a blast does (the object layer stays read-only over terrain). A COLLAPSE just
+ * deposits the shavings where the shard was, into open air only — nothing pushed
+ * them, so they fall straight down as a pile and never displace the water or sand
+ * the body was sitting in.
+ */
+function spawnSawdust(o: SimWoodBox, ctx: SimContext, cause: WoodBoxBreakCause): void {
+  const impact = cause === 'impact';
   const r = o.radius;
   const r2 = r * r;
   const x0 = Math.floor(o.x - r);
@@ -2859,9 +2883,10 @@ function spawnSawdust(o: SimWoodBox, ctx: SimContext): void {
       const dx = cx + 0.5 - o.x;
       if (dx * dx + dy * dy > r2) continue;
       if (!ctx.inBounds(cx, cy)) continue;
-      if (isSolidCell(cx, cy, ctx)) continue;
+      if (impact ? isSolidCell(cx, cy, ctx) : !ctx.isEmpty(cx, cy)) continue;
       if (!ctx.chance(WOOD_BOX_SAWDUST_CHANCE)) continue;
-      launchDebris(ctx, cx, cy, SAWDUST.id, cx + 0.5 < o.x ? -1 : 1, -1, 1.5);
+      if (impact) launchDebris(ctx, cx, cy, SAWDUST.id, cx + 0.5 < o.x ? -1 : 1, -1, 1.5);
+      else ctx.spawn(cx, cy, SAWDUST.id);
     }
   }
 }
@@ -2871,22 +2896,32 @@ function spawnSawdust(o: SimWoodBox, ctx: SimContext): void {
  * This is the 2차 오브젝트 rule and the one place it lives:
  *
  *   - a CRATE comes apart into its three shards, each spawned at exactly the spot
- *     it occupied inside the box (see WoodBoxSprite.ox/oy) and thrown outward from
- *     the crate's centre with a little lift, so for the first instant the wreckage
- *     still reads as the box that just burst. They inherit the crate's velocity and
- *     its heat, and — if the crate was alight — they spawn already burning, which
- *     is what makes a burning crate a chain rather than a single event. The shards
- *     exist ONLY through this path: nothing else can create one (조각은 나무 상자를
- *     부술 때만 소환).
+ *     it occupied inside the box (see WoodBoxSprite.ox/oy). They inherit the
+ *     crate's velocity and its heat, and — if the crate was alight — they spawn
+ *     already burning, which is what makes a burning crate a chain rather than a
+ *     single event. The shards exist ONLY through this path: nothing else can
+ *     create one (조각은 나무 상자를 부술 때만 소환).
  *   - a SHARD has nothing left to break into, so it crumbles to Sawdust cells.
+ *
+ * `cause` decides how violently that happens (see WoodBoxBreakCause): an impact
+ * throws the shards outward from the crate's centre with a little lift and a spin
+ * each, so for the first instant the wreckage still reads as the box that just
+ * burst; a collapse leaves them exactly where they were, carrying only the motion
+ * the crate already had, so the box slumps into three pieces on the spot.
  *
  * New bodies go into `spawn` rather than straight into the live object array:
  * stepObjects is compacting that array in place when this runs, so appending to
  * it mid-pass would clobber the compaction. The caller appends them afterwards.
  */
-function breakWoodBox(o: SimWoodBox, ctx: SimContext, spawn: SimBody[], alight: boolean): void {
+function breakWoodBox(
+  o: SimWoodBox,
+  ctx: SimContext,
+  spawn: SimBody[],
+  alight: boolean,
+  cause: WoodBoxBreakCause,
+): void {
   if (o.part !== 'crate') {
-    spawnSawdust(o, ctx);
+    spawnSawdust(o, ctx, cause);
     return;
   }
   // Each shard's slot inside the crate, carried out through the crate's own
@@ -2904,14 +2939,22 @@ function breakWoodBox(o: SimWoodBox, ctx: SimContext, spawn: SimBody[], alight: 
     const py = o.y + dy;
     const piece = createWoodBox(px, py, part);
     piece.angle = o.angle; // it starts as the part of the crate it just was
-    // Outward from the crate's centre, plus a lift against gravity so the shards
-    // pop up out of the wreckage instead of sliding out of it.
-    const d = Math.hypot(dx, dy) || 1;
-    const kick = WOOD_BOX_SHATTER_SPEED;
-    piece.vx = o.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * WOOD_BOX_SHATTER_LIFT;
-    piece.vy = o.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * WOOD_BOX_SHATTER_LIFT;
-    // Splinters tumble: the crate's own spin plus a random kick of its own.
-    piece.angularVelocity = o.angularVelocity + randSigned(ctx) * WOOD_BOX_SHATTER_SPIN;
+    if (cause === 'impact') {
+      // Outward from the crate's centre, plus a lift against gravity so the shards
+      // pop up out of the wreckage instead of sliding out of it.
+      const d = Math.hypot(dx, dy) || 1;
+      const kick = WOOD_BOX_SHATTER_SPEED;
+      piece.vx = o.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * WOOD_BOX_SHATTER_LIFT;
+      piece.vy = o.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * WOOD_BOX_SHATTER_LIFT;
+      // Splinters tumble: the crate's own spin plus a random kick of its own.
+      piece.angularVelocity = o.angularVelocity + randSigned(ctx) * WOOD_BOX_SHATTER_SPIN;
+    } else {
+      // Nothing hit it: the box just gives way, so each piece carries on with
+      // exactly the motion the crate had and drops out of the wreck under gravity.
+      piece.vx = o.vx;
+      piece.vy = o.vy;
+      piece.angularVelocity = o.angularVelocity;
+    }
     piece.temp = o.temp;
     if (alight) piece.burnTicks = woodBoxBurnTicks(part);
     spawn.push(piece);
@@ -2928,7 +2971,8 @@ function breakWoodBox(o: SimWoodBox, ctx: SimContext, spawn: SimBody[], alight: 
  *      footprint) puts it straight back out, otherwise it throws real Fire cells
  *      and its burn timer runs down.
  *   3. BURNT THROUGH — the body gives way: a crate into its three shards, a shard
- *      into Sawdust (see breakWoodBox).
+ *      into Sawdust (see breakWoodBox). Nothing struck it, so the wreckage falls
+ *      apart in place rather than being thrown ('collapse').
  * Returns true to keep the body, false once it has broken.
  */
 function stepWoodBox(
@@ -2955,7 +2999,7 @@ function stepWoodBox(
   }
   emitWoodBoxFlames(o, ctx);
   if (--o.burnTicks > 0) return true;
-  breakWoodBox(o, ctx, spawn, true);
+  breakWoodBox(o, ctx, spawn, true, 'collapse');
   return false;
 }
 
@@ -2966,11 +3010,18 @@ function stepWoodBox(
  *  and dumps its whole remaining charge at once; a wooden crate bursts into its
  *  three shards (and a shard into Sawdust — see breakWoodBox), carrying its fire
  *  over to the wreckage if it was burning; a rubber ball leaves nothing.
+ *  `cause` matters only to the crate, and only for how far its wreckage travels
+ *  (see WoodBoxBreakCause): a blast or a crash throws it, being crushed doesn't.
  *  `spawn` collects any *bodies* the byproduct creates (only the crate makes
  *  any); see breakWoodBox for why they aren't pushed straight into the live array. */
-function destroyByproduct(o: SimBody, ctx: SimContext, spawn: SimBody[]): void {
+function destroyByproduct(
+  o: SimBody,
+  ctx: SimContext,
+  spawn: SimBody[],
+  cause: WoodBoxBreakCause,
+): void {
   if (o.kind === 'woodbox') {
-    breakWoodBox(o, ctx, spawn, o.burnTicks > 0);
+    breakWoodBox(o, ctx, spawn, o.burnTicks > 0, cause);
   } else if (o.kind === 'drum') {
     spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
     spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
@@ -3000,7 +3051,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // are secondary to the phase-A doomed capture (covers a body knocked into a
   // lingering flash or into the beam's path).
   if (exp.blast || exp.heatRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
-    destroyByproduct(o, ctx, spawn);
+    // Only the blast is a blow: a crate pinched in solid (끼임) or eaten away by
+    // the beam collapses where it stands rather than bursting outward.
+    destroyByproduct(o, ctx, spawn, exp.blast ? 'impact' : 'collapse');
     return false; // ball: no byproduct
   }
   // The body's own heat reservoir relaxes toward its surroundings each tick
@@ -3072,7 +3125,9 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   // same blast's knockback is about to fling it clear of the destroy check. (A
   // near-miss blast has no footprint overlap here, so it falls through to the
   // knockback shove instead; the beam has no knockback to fall through to.)
-  const doomed = new Set<SimBody>();
+  // Each entry carries WHY it was doomed, because a wooden crate's wreckage is
+  // thrown clear only when something actually hit it (see WoodBoxBreakCause).
+  const doomed = new Map<SimBody, WoodBoxBreakCause>();
   // Bodies a destruction spawns this tick (only the wooden crate does: it bursts
   // into its three shards). Collected here and appended after phase C, because
   // that phase compacts `objects` in place — appending mid-pass would clobber it,
@@ -3087,7 +3142,9 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // footprintHazards).
     const hz = footprintHazards(o, ctx);
     if (hz.blast || hz.heatRay || hz.antimatter) {
-      doomed.add(o); // destroyed below; don't bother moving it
+      // A blast or an annihilating grain is a shock the wreckage carries away; the
+      // Nuclear Ray just eats the body where it is, so that one is a collapse.
+      doomed.set(o, hz.blast || hz.antimatter ? 'impact' : 'collapse'); // destroyed below
       continue;
     }
     applyBlastKnockback(o, ctx);
@@ -3104,7 +3161,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // it takes the one shared byproduct path in phase C — the crate into its three
     // shards, a shard into Sawdust, carrying its fire over if it was alight.
     if (impact >= WOOD_BOX_SMASH_SPEED) {
-      doomed.add(o);
+      doomed.set(o, 'impact'); // the one break that is a blow by definition
       continue;
     }
     // A settled box squares up: it collides as a disc, so the contact solve has no
@@ -3133,10 +3190,12 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     if (o.held) {
       objects[w++] = o;
     } else if (doomed.has(o)) {
-      // A blast or Nuclear Ray reached it this tick — spawn its byproduct, UNLESS
-      // it's also being swallowed by Void, which deletes it cleanly (no
-      // byproduct) and wins.
-      if (!footprintTouchesVoid(o, ctx)) destroyByproduct(o, ctx, spawned);
+      // A blast, a Nuclear Ray or a smashing arrival reached it this tick — spawn
+      // its byproduct, UNLESS it's also being swallowed by Void, which deletes it
+      // cleanly (no byproduct) and wins.
+      if (!footprintTouchesVoid(o, ctx)) {
+        destroyByproduct(o, ctx, spawned, doomed.get(o) as WoodBoxBreakCause);
+      }
     } else if (evaluateTriggers(o, ctx, spawned)) {
       objects[w++] = o;
     }
