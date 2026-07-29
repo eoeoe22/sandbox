@@ -173,8 +173,19 @@ function filled(w: number, h: number, id: number, aux = 0): { grid: Grid; sim: S
     `${count(furnace.grid, ETHYLENE.id)}/64 left`,
   );
 
+  // Seeded with a 2×2 pilot flame rather than a single Fire cell, and the reason
+  // is worth writing down. Fire has a 0.1/tick burnout chance, so a lone seed
+  // cell can burn out on the very tick it is placed — before the scan reaches
+  // the ethylene next to it — and then nothing ignites at all. Measured over 400
+  // runs the outcome was strictly bimodal: 0 ethylene left (front ran to
+  // completion) in ~91% of runs, 63 left (front never started) in ~9%. Never a
+  // partial burn, and running 80 or 150 ticks instead of 40 changed nothing —
+  // so this was a flaky *seed*, not too small a tick budget. With four seed
+  // cells the front has to lose every one of them in one tick (~1e-4) and the
+  // same 400 runs came back 400/400 clean. What the check is actually for is the
+  // propagation, so the seed shouldn't be the coin flip.
   const lit = filled(8, 8, ETHYLENE.id);
-  lit.grid.set(1, 8, FIRE.id);
+  for (const [fx, fy] of [[1, 8], [2, 8], [1, 7], [2, 7]]) lit.grid.set(fx, fy, FIRE.id);
   for (let t = 0; t < 40; t++) lit.sim.step();
   check(
     'a flame touching the cloud flashes it over',
