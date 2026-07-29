@@ -249,20 +249,25 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
 // 5b. A world saved before the growth rework stored a bare 0..250 moisture value
 //     in a plant cell's aux. Such a cell has to read as "no structure yet" and be
 //     re-initialised, not decode as an already-spent stem that can never grow.
-{
+//
+//     Every value here is >= 128 on purpose, and each gets its own world: those
+//     are exactly the bytes that set bit 7, so under the old layout (init at
+//     bit 7, vigour at bits 14-15) every one of them decoded as an initialised,
+//     vigour-0, non-tip cell and was frozen for good. A value under 128 would
+//     grow either way and would quietly make this check meaningless — as would
+//     pooling several sprouts into one count, where the ones that decode fine
+//     cover for the ones that don't.
+for (const legacy of [128, 160, 200, 250]) {
   reseed();
   const { grid, sim } = makeWorld(40, 60);
   bed(grid);
-  for (const [i, legacy] of [40, 120, 200, 250].entries()) {
-    const x = 8 + i * 8;
-    put(grid, x, 50, PLANT);
-    grid.aux[grid.idx(x, 50)] = legacy; // an old save's moisture byte, verbatim
-  }
-  for (let t = 0; t < 2000; t++) sim.step();
+  put(grid, 20, 50, PLANT);
+  grid.aux[grid.idx(20, 50)] = legacy; // an old save's moisture byte, verbatim
+  for (let t = 0; t < 2500; t++) sim.step();
   check(
-    'plants loaded from a pre-rework save still grow',
-    count(grid, PLANT) > 4,
-    `${count(grid, PLANT)} cells from 4 legacy sprouts`,
+    `a plant loaded from a pre-rework save (aux ${legacy}) still grows`,
+    count(grid, PLANT) > 1,
+    `${count(grid, PLANT)} cells`,
   );
 }
 
