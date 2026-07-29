@@ -18,7 +18,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const MATERIALS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -36,8 +36,12 @@ const REGISTER_RE = /register\(\s*\{/g;
 const ID_RE = /\bid:\s*(\d+)/;
 const NAME_RE = /\bname:\s*['"`]([^'"`]+)['"`]/;
 
-/** @returns {{id:number, name:string, file:string, line:number}[]} */
-function collectMaterials() {
+/** Every registered material, scanned statically. Exported because
+ *  `build-hand-icons.mjs` needs the same list to tell whether an icon filename
+ *  names a real material — importing the registry would mean bundling TypeScript
+ *  and Svelte runes, which is why this file scans text in the first place.
+ *  @returns {{id:number, name:string, file:string, line:number}[]} */
+export function collectMaterials() {
   const entries = [];
   const files = readdirSync(MATERIALS_DIR)
     .filter((f) => f.endsWith('.ts'))
@@ -100,4 +104,6 @@ function main() {
   );
 }
 
-main();
+// 직접 실행일 때만 검사한다. `build-hand-icons.mjs` 가 collectMaterials 를
+// 가져다 쓰는데, import 만으로 id 검사가 돌면서 결과를 찍으면 혼란스럽다.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

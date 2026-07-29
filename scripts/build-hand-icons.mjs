@@ -9,25 +9,44 @@
 //   node scripts/build-hand-icons.mjs         모듈을 다시 만든다
 //   node scripts/build-hand-icons.mjs --check 원본과 어긋났는지만 본다(종료코드)
 //
-// 검사 모드는 `npm run check:hand-icons` 로 묶여 있다. `.svg` 만 고치고 모듈을
-// 안 만들면 조용히 옛 그림이 계속 나가므로, 그 드리프트를 여기서 잡는다.
+// 검사 모드는 `npm run check:hand-icons` 로 묶여 있고 빌드에 물려 있다. 여기서
+// 잡는 실패는 전부 **아무 신호가 없는** 것들이다: `.svg` 만 고치고 다시 굽지 않으면
+// 옛 그림이 계속 나가고, 파일명이 어떤 물질의 키도 아니면 모듈에는 실리는데 화면에는
+// 안 나오고, 하위 폴더나 대문자 확장자는 아예 읽히지도 않는다.
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { parseIconSvg, iconKey } from './icon-svg.mjs';
+import { collectMaterials } from './check-material-ids.mjs';
 
 const SRC = 'temp/material-icons';
 const OUT = 'src/game/render/handIcons.ts';
 
-const files = readdirSync(SRC).filter((f) => f.endsWith('.svg')).sort();
+// 파일명이 곧 배선 키다: `materialSvg.ts` 는 `iconKey(m.name)` 으로 찾는다. 키가
+// 어떤 물질의 것도 아니면 그림은 모듈에 실리는데 화면에는 절대 안 나온다 —
+// 검사 없이는 아무 신호가 없는 실패라, 실제 물질 목록과 맞춰 본다.
+const KEYS = new Map(collectMaterials().map((m) => [iconKey(m.name), m.name]));
+
+const all = readdirSync(SRC, { withFileTypes: true });
+// 하위 폴더에 넣으면 readdir 이 못 보고 조용히 빠진다. 확장자 대소문자도 같다.
+for (const d of all) {
+  if (d.isDirectory()) {
+    console.error(`${SRC}/${d.name}/: 하위 폴더는 읽지 않는다 — .svg 는 바로 이 폴더에 둘 것.`);
+    process.exit(1);
+  }
+  if (!d.name.endsWith('.svg') && /\.svg$/i.test(d.name)) {
+    console.error(`${d.name}: 확장자는 소문자 '.svg' 여야 한다.`);
+    process.exit(1);
+  }
+}
+
+const files = all.filter((d) => d.isFile() && d.name.endsWith('.svg')).map((d) => d.name).sort();
 const entries = [];
 for (const f of files) {
   const key = f.replace(/\.svg$/, '');
-  // 파일명이 곧 배선 키다. 대문자가 섞이거나 공백이 남으면 `iconKey(m.name)` 과
-  // 영영 안 맞아서, 그림은 모듈에 실리는데 화면에는 절대 안 나온다 — 조용한
-  // 실패라 여기서 막는다. "실재하는 물질인가"까지는 물질 레지스트리가 필요해
-  // 여기서 못 보고, `test/materialicons.ts` 의 손그림 계층 검사가 본다.
-  if (key !== iconKey(key)) {
+  if (!KEYS.has(key)) {
+    const near = [...KEYS.keys()].find((k) => k.replace(/[^a-z0-9]/g, '') === key.replace(/[^a-z0-9]/g, ''));
     console.error(
-      `${f}: 파일명이 소문자 kebab-case 가 아니다 — '${iconKey(key)}.svg' 여야 배선된다.`,
+      `${f}: '${key}' 는 어떤 물질의 아이콘 키도 아니다` +
+        (near ? ` — '${near}.svg' 를 의도한 것 같다.` : '. 물질 영문명의 소문자 kebab-case 여야 한다.'),
     );
     process.exit(1);
   }
