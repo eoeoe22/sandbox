@@ -296,7 +296,7 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 | 칩 배경 `#1b1b22` / 선택 `#232b3a` / 테두리 흰색 15% | `MaterialPalette.svelte` 스타일 블록 |
 | 캔버스 바탕 `#101016` | `materials/empty.ts`의 `rgb(16, 16, 22)` |
 | 요소는 `<svg>`/`<rect>`뿐, 속성은 x/y/width/height/fill 로 고정, 값은 큰따옴표 | 소비 측 파서가 그 형태만 읽는다. §7.2의 검수 스크립트도 금지 목록이 아니라 **허용 목록**으로 짜야 `<circle>`처럼 빠뜨린 요소가 새지 않는다 |
-| rect 100개 / 6 KB 상한 | 오브젝트 스프라이트 실측 상한(나무 상자 240 rect / 14 KB)보다 아래로 잡되, **둘이 서로 모순되지 않게** — rect 한 줄이 실측 약 61 B라 6 KB에 들어가는 건 100개까지다. 예전엔 200개로 적혀 있어 바이트 상한과 충돌했다 |
+| rect 100개 / 8 KB 상한 | 오브젝트 스프라이트 실측 상한(나무 상자 240 rect / 14 KB)보다 아래로 잡되, **바이트 쪽이 rect 쪽보다 먼저 걸리지 않게** — rect 한 줄이 실측 약 63 B라 100개면 최대 6.3 KB다. 예전엔 200 rect / 6 KB로 둘이 서로 모순됐다 |
 
 ### 7.2 납품 검수 — 받는 쪽에서 돌리는 스크립트
 
@@ -307,22 +307,23 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 // node check.mjs foo.svg
 import { readFileSync } from 'node:fs';
 const raw = readFileSync(process.argv[2], 'utf8');
-// 주석을 먼저 걷어낸다. 주석 처리된 rect가 칠해진 것으로 세어져 진짜 빈 칸을
-// 가리는 것도, 주석 안의 "opacity" 같은 단어가 금지어로 잡히는 것도 막는다.
-const s = raw.replace(/<!--[\s\S]*?-->/g, '');
-// 요소는 허용 목록으로 본다 — 금지 목록은 <circle>·<path>처럼 빠뜨린 것을
-// 통과시킨다. 자기닫는 <g/>가 새는 것도 이 방식이면 없다.
-let opens = 0;
-for (const t of s.matchAll(/<(\/?)([a-zA-Z][\w:-]*)/g)) {
-  if (t[2] !== 'svg' && t[2] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[2] + '>');
-  if (t[2] === 'svg' && !t[1]) opens++;
-}
-// 중첩 <svg>는 자체 viewBox로 배율이 바뀌어, 안의 rect가 좌표와 다른 크기로
-// 그려진다. 허용 목록만으로는 안 걸리므로 루트 하나임을 따로 못박는다.
-if (opens !== 1) throw new Error(`<svg>가 ${opens}개 — 루트 하나여야 함`);
-const bad = /\bid=|\bclass=|\bstyle=|url\(|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(s);
+// 주석은 규격상 금지다. 지우고 넘어가면 규칙이 영영 강제되지 않고, 주석 처리된
+// rect가 커버리지에 세어져 진짜 빈 칸을 가릴 수도 있으므로 여기서 반려한다.
+if (/<!--/.test(raw)) throw new Error('주석 금지');
+const bad = /\bid=|\bclass=|\bstyle=|url\(|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(raw);
 if (bad) throw new Error('금지 요소: ' + bad[0]);
-if (!/viewBox="0 0 24 24"/.test(s)) throw new Error('viewBox가 0 0 24 24 가 아님');
+// 루트를 통째로 떼어내고 그 **안쪽만** 검사한다. 문자열 전체를 훑으면
+// </svg> 뒤에 붙은 rect나, 자기닫힌 루트 옆에 나란히 놓인 rect까지 칠해진
+// 것으로 세어진다 — 둘 다 인라인 삽입 시 실제로는 아무것도 그리지 않는다.
+const root = /^\s*(<svg\b[^>]*>)([\s\S]*)<\/svg>\s*$/.exec(raw);
+if (!root) throw new Error('루트가 <svg>…</svg> 하나로 감싸여 있지 않음');
+if (root[1].endsWith('/>')) throw new Error('루트 <svg>가 자기닫혀 있음 — 내용이 밖에 있다');
+if (!/viewBox="0 0 24 24"/.test(root[1])) throw new Error('viewBox가 0 0 24 24 가 아님');
+const s = root[2];
+// 루트 안에는 <rect>만. 허용 목록이라 <circle>·<path>는 물론 중첩 <svg>(자체
+// viewBox로 배율이 바뀐다)와 자기닫는 <g/>도 같이 걸린다.
+for (const t of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g))
+  if (t[1] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[1] + '>');
 const cells = new Set();
 const painted = new Set();
 const colors = new Set();
@@ -364,7 +365,10 @@ if (cells.size !== 576) throw new Error(`빈 칸 ${576 - cells.size}개 — 배�
 if (painted.size > 230) throw new Error(`기본색 ${576 - painted.size}칸 — 346칸(60%) 미만`);
 if (rects > 100) throw new Error('rect ' + rects + '개 — 100 초과');
 if (colors.size > 5) throw new Error('색 ' + colors.size + '개 — 5 초과');
-if (raw.length > 6144) throw new Error(raw.length + ' B — 6 KB 초과');
+// 8 KB. rect 상한 100개가 실제로 구속하는 규칙이 되도록 그 위에 둔다 — 한 줄이
+// 실측 약 63 B라 6 KB로 두면 브리프의 규칙을 다 지킨 100 rect 파일이 바이트로
+// 거절될 수 있고, 작성자는 그 이유를 알 방법이 없다.
+if (raw.length > 8192) throw new Error(raw.length + ' B — 8 KB 초과');
 console.log(`OK — rect ${rects}개, 색 ${colors.size}개, 기본색 ${((576 - painted.size) / 5.76).toFixed(0)}%, ${raw.length} B`);
 // 겹침은 반려 사유가 아니다(화면에는 제대로 나온다). 다만 작업자가 브리프의
 // 격자 절차를 따르지 않았다는 신호라, 나머지도 눈으로 더 봐야 한다는 뜻이다.
@@ -399,10 +403,12 @@ if (overlap) console.warn(`주의 — rect가 ${overlap}칸 겹침. 격자 절�
 - [ ] 브라우저 확인은 **직접 하지 않고 유저에게 요청** (CLAUDE.md)
 
 물질 손그림 아이콘이면 위 목록 대신
-**[MATERIAL-ICON-BRIEF.md](./MATERIAL-ICON-BRIEF.md) §5의 점검표**를 쓴다(검수
-스크립트 포함). 저장소 쪽에서 추가로 볼 것은 두 가지뿐:
+**[MATERIAL-ICON-BRIEF.md](./MATERIAL-ICON-BRIEF.md) §5의 점검표**를 쓴다. 그 점검표는
+**눈으로 읽어서 확인하는 항목만** 담고 있다(브리프의 독자는 스크립트를 못 돌린다).
+저장소 쪽에서 추가로 볼 것:
 
 - [ ] 자동 생성이 이미 그 물질을 처리하고 있지 않은지 확인했다 (§7.0)
+- [ ] **§7.2의 검수 스크립트를 돌렸다** — 브리프에는 없으므로 여기서 반드시 돌린다
 - [ ] 배선 후 `npm run test:materialicons` 통과
 
 ## 9. 읽을 파일
