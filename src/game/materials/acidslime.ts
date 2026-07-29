@@ -6,7 +6,7 @@ import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { SMOKE } from './smoke';
-import { SLIME, SLIME_FALL_STALL_CHANCE } from './slime';
+import { SLIME, SLIME_FLOW_CHANCE } from './slime';
 import { WATER } from './water';
 
 // Acid Slime (산성 슬라임) — Slime's corrosive cousin. It behaves almost exactly
@@ -150,11 +150,10 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
   // Interdiffuse with plain Slime across their shared boundary (like Water+Acid).
   if (diffuseWith(x, y, sim, SLIME.id, DIFFUSE_CHANCE)) return;
 
-  // Very viscous — its `viscosity` holds a wobbling mound as it oozes slowly, and a
-  // fall-stall throttles the drop itself so a heavy blob sinks slowly, not like thin
-  // water. Shared with plain Slime (SLIME_FALL_STALL_CHANCE) so both fall identically.
-  if (sim.chance(SLIME_FALL_STALL_CHANCE)) return;
-  updateLiquid(x, y, sim);
+  // Very viscous — the flow gate throttles all movement (fall included) to Lava's
+  // pace, and `viscosity` on top of that holds a wobbling mound instead of leveling
+  // flat. Shared with plain Slime (SLIME_FLOW_CHANCE) so both ooze identically.
+  if (sim.chance(SLIME_FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
 
 export const ACID_SLIME = register({
@@ -168,7 +167,9 @@ export const ACID_SLIME = register({
   // blends via the diffusive swap above (mirrors Acid/Water being equal density).
   density: 4,
   category: 'life',
-  // Thick, gooey ooze — holds a mound instead of spreading flat (like Slime).
+  // Thick, gooey ooze — holds a mound instead of spreading flat (like Slime; the
+  // lateral half of its viscosity, SLIME_FLOW_CHANCE being the half that slows
+  // the fall).
   viscosity: 0.86,
   // Springy goo: a glob flung by a blast bounces energetically before it settles.
   elasticity: 0.92,
