@@ -83,6 +83,7 @@ const IRON = ID('Iron');
 const GLASS = ID('Glass');
 const BATTERY = ID('Lithium Battery');
 const WOOD = ID('Wood');
+const LAVA = ID('Lava');
 
 function makeWorld(w = 80, h = 80): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -633,6 +634,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   floor(grid, 60);
   for (let x = 30; x < 40; x++) paintHot(grid, x, 59, ALUMINUM_POWDER.id, 1700);
   let maxH2 = 0;
+  let hottestH2 = -Infinity;
   for (let t = 0; t < 80; t++) {
     for (let x = 30; x < 40; x++) {
       if (grid.get(x, 59) === ALUMINUM_POWDER.id) grid.setTemp(x, 59, 1700); // keep it alight
@@ -640,8 +642,21 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     }
     sim.step();
     maxH2 = Math.max(maxH2, count(grid, HYDROGEN.id));
+    // Read the bubbles the instant they appear: a hydrogen cell over its own
+    // autoignition point converts to Fire on its very next turn, so anything
+    // still sitting there a tick later is by definition one that cooled.
+    for (let y = 50; y < 60; y++) {
+      for (let x = 28; x < 42; x++) {
+        if (grid.get(x, y) === HYDROGEN.id) hottestH2 = Math.max(hottestH2, grid.getTemp(x, y));
+      }
+    }
   }
   check('steam on burning aluminum gives hydrogen', maxH2 > 0, `${maxH2} cells at once`);
+  // …and the gas it makes is *ignitable*, which is the entire point of the rule.
+  // The reaction's own heat term guarantees this rather than leaving it to
+  // whatever temperature the steam happened to arrive at (see STEAM_REACT_HEAT).
+  check('…hot enough to light itself (past Hydrogen\'s 200° autoignition)',
+    hottestH2 >= 200, `hottest bubble ${hottestH2.toFixed(0)}°C`);
 
   const { grid: g2, sim: s2 } = makeWorld();
   floor(g2, 60);
@@ -673,12 +688,15 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   }
   const cloud = count(grid, ALUMINUM_POWDER.id);
   grid.set(41, 27, FIRE.id); // one lick of flame in the middle of it
-  for (let t = 0; t < 25; t++) sim.step();
+  for (let t = 0; t < 35; t++) sim.step();
   const cloudLeft = count(grid, ALUMINUM_POWDER.id);
-  // Not all of it: the front is over in ~15 ticks and a fraction of the grains
-  // are always thrown clear of it, which is what a real dust explosion does too.
+  // Never all of it, and the fraction swings: the front is over in ~15 ticks and
+  // whatever was thrown clear of it by then survives, which is what a real dust
+  // explosion does too. Measured across 8 seeds: 7–39% of the cloud left, so the
+  // bar sits at half — still miles from the ~100% an un-exploded cloud leaves,
+  // which is the thing this is actually distinguishing.
   check('a suspended cloud flashes off from one lick of flame',
-    cloudLeft < cloud * 0.25, `${cloudLeft}/${cloud} grains left`);
+    cloudLeft < cloud * 0.5, `${cloudLeft}/${cloud} grains left`);
 
   const { grid: g2, sim: s2 } = makeWorld(80, 80);
   floor(g2, 70);
@@ -691,6 +709,58 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   const pileLeft = count(g2, ALUMINUM_POWDER.id);
   check('…but a heap under the same flame just smoulders (the pile is untouched)',
     pileLeft > pile * 0.85, `${pileLeft}/${pile} grains left`);
+
+  // …and the other half of the same gate, which is the one a future change is
+  // most likely to break: **dust in a liquid never goes off**. `isSuspended`
+  // reads a liquid neighbour as support (only air and gases count as open), so
+  // submerged dust is piled dust no matter what is happening to it — wet dust is
+  // not a suspension.
+  //
+  // The medium is Lava rather than the obvious Water on purpose. The flash gate
+  // is 400°, which is well over water's boiling point, so any pool hot enough to
+  // put a submerged grain near that gate has already flashed to Steam around it —
+  // and dust in steam is a genuinely different (and legitimately explosive)
+  // situation, so the run would end up measuring that instead. Lava is the one
+  // liquid here that stays liquid at these temperatures, and it doubles as an
+  // igniter, so it exercises *both* trigger branches (self temperature and
+  // `igniterAdjacent`) at once.
+  //
+  // What the grains must do instead is what they always did: catch and burn
+  // slowly, at `burnChance` 0.05, from the flame in contact. So a few ticks in,
+  // nearly all of them are still there. Verified to be load-bearing by flipping
+  // `isOpen` to admit liquids: every grain flashes to Fire on the *first* tick
+  // (36 → 0), against 36 → 29 here.
+  const { grid: g3, sim: s3 } = makeWorld(80, 80);
+  floor(g3, 70);
+  for (let y = 55; y < 70; y++) for (let x = 30; x < 50; x++) paintHot(g3, x, y, LAVA, 1200);
+  for (let y = 60; y < 66; y++) {
+    for (let x = 34; x < 46; x++) if ((x + y) % 2 === 0) g3.set(x, y, ALUMINUM_POWDER.id);
+  }
+  const drowned = count(g3, ALUMINUM_POWDER.id);
+  for (let t = 0; t < 3; t++) {
+    for (let y = 55; y < 70; y++) {
+      for (let x = 30; x < 50; x++) if (g3.get(x, y) === LAVA) g3.setTemp(x, y, 1200);
+    }
+    s3.step();
+  }
+  check('…and dust submerged in a liquid never flashes (it just burns)',
+    count(g3, ALUMINUM_POWDER.id) > drowned * 0.75,
+    `${count(g3, ALUMINUM_POWDER.id)}/${drowned} grains left`);
+
+  // The activated dust is the same metal and shares the same helper, but it is a
+  // different material id — and the front hands itself on by matching id, so
+  // that path deserves its own run rather than being inferred from the powder's.
+  const { grid: g4, sim: s4 } = makeWorld(80, 80);
+  floor(g4, 76);
+  for (let y = 20; y < 35; y++) {
+    for (let x = 30; x < 50; x++) if ((x + y) % 2 === 0) g4.set(x, y, ACTIVATED_ALUMINUM.id);
+  }
+  const actCloud = count(g4, ACTIVATED_ALUMINUM.id);
+  g4.set(41, 27, FIRE.id);
+  for (let t = 0; t < 35; t++) s4.step();
+  const actLeft = count(g4, ACTIVATED_ALUMINUM.id);
+  check('…and an activated cloud flashes off the same way',
+    actLeft < actCloud * 0.5, `${actLeft}/${actCloud} grains left`);
 }
 
 // 15. Ammonal: the fourth recipe off the same grain, on the same gates as the

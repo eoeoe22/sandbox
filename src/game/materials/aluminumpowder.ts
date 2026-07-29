@@ -149,10 +149,18 @@ const ACID_REACT_CHANCE = 0.12;
 // collect somewhere instead of lighting itself at birth.
 const ACID_REACT_HEAT = 25;
 // …and the same for steam meeting a *burning* grain. Faster, because that
-// reaction is a runaway rather than a fizz: the steam is already hot, the metal
-// is at 1700°, and the hydrogen it makes is born well past its own ignition
-// point and lights immediately — which is the point of the rule.
+// reaction is a runaway rather than a fizz.
 const STEAM_REACT_CHANCE = 0.25;
+// Heat carried into the hydrogen this one makes — and unlike the acid rule's,
+// this number is deliberately *large*, because the whole point of the rule is
+// that the gas lights. Steam already arrives hot (110° from the kettle, more
+// beside a 1700° grain), but that is an assumption about the neighbourhood
+// rather than a guarantee; +200 puts the fresh bubble past Hydrogen's own 200°
+// autoignition point (hydrogen.ts) from any steam temperature at all, so
+// "물을 끼얹으면 오히려 커진다" is enforced by the rule instead of merely being
+// likely. The exotherm is honest too: this reaction is what blew the roofs off
+// at Fukushima.
+const STEAM_REACT_HEAT = 200;
 
 export const ALUMINUM_POWDER = register({
   // 127 is deliberately skipped — it's claimed by a material being added on a
@@ -294,6 +302,7 @@ export const ALUMINUM_POWDER = register({
       produce: EMPTY,
       otherBecomes: HYDROGEN.id,
       probability: STEAM_REACT_CHANCE,
+      heat: STEAM_REACT_HEAT,
       tempMin: SPEC.autoIgniteTemp,
     },
   ],
