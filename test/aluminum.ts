@@ -65,6 +65,7 @@ const WATER = ID('Water');
 const IRON = ID('Iron');
 const GLASS = ID('Glass');
 const BATTERY = ID('Lithium Battery');
+const WOOD = ID('Wood');
 
 function makeWorld(w = 80, h = 80): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -78,6 +79,14 @@ function floor(grid: Grid, y: number, id = STONE): void {
 function count(grid: Grid, id: number): number {
   let n = 0;
   for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === id) n++;
+  return n;
+}
+/** Like `count`, but also finds cells riding in a powder's 겹침 (overlap) slot —
+ *  a liquid that has soaked into a powder bed is still there, just not a primary
+ *  cell, so a plain `count` would report it as destroyed. */
+function countWithOverlay(grid: Grid, id: number): number {
+  let n = count(grid, id);
+  for (let i = 0; i < grid.overlay.length; i++) if (grid.overlay[i] === id) n++;
   return n;
 }
 /** Paint a cell and hold it at a temperature (the way a hot bed of terrain would). */
@@ -320,10 +329,46 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   check('the disc is filled with white Flash light', flash > 60, `${flash} cells`);
   check('…and almost none of it is the orange shockwave flash', blast < flash / 8,
     `${blast} blast vs ${flash} flash`);
-  check('Flash light never heats what it washes over (decorTemp)',
-    FLASH.decorTemp === true && FLASH.thermal?.conductivity === 0);
-  check('…and a blast passes straight over it rather than shoving it',
-    FLASH.blastInert === true);
+  // The next two are the same properties test/fireworks.ts pins for the firework
+  // flower, checked the same way — by *outcome*, not by reading the tag back.
+  // Asserting `FLASH.decorTemp === true` would keep passing even if the consumers
+  // of that tag (engine/objects.ts's body-exposure scan, the heat pass) stopped
+  // honouring it, which is exactly the regression worth catching.
+  {
+    // A block of Wood buried in flash light, re-stamped every tick so the light
+    // is continuously present far longer than one real flash lives.
+    const { grid: g, sim: s } = makeWorld();
+    for (let y = 38; y <= 42; y++) for (let x = 38; x <= 42; x++) g.set(x, y, WOOD);
+    let peak = -Infinity;
+    for (let t = 0; t < 120; t++) {
+      for (let y = 36; y <= 44; y++)
+        for (let x = 36; x <= 44; x++) if (g.get(x, y) === 0) g.set(x, y, FLASH.id);
+      s.step();
+      for (let y = 38; y <= 42; y++)
+        for (let x = 38; x <= 42; x++)
+          if (g.get(x, y) === WOOD) peak = Math.max(peak, g.getTemp(x, y));
+    }
+    check('Flash light never heats what it washes over', peak < AMBIENT_TEMP + 1,
+      `wood peaked at ${peak.toFixed(1)}°C`);
+    check('…and never sets it alight', count(g, WOOD) === 25, `${count(g, WOOD)}/25 cells`);
+  }
+  {
+    // A field of flash light with a charge going off inside it: every cell must
+    // still be there (or expired on its own timer) — never converted to Debris,
+    // which is what a blast does to loose matter it can't break. Debris carrying
+    // FLASH would deposit stray flash cells wherever the fragments land.
+    const { grid: g, sim: s } = makeWorld(100, 100);
+    floor(g, 80);
+    for (let y = 70; y < 79; y++) for (let x = 40; x < 60; x++) g.set(x, y, FLASH.id);
+    const before = count(g, FLASH.id);
+    for (let x = 49; x < 51; x++) paintHot(g, x, 79, FLASH_POWDER.id, 250);
+    s.step();
+    // Some cells legitimately expire on their own `life` timer during the step —
+    // what must never happen is a single one becoming Debris.
+    check('…and a blast passes straight over it rather than shoving it as Debris',
+      count(g, ID('Debris')) === 0 && count(g, FLASH.id) > before * 0.7,
+      `${count(g, ID('Debris'))} debris, ${count(g, FLASH.id)}/${before} flash still lit`);
+  }
   // It must not be a detonation trigger itself — an effect cell that reads as
   // one lets a charge set off a stockpile it should never reach (see woofer.ts).
   const { grid: g2, sim: s2 } = makeWorld();
@@ -343,7 +388,9 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   for (let y = 40; y < 59; y++) for (let x = 38; x <= 42; x++) grid.set(x, y, ALUMINUM.id);
   const bar = count(grid, ALUMINUM.id);
   for (let x = 38; x <= 42; x++) grid.set(x, 39, LIQUID_GALLIUM.id);
-  const gallium = count(grid, LIQUID_GALLIUM.id);
+  // Counted with the overlap slot: as the wall crumbles the puddle sinks into the
+  // fresh powder bed, and a drop riding a grain's 겹침 slot is still a drop.
+  const gallium = countWithOverlay(grid, LIQUID_GALLIUM.id);
   for (let t = 0; t < 200; t++) {
     // Hold the puddle above its 28° set point. Ambient is 20°, so gallium left
     // alone freezes within a few ticks and the run would be measuring the melt
@@ -351,7 +398,10 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const id = grid.get(x, y);
-        if (id === LIQUID_GALLIUM.id || id === GALLIUM.id) grid.setTemp(x, y, 40);
+        const over = grid.getOverlay(x, y);
+        if (id === LIQUID_GALLIUM.id || id === GALLIUM.id || over === LIQUID_GALLIUM.id) {
+          grid.setTemp(x, y, 40); // an overlap fluid shares its host cell's temperature
+        }
       }
     }
     sim.step();
@@ -360,8 +410,8 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     count(grid, ALUMINUM.id) < bar && count(grid, ALUMINUM_POWDER.id) > 0,
     `${bar - count(grid, ALUMINUM.id)} cells eaten → ${count(grid, ALUMINUM_POWDER.id)} powder`);
   check('…without being consumed (one drop keeps eating)',
-    count(grid, LIQUID_GALLIUM.id) === gallium,
-    `${count(grid, LIQUID_GALLIUM.id)}/${gallium} drops left`);
+    countWithOverlay(grid, LIQUID_GALLIUM.id) === gallium,
+    `${countWithOverlay(grid, LIQUID_GALLIUM.id)}/${gallium} drops left`);
 
   // The off switch: solid Gallium is the same metal two degrees colder and does
   // nothing, so chilling the puddle stops it mid-meal.

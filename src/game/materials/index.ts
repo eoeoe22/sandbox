@@ -302,6 +302,9 @@ export {
  *   • FIREWORK_BURST — the coloured flower a star opens into (fireworkburst.ts).
  *     It only ever exists as that product: its colour lives in the `aux` a star
  *     stamps, so one placed by brush would be a colour-0 cell that fades at once.
+ *   • FLASH — the white light a Flash Powder detonation fills its reach with
+ *     (flash.ts), the same kind of thing as the shockwave flash it replaces.
+ *     Hand-placed it would be a lone motionless white dot that blinks out.
  *
  *  The Fan's gust is deliberately NOT a material at all: it's a transient wind
  *  *field* (Grid.wind) the Fan stamps and the renderer/object layer read, so there

@@ -8,7 +8,7 @@
 
 ## 물질 총량 · 시스템 파티클
 
-현재 **131종**(팔레트 119종 + 비노출 12종 — Empty·Wall 등 포함, `npm run check:material-ids`가 세는 등록 수 기준). 비노출 9종은 브러시로 칠할 수 없다 — 지우개용 Empty와, 시뮬레이션이 스스로 생성하는 시스템 파티클 8종: 불똥(Ember, 폭발 탄도 잔해), 스파크(Spark, 전기 펄스), 핵 광선(Nuclear Ray, 임계 우라늄이 뿜는 초고온 붉은 광선), 열선(Heat Ray, 전기를 받은 Laser가 쏘는 레이저 빔 — 파괴력 없이 가열만 함), **파편(Debris)·자탄(Bomblet)·네이팜 겔(Napalm Gel)**(폭발 다변화 탄도 잔해), 비눗방울(Bubble, Soapy Water가 내는 거품).
+현재 **131종**(팔레트 119종 + 비노출 12종 — Empty·Wall 등 포함, `npm run check:material-ids`가 세는 등록 수 기준). 비노출 12종은 브러시로 칠할 수 없다 — 지우개용 Empty와, 시뮬레이션이 스스로 생성하는 시스템 파티클 11종: 불똥(Ember, 폭발 탄도 잔해), 스파크(Spark, 전기 펄스), 핵 광선(Nuclear Ray, 임계 우라늄이 뿜는 초고온 붉은 광선), 열선(Heat Ray, 전기를 받은 Laser가 쏘는 레이저 빔 — 파괴력 없이 가열만 함), **파편(Debris)·자탄(Bomblet)·네이팜 겔(Napalm Gel)**(폭발 다변화 탄도 잔해), 비눗방울(Bubble, Soapy Water가 내는 거품), **불꽃 자탄(Firework Star)·불꽃(Firework Burst)**(불꽃놀이 화약이 쏘는 자탄과 그 자탄이 피우는 색 꽃), **섬광(Flash)**(섬광화약이 터질 때 차오르는 백색 광). (여기 적힌 총량·내역은 이 절을 갱신한 시점 기준이다 — 정확한 등록 수는 항상 `npm run check:material-ids`가 출력한다.)
 
 ## 공용 엔진 메커니즘 (크로스-물질)
 
@@ -2071,11 +2071,16 @@ Aluminum Powder가 **테르밋 재료로만** 쓰이던 문제를 푼 라운드.
   된다). 규칙을 **액체 쪽에만** 선언했으므로 28° 아래로 식혀 고체 Gallium이 되면 그 자리에서
   멎는다 — **냉각이 곧 스위치**인 유일한 위협이고, 산이 상(phase) 기준으로 무차별 부식하는
   것과 달리 **표적이 정확히 한 물질**이다. 확률 0.03/틱은 Acid의 부식률과 같은 급.
-  - 반응 규칙을 **알루미늄 쪽이 아니라 갈륨 쪽에** 단 데는 순환 임포트 이유도 있다:
-    `reactions` 배열은 모듈 스코프에서 `.id`를 읽으므로, `aluminum.ts`에서 선언하면
-    aluminum → aluminumpowder → moltenaluminum → aluminum 순환을 타고 **초기화 전 바인딩을
-    읽을** 수 있다. `liquidgallium.ts`는 알루미늄 계열 어느 파일에서도 임포트되지 않아
-    (gallium ↔ liquidgallium 기존 순환은 함수 스코프 참조뿐) 안전하다.
+  - 반응 규칙을 **알루미늄 쪽이 아니라 갈륨 쪽에** 단 데는 임포트 그래프 이유도 있다.
+    `reactions` 배열은 모듈 스코프에서 `.id`를 읽으므로 파트너 모듈이 **그 시점에 평가를
+    마쳤어야** 한다. `aluminum.ts`에서 선언했다면 거기에 `aluminumpowder.ts` 임포트를 **새로
+    추가**하게 되고, 그 순간 aluminum → aluminumpowder → moltenaluminum → aluminum **순환이
+    생겨** 초기화 전 바인딩을 읽을 위험이 열린다(지금은 aluminum.ts가 aluminumpowder.ts를
+    임포트하지 않아 그런 순환이 없다 — 즉 만들지 않은 것이지 피해 간 게 아니다).
+    `liquidgallium.ts` 쪽은 반대로 안전하다: 알루미늄 계열 어느 파일도 gallium/liquidgallium을
+    임포트하지 않아 **되돌아오는 간선이 없으므로**, 어느 진입 순서로 평가되든 알루미늄 두
+    모듈이 먼저 완료된 뒤에 이 배열이 평가된다(gallium ↔ liquidgallium 기존 순환은 함수
+    스코프 참조뿐이라 무관).
 
 미채택 제안(갈륨 활성 알루미늄, 암모날, 산-알루미늄 수소 발생, 분진 폭발 등)은
 [MATERIAL-IDEAS.md](./MATERIAL-IDEAS.md)에 정리해 뒀다.
