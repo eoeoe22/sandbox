@@ -39,6 +39,13 @@ export const BURST_COLORS: readonly number[] = [
  *  a coloured haze that piles up. */
 const LIFE_TICKS = 14;
 
+/** Apparent temperature of a burst cell (°C). A star's composition burns hotter
+ *  than an ordinary wood flame (Fire's 1000) and well short of the Blue Flame's
+ *  1800 — so a flower surveyed with the 돋보기, or watched through the heat
+ *  overlay, reads as the burning thing it looks like instead of as 20°C room air.
+ *  It's a *reading*, not heat: see `decorTemp` below. */
+const BURN_TEMP = 1200;
+
 /** Stamp a burst cell of colour `colorIndex` at (x,y). spawn() marks the cell
  *  moved, so a freshly opened flower isn't re-processed the same tick. */
 export function burstCell(sim: SimContext, x: number, y: number, colorIndex: number): void {
@@ -68,8 +75,16 @@ export const FIREWORK_BURST = register({
   // landed as a colour-0 flower with its own colour lost.
   blastInert: true,
   // Inert to heat: a firework flower is light, not a heat source, and its cells
-  // shouldn't warm what they wash over.
-  thermal: { conductivity: 0 },
+  // shouldn't warm what they wash over. conductivity 0 handles the grid on its
+  // own (conduction is gated by the lower of the two cells' conductivities, so a
+  // 0 neither gains nor gives heat)…
+  thermal: { init: BURN_TEMP, conductivity: 0 },
+  // …and `decorTemp` says the reading it carries is for the eye only, so the
+  // object layer — the one place that reads raw cell temperatures as heat
+  // applied to a body — keeps ignoring it. Without this the hot reading would
+  // silently start igniting wooden boxes and burning balls that a flower drifts
+  // over, which is exactly the "washes over, changes nothing" behaviour above.
+  decorTemp: true,
   // Fades on the shared memoryless timer (Material.life), like Smoke.
   life: { ticks: LIFE_TICKS },
   // Deliberately motionless: a gas that rose and diffused would smear the flower

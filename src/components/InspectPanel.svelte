@@ -103,7 +103,12 @@
     z-index: 8;
     top: 8px;
     left: calc(var(--sidebar-w) + 8px);
-    width: 240px;
+    /* Wide enough that the longest material name ("White Phosphorus",
+       "알루미늄 가루") fits beside the temperature/count/ratio columns on one
+       line — the readout names what's under the brush, so a clipped
+       "Firework Bu…" defeats the point. Names still wrap rather than clip if a
+       narrow screen (or a future longer name) squeezes the column anyway. */
+    width: 288px;
     max-width: calc(100vw - var(--sidebar-w) - 16px);
     padding: 8px 10px;
     background: rgba(20, 20, 26, 0.92);
@@ -172,13 +177,18 @@
     border-radius: 3px;
     border: 1px solid rgba(0, 0, 0, 0.5);
   }
+  /* Never clipped: the name wraps onto a second line instead of ellipsizing, so
+     every constituent material is fully readable however narrow the card gets.
+     keep-all breaks Korean names at spaces (어절 단위) rather than mid-word;
+     break-word is the fallback for a single word longer than the column. */
   .name {
     flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: #e8e8ee;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: keep-all;
+    line-height: 1.25;
   }
   /* Per-material average temperature — tinted amber like the summary temperature
      so it reads as a heat value, not a count. */
@@ -186,6 +196,7 @@
     flex: none;
     min-width: 46px;
     text-align: right;
+    white-space: nowrap;
     color: #f0c85a;
   }
   .temp.none {

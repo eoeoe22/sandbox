@@ -159,7 +159,7 @@ export const materialNamesKo: Record<number, string> = {
   80: '베이킹소다',
   81: '니크롬',
   82: 'LFP 배터리',
-  83: '망',
+  83: '체',
   84: '터빈',
   85: '히트파이프',
   86: '나트륨',
@@ -212,4 +212,8 @@ export const materialNamesKo: Record<number, string> = {
   133: '태양광 패널',
   134: '산호',
   135: '백화 산호',
+  136: '알루미늄',
+  137: '섬광화약',
+  138: '섬광',
+  143: '녹은 알루미늄',
 };

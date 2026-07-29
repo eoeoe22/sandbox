@@ -4,6 +4,8 @@ import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { GALLIUM } from './gallium';
+import { ALUMINUM } from './aluminum';
+import { ALUMINUM_POWDER } from './aluminumpowder';
 
 // Liquid Gallium — the molten counterpart to solid Gallium, but at a
 // theatrically low temperature: Gallium's whole party trick is that it melts
@@ -20,6 +22,36 @@ import { GALLIUM } from './gallium';
 // point doesn't flicker between solid and liquid every tick.
 export const GALLIUM_MELT_TEMP = 30;
 const GALLIUM_FREEZE_TEMP = 28;
+
+// Gallium's *other* famous party trick, and the one thing in the game that
+// destroys a metal without heat, acid or explosives: **liquid gallium
+// embrittles aluminum**. It wicks along the grain boundaries of solid aluminum
+// and the metal falls apart in your hands — the aluminum-can-torn-like-paper
+// demo. Here that reads as a cast Aluminum cell crumbling into Aluminum Powder
+// on contact, which is exactly the right product: the bar doesn't melt or
+// dissolve, it turns back into the dust it was poured from (and can be melted
+// and recast, so the loop closes).
+//
+// Three things make this a *mechanic* rather than a second acid:
+//
+//  • **The gallium is not consumed.** `otherBecomes` transforms the aluminum
+//    and `produce` is omitted, so this cell is untouched — the textbook
+//    one-sided reaction engine/reactions.ts documents. One drop keeps eating,
+//    following the powder down as the wall gives way. That is the real
+//    behaviour (gallium alloys into the aluminum rather than being spent) and
+//    it's what makes it feel like corrosion rather than a consumable.
+//  • **It only works as a liquid**, because only this material declares it —
+//    solid Gallium (which is the same metal two degrees colder) does nothing.
+//    So the off switch is temperature: chill the puddle under 28° and it
+//    freezes mid-meal and stops. Nothing else in the game is disarmed by
+//    cooling it.
+//  • **It is aluminum-specific.** Acid eats every solid and powder that isn't
+//    tagged acid-resistant; this touches exactly one material, so it's a
+//    surgical tool for the one metal that is otherwise cheap and everywhere.
+//
+// Per-tick, per-contact — near Acid's own 0.03 corrosion rate, so a face
+// visibly eats away over a beat or two rather than a bar vanishing at once.
+const ALUMINUM_EMBRITTLE_CHANCE = 0.03;
 
 function updateLiquidGallium(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again
@@ -56,5 +88,14 @@ export const LIQUID_GALLIUM = register({
   // Placed just above its melt point so a freshly poured puddle stays liquid;
   // conducts heat well like the other metals.
   thermal: { init: 35, conductivity: 0.7 },
+  // Embrittles solid Aluminum into Aluminum Powder without being consumed —
+  // see ALUMINUM_EMBRITTLE_CHANCE above for why it's declared on this side.
+  reactions: [
+    {
+      with: ALUMINUM.id,
+      otherBecomes: ALUMINUM_POWDER.id,
+      probability: ALUMINUM_EMBRITTLE_CHANCE,
+    },
+  ],
   update: updateLiquidGallium,
 });

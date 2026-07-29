@@ -3,13 +3,25 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn, flameAdjacent, type Combustible } from './combustion';
 import { RUST_POWDER } from './rustpowder';
 import { THERMITE } from './thermite';
+import { SALTPETER } from './saltpeter';
+import { FLASH_POWDER } from './flashpowder';
+import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 
-// Aluminum Powder (알루미늄 가루) — the bright silver metal dust, and the *fuel*
-// half of the thermite recipe: **Aluminum Powder + Rust Powder → Thermite**
-// (see the `reactions` rule below). Thermite has always been a palette-only
+// Aluminum Powder (알루미늄 가루) — the bright silver metal dust, and the hub the
+// whole aluminum line runs through. Everything it does starts here:
+//
+//   • **+ Rust Powder → Thermite** — the cutting charge (see the `reactions`
+//     rules below).
+//   • **+ Saltpeter → Flash Powder** — the flash charge (same rules block).
+//   • **heat it past 660° with no flame on it → Molten Aluminum → Aluminum** —
+//     the casting line (see `tryMeltAluminum` below and moltenaluminum.ts).
+//   • **light it** — the game's most stubborn, hottest ordinary fuel (below).
+//
+// The oldest of those is the thermite recipe: **Aluminum Powder + Rust Powder →
+// Thermite**. Thermite had always been a palette-only
 // material; now it has the same "pour the ingredients into one pile and it
 // becomes the product" crafting step Gunpowder got from Sulfur + Saltpeter +
 // Coal Powder. And the ingredients are the real ones: thermite *is* iron oxide
@@ -21,10 +33,12 @@ import { THERMITE } from './thermite';
 // aluminum powder is wrapped in a passivating oxide skin, which is exactly why
 // thermite needs a magnesium ribbon to start rather than a match — so its
 // autoignition point is the highest in the palette (Coal, the previous hardest
-// to light, needs 580°). That governs the *radiant* path only: like every fuel
-// in combustion.ts it will still catch from a flame cell actually touching it
-// (Fire/Lava/Blue Flame, rolled at `burnChance`), so a match does work — it just
-// takes its time, and nothing short of touching flame or serious heat starts it.
+// to light, needs 580°). Lighting it therefore takes a flame in *contact*:
+// like every fuel in combustion.ts it catches from a touching Fire/Lava/Blue
+// Flame cell rolled at `burnChance`, so a match does work — it just takes its
+// time. Radiant heat with no flame on it no longer lights it at all, because
+// the melting point now sits underneath the autoignition point and answers
+// first (see `tryMeltAluminum`); that split is the metal's central rule.
 // Once it does catch it runs at BURN_TEMP, hotter than any other fuel here,
 // melting the iron/stone/glass it rests on — but still nowhere near Thermite's
 // 2800°, which is the whole point: lighting the aluminum alone gets you a torch,
@@ -42,10 +56,12 @@ const SPEC: Combustible = {
   // Between Coal Powder (0.035) and Wood (0.06): a metal dust front creeps
   // rather than races — it took real heat to start and it doesn't hurry.
   burnChance: 0.05,
-  // The highest autoignition in the game — nothing merely warm sets this off by
-  // radiant heat; it takes Lava, a Blue Flame, molten metal or a lit Thermite
-  // grain nearby. (Flame in direct contact still lights it at `burnChance`
-  // above, as it does every fuel — see tryBurn.)
+  // The highest autoignition in the game. In practice it is now reached only by
+  // a grain sitting *in* a flame: `tryMeltAluminum` vetoes melting while any
+  // flame is adjacent, so a grain against Fire/Lava/Blue Flame/a lit Thermite
+  // wreath climbs right past 660° to here and catches, while one heated with no
+  // flame on it melts at 660° and never arrives. (Flame in direct contact also
+  // lights it outright at `burnChance`, as it does every fuel — see tryBurn.)
   autoIgniteTemp: 1000,
   // The hottest ordinary fuel here — past Iron (1200°), Glass (1150°) and
   // Stone (1100°), so burning aluminum genuinely melts what it rests on. Kept
@@ -54,8 +70,45 @@ const SPEC: Combustible = {
   burnTemp: 1700,
 };
 
+// Melt vs burn. Aluminum's real melting point (660°, see moltenaluminum.ts) is
+// far *below* its autoignition point here (1000°), so heat alone now has two
+// possible answers and the cell has to pick one. It picks the same way the
+// petroleum fuels do (see `flameAdjacent` / petroleumdistill.ts): **direct flame
+// contact wins**.
+//
+//   • A flame actually touching the grain — Fire, Lava or Blue Flame — means it
+//     burns, exactly as before: `tryBurn` above rolls `burnChance` and the melt
+//     path is vetoed while any flame is adjacent, so the grain heats on toward
+//     1000° and catches instead of quietly slumping into a puddle first.
+//   • Heat with no flame on it — a coal bed through a wall, a molten metal pool,
+//     a hot pipe — melts it at 660°, and it never reaches 1000° at all.
+//
+// That reads as one rule ("불을 대면 타고, 그냥 데우면 녹는다") and it is the
+// physically honest one too: bulk aluminum melts, and it is fine aluminum *dust
+// in a flame* that burns. It also produces a nice split inside a single heap
+// resting on lava — the face in contact with the flame lights while the grains
+// behind it, heated only by conduction, run down into melt.
+//
+// The upper bound matters as much as the lower one: a cell at or above the
+// autoignition point is either already burning (its heat pinned at BURN_TEMP by
+// combustion.ts) or about to, and a burning grain only wreathes itself in Fire
+// on a WREATH_CHANCE roll — so on the ticks where no flame happens to be beside
+// it, an unbounded melt check would yank a mid-burn grain out of the fire and
+// turn it into a puddle. Melting strictly below the autoignition point leaves
+// every burning cell to `tryBurn`.
+function tryMeltAluminum(x: number, y: number, sim: SimContext): boolean {
+  const t = sim.getTemp(x, y);
+  if (t < ALUMINUM_MELT_TEMP || t >= SPEC.autoIgniteTemp) return false;
+  if (flameAdjacent(x, y, sim)) return false;
+  // In-place `set` keeps the (now high) temperature so the fresh Molten Aluminum
+  // reads as molten instead of instantly re-freezing next tick.
+  sim.set(x, y, MOLTEN_ALUMINUM.id);
+  return true;
+}
+
 function updateAluminumPowder(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryMeltAluminum(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -152,6 +205,26 @@ export const ALUMINUM_POWDER = register({
       with: RUST_POWDER.id,
       produce: THERMITE.id,
       otherBecomes: THERMITE.id,
+      probability: MIX_CHANCE,
+      tempMax: MIX_MAX_TEMP,
+    },
+    // The second recipe off the same grain: **Aluminum Powder + Saltpeter →
+    // Flash Powder** (see flashpowder.ts). Identical shape and identical gates
+    // to the Thermite row above — same 0.25 mixing chance, same 150° cold gate —
+    // so all three of the game's crafting recipes feel the same in the hand.
+    // The two rows can never contend: they take different partners, and
+    // `tryReact` applies the first rule that finds one, so a grain touching both
+    // an oxide and an oxidizer simply becomes Thermite this tick and is free to
+    // become Flash Powder on a later one if the rust is gone.
+    //
+    // Which is the *interesting* half of putting them side by side: aluminum is
+    // the fuel in both, and what you grind it with decides whether you get the
+    // slow, blinding cutting charge or the instantaneous flash — 산화철이면
+    // 절단, 산화제 염이면 섬광.
+    {
+      with: SALTPETER.id,
+      produce: FLASH_POWDER.id,
+      otherBecomes: FLASH_POWDER.id,
       probability: MIX_CHANCE,
       tempMax: MIX_MAX_TEMP,
     },
