@@ -895,11 +895,13 @@ const SPLASH_MIN_SPEED = 1.2;
  *  Sized for the default 4-cell rubber ball and scaled up for wider bodies by
  *  SPLASH_REF_HALF_WIDTH, so the drops-per-cell density is the same for all. */
 const SPLASH_MAX_DROPLETS = 6;
-/** The rim half-width (cells) the two caps above are quoted at — the default
- *  rubber ball's radius. A body twice as wide across its waterline throws twice
- *  as many drops/grains, so a chunky wooden crate belly-flopping into a pond
- *  makes a properly bigger splash than a marble, and a drum that lands flat makes
- *  a wider one than a drum that lands on its end, at the same visual density. */
+/** The rim half-width (cells) the two caps above are quoted at — a rubber ball's
+ *  radius. A body twice as wide across its waterline throws twice as many
+ *  drops/grains, so a chunky wooden crate belly-flopping into a pond makes a
+ *  properly bigger splash than a marble, and a drum that lands flat makes a wider
+ *  one than a drum that lands on its end, at the same visual density. Bodies at
+ *  or under this width are unaffected — see rimFragments, where the cap is a
+ *  floor, so no ball's splash ever got smaller than it was. */
 const SPLASH_REF_HALF_WIDTH = 4;
 
 /**
@@ -1178,11 +1180,14 @@ function bodyRim(o: SimObject | CapsuleBody): { halfW: number; yTop: number; yBo
   };
 }
 
-/** How many fragments a body of this rim throws, from a cap quoted for the
- *  default ball (see SPLASH_REF_HALF_WIDTH). At least one, so even a sliver of a
- *  body still marks the surface it broke. */
+/** How many fragments a body of this rim throws, from a cap quoted for a
+ *  ball-sized body (see SPLASH_REF_HALF_WIDTH). The cap is a FLOOR, not a
+ *  proportion: every ball keeps exactly the spray the effect was tuned at — the
+ *  palette spawns them at the brush size (radius 2 and up, 3 by default), so
+ *  scaling proportionally would have quietly shrunk the common ball's splash —
+ *  and only a body wider than that reference throws more. */
 function rimFragments(cap: number, halfW: number): number {
-  return Math.max(1, Math.round((cap * halfW) / SPLASH_REF_HALF_WIDTH));
+  return Math.max(cap, Math.round((cap * halfW) / SPLASH_REF_HALF_WIDTH));
 }
 
 /**

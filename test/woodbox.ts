@@ -3,7 +3,7 @@
 // and the douse rule. Run: `node test/run-woodbox.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
-import { createDrum, createWoodBox, WOOD_BOX_IGNITE_TEMP } from '../src/game/engine/objects';
+import { createDrum, createRubberBall, createWoodBox, WOOD_BOX_IGNITE_TEMP } from '../src/game/engine/objects';
 import type { SimBody, SimWoodBox } from '../src/game/engine/objects';
 import { getMaterial } from '../src/game/materials/registry';
 import { detonate } from '../src/game/materials/blast';
@@ -218,6 +218,35 @@ function sawdustSpread(grid: Grid): number {
     any = Math.max(any, count(grid, DEBRIS));
   }
   check('a crate lowered gently onto water does not spray', any === 0, `${any} fragments`);
+}
+{
+  // The ball is the CONTROL for the shared splash path: the crate now rides the
+  // same code, and a ball is spawned at the brush size (radius 2 and up, 3 by
+  // default), so the count must never have shrunk for one. A small ball still
+  // throws the full tuned cap of 6 droplets, and the far wider crate throws more.
+  const drop = (make: () => SimBody): number => {
+    const { grid, sim } = makeWorld(100, 300);
+    floor(grid, 290);
+    for (let y = 240; y < 290; y++)
+      for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = WATER;
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    grid.objects.push(make());
+    let peak = 0;
+    for (let t = 1; t <= 120; t++) {
+      sim.step();
+      peak = Math.max(peak, count(grid, DEBRIS));
+    }
+    return peak;
+  };
+  const smallBall = drop(() => createRubberBall(50, 20, 3)); // the palette default
+  const minBall = drop(() => createRubberBall(50, 20, 2)); // the smallest brush
+  const crate = drop(() => createWoodBox(50, 20));
+  check('a default-sized ball still throws the full 6-droplet splash', smallBall >= 6,
+    `${smallBall} fragments`);
+  check('and so does the smallest one (the cap is a floor, not a proportion)',
+    minBall >= 6, `${minBall} fragments`);
+  check('a crate, far wider at the waterline, throws a bigger splash than a ball',
+    crate > smallBall, `crate ${crate} vs ball ${smallBall}`);
 }
 {
   // Shared with the rest of the object layer, not crate-only: a drum splashes too.
