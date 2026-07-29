@@ -343,6 +343,34 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
   );
 }
 
+// 5e. …and the same rule under the conditions a grown canopy never provides.
+//     The scene above only proves leaves stay put where they actually grow: at
+//     the far, dry, crowded end of the moisture gradient, where the side-shoot
+//     rule (lateralShoot) is already held back by its own thirst and headroom
+//     tests whether or not it checks vigour. So the one leaf here is hand-built
+//     and given everything a side shoot could want — a full cell of moisture, a
+//     puddle to keep it that way, and clear sky overhead. What must stop it is
+//     nothing but "a leaf has no vigour", and if that test ever goes, this is
+//     where it shows.
+{
+  reseed();
+  const { grid, sim } = makeWorld(30, 40);
+  fill(grid, 0, 34, 29, 39, STONE);
+  fill(grid, 10, 32, 19, 33, WATER); // a walled puddle it can drink from forever
+  fill(grid, 0, 32, 9, 33, STONE);
+  fill(grid, 20, 32, 29, 33, STONE);
+  put(grid, 15, 31, PLANT);
+  // A leaf, packed the way plant.ts packs one: initialised, full of water, but
+  // no tip flag, no segment and no vigour.
+  grid.aux[grid.idx(15, 31)] = (1 << 15) | 0x7f;
+  for (let t = 0; t < 6000; t++) sim.step();
+  check(
+    'a well-fed leaf under open sky still puts out nothing',
+    count(grid, PLANT) === 1,
+    `${count(grid, PLANT)} cells`,
+  );
+}
+
 // 5b. A world saved before the growth rework stored a bare 0..250 moisture value
 //     in a plant cell's aux. Such a cell has to read as "no structure yet" and be
 //     re-initialised, not decode as an already-spent stem that can never grow.
