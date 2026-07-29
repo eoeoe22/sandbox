@@ -3,7 +3,7 @@
 // and the douse rule. Run: `node test/run-woodbox.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
-import { createWoodBox, WOOD_BOX_IGNITE_TEMP } from '../src/game/engine/objects';
+import { createDrum, createWoodBox, WOOD_BOX_IGNITE_TEMP } from '../src/game/engine/objects';
 import type { SimBody, SimWoodBox } from '../src/game/engine/objects';
 import { getMaterial } from '../src/game/materials/registry';
 import { detonate } from '../src/game/materials/blast';
@@ -39,6 +39,8 @@ const WATER = ID('Water');
 const LAVA = ID('Lava');
 const SAWDUST = ID('Sawdust');
 const FIRE = ID('Fire');
+const SAND = ID('Sand');
+const DEBRIS = ID('Debris');
 
 function makeWorld(w = 100, h = 100): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -151,6 +153,86 @@ function sawdustSpread(grid: Grid): number {
     crate.y + crate.radius < 90 && submerged > 0 && submerged < 2 * crate.radius,
     `submerged=${submerged.toFixed(2)} of ${(2 * crate.radius).toFixed(1)} cells`,
   );
+}
+
+// 2b. Hitting a liquid or a powder surface throws the same one-shot spray the
+//     rubber ball has always thrown (액체·가루 충돌 파티클): droplets/grains are
+//     relaunched as Debris fragments the tick the surface breaks — once, not every
+//     tick the body sits in the pond — and a body set down gently makes none.
+{
+  // Dropped into a pond from height: a splash on the entry tick.
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let y = 60; y < 90; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = WATER;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(50, 20);
+  grid.objects.push(crate);
+  let splashAt = -1;
+  let peak = 0;
+  let afterEntry = 0;
+  for (let t = 1; t <= 120; t++) {
+    sim.step();
+    const d = count(grid, DEBRIS);
+    if (splashAt < 0 && d > 0) splashAt = t;
+    peak = Math.max(peak, d);
+    if (splashAt > 0 && t > splashAt + 60) afterEntry = Math.max(afterEntry, d);
+  }
+  check('a crate dropped in water throws a splash', splashAt > 0 && peak > 0,
+    `tick ${splashAt}, peak ${peak} fragments`);
+  check('and the splash is a one-shot, not a per-tick spray',
+    afterEntry === 0, `${afterEntry} fragments still flying long after entry`);
+  check('the crate still floats after splashing',
+    grid.objects.includes(crate as SimBody) && crate.y + crate.radius < 90,
+    `y=${crate.y.toFixed(1)}`);
+}
+{
+  // The same drop into sand: a weaker grain scatter (물보다 약하게).
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let y = 60; y < 90; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = SAND;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(50, 20);
+  grid.objects.push(crate);
+  let scattered = 0;
+  for (let t = 1; t <= 60; t++) {
+    sim.step();
+    scattered = Math.max(scattered, count(grid, DEBRIS));
+  }
+  check('a crate dropped in sand throws a grain scatter', scattered > 0,
+    `peak ${scattered} grains`);
+}
+{
+  // Set down gently onto the surface: below the entry-speed gate, so no spray.
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let y = 60; y < 90; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = WATER;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(50, 53); // rests exactly on the waterline
+  grid.objects.push(crate);
+  let any = 0;
+  for (let t = 1; t <= 120; t++) {
+    sim.step();
+    any = Math.max(any, count(grid, DEBRIS));
+  }
+  check('a crate lowered gently onto water does not spray', any === 0, `${any} fragments`);
+}
+{
+  // Shared with the rest of the object layer, not crate-only: a drum splashes too.
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let y = 60; y < 90; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = WATER;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  grid.objects.push(createDrum(50, 20));
+  let peak = 0;
+  for (let t = 1; t <= 60; t++) {
+    sim.step();
+    peak = Math.max(peak, count(grid, DEBRIS));
+  }
+  check('a drum dropped in water splashes too (같은 경로)', peak > 0, `peak ${peak} fragments`);
 }
 
 // 3. Heat sets it alight, and it burns down into exactly three shards which then

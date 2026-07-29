@@ -891,8 +891,16 @@ const OBJECT_FLUID_DRAG = 0.12;
 const SPLASH_MIN_SPEED = 1.2;
 
 /** Upper bound on droplets a single splash throws — the "narrow the scope"
- *  reuse of the blast-fragment scatter: a handful of drops, not a fountain. */
+ *  reuse of the blast-fragment scatter: a handful of drops, not a fountain.
+ *  Sized for the default 4-cell rubber ball and scaled up for wider bodies by
+ *  SPLASH_REF_HALF_WIDTH, so the drops-per-cell density is the same for all. */
 const SPLASH_MAX_DROPLETS = 6;
+/** The rim half-width (cells) the two caps above are quoted at — the default
+ *  rubber ball's radius. A body twice as wide across its waterline throws twice
+ *  as many drops/grains, so a chunky wooden crate belly-flopping into a pond
+ *  makes a properly bigger splash than a marble, and a drum that lands flat makes
+ *  a wider one than a drum that lands on its end, at the same visual density. */
+const SPLASH_REF_HALF_WIDTH = 4;
 
 /**
  * Granular-bearing support (cells/tick², per unit of submerged footprint
@@ -1149,6 +1157,35 @@ function sampleMedium(o: SimObject, ctx: SimContext): {
 }
 
 /**
+ * The rim a surface-entry effect works over: how far the footprint reaches
+ * sideways from the centre (where the droplets are spread), and the vertical span
+ * to search for the surface the body is punching through. A ball's rim is simply
+ * its radius; a capsule's follows its medial segment, so a drum that comes down
+ * flat presents a wider waterline than one that comes down on its end.
+ */
+function bodyRim(o: SimObject | CapsuleBody): { halfW: number; yTop: number; yBot: number } {
+  // Structural, like the rest of the capsule machinery (see CapsuleBody): a ball
+  // carries `r` and no medial segment, a capsule carries `radius`/`halfLength`.
+  if ('r' in o) {
+    return { halfW: o.r, yTop: Math.floor(o.y - o.r), yBot: Math.floor(o.y + o.r) };
+  }
+  const r = o.radius;
+  const [ax, ay, bx, by] = capsuleEnds(o);
+  return {
+    halfW: Math.max(Math.abs(ax - o.x), Math.abs(bx - o.x)) + r,
+    yTop: Math.floor(Math.min(ay, by) - r),
+    yBot: Math.floor(Math.max(ay, by) + r),
+  };
+}
+
+/** How many fragments a body of this rim throws, from a cap quoted for the
+ *  default ball (see SPLASH_REF_HALF_WIDTH). At least one, so even a sliver of a
+ *  body still marks the surface it broke. */
+function rimFragments(cap: number, halfW: number): number {
+  return Math.max(1, Math.round((cap * halfW) / SPLASH_REF_HALF_WIDTH));
+}
+
+/**
  * Throw a splash on water entry — a *discrete* one-shot event fired the tick an
  * object first breaks the surface, NOT a continuous per-tick coupling. It reuses
  * the blast-fragment scatter (launchDebris): a handful of surface liquid cells
@@ -1156,19 +1193,20 @@ function sampleMedium(o: SimObject, ctx: SimContext): {
  * out carrying their own liquid, then rain back down — the crown of a splash,
  * with the fragment count/speed scaled to the entry speed and capped small. The
  * only place the object layer writes fluid cells; everywhere else it reads.
+ *
+ * Body-generic (bodyRim): the ball, the drums, the dynamite, the smoke bomb and
+ * the wooden crate all splash through this one path.
  */
-function spawnSplash(o: SimObject, ctx: SimContext, entrySpeed: number): void {
-  const r = o.r;
-  const n = Math.min(SPLASH_MAX_DROPLETS, 2 + Math.floor(entrySpeed));
+function spawnSplash(o: SimObject | CapsuleBody, ctx: SimContext, entrySpeed: number): void {
+  const { halfW, yTop, yBot } = bodyRim(o);
+  const n = Math.min(rimFragments(SPLASH_MAX_DROPLETS, halfW), 2 + Math.floor(entrySpeed));
   const outB = Math.min(3, entrySpeed * 0.6); // launchDebris speed budget
-  const yTop = Math.floor(o.y - r);
-  const yBot = Math.floor(o.y + r);
   for (let i = 0; i < n; i++) {
-    // Spread the droplets across the entry rim (−r … +r around the center).
+    // Spread the droplets across the entry rim (−halfW … +halfW around the center).
     const frac = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
-    const sx = Math.round(o.x + frac * r);
-    // Topmost non-frozen liquid cell in this column, within the ball's span —
-    // the surface the ball is punching through.
+    const sx = Math.round(o.x + frac * halfW);
+    // Topmost non-frozen liquid cell in this column, within the body's span —
+    // the surface it is punching through.
     let surfY = -1;
     let id = 0;
     for (let yy = yTop; yy <= yBot; yy++) {
@@ -1195,18 +1233,17 @@ function spawnSplash(o: SimObject, ctx: SimContext, entrySpeed: number): void {
  * speed. A handful of surface grains around the entry point are flung up and out
  * carrying their own powder, then rain back down as a little crater rim. Fires
  * only on the impact tick; the resting penetration below never moves grains.
+ * Body-generic in exactly the same way as the splash (see bodyRim).
  */
-function spawnPowderScatter(o: SimObject, ctx: SimContext, entrySpeed: number): void {
-  const r = o.r;
-  const n = Math.min(POWDER_SCATTER_MAX, 1 + Math.floor(entrySpeed / 2));
+function spawnPowderScatter(o: SimObject | CapsuleBody, ctx: SimContext, entrySpeed: number): void {
+  const { halfW, yTop, yBot } = bodyRim(o);
+  const n = Math.min(rimFragments(POWDER_SCATTER_MAX, halfW), 1 + Math.floor(entrySpeed / 2));
   const outB = Math.min(1.5, entrySpeed * 0.35); // weaker than a splash's budget
-  const yTop = Math.floor(o.y - r);
-  const yBot = Math.floor(o.y + r);
   for (let i = 0; i < n; i++) {
     const frac = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
-    const sx = Math.round(o.x + frac * r);
-    // Topmost powder cell in this column, within the ball's span — the surface
-    // the ball is punching into.
+    const sx = Math.round(o.x + frac * halfW);
+    // Topmost powder cell in this column, within the body's span — the surface
+    // it is punching into.
     let surfY = -1;
     let id = 0;
     for (let yy = yTop; yy <= yBot; yy++) {
@@ -1901,6 +1938,10 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
  * position and contact torque folded into the collision resolve. Object-object
  * collisions and the terminal-state triggers (blast/heat/crush) are evaluated
  * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
+ * The surface-entry splash/scatter is here too, detected exactly as the ball's is
+ * (edge-triggered on the medium sampled before vs. after the move), so a drum, a
+ * stick of dynamite, a smoke bomb or a wooden crate dropped into a pond or a sand
+ * pit throws the same one-shot spray a ball does.
  * Returns the hardest normal closing speed it resolved against the grid this tick
  * (0 if it never met it), which is what a wooden box's smash test reads.
  */
@@ -1928,6 +1969,14 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
     o.vy -= o.vy * drag;
     o.angularVelocity -= o.angularVelocity * drag;
   }
+  // Impact speed along gravity, captured before integration, and the edge test
+  // for each medium: the body must have been CLEAR of it at tick start and be
+  // moving in fast enough. Same stateless before/after comparison the ball uses,
+  // so it fires once — on the tick the surface actually breaks — and can't
+  // retrigger while the body sits in the pond.
+  const entrySpeed = o.vx * ctx.gravityX + o.vy * ctx.gravityY;
+  const enteredLiquid = ms.liquidCells === 0 && entrySpeed >= SPLASH_MIN_SPEED;
+  const enteredPowder = ms.powderCells === 0 && entrySpeed >= POWDER_IMPACT_MIN_SPEED;
   // Integrate position AND orientation in tunneling-safe substeps. The substep
   // budget accounts for the rim's linear speed from spin (|ω|·(halfLength+radius))
   // so a fast-spinning drum still resolves contacts each fraction of a cell.
@@ -1967,6 +2016,14 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   // wrap; the modulo handles any number of turns in a tick).
   const TWO_PI = 2 * Math.PI;
   o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
+  // Surface-entry spray, now that the body has moved: water throws a splash,
+  // powder a weaker grain scatter (물보다 약하게). Liquid wins if a body somehow
+  // broke both this tick, matching the ball.
+  if (enteredLiquid || enteredPowder) {
+    const after = sampleMediumCapsule(o, ctx);
+    if (enteredLiquid && after.liquidCells > 0) spawnSplash(o, ctx, entrySpeed);
+    else if (enteredPowder && after.powderCells > 0) spawnPowderScatter(o, ctx, entrySpeed);
+  }
   return impact;
 }
 
