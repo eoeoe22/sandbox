@@ -37,7 +37,7 @@ Math.random = () => {
 };
 
 import { MATERIALS } from '../src/game/materials/index';
-import { materialSvgFor, MATERIAL_ICON_CELLS as N } from '../src/game/render/materialSvg';
+import { materialSvgFor } from '../src/game/render/materialSvg';
 import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
@@ -53,7 +53,11 @@ function check(name: string, ok: boolean, detail = ''): void {
 /** Run a check whose subject may be malformed enough to throw while being read.
  *  Without this a single unparseable icon aborts the process at whichever check
  *  touches it first, and every check after that never runs — so a one-line
- *  regression reports as one failure instead of the dozen it actually caused. */
+ *  regression reports as one failure instead of the dozen it actually caused.
+ *
+ *  Every check from section 2 on goes through this, because all of them reach
+ *  the icon through `raster()`, which throws on markup it cannot account for.
+ *  Anything the body already reported before it threw keeps its own result. */
 function checkThrows(name: string, body: () => void): void {
   try {
     body();
@@ -277,18 +281,19 @@ const GOLDEN: Record<string, string> = {
 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
-  checkThrows(`${name} tile matches its golden`, () => {
+  const label = `${name} tile matches its golden`;
+  checkThrows(label, () => {
     const got = ascii(byName(name));
-    check(`${name} tile matches its golden`, got === want, got === want ? '' : '\n' + got);
+    check(label, got === want, got === want ? '' : '\n' + got);
   });
 }
 
 // The batteries' pattern colour is the renderer's literal flat black, not a
 // shade of the base — a regression to `lattice` would be invisible in ASCII.
-{
+checkThrows('battery staircase is flat black', () => {
   const { grid: g } = raster(materialSvgFor(byName('Lithium Battery')));
   check('battery staircase is flat black', g.includes('#000000'), [...new Set(g)].join(' '));
-}
+});
 
 // ---------------------------------------------------------------------------
 // 3. Flat stays flat; textured stays textured.
@@ -298,14 +303,22 @@ for (const [name, want] of Object.entries(GOLDEN)) {
 const tones = (m: Material): number => new Set(raster(materialSvgFor(m)).grid).size;
 
 for (const name of ['Stone', 'Iron', 'Wall', 'Mercury', 'Liquid Gallium']) {
-  const m = byName(name);
-  check(`${name} is drawn flat`, tones(m) === 1, `${tones(m)} tones`);
+  const label = `${name} is drawn flat`;
+  checkThrows(label, () => {
+    const t = tones(byName(name));
+    check(label, t === 1, `${t} tones`);
+  });
 }
-check('a flat material costs one shape', materialSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
+checkThrows('a flat material costs one shape', () => {
+  check('a flat material costs one shape', materialSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
+});
 
 for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
-  const m = byName(name);
-  check(`${name} is speckled`, tones(m) > 8, `${tones(m)} tones`);
+  const label = `${name} is speckled`;
+  checkThrows(label, () => {
+    const t = tones(byName(name));
+    check(label, t > 8, `${t} tones`);
+  });
 }
 
 // The grain never exceeds the material's own amplitude — the icon runs the
@@ -324,10 +337,16 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
     if (amp === 0 || m.glow || m.auxPalette || m.tintPalette || m.checker2x2 || m.lattice) continue;
     const base = m.color;
     const br = base & 0xff;
-    for (const c of new Set(raster(materialSvgFor(m)).grid)) {
-      const d = parseInt(c.slice(1, 3), 16) - br;
-      // The channel clamps at 0/255, so only an *unclamped* overshoot is a bug.
-      if (Math.abs(d) > amp && br + d > 0 && br + d < 255) violations.push(`${m.name} ${d} vs ±${amp}`);
+    // Per material rather than around the sweep: one unreadable icon must not
+    // hide the amplitudes of the ninety-odd that come after it.
+    try {
+      for (const c of new Set(raster(materialSvgFor(m)).grid)) {
+        const d = parseInt(c.slice(1, 3), 16) - br;
+        // The channel clamps at 0/255, so only an *unclamped* overshoot is a bug.
+        if (Math.abs(d) > amp && br + d > 0 && br + d < 255) violations.push(`${m.name} ${d} vs ±${amp}`);
+      }
+    } catch (e) {
+      violations.push(`${m.name}: ${(e as Error).message}`);
     }
   }
   check('grain never exceeds the material amplitude', violations.length === 0, violations.slice(0, 4).join(', '));
@@ -337,7 +356,7 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
 // field it samples is an OU process that settles to about half the spread of the
 // uniform bytes a powder grain carries (see BG_SIGMA_SCALE). Water's amplitude
 // (22) is *higher* than Sand's (18), so a naive icon would get this backwards.
-{
+checkThrows('a liquid shimmers less than a powder', () => {
   const spread = (m: Material): number => {
     const cs = [...new Set(raster(materialSvgFor(m)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
     return Math.max(...cs) - Math.min(...cs);
@@ -350,21 +369,24 @@ for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
     `${varyAmplitude(byName('Water'))} vs ${varyAmplitude(byName('Sand'))}`);
   check('sand reads its own grain, water the background field',
     varyMode(byName('Sand')) === VARY_PARTICLE && varyMode(byName('Water')) !== VARY_PARTICLE);
-}
+});
 
 // ---------------------------------------------------------------------------
 // 4. Glow materials show the ramp, gases dissolve.
 // ---------------------------------------------------------------------------
 
 for (const name of ['Lava', 'Molten Metal', 'Slag']) {
-  const m = byName(name);
-  const { grid: g, n } = raster(materialSvgFor(m));
-  const lum = (c: string) =>
-    parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11;
-  const topRow = g.slice(0, n).reduce((a, c) => a + lum(c), 0) / n;
-  const botRow = g.slice(n * (n - 1)).reduce((a, c) => a + lum(c), 0) / n;
-  check(`${name} shows a heat ramp, hot at the top`, topRow > botRow + 8, `${topRow | 0} vs ${botRow | 0}`);
-  check(`…and never cools past its ramp floor`, tones(m) > 4, `${tones(m)} tones`);
+  const label = `${name} shows a heat ramp, hot at the top`;
+  checkThrows(label, () => {
+    const m = byName(name);
+    const { grid: g, n } = raster(materialSvgFor(m));
+    const lum = (c: string) =>
+      parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11;
+    const topRow = g.slice(0, n).reduce((a, c) => a + lum(c), 0) / n;
+    const botRow = g.slice(n * (n - 1)).reduce((a, c) => a + lum(c), 0) / n;
+    check(label, topRow > botRow + 8, `${topRow | 0} vs ${botRow | 0}`);
+    check(`…and never cools past its ramp floor`, tones(m) > 4, `${tones(m)} tones`);
+  });
 }
 
 // A flat gas is drawn as a solid-filled cloud silhouette on the board's own
@@ -393,41 +415,50 @@ const GAS_GOLDEN = [
 ].join('\n');
 
 for (const name of ['Steam', 'Smoke', 'Chlorine']) {
-  const m = byName(name);
-  const svg = materialSvgFor(m);
-  const { grid: g, n } = raster(svg);
-  check(`${name} uses the finer gas grid`, n === 18, `${n} cells`);
-  // The cloud is the material's own colour; everything outside it is the board.
-  const board = [...new Set(g)].find((c) => c !== hex(m.color));
-  const rows: string[] = [];
-  for (let y = 0; y < n; y++) {
-    let row = '';
-    for (let x = 0; x < n; x++) row += g[y * n + x] === board ? '.' : 'o';
-    rows.push(row);
-  }
-  const got = rows.join('\n');
-  check(`${name} is a solid-filled cloud`, got === GAS_GOLDEN, got === GAS_GOLDEN ? '' : '\n' + got);
-  check(`…filled with no holes in it`, new Set(g).size === 2, `${new Set(g).size} colours`);
-  check(`…and is a Gas with no grain of its own`, m.phase === Phase.Gas && varyAmplitude(m) === 0);
+  const label = `${name} is a solid-filled cloud`;
+  checkThrows(label, () => {
+    const m = byName(name);
+    const svg = materialSvgFor(m);
+    const { grid: g, n } = raster(svg);
+    check(`${name} uses the finer gas grid`, n === 18, `${n} cells`);
+    // The cloud is the material's own colour; everything outside it is the board.
+    const board = [...new Set(g)].find((c) => c !== hex(m.color));
+    const rows: string[] = [];
+    for (let y = 0; y < n; y++) {
+      let row = '';
+      for (let x = 0; x < n; x++) row += g[y * n + x] === board ? '.' : 'o';
+      rows.push(row);
+    }
+    const got = rows.join('\n');
+    check(label, got === GAS_GOLDEN, got === GAS_GOLDEN ? '' : '\n' + got);
+    check(`…filled with no holes in it`, new Set(g).size === 2, `${new Set(g).size} colours`);
+    check(`…and is a Gas with no grain of its own`, m.phase === Phase.Gas && varyAmplitude(m) === 0);
+  });
 }
 
 // The board showing around the puff is the eraser's colour — the same thing that
 // is actually behind a gas cell in play, not an invented dark.
-check('the gas surround is the board background',
-  new Set(raster(materialSvgFor(byName('Steam'))).grid).has(hex(getMaterial(EMPTY).color)));
+checkThrows('the gas surround is the board background', () => {
+  check('the gas surround is the board background',
+    new Set(raster(materialSvgFor(byName('Steam'))).grid).has(hex(getMaterial(EMPTY).color)));
+});
 
 // A gas that DOES carry a grain (none ship today, but the branch guards for it)
 // must fall through to the speckle rather than the cloud, and Blast — a Gas with
 // a `glow` ramp — must still take the glow branch.
-check('the gas cloud only claims flat gases',
-  all.every((m) => !(m.phase === Phase.Gas && varyAmplitude(m) > 0) || tones(m) > 2));
-check('a glowing gas still takes the glow branch', raster(materialSvgFor(byName('Blast'))).n === 9);
+checkThrows('the gas cloud only claims flat gases', () => {
+  check('the gas cloud only claims flat gases',
+    all.every((m) => !(m.phase === Phase.Gas && varyAmplitude(m) > 0) || tones(m) > 2));
+});
+checkThrows('a glowing gas still takes the glow branch', () => {
+  check('a glowing gas still takes the glow branch', raster(materialSvgFor(byName('Blast'))).n === 9);
+});
 
 // ---------------------------------------------------------------------------
 // 5. The two palette-array materials show their palette, not one colour.
 // ---------------------------------------------------------------------------
 
-{
+checkThrows('Fireworks speckles all three palette colours', () => {
   const fw = byName('Fireworks');
   const hues = new Set(
     raster(materialSvgFor(fw)).grid.map((c) => {
@@ -440,14 +471,16 @@ check('a glowing gas still takes the glow branch', raster(materialSvgFor(byName(
     }),
   );
   check('Fireworks speckles all three palette colours', hues.size >= 3, `${hues.size} hues`);
+});
 
+checkThrows('Seed sprouts green at the top, dormant brown at the base', () => {
   const seed = byName('Seed');
   const { grid: g, n } = raster(materialSvgFor(seed));
   const green = (c: string) => parseInt(c.slice(3, 5), 16) - parseInt(c.slice(1, 3), 16);
   const top = g.slice(0, n).reduce((a, c) => a + green(c), 0) / n;
   const bot = g.slice(n * (n - 1)).reduce((a, c) => a + green(c), 0) / n;
   check('Seed sprouts green at the top, dormant brown at the base', top > bot + 10, `${top | 0} vs ${bot | 0}`);
-}
+});
 
 Math.random = REAL_RANDOM;
 console.log(failures === 0 ? '\nAll material icon checks passed.' : `\n${failures} check(s) FAILED.`);

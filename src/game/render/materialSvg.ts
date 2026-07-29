@@ -122,6 +122,13 @@ const GAS_CLOUD = [
  */
 const GAS_N = GAS_CLOUD.length;
 
+// GAS_N is derived from the row *count*, so a row that is not equally wide would
+// be indexed past its end and read as background — a hole in the cloud. A short
+// row of `#` shows up in the golden, but a short all-`.` row is invisible there,
+// so pin the invariant next to the hand-edited literal instead of relying on it.
+for (const row of GAS_CLOUD)
+  if (row.length !== GAS_N) throw new Error(`GAS_CLOUD rows must be ${GAS_N} wide: "${row}"`);
+
 /**
  * Pure 32-bit mix of (id, x, y) → a byte in 0..255. Stands in for the random
  * tint bytes the world seeds, so an icon is reproducible: the same material

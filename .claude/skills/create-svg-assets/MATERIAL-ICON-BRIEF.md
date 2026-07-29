@@ -21,6 +21,7 @@
 | `viewBox` | `0 0 24 24` — **정사각 고정** |
 | 도형 | **`<rect>`만.** 다른 도형 요소 일절 금지 |
 | 좌표·크기 | `x` `y` `width` `height` 모두 **0 이상 정수**, `width`/`height`는 1 이상, 타일 밖으로 나가지 않을 것 |
+| 속성 표기 | 값은 **큰따옴표**로 감싼다 (`x="0"`). 홑따옴표 금지 |
 | 색 | `fill="#rrggbb"` — 6자리 **소문자** 16진수. 이름 색·`rgb()`·8자리 금지 |
 | 첫 rect | **타일 전체를 덮어야 한다**: `<rect x="0" y="0" width="24" height="24" fill="#기본색"/>` |
 | 개수·용량 | rect **200개 이하**, 파일 **6 KB 이하** |
@@ -38,10 +39,13 @@
 
 ## 2. 금지 목록
 
-`id` · `class` · `<defs>` · `<style>` · `<filter>` · `<mask>` · `<clipPath>` ·
-`<use>` · `<image>` · `<text>` · `<g>` · `url(#…)` · `<linearGradient>` ·
-`<radialGradient>` · `fill="none"` · `fill-opacity` · `opacity` · `stroke` 계열 ·
-외부 파일/폰트/URL 참조 · CSS 변수
+**요소는 `<svg>`와 `<rect>` 둘뿐이다.** 나머지는 전부 금지 — `<circle>` ·
+`<ellipse>` · `<polygon>` · `<path>` · `<line>` · `<defs>` · `<style>` ·
+`<filter>` · `<mask>` · `<clipPath>` · `<use>` · `<image>` · `<text>` · `<g>` ·
+`<linearGradient>` · `<radialGradient>`
+
+**속성은** `id` · `class` · `style` · `url(#…)` · `fill="none"` · `fill-opacity` ·
+`opacity` · `stroke` 계열 · 외부 파일/폰트/URL 참조 · CSS 변수 금지
 
 **취향이 아니라 기술적 제약이다.** 이 SVG는 파일로 로드되지 않고 마크업이 HTML
 문서에 그대로 인라인 삽입되며, **같은 마크업이 한 화면에 여러 벌 동시에 존재할 수
@@ -97,9 +101,9 @@
 ## 4. 납품 전 점검
 
 - [ ] `viewBox="0 0 24 24"`, XML 선언·DOCTYPE 없음
-- [ ] `<rect>` 외의 도형 요소 없음
+- [ ] `<svg>`와 `<rect>` 외의 요소가 하나도 없음
 - [ ] 좌표·크기 전부 정수, 타일 밖으로 안 나감
-- [ ] 모든 `fill`이 `#rrggbb` 6자리 소문자
+- [ ] 모든 속성값이 큰따옴표, 모든 `fill`이 `#rrggbb` 6자리 소문자
 - [ ] **첫 rect가 24×24로 타일 전체를 덮음**
 - [ ] §2 금지 목록이 파일 안에 **한 번도** 등장하지 않음
 - [ ] rect 200개 이하, 6 KB 이하, 색 5개 이하
@@ -117,8 +121,15 @@
 ```js
 // node check.mjs foo.svg
 import { readFileSync } from 'node:fs';
-const s = readFileSync(process.argv[2], 'utf8');
-const bad = /\bid=|\bclass=|<defs|<style|<g[ >]|<use|<image|<text|url\(|gradient|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(s);
+const raw = readFileSync(process.argv[2], 'utf8');
+// 주석을 먼저 걷어낸다. 주석 처리된 rect가 칠해진 것으로 세어져 진짜 빈 칸을
+// 가리는 것도, 주석 안의 "opacity" 같은 단어가 금지어로 잡히는 것도 막는다.
+const s = raw.replace(/<!--[\s\S]*?-->/g, '');
+// 요소는 허용 목록으로 본다 — 금지 목록은 <circle>·<path>처럼 빠뜨린 것을
+// 통과시킨다. 자기닫는 <g/>가 새는 것도 이 방식이면 없다.
+for (const t of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g))
+  if (t[1] !== 'svg' && t[1] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[1] + '>');
+const bad = /\bid=|\bclass=|\bstyle=|url\(|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(s);
 if (bad) throw new Error('금지 요소: ' + bad[0]);
 if (!/viewBox="0 0 24 24"/.test(s)) throw new Error('viewBox가 0 0 24 24 가 아님');
 const cells = new Set();
@@ -128,7 +139,8 @@ for (const m of s.matchAll(/<rect\s+([^>]*?)\s*\/>/g)) {
   rects++;
   const a = Object.fromEntries([...m[1].matchAll(/(\w[\w-]*)="([^"]*)"/g)].map((k) => [k[1], k[2]]));
   const keys = Object.keys(a).sort().join(',');
-  if (keys !== 'fill,height,width,x,y') throw new Error('rect 속성이 x/y/width/height/fill 이 아님: ' + m[0]);
+  if (keys !== 'fill,height,width,x,y')
+    throw new Error('rect 속성이 x/y/width/height/fill 이 아님(값은 큰따옴표로): ' + m[0]);
   if (!/^#[0-9a-f]{6}$/.test(a.fill)) throw new Error('fill 형식 오류: ' + a.fill);
   const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((k) => Number(a[k]));
   if (![x, y, w, h].every(Number.isInteger) || w < 1 || h < 1 || x < 0 || y < 0)
@@ -141,8 +153,8 @@ if (rects !== (s.match(/<rect/g) || []).length) throw new Error('형식에 안 �
 if (cells.size !== 576) throw new Error(`빈 칸 ${576 - cells.size}개 — 배경 rect 누락?`);
 if (rects > 200) throw new Error('rect ' + rects + '개 — 200 초과');
 if (colors.size > 5) throw new Error('색 ' + colors.size + '개 — 5 초과');
-if (s.length > 6144) throw new Error(s.length + ' B — 6 KB 초과');
-console.log(`OK — rect ${rects}개, 색 ${colors.size}개, ${s.length} B`);
+if (raw.length > 6144) throw new Error(raw.length + ' B — 6 KB 초과');
+console.log(`OK — rect ${rects}개, 색 ${colors.size}개, ${raw.length} B`);
 ```
 
 스크립트가 잡지 못하는 것(눈으로 봐야 하는 것): 18px 축소 후 판독성, 기본색
