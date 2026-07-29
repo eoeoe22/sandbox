@@ -754,13 +754,24 @@ const WOOD_BOX_SHATTER_SPIN = 0.09;
  * velocity, so a box skimming *along* a wall or rolling fast over flat ground is
  * never mistaken for one slamming into it.
  *
- * Set well above every routine way a box gets moving, so the sandbox's ordinary
- * shoves can't shatter one: free-fall reaches this only after ~160 cells of drop
- * (v = √(h/2) at OBJECT_GRAVITY), and a blast's knockback floor (7), a Woofer's
- * (6) and a Fan's wind (3.75) are all below it. What does reach it is a genuine
- * hurl — flinging a box with the 보기 모드 drag, or dropping one from the top of a
- * tall world. Crashing yields the same wreckage as any other break: a crate bursts
- * into its three shards, a shard into Sawdust.
+ * Set above every INDIVIDUAL shove the sandbox hands out, so no single ordinary
+ * force can shatter a box on its own: a blast's knockback floor (7), a Woofer's
+ * (6), a Fan's wind (3.75) and the 섞기 brush (gated at 4) are each below it, and
+ * free-fall reaches it only after ~160 cells of drop (v = √(h/2) at
+ * OBJECT_GRAVITY). What clears it is a genuine hurl — flinging a box with the
+ * 보기 모드 drag, or dropping one from the top of a tall world.
+ *
+ * Two shoves in the SAME tick can still combine past it, because each knockback
+ * sets a floor on its own direction rather than capping the total: a near-miss
+ * blast (7) plus a Woofer pulse (6) at right angles resolves to ~9.2. That is
+ * deliberate rather than a leak — an explosion that flings a crate into a wall
+ * hard enough to burst it is the behaviour you'd want. What the threshold does
+ * guarantee is the promise each source makes on its own: a Woofer alone can never
+ * break a box no matter how close (see applyWooferKnockback's 완전한 비파괴성),
+ * and neither can wind or a near miss.
+ *
+ * Crashing yields the same wreckage as any other break: a crate bursts into its
+ * three shards, a shard into Sawdust.
  */
 export const WOOD_BOX_SMASH_SPEED = 9;
 /** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both

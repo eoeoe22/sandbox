@@ -372,5 +372,77 @@ const boxes = (grid: Grid): SimWoodBox[] =>
   check('the world border wall smashes it too', smashed);
 }
 
+// 10. The non-destructive forces stay non-destructive on their own. Each of these
+//     shoves a crate into a wall as hard as it can and the crate must survive —
+//     the promise the smash threshold is there to keep (a Woofer in particular
+//     documents 완전한 비파괴성). They can still combine past it in one tick, which
+//     is deliberate; what must never happen is any one of them doing it alone.
+function shoveIntoWall(
+  push: (sim: Simulation, x: number, y: number) => void,
+): { alive: boolean; peakSpeed: number } {
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  for (let y = 0; y < 70; y++) // wall down the right-hand side
+    for (let x = 74; x < 78; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(60, 63);
+  grid.objects.push(crate);
+  for (let t = 0; t < 40; t++) sim.step(); // settle against the floor
+  let peakSpeed = 0;
+  for (let t = 0; t < 40; t++) {
+    push(sim, 40, 63); // keep shoving it rightwards into the wall
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) return { alive: false, peakSpeed };
+    peakSpeed = Math.max(peakSpeed, Math.hypot(crate.vx, crate.vy));
+  }
+  return { alive: true, peakSpeed };
+}
+{
+  const woofer = shoveIntoWall((sim, _x, y) => {
+    // Inside WOOFER_KNOCK_RADIUS + the crate's reach, i.e. as close as a Woofer's
+    // shockwave ever gets to hit it — the worst case for the guarantee.
+    sim.context.wooferPulseX.push(52);
+    sim.context.wooferPulseY.push(y);
+  });
+  // peakSpeed proves the push actually landed, so "alive" isn't vacuously true.
+  check('a Woofer pulse alone never smashes a crate (완전한 비파괴성)',
+    woofer.alive && woofer.peakSpeed > 1, `shoved to ${woofer.peakSpeed.toFixed(1)} cells/tick`);
+}
+{
+  const wind = shoveIntoWall((sim, x, y) => {
+    for (let dy = -8; dy <= 8; dy++)
+      for (let dx = 0; dx < 30; dx++) sim.context.setWind(x + dx, y + dy, 3); // 3 = blow right
+    // Simulation.step() wipes last tick's wind field at the top of the tick before
+    // the fans repaint it during the CA scan. Clearing the flag here stands in for
+    // that repaint, so the stamped gust survives into this step exactly as a real
+    // Fan's would.
+    sim.context.windStamped = false;
+  });
+  check('a Fan\'s wind alone never smashes a crate',
+    wind.alive && wind.peakSpeed > 1, `shoved to ${wind.peakSpeed.toFixed(1)} cells/tick`);
+}
+{
+  // A near-miss blast: its concussion shoves the crate hard, but the flash never
+  // reaches the footprint (a direct hit is the separate, intended destroy path).
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  for (let y = 0; y < 70; y++)
+    for (let x = 74; x < 78; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const crate = createWoodBox(60, 63);
+  grid.objects.push(crate);
+  for (let t = 0; t < 40; t++) sim.step();
+  detonate(sim.context, 36, 63, 0, { reach: 15, power: 6 });
+  let alive = true;
+  let peak = 0;
+  for (let t = 0; t < 40; t++) {
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) { alive = false; break; }
+    peak = Math.max(peak, Math.hypot(crate.vx, crate.vy));
+  }
+  check('a near-miss blast alone never smashes a crate', alive && peak > 1,
+    `shoved to ${peak.toFixed(1)} cells/tick`);
+}
+
 console.log(failures === 0 ? '\nAll wooden-box checks passed.' : `\n${failures} check(s) FAILED.`);
 if (failures > 0) process.exit(1);
