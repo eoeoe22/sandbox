@@ -273,17 +273,39 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
 //     standing over the cavity its own soil left behind. Roots bridge one cell of
 //     that (soil.ts), so a plant on a soaking bed doesn't starve for a reason
 //     nothing on screen explains.
+//
+//     The scene has to be built by hand rather than with bed(): what is under
+//     test is the *gap-bridging* branch of findMoisture, and standing water
+//     anywhere among the eight neighbours short-circuits it (drink() takes that
+//     first), which would let the check pass with the allowance reverted. So the
+//     plant sits on a ledge with exactly one empty cell beneath it and the water
+//     table directly under that, with nothing to drink within reach. The ledge
+//     and the walls are Stone on purpose: every soil is a powder, so loose ground
+//     would simply tumble into the cavity and heal it before the roots were ever
+//     asked to cross it.
 {
   reseed();
   const { grid, sim } = makeWorld(40, 60);
-  bed(grid);
-  put(grid, 20, 51, EMPTY); // the cell under the sprout slumps away
-  put(grid, 20, 50, PLANT);
+  fill(grid, 0, 58, 39, 59, STONE); // tank floor
+  fill(grid, 0, 56, 39, 57, WATER); // the water table, out of sight
+  fill(grid, 0, 55, 39, 55, STONE); // the ledge the plant is left standing on…
+  put(grid, 20, 55, EMPTY); //          …with the cavity punched through it
+  put(grid, 20, 54, PLANT);
+  const dry = count(grid, PLANT);
   for (let t = 0; t < 2500; t++) sim.step();
+  // Water anywhere against the plant would make this prove nothing (see above).
+  let touching = 0;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++)
+      if (grid.cells[grid.idx(20 + dx, 54 + dy)] === WATER) touching++;
+  // A cell starts with moisture in hand and can spend it on a few cells before
+  // it ever needs a drink, so "grew at all" is not the bar — this has to be a
+  // plant that kept drinking. Cut off (allowance 0) it stalls in single digits.
+  const n = count(grid, PLANT);
   check(
     'a plant left standing over a cavity still reaches the water table',
-    count(grid, PLANT) > 1,
-    `${count(grid, PLANT)} cells`,
+    touching === 0 && n > 30,
+    `${dry} → ${n} cells, ${touching} water neighbours`,
   );
 }
 
