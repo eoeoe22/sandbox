@@ -402,6 +402,25 @@ for (const [name, soil] of [
   );
 }
 
+// 7b. A reef that is fully submerged does NOT bleach from the inside. The cells
+//     walled in by their own colony touch no brine at all, so the health check
+//     has to reach through the colony (hydration, coral.ts) rather than only at
+//     each cell's own eight neighbours.
+{
+  reseed();
+  const { grid, sim } = makeWorld(40, 40);
+  fill(grid, 0, 35, 39, 39, STONE);
+  fill(grid, 0, 5, 39, 34, SALTWATER);
+  fill(grid, 16, 28, 22, 34, CORAL); // a solid 7x7 head, brine all around it
+  const painted = 7 * 7;
+  for (let t = 0; t < 3000; t++) sim.step();
+  check(
+    'a submerged reef does not bleach from the inside',
+    count(grid, BLEACHED) === 0 && count(grid, CORAL) >= painted,
+    `${count(grid, CORAL)} coral (painted ${painted}), ${count(grid, BLEACHED)} bleached`,
+  );
+}
+
 // 8. 백화 by drought: brine gone, colour gone.
 {
   reseed();

@@ -42,19 +42,24 @@ import { BLEACHED_CORAL } from './bleachedcoral';
 
 // --- aux layout (16 bits, see Grid.aux) -------------------------------------
 //   bits 0-2   heading, an index into CORAL_DX/CORAL_DY (0..4)
-//   bits 3-5   segment cells left before this branch forks
-//   bits 6-7   generations of vigour left (forks remaining)
+//   bits 3-4   segment cells left before this branch forks
+//   bits 5-7   generations of vigour left (forks remaining)
 //   bit  8     tip (only a tip grows)
 //   bit  9     initialised (this cell has been given a structural role)
-//   bits 10-14 bleaching stress 0..MAX_STRESS
+//   bits 10-12 bleaching stress 0..MAX_STRESS
+//   bits 13-15 hydration 0..MAX_HYDRATION (how near brine this cell is — see below)
 const DIR_MASK = 0b111;
 const SEG_SHIFT = 3;
-const GEN_SHIFT = 6;
+const SEG_MASK = 0b11;
+const GEN_SHIFT = 5;
+const GEN_MASK = 0b111;
 const TIP_BIT = 1 << 8;
 const INIT_BIT = 1 << 9;
 const STRESS_SHIFT = 10;
-const MAX_STRESS = 31;
-const MAX_GEN = 3; // fork depth — a colony tops out at ~8 branch tips
+const MAX_STRESS = 7;
+const HYD_SHIFT = 13;
+const MAX_HYDRATION = 7;
+const MAX_GEN = 5; // fork depth — a colony fans out to ~30 branch tips
 
 /** The five directions coral will build in — everything but straight down and
  *  the two down-diagonals, so a head climbs and spreads but never drills into
@@ -65,29 +70,30 @@ const CORAL_DY: readonly number[] = [0, -1, -1, -1, 0];
 const DIR_UP = 2; // index of straight up in the table above
 
 const GROW_CHANCE = 0.012; // ~a tenth of a plant's pace: a reef takes its time
-const TURN_CHANCE = 0.35; // chance a tip's heading wanders one step
-const SINGLE_FORK_CHANCE = 0.3; // a fork that puts out one shoot, not two (asymmetry)
-const CROWD_LIMIT = 1; // coral neighbours a target may already have (keeps fans thin)
+const TURN_CHANCE = 0.12; // chance a tip's heading wanders one step
+const RIGHTING_CHANCE = 0.5; // chance a flat-running tip turns back upward
+const SINGLE_FORK_CHANCE = 0.12; // a fork that puts out one shoot, not two (asymmetry)
 
 const BLEACH_TEMP = 40; // above this the polyp cooks — 백화 by heat
-const HEAT_STRESS_CHANCE = 0.12; // stress gained per tick while too hot
-const DRY_STRESS_CHANCE = 0.25; // …and faster with no brine left around it at all
-const HEAL_CHANCE = 0.03; // stress shed per tick while healthy — recovery is slow
+const HEAT_STRESS_CHANCE = 0.03; // stress gained per tick while too hot
+const DRY_STRESS_CHANCE = 0.06; // …and faster once the brine is gone entirely
+const HEAL_CHANCE = 0.007; // stress shed per tick while healthy — recovery is slow
 
 const dirOf = (a: number): number => a & DIR_MASK;
-const segOf = (a: number): number => (a >> SEG_SHIFT) & 0b111;
-const genOf = (a: number): number => (a >> GEN_SHIFT) & 0b11;
+const segOf = (a: number): number => (a >> SEG_SHIFT) & SEG_MASK;
+const genOf = (a: number): number => (a >> GEN_SHIFT) & GEN_MASK;
 const stressOf = (a: number): number => (a >> STRESS_SHIFT) & MAX_STRESS;
+const hydOf = (a: number): number => (a >> HYD_SHIFT) & MAX_HYDRATION;
 const isTip = (a: number): boolean => (a & TIP_BIT) !== 0;
 
-function pack(dir: number, seg: number, gen: number, tip: boolean, stress: number): number {
+function pack(dir: number, seg: number, gen: number, tip: boolean, hyd: number): number {
   return (
     (dir & DIR_MASK) |
-    ((seg & 0b111) << SEG_SHIFT) |
-    ((gen & 0b11) << GEN_SHIFT) |
+    ((seg & SEG_MASK) << SEG_SHIFT) |
+    ((gen & GEN_MASK) << GEN_SHIFT) |
     (tip ? TIP_BIT : 0) |
     INIT_BIT |
-    ((stress & MAX_STRESS) << STRESS_SHIFT)
+    ((hyd & MAX_HYDRATION) << HYD_SHIFT)
   );
 }
 
@@ -96,26 +102,60 @@ function withStress(a: number, s: number): number {
   return (a & ~(MAX_STRESS << STRESS_SHIFT)) | (c << STRESS_SHIFT);
 }
 
+function withHydration(a: number, h: number): number {
+  const c = h < 0 ? 0 : h > MAX_HYDRATION ? MAX_HYDRATION : h;
+  return (a & ~(MAX_HYDRATION << HYD_SHIFT)) | (c << HYD_SHIFT);
+}
+
 /** Headings a tip tries, as offsets from its own: itself first, then one step to
- *  either side. Forking wants the *widest* opening first, so it walks the same
- *  neighbourhood outside-in. Module-level so neither path allocates per call. */
+ *  either side. A fork wants to open a **Y**, so it reaches for the one-step
+ *  headings first and only takes the flat sideways ones when nothing else is
+ *  free — reaching outside-in instead made colonies throw long horizontal limbs
+ *  that read as legs, not coral. Module-level so neither path allocates. */
 const EXTEND_OFFSETS: readonly number[] = [0, -1, 1, -2, 2];
-const FORK_OFFSETS: readonly number[] = [-2, -1, 1, 2, 0];
+const FORK_OFFSETS: readonly number[] = [-1, 1, -2, 2, 0];
 
-/** Cells a branch runs before forking. Later generations run shorter than the
- *  ones they came off — the self-similar taper that makes the fan read as coral. */
-const randSeg = (sim: SimContext, gen: number): number => 2 + gen + sim.randInt(3);
+/** Cells a branch runs before forking — short, and shorter still in the later
+ *  generations. Short runs between forks are what makes a colony read as a dense
+ *  twiggy reef rather than a few long wandering arms. */
+const randSeg = (sim: SimContext, gen: number): number =>
+  1 + sim.randInt(gen >= MAX_GEN - 1 ? 3 : 2);
 
-/** How many of the 8 neighbours of (x,y) are Saltwater — the polyp's food, its
- *  building material, and (at zero) the thing whose absence bleaches it. */
-function brineAround(x: number, y: number, sim: SimContext): number {
-  let n = 0;
+/** Coral neighbours a target may already have. The trunk end of a colony (the
+ *  generations nearest the base) is allowed one more than the twigs, so a reef
+ *  thickens where it is anchored and stays fine at the tips — a branch that is
+ *  one cell wide from seabed to crown is the other half of the "spindly legs"
+ *  look. */
+const crowdLimit = (gen: number): number => (gen >= MAX_GEN - 1 ? 2 : 1);
+
+/**
+ * Hydration — how near this polyp is to open brine, counted *through the colony*
+ * rather than only in its own eight neighbours.
+ *
+ * This is what stops a reef bleaching from the inside out. A cell walled in by
+ * its own colony touches no saltwater at all, so a plain neighbour check called
+ * a fully submerged reef "dry" and killed its core while the outside stayed
+ * healthy. Instead a cell in contact with brine sits at MAX_HYDRATION and every
+ * other cell takes its wettest coral neighbour's value minus one, so hydration
+ * seeps inward one cell per tick and a colony up to MAX_HYDRATION cells thick is
+ * wet throughout. (The same decaying-gradient trick as a plant's moisture — see
+ * plant.ts.) Drain the tank and the whole gradient collapses within a few ticks,
+ * so 백화 by drought still works exactly as before.
+ */
+function hydrate(x: number, y: number, sim: SimContext, a: number): number {
+  let best = 0;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
-    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SALTWATER.id) n++;
+    if (!sim.inBounds(nx, ny)) continue;
+    const id = sim.get(nx, ny);
+    if (id === SALTWATER.id) return withHydration(a, MAX_HYDRATION);
+    if (id === CORAL.id) {
+      const h = hydOf(sim.getAux(nx, ny));
+      if (h > best) best = h;
+    }
   }
-  return n;
+  return withHydration(a, best - 1);
 }
 
 function coralNeighbours(x: number, y: number, sim: SimContext): number {
@@ -129,11 +169,11 @@ function coralNeighbours(x: number, y: number, sim: SimContext): number {
 }
 
 /** Somewhere a tip may build: a brine cell that isn't already crowded by coral. */
-function canGrowInto(x: number, y: number, sim: SimContext): boolean {
+function canGrowInto(x: number, y: number, sim: SimContext, gen: number): boolean {
   return (
     sim.inBounds(x, y) &&
     sim.get(x, y) === SALTWATER.id &&
-    coralNeighbours(x, y, sim) <= CROWD_LIMIT
+    coralNeighbours(x, y, sim) <= crowdLimit(gen)
   );
 }
 
@@ -148,7 +188,14 @@ function build(x: number, y: number, sim: SimContext, dir: number, seg: number, 
  *  falling back to its neighbouring headings when the brine ahead is taken. */
 function extend(x: number, y: number, sim: SimContext, a: number): number {
   let d = dirOf(a);
-  if (sim.chance(TURN_CHANCE)) d = sim.chance(0.5) ? d - 1 : d + 1;
+  if (d === 0 || d === 4) {
+    // A branch that ended up running dead flat rights itself: left/right are in
+    // the table so a colony can spread, but a tip that *keeps* one of them lays
+    // a long horizontal bar, and bars are what made reefs read as legs.
+    if (sim.chance(RIGHTING_CHANCE)) d = d === 0 ? 1 : 3;
+  } else if (sim.chance(TURN_CHANCE)) {
+    d = sim.chance(0.5) ? d - 1 : d + 1;
+  }
   if (d < 0) d = 0;
   else if (d > 4) d = 4;
 
@@ -159,7 +206,7 @@ function extend(x: number, y: number, sim: SimContext, a: number): number {
     if (c < 0 || c > 4) continue;
     const tx = x + CORAL_DX[c];
     const ty = y + CORAL_DY[c];
-    if (!canGrowInto(tx, ty, sim)) continue;
+    if (!canGrowInto(tx, ty, sim, gen)) continue;
     build(tx, ty, sim, c, seg - 1, gen);
     return a & ~TIP_BIT;
   }
@@ -171,13 +218,13 @@ function extend(x: number, y: number, sim: SimContext, a: number): number {
 function fork(x: number, y: number, sim: SimContext, a: number): number {
   const d = dirOf(a);
   const gen = genOf(a) - 1;
-  // Widest-first: two steps out to either side, then one, so a fork opens up.
+  // A Y first (one step out to either side), flat sideways only as a fallback.
   let first = -1;
   let second = -1;
   for (const off of FORK_OFFSETS) {
     const c = d + off;
     if (c < 0 || c > 4) continue;
-    if (!canGrowInto(x + CORAL_DX[c], y + CORAL_DY[c], sim)) continue;
+    if (!canGrowInto(x + CORAL_DX[c], y + CORAL_DY[c], sim, gen)) continue;
     if (first < 0) first = c;
     else if (second < 0 || Math.abs(c - first) > Math.abs(second - first)) second = c;
   }
@@ -191,26 +238,28 @@ function fork(x: number, y: number, sim: SimContext, a: number): number {
 
 /**
  * Give a structure-less cell a role. Hand-painted coral (or a cell cloned/pasted
- * in) arrives with a zeroed aux: a cell with brine touching it is a live polyp
- * heading upward, one walled inside the colony is plain skeleton.
+ * in) arrives with a zeroed aux: a cell the brine reaches is a live polyp heading
+ * upward, one walled deep inside the colony is plain skeleton.
  */
-function initCell(x: number, y: number, sim: SimContext): number {
-  const tip = brineAround(x, y, sim) > 0;
-  return pack(DIR_UP, randSeg(sim, MAX_GEN), MAX_GEN, tip, 0);
+function initCell(sim: SimContext, wet: boolean): number {
+  return pack(DIR_UP, randSeg(sim, MAX_GEN), MAX_GEN, wet, 0);
 }
 
 function updateCoral(x: number, y: number, sim: SimContext): void {
   let a = sim.getAux(x, y);
-  if ((a & INIT_BIT) === 0) a = initCell(x, y, sim);
+  // Hydration first: it decides both whether this cell is drying out and, for a
+  // freshly painted cell, whether it starts as a live polyp or plain skeleton.
+  a = hydrate(x, y, sim, a);
+  const wet = hydOf(a) > 0;
+  if ((a & INIT_BIT) === 0) a = withHydration(initCell(sim, wet), hydOf(a));
 
-  // 백화 — too hot, or no brine left around it, and the polyp starts dying. The
+  // 백화 — too hot, or cut off from the brine, and the polyp starts dying. The
   // stress it has built up is what decides, so damage has to be sustained.
-  const brine = brineAround(x, y, sim);
   const hot = sim.getTemp(x, y) >= BLEACH_TEMP;
   let stress = stressOf(a);
-  if (brine === 0 && sim.chance(DRY_STRESS_CHANCE)) stress++;
+  if (!wet && sim.chance(DRY_STRESS_CHANCE)) stress++;
   else if (hot && sim.chance(HEAT_STRESS_CHANCE)) stress++;
-  else if (!hot && brine > 0 && stress > 0 && sim.chance(HEAL_CHANCE)) stress--;
+  else if (!hot && wet && stress > 0 && sim.chance(HEAL_CHANCE)) stress--;
 
   if (stress >= MAX_STRESS) {
     // Dead: what's left is the white skeleton. In-place `set` keeps the cell's

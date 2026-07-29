@@ -29,10 +29,12 @@ import { tryBurn, type Combustible } from './combustion';
 //   • A tip carries a heading (up-left / up / up-right) and mostly keeps it,
 //     turning one step now and then — the wobble that makes a stem look grown
 //     rather than drawn.
-//   • Each shoot runs a random SEGMENT of cells, then FORKS into two tips that
-//     diverge, each with one less generation of vigour left. After MAX_GEN forks
-//     a tip stops growing and becomes a bud — so a plant is naturally finite and
-//     ends up crown-shaped rather than expanding forever.
+//   • Each shoot runs a short random SEGMENT of cells, then FORKS into two tips
+//     that diverge, each with one less generation of vigour left. After MAX_GEN
+//     forks a tip stops growing and becomes a bud — so a plant is naturally
+//     finite and ends up crown-shaped rather than expanding forever. Forking
+//     often, with only a cell or three between forks, is what makes it read as
+//     foliage; long runs between rare forks read as limbs.
 //   • Nothing grows into a spot that already has more than CROWD_LIMIT plant
 //     neighbours, which is what keeps branches thin and stops two shoots that
 //     drift together from merging back into a slab.
@@ -71,8 +73,8 @@ const BURN_SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 400 };
 //   bits 0-6   moisture 0..127
 //   bit  7     tip (only a tip grows)
 //   bits 8-9   heading: 0 = up-left, 1 = up, 2 = up-right
-//   bits 10-12 segment cells left before this shoot forks
-//   bits 13-14 generations of vigour left (forks remaining)
+//   bits 10-11 segment cells left before this shoot forks
+//   bits 12-14 generations of vigour left (forks remaining)
 //   bit  15    initialised (this cell has been given a structural role)
 //
 // The "initialised" flag lives in the TOP bit on purpose, and that's a
@@ -89,9 +91,15 @@ const MAX_MOISTURE = 127;
 const TIP_BIT = 1 << 7;
 const DIR_SHIFT = 8;
 const SEG_SHIFT = 10;
-const GEN_SHIFT = 13;
+const SEG_MASK = 0b11;
+const GEN_SHIFT = 12;
+const GEN_MASK = 0b111;
 const INIT_BIT = 1 << 15;
-const MAX_GEN = 3; // fork depth — up to 2^3 tips per plant before it buds
+// Fork depth. Deep and short beats shallow and long: with only three forks and
+// long runs between them a plant came out as a handful of long crooked limbs —
+// more legs than foliage. Five forks with a run of 1-3 cells between them gives
+// the same height out of many more twigs, which is what reads as a bush.
+const MAX_GEN = 5;
 
 /** Moisture a fresh sprout (a germinated Seed) starts with, so it can climb out
  *  of the soil straight away before its roots have topped up. */
@@ -103,11 +111,18 @@ const THIRST = 63; // roots only drink once they're down to about half — a pla
 const MUD_DRINK_CHANCE = 0.12; // damp earth gives its moisture up more slowly
 const SOIL_MOISTURE = 76; // what damp ground alone sustains — enough for a modest
 //                           plant, well short of what standing water gives
-const WICK_STEP = 7; // moisture lost per cell as it wicks up the stem
+// Moisture lost per cell as it wicks up the stem. This single number decides how
+// bushy a plant can get, because a fork needs BRANCH_COST *at the tip*: at a
+// steep 7 per cell only the bottom four cells could ever afford one, so a plant
+// spent its vigour as one long bare stalk with a token Y on top. At 4 the
+// gradient reaches roughly twice as far and the crown actually fills in, while
+// the cap it puts on height (moisture / WICK_STEP cells from water) is still
+// what stops a plant climbing forever.
+const WICK_STEP = 4;
 const DECAY_CHANCE = 0.5; // chance of losing 1 moisture per tick
 const GROW_CHANCE = 0.09; // how often a tip attempts to advance
-const GROW_COST = 18; // moisture a tip spends to put out one new cell
-const BRANCH_COST = 46; // a fork puts out two cells and needs real reserves
+const GROW_COST = 14; // moisture a tip spends to put out one new cell
+const BRANCH_COST = 38; // a fork puts out two cells and needs real reserves
 const TURN_CHANCE = 0.3; // chance a tip's heading wanders one step
 const SHOOT_CHANCE = 0.0025; // chance an exposed, wet stem puts out a new shoot
 const SEED_CHANCE = 0.004; // chance a well-fed bud sets a seed
@@ -116,8 +131,8 @@ const CROWD_LIMIT = 2; // max plant neighbours a cell may grow into (keeps it th
 
 const moistOf = (a: number): number => a & MOIST_MASK;
 const dirOf = (a: number): number => (a >> DIR_SHIFT) & 0b11;
-const segOf = (a: number): number => (a >> SEG_SHIFT) & 0b111;
-const genOf = (a: number): number => (a >> GEN_SHIFT) & 0b11;
+const segOf = (a: number): number => (a >> SEG_SHIFT) & SEG_MASK;
+const genOf = (a: number): number => (a >> GEN_SHIFT) & GEN_MASK;
 const isTip = (a: number): boolean => (a & TIP_BIT) !== 0;
 const clampMoist = (m: number): number => (m < 0 ? 0 : m > MAX_MOISTURE ? MAX_MOISTURE : m);
 
@@ -132,14 +147,14 @@ function pack(m: number, tip: boolean, dir: number, seg: number, gen: number): n
     INIT_BIT |
     (tip ? TIP_BIT : 0) |
     ((dir & 0b11) << DIR_SHIFT) |
-    ((seg & 0b111) << SEG_SHIFT) |
-    ((gen & 0b11) << GEN_SHIFT)
+    ((seg & SEG_MASK) << SEG_SHIFT) |
+    ((gen & GEN_MASK) << GEN_SHIFT)
   );
 }
 
-/** Cells a shoot runs before it forks — 3..7, so no two branches come out the
- *  same length and the silhouette is irregular the way a real plant's is. */
-const randSeg = (sim: SimContext): number => 3 + sim.randInt(5);
+/** Cells a shoot runs before it forks — 1..3, so branches come out short and
+ *  the plant spends its height on twigs rather than on long bare limbs. */
+const randSeg = (sim: SimContext): number => 1 + sim.randInt(3);
 
 /** The `aux` a freshly germinated Seed hands its sprout: a full-vigour tip
  *  heading straight up, pre-charged with moisture so it can start climbing
