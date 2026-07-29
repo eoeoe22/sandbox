@@ -23,29 +23,49 @@ const OUT = 'src/game/render/handIcons.ts';
 // 파일명이 곧 배선 키다: `materialSvg.ts` 는 `iconKey(m.name)` 으로 찾는다. 키가
 // 어떤 물질의 것도 아니면 그림은 모듈에 실리는데 화면에는 절대 안 나온다 —
 // 검사 없이는 아무 신호가 없는 실패라, 실제 물질 목록과 맞춰 본다.
-const KEYS = new Map(collectMaterials().map((m) => [iconKey(m.name), m.name]));
-
-const all = readdirSync(SRC, { withFileTypes: true });
-// 하위 폴더에 넣으면 readdir 이 못 보고 조용히 빠진다. 확장자 대소문자도 같다.
-for (const d of all) {
-  if (d.isDirectory()) {
-    console.error(`${SRC}/${d.name}/: 하위 폴더는 읽지 않는다 — .svg 는 바로 이 폴더에 둘 것.`);
+const KEYS = new Map();
+for (const m of collectMaterials()) {
+  const k = iconKey(m.name);
+  // 두 물질이 같은 키로 뭉개지면 Map 은 조용히 마지막 것만 남기고, 아이콘 하나가
+  // 엉뚱한 물질에 붙는다. 지금은 138종 전부 유일하지만 이름은 늘어난다.
+  if (KEYS.has(k)) {
+    console.error(`아이콘 키 '${k}' 를 두 물질이 공유한다: ${KEYS.get(k)} / ${m.name}`);
     process.exit(1);
   }
+  KEYS.set(k, m.name);
+}
+
+const all = readdirSync(SRC, { withFileTypes: true });
+
+/** 무엇이길래 못 읽는지 — 오류 문구에 그대로 들어간다. */
+function shapeOf(d) {
+  if (d.isDirectory()) return '하위 폴더';
+  if (d.isSymbolicLink()) return '심볼릭 링크';
+  if (d.isFIFO()) return '파이프(FIFO)';
+  if (d.isSocket()) return '소켓';
+  if (d.isCharacterDevice() || d.isBlockDevice()) return '장치 파일';
+  return '일반 파일이 아닌 것';
+}
+
+// **받아들이는 모양을 하나만 정하고 나머지를 전부 막는다.** 못 읽는 모양을 하나씩
+// 열거하는 쪽으로 짜면 열거에서 빠진 것이 조용히 사라진다 — 실제로 하위 폴더와
+// 대문자 확장자를 막은 뒤에도 심볼릭 링크가, 그걸 막은 뒤에도 FIFO 가 그렇게
+// 빠져나갔다. `isFile()` 이 아닌 건 전부 여기서 걸린다.
+for (const d of all) {
+  if (!d.isFile()) {
+    console.error(`${SRC}/${d.name}: 일반 파일이 아니라 읽지 않는다(${shapeOf(d)}) — 실제 .svg 파일을 둘 것.`);
+    process.exit(1);
+  }
+  // 일반 파일이지만 `.SVG` 인 경우. 확장자가 소문자가 아니면 아래 filter 에서
+  // 빠지므로, 무시하지 말고 알려 준다. 확장자가 아예 다른 파일(메모 등)은 통과.
   if (!d.name.endsWith('.svg') && /\.svg$/i.test(d.name)) {
     console.error(`${d.name}: 확장자는 소문자 '.svg' 여야 한다.`);
     process.exit(1);
   }
-  // 심볼릭 링크의 Dirent 는 isFile() 도 isDirectory() 도 false 라, 아래 filter 에서
-  // 한마디 없이 빠진다 — 이름 검사조차 못 거친다. 폴더·대문자 확장자와 같은
-  // 부류의 실패라 같이 막는다.
-  if (d.isSymbolicLink()) {
-    console.error(`${d.name}: 심볼릭 링크는 읽지 않는다 — 실제 파일을 둘 것.`);
-    process.exit(1);
-  }
 }
 
-const files = all.filter((d) => d.isFile() && d.name.endsWith('.svg')).map((d) => d.name).sort();
+const files = all.filter((d) => d.name.endsWith('.svg')).map((d) => d.name).sort();
+
 const entries = [];
 for (const f of files) {
   const key = f.replace(/\.svg$/, '');
@@ -100,6 +120,11 @@ if (process.argv.includes('--check')) {
   }
   console.log(`✓ 손그림 아이콘 ${entries.length}종, 모듈이 원본과 일치.`);
 } else {
+  // 전부 사라진 상태로 굽으면 손그림이 통째로 없는 모듈이 조용히 커밋된다.
+  if (entries.length === 0) {
+    console.error(`${SRC}/ 에 .svg 가 하나도 없다 — 의도한 것이라면 ${OUT} 을 직접 지울 것.`);
+    process.exit(1);
+  }
   writeFileSync(OUT, out);
   console.log(`✓ ${OUT} — ${entries.length}종 (${entries.map(([k]) => k).join(', ')})`);
 }
