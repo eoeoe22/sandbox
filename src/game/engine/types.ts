@@ -598,7 +598,16 @@ export interface Material {
    * still drops under gravity — 점성 흐름 개선), only the lateral leveling and
    * diagonal creep, so honey/mud/slime ooze instead of racing flat like water.
    * 0 (or omitted) ⇒ frictionless flow (Water). Read by updateLiquid; ignored for
-   * non-liquids. Replaces the old per-material `chance(FLOW)` throttle.
+   * non-liquids.
+   *
+   * Because it never touches the fall, this tag alone can't make a liquid *ooze*
+   * — a very viscous liquid still drops at water speed and only refuses to
+   * flatten once it lands. A material that should crawl in every direction pairs
+   * it with the per-material `chance(FLOW_CHANCE)` gate around its own
+   * `updateLiquid` call, which throttles the whole movement step: Lava does this
+   * at 0.15, and Honey / Slime / Acid Slime follow it (see lava.ts, honey.ts,
+   * slime.ts). The two are complementary — the gate sets how *often* the liquid
+   * moves at all, `viscosity` how reluctantly it levels out when it does.
    */
   viscosity?: number;
   /**
