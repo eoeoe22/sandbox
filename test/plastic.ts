@@ -205,12 +205,14 @@ function packedBed(w: number, h: number, code: number): { grid: Grid; sim: Simul
   //
   // 60×60, because tolerance has to be several sigma to be a pin rather than a
   // coin flip. At this size n is 1800 per cut, so the binomial sd is 0.0084 for
-  // naphtha (p=0.85) and 0.0116 for BOTH kerosene and diesel — p(1-p) is 0.24
+  // naphtha (p=0.85) and 0.0115 for BOTH kerosene and diesel — p(1-p) is 0.24
   // either way, since 0.6 and 0.4 sit the same distance from 0.5, so neither of
-  // those two is inherently the noisier row. That puts ±0.06 at roughly 7 sigma
-  // on naphtha and 5 on the other two. Sample sds across ~80 suite runs landed
-  // between 0.008 and 0.014 per cut, straddling those figures as expected, with
-  // a worst observed deviation of 0.037 and no failures.
+  // those two is inherently the noisier row. That puts ±0.06 at 7.1 sigma on
+  // naphtha and 5.2 on the other two. Sample sds measured across independent
+  // batches totalling ~110 suite runs landed between 0.007 and 0.014 per cut,
+  // scattering around those figures as expected; worst deviation seen was 0.037
+  // and nothing failed. (Those are historical observations, not bounds — a
+  // fresh batch drawing a slightly lower or higher sample sd is normal.)
   const yields: Record<number, number> = {};
   for (const code of [1, 2, 3]) {
     const { grid, sim } = packedBed(60, 60, code);
