@@ -178,6 +178,48 @@ for (const fill of ['oil', 'acid'] as const) {
   check('though the magnet itself is still live', w.grid.magnetFields.length === 1);
 }
 
+// 7b. …and a shield made of MAGNET is still a shield (코드리뷰 지적). Magnet is an
+//     ordinary structural solid to the ray, so a second, dead, disconnected block
+//     shadows the live slab exactly like the stone one above. Keying the ray's
+//     passability on the material would have made any magnet block — live or dead,
+//     connected or not — silently stop shielding.
+{
+  const w = makeWorld();
+  for (let x = 25; x <= 95; x++) w.grid.cells[w.grid.idx(x, SHIELD_Y)] = ELECTROMAGNET.id;
+  w.grid.dirty.rebuild(w.grid.cells, w.grid.overlay, w.grid.width, w.grid.height);
+  const drum = createDrum(60, 0);
+  const startY = place(w, drum);
+  run(w, 90);
+  check('an unpowered MAGNET plate shields just like stone', drum.y > startY - 1, `${startY.toFixed(1)} → ${drum.y.toFixed(1)}`);
+  check('and the shield never powers up on its own', w.grid.aux[w.grid.idx(60, SHIELD_Y)] === 0);
+}
+
+// 7c. No corner-cutting: a 1-cell-thick 45° wall is a wall, not a sieve. The
+//     geometry is picked so the ray's ONLY crossing is a diagonal hop whose two
+//     flanking cells are both wall while the cells it actually samples are open —
+//     i.e. it squeezes through the point where two stones merely touch at a
+//     corner. Without the flank guard the drum is dragged straight through it.
+//     (Same failure mode, and same fix, as the smoke flood's own check.)
+{
+  const grid = new Grid(120, 120);
+  const sim = new Simulation(grid);
+  for (let y = FLOOR_Y; y < grid.height; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = STONE;
+  grid.cells[grid.idx(72, 40)] = ELECTROMAGNET.id; // a single magnet cell: exactly one ray
+  grid.cells[grid.idx(73, 40)] = BATTERY.id;
+  // Wall along y = x − 25, perpendicular to that ray. It passes between the two
+  // cells the ray samples at (68,44) → (69,43) without occupying either.
+  for (let x = 62; x <= 84; x++) grid.cells[grid.idx(x, x - 25)] = STONE;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const w: World = { grid, sim };
+  const drum = createDrum(60, 0);
+  const startY = place(w, drum);
+  run(w, 90);
+  const moved = Math.hypot(drum.x - 60, drum.y - startY);
+  check('a 1-cell 45° wall blocks the pull too', moved < 1, `moved ${moved.toFixed(2)} cells`);
+  check('(and the magnet in that scene really is live)', grid.magnetFields.length === 1);
+}
+
 // 8. Range is finite: a drum parked well outside the halo stays put.
 {
   const w = makeWorld();

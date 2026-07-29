@@ -17,7 +17,6 @@ import { FIRE } from '../materials/fire';
 import { SMOKE } from '../materials/smoke';
 import { SAWDUST } from '../materials/sawdust';
 import { VOID } from '../materials/void';
-import { ELECTROMAGNET } from '../materials/electromagnet';
 import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
 
 /**
@@ -2380,15 +2379,20 @@ function isMagneticBody(o: SimBody): boolean {
   return o.kind === 'drum' || o.kind === 'smokebomb';
 }
 
-/** True if the magnet's pull can travel *through* this cell — the object layer's
- *  copy of electromagnet.ts's `isFieldPassable`, plus the magnet material itself
- *  (a ray ending on a magnet cell crosses its own body first when the body is
- *  more than one cell thick). Structural solids stop it, so a magnet boxed in
- *  behind a plate has no grip on a drum on the far side, matching the shadow the
- *  cell field casts and the rings the renderer draws. */
+/** True if the magnet's pull can travel *through* this cell — `isFieldPassable`
+ *  (materials/electromagnet.ts) verbatim, deliberately including the magnet
+ *  material itself. Magnet is an ordinary structural solid here, exactly as it is
+ *  to the cell sweep, so an Electromagnet plate shadows a drum behind it just like
+ *  a stone one. It is tempting to make magnet cells transparent (a ray to the far
+ *  face of a thick body crosses its own near face, and those contributions are
+ *  lost) — but keying that on the *material* would make any OTHER magnet block,
+ *  live or dead, connected or not, silently stop shielding, which is precisely the
+ *  promise "고체가 그림자를 만든다" makes. The lost contributions cost nothing that
+ *  shows: the 1/d² weighting is already dominated by the near face the body can
+ *  actually see. */
 function magnetRayPassable(ctx: SimContext, x: number, y: number): boolean {
   const id = ctx.get(x, y);
-  if (id === EMPTY || id === ELECTROMAGNET.id) return true;
+  if (id === EMPTY) return true;
   const m = getMaterial(id);
   if (m.shockLoose) return true;
   const p = m.phase;
@@ -2400,18 +2404,35 @@ function magnetRayPassable(ctx: SimContext, x: number, y: number): boolean {
  *  structure? A straight ray rather than the cell field's geodesic sweep: a body
  *  is a rigid lump metres across that can't thread its way around a corner the
  *  way a single grain of iron filing does, so "can I see it" is both the cheaper
- *  test and the more honest one. */
+ *  test and the more honest one.
+ *
+ *  The target cell itself is exempt (it's the magnet we're measuring), and a
+ *  diagonal hop needs at least one of its two flanking cells open — without that,
+ *  a ray slips through the point where two solids merely touch at a corner and any
+ *  1-cell-thick 45° wall stops shielding. Same rule, and the same reason, as the
+ *  smoke flood's own no-corner-cutting check in `puffDisc`. */
 function magnetRayClear(ctx: SimContext, ox: number, oy: number, cx: number, cy: number): boolean {
   const dx = cx + 0.5 - ox;
   const dy = cy + 0.5 - oy;
   const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+  let px = Math.floor(ox);
+  let py = Math.floor(oy);
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const sx = Math.floor(ox + dx * t);
     const sy = Math.floor(oy + dy * t);
-    if (sx === cx && sy === cy) continue; // arrived — the magnet isn't its own shield
-    if (!ctx.inBounds(sx, sy)) return false;
-    if (!magnetRayPassable(ctx, sx, sy)) return false;
+    if (sx === px && sy === py) continue; // same cell as the last sample
+    if (sx !== cx || sy !== cy) {
+      // arrived is exempt — the magnet isn't its own shield
+      if (!ctx.inBounds(sx, sy) || !magnetRayPassable(ctx, sx, sy)) return false;
+      if (sx !== px && sy !== py) {
+        const openX = ctx.inBounds(sx, py) && magnetRayPassable(ctx, sx, py);
+        const openY = ctx.inBounds(px, sy) && magnetRayPassable(ctx, px, sy);
+        if (!openX && !openY) return false; // squeezed through a corner — not a path
+      }
+    }
+    px = sx;
+    py = sy;
   }
   return true;
 }
