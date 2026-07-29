@@ -29,12 +29,14 @@ import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 //    metal (every telescope mirror is aluminized), and a pour of it gives the
 //    laser toys a cheap, castable mirror for the first time.
 //  • Heat *resistance*: none. It melts at 660° — under Stone (1100°), Glass
-//    (1150°) and Iron (1200°), and under a bare Fire's ~1000°. That is the
-//    lowest melting point of any structural solid you'd actually *build* with;
-//    only Gallium goes lower (30°), and Gallium is the novelty that melts in
-//    your hand, not a material anyone raises a wall out of. So an aluminum
+//    (1150°) and Iron (1200°), and under a bare Fire's ~1000°. So an aluminum
 //    wall, mirror or bus bar slumps in the very fire that cast it. Aluminum
 //    is the cheap metal you build with everywhere the heat can't reach.
+//    (Deliberately *not* phrased as "the lowest melting point of any
+//    structural solid" — that superlative has been wrong twice. Gallium melts
+//    at 30° and Asphalt softens at 200°, both `Phase.Solid`. The comparison
+//    against Stone/Glass/Iron is the point; the ranking isn't, and it breaks
+//    every time a low-melting solid joins the roster.)
 //
 // Deliberately not `magnetic` — aluminum isn't ferrous, exactly as its powder
 // isn't (see aluminumpowder.ts), so an Electromagnet won't drag a cast bar
