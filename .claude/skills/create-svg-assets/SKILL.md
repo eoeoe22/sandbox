@@ -1,6 +1,6 @@
 ---
 name: create-svg-assets
-description: 이 샌드박스 프로젝트의 픽셀아트 에셋(독립 오브젝트 스프라이트, 물질 팔레트 아이콘, 캔버스 안에 그려지는 장식)을 만들거나 고칠 때 쓴다. 색 포맷(packed 0xAABBGGRR), 저작 형식 3종(fillRect / ASCII 행 / 벡터 예외), 해상도·종횡비 법칙, 음영·실루엣 하우스 스타일, 팔레트 SVG 내보내기, 크기 예산. 손으로 그리는 물질 아이콘 SVG의 규격은 저장소 없이도 쓸 수 있는 자체 완결 문서(MATERIAL-ICON-BRIEF.md)로 따로 빠져 있어, 외부 도구나 맥락이 끊긴 에이전트에게 그 파일과 대상 물질·기본색만 넘기면 된다. "스프라이트 만들어줘", "오브젝트 아트", "물질 아이콘", "SVG 에셋" 같은 요청에서 파일을 열기 전에 읽을 것.
+description: 이 샌드박스 프로젝트의 픽셀아트 에셋(독립 오브젝트 스프라이트, 물질 팔레트 아이콘, 캔버스 안에 그려지는 장식)을 만들거나 고칠 때 쓴다. 색 포맷(packed 0xAABBGGRR), 저작 형식 3종(fillRect / ASCII 행 / 벡터 예외), 해상도·종횡비 법칙, 음영·실루엣 하우스 스타일, 팔레트 SVG 내보내기, 크기 예산. 손으로 그리는 물질 아이콘 SVG의 규격은 시스템 프롬프트에 그대로 붙여 넣도록 쓴 자체 완결 문서(MATERIAL-ICON-BRIEF.md)로 따로 빠져 있어, 저장소도 스크립트 실행도 없는 외부 채팅 AI에게 그 파일과 대상 물질·기본색만 넘기면 된다. "스프라이트 만들어줘", "오브젝트 아트", "물질 아이콘", "SVG 에셋" 같은 요청에서 파일을 열기 전에 읽을 것.
 ---
 
 # 픽셀아트 · SVG 에셋 저작 지침
@@ -13,13 +13,14 @@ description: 이 샌드박스 프로젝트의 픽셀아트 에셋(독립 오브�
 | 하려는 일 | 읽을 것 | 저장소 필요? |
 |---|---|---|
 | **물질 아이콘 SVG를 손으로 그린다** | **[MATERIAL-ICON-BRIEF.md](./MATERIAL-ICON-BRIEF.md)** + 발주받은 물질·기본색 | ❌ 불필요 |
+| 들어온 손그림 SVG를 검수한다 | 이 파일 §7.2 | ✅ |
 | 캔버스 안에 들어갈 오브젝트 스프라이트를 만든다 | 이 파일 §1~§6 | ✅ |
 | 물질 아이콘 **생성기 코드**를 고친다 | 이 파일 §7 | ✅ |
 
-**`MATERIAL-ICON-BRIEF.md`는 규격만 담은 자체 완결 문서다.** 파일 형식·금지 목록·
-그리기 규격·점검표·검증 스크립트가 전부 그 안에 인라인돼 있어 저장소를 열 필요가
-없다. 외부 작업자, 외부 도구, 또는 **맥락을 갖고 있지 않은 서브에이전트에게 그
-파일을 그대로 넘기면 된다.**
+**`MATERIAL-ICON-BRIEF.md`는 규격만 담은 자체 완결 문서다.** 작업 절차·파일 형식·
+금지 목록·그리기 규격·점검표가 전부 그 안에 인라인돼 있다. 상정 소비자는 **저장소도
+렌더링 도구도 없고 스크립트도 실행할 수 없는 채팅 AI**라, 그대로 시스템 프롬프트에
+붙여 넣으면 된다. 들어온 결과물을 기계로 검수하는 스크립트는 발주자 쪽인 §7.2에 있다.
 
 **단 "무엇을 그릴지"는 브리프에 없다.** 대상 물질과 그 기본색은 그때그때 달라지는
 발주 내용이지 규격이 아니므로, 목록은 `docs/MATERIAL-ICONS.md` §7.1에 두고 작업을
@@ -273,6 +274,12 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 에 통째로 들어 있다. 여기서 요약을 다시 적지 않는다 — 두 벌이 되면 갈라지고, 갈라진
 쪽을 하필 외부 작업자가 받게 된다. 브리프가 단일 진실 공급원이다.
 
+**브리프는 시스템 프롬프트에 붙여 넣는 용도로 쓰여 있다.** 상정하는 소비자는
+저장소도 렌더링 도구도 없고 **스크립트도 실행할 수 없는** 채팅 인터페이스의 AI다.
+그래서 브리프에는 검증 스크립트가 없고, 대신 **ASCII 격자를 먼저 그리고 그걸 세어서
+점검한 뒤 rect로 옮기는 절차**가 들어 있다 — 결과물을 볼 수 없는 작업자에게 눈을
+대신 쥐여 주는 장치다. 브리프를 고칠 때 "돌려 보면 된다"류의 문장을 넣지 말 것.
+
 **대상 물질과 기본색은 브리프에 없다** — 발주마다 달라지는 값이라 규격 문서에 두지
 않는다. 목록은 `docs/MATERIAL-ICONS.md` §7.1에 있고, 작업을 맡길 때 브리프와 함께
 전달한다.
@@ -288,10 +295,72 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 | `id`/`<defs>`/`url(#…)`/`<style>` 금지 | 마크업이 `{@html}`로 인라인되고 같은 문자열이 한 문서에 여러 벌 존재한다 |
 | 칩 배경 `#1b1b22` / 선택 `#232b3a` / 테두리 흰색 15% | `MaterialPalette.svelte` 스타일 블록 |
 | 캔버스 바탕 `#101016` | `materials/empty.ts`의 `rgb(16, 16, 22)` |
-| 요소는 `<svg>`/`<rect>`뿐, 속성은 x/y/width/height/fill 로 고정, 값은 큰따옴표 | 소비 측 파서가 그 형태만 읽는다. 브리프의 검증 스크립트도 금지 목록이 아니라 **허용 목록**으로 짜여 있어야 `<circle>`처럼 빠뜨린 요소가 새지 않는다 |
-| rect 200개 / 6 KB 상한 | 오브젝트 스프라이트 실측 상한(나무 상자 240 rect / 14 KB)보다 아래 |
+| 요소는 `<svg>`/`<rect>`뿐, 속성은 x/y/width/height/fill 로 고정, 값은 큰따옴표 | 소비 측 파서가 그 형태만 읽는다. §7.2의 검수 스크립트도 금지 목록이 아니라 **허용 목록**으로 짜야 `<circle>`처럼 빠뜨린 요소가 새지 않는다 |
+| rect 100개 / 6 KB 상한 | 오브젝트 스프라이트 실측 상한(나무 상자 240 rect / 14 KB)보다 아래로 잡되, **둘이 서로 모순되지 않게** — rect 한 줄이 실측 약 61 B라 6 KB에 들어가는 건 100개까지다. 예전엔 200개로 적혀 있어 바이트 상한과 충돌했다 |
 
-### 7.2 돋보기 11×11은 제외
+### 7.2 납품 검수 — 받는 쪽에서 돌리는 스크립트
+
+브리프에는 없다(작업자가 실행할 수 없으므로). **발주자인 우리가** 들어온 `.svg`를
+받을 때 이걸 돌린다. 규격 위반·빈 칸·영역 이탈·용량 초과를 잡는다(Node, 의존성 없음).
+
+```js
+// node check.mjs foo.svg
+import { readFileSync } from 'node:fs';
+const raw = readFileSync(process.argv[2], 'utf8');
+// 주석을 먼저 걷어낸다. 주석 처리된 rect가 칠해진 것으로 세어져 진짜 빈 칸을
+// 가리는 것도, 주석 안의 "opacity" 같은 단어가 금지어로 잡히는 것도 막는다.
+const s = raw.replace(/<!--[\s\S]*?-->/g, '');
+// 요소는 허용 목록으로 본다 — 금지 목록은 <circle>·<path>처럼 빠뜨린 것을
+// 통과시킨다. 자기닫는 <g/>가 새는 것도 이 방식이면 없다.
+for (const t of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g))
+  if (t[1] !== 'svg' && t[1] !== 'rect') throw new Error('허용되지 않은 요소: <' + t[1] + '>');
+const bad = /\bid=|\bclass=|\bstyle=|url\(|opacity|stroke|fill="none"|<\?xml|<!DOCTYPE/i.exec(s);
+if (bad) throw new Error('금지 요소: ' + bad[0]);
+if (!/viewBox="0 0 24 24"/.test(s)) throw new Error('viewBox가 0 0 24 24 가 아님');
+const cells = new Set();
+const painted = new Set();
+const colors = new Set();
+let rects = 0;
+let overlap = 0;
+for (const m of s.matchAll(/<rect\s+([^>]*?)\s*\/>/g)) {
+  rects++;
+  const a = Object.fromEntries([...m[1].matchAll(/(\w[\w-]*)="([^"]*)"/g)].map((k) => [k[1], k[2]]));
+  const keys = Object.keys(a).sort().join(',');
+  if (keys !== 'fill,height,width,x,y')
+    throw new Error('rect 속성이 x/y/width/height/fill 이 아님(값은 큰따옴표로): ' + m[0]);
+  if (!/^#[0-9a-f]{6}$/.test(a.fill)) throw new Error('fill 형식 오류: ' + a.fill);
+  const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((k) => Number(a[k]));
+  if (![x, y, w, h].every(Number.isInteger) || w < 1 || h < 1 || x < 0 || y < 0)
+    throw new Error('좌표/크기 오류: ' + m[0]);
+  if (x + w > 24 || y + h > 24) throw new Error('타일 밖으로 나감: ' + m[0]);
+  colors.add(a.fill);
+  for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) cells.add(j * 24 + i);
+  // 배경 rect를 뺀 실제 도포 면적. Set이라 겹쳐도 중복으로 세지 않는다.
+  if (rects > 1)
+    for (let j = y; j < y + h; j++)
+      for (let i = x; i < x + w; i++) {
+        if (painted.has(j * 24 + i)) overlap++;
+        painted.add(j * 24 + i);
+      }
+}
+if (rects !== (s.match(/<rect/g) || []).length) throw new Error('형식에 안 맞는 rect가 있음');
+if (cells.size !== 576) throw new Error(`빈 칸 ${576 - cells.size}개 — 배경 rect 누락?`);
+if (painted.size > 230) throw new Error(`기본색 ${576 - painted.size}칸 — 346칸(60%) 미만`);
+if (rects > 100) throw new Error('rect ' + rects + '개 — 100 초과');
+if (colors.size > 5) throw new Error('색 ' + colors.size + '개 — 5 초과');
+if (raw.length > 6144) throw new Error(raw.length + ' B — 6 KB 초과');
+console.log(`OK — rect ${rects}개, 색 ${colors.size}개, 기본색 ${((576 - painted.size) / 5.76).toFixed(0)}%, ${raw.length} B`);
+// 겹침은 반려 사유가 아니다(화면에는 제대로 나온다). 다만 작업자가 브리프의
+// 격자 절차를 따르지 않았다는 신호라, 나머지도 눈으로 더 봐야 한다는 뜻이다.
+if (overlap) console.warn(`주의 — rect가 ${overlap}칸 겹침. 격자 절차를 안 거쳤을 수 있음`);
+```
+
+스크립트가 잡지 못하는 것 — **눈으로 봐야 한다**: 18px 축소 후 판독성, 광원 방향,
+최소 두께 2칸, 그린 것이 실제로 그 물질로 보이는지. 축소 판독성은 24×24 격자를
+0.75배 박스 평균으로 눌러 ASCII로 찍어 보면 상당 부분 미리 알 수 있고, 최종 확인은
+브랜치 프리뷰에서 유저에게 요청한다(CLAUDE.md — 브라우저 테스트는 직접 하지 않는다).
+
+### 7.3 돋보기 11×11은 제외
 
 `InspectPanel`의 11px 스와치는 **의도적으로 단색을 유지한다.** 18px에서 읽히는
 패턴이 11px에서는 진흙이 되고, 그 행에는 물질 이름이 이미 나란히 붙어 있어
@@ -314,7 +383,7 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 - [ ] 브라우저 확인은 **직접 하지 않고 유저에게 요청** (CLAUDE.md)
 
 물질 손그림 아이콘이면 위 목록 대신
-**[MATERIAL-ICON-BRIEF.md](./MATERIAL-ICON-BRIEF.md) §4의 점검표**를 쓴다(검증
+**[MATERIAL-ICON-BRIEF.md](./MATERIAL-ICON-BRIEF.md) §5의 점검표**를 쓴다(검수
 스크립트 포함). 저장소 쪽에서 추가로 볼 것은 두 가지뿐:
 
 - [ ] 자동 생성이 이미 그 물질을 처리하고 있지 않은지 확인했다 (§7.0)
@@ -335,5 +404,5 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 | `src/game/tint.ts` | 물질 질감 공식의 단일 진실 공급원 |
 | `docs/OBJECTS.md` | 오브젝트 레이어 전체 설계 기록 |
 | `docs/MATERIAL-ICONS.md` | 물질 아이콘 전체 설계·분류·손그림 대상 |
-| `./MATERIAL-ICON-BRIEF.md` | **자체 완결** 손그림 규격 — 저장소 없이 그대로 넘길 수 있다 |
+| `./MATERIAL-ICON-BRIEF.md` | **자체 완결** 손그림 규격 — 외부 AI 시스템 프롬프트에 그대로 붙여 넣는다 |
 | `temp/*.svg` | 디자인 핸드오프 원본(런타임 미사용) |
