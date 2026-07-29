@@ -12,7 +12,16 @@
 //   • the recipe — Aluminum Powder + Saltpeter → Flash Powder, its 150° cold
 //     gate, and that it doesn't cannibalise the Thermite recipe;
 //   • Flash Powder's identity — spark/heat sensitivity, the wet misfire, and a
-//     blast that breaks no solid.
+//     blast that breaks no solid;
+//   • the hydrogen line — gallium activating the powder (and not being consumed
+//     doing it), Activated Aluminum fizzing water into Hydrogen and warming it,
+//     acid doing the same to both the powder and a cast bar, and *burning*
+//     aluminum tearing hydrogen out of steam while cold aluminum ignores it;
+//   • 분진 폭발 — a suspended cloud flashing off at once while the exact same
+//     powder in a heap, under the exact same flame, does not;
+//   • Ammonal — the recipe and its cold gate, a blast that out-craters the same
+//     amount of dry prill and leaves the crater on fire, and the wet misfire it
+//     inherits from that prill.
 //
 // Run: `node test/run-aluminum.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -29,6 +38,12 @@ import { FLASH_POWDER } from '../src/game/materials/flashpowder';
 import { FLASH } from '../src/game/materials/flash';
 import { LIQUID_GALLIUM } from '../src/game/materials/liquidgallium';
 import { GALLIUM } from '../src/game/materials/gallium';
+import { ACTIVATED_ALUMINUM } from '../src/game/materials/activatedaluminum';
+import { AMMONAL } from '../src/game/materials/ammonal';
+import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
+import { HYDROGEN } from '../src/game/materials/hydrogen';
+import { ACID } from '../src/game/materials/acid';
+import { STEAM } from '../src/game/materials/steam';
 import { BLAST } from '../src/game/materials/blast';
 import { THERMITE } from '../src/game/materials/thermite';
 import { RUST_POWDER } from '../src/game/materials/rustpowder';
@@ -68,6 +83,7 @@ const IRON = ID('Iron');
 const GLASS = ID('Glass');
 const BATTERY = ID('Lithium Battery');
 const WOOD = ID('Wood');
+const LAVA = ID('Lava');
 
 function makeWorld(w = 80, h = 80): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -490,6 +506,322 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     `Al ${MOLTEN_ALUMINUM.density} vs salt ${getMaterial(ID('Molten Salt')).density}`);
   check('a fresh pour is not at room temperature',
     (MOLTEN_ALUMINUM.thermal?.init ?? AMBIENT_TEMP) > AMBIENT_TEMP);
+}
+
+// 10. Gallium activates the *powder* the way it embrittles the *bar* — same
+//     one-sided rule, so the drop is not consumed and one puddle converts a heap.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let x = 30; x < 50; x++) grid.set(x, 59, ALUMINUM_POWDER.id);
+  for (let x = 30; x < 50; x++) grid.set(x, 58, LIQUID_GALLIUM.id);
+  const drops = countWithOverlay(grid, LIQUID_GALLIUM.id);
+  for (let t = 0; t < 200; t++) {
+    // Hold every gallium cell above its 28° set point, exactly as check 8c does:
+    // left alone it freezes within a few ticks and the run would be measuring
+    // the melt point instead of the activation.
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const id = grid.get(x, y);
+        if (id === LIQUID_GALLIUM.id || grid.getOverlay(x, y) === LIQUID_GALLIUM.id) {
+          grid.setTemp(x, y, 40);
+        }
+      }
+    }
+    sim.step();
+  }
+  const made = count(grid, ACTIVATED_ALUMINUM.id);
+  check('liquid gallium activates Aluminum Powder', made > 0, `${made} cells`);
+  check('…without being consumed (one drop converts a heap)',
+    countWithOverlay(grid, LIQUID_GALLIUM.id) === drops,
+    `${countWithOverlay(grid, LIQUID_GALLIUM.id)}/${drops} drops left`);
+}
+
+// 11. …and what the activated dust is *for*: it tears hydrogen out of plain
+//     water, warms the pool doing it, and is consumed in the process. The plain
+//     powder in the same pool does nothing at all — that contrast is the whole
+//     point of the material.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let y = 50; y < 60; y++) for (let x = 30; x < 50; x++) grid.set(x, y, WATER);
+  for (let x = 36; x < 44; x++) grid.set(x, 59, ACTIVATED_ALUMINUM.id);
+  const dust = count(grid, ACTIVATED_ALUMINUM.id);
+  let maxH2 = 0;
+  let peakWater = -Infinity;
+  for (let t = 0; t < 300; t++) {
+    sim.step();
+    maxH2 = Math.max(maxH2, count(grid, HYDROGEN.id));
+    for (let y = 50; y < 60; y++) {
+      for (let x = 30; x < 50; x++) {
+        if (grid.get(x, y) === WATER) peakWater = Math.max(peakWater, grid.getTemp(x, y));
+      }
+    }
+  }
+  check('activated aluminum fizzes hydrogen out of plain water', maxH2 > 0, `${maxH2} cells at once`);
+  check('…is consumed doing it', count(grid, ACTIVATED_ALUMINUM.id) < dust,
+    `${count(grid, ACTIVATED_ALUMINUM.id)}/${dust} left`);
+  check('…and warms the pool it works in (발열)', peakWater > AMBIENT_TEMP + 5,
+    `pool peaked at ${peakWater.toFixed(1)}°C`);
+
+  // The contrast: un-activated powder is inert in water, exactly as before.
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let y = 50; y < 60; y++) for (let x = 30; x < 50; x++) g2.set(x, y, WATER);
+  for (let x = 36; x < 44; x++) g2.set(x, 59, ALUMINUM_POWDER.id);
+  let plainH2 = 0;
+  for (let t = 0; t < 300; t++) {
+    s2.step();
+    plainH2 = Math.max(plainH2, count(g2, HYDROGEN.id));
+  }
+  check('…and plain Aluminum Powder in the same pool does nothing', plainH2 === 0,
+    `${plainH2} cells`);
+}
+
+// 11b. Its off switch is the casting line: melt it and what pours out is
+//      ordinary Molten Aluminum, so the activation does not survive a recast.
+//      (This is also the pin on the autoignition point staying *above* the 660°
+//      melt point — drop it below and the melt band collapses to nothing and the
+//      dust could never be recycled at all.)
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let x = 30; x < 40; x++) grid.set(x, 59, ACTIVATED_ALUMINUM.id);
+  let melted = 0;
+  for (let t = 0; t < 200; t++) {
+    for (let x = 28; x < 42; x++) for (let y = 60; y < 63; y++) grid.setTemp(x, y, 690);
+    sim.step();
+    melted = Math.max(melted, count(grid, MOLTEN_ALUMINUM.id));
+    if (melted > 0) break;
+  }
+  check('activated dust heated with no flame on it melts back to Molten Aluminum',
+    melted > 0, `${melted} cells`);
+}
+
+// 12. Acid + aluminum → hydrogen. Until now acid.ts's phase-only corrosion just
+//     blinked the grains out with no product at all; now the acid cell it eats
+//     becomes a rising bubble. Both the loose powder and a cast bar do it.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let y = 54; y < 60; y++) for (let x = 30; x < 50; x++) grid.set(x, y, ACID.id);
+  for (let x = 36; x < 44; x++) grid.set(x, 59, ALUMINUM_POWDER.id);
+  let maxH2 = 0;
+  for (let t = 0; t < 200; t++) {
+    sim.step();
+    maxH2 = Math.max(maxH2, count(grid, HYDROGEN.id));
+  }
+  check('aluminum powder poured into acid gives off hydrogen', maxH2 > 0,
+    `${maxH2} cells at once`);
+
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let y = 50; y < 60; y++) for (let x = 30; x < 50; x++) g2.set(x, y, ACID.id);
+  for (let y = 50; y < 60; y++) for (let x = 39; x <= 41; x++) g2.set(x, y, ALUMINUM.id);
+  let barH2 = 0;
+  for (let t = 0; t < 200; t++) {
+    s2.step();
+    barH2 = Math.max(barH2, count(g2, HYDROGEN.id));
+  }
+  check('…and so does a cast aluminum bar standing in it', barH2 > 0, `${barH2} cells at once`);
+}
+
+// 13. 불타는 금속에 물을 끼얹으면 오히려 커진다: steam meeting *burning* aluminum
+//     hands back hydrogen (the Fukushima reaction). Cold aluminum in the same
+//     steam does nothing — the tempMin gate is the whole rule.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let x = 30; x < 40; x++) paintHot(grid, x, 59, ALUMINUM_POWDER.id, 1700);
+  let maxH2 = 0;
+  let hottestH2 = -Infinity;
+  for (let t = 0; t < 80; t++) {
+    for (let x = 30; x < 40; x++) {
+      if (grid.get(x, 59) === ALUMINUM_POWDER.id) grid.setTemp(x, 59, 1700); // keep it alight
+      if (grid.get(x, 58) === 0) paintHot(grid, x, 58, STEAM.id, 110);
+    }
+    sim.step();
+    maxH2 = Math.max(maxH2, count(grid, HYDROGEN.id));
+    // Read the bubbles the instant they appear: a hydrogen cell over its own
+    // autoignition point converts to Fire on its very next turn, so anything
+    // still sitting there a tick later is by definition one that cooled.
+    for (let y = 50; y < 60; y++) {
+      for (let x = 28; x < 42; x++) {
+        if (grid.get(x, y) === HYDROGEN.id) hottestH2 = Math.max(hottestH2, grid.getTemp(x, y));
+      }
+    }
+  }
+  check('steam on burning aluminum gives hydrogen', maxH2 > 0, `${maxH2} cells at once`);
+  // …and the gas it makes is *ignitable*, which is the entire point of the rule.
+  // The reaction's own heat term guarantees this rather than leaving it to
+  // whatever temperature the steam happened to arrive at (see STEAM_REACT_HEAT).
+  check('…hot enough to light itself (past Hydrogen\'s 200° autoignition)',
+    hottestH2 >= 200, `hottest bubble ${hottestH2.toFixed(0)}°C`);
+
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let x = 30; x < 40; x++) g2.set(x, 59, ALUMINUM_POWDER.id);
+  let coldH2 = 0;
+  for (let t = 0; t < 80; t++) {
+    for (let x = 30; x < 40; x++) if (g2.get(x, 58) === 0) paintHot(g2, x, 58, STEAM.id, 110);
+    s2.step();
+    coldH2 = Math.max(coldH2, count(g2, HYDROGEN.id));
+  }
+  check('…but steam on cold aluminum does not', coldH2 === 0, `${coldH2} cells`);
+}
+
+// 14. 분진 폭발. A dispersed cloud of the same powder that is the hardest thing
+//     in the palette to light goes off all at once from a single lick of flame —
+//     and the identical powder in a heap, under the identical flame, does not.
+//     The second half is the load-bearing one: the suspension gate is what keeps
+//     the material's "제일 안 붙는 연료" identity intact.
+{
+  const { grid, sim } = makeWorld(80, 80);
+  floor(grid, 76);
+  // A loose cloud, the way a Fan leaves a heap it has blown apart — every grain
+  // hanging in open air with nothing under it. Started high above the floor on
+  // purpose: the cloud is falling the whole time, and a grain that lands is a
+  // heap again, so the run has to give the front room to work before the dust
+  // settles (which is itself the honest behaviour — settled dust is safe dust).
+  for (let y = 20; y < 35; y++) {
+    for (let x = 30; x < 50; x++) if ((x + y) % 2 === 0) grid.set(x, y, ALUMINUM_POWDER.id);
+  }
+  const cloud = count(grid, ALUMINUM_POWDER.id);
+  grid.set(41, 27, FIRE.id); // one lick of flame in the middle of it
+  for (let t = 0; t < 35; t++) sim.step();
+  const cloudLeft = count(grid, ALUMINUM_POWDER.id);
+  // Never all of it, and the fraction swings: the front is over in ~15 ticks and
+  // whatever was thrown clear of it by then survives, which is what a real dust
+  // explosion does too. Measured across 8 seeds: 7–39% of the cloud left, so the
+  // bar sits at half — still miles from the ~100% an un-exploded cloud leaves,
+  // which is the thing this is actually distinguishing.
+  check('a suspended cloud flashes off from one lick of flame',
+    cloudLeft < cloud * 0.5, `${cloudLeft}/${cloud} grains left`);
+
+  const { grid: g2, sim: s2 } = makeWorld(80, 80);
+  floor(g2, 70);
+  for (let y = 66; y < 70; y++) for (let x = 30; x < 50; x++) g2.set(x, y, ALUMINUM_POWDER.id);
+  const pile = count(g2, ALUMINUM_POWDER.id);
+  for (let t = 0; t < 25; t++) {
+    for (let x = 30; x < 50; x++) if (g2.get(x, 65) === 0) g2.set(x, 65, FIRE.id);
+    s2.step();
+  }
+  const pileLeft = count(g2, ALUMINUM_POWDER.id);
+  check('…but a heap under the same flame just smoulders (the pile is untouched)',
+    pileLeft > pile * 0.85, `${pileLeft}/${pile} grains left`);
+
+  // …and the other half of the same gate, which is the one a future change is
+  // most likely to break: **dust in a liquid never goes off**. `isSuspended`
+  // reads a liquid neighbour as support (only air and gases count as open), so
+  // submerged dust is piled dust no matter what is happening to it — wet dust is
+  // not a suspension.
+  //
+  // The medium is Lava rather than the obvious Water on purpose. The flash gate
+  // is 400°, which is well over water's boiling point, so any pool hot enough to
+  // put a submerged grain near that gate has already flashed to Steam around it —
+  // and dust in steam is a genuinely different (and legitimately explosive)
+  // situation, so the run would end up measuring that instead. Lava is the one
+  // liquid here that stays liquid at these temperatures — and it is itself an
+  // igniter, which is what makes it a *decisive* control rather than merely a
+  // valid one: the suspension gate is the only thing standing between these
+  // grains and an instant flash, so if it ever stops excluding liquids the
+  // `igniterAdjacent` branch fires on the very first tick. (It is not reached
+  // while the gate holds — `isSuspended` short-circuits first.)
+  //
+  // What the grains must do instead is what they always did: catch and burn
+  // slowly, at `burnChance` 0.05, from the flame in contact. So a few ticks in,
+  // nearly all of them are still there. Verified to be load-bearing by flipping
+  // `isOpen` to admit liquids: every grain flashes to Fire on the *first* tick
+  // (36 → 0), against 36 → 29 here.
+  const { grid: g3, sim: s3 } = makeWorld(80, 80);
+  floor(g3, 70);
+  for (let y = 55; y < 70; y++) for (let x = 30; x < 50; x++) paintHot(g3, x, y, LAVA, 1200);
+  for (let y = 60; y < 66; y++) {
+    for (let x = 34; x < 46; x++) if ((x + y) % 2 === 0) g3.set(x, y, ALUMINUM_POWDER.id);
+  }
+  const drowned = count(g3, ALUMINUM_POWDER.id);
+  for (let t = 0; t < 3; t++) {
+    for (let y = 55; y < 70; y++) {
+      for (let x = 30; x < 50; x++) if (g3.get(x, y) === LAVA) g3.setTemp(x, y, 1200);
+    }
+    s3.step();
+  }
+  check('…and dust submerged in a liquid never flashes (it just burns)',
+    count(g3, ALUMINUM_POWDER.id) > drowned * 0.75,
+    `${count(g3, ALUMINUM_POWDER.id)}/${drowned} grains left`);
+
+  // The activated dust is the same metal and shares the same helper, but it is a
+  // different material id — and the front hands itself on by matching id, so
+  // that path deserves its own run rather than being inferred from the powder's.
+  const { grid: g4, sim: s4 } = makeWorld(80, 80);
+  floor(g4, 76);
+  for (let y = 20; y < 35; y++) {
+    for (let x = 30; x < 50; x++) if ((x + y) % 2 === 0) g4.set(x, y, ACTIVATED_ALUMINUM.id);
+  }
+  const actCloud = count(g4, ACTIVATED_ALUMINUM.id);
+  g4.set(41, 27, FIRE.id);
+  for (let t = 0; t < 35; t++) s4.step();
+  const actLeft = count(g4, ACTIVATED_ALUMINUM.id);
+  check('…and an activated cloud flashes off the same way',
+    actLeft < actCloud * 0.5, `${actLeft}/${actCloud} grains left`);
+}
+
+// 15. Ammonal: the fourth recipe off the same grain, on the same gates as the
+//     other three.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let x = 20; x < 60; x++) {
+    grid.set(x, 59, x % 2 ? ALUMINUM_POWDER.id : AMMONIUM_NITRATE.id);
+  }
+  for (let t = 0; t < 80; t++) sim.step();
+  const made = count(grid, AMMONAL.id);
+  check('Aluminum Powder + Ammonium Nitrate grinds into Ammonal', made >= 30, `${made} cells`);
+
+  // The same 150° cold gate. Held at 200°, which is over the gate but under the
+  // prill's own 300° decomposition, so nothing detonates and the only thing
+  // being measured is the gate.
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 60);
+  for (let x = 20; x < 60; x++) {
+    paintHot(g2, x, 59, x % 2 ? ALUMINUM_POWDER.id : AMMONIUM_NITRATE.id, 200);
+  }
+  s2.step();
+  check('…but not while the pile is hot (150° gate)', count(g2, AMMONAL.id) === 0,
+    `${count(g2, AMMONAL.id)} cells`);
+}
+
+// 16. …and what it does when it goes off: a bigger hole than the same amount of
+//     dry prill, and a crater left on fire (the metal fuel's signature). Plus the
+//     wet misfire it inherits from the prill.
+{
+  function crater(charge: number): { stone: number; fire: number } {
+    const { grid, sim } = makeWorld(120, 120);
+    floor(grid, 90);
+    const before = count(grid, STONE);
+    // Well over the 300° decomposition point: the heat-diffusion pass runs
+    // before the cell's own update, so a charge started just above the gate
+    // sheds its way back under it against the cold floor before it ever gets a
+    // turn (measured: 350° arrives at its update as 290°).
+    for (let x = 56; x < 60; x++) paintHot(grid, x, 89, charge, 500);
+    for (let t = 0; t < 20; t++) sim.step();
+    return { stone: before - count(grid, STONE), fire: count(grid, FIRE.id) };
+  }
+  const ammonal = crater(AMMONAL.id);
+  const prill = crater(AMMONIUM_NITRATE.id);
+  check('an ammonal charge craters stone', ammonal.stone > 0, `${ammonal.stone} cells`);
+  check('…more of it than the same amount of dry prill', ammonal.stone > prill.stone,
+    `${ammonal.stone} vs ${prill.stone} cells`);
+  check('…and leaves the crater burning (the metal fuel\'s fireball)',
+    ammonal.fire > prill.fire, `${ammonal.fire} vs ${prill.fire} fire cells`);
+
+  const { grid, sim } = makeWorld();
+  floor(grid, 60);
+  for (let x = 38; x < 42; x++) paintHot(grid, x, 59, AMMONAL.id, 500);
+  for (let x = 38; x < 42; x++) grid.set(x, 58, WATER);
+  sim.step();
+  check('…but a wet charge misfires, exactly like the prill', count(grid, AMMONAL.id) > 0,
+    `${count(grid, AMMONAL.id)} left`);
 }
 
 console.log(failures === 0 ? '\nAll aluminum checks passed.' : `\n${failures} check(s) FAILED.`);

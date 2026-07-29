@@ -1,14 +1,19 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, flameAdjacent, type Combustible } from './combustion';
+import { tryBurn, type Combustible } from './combustion';
+import { tryMeltAluminumDust, tryDustExplosion } from './aluminumdust';
 import { RUST_POWDER } from './rustpowder';
 import { THERMITE } from './thermite';
 import { SALTPETER } from './saltpeter';
 import { FLASH_POWDER } from './flashpowder';
-import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
+import { AMMONIUM_NITRATE } from './ammoniumnitrate';
+import { AMMONAL } from './ammonal';
+import { ACID } from './acid';
+import { STEAM } from './steam';
+import { HYDROGEN } from './hydrogen';
 
 // Aluminum Powder (알루미늄 가루) — the bright silver metal dust, and the hub the
 // whole aluminum line runs through. Everything it does starts here:
@@ -16,9 +21,21 @@ import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 //   • **+ Rust Powder → Thermite** — the cutting charge (see the `reactions`
 //     rules below).
 //   • **+ Saltpeter → Flash Powder** — the flash charge (same rules block).
+//   • **+ Ammonium Nitrate → Ammonal** — the metal-fuelled bulk charge, ANFO's
+//     stronger cousin (same rules block; see ammonal.ts).
+//   • **+ Acid → Hydrogen** — the cheapest gas generator in the game (same
+//     rules block).
+//   • **+ Steam, while it is burning → Hydrogen** — 불타는 금속에 물을 끼얹으면
+//     오히려 더 커진다 (same rules block).
+//   • **+ Liquid Gallium → Activated Aluminum** — the oxide film comes off and
+//     the dust starts tearing hydrogen out of plain water (declared on the
+//     gallium side; see activatedaluminum.ts).
 //   • **heat it past 660° with no flame on it → Molten Aluminum → Aluminum** —
-//     the casting line (see `tryMeltAluminum` below and moltenaluminum.ts).
-//   • **light it** — the game's most stubborn, hottest ordinary fuel (below).
+//     the casting line (see `tryMeltAluminumDust` in aluminumdust.ts and
+//     moltenaluminum.ts).
+//   • **light it** — the game's most stubborn, hottest ordinary fuel (below) —
+//     unless it is *airborne*, in which case it is a dust explosion
+//     (`tryDustExplosion`, aluminumdust.ts).
 //
 // The oldest of those is the thermite recipe: **Aluminum Powder + Rust Powder →
 // Thermite**. Thermite had always been a palette-only
@@ -70,45 +87,20 @@ const SPEC: Combustible = {
   burnTemp: 1700,
 };
 
-// Melt vs burn. Aluminum's real melting point (660°, see moltenaluminum.ts) is
-// far *below* its autoignition point here (1000°), so heat alone now has two
-// possible answers and the cell has to pick one. It picks the same way the
-// petroleum fuels do (see `flameAdjacent` / petroleumdistill.ts): **direct flame
-// contact wins**.
-//
-//   • A flame actually touching the grain — Fire, Lava or Blue Flame — means it
-//     burns, exactly as before: `tryBurn` above rolls `burnChance` and the melt
-//     path is vetoed while any flame is adjacent, so the grain heats on toward
-//     1000° and catches instead of quietly slumping into a puddle first.
-//   • Heat with no flame on it — a coal bed through a wall, a molten metal pool,
-//     a hot pipe — melts it at 660°, and it never reaches 1000° at all.
-//
-// That reads as one rule ("불을 대면 타고, 그냥 데우면 녹는다") and it is the
-// physically honest one too: bulk aluminum melts, and it is fine aluminum *dust
-// in a flame* that burns. It also produces a nice split inside a single heap
-// resting on lava — the face in contact with the flame lights while the grains
-// behind it, heated only by conduction, run down into melt.
-//
-// The upper bound matters as much as the lower one: a cell at or above the
-// autoignition point is either already burning (its heat pinned at BURN_TEMP by
-// combustion.ts) or about to, and a burning grain only wreathes itself in Fire
-// on a WREATH_CHANCE roll — so on the ticks where no flame happens to be beside
-// it, an unbounded melt check would yank a mid-burn grain out of the fire and
-// turn it into a puddle. Melting strictly below the autoignition point leaves
-// every burning cell to `tryBurn`.
-function tryMeltAluminum(x: number, y: number, sim: SimContext): boolean {
-  const t = sim.getTemp(x, y);
-  if (t < ALUMINUM_MELT_TEMP || t >= SPEC.autoIgniteTemp) return false;
-  if (flameAdjacent(x, y, sim)) return false;
-  // In-place `set` keeps the (now high) temperature so the fresh Molten Aluminum
-  // reads as molten instead of instantly re-freezing next tick.
-  sim.set(x, y, MOLTEN_ALUMINUM.id);
-  return true;
-}
-
+// The melt-vs-burn split ("불을 대면 타고, 그냥 데우면 녹는다") and the
+// dust-explosion path both live in aluminumdust.ts now, because the activated
+// dust obeys exactly the same two rules with different numbers — see that file
+// for why each one is shaped the way it is.
 function updateAluminumPowder(x: number, y: number, sim: SimContext): void {
+  // Airborne and lit → the whole grain flashes at once, and the front rips
+  // through the rest of the cloud. Checked *first*, before the ordinary
+  // catch-from-a-flame roll, because that is the difference the rule exists to
+  // express: a heap of this stuff is the hardest thing here to light, and the
+  // same grains hanging in the air are a bomb. It is gated strictly on
+  // suspension, so a pile behaves exactly as it always did.
+  if (tryDustExplosion(x, y, sim)) return;
   if (tryBurn(x, y, sim, SPEC)) return;
-  if (tryMeltAluminum(x, y, sim)) return;
+  if (tryMeltAluminumDust(x, y, sim, SPEC.autoIgniteTemp)) return;
   updatePowder(x, y, sim);
 }
 
@@ -146,6 +138,29 @@ const MIX_CHANCE = 0.25;
 // already alight — which is what mixing aluminum into red-hot iron oxide ought
 // to do.
 const MIX_MAX_TEMP = 150;
+
+// Per-tick, per-contact chance a grain touching Acid dissolves into a hydrogen
+// bubble. Set well above acid's own corrosion rate (0.03) so the reaction
+// usually beats the plain "vanish with no product" path they compete for, and
+// low enough that a pile in a puddle fizzes for a beat rather than flashing.
+const ACID_REACT_CHANCE = 0.12;
+// Heat carried into the fresh bubble. Kept under Hydrogen's 200° autoignition
+// point (starting from a room-temperature puddle) so the gas gets to rise and
+// collect somewhere instead of lighting itself at birth.
+const ACID_REACT_HEAT = 25;
+// …and the same for steam meeting a *burning* grain. Faster, because that
+// reaction is a runaway rather than a fizz.
+const STEAM_REACT_CHANCE = 0.25;
+// Heat carried into the hydrogen this one makes — and unlike the acid rule's,
+// this number is deliberately *large*, because the whole point of the rule is
+// that the gas lights. Steam already arrives hot (110° from the kettle, more
+// beside a 1700° grain), but that is an assumption about the neighbourhood
+// rather than a guarantee; +200 puts the fresh bubble past Hydrogen's own 200°
+// autoignition point (hydrogen.ts) from any steam temperature at all, so
+// "물을 끼얹으면 오히려 커진다" is enforced by the rule instead of merely being
+// likely. The exotherm is honest too: this reaction is what blew the roofs off
+// at Fukushima.
+const STEAM_REACT_HEAT = 200;
 
 export const ALUMINUM_POWDER = register({
   // 127 is deliberately skipped — it's claimed by a material being added on a
@@ -227,6 +242,68 @@ export const ALUMINUM_POWDER = register({
       otherBecomes: FLASH_POWDER.id,
       probability: MIX_CHANCE,
       tempMax: MIX_MAX_TEMP,
+    },
+    // …and the third, on the same gates again: **+ Ammonium Nitrate → Ammonal**
+    // (ammonal.ts), the metal-fuelled bulk charge. It completes the sentence the
+    // other two started — 이 가루를 무엇과 갈아 섞느냐가 전부다: 산화철이면
+    // 절단(Thermite), 산화제 염이면 섬광(Flash Powder), 질산암모늄이면
+    // 광산 폭약(Ammonal). Seen from the prill's side it is the dry counterpart
+    // to ANFO: pour fuel oil on ammonium nitrate and you get ANFO, grind metal
+    // dust into it and you get something stronger still.
+    {
+      with: AMMONIUM_NITRATE.id,
+      produce: AMMONAL.id,
+      otherBecomes: AMMONAL.id,
+      probability: MIX_CHANCE,
+      tempMax: MIX_MAX_TEMP,
+    },
+    // **Acid → Hydrogen.** Until now pouring acid on aluminum did the least
+    // interesting thing in the game: acid.ts's `isCorrodible` looks at nothing
+    // but the phase, so the grains simply blinked out with no product at all.
+    // Real aluminum in hydrochloric acid is one of the most violent fizzes in a
+    // school lab, and Hydrogen was already in the palette — so the acid cell
+    // *becomes* the bubble.
+    //
+    // `otherBecomes` rather than `byproduct` for the same reason as the
+    // activated dust (activatedaluminum.ts): a byproduct vents into an adjacent
+    // *empty* cell, and a heap sitting at the bottom of an acid puddle — which
+    // is where every player will put it — has no empty neighbour, so the
+    // signature product would be invisible exactly when it matters. Turning the
+    // acid cell into gas puts the bubble where the reaction happened and lets it
+    // rise through the pool.
+    //
+    // Both sides are consumed 1:1, which also keeps it honest: the acid really
+    // is used up, so a puddle dissolves a bounded amount of metal instead of
+    // acting as a free hydrogen catalyst. Acid's own corrosion pass still races
+    // this one for the same grains and either outcome reads correctly (it is
+    // eaten, or it is eaten and gives off gas) — the rate here is set well above
+    // acid's own 0.03 so the interesting answer usually wins.
+    {
+      with: ACID.id,
+      produce: EMPTY,
+      otherBecomes: HYDROGEN.id,
+      probability: ACID_REACT_CHANCE,
+      heat: ACID_REACT_HEAT,
+    },
+    // **Burning aluminum + Steam → Hydrogen.** The one that inverts a piece of
+    // common sense: throwing water at a metal fire makes it *worse*. Hot
+    // aluminum (and zirconium — this is the reaction behind the hydrogen
+    // explosions at Fukushima) tears the oxygen out of steam and hands back
+    // hydrogen, which then finds the very flame that made it.
+    //
+    // The `tempMin` gate is what keeps it a metal-fire rule rather than a
+    // kettle rule, and 1000° is not an arbitrary number: it is this powder's own
+    // autoignition point, so in practice the only cells that ever qualify are
+    // the ones actually on fire (a burning grain pins at 1700°). A grain merely
+    // heated toward it melts at 660° long before it arrives — the melt/burn
+    // split doing the gating for us.
+    {
+      with: STEAM.id,
+      produce: EMPTY,
+      otherBecomes: HYDROGEN.id,
+      probability: STEAM_REACT_CHANCE,
+      heat: STEAM_REACT_HEAT,
+      tempMin: SPEC.autoIgniteTemp,
     },
   ],
   update: updateAluminumPowder,
