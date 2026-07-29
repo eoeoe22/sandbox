@@ -33,8 +33,11 @@ function isLiving(id: number): boolean {
     id === SEED.id ||
     id === SLIME.id ||
     id === TERMITE.id ||
-    // Living coral polyps go the same way; the bleached skeleton they leave is
-    // dead rock and stays put (see coral.ts / bleachedcoral.ts).
+    // Living coral polyps wither away to nothing like everything else here —
+    // gassing a reef erases it rather than bleaching it. Bleached Coral is
+    // already-dead rock, not a living thing, so it is deliberately NOT on this
+    // list and a gassed reef leaves bare seabed (see coral.ts/bleachedcoral.ts:
+    // 백화 is the heat/brine death, and it's the only one that leaves a skeleton).
     id === CORAL.id
   );
 }

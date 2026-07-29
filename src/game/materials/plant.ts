@@ -69,18 +69,28 @@ const BURN_SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 400 };
 
 // --- aux layout (16 bits, see Grid.aux) -------------------------------------
 //   bits 0-6   moisture 0..127
-//   bit  7     initialised (this cell has been given a structural role)
-//   bit  8     tip (only a tip grows)
-//   bits 9-10  heading: 0 = up-left, 1 = up, 2 = up-right
-//   bits 11-13 segment cells left before this shoot forks
-//   bits 14-15 generations of vigour left (forks remaining)
+//   bit  7     tip (only a tip grows)
+//   bits 8-9   heading: 0 = up-left, 1 = up, 2 = up-right
+//   bits 10-12 segment cells left before this shoot forks
+//   bits 13-14 generations of vigour left (forks remaining)
+//   bit  15    initialised (this cell has been given a structural role)
+//
+// The "initialised" flag lives in the TOP bit on purpose, and that's a
+// save-compatibility rule, not a stylistic one: a Plant cell saved before this
+// rework stored a bare 0..250 moisture value in `aux` (and `aux` is persisted —
+// see Grid.aux / SNAPSHOTS.md), so any bit from 8 up is guaranteed clear in old
+// data. Reading such a cell therefore finds the flag *unset* and re-initialises
+// it into a proper sprout on its first tick. Had the flag sat in the low byte,
+// every old plant that happened to be saved above half moisture would have
+// decoded as an already-initialised, vigour-0, non-tip cell — permanently unable
+// to grow again, with nothing on screen to say why.
 const MOIST_MASK = 0x7f;
 const MAX_MOISTURE = 127;
-const INIT_BIT = 1 << 7;
-const TIP_BIT = 1 << 8;
-const DIR_SHIFT = 9;
-const SEG_SHIFT = 11;
-const GEN_SHIFT = 14;
+const TIP_BIT = 1 << 7;
+const DIR_SHIFT = 8;
+const SEG_SHIFT = 10;
+const GEN_SHIFT = 13;
+const INIT_BIT = 1 << 15;
 const MAX_GEN = 3; // fork depth — up to 2^3 tips per plant before it buds
 
 /** Moisture a fresh sprout (a germinated Seed) starts with, so it can climb out

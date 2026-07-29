@@ -246,6 +246,26 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
   );
 }
 
+// 5b. A world saved before the growth rework stored a bare 0..250 moisture value
+//     in a plant cell's aux. Such a cell has to read as "no structure yet" and be
+//     re-initialised, not decode as an already-spent stem that can never grow.
+{
+  reseed();
+  const { grid, sim } = makeWorld(40, 60);
+  bed(grid);
+  for (const [i, legacy] of [40, 120, 200, 250].entries()) {
+    const x = 8 + i * 8;
+    put(grid, x, 50, PLANT);
+    grid.aux[grid.idx(x, 50)] = legacy; // an old save's moisture byte, verbatim
+  }
+  for (let t = 0; t < 2000; t++) sim.step();
+  check(
+    'plants loaded from a pre-rework save still grow',
+    count(grid, PLANT) > 4,
+    `${count(grid, PLANT)} cells from 4 legacy sprouts`,
+  );
+}
+
 // --- Seed -------------------------------------------------------------------
 
 /** Drop one seed on a bed of `soil` with `wet` alongside it and run. */
@@ -292,18 +312,22 @@ for (const [name, soil] of [
   check('a seed in brine does not germinate', !sprouted);
 }
 {
-  // Progress is visible (it is the aux the palette draws) and it only ever
-  // pauses: dry the bed out mid-germination and the count holds where it was.
+  // Progress is visible: it *is* the aux the palette ramp draws, so a planted
+  // seed greens as it matures. Read wherever the grain ends up, since a seed
+  // dropped in water settles before it takes root.
+  reseed();
   const { grid, sim } = makeWorld(40, 40);
-  fill(grid, 0, 32, 39, 39, DIRT);
-  fill(grid, 0, 30, 39, 31, WATER);
-  put(grid, 20, 31, SEED);
-  let progressed = false;
-  for (let t = 0; t < 40; t++) {
+  fill(grid, 0, 34, 39, 39, STONE);
+  fill(grid, 0, 30, 39, 33, DIRT);
+  fill(grid, 0, 28, 39, 29, WATER);
+  put(grid, 20, 29, SEED);
+  let best = 0;
+  for (let t = 0; t < 200; t++) {
     sim.step();
-    if (grid.cells[grid.idx(20, 31)] === SEED && grid.aux[grid.idx(20, 31)] > 0) progressed = true;
+    for (let i = 0; i < grid.cells.length; i++)
+      if (grid.cells[i] === SEED && grid.aux[i] > best) best = grid.aux[i];
   }
-  check('germination progress is visible in aux', progressed);
+  check('germination progress is visible in aux', best > 0, `reached step ${best}/15`);
 }
 {
   // Progress only ever pauses: a half-germinated seed moved onto bone-dry ground
