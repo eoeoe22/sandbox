@@ -492,10 +492,21 @@ export class SimContext {
    *  coordinates and `reach` how far its pull extends. Re-stamped every powered
    *  tick (the list is cleared at each step's start — see Grid.magnetFields), so
    *  unlike the Woofer's one-shot shockwave the rings persist exactly as long as
-   *  the field does. Purely cosmetic: the pull itself rides pullField's sweep
-   *  (materials/electromagnet.ts); the CA and object layers never read this. */
+   *  the field does. The CA never reads it — matter is pulled by pullField's own
+   *  sweep (materials/electromagnet.ts) — but the OBJECT layer does: a body has no
+   *  grid cell for that sweep to reach, so it reads this published field instead
+   *  and pulls itself in (see objects.ts applyMagnetPull), the same way the
+   *  Woofer's body shove rides its own event queue. */
   emitMagnetField(bx: number[], by: number[], reach: number): void {
     this.grid.magnetFields.push({ bx, by, reach });
+  }
+
+  /** The Electromagnet fields live *this* tick (see emitMagnetField): the object
+   *  layer's read side, consumed by stepObjects after the CA scan has re-stamped
+   *  them. Empty in a world with no powered magnet, so a magnet-free sandbox pays
+   *  nothing for the pull. */
+  get liveMagnetFields(): readonly { bx: number[]; by: number[]; reach: number }[] {
+    return this.grid.magnetFields;
   }
 
   /** The 겹침 (overlap) fluid sharing this cell with its primary occupant, or

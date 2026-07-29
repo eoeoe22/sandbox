@@ -17,6 +17,7 @@ import { FIRE } from '../materials/fire';
 import { SMOKE } from '../materials/smoke';
 import { SAWDUST } from '../materials/sawdust';
 import { VOID } from '../materials/void';
+import { ELECTROMAGNET } from '../materials/electromagnet';
 import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
 
 /**
@@ -2084,6 +2085,21 @@ const WIND_KNOCK_RADIUS = 2;
 const WIND_PUSH_SPEED = 3.75;
 /** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along. */
 const WIND_KNOCK_SPIN = 0.04;
+/** Speed (cells/tick) a live Electromagnet field drags a ferrous body toward
+ *  itself at. Applied as a *floor* on the body's speed along the pull direction
+ *  — the same shape as the Fan's wind push, not an accumulating force — which is
+ *  also what makes the magnet HOLD rather than juggle: the floor is re-imposed
+ *  every tick, so gravity's OBJECT_GRAVITY (0.25/tick) never gets to build up and
+ *  a drum stays stuck to the magnet's underside instead of sagging off it.
+ *
+ *  Deliberately kept under CAPSULE_REST_EPS divided by the capsule restitutions
+ *  (1.3 × 0.26 = 0.34 < 0.35): a body arriving at this speed rebounds below the
+ *  grid collision's rest epsilon, so it's treated as an inelastic contact and
+ *  clings quietly instead of chattering against the magnet face — the object
+ *  layer's counterpart of the cell field's `holdMagnetically` (see
+ *  materials/electromagnet.ts). Raise it and clinging drums start to buzz. */
+const MAGNET_PULL_SPEED = 1.3;
+
 /** Unit blow vector per Wind aux direction code (0 up / 1 down / 2 left / 3 right —
  *  see materials/fan.ts). */
 const WIND_DIRV: ReadonlyArray<readonly [number, number]> = [
@@ -2340,6 +2356,126 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
   if (o.kind !== 'ball') o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
 }
 
+// ── Electromagnet attraction (자력) on the object layer ───────────────────────
+//
+// The magnet's selectivity is its whole toy (see materials/electromagnet.ts): the
+// field only takes ferromagnetic matter. On the grid that's `Material.magnetic`;
+// up here it's the body's *kind*, because a body is a thing, not a substance —
+// and the object layer already keys every material judgement off `kind` this way
+// (a drum melts to Molten Metal, a crate burns, a ball scorches).
+//
+// A body has no grid cell, so the magnet's own sweep (`pullField`) can never see
+// one — it walks cells. The object layer therefore reads the field the magnet
+// *publishes* each powered tick (Grid.magnetFields, the same list the renderer's
+// 자기력선 rings are drawn from) and pulls itself in, exactly as the Woofer's body
+// shove rides its own event queue rather than the shockwave's cell sweep.
+
+/** True if the Electromagnet's field can grab this body. Steel bodies only: the
+ *  드럼통 (every fill — an empty, an oil and an acid drum are one steel shell, so
+ *  they behave identically here as they do everywhere else) and the 연막탄's steel
+ *  canister. A rubber ball, a wooden crate and a wax-and-paper stick of dynamite
+ *  are not ferrous and sail right past a live magnet — which is the point: the
+ *  magnet must stay a 자력 선별기 you can sort a pile with, not a vacuum. */
+function isMagneticBody(o: SimBody): boolean {
+  return o.kind === 'drum' || o.kind === 'smokebomb';
+}
+
+/** True if the magnet's pull can travel *through* this cell — the object layer's
+ *  copy of electromagnet.ts's `isFieldPassable`, plus the magnet material itself
+ *  (a ray ending on a magnet cell crosses its own body first when the body is
+ *  more than one cell thick). Structural solids stop it, so a magnet boxed in
+ *  behind a plate has no grip on a drum on the far side, matching the shadow the
+ *  cell field casts and the rings the renderer draws. */
+function magnetRayPassable(ctx: SimContext, x: number, y: number): boolean {
+  const id = ctx.get(x, y);
+  if (id === EMPTY || id === ELECTROMAGNET.id) return true;
+  const m = getMaterial(id);
+  if (m.shockLoose) return true;
+  const p = m.phase;
+  if (p !== Phase.Powder && p !== Phase.Liquid && p !== Phase.Gas) return false;
+  return !ctx.isFrozen(x, y);
+}
+
+/** Is the straight line from a body's centre to the magnet cell (cx,cy) clear of
+ *  structure? A straight ray rather than the cell field's geodesic sweep: a body
+ *  is a rigid lump metres across that can't thread its way around a corner the
+ *  way a single grain of iron filing does, so "can I see it" is both the cheaper
+ *  test and the more honest one. */
+function magnetRayClear(ctx: SimContext, ox: number, oy: number, cx: number, cy: number): boolean {
+  const dx = cx + 0.5 - ox;
+  const dy = cy + 0.5 - oy;
+  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const sx = Math.floor(ox + dx * t);
+    const sy = Math.floor(oy + dy * t);
+    if (sx === cx && sy === cy) continue; // arrived — the magnet isn't its own shield
+    if (!ctx.inBounds(sx, sy)) return false;
+    if (!magnetRayPassable(ctx, sx, sy)) return false;
+  }
+  return true;
+}
+
+/**
+ * Drag a ferrous body toward every live Electromagnet field it sits in (see
+ * `SimContext.liveMagnetFields`, published by materials/electromagnet.ts each
+ * powered tick). Same inverse-square-weighted-direction + speed-floor shape as
+ * the blast/Woofer knockback, with the sign flipped — this is the one force in
+ * the sandbox that GATHERS — and with the reach the field itself published rather
+ * than a constant of its own, so re-tuning the magnet moves both layers together.
+ *
+ * Weighting every in-range body cell by 1/d² (rather than aiming at the nearest
+ * one) is what makes a long magnet bar pull along its whole length instead of
+ * yanking everything at one end of it, matching what the cell sweep does for
+ * powders. The range is measured from the body's centre against `bodyReach`, the
+ * same crude-but-consistent footprint the wind and blast knockbacks use, so a
+ * wide drum enters the field when its *shell* does rather than when its centre
+ * finally arrives.
+ *
+ * Never destroys or heats anything: a magnet only ever moves a body.
+ */
+function applyMagnetPull(o: SimBody, ctx: SimContext): void {
+  const fields = ctx.liveMagnetFields;
+  if (fields.length === 0) return;
+  const span = bodyReach(o);
+  let px = 0;
+  let py = 0;
+  let found = false;
+  for (let f = 0; f < fields.length; f++) {
+    const field = fields[f];
+    const bx = field.bx;
+    const by = field.by;
+    const range = field.reach + span;
+    const range2 = range * range;
+    for (let i = 0; i < bx.length; i++) {
+      const dx = bx[i] + 0.5 - o.x;
+      const dy = by[i] + 0.5 - o.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > range2 || d2 < 1e-6) continue;
+      if (!magnetRayClear(ctx, o.x, o.y, bx[i], by[i])) continue;
+      // 1/d² so the nearest stretch of the magnet dominates the direction.
+      const inv2 = 1 / d2;
+      px += dx * inv2;
+      py += dy * inv2;
+      found = true;
+    }
+  }
+  if (!found) return;
+  const plen = Math.hypot(px, py);
+  if (plen < 1e-6) return;
+  const nx = px / plen;
+  const ny = py / plen;
+  const toward = o.vx * nx + o.vy * ny;
+  if (toward < MAGNET_PULL_SPEED) {
+    const add = MAGNET_PULL_SPEED - toward;
+    o.vx += nx * add;
+    o.vy += ny * add;
+  }
+  // No spin kick here, unlike the wind/blast shoves: those fling a body away and
+  // are gone, while the magnet keeps gripping — a per-tick torque would spin a
+  // clinging drum up forever against a face it can't roll along.
+}
+
 /**
  * Resolve one overlapping pair with a 2D impulse. Both bodies are stadiums
  * (segment + cap radius), so the contact is the closest points between their
@@ -2588,10 +2724,82 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
  *  the canister's whole job is seeding cells and letting the grid take it from
  *  there. spawn() marks the cell moved, so a fresh puff isn't re-processed the
  *  same tick. Silently skipped on an occupied cell — a bomb buried in sand vents
- *  through whatever gaps it has rather than carving them. */
+ *  through whatever gaps it has rather than carving them — with ONE exception:
+ *  liquid, which the charge shoves aside instead of being stopped by (see below). */
 function puffSmoke(ctx: SimContext, cx: number, cy: number): void {
-  if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) return;
+  if (!ctx.inBounds(cx, cy)) return;
+  const id = ctx.get(cx, cy);
+  if (id === EMPTY) {
+    ctx.spawn(cx, cy, SMOKE.id);
+    return;
+  }
+  // 액체 속에서도 연기 발생. A smoke composition doesn't need air — it makes its own
+  // gas — so water is not a lid on it, only something in the way. The plume used
+  // to travel *through* a pond (smokePassable) and yet only ever surface above it,
+  // which read as a canister that goes quiet the moment it sinks. Now the gas
+  // forms down there too: it takes the liquid's cell and the liquid it evicted
+  // goes up the column (displaceLiquidUp — the level rises to make room, nothing
+  // is destroyed), then bubbles up through the water on its own buoyancy like any
+  // other gas. A canister thrown in a pond now boils it and blooms at the surface.
+  const m = getMaterial(id);
+  if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) return; // ice is a wall, not a pond
+  if (!ctx.chance(SMOKE_SUBMERGED_CHANCE)) return;
+  if (!displaceLiquidUp(ctx, cx, cy)) return;
+  // If the sandbox's smoke level thins this puff away (SimContext.spawn), the cell
+  // is simply left empty and the water that moved up falls straight back into it —
+  // no smoke, nothing lost.
   ctx.spawn(cx, cy, SMOKE.id);
+}
+
+/** Per-cell chance a puff that lands on a LIQUID cell actually forms there, on
+ *  top of the stage's own density. Well under 1 on purpose: underwater smoke has
+ *  to shove real water out of the way to exist, and at full density a 2.5-second
+ *  discharge would heave an entire pond out of its basin in a couple of seconds.
+ *  At this rate a submerged canister reads as a rolling boil of bubbles that
+ *  blooms into a proper cloud once it reaches the surface — which is what a smoke
+ *  grenade dropped in water actually looks like. */
+const SMOKE_SUBMERGED_CHANCE = 0.35;
+
+/** How far up the column the evicted liquid may travel to find room, in cells.
+ *  Deep enough for any ordinary pond; a canister sealed in a brim-full tank with
+ *  nowhere for the water to go simply doesn't smoke inside it, which is the right
+ *  answer for an incompressible liquid. */
+const SMOKE_DISPLACE_REACH = 64;
+
+/**
+ * Make room for one cell of smoke inside a body of liquid by shoving that liquid
+ * *up* the column (against gravity, so a flipped or sideways sandbox works too)
+ * into the first open cell it finds. The water level rises to make room, which is
+ * both what really happens when a charge gasses off underwater and what keeps the
+ * pond conserved — no liquid is deleted anywhere in this path. Returns false, and
+ * changes nothing, when there is nowhere for it to go.
+ *
+ * The walk passes through liquid AND gas. Gas matters: within a tick or two the
+ * plume has laid its own Smoke over the pond, and stopping the search at it would
+ * shut the bubbling off just as it got going. A liquid parked above a gas cell
+ * falls straight back down through it under the ordinary density sort, so the only
+ * cost is a cell of water briefly riding high.
+ */
+function displaceLiquidUp(ctx: SimContext, x: number, y: number): boolean {
+  const ux = -ctx.gravityX;
+  const uy = -ctx.gravityY;
+  let cx = x;
+  let cy = y;
+  for (let i = 0; i < SMOKE_DISPLACE_REACH; i++) {
+    cx += ux;
+    cy += uy;
+    if (!ctx.inBounds(cx, cy)) return false; // out of the world — no room that way
+    const id = ctx.get(cx, cy);
+    if (id === EMPTY) {
+      ctx.swap(x, y, cx, cy); // the liquid (with its temp/aux/tint) rises; its cell frees up
+      return true;
+    }
+    const p = getMaterial(id).phase;
+    if (p === Phase.Gas) continue;
+    if (p === Phase.Liquid && !ctx.isFrozen(cx, cy)) continue;
+    return false; // solid, powder or ice caps the column
+  }
+  return false;
 }
 
 // Chamfer step costs for the smoke flood below, so the cloud grows as a round
@@ -2654,12 +2862,13 @@ function nextSmokeStamp(ctx: SimContext): Int32Array {
  *     through as if it weren't there — the engine's own overlap rule already says
  *     such a host admits a gas.
  *
- * Passing through is NOT the same as filling: `puffSmoke` still only ever writes
- * into an empty cell, so the front travels through water and sand but only leaves
- * smoke where smoke can actually be (액체·가루는 차단이 아니되 겹침 가능한 곳에만 생성).
- * A submerged canister's plume therefore surfaces and blooms in the air above,
- * and a buried one fills the pockets in the bed and the space over it, rather
- * than either of them being smothered outright.
+ * Passing through is NOT the same as filling: `puffSmoke` decides separately what
+ * a reached cell can actually take. Empty air always takes a puff; a LIQUID cell
+ * takes one at a reduced rate, by shoving its liquid up the column to make room
+ * (액체 속에서도 연기 발생 — see puffSmoke/displaceLiquidUp), so a submerged canister
+ * boils the pond it sits in as well as blooming at the surface; a powder bed only
+ * takes puffs in the pockets between its grains, so a buried canister fills the
+ * gaps it has and the space above rather than being smothered outright.
  *
  * Deliberately not written into the 겹침 (overlay) slot of a host that could take
  * it: SimContext's movement seam is the sole enforcer of the (host, overlay)
@@ -3167,7 +3376,8 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
 /**
  * Advance every free object one tick in three phases: (A) each body's own physics
  * — a near-miss blast (or a Woofer's shockwave — see applyWooferKnockback) shoves
- * it, then gravity/buoyancy/grid-collision integration, and a wooden box that met
+ * it, a Fan's gust carries it and a live Electromagnet drags it in if it's steel
+ * (see applyMagnetPull), then gravity/buoyancy/grid-collision integration, and a wooden box that met
  * the grid at smashing speed is marked doomed — skipped while the
  * pointer holds it; (B) resolve collisions *between* bodies so
  * the layer is fully interactive; (C) evaluate terminal triggers (blast/heat/
@@ -3212,6 +3422,9 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);
+    // The one force that gathers instead of shoving — and the only one that is
+    // selective about what it acts on (see isMagneticBody).
+    if (isMagneticBody(o)) applyMagnetPull(o, ctx);
     if (o.kind === 'ball') {
       stepBall(o, ctx, ax, ay, s);
       continue;
