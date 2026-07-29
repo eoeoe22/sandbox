@@ -24,13 +24,16 @@
  *      ever make, so resin can't autocatalyse a whole cloud with no catalyst in
  *      it. (It bounds chain DEPTH, not distance — resin is a powder and falls,
  *      carrying its remaining generations somewhere else.)
- *   8. Blast-debris aux clamp — a resin grain whose aux was overwritten by the
- *      Debris carrier (which stores a material id there) must not read back as
- *      a giant generation count. Verified to fail if the clamp is removed: the
- *      unclamped run converts all 800 cells of the test cloud.
+ *   8. Out-of-range aux clamp — a resin grain whose aux holds something that is
+ *      not a generation (a hand-edited save, a future system writing aux without
+ *      gating on the cell's id) must not read back as a giant generation count.
+ *      Verified to fail if the clamp is removed: the unclamped run converts all
+ *      800 cells of the test cloud.
  *   9. The recipe works — a vapour charge in an iron chamber at the documented
- *      furnace temperature actually reaches 850° (measured: ~42 ticks), rather
- *      than the recipe being technically true but unusably slow.
+ *      furnace temperature actually reaches 850° in tens of ticks, rather than
+ *      the recipe being technically true but unusably slow. The sim is unseeded,
+ *      so the tick count varies run to run (~30-60 observed); the check is a
+ *      loose "minutes or never" guard, not a constant.
  *
  * Run: `node test/run-plastic.mjs`.
  */
@@ -316,14 +319,16 @@ function hottestEthylene(grid: Grid): number {
     `${honest} grains (bound ${bound}, cloud ${cloud})`,
   );
 
-  // Debris carries its origin material id in aux (see blast.ts), so a grain that
-  // has been flung by a blast and landed comes back with aux = POLYETHYLENE.id.
-  // Read unclamped that is a 140-generation chain — far deeper than the cloud is
-  // wide, i.e. the whole cloud. The clamp in ethylene.ts is what stops it, and
-  // this is the check that would catch its removal.
+  // Same bound must hold for an out-of-range aux. No live mechanic is known to
+  // write one (blast debris rides as a different id and lands via `spawn`, which
+  // zeroes aux) — this stands in for a hand-edited save or a future system that
+  // writes aux without gating on the cell's id. A material id in that slot reads
+  // unclamped as a 140-generation chain, far deeper than the cloud is wide, i.e.
+  // the whole cloud; the clamp in ethylene.ts is what stops it, and this is the
+  // check that would catch its removal.
   const mangled = strayGrain(POLYETHYLENE.id);
   check(
-    'a grain with a debris-mangled aux is clamped to the same bound',
+    'a grain with an out-of-range aux is clamped to the same bound',
     mangled <= bound,
     `${mangled} grains (bound ${bound}, cloud ${cloud})`,
   );

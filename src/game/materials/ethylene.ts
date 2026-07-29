@@ -79,8 +79,9 @@ const POLY_HEAT = 80;
 const POLY_HEAT_NEIGHBOR = 40;
 
 /** Spread the exotherm of one newly formed grain. Skips `packedTemp` materials
- *  (Ember, Blast, Spark, Nuclear/Heat Ray): their `temp` is packed flight
- *  bookkeeping, not a reading, so adding degrees to it would corrupt them. */
+ *  (Ember, Blast, Bomblet, Debris, Napalm Gel, Firework Star, Nuclear/Heat Ray):
+ *  their `temp` is packed flight bookkeeping, not a reading, so adding degrees
+ *  to it would corrupt them. */
 function releaseHeat(x: number, y: number, sim: SimContext): void {
   sim.setTemp(x, y, sim.getTemp(x, y) + POLY_HEAT);
   for (const [dx, dy] of DIR8) {
@@ -113,10 +114,13 @@ function tryPolymerize(x: number, y: number, sim: SimContext): boolean {
       break;
     }
     if (id === POLYETHYLENE.id) {
-      // Clamp what we read back: a resin grain that has been flung by a blast
-      // returns as Debris carrying its origin id in `aux` (see blast.ts), so a
-      // landed grain's aux can be an arbitrary material id rather than a
-      // generation. Unclamped that would seed a chain hundreds of cells long.
+      // Defensive clamp on the generation read. No live mechanic is known to
+      // produce an out-of-range aux here — a grain flung by a blast rides as
+      // Debris (a different id, so this branch never sees it) and lands via
+      // `sim.spawn`, which zeroes aux — but a hand-edited save, or any future
+      // system that writes aux without gating on the cell's id, would hand us
+      // an arbitrary number, and an unclamped generation count seeds a chain
+      // deep enough to convert a whole cloud. One `min` buys that off.
       const g = Math.min(sim.getAux(nx, ny), CHAIN_GENERATIONS);
       if (g >= 1 && g - 1 > chainGen) chainGen = g - 1;
     }

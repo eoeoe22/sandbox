@@ -13,7 +13,7 @@ import { rgb } from '../render/color';
 // but a bed that had to be re-laid would turn "run a plastics plant" into
 // re-painting the same cells forever; leaving it permanent is what lets a
 // player build a reactor once and then work on the interesting problem, which
-// is keeping it in its temperature window (60~200°) while a 850° cracker runs
+// is keeping it in its temperature window (40~200°) while a 850° cracker runs
 // next door.
 //
 // It conducts heat moderately well (0.5, between Stone and Iron) on purpose:
