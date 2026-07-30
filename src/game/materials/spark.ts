@@ -187,13 +187,13 @@ if (CONDUCTOR_LOSS.length !== CONDUCTOR_IDS.length) {
 // without anyone noticing that a generator feeds it. The converse is NOT asserted:
 // a zero-loss conductor that isn't wiring is exactly the Acid Slime case, and the
 // whole point of the tag is to be able to say that.
-for (const id of CONDUCTOR_IDS) {
-  if (getMaterial(id).wiring === true && CONDUCTOR_LOSS[CONDUCTOR_IDS.indexOf(id)] !== 0) {
+CONDUCTOR_IDS.forEach((id, i) => {
+  if (getMaterial(id).wiring === true && CONDUCTOR_LOSS[i] !== 0) {
     throw new Error(
       `${getMaterial(id).name} is tagged Material.wiring but loses strength per cell — wiring is zero-loss by definition.`,
     );
   }
-}
+});
 
 // Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
 // it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
