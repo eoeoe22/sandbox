@@ -46,7 +46,19 @@ function getSaltWaterDepth(x: number, y: number, sim: SimContext): number {
 //    down a wire instead of sloshing back and forth (see spark.ts's comment).
 //
 // Acid dissolves Iron outright via Acid's own corrosion pass (Iron isn't tagged
-// acidResistant), so a wet-but-safe metal is still vulnerable to acid.
+// acidResistant), so a wet-but-safe metal is still vulnerable to acid — and it
+// dissolves *fizzing*, see ACID_HYDROGEN_CHANCE below.
+
+// Per-tick, per-acid-contact chance a face of the bar dissolves into a hydrogen
+// bubble (`Material.acidHydrogen` — the reactivity-series tag; see acid.ts).
+// Fe + 2HCl → FeCl₂ + H₂ is the fizz every school lab does with an iron nail,
+// and iron sits below aluminum in the series, so this is deliberately under cast
+// Aluminum's 0.04: pour acid on both and the aluminum bubbles harder. Its own
+// filings go three times faster (metalpowder.ts, 0.09) for the surface-area
+// reason the aluminum pair already encodes — dust presents all of itself where a
+// bar presents one face.
+const ACID_HYDROGEN_CHANCE = 0.03;
+
 function updateIron(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again.
   const refractory = sim.getAux(x, y);
@@ -92,6 +104,9 @@ export const IRON = register({
   // The best heat conductor in the game: an Iron bar shuttles heat end-to-end,
   // so it both melts readily against a hot source and makes a fine cold bridge.
   thermal: { conductivity: 0.85 },
+  // 이온화 경향이 수소보다 크다 — acid doesn't just erase an iron bar, it fizzes
+  // hydrogen off the wetted face (see the constant above and acid.ts).
+  acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateIron,
 });
 

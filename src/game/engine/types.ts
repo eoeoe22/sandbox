@@ -147,6 +147,28 @@ export interface Material {
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
   /**
+   * 산에 녹으면서 수소를 내놓는 금속 — a metal *above hydrogen in the reactivity
+   * series* (이온화 경향이 수소보다 큰 금속: Al·U·Fe·Ga…). Acid's corrosion pass
+   * (acid.ts) reads this: instead of blinking the cell out silently, the acid cell
+   * doing the eating *becomes* a hydrogen bubble, so the fizz is visible and the
+   * two are consumed 1:1. Omit for anything that dissolves without giving off
+   * hydrogen — the metals *below* hydrogen (Copper/Wire, Mercury), oxides and
+   * carbonates (Rust, Iron Ore, Limestone), and every non-metal.
+   *
+   * Sodium is the one deliberate omission at the *top* of the series rather than
+   * the bottom: it is violent enough in plain water that a polite stream of cool
+   * bubbles would be a downgrade, so it handles acid in its own update instead
+   * (flame + hot hydrogen, detonating when packed — see sodium.ts). Adding the
+   * tag to it would not be a fix.
+   *
+   * This is the generalization of what the aluminum line used to do with three
+   * copies of the same `reactions` row (see docs/MATERIAL-IDEAS.md's
+   * `Material.acidReaction` note): a tag rather than a rule row, so it can't
+   * lose the race against acid's own corrosion — the corrosion pass rolls this
+   * first, per contact, and only falls through to a silent bite when it misses.
+   */
+  acidHydrogen?: AcidHydrogen;
+  /**
    * A polished, highly-reflective surface that a Heat Ray beam bounces off with a
    * clean specular (정반사) reflection instead of being absorbed — Mercury and the
    * shiny metals (Iron, Heatpipe, Gallium, Liquid Gallium). The Heat Ray walk
@@ -797,6 +819,22 @@ export interface Material {
   reactions?: ReactionRule[];
   /** Per-cell update rule. Resolved by the registry from `phase` when omitted. */
   update?: (x: number, y: number, sim: SimContext) => void;
+}
+
+/**
+ * How briskly a metal fizzes hydrogen off in acid (see `Material.acidHydrogen`
+ * and acid.ts). One number per metal, and that number *is* the reactivity
+ * ordering as the player reads it: aluminum bubbles harder than iron because its
+ * chance is higher, and a loose powder harder than a cast bar because dust
+ * presents all of itself where bulk metal presents one face.
+ */
+export interface AcidHydrogen {
+  /** Per-tick, per-acid-contact chance the metal cell dissolves into a bubble. */
+  chance: number;
+  /** Heat of reaction dumped into the fresh Hydrogen. Omit for acid.ts's default,
+   *  which is picked to stay under Hydrogen's 200° autoignition so the gas gets to
+   *  rise and collect instead of lighting at birth. */
+  heat?: number;
 }
 
 /**

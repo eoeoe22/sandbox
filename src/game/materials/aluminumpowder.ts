@@ -11,7 +11,6 @@ import { SALTPETER } from './saltpeter';
 import { FLASH_POWDER } from './flashpowder';
 import { AMMONIUM_NITRATE } from './ammoniumnitrate';
 import { AMMONAL } from './ammonal';
-import { ACID } from './acid';
 import { STEAM } from './steam';
 import { HYDROGEN } from './hydrogen';
 
@@ -23,8 +22,8 @@ import { HYDROGEN } from './hydrogen';
 //   • **+ Saltpeter → Flash Powder** — the flash charge (same rules block).
 //   • **+ Ammonium Nitrate → Ammonal** — the metal-fuelled bulk charge, ANFO's
 //     stronger cousin (same rules block; see ammonal.ts).
-//   • **+ Acid → Hydrogen** — the cheapest gas generator in the game (same
-//     rules block).
+//   • **+ Acid → Hydrogen** — the cheapest gas generator in the game (the
+//     `acidHydrogen` tag below; acid's own corrosion pass drives it).
 //   • **+ Steam, while it is burning → Hydrogen** — 불타는 금속에 물을 끼얹으면
 //     오히려 더 커진다 (same rules block).
 //   • **+ Liquid Gallium → Activated Aluminum** — the oxide film comes off and
@@ -140,14 +139,12 @@ const MIX_CHANCE = 0.25;
 const MIX_MAX_TEMP = 150;
 
 // Per-tick, per-contact chance a grain touching Acid dissolves into a hydrogen
-// bubble. Set well above acid's own corrosion rate (0.03) so the reaction
-// usually beats the plain "vanish with no product" path they compete for, and
-// low enough that a pile in a puddle fizzes for a beat rather than flashing.
-const ACID_REACT_CHANCE = 0.12;
-// Heat carried into the fresh bubble. Kept under Hydrogen's 200° autoignition
-// point (starting from a room-temperature puddle) so the gas gets to rise and
-// collect somewhere instead of lighting itself at birth.
-const ACID_REACT_HEAT = 25;
+// bubble (see `Material.acidHydrogen`). Second only to the activated dust this
+// powder becomes (0.2, activatedaluminum.ts — it has no oxide film left to
+// strip): aluminum in hydrochloric acid is one of the most violent fizzes in a
+// school lab. Low enough, still, that a pile in a puddle fizzes for a beat
+// rather than flashing.
+const ACID_HYDROGEN_CHANCE = 0.12;
 // …and the same for steam meeting a *burning* grain. Faster, because that
 // reaction is a runaway rather than a fizz.
 const STEAM_REACT_CHANCE = 0.25;
@@ -204,6 +201,14 @@ export const ALUMINUM_POWDER = register({
   // worse than a solid bar, so this sits just above Metal Powder's 0.35 — hot
   // enough to carry a burn front through a pile without a flame between grains.
   thermal: { conductivity: 0.4 },
+  // **Acid → Hydrogen.** Pouring acid on aluminum used to do the least
+  // interesting thing in the game: acid.ts's `isCorrodible` looks at nothing but
+  // the phase, so the grains simply blinked out with no product at all. Now the
+  // acid cell that eats a grain *becomes* the bubble — 1:1, so the puddle is
+  // spent as it works and its size is the cap on how much gas you get (see
+  // acid.ts's tryEvolveHydrogen for why the bubble replaces the acid cell rather
+  // than venting into a free neighbour).
+  acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   // The thermite recipe. Unlike black powder's three-body mix — which needed a
   // shared helper module because the declarative table is structurally 2-body
   // (see gunpowdermix.ts) — this one *is* two-body, so it's exactly the one
@@ -257,34 +262,10 @@ export const ALUMINUM_POWDER = register({
       probability: MIX_CHANCE,
       tempMax: MIX_MAX_TEMP,
     },
-    // **Acid → Hydrogen.** Until now pouring acid on aluminum did the least
-    // interesting thing in the game: acid.ts's `isCorrodible` looks at nothing
-    // but the phase, so the grains simply blinked out with no product at all.
-    // Real aluminum in hydrochloric acid is one of the most violent fizzes in a
-    // school lab, and Hydrogen was already in the palette — so the acid cell
-    // *becomes* the bubble.
+    // (Acid → Hydrogen lives on the `acidHydrogen` tag below, not here: acid's
+    // own corrosion pass drives it so the fizz can't lose a race against the
+    // silent bite. It used to be a row right here — see types.ts.)
     //
-    // `otherBecomes` rather than `byproduct` for the same reason as the
-    // activated dust (activatedaluminum.ts): a byproduct vents into an adjacent
-    // *empty* cell, and a heap sitting at the bottom of an acid puddle — which
-    // is where every player will put it — has no empty neighbour, so the
-    // signature product would be invisible exactly when it matters. Turning the
-    // acid cell into gas puts the bubble where the reaction happened and lets it
-    // rise through the pool.
-    //
-    // Both sides are consumed 1:1, which also keeps it honest: the acid really
-    // is used up, so a puddle dissolves a bounded amount of metal instead of
-    // acting as a free hydrogen catalyst. Acid's own corrosion pass still races
-    // this one for the same grains and either outcome reads correctly (it is
-    // eaten, or it is eaten and gives off gas) — the rate here is set well above
-    // acid's own 0.03 so the interesting answer usually wins.
-    {
-      with: ACID.id,
-      produce: EMPTY,
-      otherBecomes: HYDROGEN.id,
-      probability: ACID_REACT_CHANCE,
-      heat: ACID_REACT_HEAT,
-    },
     // **Burning aluminum + Steam → Hydrogen.** The one that inverts a piece of
     // common sense: throwing water at a metal fire makes it *worse*. Hot
     // aluminum (and zirconium — this is the reaction behind the hydrogen

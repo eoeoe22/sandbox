@@ -7,7 +7,6 @@ import { tryBurn, type Combustible } from './combustion';
 import { tryMeltAluminumDust, tryDustExplosion } from './aluminumdust';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
-import { ACID } from './acid';
 import { HYDROGEN } from './hydrogen';
 
 // Activated Aluminum (활성 알루미늄) — aluminum dust with its oxide skin taken
@@ -66,10 +65,9 @@ const WATER_REACT_HEAT = 30;
 const FIZZ_HEAT_CHANCE = 0.1;
 const FIZZ_HEAT = 6;
 // Acid strips aluminum with or without the oxide film (see aluminumpowder.ts's
-// own acid row) — activated dust just gets there faster, having nothing left to
-// strip.
-const ACID_REACT_CHANCE = 0.2;
-const ACID_REACT_HEAT = 25;
+// own `acidHydrogen` tag) — activated dust just gets there faster, having
+// nothing left to strip. The fastest rate on the roster.
+const ACID_HYDROGEN_CHANCE = 0.2;
 
 // Burning. Same metal, same 1700° flame as Aluminum Powder, but it lights far
 // more readily — the oxide skin is precisely what made the plain powder the
@@ -153,15 +151,10 @@ export const ACTIVATED_ALUMINUM = register({
     },
     { with: WATER.id, probability: FIZZ_HEAT_CHANCE, heat: FIZZ_HEAT },
     { with: SALTWATER.id, probability: FIZZ_HEAT_CHANCE, heat: FIZZ_HEAT },
-    // Acid does the same thing faster, and the same way — see aluminumpowder.ts
-    // for why the acid cell becomes the bubble instead of venting one.
-    {
-      with: ACID.id,
-      produce: EMPTY,
-      otherBecomes: HYDROGEN.id,
-      probability: ACID_REACT_CHANCE,
-      heat: ACID_REACT_HEAT,
-    },
   ],
+  // Acid does the same thing faster, and the same way — it just isn't a rule row:
+  // acid's own corrosion pass drives every metal's fizz through this tag so the
+  // reaction can't lose a race against the silent bite (see acid.ts).
+  acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateActivatedAluminum,
 });
