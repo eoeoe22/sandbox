@@ -463,6 +463,21 @@ checkThrows('the withdrawn drawings stay withdrawn', () => {
   check('the withdrawn drawings stay withdrawn', back.length === 0, back.join(', '));
 });
 
+// `tintBlock` becomes the bit mask `~(b - 1)` on both sides, which is only a block
+// edge for a power of two: `~(3 - 1)` clears bit 1 and leaves bit 0, so a "3×3" flake
+// would render as a lattice instead. This lives here rather than as a throw in the
+// CanvasRenderer constructor for the same reason GAS_CLOUD's row width does — that
+// constructor runs from `startGame()` uncaught, so throwing would blank the sandbox
+// with no on-screen error over a mis-typed render hint. Nothing in the repo constructs
+// a renderer, so this is the only place the invariant is actually checked.
+checkThrows('every tintBlock is a power of two', () => {
+  const bad = all
+    .filter((m) => m.tintBlock !== undefined)
+    .filter((m) => !(Number.isInteger(m.tintBlock) && m.tintBlock! >= 1 && (m.tintBlock! & (m.tintBlock! - 1)) === 0));
+  check('every tintBlock is a power of two', bad.length === 0,
+    bad.map((m) => `${m.name} ${m.tintBlock}`).join(', '));
+});
+
 // The 2×2 tint block, as a measurable property rather than as a picture: Obsidian's
 // grain is blocked, so cell (0,0) and cell (1,1) of its tile must be the same shade
 // while a per-cell grain of the same amplitude (Sand's) differs somewhere in that

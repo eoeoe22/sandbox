@@ -630,14 +630,18 @@ export class CanvasRenderer implements Renderer {
           this.tntPattern[i] = 1;
           this.tntLit[i] = tinted(m.color, TNT_LIT);
         }
-        // A block edge of B means the low log2(B) bits of x and y are cleared, which
-        // is only a mask for a power of two. Anything else would silently round to
-        // one, so it is rejected here rather than drawn wrong.
-        if (m.tintBlock !== undefined && m.tintBlock > 1) {
-          if ((m.tintBlock & (m.tintBlock - 1)) !== 0)
-            throw new Error(`${m.name}: tintBlock ${m.tintBlock} is not a power of two`);
-          this.tintBlockMask[i] = ~(m.tintBlock - 1);
-        }
+        // A block edge of B clears the low log2(B) bits of x and y, which is only a
+        // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
+        // a lattice nobody asked for rather than a 3×3 flake.
+        //
+        // That invariant is pinned in `test/materialicons.ts`, NOT thrown on here. This
+        // constructor runs from `startGame()` with nothing catching it, so a throw would
+        // leave the page loaded and the sandbox dead — no game loop, no painter, no
+        // on-screen error — over a mis-typed render hint. Same trade as GAS_CLOUD's row
+        // width (see materialSvg.ts): the blast radius of the guard is far worse than
+        // the wrong-looking grain it guards against, and the registry is a static fact a
+        // test can check without ever building a renderer.
+        if (m.tintBlock !== undefined && m.tintBlock > 1) this.tintBlockMask[i] = ~(m.tintBlock - 1);
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
