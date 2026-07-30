@@ -102,6 +102,31 @@ const TRI_STEP = 5; // cells along the axis per triangle (3 drawn + 2 front gutt
 const SOLAR_CELL_W = 4; // columns per panel cell (3 drawn + 1 seam)
 const SOLAR_CELL_H = 6; // rows per panel cell (5 drawn + 1 seam)
 
+// Tiling of the `brickPattern` running-bond masonry (Wall — see the render loop).
+// One period is a brick plus the mortar on its right and bottom edges, so a brick
+// reads 5 wide × 3 tall with a 1-cell joint on two of its sides.
+//
+// This is the hand-drawn Wall icon's pattern brought down to world scale — the three
+// structural features (running bond, mortar joints, a lit top edge) rather than its
+// measurements. The icon's own bricks are near-square (11 × 11 with a 2-cell joint)
+// only because two 2:1 bricks will not fit side by side across a 24-cell tile; the
+// world grid has no such limit, so the period is free to be brick-shaped, and 5 × 3
+// reads as masonry where 4 × 4 would read as tile.
+//
+// Kept small for the same reason SOLAR_CELL_W stepped down from its reference art:
+// the pattern is drawn in *world* cells, not screen pixels, so a period that shows
+// its structure on a wall a handful of cells wide is worth more than a larger, more
+// faithful brick. At 6×4 a 12-cell wall already shows two bricks and the offset
+// course under them.
+const BRICK_W = 6; // columns per brick (5 drawn + 1 head joint)
+const BRICK_H = 4; // rows per brick (3 drawn + 1 mortar bed)
+// Half-brick offset applied to odd courses — what makes it masonry and not a grid.
+const BRICK_OFFSET = BRICK_W >> 1;
+// How far the top row of each brick is lifted above the base colour. 40 is the
+// exact step from Wall's own colour to the highlight in its icon (#787c82 →
+// #a0a4aa), so the canvas and the palette chip are lit the same way.
+const BRICK_LIT = 40;
+
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
   return v - Math.floor(v);
@@ -342,6 +367,12 @@ export class CanvasRenderer implements Renderer {
    *  separated by `lattice`-coloured seams (Solar Panel — see
    *  Material.solarPattern). */
   private solarPattern: Uint8Array;
+  /** id → 1 if the material draws running-bond masonry — `lattice`-coloured mortar
+   *  joints with the top row of each brick lit (Wall — see Material.brickPattern). */
+  private brickPattern: Uint8Array;
+  /** id → the lit colour of a `brickPattern` material's brick top, precomputed from
+   *  its base colour so the render loop never shades per pixel. */
+  private brickLit: Uint32Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -462,6 +493,8 @@ export class CanvasRenderer implements Renderer {
     this.coilPattern = new Uint8Array(256);
     this.stripePattern = new Uint8Array(256);
     this.solarPattern = new Uint8Array(256);
+    this.brickPattern = new Uint8Array(256);
+    this.brickLit = new Uint32Array(256);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -490,6 +523,10 @@ export class CanvasRenderer implements Renderer {
         if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.stripePattern) this.stripePattern[i] = 1;
         if (m.solarPattern) this.solarPattern[i] = 1;
+        if (m.brickPattern) {
+          this.brickPattern[i] = 1;
+          this.brickLit[i] = tinted(m.color, BRICK_LIT);
+        }
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
@@ -604,6 +641,8 @@ export class CanvasRenderer implements Renderer {
     const coilPattern = this.coilPattern;
     const stripePattern = this.stripePattern;
     const solarPattern = this.solarPattern;
+    const brickPattern = this.brickPattern;
+    const brickLit = this.brickLit;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -808,6 +847,26 @@ export class CanvasRenderer implements Renderer {
         c = x % SOLAR_CELL_W === SOLAR_CELL_W - 1 || y % SOLAR_CELL_H === SOLAR_CELL_H - 1
           ? latCol[id]
           : pal[id];
+      } else if (brickPattern[id]) {
+        // A Wall draws running-bond masonry: a `lattice`-coloured mortar bed on the
+        // last row of every course and a head joint on the last column of every
+        // brick, with alternate courses offset half a brick so the joints stagger.
+        // The top row of each brick is lit BRICK_LIT above the base, which is what
+        // turns a flat two-tone grid into blocks with light on their top edges — the
+        // same three tones, in the same places, as the hand-drawn Wall chip.
+        // Positional like the Mesh weave and the panel's seams, so dragging the
+        // brush extends one continuous wall instead of restarting the courses.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const row = y % BRICK_H;
+        const course = (y / BRICK_H) | 0;
+        // Odd courses shift the head joints half a brick to the right.
+        const col = (x + (course & 1 ? BRICK_OFFSET : 0)) % BRICK_W;
+        c = row === BRICK_H - 1 || col === BRICK_W - 1
+          ? latCol[id]
+          : row === 0
+            ? brickLit[id]
+            : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

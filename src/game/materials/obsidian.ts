@@ -51,7 +51,14 @@ export const OBSIDIAN = register({
   color: rgb(48, 36, 68),
   // A glassy, uneven fracture — a little per-particle variation keeps a big
   // slab from looking like one flat painted rectangle.
-  colorVary: 14,
+  //
+  // Deliberately *narrow* (below Concrete's 7, well below Diamond's 10): the base
+  // is near-black, so a channel sits around 36–68 and the ±spread reads as a much
+  // larger swing than the same number does on a mid-tone material — at the original
+  // 14 a slab (and its palette chip) came out as coarse noise rather than glass.
+  // The amplitude is shared by the canvas and the icon generator through
+  // `varyAmplitude`, so this one number narrows both.
+  colorVary: 6,
   density: 1000,
   explosionProof: true,
   category: 'solid',

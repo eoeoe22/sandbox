@@ -588,13 +588,26 @@ export interface Material {
   tintPalette?: readonly number[];
   /**
    * Draw a photovoltaic cell grid (Solar Panel): rectangular cells of the base
-   * `color` separated by thin `lattice`-coloured seams — a seam on every 5th
-   * column and every 8th row, so each cell reads 4 wide × 7 tall like the panel's
-   * reference art. Positional (tied to x/y, not to the particle) like the Mesh
-   * weave, so a painted array lines up into one continuous panel however it's
-   * drawn. Purely a rendering hint the simulation never reads.
+   * `color` separated by thin `lattice`-coloured seams — one seam column of every
+   * SOLAR_CELL_W and one seam row of every SOLAR_CELL_H, so each cell reads 3
+   * wide × 5 tall (the reference art's 4×7 proportions scaled down so a small
+   * panel still shows its structure — see CanvasRenderer's SOLAR_CELL_W).
+   * Positional (tied to x/y, not to the particle) like the Mesh weave, so a
+   * painted array lines up into one continuous panel however it's drawn. Purely a
+   * rendering hint the simulation never reads.
    */
   solarPattern?: boolean;
+  /**
+   * Draw running-bond masonry (Wall): a `lattice`-coloured mortar bed under every
+   * course and a mortar head joint between bricks, with the top row of each brick
+   * lit a step above the base `color` so a slab reads as stacked blocks with light
+   * falling on their top edges. Alternate courses are offset half a brick, which is
+   * what makes it masonry rather than a grid. Positional (tied to x/y, not to the
+   * particle) like the Mesh weave and the panel's seams, so however the brush is
+   * dragged the courses line up into one continuous wall instead of restarting per
+   * stroke. Purely a rendering hint the simulation never reads.
+   */
+  brickPattern?: boolean;
   /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound

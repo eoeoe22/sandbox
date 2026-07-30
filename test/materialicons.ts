@@ -122,10 +122,22 @@ function raster(svg: string): { grid: string[]; n: number } {
   return { grid, n };
 }
 
-/** A two-tone tile as ASCII: `.` = the tile's background rect — which for every
- *  pattern here is the material's own `color`, since the pattern is always the
- *  minority of cells — and `o` = the pattern colour. */
-function ascii(m: Material): string {
+/** A tile as ASCII: `.` = the tile's background rect, which for every pattern here
+ *  is the material's own `color` since the pattern is always the minority of cells.
+ *  The pattern's own tones take a glyph each, assigned by relative lightness — a
+ *  lone one is `o`, and where there are two the lighter is `i` and the darker `o`.
+ *  (Ranking among the pattern tones rather than against the base is what keeps a
+ *  two-tone golden reading `o` whether its pattern is lighter than the base, as the
+ *  panel's seams are, or darker, as the battery's staircase is.)
+ *
+ *  `want` is the number of distinct tones the whole tile must have. Almost every
+ *  pattern is two-tone (base + `lattice`); Wall's masonry also lights the top of
+ *  each brick, so it needs three. Asserting the count is part of the golden: a
+ *  branch that lost or gained a tone would otherwise still render as plausible
+ *  ASCII. */
+const PATTERN_GLYPHS = ['i', 'o', 'O'];
+
+function ascii(m: Material, want = 2): string {
   // Reads the generator directly. Solar Panel's chip is hand-drawn art now, but
   // its `solarPattern` branch is still live and still what this golden pins.
   const svg = generatedSvgFor(m);
@@ -133,11 +145,19 @@ function ascii(m: Material): string {
   const bg = new RegExp(`width="${n}" height="${n}" fill="(#[0-9a-f]{6})"`).exec(svg)![1];
   if (bg !== hex(m.color)) throw new Error(`${m.name}: pattern outweighs its base colour`);
   const tones = new Set(g);
-  if (tones.size !== 2) throw new Error(`${m.name} is not two-tone (${tones.size} colours)`);
+  if (tones.size !== want) throw new Error(`${m.name} has ${tones.size} tones, expected ${want}`);
+  const lum = (c: string) =>
+    parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11;
+  const ranked = [...tones].filter((c) => c !== bg).sort((a, b) => lum(b) - lum(a));
+  // One tone: `o`. Two: lighter `i`, darker `o` — so the glyph carries which is which.
+  const glyph = new Map(ranked.map((c, i) => [c, ranked.length === 1 ? 'o' : PATTERN_GLYPHS[i]]));
   const rows: string[] = [];
   for (let y = 0; y < n; y++) {
     let row = '';
-    for (let x = 0; x < n; x++) row += g[y * n + x] === bg ? '.' : 'o';
+    for (let x = 0; x < n; x++) {
+      const c = g[y * n + x];
+      row += c === bg ? '.' : (glyph.get(c) ?? '?');
+    }
     rows.push(row);
   }
   return rows.join('\n');
@@ -273,6 +293,21 @@ const GOLDEN: Record<string, string> = {
     '...o...o.',
     '...o...o.',
   ].join('\n'),
+  // Wall: running-bond masonry — a mortar bed row (`o`) under every course, head
+  // joints staggered half a brick between courses, and the top row of each brick lit
+  // (`i`). The stagger is the whole point: joints that lined up would be a grid, not
+  // a wall, so a golden that goes column-regular means BRICK_OFFSET was lost.
+  Wall: [
+    'iiiiioiii',
+    '.....o...',
+    '.....o...',
+    'ooooooooo',
+    'iioiiiiio',
+    '..o.....o',
+    '..o.....o',
+    'ooooooooo',
+    'iiiiioiii',
+  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -299,10 +334,13 @@ const GOLDEN: Record<string, string> = {
   ].join('\n'),
 };
 
+/** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
+const GOLDEN_TONES: Record<string, number> = { Wall: 3 };
+
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;
   checkThrows(label, () => {
-    const got = ascii(byName(name));
+    const got = ascii(byName(name), GOLDEN_TONES[name] ?? 2);
     check(label, got === want, got === want ? '' : '\n' + got);
   });
 }
@@ -321,7 +359,8 @@ checkThrows('battery staircase is flat black', () => {
 /** Distinct colours in a material's icon. */
 const tones = (m: Material): number => new Set(raster(generatedSvgFor(m)).grid).size;
 
-for (const name of ['Stone', 'Iron', 'Wall', 'Mercury', 'Liquid Gallium']) {
+// Wall used to be in this list; it draws masonry now and has its own golden above.
+for (const name of ['Stone', 'Iron', 'Mercury', 'Liquid Gallium']) {
   const label = `${name} is drawn flat`;
   checkThrows(label, () => {
     const t = tones(byName(name));
@@ -388,6 +427,22 @@ checkThrows('a liquid shimmers less than a powder', () => {
     `${varyAmplitude(byName('Water'))} vs ${varyAmplitude(byName('Sand'))}`);
   check('sand reads its own grain, water the background field',
     varyMode(byName('Sand')) === VARY_PARTICLE && varyMode(byName('Water')) !== VARY_PARTICLE);
+});
+
+// Obsidian is volcanic *glass*, and its base is near-black — a channel sits around
+// 36–68, so the same amplitude that reads as a subtle grain on a mid-tone material
+// reads there as coarse noise. It therefore carries the narrowest grain of any
+// tinted solid, below even Diamond's deliberately low range. One amplitude feeds
+// both the canvas and this icon (`varyAmplitude`), so the check covers both.
+checkThrows('Obsidian carries the narrowest grain of the tinted solids', () => {
+  const obs = byName('Obsidian');
+  const amp = varyAmplitude(obs);
+  check('Obsidian carries the narrowest grain of the tinted solids',
+    amp > 0 && amp < varyAmplitude(byName('Diamond')),
+    `${amp} vs Diamond ${varyAmplitude(byName('Diamond'))}`);
+  const cs = [...new Set(raster(generatedSvgFor(obs)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
+  const spread = Math.max(...cs) - Math.min(...cs);
+  check('…and its tile spans no more than a dozen brightness steps', spread <= 12, `${spread} steps`);
 });
 
 // ---------------------------------------------------------------------------

@@ -72,6 +72,10 @@ const TRI_SPAN = 8;
 const TRI_STEP = 5;
 const SOLAR_CELL_W = 4;
 const SOLAR_CELL_H = 6;
+const BRICK_W = 6;
+const BRICK_H = 4;
+const BRICK_OFFSET = BRICK_W >> 1;
+const BRICK_LIT = 40;
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -201,9 +205,10 @@ function grain(m: Material, c: number, x: number, y: number): number {
  * The `if`/`else if` order below is the renderer's order, not a rewrite of it:
  * several materials set more than one hint (a Fan is `lattice` *and*
  * `windArrow`, Diamond is `lattice` *and* `checker2x2`, Solar Panel is `lattice`
- * *and* `solarPattern`) and only the first matching branch draws. `Material.lattice`
- * on those is just supplying the second tone. Reordering these would quietly
- * change what half the electric category looks like.
+ * *and* `solarPattern`, Wall is `lattice` *and* `brickPattern`) and only the first
+ * matching branch draws. `Material.lattice` on those is just supplying the second
+ * tone. Reordering these would quietly change what half the electric category
+ * looks like.
  */
 function patchFor(m: Material): { buf: Uint32Array; n: number } {
   const base = m.color;
@@ -273,6 +278,17 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
       } else if (m.solarPattern) {
         // Solar Panel: photovoltaic cells separated by thin seams.
         c = x % SOLAR_CELL_W === SOLAR_CELL_W - 1 || y % SOLAR_CELL_H === SOLAR_CELL_H - 1 ? lat : base;
+      } else if (m.brickPattern) {
+        // Wall: running-bond masonry — mortar bed and staggered head joints in the
+        // `lattice` colour, the top row of each brick lit a step above the base.
+        const row = y % BRICK_H;
+        const course = (y / BRICK_H) | 0;
+        const col = (x + (course & 1 ? BRICK_OFFSET : 0)) % BRICK_W;
+        c = row === BRICK_H - 1 || col === BRICK_W - 1
+          ? lat
+          : row === 0
+            ? tinted(base, BRICK_LIT)
+            : base;
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);
