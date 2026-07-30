@@ -314,11 +314,16 @@ export const WOOFER = register({
   name: 'Woofer',
   phase: Phase.Solid,
   // A cabinet baffle with speaker drivers set into it (`wooferPattern`): one round
-  // driver per 8-cell tile, drawn as a rim, a cone in `lattice`, and a dark dust cap
+  // driver per 12-cell tile, drawn as a rim, a cone in `lattice`, and a dark dust cap
   // — the same four tones in the same radial order as the hand-drawn Woofer chip, so
   // the thing on the board and the thing in the palette are one picture. Replaces the
   // old copper `lattice` weave, which read as a grille laid over the cone rather than
   // as the driver itself.
+  //
+  // The tile is the chip halved, cell for cell: driver 8 across on 12 where the chip
+  // is 16 on 24, cone and cap at half the chip's radii. It used to be a 7-across
+  // driver on a 9-cell tile — the same idea sized by eye, which left the driver
+  // fatter than the drawing's and its cap and rim thinner.
   //
   // The base is the chip's own `#2a2a32` (was `#282a30`, two units off in red and
   // blue): the harness requires a hand icon to open on its material's registered

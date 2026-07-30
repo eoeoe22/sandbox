@@ -8,9 +8,10 @@
 //     throw, so any icon built with a random draw fails loudly instead of
 //     quietly making a material look different in its category flyout than in
 //     search results.
-//   • Branch order. Nine of the electric/exotic materials set more than one
-//     visual hint (a Fan is `lattice` AND `windArrow`; Diamond is `lattice` AND
-//     `checker2x2`; a Solar Panel is `lattice` AND `solarPattern`), and only the
+//   • Branch order. Most of the electric/exotic materials set more than one
+//     visual hint (a Laser is `lattice` AND `windArrow`; Diamond is `lattice` AND
+//     `checker2x2`; a Solar Panel is `lattice` AND `solarPattern`; a Fan and a
+//     Turbine are `lattice` AND `rotorPattern`), and only the
 //     first matching branch draws — `lattice` on those is just supplying the
 //     second tone. The golden tiles below are what catches someone reordering
 //     the chain and turning half the electric tab into checkerboards.
@@ -52,6 +53,8 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
+import { ROTOR_N, ROTOR_TILE_ROWS } from '../src/game/render/rotorTile';
+import { COAL_N, COAL_TILE_ROWS } from '../src/game/render/coalTile';
 import '../src/game/materials';
 
 let failures = 0;
@@ -265,19 +268,48 @@ const GOLDEN: Record<string, string> = {
     'o...o...o',
     'o...o...o',
   ].join('\n'),
-  // Fan: the same tent, folded over y for the horizontal blow FAN_RIGHT stamps.
-  // Identical picture to the Conveyor's by construction — that is the renderer's
-  // behaviour, not a copy-paste slip.
+  // Fan: a four-blade rotor on its own 12-cell tile (render/rotorTile.ts), one of the
+  // three bitmap patterns. `i` is a blade's lit leading edge (`lattice`), `o` its
+  // shaded trailing edge, `O` the hub.
+  //
+  // The Fan used to draw the Conveyor's chevron here, folded over y — same picture as
+  // the belt's by construction, because the renderer really did compute the same tent.
+  // What the golden holds now is the thing that replaced it: a wheel with FOUR blades,
+  // which is what tells a Fan from a Turbine on the board, and blades that are lit and
+  // shaded the same way round all the way round the hub, which is what makes a wheel
+  // read as turning rather than as a snowflake. A golden whose `i`/`o` pairs stop
+  // alternating consistently means the tile was transposed or mirrored.
   Fan: [
-    'o...o...o',
-    '.o...o...',
-    '.o...o...',
-    'o...o...o',
-    'o...o...o',
-    '.o...o...',
-    '.o...o...',
-    'o...o...o',
-    'o...o...o',
+    '............',
+    '.....ioo....',
+    '....iioo....',
+    '....iio.....',
+    '.oo..io.ii..',
+    '.ooooOOiiii.',
+    '.iiiiOOoooo.',
+    '..ii.oi..oo.',
+    '.....oii....',
+    '....ooii....',
+    '....ooi.....',
+    '............',
+  ].join('\n'),
+  // Turbine: the same tile at eight blades — four on the axes, four on the diagonals.
+  // A steam wheel is a dense disc of blades and a household fan is not, and that count
+  // is the entire visual difference between the two machines: a golden that comes back
+  // with the Fan's picture means both materials resolved to the same rotor.
+  Turbine: [
+    '............',
+    '..o..io.....',
+    '..io.io..io.',
+    '...ioio.io..',
+    '....iioio...',
+    '.ooooOOiiii.',
+    '.iiiiOOoooo.',
+    '...oioii....',
+    '..oi.oioi...',
+    '.oi..oi.oi..',
+    '.....oi..o..',
+    '............',
   ].join('\n'),
   // Shaped Charge: solid arrowheads pointing right, 1/2/3/3/2/1 across six lanes
   // with a gutter lane either side so neighbours never merge into a slab.
@@ -343,24 +375,58 @@ const GOLDEN: Record<string, string> = {
     'ooooooooo',
     'iiiiioiii',
   ].join('\n'),
-  // Woofer: one speaker driver per 9-cell tile — rim (`o`), cone (`i`), dust cap
+  // Woofer: one speaker driver per 12-cell tile — rim (`o`), cone (`i`), dust cap
   // (`O`) — on the baffle. The Woofer used to draw the plain lattice weave in a
   // copper tone, so this golden is also what catches it falling back there.
   //
-  // Widths 3/5/7/7/7/5/3 are the point of the tile, not incidental: the driver was
-  // 6 across on an 8-cell period, and an even diameter has no centre row, so it
-  // rasterized 4/6/6/6/6/4 and read as a hexagon. A golden that goes back to four
-  // flat rows means the period went back to even.
+  // Every measurement here is the hand-drawn chip's, halved: driver 8 across on 12
+  // where the chip is 16 on 24, cap 4 across where the chip's is 8, rim one cell where
+  // the chip's is two. The tile before this was a 7-across driver on 9 cells — the
+  // same idea sized by eye, which came out fatter than the drawing with a cap barely a
+  // third of the cone. A golden that goes back to nine rows means the two pictures
+  // drifted apart again.
+  //
+  // Widths 4/6/8/8/8/8/6/4 are the point of the raster, not incidental: two graduated
+  // steps into each pole. An earlier 6-across driver rasterized 4/6/6/6/6/4 — four of
+  // six rows at full width — and read as a hexagon.
   Woofer: [
-    '.........',
-    '...ooo...',
-    '..oiiio..',
-    '.oiiOiio.',
-    '.oiOOOio.',
-    '.oiiOiio.',
-    '..oiiio..',
-    '...ooo...',
-    '.........',
+    '............',
+    '............',
+    '....oooo....',
+    '...oiiiio...',
+    '..oiiOOiio..',
+    '..oiOOOOio..',
+    '..oiOOOOio..',
+    '..oiiOOiio..',
+    '...oiiiio...',
+    '....oooo....',
+    '............',
+    '............',
+  ].join('\n'),
+  // Coal: a bed of angular lumps on its own 12-cell tile (render/coalTile.ts), the
+  // third bitmap pattern. `i` is a lump's lit face (`lattice`), `o` the face turned
+  // away from the light, `O` the pocket where two lumps meet — which is darker than
+  // the base, so `.` is a crack and not a lump.
+  //
+  // Coal drew as one flat near-black here until it got this tile: it was one of the
+  // materials whose chip was hand-drawn *because* the canvas had nothing to reflect,
+  // and the whole point of the tile is that the canvas now does. The lumps are
+  // deliberately unequal and deliberately off-centre — one lump centred in the tile
+  // tiles into a polka dot — so a golden that comes back symmetric is a redrawing, not
+  // a retune.
+  Coal: [
+    '.iiiii......',
+    'iiiiioo.....',
+    'iiiiooo.....',
+    '.iiioooO....',
+    '.iiooooO....',
+    '..ooooo.....',
+    '.....iiiii..',
+    '.ii..iiiiioo',
+    '.iii.iiiiooo',
+    '.iio..iiiooo',
+    '..oo..oooooO',
+    '.....ooo....',
   ].join('\n'),
   // TNT: a bundle of dynamite behind a printed paper label, on its own 16-cell tile
   // (render/tntTile.ts) — the only pattern here that is a bitmap rather than a rule,
@@ -421,7 +487,14 @@ const GOLDEN: Record<string, string> = {
 };
 
 /** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
-const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4, TNT: 7 };
+const GOLDEN_TONES: Record<string, number> = {
+  Wall: 3,
+  Woofer: 4,
+  TNT: 7,
+  Fan: 4,
+  Turbine: 4,
+  Coal: 4,
+};
 
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;
@@ -488,19 +561,66 @@ checkThrows('battery staircase is flat black', () => {
       `ink on rows ${inked.join(',')}; label on rows ${paper.join(',')}`);
   }
 
-  // The tile's edge is TNT's alone. Giving one material its own patch size means the
-  // generator now reads a per-material edge where it used to read a constant, so the
-  // thing worth pinning is that nothing else moved off 9 (or off 18, for the gases and
+  // A patch edge other than 9 is opt-in, and the opt-in is exactly the four patterns
+  // built around one centred object: TNT's labelled bundle (16), and the rotor, coal
+  // and woofer tiles (12). For those a 9-cell window would be a *crop* of the object
+  // rather than a sample of the material — two sliced glyphs, a rotor missing two
+  // blades, three quarters of a driver — which is the whole reason they carry their
+  // own edge. Everything else must still come out at 9 (or at 18, for the gases and
   // the hazard chips that already had their own).
-  checkThrows('only TNT derives its tile at TNT_N', () => {
+  checkThrows('only the object-shaped tiles derive at their own edge', () => {
+    const own = (m: Material): number | null =>
+      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.coalPattern ? COAL_N : m.wooferPattern ? 12 : null;
     const odd = all
-      .filter((m) => !m.tntPattern)
-      .map((m) => [m.name, raster(generatedSvgFor(m)).n] as const)
-      .filter(([, n]) => n !== 9 && n !== 18);
-    check('only TNT derives its tile at TNT_N', odd.length === 0,
-      odd.map(([name, n]) => `${name} ${n}`).join(', '));
+      .map((m) => [m.name, raster(generatedSvgFor(m)).n, own(m)] as const)
+      .filter(([, n, want]) => (want === null ? n !== 9 && n !== 18 : n !== want));
+    check('only the object-shaped tiles derive at their own edge', odd.length === 0,
+      odd.map(([name, n, want]) => `${name} ${n} (want ${want ?? '9/18'})`).join(', '));
   });
 }
+
+// The other two bitmaps, held to what tntTile.ts's rows are held to: a row narrower
+// than its tile is indexed past its end and falls through to the base colour. On these
+// tiles that fallthrough reads as a chipped blade or a slightly smaller lump — which is
+// exactly the kind of thing a golden diff shows you without telling you why. Pinned in
+// the harness rather than thrown at module load because both modules ship to the
+// browser (see tntTile.ts's own note).
+check('every rotor tile is ROTOR_N rows of ROTOR_N',
+  Object.values(ROTOR_TILE_ROWS).every((rows) => rows.length === ROTOR_N && rows.every((r) => r.length === ROTOR_N)),
+  Object.entries(ROTOR_TILE_ROWS).map(([b, rows]) => `${b}: ${rows.length} rows`).join(', '));
+check('the coal tile is COAL_N rows of COAL_N',
+  COAL_TILE_ROWS.length === COAL_N && COAL_TILE_ROWS.every((r) => r.length === COAL_N),
+  `${COAL_TILE_ROWS.length} rows, widths ${[...new Set(COAL_TILE_ROWS.map((r) => r.length))].join('/')}`);
+
+// The two rotors are one tile module with a blade count, so the failure worth naming is
+// them collapsing onto each other — a Fan drawing the Turbine's eight blades is not a
+// wrong picture, it is the wrong *machine*, and it would sail through both goldens if
+// they were generated from the same rows.
+checkThrows('the Fan and the Turbine draw different wheels', () => {
+  const fan = byName('Fan');
+  const turbine = byName('Turbine');
+  check('the Fan draws four blades and the Turbine eight',
+    fan.rotorPattern === 4 && turbine.rotorPattern === 8,
+    `${fan.rotorPattern} / ${turbine.rotorPattern}`);
+  check('…and the two tiles really are different pictures',
+    ROTOR_TILE_ROWS[4].join('') !== ROTOR_TILE_ROWS[8].join(''));
+});
+
+// Both rotors are exactly symmetric under a 90° turn about the hub, which is what a
+// wheel is — and, unlike "does it look like a rotor", it is checkable. A row copied to
+// the wrong place or a blade drawn one cell long breaks it, and the golden alone would
+// only show that something moved.
+checkThrows('a rotor tile is unchanged by a quarter turn', () => {
+  for (const [blades, rows] of Object.entries(ROTOR_TILE_ROWS)) {
+    const at = (x: number, y: number): string => rows[y][x];
+    let bad = '';
+    for (let y = 0; y < ROTOR_N && !bad; y++)
+      for (let x = 0; x < ROTOR_N; x++)
+        // (x, y) → (N-1-y, x) is the quarter turn; the tone must ride round with it.
+        if (at(ROTOR_N - 1 - y, x) !== at(x, y)) { bad = `${blades}-blade at (${x}, ${y})`; break; }
+    check(`the ${blades}-blade rotor is symmetric under a quarter turn`, bad === '', bad);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // 3. Flat stays flat; textured stays textured.
@@ -509,8 +629,10 @@ checkThrows('battery staircase is flat black', () => {
 /** Distinct colours in a material's icon. */
 const tones = (m: Material): number => new Set(raster(generatedSvgFor(m)).grid).size;
 
-// Wall used to be in this list; it draws masonry now and has its own golden above.
-for (const name of ['Stone', 'Iron', 'Mercury', 'Liquid Gallium']) {
+// Wall and Coal used to be in this list; both draw a pattern now and have their own
+// goldens above. Stone was here too and left the other way — it grew a grain rather
+// than a pattern (see below).
+for (const name of ['Iron', 'Mercury', 'Liquid Gallium']) {
   const label = `${name} is drawn flat`;
   checkThrows(label, () => {
     const t = tones(byName(name));
@@ -518,7 +640,24 @@ for (const name of ['Stone', 'Iron', 'Mercury', 'Liquid Gallium']) {
   });
 }
 checkThrows('a flat material costs one shape', () => {
-  check('a flat material costs one shape', generatedSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
+  check('a flat material costs one shape', generatedSvgFor(byName('Iron')).match(/<(rect|path)/g)!.length === 1);
+});
+
+// Stone carries a grain now, and the point of it is that it is a *quiet* one: it is
+// placed by the screenful, so an amplitude that reads as pleasant texture on one cell
+// reads as noise across a cavern wall. Both ends need holding — a grain that fell to 0
+// is the flat plaster this replaced, and one that climbed to the powders' default would
+// be the noise it exists to avoid. Sand is the reference for "too much" because it is
+// the material the default was set for.
+checkThrows('Stone carries a quiet grain, not a loud one', () => {
+  const stone = byName('Stone');
+  const amp = varyAmplitude(stone);
+  check('Stone carries a grain at all', amp > 0 && tones(stone) > 4, `amp ${amp}, ${tones(stone)} tones`);
+  check('…and a narrower one than a powder',
+    amp < varyAmplitude(byName('Sand')), `${amp} vs Sand ${varyAmplitude(byName('Sand'))}`);
+  const cs = [...new Set(raster(generatedSvgFor(stone)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
+  check('…and spanning no more than its own amplitude either way',
+    Math.max(...cs) - Math.min(...cs) <= 2 * amp, `${Math.max(...cs) - Math.min(...cs)} steps at ±${amp}`);
 });
 
 // Wood is here because it used to be in the flat list with a drawing on top of it.
@@ -642,6 +781,28 @@ checkThrows('Obsidian carries the narrowest grain of the tinted solids', () => {
   const cs = [...new Set(raster(generatedSvgFor(obs)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
   const spread = Math.max(...cs) - Math.min(...cs);
   check('…and its tile spans no more than a dozen brightness steps', spread <= 12, `${spread} steps`);
+});
+
+// Obsidian is *black* glass, and its colour has been darkened toward that. What stops
+// it going further is the eraser's own colour: a shell has to read against open air, so
+// its DARKEST grain — the base taken down by the full amplitude — has to stay clear of
+// the board. Measured in luminance rather than per channel because the cast is violet:
+// the green channel is the low one by design, and holding each channel to the same
+// margin would make the hue itself the thing that failed.
+checkThrows('Obsidian stays legible against the empty board', () => {
+  const obs = byName('Obsidian');
+  const board = getMaterial(EMPTY).color;
+  const amp = varyAmplitude(obs);
+  const ch = (c: number, i: number): number => (c >> (8 * i)) & 0xff;
+  const lum = (c: number, d = 0): number =>
+    (ch(c, 0) + d) * 0.3 + (ch(c, 1) + d) * 0.59 + (ch(c, 2) + d) * 0.11;
+  const margin = lum(obs.color, -amp) - lum(board);
+  check('Obsidian stays legible against the empty board', margin >= 8,
+    `darkest grain sits ${margin.toFixed(1)} above the board at amplitude ${amp}`);
+  // …and it is still darker than the grey rock it is the glassy cousin of, which is the
+  // direction the colour has been moving.
+  check('…and darker than Stone', lum(obs.color) < lum(byName('Stone').color),
+    `${lum(obs.color).toFixed(0)} vs ${lum(byName('Stone').color).toFixed(0)}`);
 });
 
 // ---------------------------------------------------------------------------

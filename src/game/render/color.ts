@@ -51,6 +51,35 @@ export function tinted(base: number, d: number): number {
   return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
 }
 
+/**
+ * Scale a packed 0xAABBGGRR color's channels by `f`, clamped, preserving alpha.
+ *
+ * The multiplicative counterpart of `tinted`, and the difference matters on a
+ * *coloured* surface: adding a constant to every channel walks a tone toward
+ * grey (the ratios between channels shrink as the offset grows), while
+ * multiplying keeps the hue exactly and only changes how much light the facet
+ * receives — which is what a shaded side of the same material actually is.
+ *
+ * That is also how the drawn rotor and coal chips were authored: their shade and
+ * hub tones are their base colour times a constant (the Turbine's `#43484d` is
+ * `#96a0ac × 0.45` to the unit), so the world tiles reproduce those drawings
+ * exactly by using the same arithmetic rather than by copying hexes that would
+ * be wrong for any other material setting the same pattern.
+ *
+ * Truncating rather than rounding, so that a tone is reproducible by hand from
+ * the base colour with integer arithmetic.
+ */
+export function scaled(base: number, f: number): number {
+  const ch = (c: number): number => {
+    const v = (c * f) | 0;
+    return v < 0 ? 0 : v > 255 ? 255 : v;
+  };
+  const r = ch(base & 0xff);
+  const g = ch((base >> 8) & 0xff);
+  const b = ch((base >> 16) & 0xff);
+  return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+}
+
 /** Blend a packed colour toward an icy white-blue, for rendering a frozen
  *  liquid (see Material.freeze) as a frosted block distinct from its liquid
  *  self. Keeps a little of the base hue so frozen oil still reads dark-frosty

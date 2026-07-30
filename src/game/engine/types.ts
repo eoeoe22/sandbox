@@ -654,6 +654,35 @@ export interface Material {
    */
   tntPattern?: boolean;
   /**
+   * Draw a bladed rotor (Turbine: 8, Fan: 4): one wheel per tile — blades whose
+   * leading edge is the `lattice` colour and whose trailing edge is the base
+   * `color` darkened, keyed to a darker hub. The value is the blade count and
+   * picks which wheel; the tiles themselves live in `render/rotorTile.ts`, shared
+   * with the palette icon generator, so its period is fixed at ROTOR_N (12) rather
+   * than being a rule this type could restate.
+   *
+   * Positional (tied to x/y, not to the particle) like the Wall's courses, so a
+   * dragged-out machine is one continuous array of wheels. Purely a rendering hint
+   * the simulation never reads.
+   *
+   * A Fan carrying this draws no chevron: the rotor replaces `windArrow` rather
+   * than layering on it, so the *direction* it blows is read off the wind streaks
+   * it throws rather than off the block face. That is a deliberate trade for the
+   * machine reading as a fan at a glance — see docs/MATERIAL-ICONS.md §4.1.
+   */
+  rotorPattern?: 4 | 8;
+  /**
+   * Draw a bed of coal lumps (Coal): angular chunks with a lit face in the
+   * `lattice` colour, a shaded face in the base `color` lifted, and the deep
+   * pocket where two lumps meet darker than either. A bitmap rather than a rule
+   * — the tile lives in `render/coalTile.ts`, shared with the palette icon
+   * generator — so its period is fixed at COAL_N (12).
+   *
+   * Positional like the Wall's courses, so a seam dug out with the brush is one
+   * continuous bed of lumps. Purely a rendering hint the simulation never reads.
+   */
+  coalPattern?: boolean;
+  /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound
    * before it slowly flattens. It never blocks straight-down fall (a viscous blob

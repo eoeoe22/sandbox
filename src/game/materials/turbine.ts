@@ -104,6 +104,13 @@ export const TURBINE = register({
   name: 'Turbine',
   phase: Phase.Solid,
   color: rgb(150, 160, 172),
+  // An eight-blade wheel keyed to a dark hub (`rotorPattern`), the same picture as
+  // the hand-drawn Turbine chip: `lattice` is a blade's lit leading edge, and the
+  // trailing edge and the hub are this colour scaled down (see render/rotorTile.ts).
+  // Eight blades is what separates it at a glance from the Fan, which draws four on
+  // the same tile — a steam wheel is a dense disc of blades, a household fan is not.
+  lattice: rgb(192, 205, 220),
+  rotorPattern: 8,
   density: 1000,
   category: 'electric',
   // Porous like the Mesh — fluids (and its working steam) pass through any

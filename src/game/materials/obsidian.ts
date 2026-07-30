@@ -48,7 +48,18 @@ export const OBSIDIAN = register({
   phase: Phase.Solid,
   // Near-black with a violet cast (the Minecraft read), still clearly lighter
   // than the empty-cell background so a shell reads against open air.
-  color: rgb(48, 36, 68),
+  //
+  // Darkened from `rgb(48, 36, 68)`: at that value the violet read as a dark *purple
+  // stone* rather than as black glass. This keeps the cast (which is what makes it
+  // obsidian and not coal) at about three quarters of the ratio and takes a quarter of
+  // the light out.
+  //
+  // How far it can go is set by the eraser, `rgb(16, 16, 22)`: what has to stay legible
+  // against open air is not this colour but the *darkest grain* of it, the base taken
+  // down by the full `colorVary`. `test/materialicons.ts` measures that margin in
+  // luminance rather than per channel — the green is deliberately the low channel here,
+  // so a per-channel floor would be a floor on the hue instead of on the contrast.
+  color: rgb(36, 26, 51),
   // A glassy, uneven fracture — a little per-particle variation keeps a big
   // slab from looking like one flat painted rectangle.
   //

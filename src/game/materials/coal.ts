@@ -34,6 +34,14 @@ export const COAL = register({
   name: 'Coal',
   phase: Phase.Solid,
   color: rgb(26, 24, 30),
+  // A bed of angular lumps (`coalPattern`), the hand-drawn Coal chip brought down to
+  // world scale: `lattice` is a lump's lit face, and the shaded face and the deep
+  // pocket between two lumps are this colour scaled up and down (see
+  // render/coalTile.ts). Coal used to be one flat near-black on the board and
+  // textured only in the palette — it was in the group of materials whose chip was
+  // hand-drawn *because* the canvas had nothing to reflect, and now it does.
+  lattice: rgb(58, 56, 68),
+  coalPattern: true,
   // Density is inert for a Solid (solids never move or get displaced); kept for
   // completeness alongside the other materials.
   density: 5,

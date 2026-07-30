@@ -40,6 +40,8 @@ import { hex, tinted, buildGlow, shade } from './color';
 import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
 import { TNT_N, buildTntTile } from './tntTile';
+import { ROTOR_N, buildRotorTile } from './rotorTile';
+import { COAL_N, buildCoalTile } from './coalTile';
 
 /** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
  *
@@ -77,15 +79,16 @@ const BRICK_W = 6;
 const BRICK_H = 4;
 const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
-const WOOFER_P = 9;
-const WOOFER_R2 = 49;
-const WOOFER_CONE_R2 = 25;
-const WOOFER_CAP_R2 = 4;
+const WOOFER_P = 12;
+const WOOFER_R2 = 64;
+const WOOFER_CONE_R2 = 42;
+const WOOFER_CAP_R2 = 16;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
-// TNT is the exception: its tile is a bitmap rather than a rule, so instead of
-// mirroring constants this module shares the picture itself (see tntTile.ts). A
-// 16-row ASCII block copied into two files would diverge invisibly.
+// The three bitmap patterns are the exception: TNT's bundle, the rotor wheels and
+// the coal bed are pictures rather than rules, so instead of mirroring constants
+// this module shares the pictures themselves (tntTile / rotorTile / coalTile). An
+// ASCII block copied into two files would diverge invisibly.
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -315,10 +318,11 @@ function grain(m: Material, c: number, x: number, y: number): number {
  * Fill an N×N patch with the colour the renderer would give each cell.
  *
  * The `if`/`else if` order below is the renderer's order, not a rewrite of it:
- * several materials set more than one hint (a Fan is `lattice` *and*
+ * several materials set more than one hint (a Laser is `lattice` *and*
  * `windArrow`, Diamond is `lattice` *and* `checker2x2`, Solar Panel is `lattice`
  * *and* `solarPattern`, Wall is `lattice` *and* `brickPattern`, TNT is `lattice`
- * *and* `tntPattern`) and only the first matching branch draws.
+ * *and* `tntPattern`, a Fan/Turbine is `lattice` *and* `rotorPattern`, Coal is
+ * `lattice` *and* `coalPattern`) and only the first matching branch draws.
  * `Material.lattice` on those is just supplying the second tone. Reordering these
  * would quietly change what half the electric category looks like.
  */
@@ -337,20 +341,33 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
     return { buf, n: GAS_N };
   }
 
-  // Every pattern but one is drawn on the N-cell patch. TNT's tile is 16 cells and
-  // carries lettering, so a 9-cell window would show a slice of two glyphs and
-  // nothing else — the one case where a partial period isn't a fair sample of the
-  // material (every other tile's window is: a 9-cell patch shows 1½ bricks, and 1½
-  // bricks read as masonry). Its own edge instead, so the chip shows exactly one
-  // labelled block.
+  // Most patterns are drawn on the N-cell patch; four are drawn on their own period.
+  // The rule is what a 9-cell *window* of the pattern is: for a rule-shaped tile it is
+  // an honest sample (a 9-cell patch of the Wall shows 1½ bricks, and 1½ bricks read as
+  // masonry), but for a tile built around one centred object it is a crop of that
+  // object. A slice of two TNT glyphs is not a sample of TNT; three quarters of a
+  // speaker driver, a rotor with two of its blades cut off, or a coal lump sheared at
+  // the edge are the same failure. Those four use their own edge, so the tile shows
+  // exactly one of whatever it draws.
   //
-  // 16 does not land on whole device pixels in the palette's 18 px swatch the way 9
-  // and 18 do (see N). That is acceptable *only* because this tile is never the
-  // shipped chip — TNT's chip is hand-drawn art, and `generatedSvgFor` exists to keep
-  // the branch pinned. A future `tntPattern` material with no hand art would want the
-  // resampling `hazardPatch` does, not this.
-  const n = m.tntPattern ? TNT_N : N;
+  // 12 and 16 do not land on whole device pixels in the palette's 18 px swatch the way
+  // 9 and 18 do (see N). That is acceptable *only* because none of these four is the
+  // shipped chip — all of TNT, Woofer, Turbine, Fan and Coal are hand-drawn art, and
+  // `generatedSvgFor` exists to keep the branches pinned. A future material setting one
+  // of these patterns with no hand art would want the resampling `hazardPatch` does,
+  // not this.
+  const n = m.tntPattern
+    ? TNT_N
+    : m.rotorPattern
+      ? ROTOR_N
+      : m.coalPattern
+        ? COAL_N
+        : m.wooferPattern
+          ? WOOFER_P
+          : N;
   const tntTile = m.tntPattern ? buildTntTile(base, lat) : null;
+  const rotorTile = m.rotorPattern ? buildRotorTile(m.rotorPattern, base, lat) : null;
+  const coalTile = m.coalPattern ? buildCoalTile(base, lat) : null;
   const buf = new Uint32Array(n * n);
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
@@ -436,6 +453,14 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // reads a bitmap instead of evaluating a rule — the modulo is kept anyway so
         // this stays the renderer's expression even though `n` is the tile's own edge.
         c = tntTile![(y % TNT_N) * TNT_N + (x % TNT_N)];
+      } else if (m.rotorPattern) {
+        // Turbine (8 blades) / Fan (4): one bladed wheel per tile, lit on each blade's
+        // leading edge and shaded on its trailing one. A bitmap, like TNT's bundle.
+        c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
+      } else if (m.coalPattern) {
+        // Coal: a bed of angular lumps, lit face, shaded face and the deep pocket
+        // between two of them. Also a bitmap.
+        c = coalTile![(y % COAL_N) * COAL_N + (x % COAL_N)];
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);

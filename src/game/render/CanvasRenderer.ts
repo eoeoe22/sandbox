@@ -14,6 +14,8 @@ import {
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { TNT_N, buildTntTile } from './tntTile';
+import { ROTOR_N, buildRotorTile } from './rotorTile';
+import { COAL_N, buildCoalTile } from './coalTile';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -129,26 +131,32 @@ const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
 
 // Tiling of the `wooferPattern` speaker-driver grid (Woofer — see the render loop).
-// One period holds one round driver 7 cells across with 2 cells of baffle between
-// neighbours, drawn as three radial bands: a 1-cell rim, a cone, and a plus-shaped
-// 5-cell dust cap. That is the hand-drawn Woofer chip's structure shrunk — its driver
-// is 16 across on a 24-cell tile (0.67 of the tile against 0.78 here) with a 2-cell
-// rim, which 7 cells across has no room for: a second rim ring would leave the cone
-// with nothing.
+// One period holds one round driver 8 cells across with 4 cells of baffle between
+// neighbours, drawn as three radial bands: a 1-cell rim, a cone, and a 2-cell dust cap.
 //
-// The period was 8, giving a 6-across driver. Both are honest circle rasters, but an
-// EVEN diameter has no centre row, so its widths come out 4/6/6/6/6/4 — four of the six
-// rows at full width, which reads as a hexagon. At 7 they are 3/5/7/7/7/5/3: only three
-// rows flat and two graduated steps into each pole, which is what actually reads as
-// round. The chip had the same problem in a worse form and was redrawn with it.
+// Every one of those numbers is the hand-drawn Woofer chip's, halved. The chip is a
+// 24-cell tile holding a driver of diameter 16, a cone starting at r = 6.5 and a cap of
+// r = 4; this is a 12-cell tile holding diameter 8, cone at r = 3.25 and cap r = 2. So
+// the driver takes the same 0.67 of its tile in both, the rim is the same 1/12 of the
+// tile thick in both, and the cap is the same third of the driver across — the chip and
+// the board are one picture at two scales rather than two drawings of a speaker.
+//
+// The period was 9 with a 7-cell driver, which was the same *idea* built by eye: 0.78 of
+// the tile, a 1-cell rim where the chip has two cells' worth, and a cap barely a third
+// the cone's width. Before that it was 8 with a 6-cell driver, and that one was wrong
+// rather than merely off-proportion — an EVEN diameter has no centre row, so it
+// rasterized 4/6/6/6/6/4 and read as a hexagon. 8 is even too, but at this radius the
+// widths come out 4/6/8/8/8/8/6/4: two graduated steps into each pole, which is what
+// reads as round. (The chip's own 16-across driver is even for the same reason and
+// rasterizes the same way, which is exactly why halving it works.)
 //
 // Membership is tested on SQUARED radii in doubled coordinates, so a cell's band
 // falls out of integer arithmetic with no sqrt and no lookup table: `2*(x % P) - (P-1)`
 // puts the tile's centre at 0 whether the period is odd or even.
-const WOOFER_P = 9; // period, in cells (7-cell driver + 2-cell baffle)
-const WOOFER_R2 = 49; // (2r)² of the driver's outer edge — r = 3.5, so 7 across
-const WOOFER_CONE_R2 = 25; // (2r)² inside the rim — the cone band starts here
-const WOOFER_CAP_R2 = 4; // (2r)² of the dust cap — the centre cell plus its four sides
+const WOOFER_P = 12; // period, in cells (8-cell driver + 4-cell baffle)
+const WOOFER_R2 = 64; // (2r)² of the driver's outer edge — r = 4, so 8 across
+const WOOFER_CONE_R2 = 42; // (2r)² inside the rim — r = 3.25, the chip's cone, halved
+const WOOFER_CAP_R2 = 16; // (2r)² of the dust cap — r = 2, the chip's cap halved
 // The two dark tones, as brightness offsets from the material's own colour. The cone
 // is the `lattice` colour and therefore exact; these two are offsets because a
 // material carries only one second colour, and the chip's ramp is very slightly
@@ -159,10 +167,12 @@ const WOOFER_CAP_R2 = 4; // (2r)² of the dust cap — the centre cell plus its 
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
 
-// `tntPattern`'s tile (TNT — see the render loop) is a bitmap, not a rule, so it has
-// no constants to state here: the ASCII, the label's colours and the highlight offset
-// all live in ./tntTile, shared with the palette icon generator. TNT_N is the tile's
-// edge in cells; buildTntTile resolves it against one material's two colours.
+// The three bitmap patterns — `tntPattern` (TNT), `rotorPattern` (Turbine, Fan) and
+// `coalPattern` (Coal) — have no constants to state here. They are pictures rather than
+// rules, so the ASCII, the tone alphabet and the reasoning all live in ./tntTile,
+// ./rotorTile and ./coalTile, shared with the palette icon generator instead of being
+// restated on each side. Each module exports its tile edge in cells and a `build…`
+// that resolves the ASCII against one material's colours.
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -428,6 +438,18 @@ export class CanvasRenderer implements Renderer {
    *  pattern isn't a rule the loop can evaluate, so there is nothing to precompute
    *  *into* except the picture itself. 256 cells per material, one material today. */
   private tntTile: (Uint32Array | null)[];
+  /** id → 1 if the material draws a bladed rotor wheel (Turbine, Fan — see
+   *  Material.rotorPattern), and id → that material's finished ROTOR_N × ROTOR_N
+   *  tile. Same shape and the same argument as `tntTile`: the pattern is a picture,
+   *  so the only thing to precompute is the picture with this material's colours in
+   *  it (see rotorTile.ts). */
+  private rotorPattern: Uint8Array;
+  private rotorTile: (Uint32Array | null)[];
+  /** id → 1 if the material draws a bed of coal lumps (Coal — see
+   *  Material.coalPattern), and id → its finished COAL_N × COAL_N tile. Same shape
+   *  as `tntTile` / `rotorTile` (see coalTile.ts). */
+  private coalPattern: Uint8Array;
+  private coalTile: (Uint32Array | null)[];
   /** id → the edge, in cells, of the square block that shares one tint sample — 0
    *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
    *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
@@ -560,6 +582,10 @@ export class CanvasRenderer implements Renderer {
     this.wooferCap = new Uint32Array(256);
     this.tntPattern = new Uint8Array(256);
     this.tntTile = new Array(256).fill(null);
+    this.rotorPattern = new Uint8Array(256);
+    this.rotorTile = new Array(256).fill(null);
+    this.coalPattern = new Uint8Array(256);
+    this.coalTile = new Array(256).fill(null);
     // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
     // loop can skip the whole block-anchor computation with one compare.
     this.tintBlockMask = new Int32Array(256).fill(-1);
@@ -603,6 +629,14 @@ export class CanvasRenderer implements Renderer {
         if (m.tntPattern) {
           this.tntPattern[i] = 1;
           this.tntTile[i] = buildTntTile(m.color, m.lattice ?? m.color);
+        }
+        if (m.rotorPattern) {
+          this.rotorPattern[i] = 1;
+          this.rotorTile[i] = buildRotorTile(m.rotorPattern, m.color, m.lattice ?? m.color);
+        }
+        if (m.coalPattern) {
+          this.coalPattern[i] = 1;
+          this.coalTile[i] = buildCoalTile(m.color, m.lattice ?? m.color);
         }
         // A block edge of B clears the low log2(B) bits of x and y, which is only a
         // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
@@ -737,6 +771,10 @@ export class CanvasRenderer implements Renderer {
     const wooferCap = this.wooferCap;
     const tntPattern = this.tntPattern;
     const tntTile = this.tntTile;
+    const rotorPattern = this.rotorPattern;
+    const rotorTile = this.rotorTile;
+    const coalPattern = this.coalPattern;
+    const coalTile = this.coalTile;
     const tintBlockMask = this.tintBlockMask;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
@@ -1012,6 +1050,29 @@ export class CanvasRenderer implements Renderer {
         const y = (i / w) | 0;
         const x = i - y * w;
         c = tntTile[id]![(y % TNT_N) * TNT_N + (x % TNT_N)];
+      } else if (rotorPattern[id]) {
+        // A Turbine (8 blades) or a Fan (4) draws its rotor wheel: blades lit on the
+        // leading edge and shaded on the trailing one, keyed to a dark hub, one wheel
+        // per ROTOR_N tile (see rotorTile.ts). A bitmap rather than a rule for the same
+        // reason TNT's bundle is — the sweep that makes a wheel read as *turning* has no
+        // short closed form at twelve cells.
+        //
+        // Positional like the Wall's courses, so a machine dragged out with the brush is
+        // one array of wheels rather than a fresh tile per cell. Nothing here brightens:
+        // the Fan's chevron used to light up while powered, and the running fan's cue is
+        // now the wind streaks it throws (drawn as their own background layer), which
+        // says the same thing and says which way.
+        const y2 = (i / w) | 0;
+        const x2 = i - y2 * w;
+        c = rotorTile[id]![(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
+      } else if (coalPattern[id]) {
+        // Coal draws its bed of lumps: angular chunks with a lit face, a shaded face and
+        // the deep pocket where two of them meet (see coalTile.ts). Coal was flat here
+        // and textured only in the palette — this is the drawn chip brought down to world
+        // scale, so a seam finally looks like broken rock on the board too.
+        const y2 = (i / w) | 0;
+        const x2 = i - y2 * w;
+        c = coalTile[id]![(y2 % COAL_N) * COAL_N + (x2 % COAL_N)];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

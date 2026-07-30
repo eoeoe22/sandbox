@@ -296,12 +296,22 @@ export const FAN = register({
   id: 112,
   name: 'Fan',
   phase: Phase.Solid,
-  // A dark machine housing with a bright light-blue rotor chevron pointing the
-  // way it blows (drawn from the aux direction; brightens while powered — see
-  // CanvasRenderer's windArrow path).
+  // A dark machine housing with a bright light-blue four-blade rotor set into it
+  // (`rotorPattern`), the same picture as the hand-drawn Fan chip: `lattice` is each
+  // blade's lit leading edge, and the trailing edge and hub are this colour scaled
+  // down (see render/rotorTile.ts). The Turbine draws eight blades on the same tile,
+  // which is what tells the two machines apart on the board.
+  //
+  // This replaced a chevron that pointed the blow direction and brightened while
+  // powered (`windArrow`, which the Laser still uses). A face-on rotor cannot point,
+  // so the direction now reads off the wind streaks the fan throws — which only show
+  // while it is actually blowing. A fan sitting unpowered no longer says which way it
+  // faces: the trade is deliberate (the block reads as a fan at a glance instead of
+  // as a chevron), and the aux direction bits are untouched, so restoring the chevron
+  // is a one-line change if it turns out to matter more than the picture does.
   color: rgb(70, 80, 95),
   lattice: rgb(150, 200, 240),
-  windArrow: true,
+  rotorPattern: 4,
   density: 1000,
   category: 'electric',
   // Doesn't burn or corrode away underfoot, like the other electric machines.
