@@ -76,6 +76,12 @@ const BRICK_W = 6;
 const BRICK_H = 4;
 const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
+const WOOFER_P = 8;
+const WOOFER_R2 = 34;
+const WOOFER_CONE_R2 = 18;
+const WOOFER_CAP_R2 = 2;
+const WOOFER_RIM = -20;
+const WOOFER_CAP = -29;
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -289,11 +295,25 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
           : row === 0
             ? tinted(base, BRICK_LIT)
             : base;
+      } else if (m.wooferPattern) {
+        // Woofer: one speaker driver per tile — rim, `lattice` cone, dark dust cap,
+        // on the base colour's baffle. Squared radii in doubled coordinates.
+        const ax = 2 * (x % WOOFER_P) - (WOOFER_P - 1);
+        const ay = 2 * (y % WOOFER_P) - (WOOFER_P - 1);
+        const d2 = ax * ax + ay * ay;
+        c = d2 <= WOOFER_CAP_R2
+          ? tinted(base, WOOFER_CAP)
+          : d2 <= WOOFER_CONE_R2
+            ? lat
+            : d2 <= WOOFER_R2
+              ? tinted(base, WOOFER_RIM)
+              : base;
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);
       } else if (m.lattice) {
-        // Mesh / Wire / Woofer: a woven two-tone grid.
+        // Mesh / Wire: a woven two-tone grid. (The Woofer used to land here too,
+        // on a copper grille tone; it draws its drivers in the branch above now.)
         c = (x ^ y) & 1 ? lat : base;
       } else if (m.batteryPattern) {
         // Lithium / LFP Battery: a 2-step diagonal staircase on a 4×5 tile, in

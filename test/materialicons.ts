@@ -308,6 +308,20 @@ const GOLDEN: Record<string, string> = {
     'ooooooooo',
     'iiiiioiii',
   ].join('\n'),
+  // Woofer: one speaker driver per 8-cell tile — rim (`o`), cone (`i`), dust cap
+  // (`O`) — on the baffle. The Woofer used to draw the plain lattice weave in a
+  // copper tone, so this golden is also what catches it falling back there.
+  Woofer: [
+    '.........',
+    '..oooo...',
+    '.oiiiio..',
+    '.oiOOio..',
+    '.oiOOio..',
+    '.oiiiio..',
+    '..oooo...',
+    '.........',
+    '.........',
+  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -335,7 +349,7 @@ const GOLDEN: Record<string, string> = {
 };
 
 /** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
-const GOLDEN_TONES: Record<string, number> = { Wall: 3 };
+const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;

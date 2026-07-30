@@ -609,6 +609,17 @@ export interface Material {
    */
   brickPattern?: boolean;
   /**
+   * Draw a grid of speaker drivers (Woofer): one round driver per tile — a rim, a
+   * cone in the `lattice` colour, and a dark dust cap at the centre — with the base
+   * `color` as the baffle between them. The same four tones, in the same radial
+   * order, as the hand-drawn Woofer chip. Positional (tied to x/y, not to the
+   * particle) like the Mesh weave and the panel's seams, so a cabinet dragged out
+   * with the brush reads as one continuous array of drivers. Purely a rendering hint
+   * the simulation never reads — the Woofer stamps no cell state at all (it fires a
+   * shockwave and is done), so unlike the Pump's stripes nothing here brightens.
+   */
+  wooferPattern?: boolean;
+  /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound
    * before it slowly flattens. It never blocks straight-down fall (a viscous blob

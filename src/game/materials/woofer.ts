@@ -313,10 +313,20 @@ export const WOOFER = register({
   id: 109,
   name: 'Woofer',
   phase: Phase.Solid,
-  // Dark speaker-cone body; the lattice weave (copper grille tone) reads as a
-  // speaker grille over the cone.
-  color: rgb(40, 42, 48),
-  lattice: rgb(150, 108, 66),
+  // A cabinet baffle with speaker drivers set into it (`wooferPattern`): one round
+  // driver per 8-cell tile, drawn as a rim, a cone in `lattice`, and a dark dust cap
+  // — the same four tones in the same radial order as the hand-drawn Woofer chip, so
+  // the thing on the board and the thing in the palette are one picture. Replaces the
+  // old copper `lattice` weave, which read as a grille laid over the cone rather than
+  // as the driver itself.
+  //
+  // The base is the chip's own `#2a2a32` (was `#282a30`, two units off in red and
+  // blue): the harness requires a hand icon to open on its material's registered
+  // colour, and matching the drawing rather than repainting it keeps one base for the
+  // canvas and the chip both.
+  color: rgb(42, 42, 50),
+  lattice: rgb(63, 63, 74),
+  wooferPattern: true,
   density: 1000,
   category: 'electric',
   thermal: { conductivity: 0.3 },

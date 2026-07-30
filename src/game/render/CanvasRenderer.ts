@@ -127,6 +127,32 @@ const BRICK_OFFSET = BRICK_W >> 1;
 // #a0a4aa), so the canvas and the palette chip are lit the same way.
 const BRICK_LIT = 40;
 
+// Tiling of the `wooferPattern` speaker-driver grid (Woofer — see the render loop).
+// One period holds one round driver 6 cells across with 2 cells of baffle between
+// neighbours, drawn as three radial bands: a 1-cell rim, a 1-cell cone, and a 2×2
+// dust cap. That is the hand-drawn Woofer chip's structure at 1/3 scale — its driver
+// is 16 across on a 24-cell tile (0.75 of the tile, matched exactly here) with a
+// 1-cell rim (also matched). Only the cap is off: 8/16 of the driver on the chip
+// against 2/6 here, because at six cells across there is no room for a wider cap
+// without the cone band disappearing entirely.
+//
+// Membership is tested on SQUARED radii in doubled coordinates, so a cell's band
+// falls out of integer arithmetic with no sqrt and no lookup table: `2*(x % P) - (P-1)`
+// puts the tile's centre at 0 whether the period is odd or even.
+const WOOFER_P = 8; // period, in cells (6-cell driver + 2-cell baffle)
+const WOOFER_R2 = 34; // (2r)² of the driver's outer edge — r ≈ 2.9, so 6 across
+const WOOFER_CONE_R2 = 18; // (2r)² inside the rim — the cone band starts here
+const WOOFER_CAP_R2 = 2; // (2r)² of the dust cap — the 2×2 centre
+// The two dark tones, as brightness offsets from the material's own colour. The cone
+// is the `lattice` colour and therefore exact; these two are offsets because a
+// material carries only one second colour, and the chip's ramp is very slightly
+// blue-biased (its rim is #16161c where base − 20 gives #16161e), so they land within
+// 3 units on the blue channel rather than dead on. On a near-black that is below a
+// visible step; if a future pattern needs all four exact it needs a colour list, not
+// a bigger offset.
+const WOOFER_RIM = -20;
+const WOOFER_CAP = -29;
+
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
   return v - Math.floor(v);
@@ -373,6 +399,13 @@ export class CanvasRenderer implements Renderer {
   /** id → the lit colour of a `brickPattern` material's brick top, precomputed from
    *  its base colour so the render loop never shades per pixel. */
   private brickLit: Uint32Array;
+  /** id → 1 if the material draws a grid of speaker drivers — a rim, a `lattice`
+   *  cone and a dark cap on the base baffle (Woofer — see Material.wooferPattern). */
+  private wooferPattern: Uint8Array;
+  /** id → the rim / dust-cap colours of a `wooferPattern` material, precomputed from
+   *  its base colour for the same reason `brickLit` is. */
+  private wooferRim: Uint32Array;
+  private wooferCap: Uint32Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -495,6 +528,9 @@ export class CanvasRenderer implements Renderer {
     this.solarPattern = new Uint8Array(256);
     this.brickPattern = new Uint8Array(256);
     this.brickLit = new Uint32Array(256);
+    this.wooferPattern = new Uint8Array(256);
+    this.wooferRim = new Uint32Array(256);
+    this.wooferCap = new Uint32Array(256);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -526,6 +562,11 @@ export class CanvasRenderer implements Renderer {
         if (m.brickPattern) {
           this.brickPattern[i] = 1;
           this.brickLit[i] = tinted(m.color, BRICK_LIT);
+        }
+        if (m.wooferPattern) {
+          this.wooferPattern[i] = 1;
+          this.wooferRim[i] = tinted(m.color, WOOFER_RIM);
+          this.wooferCap[i] = tinted(m.color, WOOFER_CAP);
         }
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
@@ -643,6 +684,9 @@ export class CanvasRenderer implements Renderer {
     const solarPattern = this.solarPattern;
     const brickPattern = this.brickPattern;
     const brickLit = this.brickLit;
+    const wooferPattern = this.wooferPattern;
+    const wooferRim = this.wooferRim;
+    const wooferCap = this.wooferCap;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -867,6 +911,28 @@ export class CanvasRenderer implements Renderer {
           : row === 0
             ? brickLit[id]
             : pal[id];
+      } else if (wooferPattern[id]) {
+        // A Woofer draws its speaker drivers: one round driver per WOOFER_P tile —
+        // rim, `lattice`-coloured cone, dark dust cap — on the base colour's baffle,
+        // the same four tones in the same radial order as the hand-drawn chip.
+        // Positional like the Mesh weave, so a cabinet dragged out with the brush is
+        // one continuous array of drivers rather than a fresh one per stroke. The
+        // Woofer stamps no cell state (it thumps and is done), so unlike the Pump's
+        // stripes there is nothing here to brighten when it fires — the shockwave
+        // wavefront is drawn separately, as its own background layer.
+        const x = i % w;
+        const y = (i / w) | 0;
+        // Doubled offsets from the tile centre keep the radius test integral.
+        const ax = 2 * (x % WOOFER_P) - (WOOFER_P - 1);
+        const ay = 2 * (y % WOOFER_P) - (WOOFER_P - 1);
+        const d2 = ax * ax + ay * ay;
+        c = d2 <= WOOFER_CAP_R2
+          ? wooferCap[id]
+          : d2 <= WOOFER_CONE_R2
+            ? latCol[id]
+            : d2 <= WOOFER_R2
+              ? wooferRim[id]
+              : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
