@@ -69,6 +69,22 @@ export interface Material {
    */
   insulated?: boolean;
   /**
+   * 배선재 — a `conductive` material that counts as *proper wiring*: a cable
+   * (Wire) or a metal (Iron, Mercury, Gallium, Liquid Gallium, Nichrome,
+   * Aluminum). Nothing about how a pulse propagates reads this; it's what a
+   * *source* checks when it only wants to feed wiring rather than whatever it
+   * happens to be sitting in — the Turbine's `'wiring'` emission gate (see
+   * spark.ts's PulseGate), which is how a turbine standing in its own boiler
+   * stops electrifying the condensate around it.
+   *
+   * Wiring is by definition zero-loss (spark.ts asserts that at load: a `wiring`
+   * conductor whose CONDUCTOR_LOSS isn't 0 throws), but the converse is
+   * deliberately NOT true — Acid Slime conducts at zero loss and is still not
+   * wiring, because "무손실"과 "배선" 은 다른 질문이다. That's exactly why this is
+   * a declared tag instead of a `loss === 0` test.
+   */
+  wiring?: boolean;
+  /**
    * Electric-appliance sink: a hook fired when a live electric pulse reaches a
    * cell of this material — whether from a power source in *direct contact*
    * (Battery/LFP Battery `injectPulses`, Turbine `energizeNeighbors`) or from a

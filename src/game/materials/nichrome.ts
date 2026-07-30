@@ -138,6 +138,9 @@ export const NICHROME = register({
   color: rgb(255, 122, 40),
   density: 1000,
   conductive: true,
+  // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
+  // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
+  wiring: true,
   acidResistant: true,
   category: 'electric',
   // Real nichrome conducts heat poorly for a metal (~11 W/mK vs Iron's ~80) —

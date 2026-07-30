@@ -61,6 +61,9 @@ export const WIRE = register({
   lattice: rgb(190, 118, 60),
   density: 1000,
   conductive: true,
+  // 배선재: the cable this whole gate is named after — a generator that only feeds
+  // wiring (the Turbine, see spark.ts's PulseGate) feeds this first of all.
+  wiring: true,
   // 피복: a pulse on this cable never leaks into a neighbouring bare conductor —
   // see Material.insulated and the header note.
   insulated: true,

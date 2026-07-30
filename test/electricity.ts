@@ -40,6 +40,7 @@ import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
 import { TURBINE } from '../src/game/materials/turbine';
 import { STEAM } from '../src/game/materials/steam';
 import { SLIME } from '../src/game/materials/slime';
+import { ACID_SLIME } from '../src/game/materials/acidslime';
 import { NICHROME } from '../src/game/materials/nichrome';
 import { emitHeatRay } from '../src/game/materials/heatray';
 import { AMBIENT_TEMP } from '../src/game/config';
@@ -674,8 +675,10 @@ function farLeadReached(barId: number): boolean {
 // wrong model for it: every beat energized the boiler water touching it, spread a
 // pulse through the whole pool, electrolysed it into gas and bled the generated
 // strength into a puddle instead of down the cable. Its faces now emit only into
-// zero-loss wiring (the `'lossless'` PulseGate in spark.ts): Wire and the metals
-// yes, water/brine/acid/Slime no. What must NOT change is the other branch —
+// wiring (the `'wiring'` PulseGate in spark.ts): Wire and the metals yes,
+// water/brine/acid/Slime/Acid Slime no — Acid Slime carries a pulse at zero loss
+// and is still goo, which is why the gate reads a declared `Material.wiring` tag
+// rather than the loss table. What must NOT change is the other branch —
 // appliances and charges bolted straight onto a face still fire (도체 없이 직접
 // 연결), because those consume a pulse instead of spreading it, exactly like the
 // far end of a Wire run.
@@ -726,17 +729,20 @@ function sourceFeeds(sourceId: number, mediumId: number): boolean {
 }
 
 {
-  // Zero-loss wiring — the turbine's output has to reach all of it, or a steam
-  // plant simply doesn't work.
+  // Wiring — the turbine's output has to reach all of it, or a steam plant simply
+  // doesn't work.
   for (const wiring of [WIRE, IRON, NICHROME]) {
     check(
-      `a Turbine feeds ${wiring.name} bolted to its face (무손실 도체)`,
+      `a Turbine feeds ${wiring.name} bolted to its face (배선재)`,
       sourceFeeds(TURBINE.id, wiring.id),
       'wired output',
     );
   }
-  // Lossy media — skipped outright, and the battery control proves the scene works.
-  for (const wet of [WATER, SALTWATER, ACID, SLIME]) {
+  // Non-wiring conductors — skipped outright, and the battery control proves the
+  // scene works. Acid Slime is in this list on purpose: it is a *zero-loss*
+  // conductor, so it would pass a "lossless" gate, and only the declared tag keeps
+  // a generator from pushing power into a puddle of goo.
+  for (const wet of [WATER, SALTWATER, ACID, SLIME, ACID_SLIME]) {
     check(
       `a Turbine does NOT electrify the ${wet.name} it stands in`,
       !sourceFeeds(TURBINE.id, wet.id),
@@ -777,6 +783,83 @@ function sourceFeeds(sourceId: number, mediumId: number): boolean {
     'a Fan bolted straight onto a Turbine face still runs (도체 없이 직접 연결)',
     powered === fanCells,
     `${powered}/${fanCells} fan cells`,
+  );
+}
+
+// --- 10. Solar Panel: battery cadence + active/inactive -----------------------
+// The panel used to emit *inside* its light hook, so a lit array fired every single
+// tick — the wire's own 3-tick refractory was the only limit, which made a panel
+// drive everything downstream several times harder than a Battery or a Turbine
+// (지나치게 빠름). Light now only makes the array **active** (a countdown, exactly
+// like the Fan/Laser/Pump/Electromagnet's POWERED_TICKS) and an active array beats
+// on the shared PULSE_PERIOD, so all three sources are indistinguishable
+// downstream. Two things to pin, both of which a plausible refactor breaks quietly:
+//   • the beat RATE equals a battery's — measured against a real Battery in the
+//     same geometry, not against the constant, so re-phasing bugs that shave a tick
+//     off every beat (or a body that fires once per cell) show up as a mismatch;
+//   • the panel goes INACTIVE when the light stops, and then does nothing at all.
+
+/** Count the ticks on which the Iron lead beside a source column carries a Spark.
+ *  The source is a 4-cell column at x=10; the lead is the column at x=11. When
+ *  `lit` is set a Heat Ray is emitted at the source from the left on every tick —
+ *  what a powered Laser actually does — for the first `litTicks` ticks only, so the
+ *  same helper measures both "in full sun" and "the beam stopped". Returns the beat
+ *  count in the first window and in the tail after the light stops. */
+function sourceBeats(
+  sourceId: number,
+  lit: boolean,
+  ticks = 240,
+  litTicks = ticks,
+): { beats: number; tailBeats: number } {
+  const grid = new Grid(24, 9);
+  const sim = new Simulation(grid);
+  for (let y = 3; y <= 6; y++) {
+    grid.set(10, y, sourceId);
+    grid.set(11, y, IRON.id);
+  }
+  let beats = 0;
+  let tailBeats = 0;
+  for (let t = 0; t < ticks; t++) {
+    if (lit && t < litTicks) emitHeatRay(sim.context, 3, 4, 1, 0);
+    sim.step();
+    let sparked = false;
+    for (let y = 3; y <= 6; y++) if (grid.get(11, y) === SPARK.id) sparked = true;
+    if (!sparked) continue;
+    beats++;
+    // The tail starts one full active-countdown *and* one beat interval after the
+    // light stops — everything after that must be silence.
+    if (t >= litTicks + 24 + PULSE_PERIOD) tailBeats++;
+  }
+  return { beats, tailBeats };
+}
+
+{
+  const panel = sourceBeats(SOLAR_PANEL.id, true);
+  const battery = sourceBeats(BATTERY.id, false);
+  const dark = sourceBeats(SOLAR_PANEL.id, false);
+  check(
+    'a lit Solar Panel beats at the Battery cadence, not once per tick',
+    Math.abs(panel.beats - battery.beats) <= 1,
+    `panel ${panel.beats} beats vs battery ${battery.beats} over 240 ticks (PULSE_PERIOD ${PULSE_PERIOD})`,
+  );
+  check(
+    '…which is far below the one-per-tick it used to run at (the check can fail)',
+    panel.beats > 0 && panel.beats < 240 / 4,
+    `${panel.beats}/240 ticks carried a pulse`,
+  );
+  check(
+    'an unlit Solar Panel is inert — no light, no pulse, ever',
+    dark.beats === 0,
+    `${dark.beats} beats in 240 dark ticks`,
+  );
+
+  // Drop the beam a third of the way in: the panel keeps beating through its active
+  // countdown and then goes quiet for good.
+  const cut = sourceBeats(SOLAR_PANEL.id, true, 240, 80);
+  check(
+    'a Solar Panel goes inactive once the beam stops (and stays silent)',
+    cut.tailBeats === 0 && cut.beats > 0,
+    `${cut.beats} beats total, ${cut.tailBeats} after the countdown ran out`,
   );
 }
 

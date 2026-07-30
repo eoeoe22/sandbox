@@ -82,6 +82,9 @@ export const IRON = register({
   color: rgb(135, 140, 150),
   density: 1000,
   conductive: true,
+  // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
+  // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
+  wiring: true,
   category: 'solid',
   // A polished metal surface: a Heat Ray beam reflects cleanly off it (정반사) —
   // see heatray.ts.

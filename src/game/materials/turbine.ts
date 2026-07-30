@@ -31,11 +31,12 @@ import { PULSE_PERIOD } from './battery';
 // turbine from acting as a free wire that back-feeds a circuit, while still
 // solving "steam in the center can't reach the terminal on the edge".
 //
-// Its output is WIRED, not bare (전선처럼): a turbine face only ever feeds
-// proper wiring — Wire, the metals, anything that carries a pulse at zero loss
-// (`isLosslessConductor`) — plus electric appliances and charges bolted straight
-// onto it. Lossy media (water, brine, acid, Slime) are skipped entirely, the
-// `'lossless'` emission gate in spark.ts's `pulseCell`. The reason is that a
+// Its output is WIRED, not bare (전선처럼): a turbine face only ever feeds proper
+// wiring — a cable or a metal (`Material.wiring`) — plus electric appliances and
+// charges bolted straight onto it. Everything else is skipped: water, brine, acid,
+// Slime, and Acid Slime too, which carries a pulse at zero loss but is goo rather
+// than wire (that's why the gate reads a declared tag instead of the loss table).
+// It's the `'wiring'` emission gate in spark.ts's `pulseCell`. The reason is that a
 // turbine lives inside wet machinery *by design*: it stands over a boiler with
 // steam blowing through it and condensate draining back down through its own
 // pores. A bare face dumped every beat into that water, which spread a pulse
@@ -56,16 +57,16 @@ import { PULSE_PERIOD } from './battery';
  *  브러시), so the turbine stays consistent with them by construction — a new
  *  `directPulse`/explosive material needs no turbine edit.
  *
- *  The one thing the turbine asks of that shared rule is the `'lossless'`
- *  emission gate (see PulseGate): of the conductors, only zero-loss wiring gets
- *  a pulse, never the boiler water/brine/acid/goo the machine is standing in
- *  (see the header note). Devices and charges are unaffected. */
+ *  The one thing the turbine asks of that shared rule is the `'wiring'` emission
+ *  gate (see PulseGate): of the conductors, only cables and metals get a pulse,
+ *  never the boiler water/brine/acid/goo the machine is standing in (see the
+ *  header note). Devices and charges are unaffected. */
 function energizeNeighbors(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    pulseCell(sim, nx, ny, 'lossless');
+    pulseCell(sim, nx, ny, 'wiring');
   }
 }
 
