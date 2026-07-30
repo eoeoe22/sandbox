@@ -14,7 +14,7 @@ import { STONE } from './stone';
 import { SAND } from './sand';
 import { GLASS } from './glass';
 import { IRON } from './iron';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 
 // Thermite — a powder that, once lit, burns hotter than anything else in the
@@ -23,7 +23,7 @@ import { MOLTEN_GLASS } from './moltenglass';
 //   1. Ignite — a flame/blast/molten neighbor, or enough radiant heat, lights it.
 //   2. Molten burn — for BURN_TICKS it pins itself to a blistering BURN_TEMP,
 //      glows white-hot, and cuts: Stone→Lava, Sand/Glass→Molten Glass,
-//      Iron→Molten Metal, flammables→Fire, wreathing itself in flame. This is
+//      Iron→Molten Iron, flammables→Fire, wreathing itself in flame. This is
 //      the "cutting torch" window; it now lasts 2.5× as long as it once did
 //      (BURN_TICKS), so a lit grain lingers and bores far deeper before it fades.
 //   3. Fade — when the burn timer runs out it does NOT blink out instantly.
@@ -76,7 +76,7 @@ function isIgniter(id: number): boolean {
     id === LAVA.id ||
     id === BLUE_FLAME.id ||
     id === BLAST.id ||
-    id === MOLTEN_METAL.id ||
+    id === MOLTEN_IRON.id ||
     id === MOLTEN_GLASS.id
   );
 }
@@ -123,7 +123,7 @@ function burnInPlace(x: number, y: number, sim: SimContext, timer: number): void
     } else if (nid === SAND.id || nid === GLASS.id) {
       if (sim.chance(MELT_CHANCE)) sim.spawn(nx, ny, MOLTEN_GLASS.id);
     } else if (nid === IRON.id) {
-      if (sim.chance(MELT_CHANCE)) sim.spawn(nx, ny, MOLTEN_METAL.id);
+      if (sim.chance(MELT_CHANCE)) sim.spawn(nx, ny, MOLTEN_IRON.id);
     } else if (getMaterial(nid).flammable && sim.chance(MELT_CHANCE)) {
       sim.spawn(nx, ny, FIRE.id);
     }

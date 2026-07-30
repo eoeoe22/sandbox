@@ -8,7 +8,7 @@ import { SALT } from './salt';
 // Molten Salt (용융염) — what Salt becomes when heated past its melting point
 // (see salt.ts). A hot, glowing liquid that flows and, once conduction cools it
 // back below the freeze point, crystallizes into solid Salt again — the same
-// melt→flow→set cycle as Lava↔Stone, Sand→Glass and Iron→Molten Metal. Placed
+// melt→flow→set cycle as Lava↔Stone, Sand→Glass and Iron→Molten Iron. Placed
 // molten-hot; like isolated Lava it stays molten with nothing cold touching it.
 export const SALT_MELT_TEMP = 800;
 const MOLTEN_SALT_TEMP = 900;

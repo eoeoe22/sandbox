@@ -11,7 +11,7 @@ import { BROKEN_GLASS } from './brokenglass';
 // its melting point (GLASS_MELT_TEMP — lower than raw sand's, since fused glass
 // only has to soften), it re-melts into Molten Glass — the exact mirror of
 // Stone↔Lava, so a glass wall against a hot enough source (Lava, Blue Flame,
-// Molten Metal, a Thermite burn) softens and flows away. It's not
+// Molten Iron, a Thermite burn) softens and flows away. It's not
 // indestructible, though: a Blast shatters it like any other non-Wall solid.
 //
 // Brittle, too: a shock it can't be fully broken by — a Gunpowder concussion, a

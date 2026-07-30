@@ -10,7 +10,7 @@ import { FIRE } from './fire';
 // Molten Glass — what Sand becomes when it's heated past its melting point (see
 // sand.ts and glass.ts). A hot, sluggish, glowing liquid that flows to fill a
 // mold and then freezes into clear solid Glass as it cools, the same
-// melt→flow→set cycle as Lava→Stone and Molten Metal→Iron. It's still fiercely
+// melt→flow→set cycle as Lava→Stone and Molten Iron→Iron. It's still fiercely
 // hot, so it ignites flammable neighbors while molten.
 // Raw silica sand has to fully fuse before it flows, so it needs the highest
 // heat. Already-fused Glass just has to soften back up, so it re-melts at a

@@ -25,7 +25,7 @@ import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 //     burns: `tryBurn` rolls `burnChance` and the melt path is vetoed while any
 //     flame is adjacent, so the grain heats on toward its autoignition point and
 //     catches instead of quietly slumping into a puddle first.
-//   • Heat with no flame on it — a coal bed through a wall, a molten metal pool,
+//   • Heat with no flame on it — a coal bed through a wall, a molten iron pool,
 //     a hot pipe — melts it at 660°, and it never reaches autoignition at all.
 //
 // That reads as one rule ("불을 대면 타고, 그냥 데우면 녹는다") and it is the

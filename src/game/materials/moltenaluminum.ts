@@ -6,7 +6,7 @@ import type { SimContext } from '../engine/SimContext';
 import { ALUMINUM } from './aluminum';
 
 // Molten Aluminum — the liquid half of the aluminum pair, mirroring
-// Molten Metal↔Iron and Molten Glass↔Glass, but at a *far* lower temperature
+// Molten Iron↔Iron and Molten Glass↔Glass, but at a *far* lower temperature
 // than either. That temperature is the whole point of the material.
 //
 // Real aluminum melts at 660°, less than half of iron's 1200°, and that single
@@ -19,7 +19,7 @@ import { ALUMINUM } from './aluminum';
 // that away and instead gives up its heat resistance (a cast aluminum wall
 // melts right back into a puddle in the fire that made it).
 //
-// It also deliberately does NOT glow like Molten Metal or Lava. Real aluminum
+// It also deliberately does NOT glow like Molten Iron or Lava. Real aluminum
 // melts well below visible incandescence: a crucible of it looks like a bright
 // silver mirror, not a blazing orange one — the classic "it looks cold but it
 // is 700°" hazard. The `glow` ramp below therefore runs between two *silvers*
@@ -33,7 +33,7 @@ export const ALUMINUM_MELT_TEMP = 660;
 const MOLTEN_ALUMINUM_TEMP = 800;
 // Placed 100° under the melt point, the same hysteresis gap Glass↔Molten Glass
 // uses (1150/1050), so a cell hovering right at 660° can't flicker between the
-// two states every tick. Like Lava and Molten Metal, nothing cold touching it
+// two states every tick. Like Lava and Molten Iron, nothing cold touching it
 // means it never cools at all (air conducts no heat), so an isolated pool stays
 // liquid forever and it takes water, or the metal/stone it was poured onto, to
 // bleed the heat away and actually set it.
@@ -43,17 +43,17 @@ function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) <= MOLTEN_ALUMINUM_FREEZE_TEMP) {
     // Cooled enough to set. In-place `set` keeps the (now low) temperature so
     // the fresh Aluminum reads as cold and keeps drawing heat out of any melt
-    // still under it, exactly as Molten Metal → Iron does.
+    // still under it, exactly as Molten Iron → Iron does.
     sim.set(x, y, ALUMINUM.id);
     return;
   }
-  // No flammable-ignition pass of its own (unlike Molten Metal's, which runs at
+  // No flammable-ignition pass of its own (unlike Molten Iron's, which runs at
   // 1550°): at 660–800° this pool is barely above wood's own ignition point, so
   // whether it lights what it touches is left to ordinary conduction rather
   // than a scripted roll. It sets fire to a wooden floor it is poured on; it
   // does not flash-ignite a room the way a crucible of iron does.
 
-  // …and then it flows, like the liquid it is. Molten Metal and Lava gate this
+  // …and then it flows, like the liquid it is. Molten Iron and Lava gate this
   // behind a FLOW_CHANCE roll because they are thick, sluggish melts; molten
   // aluminum is a thin one (real aluminum pours about as freely as water), so
   // it runs every tick and its `viscosity` field alone supplies the small drag
@@ -81,7 +81,7 @@ export const MOLTEN_ALUMINUM = register({
   // mineral* melts and, like real aluminum, is lighter as a liquid than as a
   // solid — so its own powder (4.6) sinks through it. Placed just under Lava
   // (4.5) and Molten Glass (5), and well under Slag (5.75) / Molten Iron Ore
-  // (6.5) / Molten Metal (8), so a pour floats clear on top of every smelting
+  // (6.5) / Molten Iron (8), so a pour floats clear on top of every smelting
   // liquid and on lava. It is not the lightest melt outright: Molten Salt (4)
   // is lighter still, so aluminum sinks through a salt bath — and through
   // Water (3), so it sinks in a quench instead of skating on it.

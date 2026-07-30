@@ -13,7 +13,7 @@ import { FIRE } from './fire';
 import { emitNuclearRay, NUCLEAR_RAY } from './nuclearray';
 
 // Molten Uranium — a solid uranium mass past its melting point (see
-// uranium.ts). Unlike Lava or Molten Metal it is deliberately *not* viscous:
+// uranium.ts). Unlike Lava or Molten Iron it is deliberately *not* viscous:
 // there's no flow-chance gate, so it slumps and spreads like ordinary water —
 // a meltdown visibly escapes its containment instead of oozing. It's also the
 // densest liquid in the game (10, above Mercury's 9), so it sinks through
@@ -24,7 +24,7 @@ import { emitNuclearRay, NUCLEAR_RAY } from './nuclearray';
 // keeps climbing past the melt point. Two ways back down, two ways forward:
 //  • Cool it below the freeze point (water boiled off the surface still works,
 //    exactly like the solid-phase reactor) and it sets back into solid
-//    Uranium — the full melt ↔ freeze round trip, like Iron ↔ Molten Metal.
+//    Uranium — the full melt ↔ freeze round trip, like Iron ↔ Molten Iron.
 //  • Let it keep heating and at CRITICAL_TEMP the mass goes prompt-critical.
 //
 // Criticality is NOT the old instant detonation. The pool *burns*: each
@@ -165,7 +165,7 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // No viscosity gate (compare Lava/Molten Metal's FLOW_CHANCE): a meltdown
+  // No viscosity gate (compare Lava/Molten Iron's FLOW_CHANCE): a meltdown
   // flows like ordinary water, every tick.
   updateLiquid(x, y, sim);
 }

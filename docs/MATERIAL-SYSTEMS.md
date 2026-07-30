@@ -42,7 +42,7 @@
 즉발 폭발 없이 **단계적 재앙**으로 진행되는 핵연료 시스템. 전용 `방사성` 팔레트 카테고리에 U235·Molten U235·U238·Molten U238·Nuke Waste 5종이 모여 있다. 우라늄은 인접 우라늄 수 비례 자가 발열(연쇄반응 모델)이라 "임계질량"이 기하학에서 창발한다. 물/소금물 냉각으로 아임계 운전 가능.
 
 **두 동위원소 분기** — U235는 폭발형, U238은 비폭발형이다:
-- **U235 (폭발형)**: 멜트다운(1500°) → Molten U235. 점성 게이트 없이 물처럼 흐르는 코륨, 전체 액체 최고 밀도(10), 발열 가속(인접당 3°/틱). **가역 상전이**로 1400°↓ 냉각 시 고체 U235로 응고(Iron↔Molten Metal식 왕복). 방치해 **임계(2000°)** 도달 시 표면부터 서서히 연소하며 핵 광선 방출, 셀당 10발 방출 후 연기로 소진(방출 확률 0.7). 매몰돼도 연료·Wall이 아닌 면이면 덮개를 뚫고 방출. 대량 덩어리는 내부 셀까지 빠르게 붕괴(뭉칠수록 가속)해 폭주가 오래 안 끈다.
+- **U235 (폭발형)**: 멜트다운(1500°) → Molten U235. 점성 게이트 없이 물처럼 흐르는 코륨, 전체 액체 최고 밀도(10), 발열 가속(인접당 3°/틱). **가역 상전이**로 1400°↓ 냉각 시 고체 U235로 응고(Iron↔Molten Iron식 왕복). 방치해 **임계(2000°)** 도달 시 표면부터 서서히 연소하며 핵 광선 방출, 셀당 10발 방출 후 연기로 소진(방출 확률 0.7). 매몰돼도 연료·Wall이 아닌 면이면 덮개를 뚫고 방출. 대량 덩어리는 내부 셀까지 빠르게 붕괴(뭉칠수록 가속)해 폭주가 오래 안 끈다.
 - **U238 (비폭발형, 멜트다운까지만)**: U235와 똑같이 자가 발열하지만 멜트다운(1500° → Molten U238)이 종점이다. **멜트다운과 동시에 연쇄반응이 멈춘다** — Molten U238은 자가 발열 없이 방사 냉각(0.2°/틱)만 하며, 물 냉각이 이를 가속한다. 1400°↓로 식으면 **U235와 달리 되돌아오지 않고 Nuke Waste(가루)로 일방통행 응고**한다(공기는 완전 절연이라 순수 공기 중에서도 방사 냉각으로 결국 폐기물이 됨). Nuke Waste는 연쇄반응이 없어 다시 멜트다운하지 않고, 붕괴열로 스스로 ~160°까지 데우는 **약한 잔열원**이다.
 - **방폭(explosionProof)**: 5종 전부 폭발 완전 면역. `blocksBlast`가 상(phase) 무관하게 방폭 물질에서 크레이터 플러드를 막고, **충격파 압력전파**도 방폭 물질을 고체처럼 그림자 처리(`shadowsPressure`)해 액체·가루 방사성 물질조차 Debris로 밀려나지 않는다. 단 Nuclear Ray는 방폭과 무관하게 기존대로 우라늄에 반응한다.
 
@@ -60,8 +60,8 @@
 - **산소 송풍(`combustion.ts`)**: 연소 중 인접 Oxygen 1칸당 화염 핀 +250°(상한 1550°) — 산소 문 석탄불이 철광석을 녹일 만큼 뜨거워지고 "산소+아무 연료=절단 토치"도 덤.
 - **Fire 열전도 0.1→0.3 상향(`fire.ts`)**: 열교환이 `0.2×min(두 전도도)×온도차`로 게이트돼 Fire의 0.1이 '불→용기' 계면 상한이었다. 그 탓에 용기를 철(0.85)·다이아(0.95)·돌(0.5) 뭘 써도 `min(0.1, 용기)=0.1`로 클램프돼 **어떤 용기든 똑같이 느렸다**(헤드리스: 4칸 웅덩이 용해가 용기 무관 ~450~495틱). 기본 전도도(0.3)로 올려 속도만 개선(~210틱, 2배↑) — Fire의 ~1000° 상한은 그대로라 돌(1100°)은 여전히 못 녹인다(Blue Flame·Lava의 몫). 철광석 자체 전도도도 0.4→0.85로 올려 더미 내부 가열 가속.
 - 신규 5종: 철광석(67)·용융 철광석(71)·석탄가루(70)·석회석(69)·슬래그(68). 도입 당시 밀도 층화는 석탄가루(5)·슬래그(6)<용융 철광석(7)<쇳물(8)이었다 — 환원된 쇳물(제품)이 바닥에 가라앉고 폐기물 슬래그가 위로 뜨는 것 자체는 그대로지만, 이 5종의 밀도 서열은 이후 "## 제련 밀도 재서열" 절에서 명시적으로 다시 조정됐으니 최신 값은 그쪽을 참고.
-- **Iron 녹는점 1400→1200 하향(`moltenmetal.ts`)**: 제련 라인의 권장 화력인 **석탄+산소**로 실제로 철을 녹일 수 있게 조정. 산소 2칸 블라스트가 연소 셀을 1300°에 핀(combustion.ts)하므로 1200° 철이 여유 있게 녹는다. 맨 불(~1000°)보다는 높아 일반 Fire로는 여전히 못 녹이고, 돌(1100°) 바로 위라 철을 녹이는 화력엔 돌 도가니가 함께 주저앉는다 → 권장 용기는 **Diamond(0.95)·Heatpipe(1.0)**(열전도 최상급, 무용융). 쇳물 어는점도 1350→1100으로 낮춰 melt>freeze 이력(100°)을 유지(경계 깜빡임 방지). LFP 배터리 용융점(1400)은 철과 디커플링해 그대로 둬 "석탄불엔 안 녹는 튼튼한 전원" 성질 유지, 드럼통 용융(1200)은 철과 동률.
-- **잔여 석회석·석탄가루가 Molten Metal 위로만 뜨고 Molten Iron Ore·Slag에는 가라앉도록 부력을 공유(`moltenironore.ts`)**: Limestone은 원래부터 제련 3상(Slag·Molten Iron Ore·Molten Metal) 전부에 반응하는 재질-식별 부력을 갖고 있었지만, Coal Powder는 반대로 `mixIntoMelt`가 광석 아래로 능동적으로 가라앉히기만 해서 — 근처 광석을 전부 소모하고 나면 되돌아올 방법이 없어 바닥 쇳물(Molten Metal) 속에 반응 못 한 탄소가 그대로 갇혔다. 두 물질이 쓰던(거의 동일한) 상승 로직을 `moltenironore.ts`에 `tryRiseThroughFlux`로 추출해 공유하되, 뜨는 조건을 **Molten Metal 하나로만** 좁혔다(처음엔 Slag까지 포함했다가, 슬래그에 뿌린 석회석·탄소도 그대로 섞여 들어가야 한다는 후속 조정으로 한 번 더 좁혔다). Molten Iron Ore는 아직 환원이 진행 중인 활성 층이라 거기 파묻힌 석회석·탄소는 계속 눌러앉아 주변 광석과 반응해야지 곧장 표면으로 스치고 지나가면 안 되고(석회석은 애초에 인접 광석 셀에게 "읽히는" 방식으로 작동하므로 광석 속에 머무는 쪽이 오히려 정상), Slag도 마찬가지로 뿌려진 플럭스·탄소가 그 폐기물 층에 섞여 눌러앉아야 한다. 오직 바닥 **완성품 Molten Metal**에 파묻힌 것만 다시 떠오른다. Coal Powder의 `updateCoalPowder`에서는 `mixIntoMelt`(광석으로 가라앉힘)가 매 틱 우선권을 쥐고, 실패했을 때만 `tryRiseThroughFlux`를 호출한다(헤드리스 검증: Molten Metal 깊숙이 심은 Coal Powder가 매 틱 1칸씩 착실히 떠올라 광석 경계에 닿는 순간 그 자리에서 환원으로 소모됨 — 광석 속으로 더 들어가 스치듯 통과하지 않는다). Limestone 쪽은 동작 변경 없이 공용 헬퍼 호출로 대체 — 다만 **Molten Iron Ore 안에서 뜰지 가라앉을지는 별도로 재검토 여지가 있다**(아래 참고).
+- **Iron 녹는점 1400→1200 하향(`molteniron.ts`)**: 제련 라인의 권장 화력인 **석탄+산소**로 실제로 철을 녹일 수 있게 조정. 산소 2칸 블라스트가 연소 셀을 1300°에 핀(combustion.ts)하므로 1200° 철이 여유 있게 녹는다. 맨 불(~1000°)보다는 높아 일반 Fire로는 여전히 못 녹이고, 돌(1100°) 바로 위라 철을 녹이는 화력엔 돌 도가니가 함께 주저앉는다 → 권장 용기는 **Diamond(0.95)·Heatpipe(1.0)**(열전도 최상급, 무용융). 쇳물 어는점도 1350→1100으로 낮춰 melt>freeze 이력(100°)을 유지(경계 깜빡임 방지). LFP 배터리 용융점(1400)은 철과 디커플링해 그대로 둬 "석탄불엔 안 녹는 튼튼한 전원" 성질 유지, 드럼통 용융(1200)은 철과 동률.
+- **잔여 석회석·석탄가루가 Molten Iron 위로만 뜨고 Molten Iron Ore·Slag에는 가라앉도록 부력을 공유(`moltenironore.ts`)**: Limestone은 원래부터 제련 3상(Slag·Molten Iron Ore·Molten Iron) 전부에 반응하는 재질-식별 부력을 갖고 있었지만, Coal Powder는 반대로 `mixIntoMelt`가 광석 아래로 능동적으로 가라앉히기만 해서 — 근처 광석을 전부 소모하고 나면 되돌아올 방법이 없어 바닥 쇳물(Molten Iron) 속에 반응 못 한 탄소가 그대로 갇혔다. 두 물질이 쓰던(거의 동일한) 상승 로직을 `moltenironore.ts`에 `tryRiseThroughFlux`로 추출해 공유하되, 뜨는 조건을 **Molten Iron 하나로만** 좁혔다(처음엔 Slag까지 포함했다가, 슬래그에 뿌린 석회석·탄소도 그대로 섞여 들어가야 한다는 후속 조정으로 한 번 더 좁혔다). Molten Iron Ore는 아직 환원이 진행 중인 활성 층이라 거기 파묻힌 석회석·탄소는 계속 눌러앉아 주변 광석과 반응해야지 곧장 표면으로 스치고 지나가면 안 되고(석회석은 애초에 인접 광석 셀에게 "읽히는" 방식으로 작동하므로 광석 속에 머무는 쪽이 오히려 정상), Slag도 마찬가지로 뿌려진 플럭스·탄소가 그 폐기물 층에 섞여 눌러앉아야 한다. 오직 바닥 **완성품 Molten Iron**에 파묻힌 것만 다시 떠오른다. Coal Powder의 `updateCoalPowder`에서는 `mixIntoMelt`(광석으로 가라앉힘)가 매 틱 우선권을 쥐고, 실패했을 때만 `tryRiseThroughFlux`를 호출한다(헤드리스 검증: Molten Iron 깊숙이 심은 Coal Powder가 매 틱 1칸씩 착실히 떠올라 광석 경계에 닿는 순간 그 자리에서 환원으로 소모됨 — 광석 속으로 더 들어가 스치듯 통과하지 않는다). Limestone 쪽은 동작 변경 없이 공용 헬퍼 호출로 대체 — 다만 **Molten Iron Ore 안에서 뜰지 가라앉을지는 별도로 재검토 여지가 있다**(아래 참고).
 
 ## 석탄불 온도 상향 (Coal 전용 `burnTemp`)
 
@@ -467,7 +467,7 @@ active-tile 결정성 테스트(15 시나리오·2020틱) 전건 통과. 충격�
   **Iron·Rust 같은 구조용 고체엔 일부러 달지 않았다** — 고정 구조물을 끌어당기면 유저의
   배선·기계·벽이 마운트에서 뜯겨 날아간다(Fan의 바람이 고체를 안 미는 것과 같은 이유). 전자석
   자체도 느슨한 것(가루·액체·`shockLoose` 기어다니는 것)만 옮기게 이중으로 막아 뒀다.
-  Molten Metal은 퀴리점 위라 애초에 비자성 — 유일하게 자격이 있어 보이는 액체에 고증상
+  Molten Iron은 퀴리점 위라 애초에 비자성 — 유일하게 자격이 있어 보이는 액체에 고증상
   변명이 있는 셈이다.
 - **자기장 = 몸체 외곽선에서 자라는 너비 우선 필드**: 한 점에서의 반경이 아니라 Woofer 충격파의
   측지 거리장과 같은 방식(반경 `REACH`=10). 두 가지 성질이 공짜로 따라오고 둘 다 원하던 것이다 —
@@ -697,7 +697,7 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   자체적으로 `tryBuoyantRise`를 다시 호출할 필요가 없어졌다).
 - **제련 예외의 재구성(`moltenironore.ts`의 `tryHoldInActiveMelt`, 옛 이름
   `tryRiseThroughFlux`)**: Coal Powder·Limestone은 제련액 3종(Molten Iron Ore·Slag·
-  Molten Metal) 전부보다 가벼워서, 아무 손도 안 대면 일반 밀도 부력이 셋 다에서 뜨게
+  Molten Iron) 전부보다 가벼워서, 아무 손도 안 대면 일반 밀도 부력이 셋 다에서 뜨게
   만들어 버린다 — Molten Iron Ore·Slag는 "계속 반응 중이라 눌러앉아야 하는" 층이라
   이러면 제련 메커니즘이 깨진다. 그래서 이 함수가 그 **두** 액체만 재질 식별로 가로채
   붙잡아 둔다: 위 칸이 Molten Iron Ore/Slag면 **일반 밀도 부력(위로 뜨려는 시도)만
@@ -706,14 +706,14 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   완전히 얼어붙게 만드는 버그가 있었는데(리뷰에서 발견: 위가 Ore/Slag여도 대각선
   아래가 빈 공간이면 원래는 계속 굴러떨어질 수 있어야 하고, 옛 코드는 실제로 그렇게
   동작했다), `updatePowderSink`로 고쳐 "뜨는 것만 금지, 가라앉는 건 여느 가루와 동일"로
-  바로잡았다. 위 칸이 Molten Iron Ore/Slag가 아니면(Molten Metal 포함, 그 무엇도
+  바로잡았다. 위 칸이 Molten Iron Ore/Slag가 아니면(Molten Iron 포함, 그 무엇도
   아니어도) `false`를 반환해 호출자의 `updatePowder` 폴백으로 넘긴다 — **Molten
-  Metal은 더 이상 이 함수 안에서 따로 처리하지 않는다**: 두 가루 다 Molten Metal(8)
+  Metal은 더 이상 이 함수 안에서 따로 처리하지 않는다**: 두 가루 다 Molten Iron(8)
   보다 가벼우므로, `updatePowder`의 일반 밀도 부력이 어차피 똑같은 방식(같은 확률
   상수)으로 떠오르게 하기 때문에 예전처럼 이 함수 안에 거의 동일한 부상 로직을 따로
   복제해 둘 필요가 없었다(리뷰에서 지적된 중복 제거). 그 결과 Coal Powder·Limestone은
   Molten Iron Ore·Slag에서만 재질별 예외(뜨지 않고 가라앉기만)를 따르고, **그 밖의
-  모든 액체(Molten Metal 포함 — 물·기름·용암·Mercury·Molten Uranium 등)에서는 다른
+  모든 액체(Molten Iron 포함 — 물·기름·용암·Mercury·Molten Uranium 등)에서는 다른
   가루와 똑같이 밀도(둘 다 5)로 뜨고 가라앉는다** — 예전엔 제련액 밖에서도 그냥
   가라앉기만 했던 것과 달리, Mercury·Molten Uranium(9·10)에 파묻히면 이제 떠오른다.
   (※ 이 절 작성 시점 기준 서술이다. Coal Powder의 밀도는 이후 "## 제련 밀도
@@ -754,10 +754,10 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
 잠긴 값"으로 보고 손대지 않았다. 이 라운드는 그 잠긴 값을 사용자가 명시한 새
 순서로 명시적으로 재서열한다:
 
-**Molten Metal(8) > Coal Powder(7.5) > Molten Iron Ore(6.5) > Slag(5.75) >
+**Molten Iron(8) > Coal Powder(7.5) > Molten Iron Ore(6.5) > Slag(5.75) >
 Limestone(5)** — 기존(Coal Powder=Limestone=5 < Slag=6 < Molten Iron Ore=7 <
-Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 5종 중 가장
-가벼운 쪽이 아니라 Molten Metal 다음으로 무거워진다**는 것. 실제 석탄 비중은
+Molten Iron=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 5종 중 가장
+가벼운 쪽이 아니라 Molten Iron 다음으로 무거워진다**는 것. 실제 석탄 비중은
 철광석·쇳물보다 훨씬 가볍지만(문서화된 값이 아니라 그냥 상식 수준), 이 서열은
 처음부터 사용자가 명시적으로 요청한 게임플레이 우선 순서다(CLAUDE.md 1순위
 재미 > 3순위 과학적 고증) — "석탄이 웅덩이 위에 뜬 채 표면만 반응한다"보다
@@ -811,10 +811,10 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   Slag부턴 뜬다.
 - **검증**: 저장소 루트 임시 헤드리스 스크립트(1차 라운드와 동일한 esbuild+wasm
   스텁 패턴, 실행 후 삭제)로 5개 시나리오 확인 — Coal Powder가 Molten Iron
-  Ore/Slag를 뚫고 가라앉음, Coal Powder가 Molten Metal에서는 여전히 뜸(회귀 없음),
+  Ore/Slag를 뚫고 가라앉음, Coal Powder가 Molten Iron에서는 여전히 뜸(회귀 없음),
   Limestone은 Molten Iron Ore에서 여전히 붙잡혀 있음(회귀 없음), Limestone은 Molten
   Metal에서 여전히 뜸(회귀 없음), 철광석 장입(Iron Ore + Coal Powder 혼합, 850°↑)을
-  수천 틱 헤드리스 실행해 Molten Metal/Iron과 Slag가 모두 생성되고 쇳물이 슬래그보다
+  수천 틱 헤드리스 실행해 Molten Iron/Iron과 Slag가 모두 생성되고 쇳물이 슬래그보다
   아래에 자리 잡는 전체 제련 플로우 완주 확인. `npm run check`·`npm run
   test:active-tiles`(10 시나리오 전건)도 재통과.
 
@@ -975,10 +975,10 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   안에서는 여러 알갱이가 쌓여도 전혀 평탄화되지 않는다 — 붙잡힘 계약을
   지키는 쪽을 우선한 의도적 트레이드오프(위 "리뷰가 잡은 회귀" 참고).
   또 `tryHoldInActiveMelt`는 바로 **위**가 Ore/Slag인 경우만 붙잡으므로,
-  위는 열려 있지만 Molten Metal 위에 얹힌 채 옆으로만 Ore/Slag와
+  위는 열려 있지만 Molten Iron 위에 얹힌 채 옆으로만 Ore/Slag와
   닿아 있는 드문 경계 배치에서는 (Coal Powder·Limestone 둘 다) 일반
   `updatePowder` 경로를 타 옆으로 흔들릴 수 있다 — 다만 이 조합은 이번
-  라운드 이전부터 이미 "제련액 3종 중 Molten Metal만은 전용 처리 없이
+  라운드 이전부터 이미 "제련액 3종 중 Molten Iron만은 전용 처리 없이
   일반 부력을 그대로 쓴다"는 기존 설계(`moltenironore.ts`)이고, 인접
   기반 반응(환원·플럭스)은 원래도 매 틱 새로 스캔하는 확률적 상호작용이라
   못 박아 둔 계약이 없어 이번 라운드에서 손대지 않았다.
@@ -996,7 +996,7 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   액체 없이 Rock 바닥에 15칸짜리 Sand 기둥을 떨어뜨린 경우, 수정
   전후 동일하게(무더기 형태로) 정착함을 확인했다(안식각 무더기 모양은
   안 바뀜). 리뷰가 잡은 제련로 회귀는 별도 시나리오로 — Molten Iron
-  Ore 아래·Molten Metal 바로 위에 Limestone 한 칸을 두고
+  Ore 아래·Molten Iron 바로 위에 Limestone 한 칸을 두고
   `tryHoldInActiveMelt`로 붙잡힌 상태에서 500틱을 돌려, 수정 전 옆
   칸으로 이탈 vs 수정 후 가로 이동 0칸(제자리 유지)을 확인했다.
   `npm run check`·`npm run test:active-tiles`(10 시나리오 전건)도 재통과.
@@ -1109,25 +1109,25 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   `flattenIfFloating`이 쓰는 것과 같은 `shouldFlatten` 조건으로 게이팅해
   해결 — Coal Powder는 두 액체보다 항상 무거워 `shouldFlatten`이 항상
   거짓이라 옆 이동 자체가 아예 시도되지 않는다.
-- **2차 리뷰에서 발견된 후속 문제 — Molten Metal 경계에서 재발**: Altitude
+- **2차 리뷰에서 발견된 후속 문제 — Molten Iron 경계에서 재발**: Altitude
   앵글이 지적 — `containerIds`를 `tryHoldInActiveMelt`가 확인하는 바로 그 두
-  재질(Ore/Slag)로만 좁힌 결과, **Molten Metal은 의도적으로 빠졌다**(pin
-  자체가 위 칸이 Ore/Slag일 때만 걸리므로). 그런데 Molten Metal은 밀도가 가장
+  재질(Ore/Slag)로만 좁힌 결과, **Molten Iron은 의도적으로 빠졌다**(pin
+  자체가 위 칸이 Ore/Slag일 때만 걸리므로). 그런데 Molten Iron은 밀도가 가장
   높아 Ore/Slag 아래로 가라앉아 쌓이는, 모든 제련의 자연스러운 최종 층 —
   드물게 놓이는 상황이 아니라 매 제련마다 생기는 흔한 경계다. 이 경계
   바로 위쪽, 위로는 Ore/Slag에 덮여 붙잡려 있으면서 양옆이 전부 Molten
-  Metal인 Limestone 알갱이는: 아래로는 못 가라앉고(Molten Metal이 너무
+  Metal인 Limestone 알갱이는: 아래로는 못 가라앉고(Molten Iron이 너무
   무거움), 위로도 못 뜨고(pin이 막음), 옆으로도 못 퍼진다(`containerIds`에
-  Molten Metal이 없어 거부됨) — 이 PR 시리즈 전체가 고치려던 바로 그
+  Molten Iron이 없어 거부됨) — 이 PR 시리즈 전체가 고치려던 바로 그
   "일자로 얼어붙는" 증상이 장소만 바뀌어 재발하는 것. **수정**:
   `tryHoldInActiveMelt`가 `updatePowderSink`에 넘기는 목록을
-  `[...pinIds, MOLTEN_METAL.id]`로 한 칸 넓혔다 — pin을 거는 기준(위 칸이
+  `[...pinIds, MOLTEN_IRON.id]`로 한 칸 넓혔다 — pin을 거는 기준(위 칸이
   Ore/Slag인가)은 그대로 두고, 옆으로 퍼질 수 있는 대상만 넓힌 것. Molten
   Metal은 플레이어가 우연히 근처에 놓은 무관한 액체가 아니라 바로 이 제련
   과정 자체가 만들어내는, 항상 그 Ore/Slag 덩어리 바로 아래 구조적으로 붙어
   있는 산출물이라 이 재질을 옆 이동 대상에 포함해도 1라운드가 막은 "무관한
   액체로 새어나감" 문제는 재발하지 않는다. 헤드리스 스크립트로 확인: 위는
-  Ore, 양옆·아래는 전부 Molten Metal인 고립된 Limestone 알갱이들이 300틱 뒤
+  Ore, 양옆·아래는 전부 Molten Iron인 고립된 Limestone 알갱이들이 300틱 뒤
   전부(6/6) 원래 자리를 벗어나 재배치됨을 확인(수정 전 이 목록에 Molten
   Metal이 없었다면 전부 그대로 얼어붙어 있었을 자리).
 - **2차 리뷰의 나머지 지적**: Reuse/Simplification 앵글이 독립적으로 같은
@@ -1141,9 +1141,9 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   `SimContext.ts`의 `swapOntoLiquid`, 후자는 `moltenironore.ts`의
   `tryHoldInActiveMelt`)에만 전체 설명을 남기고 나머지는 짧은 포인터로
   줄임. `test/active-tiles.ts`의 `makeMeltPinnedFlux` 시나리오도 Angle B가
-  지적한 커버리지 공백(Slag·Molten Metal·무관한 액체 중 무엇도 실제로
+  지적한 커버리지 공백(Slag·Molten Iron·무관한 액체 중 무엇도 실제로
   등장하지 않아 `containerIds` 제한 자체는 사실상 검증하지 못하고 있었음)을
-  메우도록 Ore/Slag/Molten Metal 3단 층 + 가장자리의 무관한 Water 띠로
+  메우도록 Ore/Slag/Molten Iron 3단 층 + 가장자리의 무관한 Water 띠로
   재구성.
 - **검증**: 저장소 루트 임시 헤드리스 스크립트로 확인 (1) 30×30 그리드를
   1000° Molten Iron Ore로 완전히 채우고 3칸 간격으로 고립된 Limestone 알갱이
@@ -1158,8 +1158,8 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
   2~7칸 제각각인 Limestone 빗살을 제련액 속에 완전히 봉인한 뒤 3000틱 실행 —
   수정 전엔 t=50 이후 특정 열들이 계속 같은 깊이 근방에 머물며 사실상 굳은
   모양을 유지한 반면, 수정 후엔 전 구간에 걸쳐 계속 재배치가 일어나 깊이
-  분포가 지속적으로 바뀜을 확인했다. (3) 위는 Ore, 양옆·아래는 Molten Metal인
-  고립 알갱이가 Molten Metal 경계에서도 얼어붙지 않고 재배치되는지, 같은 열에
+  분포가 지속적으로 바뀜을 확인했다. (3) 위는 Ore, 양옆·아래는 Molten Iron인
+  고립 알갱이가 Molten Iron 경계에서도 얼어붙지 않고 재배치되는지, 같은 열에
   놓인 무관한 Water 쪽으로는 절대 넘어가지 않는지 재확인. `npm run check`·
   `npm run test:active-tiles`(12 시나리오 전건) 재통과.
 - **리뷰가 지적했지만 이번엔 안 고친 것**: (1) `SimContext.swap`은 교환된 두
@@ -1181,21 +1181,21 @@ Molten Metal=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련
 ## 두 종류의 뜨는 가루가 서로를 막던 문제 — `swapOntoPowder`/`moveSidewaysMix` 추가
 
 앞 절 배포·`call_user` 통보 후 사용자가 브라우저 스크린샷과 함께 재보고 —
-"대부분 molten metal이고, 쌓인건 coal powder, limestone": 제련로 대부분이 이미
-Molten Metal로 바뀐 상태에서, 그 위에 뜬 Coal Powder·Limestone이 여전히 좁은
+"대부분 molten iron이고, 쌓인건 coal powder, limestone": 제련로 대부분이 이미
+Molten Iron으로 바뀐 상태에서, 그 위에 뜬 Coal Powder·Limestone이 여전히 좁은
 세로 줄무늬(빗살) 모양으로 얼어붙어 있었다. 앞 절 수정은 "제련액(Ore/Slag)에
 덮여 붙잡힌 채 옆으로 못 퍼지는" 경로를 고쳤지만, 이건 이미 그 단계를 지나
-Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 안 붙잡는
+Molten Iron 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 안 붙잡는
 구간, 그냥 `updatePowder`류의 일반 부력 경로)에서 벌어지고 있어 다른 원인이었다.
 
 - **원인**: `SimContext.isDisplaceable`는 Liquid/Gas만 변위 가능하다고 보고
   Powder는 절대 포함하지 않는다 — 즉 `tryMove`도, `moveSidewaysBuoyant`가
   마지막에 기대는 `swapOntoLiquid`도 **Powder 칸을 다른 Powder 칸으로 절대
   옆 이동시키지 못한다**. Coal Powder(밀도 7.5)와 Limestone(밀도 5)은 둘 다
-  Molten Metal(8)보다 가벼워 뜨는 두 재질인데, 흩어 부으면 서로 다른 재질의
+  Molten Iron(8)보다 가벼워 뜨는 두 재질인데, 흩어 부으면 서로 다른 재질의
   알갱이가 같은 높이에서 옆으로 맞닿는 경우가 생긴다 — 이때 그 알갱이의 양옆이
   전부 "떠 있는 다른 가루"이고 노출된 액체가 하나도 없으면, `shouldFlatten`은
-  참(제 밑을 타고 내려가면 결국 Molten Metal이 나오므로)이어도
+  참(제 밑을 타고 내려가면 결국 Molten Iron이 나오므로)이어도
   `moveSidewaysBuoyant`가 시도할 수 있는 이동이 **단 하나도 없다** —
   `tryMove`도 실패(Powder 대상은 변위 불가), `swapOntoLiquid`도 실패(옆 칸이
   액체가 아님), `fallAndPile`의 아래/대각선 아래도 실패(그 자리도 다른
@@ -1203,7 +1203,7 @@ Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 
   이어지지만, 서로 다른 두 재질이 표면을 빈틈없이 덮으면 이 "탈출용 액체"가
   근처에 전혀 없는 자리가 생겨 그 자리에서 그대로, 영구히 얼어붙는다 —
   헤드리스 스크립트로 재현: 두꺼운 Coal Powder 층에 완전히 둘러싸인(위/아래/
-  양옆 전부 Coal Powder, Molten Metal 침투 방지용으로 충분히 두껍게) Limestone
+  양옆 전부 Coal Powder, Molten Iron 침투 방지용으로 충분히 두껍게) Limestone
   알갱이 하나가 2000틱 내내 단 한 번도 못 움직임을 확인(수정 전).
 - **수정**: `SimContext`에 `swapOntoPowder(x, y, tx, ty, ids)`(밀도 비교나
   `isFrozen` 검사 없이 옆 칸 재질 id가 `ids`에 있으면 무조건 교환 — Powder는
@@ -1260,13 +1260,13 @@ Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 
   범위라 이번 버그 리포트(제련로 한정)의 범위를 넘는다고 보고 보류했다 —
   다른 가루 쌍에서 실제로 이 증상이 재보고되면 그때 `isDisplaceable` 자체를
   일반화하는 편이 나을 것이다. 알려진 한계로 남겨둔다.
-- **검증**: 저장소 루트 임시 헤드리스 스크립트로 Molten Metal 침투를 막을
+- **검증**: 저장소 루트 임시 헤드리스 스크립트로 Molten Iron 침투를 막을
   만큼 두꺼운 Coal Powder 슬랩 한가운데(가장자리에서 20칸 이상 떨어진 곳)에
   고립시킨 단일 Limestone 알갱이로 확인 — 수정 전엔 2000틱 내내 단 한 번도
   이동하지 않음(완전 고정), 수정 후엔 즉시(0번째 틱) 옆 Coal Powder와 자리를
   바꾸며 풀려남. `npm run check`(0 errors), `npm run test:active-tiles`
   (13 시나리오 전건, 새 시나리오 `makeMixedFloat` — Coal Powder/Limestone이
-  한 칸씩 번갈아 나열된 선반을 Molten Metal 위 두꺼운 Coal Powder 슬랩에
+  한 칸씩 번갈아 나열된 선반을 Molten Iron 위 두꺼운 Coal Powder 슬랩에
   얹어 `swapOntoPowder`/`moveSidewaysMix` 경로를 강제로 타게 함 — 포함)
   재통과.
 - **코드리뷰에서 지적된 나머지 사항**: (1) `updatePower`(오타, d 누락)를
@@ -1287,7 +1287,7 @@ Molten Metal 위에 자유롭게 뜬 상태(`tryHoldInActiveMelt`가 더 이상 
 
 앞 절 배포 후 사용자가 다시 재보고: "줄어들긴 했으나 여전히 일자 기둥이
 남음. 남은 기둥은 molten iron ore가 섞여있음." 앞 절 수정은 제련액을 완전히
-벗어나 Molten Metal 위에 자유롭게 뜬 경우만 커버했는데, 아직 Molten Iron
+벗어나 Molten Iron 위에 자유롭게 뜬 경우만 커버했는데, 아직 Molten Iron
 Ore/Slag에 붙잡힌(pinned) 상태에서도 Coal Powder·Limestone 두 재질이 옆으로
 맞닿으면 정확히 같은 이유(`isDisplaceable`이 Powder 대 Powder 변위를 절대
 허용하지 않음)로 얼어붙을 수 있었다 — 앞 절이 자유 상태만 고치고 붙잡힌
@@ -1298,7 +1298,7 @@ Ore/Slag에 붙잡힌(pinned) 상태에서도 Coal Powder·Limestone 두 재질�
   칸으로만 교환할 수 있고, 다른 재질의 붙잡힌 가루로는 절대 교환할 수
   없었다 — 앞 절의 `swapOntoPowder`/`moveSidewaysMix`는 자유롭게 뜬 경로
   (`updatePowderMix`)에만 연결돼 있었기 때문. 그래서 Coal Powder·Limestone이
-  둘 다 아직 Ore/Slag에 덮인 채(Molten Metal 경계로 다 가라앉기 전) 서로
+  둘 다 아직 Ore/Slag에 덮인 채(Molten Iron 경계로 다 가라앉기 전) 서로
   옆에 맞닿으면, 노출된 액체가 없는 자리에서 똑같이 영구 고정됐다.
 - **1차 시도와 그 결함(자체 발견, 커밋 전에 되돌림)**: `moveSidewaysContained`/
   `updatePowderSink`에 `mixIds`를 다시 넣고, 앞 절의 `swapOntoPowder`를 그대로
@@ -1344,14 +1344,14 @@ Ore/Slag에 붙잡힌(pinned) 상태에서도 Coal Powder·Limestone 두 재질�
 - **검증**: 저장소 루트 임시 헤드리스 스크립트로 확인 — Slag 천장·Molten
   Metal 바닥 사이에 낀 Coal Powder/Limestone 한 칸짜리 선반(모든 칸이
   진짜로 붙잡힌 상태: 위가 Slag라 `tryHoldInActiveMelt`가 붙잡고, 아래가
-  Molten Metal이라 Limestone은 뜬 상태로 읽힘) 중 가운데 알갱이 하나로
+  Molten Iron이라 Limestone은 뜬 상태로 읽힘) 중 가운데 알갱이 하나로
   고립 테스트 — 수정 전엔 2000틱 내내 단 한 번도 이동하지 않음, 수정
   후엔 즉시(0번째 틱) 옆 자리와 교환되며 풀려남. 터치-체크를 일부러 항상
   거짓을 반환하도록 되돌려 봐도(회귀 시뮬레이션) 여전히 안 움직임을 재확인
   — 즉 이 수정이 실제로 필요하다는 것과, 터치-체크가 진짜로 게이팅 역할을
   한다는 것 둘 다 직접 확인했다. `npm run check`(0 errors),
   `npm run test:active-tiles`(14 시나리오 전건 — 새 시나리오
-  `makeMeltPinnedMix`: Slag 천장/Molten Metal 바닥 사이에 Coal
+  `makeMeltPinnedMix`: Slag 천장/Molten Iron 바닥 사이에 Coal
   Powder/Limestone이 한 칸씩 번갈아 나열된 선반을 얹어
   `swapOntoPinnedPowder`/`moveSidewaysContained`의 `mixIds` 경로를 강제로
   타게 함) 재통과.
@@ -1614,7 +1614,7 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   개체도 옆에 섬광 셀이 있으면 확정사한다. Woofer의 충격파는 섬광 셀을 만들지 않으므로
   (woofer.ts) 이 경로엔 아예 걸리지 않고, 대신 아래 `shockLoose` 경로로 들어온다.
   흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal
-  Powder와 같은 녹는점**(Iron 융점→Molten Metal 융해)이며 Blast엔 **Metal Powder**로 부서진다.
+  Powder와 같은 녹는점**(Iron 융점→Molten Iron 융해)이며 Blast엔 **Metal Powder**로 부서진다.
 - **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
   개체만 잡는다 — 폭심에서 폭발이 직접 파괴한 셀은 자기 `update`가 돌기 전에 `defaultCell`
   (blast.ts)이 곧장 Blast 섬광 셀로 덮어써서 불/빈칸으로 사라져, 명세가 요구한 잔재(Sawdust/
@@ -2038,7 +2038,7 @@ id는 순서가 아니라 **안정 식별자**라(세이브 파일과 `spark.ts`
   반개구간으로 잡아, 자연발화점 이상인 셀은 전부 `tryBurn`의 몫으로 남긴다.
 - **Molten Aluminum은 빛나지 않는다(글로우 램프의 다른 용법)**: 실제 알루미늄은 가시
   백열 온도보다 훨씬 낮은 곳에서 녹아, 도가니 속에서 **거울 같은 은색 액체**로 보인다("차가워
-  보이는데 700°"). 그래서 `glow` 램프를 흰색→주황(Molten Metal·Lava)이 아니라 **밝은 은색
+  보이는데 700°"). 그래서 `glow` 램프를 흰색→주황(Molten Iron·Lava)이 아니라 **밝은 은색
   → 흐린 회색**으로 잡았다 — 냉각 전선은 여전히 눈에 보이지만 웅덩이가 불로 읽히지 않는다.
   기존 용융액들과 한눈에 구분되는 시각 신호이기도 하다. 밀도 4.4는 **모든 용융액 중 최저**라
   제련 3상·Lava 위에 전부 뜨고, 물(3)엔 가라앉는다. 자기 가루(4.6)보다 가벼운 것도 실물
@@ -2079,7 +2079,7 @@ id는 순서가 아니라 **안정 식별자**라(세이브 파일과 `spark.ts`
   **`updateLiquid` 호출을 빠뜨려**, 부은 자리에 기둥째 굳어 서 있었다. 헤드리스 검사가
   "식으면 고체가 된다"는 것만 봤지 **흐르는지**는 안 봐서 못 잡은 구멍이다(응고·주조 왕복은
   제자리에서도 전부 통과한다). 이제 매 틱 흐르고, `viscosity: 0.2` 필드가 유일한 저항이다 —
-  Molten Metal·Lava가 `FLOW_CHANCE` 롤로 흐름을 걸러 끈적하게 만드는 것과 달리, 실제 알루미늄
+  Molten Iron·Lava가 `FLOW_CHANCE` 롤로 흐름을 걸러 끈적하게 만드는 것과 달리, 실제 알루미늄
   용탕은 물처럼 묽은 액체라 매 틱 흐르는 쪽이 맞다. 회귀 검사로 **기둥이 바닥에 떨어져
   옆으로 퍼지는지**(38칸 폭)를 추가했다.
 - **섬광화약이 그냥 폭발로 보이던 문제 → 전용 백색 광 물질 `Flash`(138) 신설**: 공용 충격파

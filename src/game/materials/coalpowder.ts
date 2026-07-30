@@ -8,7 +8,7 @@ import { tryBurn, type Combustible } from './combustion';
 import { IRON_ORE } from './ironore';
 import { LIMESTONE } from './limestone';
 import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { tryMixGunpowder } from './gunpowdermix';
 
 // Powdered coal — the pourable form of Coal. Solid Coal (id 25) is a rigid lump
@@ -28,9 +28,9 @@ const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 13
 // mixed-into-a-charge coal would auto-ignite (580°) and burn away before the ore
 // even reaches its 850° melt (unusable), and coal dusted on a pool would flash
 // off before it could sink in and reduce the depth — as the surface it touches
-// reduces to hot Molten Metal, that metal (which isn't ore) would otherwise
+// reduces to hot Molten Iron, that metal (which isn't ore) would otherwise
 // unshield and immediately burn the carbon that's meant to reduce the next
-// layer, so the pool only ever crusts at the top. Including Molten Metal keeps
+// layer, so the pool only ever crusts at the top. Including Molten Iron keeps
 // the carbon alive through the churn (the reduced iron sinks away to the floor
 // while fresh ore stays around the carbon), so a dusted pool keeps reducing. Only coal
 // *immediately* touching the hearth
@@ -42,7 +42,7 @@ function touchingMelt(x: number, y: number, sim: SimContext): boolean {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const id = sim.get(nx, ny);
-    if (id === IRON_ORE.id || id === MOLTEN_IRON_ORE.id || id === MOLTEN_METAL.id) return true;
+    if (id === IRON_ORE.id || id === MOLTEN_IRON_ORE.id || id === MOLTEN_IRON.id) return true;
   }
   return false;
 }
@@ -108,23 +108,23 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // for why this still matters even though Coal Powder now outweighs the melt
   // on density alone). mixIntoMelt only sinks it through Molten Iron Ore,
   // though — once a grain has sunk all the way past the ore *and* the settled
-  // Slag below it into the finished Molten Metal (nothing left there to
+  // Slag below it into the finished Molten Iron (nothing left there to
   // reduce), it floats back up out of *that* layer via plain density (Coal
-  // Powder 7.5 < Molten Metal 8) instead of staying stranded at the bottom
+  // Powder 7.5 < Molten Iron 8) instead of staying stranded at the bottom
   // forever.
   if (mixIntoMelt(x, y, sim)) return;
   // tryHoldInActiveMelt (shared with Limestone, see moltenironore.ts) checks
   // Molten Iron Ore/Slag by identity; its rise-blocking half is a no-op for
   // Coal Powder at density 7.5, but its sideways-spread half is NOT always a
   // no-op — see moltenironore.ts's doc comment on tryHoldInActiveMelt for why
-  // (a Coal Powder cell resting on Molten Metal while still nominally pinned
+  // (a Coal Powder cell resting on Molten Iron while still nominally pinned
   // by Ore/Slag above does attempt the spread). The same mixIds (Limestone's
   // id) is passed here too, so a Coal Powder grain in that situation can swap
   // sideways past a pinned Limestone neighbor right there (see
   // SimContext.swapOntoPinnedPowder) — without this a mixed charge could
   // freeze into the same comb shape one step before either grain clears onto
-  // Molten Metal. updatePowderMix runs for every other liquid, including
-  // Molten Metal once fully clear of the ore/slag body, where Coal Powder's
+  // Molten Iron. updatePowderMix runs for every other liquid, including
+  // Molten Iron once fully clear of the ore/slag body, where Coal Powder's
   // own density floats or sinks it like any other powder — with Limestone
   // still in its mixIds so the two can keep swapping past each other there
   // when neither has open liquid beside it (see SimContext.moveSidewaysMix).
@@ -139,12 +139,12 @@ export const COAL_POWDER = register({
   // A touch lighter than solid Coal's near-black so a loose pile reads as grainy
   // dust rather than a solid block.
   color: rgb(40, 36, 46),
-  // Second-heaviest of the smelting stack (Molten Metal 8 > Coal Powder 7.5 >
+  // Second-heaviest of the smelting stack (Molten Iron 8 > Coal Powder 7.5 >
   // Molten Iron Ore 6.5 > Slag 5.75 > Limestone 5, see moltenironore.ts) — a
   // deliberate gameplay ordering, not real-world coal density, so a charge of
   // carbon plunges through the ore/slag it's reducing instead of skimming the
   // surface, and only floats clear once the pool below it has finished into
-  // Molten Metal.
+  // Molten Iron.
   density: 7.5,
   combustible: true,
   category: 'smelt',

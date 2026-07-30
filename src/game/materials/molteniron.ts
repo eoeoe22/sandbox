@@ -7,11 +7,11 @@ import type { SimContext } from '../engine/SimContext';
 import { IRON } from './iron';
 import { FIRE } from './fire';
 
-// Molten Metal — the liquid, glowing counterpart to Iron, exactly mirroring the
+// Molten Iron — the liquid, glowing counterpart to Iron, exactly mirroring the
 // Lava↔Stone pair one notch hotter. It's placed white-hot and dense enough (8)
 // to sink through water and oil (shoving them up out of its way), and within the
 // smelting hearth it's the *densest* of the whole stack — Slag (5.75) < Molten
-// Iron Ore (6.5) < Coal Powder (7.5) < Molten Metal (8), see slag.ts/
+// Iron Ore (6.5) < Coal Powder (7.5) < Molten Iron (8), see slag.ts/
 // moltenironore.ts/coalpowder.ts — so, just as pig iron does under the slag in a
 // real hearth, the reduced iron sinks and collects as a bright pool on the
 // floor, beneath the ore, the carbon dusted on it, and the lighter waste slag
@@ -35,7 +35,7 @@ import { FIRE } from './fire';
 export const IRON_MELT_TEMP = 1200;
 // Placed hotter than it freezes, with a wide gap so the surface has to shed a
 // lot of heat before it skins over into Iron — a gradual crust, like Lava's.
-const MOLTEN_METAL_TEMP = 1550;
+const MOLTEN_IRON_TEMP = 1550;
 // Kept below Molten Iron Ore's own SOLIDIFY_TEMP (750, moltenironore.ts) —
 // deliberately, not just "some hysteresis" — because this is also the
 // temperature freshly-reduced metal cools to *while still submerged in the
@@ -56,12 +56,12 @@ const MOLTEN_METAL_TEMP = 1550;
 // is watching it "smelt" — the reported bug. 100° of margin below 750 (rather
 // than exactly 750) covers an ore cell that's mid-cool itself, hovering just
 // above its own solidify point.
-const MOLTEN_METAL_FREEZE_TEMP = 650;
+const MOLTEN_IRON_FREEZE_TEMP = 650;
 const IGNITE_CHANCE = 0.12;
 const FLOW_CHANCE = 0.2;
 
-function updateMoltenMetal(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) <= MOLTEN_METAL_FREEZE_TEMP) {
+function updateMoltenIron(x: number, y: number, sim: SimContext): void {
+  if (sim.getTemp(x, y) <= MOLTEN_IRON_FREEZE_TEMP) {
     // Cooled enough to set. In-place `set` keeps the (now low) temperature so
     // the fresh Iron reads as cold and keeps conducting heat out of any molten
     // metal still beneath it.
@@ -83,17 +83,17 @@ function updateMoltenMetal(x: number, y: number, sim: SimContext): void {
   if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
 
-export const MOLTEN_METAL = register({
+export const MOLTEN_IRON = register({
   id: 29,
-  name: 'Molten Metal',
+  name: 'Molten Iron',
   phase: Phase.Liquid,
   color: rgb(255, 150, 50),
   density: 8,
   category: 'fire',
-  thermal: { init: MOLTEN_METAL_TEMP, conductivity: 0.85 },
+  thermal: { init: MOLTEN_IRON_TEMP, conductivity: 0.85 },
   // Glows blazing yellow-white when fully molten and darkens to a dull ember as
   // conduction cools it toward setting, so the cooling front is visible before
   // it turns to grey Iron.
-  glow: { min: MOLTEN_METAL_FREEZE_TEMP, max: MOLTEN_METAL_TEMP, cool: rgb(95, 45, 30) },
-  update: updateMoltenMetal,
+  glow: { min: MOLTEN_IRON_FREEZE_TEMP, max: MOLTEN_IRON_TEMP, cool: rgb(95, 45, 30) },
+  update: updateMoltenIron,
 });

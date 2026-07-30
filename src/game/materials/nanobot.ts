@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { IRON } from './iron';
 import { METAL_POWDER } from './metalpowder';
-import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST } from './rust';
 import { crawl, eatAndReproduce, touchingBlast, EAT_CHANCE } from './crawler';
@@ -20,7 +20,7 @@ import { DIR8 } from '../engine/directions';
 // via the 'ignore' liquid policy). It has no drowning or low-temperature death;
 // it fails two ways instead, matching its metal-powder body:
 //   • 녹는점 — the same melting point as Metal Powder (Iron's melt temp); heated
-//     past it, a nanobot melts into Molten Metal just like any other metal.
+//     past it, a nanobot melts into Molten Iron just like any other metal.
 //   • 폭발 충격파 — an adjacent Blast flash cell (a real detonation) shatters it
 //     back into loose Metal Powder (see crawler.ts).
 // A shockwave too weak to break it (a Woofer's silent thump, a Gunpowder
@@ -48,9 +48,9 @@ function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
 
 function updateNanobot(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten Metal
+    // In-place `set` keeps the (now high) temperature so the fresh Molten Iron
     // reads as molten instead of re-freezing next tick (mirrors Iron/Metal Powder).
-    sim.set(x, y, MOLTEN_METAL.id);
+    sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
   if (touchingBlast(x, y, sim)) {

@@ -6,7 +6,7 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 import { BLAST, detonate } from './blast';
 
@@ -34,7 +34,7 @@ function updateTNT(x: number, y: number, sim: SimContext): void {
         nid === LAVA.id ||
         nid === BLUE_FLAME.id ||
         nid === BLAST.id ||
-        nid === MOLTEN_METAL.id ||
+        nid === MOLTEN_IRON.id ||
         nid === MOLTEN_GLASS.id
       ) {
         trigger = true;

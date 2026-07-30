@@ -4,7 +4,7 @@ import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
 import { BLAST } from './blast';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 
 // Shared ignition trigger for the *deflagrating* fuel gases — the ones that
@@ -30,7 +30,7 @@ export function isIgniter(id: number): boolean {
     id === LAVA.id ||
     id === BLUE_FLAME.id ||
     id === BLAST.id ||
-    id === MOLTEN_METAL.id ||
+    id === MOLTEN_IRON.id ||
     id === MOLTEN_GLASS.id
   );
 }

@@ -128,7 +128,7 @@ export interface Material {
    * (Iron, Rust) are deliberately NOT tagged even though real iron is magnetic:
    * dragging a fixed structure around would walk a player's wiring, machines and
    * walls off their mounts, the same reason the Fan's gust refuses to push solids
-   * (see fan.ts `isWindPushable`). Molten Metal isn't tagged either — above the
+   * (see fan.ts `isWindPushable`). Molten Iron isn't tagged either — above the
    * Curie point iron isn't ferromagnetic, so the one liquid that might qualify
    * has a real excuse not to. The magnet enforces this too (it only ever moves
    * loose matter), so a mistagged wall stays put rather than tearing apart.

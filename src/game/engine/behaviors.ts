@@ -281,7 +281,7 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  swap unconditionally whenever fallAndPile fails, also matters for Coal
  *  Powder: it's denser than Molten Iron Ore/Slag, so shouldFlatten stays
  *  false for it while pinned above those two — but *not* once it has sunk
- *  through them to rest directly on Molten Metal (8), still denser than Coal
+ *  through them to rest directly on Molten Iron (8), still denser than Coal
  *  Powder (7.5), so this step does fire there (see moltenironore.ts's
  *  tryHoldInActiveMelt doc comment for the full density ordering).
  *
@@ -289,7 +289,7 @@ function flattenIfFloating(x: number, y: number, sim: SimContext): void {
  *  fallback (see SimContext.ts) — the same two-melt-pinned-powders-side-by-side
  *  comb that updatePowderMix's mixIds fixes for the free-floating case can
  *  recur one step earlier, while both grains are still pinned against Molten
- *  Iron Ore/Slag rather than having cleared onto Molten Metal (reported
+ *  Iron Ore/Slag rather than having cleared onto Molten Iron (reported
  *  after the free-floating fix: the frozen columns still contained Molten
  *  Iron Ore). */
 export function updatePowderSink(
@@ -542,7 +542,7 @@ function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolea
  *  SimContext.moveSidewaysMix), instead of only an adjacent Liquid. For a
  *  powder that can end up floating side by side with one particular other
  *  kind of powder on the same liquid — Coal Powder and Limestone on a
- *  smelting furnace's Molten Metal, once tryHoldInActiveMelt no longer holds
+ *  smelting furnace's Molten Iron, once tryHoldInActiveMelt no longer holds
  *  them — where the two together can fully tile the surface with no exposed
  *  liquid gap left for the ordinary moveSidewaysBuoyant fallback to use,
  *  freezing into the same comb shape flattenIfFloating exists to prevent,
