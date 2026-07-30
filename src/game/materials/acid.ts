@@ -16,12 +16,17 @@ import { HYDROGEN } from './hydrogen';
 // as a byproduct of actually corroding something, never on its own.
 //
 // One class of neighbor gets a louder ending than "blinks out": a metal above
-// hydrogen in the reactivity series (`Material.acidHydrogen` — Sodium, the
-// aluminum three, Uranium, Iron and its filings, Gallium) fizzes, and the acid
-// cell doing the eating turns into the hydrogen bubble itself (tryEvolveHydrogen
+// hydrogen in the reactivity series (`Material.acidHydrogen` — the aluminum
+// three, Uranium, Iron and its filings, solid Gallium) fizzes, and the acid cell
+// doing the eating turns into the hydrogen bubble itself (tryEvolveHydrogen
 // below). Metals *below* hydrogen (Wire's copper core, Mercury) and the oxides /
 // carbonates (Rust, Iron Ore, Limestone) carry no tag and keep dissolving
 // silently — which is the honest chemistry, not an omission.
+//
+// Sodium is *not* on that list and none of this file's code runs for it: it sits
+// at the very top of the series, so acid contact takes the same violent path
+// water does (flame + hot hydrogen, and a detonation when packed), driven
+// entirely by its own update — see sodium.ts for why it declines the tag.
 // Heated past its boiling point it flashes to Acid Vapor (corrosive fumes), the
 // gaseous counterpart that rises, etches, and condenses back to acid — the same
 // pattern as Water↔Steam (see acidvapor.ts).
