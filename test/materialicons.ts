@@ -443,24 +443,37 @@ checkThrows('battery staircase is flat black', () => {
 // can be wrong by one character in a string nobody re-reads. The golden above covers
 // the shape; these cover the ways the shape could be right and the tile still wrong.
 {
-  // A row shorter than TNT_N gets indexed past its end and `buildTntTile` falls
-  // through to the base colour, so a truncated shade row paints as plain red rather
-  // than failing. The golden would catch that in the sticks and in the letters, but a
-  // short all-`u`/all-`d` row is exactly the case it cannot see. Pinned here rather
-  // than thrown on at module load: tntTile.ts ships to the browser (see its comment).
+  // A row shorter than TNT_N gets indexed past its end and `buildTntTile` falls through
+  // to the base colour. Today the golden does catch that — every row of TILE ends in
+  // `-`/`u`/`p`/`d`, so the fallthrough always changes a pixel and the exact string
+  // compare sees it (measured: shortening the `uuuu…` row fails both this check and the
+  // golden). What this pin adds is a *reason* instead of an ASCII diff, and cover for
+  // the case the golden structurally cannot see: a future row ending in `.`, where the
+  // truncated cell would fall through to the colour it was already going to be.
+  //
+  // That is the difference from GAS_CLOUD's identical-looking pin, where a short row is
+  // genuinely invisible — there `.` *is* the fallthrough. Pinned here rather than thrown
+  // on at module load either way: tntTile.ts ships to the browser (see its comment).
   check('the TNT tile is TNT_N rows of TNT_N',
     TNT_TILE_ROWS.length === TNT_N && TNT_TILE_ROWS.every((r) => r.length === TNT_N),
     `${TNT_TILE_ROWS.length} rows, widths ${[...new Set(TNT_TILE_ROWS.map((r) => r.length))].join('/')}`);
 
-  // The label is printed paper, not shaded material: its ink is a literal near-black
-  // and its paper a literal cream, neither derived from whatever colour the material
-  // registers. A regression to `lattice` or to a `tinted()` offset would still golden
-  // as plausible ASCII, because the glyphs are assigned by rank rather than by value.
-  checkThrows('the TNT label is printed, not tinted', () => {
+  // The tile's seven colours, as literal hexes against the reference art. The golden
+  // above cannot do this: `ascii()` names its glyphs by *luminance rank*, so any
+  // TNT_LIT that leaves the lit tone brightest of the six goldens byte-identically —
+  // TNT_LIT 40 draws #ff5252 instead of the art's #ff6b6b and passed everything. That
+  // measurement is why this check exists.
+  //
+  // Set equality, not `includes`: a stray eighth tone is as wrong as a missing one, and
+  // it is what pins the label as *printed* — paper and ink are literals rather than
+  // offsets from the base, so a regression to `lattice` or to a `tinted()` step drops
+  // #f0ece1 / #1a1a1a from this set.
+  checkThrows("the TNT tile is the reference art's palette", () => {
     const { grid: g, n } = raster(generatedSvgFor(byName('TNT')));
-    check('the TNT label is printed, not tinted',
-      n === TNT_N && g.includes('#1a1a1a') && g.includes('#f0ece1'),
-      `${n} cells: ${[...new Set(g)].sort().join(' ')}`);
+    const got = [...new Set(g)].sort().join(' ');
+    // base / lit +65 / lattice shade / label top·paper·bottom / ink.
+    const want = ['#1a1a1a', '#8d0f0f', '#b5aea0', '#d3cec4', '#db2a2a', '#f0ece1', '#ff6b6b'].join(' ');
+    check("the TNT tile is the reference art's palette", n === TNT_N && got === want, `${n} cells: ${got}`);
   });
 
   // The word stays on its label. Ink that reached a stick row would read as damage to

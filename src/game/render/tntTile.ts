@@ -87,9 +87,11 @@ const TILE = [
  *
  *  A row that is not `TNT_N` characters long gets indexed past its end, and an
  *  out-of-range character falls through to the base colour in `buildTntTile` — so
- *  a short row silently paints as plain red rather than failing. The golden tile
- *  would catch that in the stick rows and in the letters, but not in a short
- *  `uuuu…`/`dddd…` shade row, so the invariant needs pinning somewhere.
+ *  a short row paints as plain red rather than failing. As TILE stands the golden
+ *  tile does catch that anywhere, because no row ends in a base-coloured character:
+ *  the fallthrough always changes a pixel. What the harness pin adds is a legible
+ *  reason instead of an ASCII diff, plus cover for a future row ending in `.`,
+ *  where the truncated cell would fall through to the colour it already had.
  *
  *  Pinned in the harness rather than by a throw at module load: this module is
  *  imported by the renderer *and* by the palette components, so it ships to the
@@ -107,6 +109,11 @@ export const TNT_TILE_ROWS: readonly string[] = TILE;
  * art's `#ff6b6b`. On a red that hot, a highlight *has* to desaturate — there is
  * nowhere left to go on the red channel — and that is what makes the round of a
  * stick read as a round rather than as a brighter red stripe.
+ *
+ * That exact hex is pinned by `test/materialicons.ts` ("the TNT tile is the
+ * reference art's palette"), not by the golden tile — the golden names its tones
+ * by luminance *rank*, so any offset leaving this the brightest tone goldens
+ * identically. 40 draws `#ff5252` and used to pass everything.
  */
 export const TNT_LIT = 65;
 
