@@ -42,7 +42,10 @@ import {
   generatedSvgFor,
   hasHandIcon,
   handIconKeys,
+  hasHazardMark,
   GAS_CLOUD_ROWS,
+  HAZARD_TREFOIL_ROWS,
+  HAZARD_CATEGORY,
 } from '../src/game/render/materialSvg';
 import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
@@ -105,14 +108,26 @@ function raster(svg: string): { grid: string[]; n: number } {
   }
   let painted = 0;
   for (const pm of svg.matchAll(/<path fill="(#[0-9a-f]{6})" d="([^"]+)"\/>/g)) {
-    for (const seg of pm[2].matchAll(/M(\d+) (\d+)h(\d+)v1h-(\d+)z/g)) {
+    // Boxes, not rows: spritePaths grows each horizontal run downward while the rows
+    // beneath repeat it, so `v` is a height rather than the constant 1 it used to be
+    // (that merge is what keeps the resampled hazard tiles inside the byte budget).
+    // Reconstructing the height here is also what keeps the overlap assertion below
+    // honest — counting a `v3` box as one row would let three rows of overlap hide.
+    for (const seg of pm[2].matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-(\d+)z/g)) {
       const x = +seg[1];
       const y = +seg[2];
       const run = +seg[3];
-      if (+seg[4] !== run) throw new Error('malformed run in path data');
-      for (let k = 0; k < run; k++) grid[y * n + x + k] = pm[1];
-      painted += run;
+      const tall = +seg[4];
+      if (+seg[5] !== run) throw new Error('malformed run in path data');
+      if (x + run > n || y + tall > n) throw new Error('path box leaves the tile: ' + seg[0]);
+      for (let j = y; j < y + tall; j++) for (let k = 0; k < run; k++) grid[j * n + x + k] = pm[1];
+      painted += run * tall;
     }
+    // Every segment in the data must be one the loop above accounted for; a shape the
+    // regex silently skipped would read as background in every check below.
+    const segs = (pm[2].match(/M/g) ?? []).length;
+    const seen = [...pm[2].matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-(\d+)z/g)].length;
+    if (segs !== seen) throw new Error('unreadable segment in path data: ' + pm[2].slice(0, 60));
   }
   // Every shape in the markup must be one this loop actually accounted for.
   const shapes = (svg.match(/<(rect|path|circle|polygon|ellipse|g)\b/g) ?? []).length;
@@ -327,6 +342,28 @@ const GOLDEN: Record<string, string> = {
     '...ooo...',
     '.........',
   ].join('\n'),
+  // TNT: explosive crates — a seam (`o`) down the last column of every block and
+  // along the last row of every course, one binding band of the same colour across
+  // the block's middle, and each block's top row lit (`i`).
+  //
+  // The two things this golden is really holding: the courses are NOT staggered (the
+  // seam column runs straight down, unlike the Wall's alternating joints — staggered
+  // crates read as brickwork), and the band and the seam are NOT four rows apart. The
+  // band started on row 3, which put both dark rows on the same period-4 lattice and
+  // turned the whole field into evenly spaced stripes with nothing marking where a
+  // crate ended. Rows 4 and 7 here are the fix; a golden with dark rows an equal
+  // distance apart means it regressed.
+  TNT: [
+    'iiiiiiioi',
+    '.......o.',
+    '.......o.',
+    '.......o.',
+    'ooooooooo',
+    '.......o.',
+    '.......o.',
+    'ooooooooo',
+    'iiiiiiioi',
+  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -354,7 +391,7 @@ const GOLDEN: Record<string, string> = {
 };
 
 /** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
-const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4 };
+const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4, TNT: 3 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;
@@ -390,13 +427,47 @@ checkThrows('a flat material costs one shape', () => {
   check('a flat material costs one shape', generatedSvgFor(byName('Stone')).match(/<(rect|path)/g)!.length === 1);
 });
 
-for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond']) {
+// Wood is here because it used to be in the flat list with a drawing on top of it.
+// Timber is not one colour, so it carries a `colorVary` now and the generator has a
+// grain to reflect — which is the whole reason its hand icon could be withdrawn.
+for (const name of ['Sand', 'Water', 'Crude Oil', 'Diamond', 'Wood']) {
   const label = `${name} is speckled`;
   checkThrows(label, () => {
     const t = tones(byName(name));
     check(label, t > 8, `${t} tones`);
   });
 }
+
+// The three withdrawn drawings, pinned by name. Each was withdrawn because the
+// derived tile is the honest one: Wood has a grain of its own now, and the two
+// mirror-flat liquids are `colorVary: 0` on purpose — a chip with reflection lines
+// ruled onto it claimed a texture the canvas never draws. Re-filing a `.svg` under
+// any of these keys would pass every other check in this file.
+checkThrows('the withdrawn drawings stay withdrawn', () => {
+  const back = ['Wood', 'Mercury', 'Liquid Gallium'].filter((n) => hasHandIcon(byName(n)));
+  check('the withdrawn drawings stay withdrawn', back.length === 0, back.join(', '));
+});
+
+// The 2×2 tint block, as a measurable property rather than as a picture: Obsidian's
+// grain is blocked, so cell (0,0) and cell (1,1) of its tile must be the same shade
+// while a per-cell grain of the same amplitude (Sand's) differs somewhere in that
+// block. One flag feeds both the canvas and this tile (Material.tintBlock).
+checkThrows('Obsidian grains in 2×2 flakes, Sand cell by cell', () => {
+  const blocked = (name: string): boolean => {
+    const { grid: g, n } = raster(generatedSvgFor(byName(name)));
+    // Every whole block inside the tile must be one colour. `n` is odd, so the last
+    // row and column are a 1-cell fringe and are deliberately not examined.
+    for (let y = 0; y + 1 < n; y += 2)
+      for (let x = 0; x + 1 < n; x += 2) {
+        const c = g[y * n + x];
+        if (g[y * n + x + 1] !== c || g[(y + 1) * n + x] !== c || g[(y + 1) * n + x + 1] !== c)
+          return false;
+      }
+    return true;
+  };
+  check('Obsidian grains in 2×2 flakes', blocked('Obsidian'));
+  check('…and an unblocked grain of the same kind does not', !blocked('Sand'));
+});
 
 // The grain never exceeds the material's own amplitude — the icon runs the
 // renderer's `((src - 128) * amp) >> 7`, so an icon brighter than that would mean
@@ -558,13 +629,20 @@ checkThrows('a glowing gas still takes the glow branch', () => {
 // ---------------------------------------------------------------------------
 // 5. The hand-drawn override layer.
 //
-// Twenty-eight materials ship a checked-in drawing instead of a derived tile, and
+// Twenty-five materials ship a checked-in drawing instead of a derived tile, and
 // they are there for two opposite reasons. Thirteen have an identity that is an
 // idea rather than a colour or a texture — no pattern the renderer draws could
-// stand for "deletes whatever it touches". The other fifteen are the reverse: they
+// stand for "deletes whatever it touches". The other twelve are the reverse: they
 // are honestly one flat colour in-world, so the generator has nothing to reflect
 // and the drawing is the only place their surface can show grain, facets or a
 // sheen at all.
+//
+// Three drawings have been *withdrawn*, which is the direction worth naming: Wood
+// got a `colorVary` instead, so the generator now has a grain to reflect and the
+// drawing had nothing left to add; Mercury and Liquid Gallium are deliberately
+// mirror-flat liquids (`colorVary: 0`), and a chip with reflection lines on it was
+// claiming a texture the canvas does not draw. A hand icon is worth its override
+// only where the derived tile is honestly wrong.
 //
 // Either way what matters here is that the layer stays a thin cap: it replaces the
 // chip and nothing else, the derived tile underneath is still built and still
@@ -590,8 +668,12 @@ checkThrows('hand-drawn icons replace the chip', () => {
   check('the override actually wins over the derived tile', notOverridden.length === 0,
     notOverridden.map((m) => m.name).join(', '));
 
-  // …and it wins for nobody else.
-  const stolen = all.filter((m) => !hasHandIcon(m) && materialSvgFor(m) !== generatedSvgFor(m));
+  // …and it wins for nobody else. The hazard-marked chips are the other layer that
+  // legitimately differs from the derived tile (section 6); everything else must be
+  // the derived tile verbatim.
+  const stolen = all.filter(
+    (m) => !hasHandIcon(m) && !hasHazardMark(m) && materialSvgFor(m) !== generatedSvgFor(m),
+  );
   check('materials without art still get the derived tile', stolen.length === 0,
     stolen.map((m) => m.name).join(', '));
 });
@@ -618,7 +700,94 @@ checkThrows('hand art is built on its material\'s own colour', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. The two palette-array materials show their palette, not one colour.
+// 6. The radioactive hazard mark.
+//
+// The other override layer, and the opposite kind of thing from hand art: not a
+// drawing of a material but a *label* on one, applied by category rather than per
+// material. The five radioactive materials are two solid metals, a powder and two
+// melts — nothing they have in common is visible, and the thing that matters about
+// them (it irradiates through walls) is not a texture at all.
+//
+// So what needs pinning is that the label is only ever a label: it goes on the chip
+// and never on the canvas, it lands on exactly the radioactive category and nothing
+// else, the material's own tile is still legible around it, and it does not quietly
+// cost more than the byte budget allows.
+// ---------------------------------------------------------------------------
+
+checkThrows('the hazard mark lands on exactly the radioactive category', () => {
+  const marked = all.filter(hasHazardMark);
+  check('the hazard mark lands on exactly the radioactive category',
+    marked.length > 0 && marked.every((m) => m.category === HAZARD_CATEGORY)
+      && all.every((m) => (m.category === HAZARD_CATEGORY) === hasHazardMark(m)),
+    `${marked.length} marked: ${marked.map((m) => m.name).join(', ')}`);
+
+  // Hand art wins over the mark (they are authored at different tile sizes and cannot
+  // be composed), so a drawing filed for a radioactive material would silently remove
+  // its hazard label. That is a decision, not a bug — but it must be a deliberate one.
+  const shadowed = marked.filter(hasHandIcon);
+  check('…and no radioactive material ships hand art that would hide it',
+    shadowed.length === 0, shadowed.map((m) => m.name).join(', '));
+
+  // The mark is a chip-only overlay: nothing in the world draws it, so the derived
+  // tile — which is what the canvas branch chain produces — must not contain the ink.
+  const leaked = marked.filter((m) => raster(generatedSvgFor(m)).grid.includes('#000000'));
+  check('…and never reaches the derived tile the canvas draws', leaked.length === 0,
+    leaked.map((m) => m.name).join(', '));
+});
+
+// The trefoil itself, as a picture. Read off U235's shipped chip rather than from the
+// literal, so this covers the resample and the stamping as well as the art: the ink is
+// the one flat black in the tile, and everything else is the material's own ramp.
+const HAZARD_GOLDEN = HAZARD_TREFOIL_ROWS.join('\n');
+
+for (const name of ['U235', 'Nuke Waste', 'Molten U238']) {
+  const label = `${name} wears the hazard trefoil`;
+  checkThrows(label, () => {
+    const m = byName(name);
+    const { grid: g, n } = raster(materialSvgFor(m));
+    check(`${name} draws its chip on the ${18}-cell hazard tile`, n === 18, `${n} cells`);
+    const rows: string[] = [];
+    for (let y = 0; y < n; y++) {
+      let row = '';
+      for (let x = 0; x < n; x++) row += g[y * n + x] === '#000000' ? '#' : '.';
+      rows.push(row);
+    }
+    const got = rows.join('\n');
+    check(label, got === HAZARD_GOLDEN, got === HAZARD_GOLDEN ? '' : '\n' + got);
+    // The material still has to be readable around the mark: the ink covers under a
+    // quarter of the tile, and what is left is its own ramp rather than one flat block.
+    const ink = g.filter((c) => c === '#000000').length;
+    check(`…over no more than a quarter of the tile`, ink * 4 <= n * n, `${ink} of ${n * n} cells`);
+    check(`…with the material's own tile still showing through`,
+      new Set(g).size > 3, `${new Set(g).size} colours`);
+  });
+}
+
+// Same argument as GAS_CLOUD_ROWS: the art is indexed by row, so a row that is not
+// as wide as the tile reads as ink-free past its end, and an all-`.` short row would
+// not show up in the golden above.
+check('every HAZARD_TREFOIL row is as wide as the tile is tall',
+  HAZARD_TREFOIL_ROWS.every((r) => r.length === HAZARD_TREFOIL_ROWS.length),
+  `${HAZARD_TREFOIL_ROWS.length} rows, widths ${[...new Set(HAZARD_TREFOIL_ROWS.map((r) => r.length))].join('/')}`);
+
+// The resample is what keeps a hazard chip affordable: it draws the SAME 9-cell patch
+// at 18 cells rather than replaying the branch chain there, so a grain cell stays 2
+// CSS px in the palette's 18 px swatch instead of shrinking to 1, and — with
+// spritePaths merging each run downward — costs about what the 9-cell tile did. Four
+// times the cells for a few percent more markup is the whole trick; if a change ever
+// undoes the vertical merge, this is the check that reports it as a budget failure
+// rather than as a mysteriously large icon.
+checkThrows('a hazard chip costs about what its 9-cell tile does', () => {
+  const worst = all.filter(hasHazardMark).map((m) => ({
+    name: m.name,
+    ratio: materialSvgFor(m).length / generatedSvgFor(m).length,
+  })).sort((a, b) => b.ratio - a.ratio)[0];
+  check('a hazard chip costs about what its 9-cell tile does', worst.ratio < 1.25,
+    `${worst.name} ×${worst.ratio.toFixed(2)}`);
+});
+
+// ---------------------------------------------------------------------------
+// 7. The two palette-array materials show their palette, not one colour.
 // ---------------------------------------------------------------------------
 
 checkThrows('Fireworks speckles all three palette colours', () => {

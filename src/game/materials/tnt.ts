@@ -54,6 +54,12 @@ export const TNT = register({
   name: 'TNT',
   phase: Phase.Solid,
   color: rgb(196, 58, 48),
+  // Stacked crates of explosive rather than a red slab: seams and a binding band in
+  // this dark tone, one block per tile (see Material.tntPattern). It is the exact
+  // dark of the hand-drawn TNT chip's outline (#5c1a14), so the canvas and the
+  // palette swatch draw the same three features in the same two colours.
+  lattice: rgb(92, 26, 20),
+  tntPattern: true,
   density: 1000,
   explosive: true,
   blastRadius: BLAST_RADIUS,

@@ -158,6 +158,40 @@ const WOOFER_CAP_R2 = 4; // (2r)² of the dust cap — the centre cell plus its 
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
 
+// Tiling of the `tntPattern` explosive-crate grid (TNT — see the render loop). One
+// period is a block plus the seam on its right and bottom edges, so a crate reads
+// 7 wide × 7 tall with a 1-cell seam on two of its sides, and carries one binding
+// band across its middle.
+//
+// This is the hand-drawn TNT chip's three features — dark outline, lit top edge, one
+// band — at world scale, not its measurements. The chip's outline runs all four
+// sides because a chip draws one object with air around it; a *field* of crates has
+// no outside, so only the two trailing edges are drawn and each block's outline is
+// its neighbour's.
+//
+// Square, unlike the Wall's 6×4 running bond: a crate is a crate, and the courses
+// are deliberately NOT staggered — offsetting them turns explosive into brickwork,
+// which is the one thing this pattern must not read as. 8 is the smallest period
+// that still fits a band with a clear row of base colour above and below it (rows
+// 1–2 and 4–5 of the block), so a charge 8 cells across already shows one whole
+// crate and its neighbours' seams.
+const TNT_W = 8; // columns per crate (7 drawn + 1 seam)
+const TNT_H = 8; // rows per crate (7 drawn + 1 seam)
+// Row within the crate carrying the binding band. 4 rather than the geometric middle
+// 3, because the band and the seam are the same colour: at 3 the two dark rows sat at
+// 3 and 7, four apart, and the whole field collapsed into evenly spaced stripes every
+// four rows with nothing left to say where one crate ended. At 4 the gaps alternate
+// 3 and 5, and the seam is immediately followed by the next crate's lit top row — so
+// a dark line with a bright line under it reads as a block edge and a dark line alone
+// reads as a strap.
+const TNT_BAND = 4;
+// How far the top row of each crate is lifted above the base colour. The chip's lit
+// edge is #e0655a against a #c43a30 base, which is +28/+43/+42 — not one offset, so
+// this is the mid channel rather than an exact match (a material carries only one
+// second colour, and `lattice` is spent on the seams). It lands within 15 units per
+// channel, which on a mid-tone red is a step in the same direction, not a new hue.
+const TNT_LIT = 38;
+
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
   return v - Math.floor(v);
@@ -411,6 +445,18 @@ export class CanvasRenderer implements Renderer {
    *  its base colour for the same reason `brickLit` is. */
   private wooferRim: Uint32Array;
   private wooferCap: Uint32Array;
+  /** id → 1 if the material draws a grid of explosive crates — `lattice`-coloured
+   *  seams and a binding band with each block's top row lit (TNT — see
+   *  Material.tntPattern). */
+  private tntPattern: Uint8Array;
+  /** id → the lit colour of a `tntPattern` material's crate top, precomputed from its
+   *  base colour for the same reason `brickLit` is. */
+  private tntLit: Uint32Array;
+  /** id → the edge, in cells, of the square block that shares one tint sample — 0
+   *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
+   *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
+   *  (`& ~1` for a 2-cell block), so the hot path needs no division. */
+  private tintBlockMask: Int32Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -536,6 +582,11 @@ export class CanvasRenderer implements Renderer {
     this.wooferPattern = new Uint8Array(256);
     this.wooferRim = new Uint32Array(256);
     this.wooferCap = new Uint32Array(256);
+    this.tntPattern = new Uint8Array(256);
+    this.tntLit = new Uint32Array(256);
+    // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
+    // loop can skip the whole block-anchor computation with one compare.
+    this.tintBlockMask = new Int32Array(256).fill(-1);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -572,6 +623,18 @@ export class CanvasRenderer implements Renderer {
           this.wooferPattern[i] = 1;
           this.wooferRim[i] = tinted(m.color, WOOFER_RIM);
           this.wooferCap[i] = tinted(m.color, WOOFER_CAP);
+        }
+        if (m.tntPattern) {
+          this.tntPattern[i] = 1;
+          this.tntLit[i] = tinted(m.color, TNT_LIT);
+        }
+        // A block edge of B means the low log2(B) bits of x and y are cleared, which
+        // is only a mask for a power of two. Anything else would silently round to
+        // one, so it is rejected here rather than drawn wrong.
+        if (m.tintBlock !== undefined && m.tintBlock > 1) {
+          if ((m.tintBlock & (m.tintBlock - 1)) !== 0)
+            throw new Error(`${m.name}: tintBlock ${m.tintBlock} is not a power of two`);
+          this.tintBlockMask[i] = ~(m.tintBlock - 1);
         }
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
@@ -692,6 +755,9 @@ export class CanvasRenderer implements Renderer {
     const wooferPattern = this.wooferPattern;
     const wooferRim = this.wooferRim;
     const wooferCap = this.wooferCap;
+    const tntPattern = this.tntPattern;
+    const tntLit = this.tntLit;
+    const tintBlockMask = this.tintBlockMask;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -749,6 +815,21 @@ export class CanvasRenderer implements Renderer {
         }
       }
       let c: number;
+      // Which cell's tint byte this cell shades from. Normally its own — but a
+      // `tintBlock` material samples the anchor of the square block it sits in, so a
+      // whole 2×2 of cells shares one shade and the grain reads as flakes instead of
+      // per-cell static (Obsidian). The mask is -1 for every other material, so the
+      // compare below is the entire cost they pay: no division, no branch taken.
+      //
+      // The anchor cell may hold a different material at a block boundary, but
+      // `Grid.tint` is a full plane of bytes with a value everywhere, so that only
+      // ever picks a different shade of THIS material — never a wrong colour.
+      let ti = i;
+      const blockMask = tintBlockMask[id];
+      if (blockMask !== -1) {
+        const by = (i / w) | 0;
+        ti = (by & blockMask) * w + ((i - by * w) & blockMask);
+      }
       // `renderAsAux` and `auxPalette` are two mutually exclusive readings of the
       // SAME aux word — "this is the material id I'm carrying" vs. "this is my own
       // colour index" — so a carrier cell must never be handed to the palette
@@ -772,7 +853,7 @@ export class CanvasRenderer implements Renderer {
           // progress) would lose the speckle every other powder has and read as
           // one flat block. Firework Burst, the other auxPalette material, is a
           // Gas with no variation (amp 0), so this is a no-op for it.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
           c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
         }
       } else if (tintPal3) {
@@ -783,7 +864,7 @@ export class CanvasRenderer implements Renderer {
         // the chosen colour, exactly as it does over the checkerboard branch below.
         // Indexing by `% n` rather than banding the byte keeps the colour
         // uncorrelated with the `liquidOverlap` split read off the same byte.
-        c = tintPal3[tintArr[i] % tintPal3.length];
+        c = tintPal3[tintArr[ti] % tintPal3.length];
         const amp = vary[id];
         if (amp !== 0) {
           // The COLOUR is per-particle by definition, so it always reads tintArr.
@@ -791,7 +872,7 @@ export class CanvasRenderer implements Renderer {
           // material's own vary source like every sibling branch — otherwise a
           // future liquid-phase tintPalette material would shade itself from a
           // plane it doesn't use.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
           c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
         }
       } else if (arrow[id]) {
@@ -938,6 +1019,22 @@ export class CanvasRenderer implements Renderer {
             : d2 <= WOOFER_R2
               ? wooferRim[id]
               : pal[id];
+      } else if (tntPattern[id]) {
+        // TNT draws a grid of explosive crates: a `lattice`-coloured seam on the last
+        // column of every block and the last row of every course, one band of the same
+        // colour across the block's middle, and the block's top row lit TNT_LIT above
+        // the base — the same three features as the hand-drawn TNT chip. Positional
+        // like the Wall's courses so a dragged charge is one continuous stack, but
+        // squarely aligned rather than offset: staggered courses would read as
+        // brickwork, and a wall of bricks is exactly what a charge must not look like.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const row = y % TNT_H;
+        c = row === TNT_H - 1 || x % TNT_W === TNT_W - 1 || row === TNT_BAND
+          ? latCol[id]
+          : row === 0
+            ? tntLit[id]
+            : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
@@ -945,7 +1042,7 @@ export class CanvasRenderer implements Renderer {
         c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
         const amp = vary[id];
         if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
           c = tinted(c, d);
         }
@@ -972,7 +1069,7 @@ export class CanvasRenderer implements Renderer {
         c = shade(glow[id]!, temp[i]);
         const amp = vary[id];
         if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;
           c = tinted(c, d);
         }
@@ -987,7 +1084,7 @@ export class CanvasRenderer implements Renderer {
         } else {
           // Powders read their own fixed per-grain tint; liquids sample the
           // positional background field at this cell (see game/tint.ts).
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
+          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
           // Map the tint byte to a signed brightness offset in [-amp, +amp]:
           // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
           const d = ((src - TINT_NEUTRAL) * amp) >> 7;

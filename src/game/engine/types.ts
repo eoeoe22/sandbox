@@ -411,6 +411,24 @@ export interface Material {
    */
   colorVary?: number;
   /**
+   * Edge, in cells, of the square block that shares one `colorVary` sample
+   * (Obsidian: `2`). Omitted ⇒ 1, i.e. every cell reads its own tint byte and the
+   * grain is per-cell white noise.
+   *
+   * With `2` the renderer samples the tint field at the cell's block anchor
+   * (`x & ~1, y & ~1`) instead of at the cell itself, so the grain comes out as
+   * chunky 2×2 flakes rather than single-cell static — for volcanic glass that
+   * reads as conchoidal fracture faces catching the light, where per-cell noise
+   * read as dust. The palette icon hashes the same anchor coordinates, so chip and
+   * canvas are blocked identically (see render/materialSvg.ts).
+   *
+   * Only meaningful for a material that doesn't move: the anchor is *positional*,
+   * so a travelling grain would swap flakes as it crossed a block boundary rather
+   * than carrying its own shade the way `colorVary` otherwise promises. Every
+   * blocked material today is a static Solid.
+   */
+  tintBlock?: number;
+  /**
    * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine, Pump).
    * To powders and solids it's an ordinary blocking Solid — piles rest on it —
    * but a fluid moving into it slips into the cell's 겹침 (overlap) slot
@@ -619,6 +637,20 @@ export interface Material {
    * shockwave and is done), so unlike the Pump's stripes nothing here brightens.
    */
   wooferPattern?: boolean;
+  /**
+   * Draw a grid of explosive crates (TNT): one block per tile — a `lattice`-coloured
+   * seam down its right edge and along its bottom, a binding band of the same colour
+   * across its middle, and its top row lit a step above the base `color`. The same
+   * three features as the hand-drawn TNT chip (dark outline, lit top edge, one band)
+   * at world scale, so a painted charge reads as stacked blocks of explosive rather
+   * than a red slab. Positional (tied to x/y, not to the particle) like the Wall's
+   * courses, so dragging the brush extends one continuous stack. Purely a rendering
+   * hint the simulation never reads.
+   *
+   * Unlike the Wall's masonry the courses are NOT offset half a block — crates stack
+   * square, and staggering them would read as brickwork.
+   */
+  tntPattern?: boolean;
   /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound

@@ -82,6 +82,10 @@ const WOOFER_CONE_R2 = 25;
 const WOOFER_CAP_R2 = 4;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
+const TNT_W = 8;
+const TNT_H = 8;
+const TNT_BAND = 4;
+const TNT_LIT = 38;
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -145,6 +149,74 @@ const GAS_CLOUD = [
  */
 const GAS_N = GAS_CLOUD.length;
 
+/**
+ * The hazard trefoil stamped over every `radioactive` material's chip.
+ *
+ * The five radioactive materials look nothing alike — two solid metals, a powder and
+ * two melts, all of them on temperature ramps — and none of them look *dangerous*.
+ * The one thing they share is the property that matters before you place them, and
+ * no pattern the renderer draws can say it: the canvas has no way to distinguish
+ * "hot rock" from "hot rock that will irradiate the far side of a wall". So this is
+ * a label, not a texture, and it goes on the chip only. Nothing in the world draws
+ * it — a slab of U235 in play looks exactly as it did.
+ *
+ * Drawn as ASCII rather than generated from the symbol's real geometry (three 60°
+ * sectors around a hub at 1.5 hub-radii) for the same reason GAS_CLOUD is: what
+ * ships is what someone read, and `test/materialicons.ts` can golden it directly.
+ * `#` is ink, `.` lets the material's own tile through.
+ *
+ * Sized for HAZARD_N, and it does not survive being changed independently of it —
+ * the rows are the tile. The blades stop one cell short of the hub, which at this
+ * size is what keeps the shape reading as a trefoil rather than as a blob.
+ */
+const HAZARD_TREFOIL = [
+  '..................',
+  '..................',
+  '......######......',
+  '.....########.....',
+  '......######......',
+  '.......####.......',
+  '..................',
+  '........##........',
+  '.......####.......',
+  '..####.####.####..',
+  '..####..##..####..',
+  '...####....####...',
+  '...####....####...',
+  '....##......##....',
+  '.....#......#.....',
+  '..................',
+  '..................',
+  '..................',
+];
+
+/**
+ * Tile edge, in cells, for a chip carrying the hazard trefoil.
+ *
+ * Twice `N`, which is the whole reason it works: a 9-cell tile cannot hold a
+ * recognizable trefoil (the hub alone would be two cells), but *resampling* the
+ * 9-cell patch up to 18 rather than replaying the branch chain at 18 keeps every
+ * pattern at exactly the apparent scale it has on every other chip — a grain cell is
+ * still 2 CSS px in the palette's 18 px swatch, not 1. Replaying the chain instead
+ * would halve the speckle and make Nuke Waste's grain finer than Sand's.
+ *
+ * It is also what the ink is drawn against: HAZARD_TREFOIL is 18 rows of 18.
+ */
+const HAZARD_N = 2 * N;
+
+/** The trefoil's ink. Flat black, as the reference symbol is — the one place this
+ *  module ignores the brief's "no broad pure black", because a hazard mark that
+ *  shaded with its material would stop reading as a hazard mark. */
+const HAZARD_INK = 0xff000000;
+
+/** Exported for `test/materialicons.ts` only. Same argument as GAS_CLOUD_ROWS: a
+ *  row that is not HAZARD_N wide silently reads as ink-free, and an all-`.` short
+ *  row would not show up in the golden tile. */
+export const HAZARD_TREFOIL_ROWS: readonly string[] = HAZARD_TREFOIL;
+
+/** The palette category whose chips carry the trefoil. */
+export const HAZARD_CATEGORY = 'radioactive';
+
 /** Exported for `test/materialicons.ts` only.
  *
  *  `GAS_N` comes from the row *count*, so a row that is not equally wide gets
@@ -198,11 +270,29 @@ function tintSrc(m: Material, x: number, y: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
+/**
+ * Mirror of the renderer's tint-block anchor mask (see Material.tintBlock): a
+ * blocked material shades a whole square of cells from one sample, so the icon
+ * clears the same low bits of x and y before hashing and comes out flaked the same
+ * way the canvas is.
+ *
+ * `N` is odd, so the tile's last row and column are a 1-cell fringe rather than a
+ * whole block. That is the same thing the world does wherever a body's edge lands
+ * off the block lattice, and at the amplitudes this is used for (Obsidian's 6) it
+ * is far below a visible step — but a future material with a wide blocked grain
+ * would show it, and the fix then is a patch edge that is a multiple of the block.
+ */
+function tintAnchor(m: Material): number {
+  const b = m.tintBlock ?? 1;
+  return b > 1 ? ~(b - 1) : -1;
+}
+
 /** The renderer's brightness grain, applied exactly as it is in-world. */
 function grain(m: Material, c: number, x: number, y: number): number {
   const amp = varyAmplitude(m);
   if (amp === 0) return c;
-  return tinted(c, ((tintSrc(m, x, y) - TINT_NEUTRAL) * amp) >> 7);
+  const mask = tintAnchor(m);
+  return tinted(c, ((tintSrc(m, x & mask, y & mask) - TINT_NEUTRAL) * amp) >> 7);
 }
 
 /**
@@ -211,10 +301,10 @@ function grain(m: Material, c: number, x: number, y: number): number {
  * The `if`/`else if` order below is the renderer's order, not a rewrite of it:
  * several materials set more than one hint (a Fan is `lattice` *and*
  * `windArrow`, Diamond is `lattice` *and* `checker2x2`, Solar Panel is `lattice`
- * *and* `solarPattern`, Wall is `lattice` *and* `brickPattern`) and only the first
- * matching branch draws. `Material.lattice` on those is just supplying the second
- * tone. Reordering these would quietly change what half the electric category
- * looks like.
+ * *and* `solarPattern`, Wall is `lattice` *and* `brickPattern`, TNT is `lattice`
+ * *and* `tntPattern`) and only the first matching branch draws.
+ * `Material.lattice` on those is just supplying the second tone. Reordering these
+ * would quietly change what half the electric category looks like.
  */
 function patchFor(m: Material): { buf: Uint32Array; n: number } {
   const base = m.color;
@@ -249,8 +339,11 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // Fireworks: each grain draws the palette entry its own tint byte names,
         // so a pile is a speckle of genuinely different colours. The icon indexes
         // with the same synthetic byte it shades with, exactly as the renderer
-        // indexes and shades with the one `tint` byte.
-        c = grain(m, m.tintPalette[hash8(m.id, x, y) % m.tintPalette.length], x, y);
+        // indexes and shades with the one `tint` byte — including the block anchor,
+        // so a blocked palette material would flake its colours, not just its
+        // brightness. (None ships today; the renderer reads the same anchor here.)
+        const mask = tintAnchor(m);
+        c = grain(m, m.tintPalette[hash8(m.id, x & mask, y & mask) % m.tintPalette.length], x, y);
       } else if (m.arrow) {
         // The three directional patterns below are drawn in the orientation the
         // painter stamps on a fresh cell, so a chip shows what a click places:
@@ -308,6 +401,16 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
             : d2 <= WOOFER_R2
               ? tinted(base, WOOFER_RIM)
               : base;
+      } else if (m.tntPattern) {
+        // TNT: one explosive crate per tile — `lattice` seams on the trailing edges,
+        // a binding band across the middle, and the top row lit. Squarely aligned,
+        // not offset like the Wall's courses.
+        const row = y % TNT_H;
+        c = row === TNT_H - 1 || x % TNT_W === TNT_W - 1 || row === TNT_BAND
+          ? lat
+          : row === 0
+            ? tinted(base, TNT_LIT)
+            : base;
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);
@@ -403,6 +506,36 @@ export function generatedSvgFor(m: Material): string {
   return patchSvg(buf, n);
 }
 
+/**
+ * The derived tile with the hazard trefoil stamped over it, on the coarser
+ * HAZARD_N grid (see HAZARD_TREFOIL).
+ *
+ * The pattern is nearest-neighbour resampled rather than redrawn, so whatever
+ * `patchFor` produced keeps its apparent cell size — including the 18-cell gas cloud,
+ * which resamples by a factor of one and comes through untouched. The ink is baked
+ * *into* the buffer instead of being layered over the emitted markup: an overlay
+ * would pay for the pattern cells it hides, and would make the tile's areas stop
+ * adding up to one tile, which is what every coverage check here relies on.
+ */
+function hazardPatch(m: Material): { buf: Uint32Array; n: number } {
+  const { buf: src, n: sn } = patchFor(m);
+  const buf = new Uint32Array(HAZARD_N * HAZARD_N);
+  for (let y = 0; y < HAZARD_N; y++) {
+    const sy = ((y * sn) / HAZARD_N) | 0;
+    for (let x = 0; x < HAZARD_N; x++) buf[y * HAZARD_N + x] = src[sy * sn + (((x * sn) / HAZARD_N) | 0)];
+  }
+  for (let y = 0; y < HAZARD_N; y++) {
+    const row = HAZARD_TREFOIL[y];
+    for (let x = 0; x < HAZARD_N; x++) if (row[x] === '#') buf[y * HAZARD_N + x] = HAZARD_INK;
+  }
+  return { buf, n: HAZARD_N };
+}
+
+/** Whether `m`'s chip carries the radioactive hazard trefoil. */
+export function hasHazardMark(m: Material): boolean {
+  return m.category === HAZARD_CATEGORY;
+}
+
 /** A material's name → the key its hand-drawn file is stored under. Mirrors
  *  `iconKey` in scripts/icon-svg.mjs, which names the files. */
 function iconKey(name: string): string {
@@ -412,16 +545,24 @@ function iconKey(name: string): string {
 /**
  * SVG markup for a material's palette swatch — inject with Svelte `{@html}`.
  *
- * Hand-drawn art wins where it exists; everything else is derived from the
- * renderer's own branch chain. The override is a thin top layer by design —
- * a material needs hand art only when its identity is an idea rather than a
- * colour or a texture (Void, Clone, …), or when the derived tile came out
- * wrong. Adding a `.svg` to temp/material-icons/ and rebuilding the module is
- * the whole wiring; nothing in the material's own definition changes.
+ * Three layers, outermost first. Hand-drawn art wins where it exists; a
+ * `radioactive` material gets its derived tile under the hazard trefoil; everything
+ * else is the derived tile alone. Both overrides are thin caps by design — a
+ * material needs hand art only when its identity is an idea rather than a colour or
+ * a texture (Void, Clone, …), or when the derived tile came out wrong, and the
+ * trefoil is a label rather than a redrawing. Adding a `.svg` to
+ * temp/material-icons/ and rebuilding the module is the whole wiring; nothing in the
+ * material's own definition changes.
+ *
+ * Hand art beating the trefoil is a real ordering choice and not an oversight: art
+ * is authored at 24 cells and the trefoil is 18, so they cannot be composed, and a
+ * drawing someone made for a specific material is the more deliberate statement of
+ * the two. No radioactive material ships art today, and `test/materialicons.ts`
+ * fails if one starts to — that check is the reminder that the mark went away.
  *
  * The string is built from the material registry, this module's arithmetic, and
  * checked-in art that `scripts/icon-svg.mjs` has validated — no user input — and
- * contains only `<rect>`s.
+ * contains only `<rect>`s and `<path>`s.
  */
 export function materialSvgFor(m: Material): string {
   let svg = CACHE.get(m.id);
@@ -430,7 +571,11 @@ export function materialSvgFor(m: Material): string {
     // Hand art is authored at 24 cells and already normalized to bare rects; it
     // only needs the same wrapper the derived tiles get, so both size and
     // rasterize identically in the palette.
-    svg = hand ? pixelSvg(HAND_ICON_CELLS, HAND_ICON_CELLS, hand, 'mat-svg') : generatedSvgFor(m);
+    if (hand) svg = pixelSvg(HAND_ICON_CELLS, HAND_ICON_CELLS, hand, 'mat-svg');
+    else if (hasHazardMark(m)) {
+      const { buf, n } = hazardPatch(m);
+      svg = patchSvg(buf, n);
+    } else svg = generatedSvgFor(m);
     CACHE.set(m.id, svg);
   }
   return svg;

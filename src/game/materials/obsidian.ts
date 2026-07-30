@@ -59,6 +59,14 @@ export const OBSIDIAN = register({
   // The amplitude is shared by the canvas and the icon generator through
   // `varyAmplitude`, so this one number narrows both.
   colorVary: 6,
+  // …and *blocked* into 2×2 flakes rather than left as per-cell noise. Obsidian
+  // fractures conchoidally: it breaks into broad curved faces, and a face is many
+  // cells wide, not one. Sampling the tint at the cell itself gave a grain whose
+  // features were a single cell across, which reads as dust settled on the surface
+  // — doubling the sample block makes the same six brightness steps read as facets
+  // catching the light. Positional, so it only holds up on a material that doesn't
+  // move; Obsidian never does (see Material.tintBlock).
+  tintBlock: 2,
   density: 1000,
   explosionProof: true,
   category: 'solid',
