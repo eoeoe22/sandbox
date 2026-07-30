@@ -343,26 +343,27 @@ const GOLDEN: Record<string, string> = {
     '.........',
   ].join('\n'),
   // TNT: explosive crates — a seam (`o`) down the last column of every block and
-  // along the last row of every course, one binding band of the same colour across
-  // the block's middle, and each block's top row lit (`i`).
+  // along the last row of every course, one binding band of the same colour down the
+  // block's middle, and each block's leading column lit (`i`).
   //
-  // The two things this golden is really holding: the courses are NOT staggered (the
-  // seam column runs straight down, unlike the Wall's alternating joints — staggered
-  // crates read as brickwork), and the band and the seam are NOT four rows apart. The
-  // band started on row 3, which put both dark rows on the same period-4 lattice and
-  // turned the whole field into evenly spaced stripes with nothing marking where a
-  // crate ended. Rows 4 and 7 here are the fix; a golden with dark rows an equal
-  // distance apart means it regressed.
+  // Three things this golden holds. **The band and the lit edge run vertically**, so
+  // a charge reads as sticks stood on end; a golden whose `o`/`i` run in rows means
+  // the pattern was transposed back. The courses are **NOT** staggered — the seam
+  // column runs straight down, unlike the Wall's alternating joints, because
+  // staggered crates read as brickwork. And the band and the seam are **NOT** an
+  // equal distance apart: the band on column 2 would put both dark columns three
+  // apart either way and collapse the field into even stripes with nothing marking
+  // where a crate ends. Column 3 gives gaps of 2 and 4.
   TNT: [
-    'iiiiiiioi',
-    '.......o.',
-    '.......o.',
-    '.......o.',
+    'i..o.oi..',
+    'i..o.oi..',
+    'i..o.oi..',
+    'i..o.oi..',
+    'i..o.oi..',
     'ooooooooo',
-    '.......o.',
-    '.......o.',
-    'ooooooooo',
-    'iiiiiiioi',
+    'i..o.oi..',
+    'i..o.oi..',
+    'i..o.oi..',
   ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [

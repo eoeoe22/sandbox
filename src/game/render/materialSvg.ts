@@ -82,9 +82,9 @@ const WOOFER_CONE_R2 = 25;
 const WOOFER_CAP_R2 = 4;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
-const TNT_W = 8;
-const TNT_H = 8;
-const TNT_BAND = 4;
+const TNT_W = 6;
+const TNT_H = 6;
+const TNT_BAND = 3;
 const TNT_LIT = 38;
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
@@ -418,13 +418,13 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
               ? tinted(base, WOOFER_RIM)
               : base;
       } else if (m.tntPattern) {
-        // TNT: one explosive crate per tile — `lattice` seams on the trailing edges,
-        // a binding band across the middle, and the top row lit. Squarely aligned,
-        // not offset like the Wall's courses.
-        const row = y % TNT_H;
-        c = row === TNT_H - 1 || x % TNT_W === TNT_W - 1 || row === TNT_BAND
+        // TNT: one explosive crate per tile — `lattice` seams on the trailing edges, a
+        // binding band down the middle, and the leading column lit. Vertical, and
+        // squarely aligned rather than offset like the Wall's courses.
+        const col = x % TNT_W;
+        c = col === TNT_W - 1 || col === TNT_BAND || y % TNT_H === TNT_H - 1
           ? lat
-          : row === 0
+          : col === 0
             ? tinted(base, TNT_LIT)
             : base;
       } else if (m.checker2x2) {

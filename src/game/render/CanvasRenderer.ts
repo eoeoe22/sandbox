@@ -160,32 +160,34 @@ const WOOFER_CAP = -29;
 
 // Tiling of the `tntPattern` explosive-crate grid (TNT — see the render loop). One
 // period is a block plus the seam on its right and bottom edges, so a crate reads
-// 7 wide × 7 tall with a 1-cell seam on two of its sides, and carries one binding
-// band across its middle.
+// 5 wide × 5 tall with a 1-cell seam on two of its sides, and carries one binding
+// band down its middle.
 //
-// This is the hand-drawn TNT chip's three features — dark outline, lit top edge, one
+// This is the hand-drawn TNT chip's three features — dark outline, lit edge, one
 // band — at world scale, not its measurements. The chip's outline runs all four
 // sides because a chip draws one object with air around it; a *field* of crates has
 // no outside, so only the two trailing edges are drawn and each block's outline is
 // its neighbour's.
 //
-// Square, unlike the Wall's 6×4 running bond: a crate is a crate, and the courses
-// are deliberately NOT staggered — offsetting them turns explosive into brickwork,
-// which is the one thing this pattern must not read as. 8 is the smallest period
-// that still fits a band with a clear row of base colour above and below it (rows
-// 1–2 and 4–5 of the block), so a charge 8 cells across already shows one whole
-// crate and its neighbours' seams.
-const TNT_W = 8; // columns per crate (7 drawn + 1 seam)
-const TNT_H = 8; // rows per crate (7 drawn + 1 seam)
-// Row within the crate carrying the binding band. 4 rather than the geometric middle
-// 3, because the band and the seam are the same colour: at 3 the two dark rows sat at
-// 3 and 7, four apart, and the whole field collapsed into evenly spaced stripes every
-// four rows with nothing left to say where one crate ended. At 4 the gaps alternate
-// 3 and 5, and the seam is immediately followed by the next crate's lit top row — so
-// a dark line with a bright line under it reads as a block edge and a dark line alone
-// reads as a strap.
-const TNT_BAND = 4;
-// How far the top row of each crate is lifted above the base colour. The chip's lit
+// **The band and the lit edge run vertically**, so a painted charge reads as sticks
+// stood on end rather than as stacked horizontal slabs. The seam row still closes
+// each course, so the field is a grid of blocks either way — what the orientation
+// decides is which way the eye travels across it.
+//
+// Square, unlike the Wall's 6×4 running bond, and the courses are deliberately NOT
+// staggered: offsetting them turns explosive into brickwork, which is the one thing
+// this pattern must not read as.
+const TNT_W = 6; // columns per crate (5 drawn + 1 seam)
+const TNT_H = 6; // rows per course (5 drawn + 1 seam)
+// Column within the crate carrying the binding band. 3 rather than the block's
+// geometric middle 2, because the band and the seam are the same colour: at 2 the two
+// dark columns sit at 2 and 5, three apart either way, and the whole field collapses
+// into evenly spaced stripes with nothing left to say where one crate ends. At 3 the
+// gaps alternate 2 and 4, and the seam is immediately followed by the next crate's lit
+// edge — so a dark line with a bright line beside it reads as a block edge and a dark
+// line alone reads as a strap.
+const TNT_BAND = 3;
+// How far the lit edge of each crate is lifted above the base colour. The chip's lit
 // edge is #e0655a against a #c43a30 base, which is +28/+43/+42 — not one offset, so
 // this is the mid channel rather than an exact match (a material carries only one
 // second colour, and `lattice` is spent on the seams). It lands within 15 units per
@@ -1022,17 +1024,18 @@ export class CanvasRenderer implements Renderer {
       } else if (tntPattern[id]) {
         // TNT draws a grid of explosive crates: a `lattice`-coloured seam on the last
         // column of every block and the last row of every course, one band of the same
-        // colour across the block's middle, and the block's top row lit TNT_LIT above
-        // the base — the same three features as the hand-drawn TNT chip. Positional
-        // like the Wall's courses so a dragged charge is one continuous stack, but
-        // squarely aligned rather than offset: staggered courses would read as
-        // brickwork, and a wall of bricks is exactly what a charge must not look like.
+        // colour down the block's middle, and the block's leading column lit TNT_LIT
+        // above the base — the same three features as the hand-drawn TNT chip, run
+        // vertically so a charge reads as sticks on end. Positional like the Wall's
+        // courses so a dragged charge is one continuous stack, but squarely aligned
+        // rather than offset: staggered courses would read as brickwork, and a wall of
+        // bricks is exactly what a charge must not look like.
         const x = i % w;
         const y = (i / w) | 0;
-        const row = y % TNT_H;
-        c = row === TNT_H - 1 || x % TNT_W === TNT_W - 1 || row === TNT_BAND
+        const col = x % TNT_W;
+        c = col === TNT_W - 1 || col === TNT_BAND || y % TNT_H === TNT_H - 1
           ? latCol[id]
-          : row === 0
+          : col === 0
             ? tntLit[id]
             : pal[id];
       } else if (chk2x2[id]) {
