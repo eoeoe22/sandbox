@@ -106,13 +106,23 @@ function raster(svg: string): { grid: string[]; n: number } {
     if (x + w > n || y + h > n) throw new Error('rect leaves the tile: ' + r[0]);
     for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) grid[j * n + i] = r[5];
   }
-  let painted = 0;
+  // Per-cell, not a running total. The old check summed painted area and compared it
+  // to the tile — which can only fire when the paths jointly cover the whole tile
+  // twice, and a material icon is mostly background, so realistic overlap sailed
+  // through it: two 3×3 boxes overlapping by 2×2 on a 9-cell tile sum to 18 against
+  // 81 and the cell just silently takes whichever path was written last. Marking each
+  // cell as it is painted catches the first double-write instead, wherever it is.
+  //
+  // Paths only. The background rect is deliberately painted over by everything above
+  // it, and a hand-drawn tile's rects are allowed to overlap each other — the
+  // acceptance script warns about that rather than rejecting it, because overlapping
+  // rects still render correctly. `spritePaths` output, by contrast, is supposed to be
+  // a partition, and that is what this holds it to.
+  const inked = new Uint8Array(n * n);
   for (const pm of svg.matchAll(/<path fill="(#[0-9a-f]{6})" d="([^"]+)"\/>/g)) {
     // Boxes, not rows: spritePaths grows each horizontal run downward while the rows
     // beneath repeat it, so `v` is a height rather than the constant 1 it used to be
     // (that merge is what keeps the resampled hazard tiles inside the byte budget).
-    // Reconstructing the height here is also what keeps the overlap assertion below
-    // honest — counting a `v3` box as one row would let three rows of overlap hide.
     for (const seg of pm[2].matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-(\d+)z/g)) {
       const x = +seg[1];
       const y = +seg[2];
@@ -120,8 +130,13 @@ function raster(svg: string): { grid: string[]; n: number } {
       const tall = +seg[4];
       if (+seg[5] !== run) throw new Error('malformed run in path data');
       if (x + run > n || y + tall > n) throw new Error('path box leaves the tile: ' + seg[0]);
-      for (let j = y; j < y + tall; j++) for (let k = 0; k < run; k++) grid[j * n + x + k] = pm[1];
-      painted += run * tall;
+      for (let j = y; j < y + tall; j++)
+        for (let k = 0; k < run; k++) {
+          const at = j * n + x + k;
+          if (inked[at]) throw new Error(`paths overlap at (${x + k}, ${j}): ` + seg[0]);
+          inked[at] = 1;
+          grid[at] = pm[1];
+        }
     }
     // Every segment in the data must be one the loop above accounted for; a shape the
     // regex silently skipped would read as background in every check below.
@@ -133,7 +148,6 @@ function raster(svg: string): { grid: string[]; n: number } {
   const shapes = (svg.match(/<(rect|path|circle|polygon|ellipse|g)\b/g) ?? []).length;
   const accounted = rects.length + (svg.match(/<path /g) ?? []).length;
   if (shapes !== accounted) throw new Error('unexpected shape element in icon');
-  if (painted > n * n) throw new Error('paths overlap');
   return { grid, n };
 }
 
