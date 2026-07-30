@@ -139,10 +139,11 @@ const MIX_CHANCE = 0.25;
 const MIX_MAX_TEMP = 150;
 
 // Per-tick, per-contact chance a grain touching Acid dissolves into a hydrogen
-// bubble (see `Material.acidHydrogen`). The briskest rate on the roster short of
-// Sodium's own path: aluminum in hydrochloric acid is one of the most violent
-// fizzes in a school lab. Low enough, still, that a pile in a puddle fizzes for a
-// beat rather than flashing.
+// bubble (see `Material.acidHydrogen`). Second only to the activated dust this
+// powder becomes (0.2, activatedaluminum.ts — it has no oxide film left to
+// strip): aluminum in hydrochloric acid is one of the most violent fizzes in a
+// school lab. Low enough, still, that a pile in a puddle fizzes for a beat
+// rather than flashing.
 const ACID_HYDROGEN_CHANCE = 0.12;
 // …and the same for steam meeting a *burning* grain. Faster, because that
 // reaction is a runaway rather than a fizz.

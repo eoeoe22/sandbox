@@ -15,9 +15,9 @@
 //     surface-area split each metal keeps between its powder and its bulk form;
 //   • **1:1 consumption** — the acid is spent as it works, so a small puddle on a
 //     big block of iron stops rather than acting as a free hydrogen catalyst;
-//   • **the bubble is born cool** — under Hydrogen's 200° autoignition, so the
-//     gas collects and you choose when it goes off (the whole point of the
-//     chain), while a *packed* pile still can't be ignited by its own warmth;
+//   • **the bubble is born cool** — under Hydrogen's 200° autoignition even off
+//     the briskest fizz, so the gas collects and you choose when it goes off
+//     (the whole point of the chain);
 //   • **Sodium is the exception** — it takes its own violent path in acid (Fire +
 //     hot Hydrogen, and a detonation when packed) rather than the polite fizz,
 //     because it is the top of the reactivity series;
