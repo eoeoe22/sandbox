@@ -4,27 +4,33 @@
 //
 // What it pins down:
 //   • 커버리지 — every material in the 방사능 category declares a dose, and every
-//     material in the 생명 category either declares its `radiationDeath` remains
-//     or is one of the three documented exemptions (Nanobot the machine, Bleached
-//     Coral the dead skeleton, and living Coral which routes the dose into its own
-//     백화 stress instead). This is the check that catches the silent failure:
-//     a new radioactive material that kills nothing, or a new living material
-//     that shrugs off a meltdown.
+//     material in the 생명 category declares either its `radiationDeath` remains
+//     or a `radiationHit` model of its own, or is one of the three documented
+//     exemptions (Nanobot the machine, and the two radiation-tolerant slimes).
+//     This is the check that catches the silent failure: a new radioactive
+//     material that kills nothing, or a new living material that shrugs off a
+//     meltdown.
+//   • 무엇이 막고 무엇이 통과하는가 — the dose floods out to RADIATION_RANGE through
+//     air, powder and liquid alike and is stopped only by solids. Each of those is
+//     checked against a control scene with the same geometry and Stone in the
+//     intervening material's place, so "it got through" can't be confused with
+//     "it was next to it all along".
 //   • 전 방사성 물질이 실제로 죽인다 — every registered radioactive material is
 //     walked through the same scene and has to kill the probe sitting on it. The
 //     probe is a Seed: alone in the roster it has no heat death at all, so the
 //     same scene works for a cool bar of U238 and for a 1600° corium pool without
 //     the result being confounded by temperature.
-//   • 물질별 사체 — Plant/Seed → Ash, Termite → Sawdust, Yeast/Virus → nothing,
-//     Slime/Acid Slime → Smoke.
+//   • 물질별 사체 — Plant/Seed → Ash, Termite → Sawdust, Yeast/Virus → nothing.
+//   • 방사선 내성 — the two slimes and Nanobot are pressed against a source for
+//     thousands of ticks and come out untouched.
 //   • 산호는 백화 — a polyp beside a source loses its colour over time (via its
 //     own stress meter, so it visibly stops growing first) and ends as Bleached
 //     Coral, while the identical tank with an inert Stone in the source's place
 //     keeps a living reef.
 //   • 재군체화 차단 — a white skeleton in a cool, brine-filled tank never comes
-//     back while a source is touching it, and does come back once it isn't.
-//   • 차폐 — one cell of anything between the source and the life stops the dose
-//     dead, and Nanobot (a machine) is never touched by it at all.
+//     back while a source can reach it, and does come back once none can.
+//   • 사거리 — a target at exactly RADIATION_RANGE dies and one two steps further
+//     out doesn't, however deep the pile of source behind it (자기차폐).
 //
 // Every scene boxes its source in Wall (a perfect heat boundary, conductivity 0)
 // so the only thing reaching the target is the radiation itself — no boiled
@@ -33,6 +39,7 @@
 // Run: `node test/run-radiation.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
+import { RADIATION_RANGE } from '../src/game/engine/radiation';
 import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import '../src/game/materials';
 
@@ -73,6 +80,8 @@ const ID = (name: string): number => {
 const EMPTY = 0;
 const WALL = ID('Wall');
 const STONE = ID('Stone');
+const SAND = ID('Sand');
+const OIL = ID('Crude Oil');
 const SALTWATER = ID('Saltwater');
 const ASH = ID('Ash');
 const SAWDUST = ID('Sawdust');
@@ -88,6 +97,7 @@ const CORAL = ID('Coral');
 const BLEACHED = ID('Bleached Coral');
 const NANOBOT = ID('Nanobot');
 const U238 = ID('U238');
+const NUKE_WASTE = ID('Nuke Waste');
 
 function makeWorld(w = 21, h = 21): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -130,14 +140,16 @@ function run(sim: Simulation, ticks: number): void {
 reseed();
 const RADIOACTIVE = allMaterials().filter((m) => m.category === 'radioactive');
 const LIVING = allMaterials().filter((m) => m.category === 'life');
-/** The 생명 materials that deliberately declare no `radiationDeath`, and why. Any
- *  other one missing it is a bug (a new life material nothing radioactive can
- *  kill), which is exactly what the check below is for. */
+/** The 생명 materials that deliberately react to radiation in no way at all, and
+ *  why. Any other one missing both tags is a bug (a new life material nothing
+ *  radioactive can touch), which is exactly what the check below is for. */
 const EXEMPT = new Map<string, string>([
   ['Nanobot', '기계 — a machine, not life; it keeps working in a hot zone'],
-  ['Bleached Coral', '이미 죽은 골격 — nothing left in it to kill'],
-  ['Coral', '백화 — routes the dose into its own bleaching stress instead'],
+  ['Slime', '방사선 내성 — a radiation-tolerant extremophile'],
+  ['Acid Slime', '방사선 내성 — ditto, identical to plain Slime'],
 ]);
+const reacts = (m: { radiationDeath?: number; radiationHit?: unknown }): boolean =>
+  m.radiationDeath !== undefined || m.radiationHit !== undefined;
 
 check('방사능 카테고리가 비어있지 않다', RADIOACTIVE.length >= 5, `${RADIOACTIVE.length}종`);
 const doseless = RADIOACTIVE.filter((m) => !(m.radiation && m.radiation > 0)).map((m) => m.name);
@@ -146,19 +158,15 @@ check(
   doseless.length === 0,
   doseless.length ? `누락: ${doseless.join(', ')}` : RADIOACTIVE.map((m) => `${m.name} ${m.radiation}`).join(' / '),
 );
-const undeclared = LIVING.filter((m) => m.radiationDeath === undefined && !EXEMPT.has(m.name)).map(
-  (m) => m.name,
-);
+const undeclared = LIVING.filter((m) => !reacts(m) && !EXEMPT.has(m.name)).map((m) => m.name);
 check(
-  '생명 카테고리 전 물질이 사체(radiationDeath)를 선언하거나 명시적 예외다',
+  '생명 카테고리 전 물질이 피폭 반응(사체 또는 자체 모델)을 선언하거나 명시적 예외다',
   undeclared.length === 0,
   undeclared.length ? `누락: ${undeclared.join(', ')}` : `예외 ${[...EXEMPT.keys()].join(', ')}`,
 );
-const wrongExempt = [...EXEMPT.keys()].filter(
-  (n) => getMaterial(ID(n)).radiationDeath !== undefined,
-);
+const wrongExempt = [...EXEMPT.keys()].filter((n) => reacts(getMaterial(ID(n))));
 check(
-  '예외로 적어 둔 물질은 실제로도 사체를 선언하지 않는다',
+  '예외로 적어 둔 물질은 실제로도 아무 반응을 선언하지 않는다',
   wrongExempt.length === 0,
   wrongExempt.join(', '),
 );
@@ -213,8 +221,6 @@ const CORPSES: { name: string; id: number; remains: number; diagonal?: boolean }
   { name: 'Termite', id: TERMITE, remains: SAWDUST },
   { name: 'Yeast', id: YEAST, remains: EMPTY },
   { name: 'Virus', id: VIRUS, remains: EMPTY },
-  { name: 'Slime', id: SLIME, remains: SMOKE },
-  { name: 'Acid Slime', id: ACID_SLIME, remains: SMOKE, diagonal: true },
 ];
 for (const t of CORPSES) {
   reseed();
@@ -240,47 +246,98 @@ for (const t of CORPSES) {
       ? `실제 = ${getMaterial(leftBehind)?.name ?? leftBehind}`
       : '',
   );
-  // The diagonal placement is only meaningful if the source is still standing:
-  // Acid Slime corrodes anything non-resistant it touches cardinally, U238
-  // included, so a cardinal scene could pass by the slime eating its executioner
-  // and then dying of something else entirely.
-  if (t.diagonal) {
-    check(
-      `${t.name} 은 부식 사거리 밖(대각선)에서도 피폭된다 — 선원은 멀쩡`,
-      at(grid, 10, 10) === U238,
-      `선원 = ${getMaterial(at(grid, 10, 10))?.name}`,
-    );
-  }
 }
 
-// ── 4. 차폐 — one cell of anything stops it ────────────────────────────────────
-reseed();
-{
+// ── 3b. 방사선 내성 — 슬라임 두 종과 나노봇은 아무렇지 않다 ─────────────────────
+//
+// Against the strongest source there is (Molten U235, dose 0.10), pressed right
+// up against it, for long enough that anything with a `radiationDeath` would have
+// died hundreds of times over. Molten U235 is thermally boxed in Wall as usual —
+// otherwise its 1600° would melt the slimes and the test would prove nothing.
+for (const t of [
+  { name: 'Slime', id: SLIME },
+  { name: 'Acid Slime', id: ACID_SLIME },
+  { name: 'Nanobot', id: NANOBOT },
+]) {
+  reseed();
   const { grid, sim } = makeWorld();
   fill(grid, 0, 0, 20, 20, WALL);
-  put(grid, 10, 10, U238);
-  put(grid, 10, 9, STONE); // the shield
-  put(grid, 10, 8, PLANT); // two cells out — out of the 8-neighbourhood
+  put(grid, 10, 10, U238); // cool source: the point is the dose, not the heat
+  put(grid, 10, 9, t.id);
   run(sim, 3000);
   check(
-    '한 칸만 가려도 방사선이 막힌다 (인접 8칸이 전부)',
-    at(grid, 10, 8) === PLANT,
-    `가려진 식물 자리 = ${getMaterial(at(grid, 10, 8))?.name}`,
+    `${t.name} 은 방사선에 죽지 않는다`,
+    count(grid, t.id) === 1 && count(grid, SMOKE) === 0,
+    `남은 수 ${count(grid, t.id)}`,
   );
 }
 
-// ── 5. 나노봇은 기계라 죽지 않는다 ──────────────────────────────────────────────
+// ── 4. 무엇을 통과하고 무엇에 막히는가 ─────────────────────────────────────────
+//
+// One corridor, one variable. A 1-cell tunnel cut through solid Wall, a U238 bar
+// at one end, three cells of the material under test, then a Plant. The only
+// thing that changes between runs is what fills those three cells — so "the dose
+// got through 3 cells of sand" can't be confused with "the plant was next to the
+// bar all along", and the Stone run is the control that proves the corridor
+// isn't simply leaky.
+function corridor(fillId: number): { grid: Grid; sim: Simulation } {
+  const { grid, sim } = makeWorld();
+  fill(grid, 0, 0, 20, 20, WALL);
+  fill(grid, 1, 10, 19, 10, EMPTY); // the tunnel (Wall floor and ceiling)
+  put(grid, 1, 10, U238);
+  fill(grid, 2, 10, 4, 10, fillId); // 3 cells of the material under test
+  put(grid, 5, 10, PLANT); // 4 steps from the bar
+  return { grid, sim };
+}
+for (const t of [
+  { name: '공기', id: EMPTY, through: true },
+  { name: '가루(Sand)', id: SAND, through: true },
+  { name: '액체(Oil)', id: OIL, through: true },
+  { name: '고체(Stone)', id: STONE, through: false },
+]) {
+  reseed();
+  const { grid, sim } = corridor(t.id);
+  run(sim, 6000);
+  const died = at(grid, 5, 10) !== PLANT;
+  check(
+    t.through ? `${t.name} 3칸은 방사선을 통과시킨다` : `${t.name} 3칸은 방사선을 막는다`,
+    died === t.through,
+    `4칸 뒤 식물 자리 = ${getMaterial(at(grid, 5, 10))?.name}`,
+  );
+}
+
+// ── 4b. 사거리 — 통과한다고 무한정 가지는 않는다 ────────────────────────────────
+//
+// Same open tunnel, a *deep* (6-cell) slab of source at one end so pile depth
+// can't buy extra reach — that's the visible half of 자기차폐, radioactive matter
+// being opaque to its own emission — and two seeds, one at exactly
+// RADIATION_RANGE and one two steps past it. Seeds because they have no heat
+// death to confound with.
+//
+// The slab is Nuke Waste rather than fuel on purpose. A 6-cell bar of U238 has
+// enough neighbours to run its own chain reaction: it self-heats to 1500°, melts,
+// and the melt *flows down the tunnel* before setting as waste several cells
+// nearer the seeds — which is a perfectly good meltdown and a completely invalid
+// range test, since the source is no longer where it was put. Spent waste has no
+// reaction left, so the slab stays exactly where the scene says it is.
 reseed();
 {
   const { grid, sim } = makeWorld();
   fill(grid, 0, 0, 20, 20, WALL);
-  put(grid, 10, 10, U238);
-  put(grid, 10, 9, NANOBOT); // boxed in against the source's one open face
-  run(sim, 3000);
+  fill(grid, 1, 10, 19, 10, EMPTY);
+  fill(grid, 1, 10, 6, 10, NUKE_WASTE); // 6 cells deep; only the face at x=6 emits
+  put(grid, 12, 10, SEED); // 6 steps out — the last cell in reach
+  put(grid, 14, 10, SEED); // 8 steps out — past it
+  run(sim, 8000);
   check(
-    '나노봇(기계)은 방사선에 죽지 않는다',
-    count(grid, NANOBOT) === 1,
-    `남은 수 ${count(grid, NANOBOT)}`,
+    `사거리(${RADIATION_RANGE}칸) 안의 씨앗은 죽는다`,
+    at(grid, 12, 10) !== SEED,
+    `자리 = ${getMaterial(at(grid, 12, 10))?.name}`,
+  );
+  check(
+    '사거리 밖의 씨앗은 두꺼운 광석 더미 앞에서도 멀쩡하다 (자기차폐 — 두께가 사거리를 늘려주지 않는다)',
+    at(grid, 14, 10) === SEED,
+    `자리 = ${getMaterial(at(grid, 14, 10))?.name}`,
   );
 }
 

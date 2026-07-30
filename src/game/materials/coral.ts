@@ -3,7 +3,6 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
-import { radiationLevel } from '../engine/radiation';
 import { SALTWATER } from './saltwater';
 import { BLEACHED_CORAL } from './bleachedcoral';
 
@@ -39,13 +38,16 @@ import { BLEACHED_CORAL } from './bleachedcoral';
 //      put the brine back and cool it down and even bleached skeleton can be
 //      recolonised in time (see bleachedcoral.ts).
 //
-//      Radiation is routed through the stress meter rather than killing a polyp
-//      outright the way it kills every other living material (`radiationDeath`,
-//      see engine/radiation.ts) precisely because coral already *has* a way of
-//      dying that the player reads at a glance: a reef beside a waste drum should
+//      Radiation is routed through the stress meter (`Material.radiationHit`,
+//      see engine/radiation.ts) rather than killing a polyp outright the way it
+//      kills every other living material precisely because coral already *has* a
+//      way of dying that the player reads at a glance: a reef in a hot tank should
 //      lose its colour outward over seconds, not blink into skeleton cell by cell.
-//      The dose is the source's own `Material.radiation`, so a corium pool
-//      whitens a reef several times faster than a bar of U238 does.
+//      The dose arrives already attenuated by distance, so a corium pool whitens a
+//      reef several times faster than a bar of U238 does — and a weak enough dose
+//      is simply outrun by HEAL_CHANCE, which is the quiet, correct answer to "how
+//      far from the drum is far enough": far enough that the polyps repair faster
+//      than they're damaged. Nothing in here special-cases that; it falls out.
 //
 // A stressed polyp also stops growing, so a reef that is losing colour is visibly
 // a reef that has stopped building.
@@ -263,18 +265,15 @@ function updateCoral(x: number, y: number, sim: SimContext): void {
   const wet = hydOf(a) > 0;
   if ((a & INIT_BIT) === 0) a = withHydration(initCell(sim, wet), hydOf(a));
 
-  // 백화 — too hot, cut off from the brine, or under a dose, and the polyp starts
-  // dying. The stress it has built up is what decides, so damage has to be
-  // sustained. Radiation gains stress at the source's own strength (rad), and
-  // while any dose is falling on the cell it can't heal either — a reef parked
-  // next to fuel is losing colour whether or not this particular tick rolled.
+  // 백화 — too hot, or cut off from the brine, and the polyp starts dying. The
+  // stress it has built up is what decides, so damage has to be sustained.
+  // (Radiation adds to that same meter from outside this update — see
+  // `radiationHit` on the registration below.)
   const hot = sim.getTemp(x, y) >= BLEACH_TEMP;
-  const rad = radiationLevel(x, y, sim);
   let stress = stressOf(a);
   if (!wet && sim.chance(DRY_STRESS_CHANCE)) stress++;
-  else if (rad > 0 && sim.chance(rad)) stress++;
   else if (hot && sim.chance(HEAT_STRESS_CHANCE)) stress++;
-  else if (!hot && wet && rad === 0 && stress > 0 && sim.chance(HEAL_CHANCE)) stress--;
+  else if (!hot && wet && stress > 0 && sim.chance(HEAL_CHANCE)) stress--;
 
   if (stress >= MAX_STRESS) {
     // Dead: what's left is the white skeleton. In-place `set` keeps the cell's
@@ -308,6 +307,19 @@ export const CORAL = register({
   colorVary: 20,
   density: 1000,
   category: 'life',
+  // 피폭 = 백화. Instead of dying outright like the rest of the 생명 tab, an
+  // irradiated polyp gains the same bleaching stress a drought or a warm tank
+  // gives it (see the 백화 note at the top of this file), so a reef in a hot zone
+  // whitens outward over seconds and visibly stops building while it does. The
+  // roll is the arriving dose, so distance and the source's strength both read
+  // straight through. Stress is written into the cell's own aux from outside its
+  // update, which is safe because updates are sequential per cell: whichever of
+  // the two runs first this tick, the other reads the result.
+  radiationHit: (sim, x, y, dose) => {
+    if (!sim.chance(dose)) return;
+    const a = sim.getAux(x, y);
+    sim.setAux(x, y, withStress(a, stressOf(a) + 1));
+  },
   // Calcium carbonate skeleton — it conducts about like the limestone it is.
   thermal: { conductivity: 0.4 },
   update: updateCoral,
