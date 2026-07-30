@@ -249,16 +249,26 @@ function bath(
   // away from the constant it describes is exactly what went stale three times
   // while this branch was in review — twice by listing Sodium, which declines
   // the tag on purpose, and once by calling 0.12 the fastest rate when the
-  // activated dust sits at 0.2. Every one of those was invisible to the tests
-  // because no test knew what the complete list was supposed to be.
+  // activated dust sits at 0.2.
   //
-  // So: adding or retuning a tagged metal fails *here* first, with the new
-  // roster printed out, and the failure is the reminder to walk the prose. Same
-  // trick as `npm run check:material-ids` — believe the registry, not a comment.
-  const tagged: string[] = [];
+  // Be clear about what this does and doesn't catch. All three of those were
+  // written *wrong in the same commit as correct code* — nothing in the registry
+  // ever disagreed with itself, only the English did, and no scan can see that.
+  // Review caught them; this can't. What it does catch is the next retune or the
+  // ninth metal, where the code moves and the prose doesn't: that fails *here*
+  // first, with the new roster printed out, and the failure is the reminder to
+  // walk the comments. Same trick as `npm run check:material-ids` — believe the
+  // registry, not a comment.
+  //
+  // Note both checks below read the *same* scan. An earlier draft hand-listed the
+  // eight materials for the heat check and was blind to a ninth arriving with an
+  // override — a second hand-written roster three lines under the one meant to
+  // abolish it.
+  const tagged = [];
   for (let id = 1; id < 256; id++) {
     const m = getMaterial(id);
-    if (m?.acidHydrogen !== undefined) tagged.push(`${m.name} ${m.acidHydrogen.chance}`);
+    // ids are architecturally capped at 255: Grid.cells is a Uint8Array.
+    if (m?.acidHydrogen !== undefined) tagged.push(m);
   }
   const EXPECTED = [
     'Activated Aluminum 0.2',
@@ -270,20 +280,22 @@ function bath(
     'U235 0.05',
     'U238 0.05',
   ];
-  const sorted = tagged.sort(); // registry order is arbitrary; compare as a set
+  // registry order is arbitrary; compare as a set
+  const sorted = tagged.map((m) => `${m.name} ${m.acidHydrogen!.chance}`).sort();
   check(
     'the tagged roster is exactly the eight metals above hydrogen',
     sorted.length === EXPECTED.length && sorted.every((v, i) => v === EXPECTED[i]),
     `${sorted.length}종: ${sorted.join(', ')}`,
   );
-  // …and none of them overrides the shared heat of reaction, which is what makes
-  // "the bubble is born cool" a property of acid.ts's one default rather than a
-  // claim that has to be re-measured per metal.
+  // …and nothing in that roster overrides the shared heat of reaction, which is
+  // what makes "the bubble is born cool" a property of acid.ts's one default
+  // rather than a claim that has to be re-measured per metal. Off the same scan,
+  // so a ninth metal arriving with an override is caught on the day it lands.
+  const overrides = tagged.filter((m) => m.acidHydrogen!.heat !== undefined);
   check(
     'no metal overrides the default heat of reaction',
-    [IRON, METAL_POWDER, URANIUM, U238, GALLIUM, ALUMINUM, ALUMINUM_POWDER, ACTIVATED_ALUMINUM].every(
-      (m) => m.acidHydrogen?.heat === undefined,
-    ),
+    overrides.length === 0,
+    overrides.map((m) => m.name).join(', '),
   );
 }
 
