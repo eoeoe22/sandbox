@@ -177,6 +177,8 @@ export const ACID_SLIME = register({
   // 최대치), so current runs full length through a blob, and a pulse passing
   // *through* a cell seeds the same electric-dissolve-to-Water front Slime has.
   conductive: true,
+  // 방사선 내성 — no `radiationDeath`, exactly like plain Slime and for the same
+  // reasons (see slime.ts, and engine/radiation.ts for the pass).
   thermal: { conductivity: 0.2 },
   update: updateAcidSlime,
 });

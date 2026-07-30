@@ -55,6 +55,11 @@ export const TERMITE = register({
   // matching the death-by-shockwave its update handles for rim survivors — and
   // the remains a shockDeathChance roll leaves too.
   blastDeathId: SAWDUST.id,
+  // 피폭사 — a fourth way for a fragile organic body to die: crawl next to anything
+  // in the 방사능 tab and the dose kills it (see engine/radiation.ts). It leaves the
+  // same fleck of Sawdust every other death does — which the colony still eats, so
+  // an irradiated swarm feeds the ones behind it right up to the front line.
+  radiationDeath: SAWDUST.id,
   // Only nominally a solid (it walks instead of piling), so a shockwave sweeps it
   // up like loose matter rather than being shadowed by it, and a body caught in
   // one is crushed half the time (leaving blastDeathId) instead of just tumbling.

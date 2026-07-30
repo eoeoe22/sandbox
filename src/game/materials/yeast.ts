@@ -79,6 +79,10 @@ export const YEAST = register({
   // floating away from the mash.
   density: 3.3,
   category: 'life',
+  // 피폭사 — a live culture is killed by radiation exactly as it's killed by heat:
+  // it simply dies off to nothing (see engine/radiation.ts). So a mash set up
+  // beside a waste drum stops fermenting, and the sugar and water just sit there.
+  radiationDeath: EMPTY,
   thermal: { conductivity: 0.3 },
   update: updateYeast,
 });

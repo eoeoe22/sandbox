@@ -169,6 +169,61 @@ export interface Material {
    */
   acidHydrogen?: AcidHydrogen;
   /**
+   * 방사선원 — this material continuously irradiates its surroundings. The value
+   * is the dose delivered to a cell *one step away*; it falls off as `dose / d`
+   * over the emission's reach (see RADIATION_RANGE in engine/radiation.ts). Every
+   * material in the 방사능 palette tab declares it, at a strength matching how hot
+   * the isotope actually is — spent fuel is far more radioactive than fresh, so
+   * Nuke Waste out-doses solid U235 (see materials/nukewaste.ts).
+   *
+   * The engine drives it, not the material: Simulation flattens this into a
+   * per-id table and runs `irradiate` (engine/radiation.ts) on the cell's turn,
+   * exactly the way `Material.life` decay is driven. So a new radioactive
+   * material becomes lethal by declaring this one number — there is no call to
+   * forget in its `update`.
+   *
+   * The emission floods outward through **anything that isn't a Solid** — air,
+   * gas, powder, liquid alike — and is stopped dead by solids. So sand poured
+   * over a waste drum shields nothing and a pool carries the dose across itself,
+   * while a stone or concrete casing is real shielding. Declaring this also makes
+   * the material *opaque to radiation itself* (자기차폐, self-shielding): a pile's
+   * interior grains are blocked in every direction, so only its surface emits — a
+   * buried grain still probes its eight neighbours each tick but stops there, so
+   * the *flood* cost tracks a source's surface rather than its volume.
+   */
+  radiation?: number;
+  /**
+   * 피폭사 — what a cell of this (living) material leaves behind when radiation
+   * kills it, and one of the two tags that make it *count* as alive: the
+   * irradiation flood only ever touches a material declaring this or
+   * `radiationHit`. Each living thing dies the way it already dies of everything
+   * else — a Termite to Sawdust, Plant/Seed to Ash, Yeast/Virus to nothing
+   * (`EMPTY`, which is why this is checked for `undefined` rather than
+   * truthiness).
+   *
+   * Three 생명 tab materials deliberately declare neither this nor
+   * `radiationHit`: Nanobot is a machine rather than life, and Slime/Acid Slime
+   * are radiation-tolerant extremophiles — between them they're what still works
+   * in a hot zone (see materials/nanobot.ts, materials/slime.ts).
+   */
+  radiationDeath?: MatId;
+  /**
+   * 피폭 반응 — the imperative alternative to `radiationDeath`, for a living
+   * material that maps exposure onto its own damage model instead of dying
+   * outright. Called once per irradiating source cell that reaches this cell,
+   * with the dose that arrived (already distance-attenuated), and takes
+   * precedence over `radiationDeath` when both are somehow present. The
+   * light/electric-side hooks `directPulse`/`lightPulse` are the same shape.
+   *
+   * Coral uses it to feed the dose into its own 백화 stress meter, so an
+   * irradiated reef loses its colour over seconds — and visibly stops growing
+   * first — instead of blinking into skeleton a cell at a time; Bleached Coral
+   * uses it to stamp a short "recently irradiated" countdown that suspends
+   * recolonisation, so a skeleton in a hot tank doesn't flicker between polyp
+   * and bone (see materials/coral.ts, materials/bleachedcoral.ts).
+   */
+  radiationHit?: (sim: SimContext, x: number, y: number, dose: number) => void;
+  /**
    * A polished, highly-reflective surface that a Heat Ray beam bounces off with a
    * clean specular (정반사) reflection instead of being absorbed — Mercury and the
    * shiny metals (Iron, Heatpipe, Gallium, Liquid Gallium). The Heat Ray walk

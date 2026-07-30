@@ -2,6 +2,7 @@ import type { Grid } from './Grid';
 import { SimContext } from './SimContext';
 import { getMaterial, allMaterials } from '../materials/registry';
 import { tryReact } from './reactions';
+import { irradiate } from './radiation';
 import { EMPTY, type BorderMode } from './types';
 import {
   HEAT_DIFFUSION_RATE,
@@ -45,6 +46,10 @@ export class Simulation {
   /** 1 for a `Material.magnetic` id — the only occupants an Electromagnet's grip
    *  applies to, checked before honouring a hold (see updateCell). */
   private magneticId: Uint8Array;
+  /** Per-tick, per-neighbour radiation dose per material id (Material.radiation),
+   *  flattened for the update hot loop. 0 = not a 방사선원 (almost everything), so
+   *  a world with no radioactive matter in it pays one array read per cell. */
+  private radiationP: Float32Array;
   /** Rolling cursor into the background tint field, so each tick drifts a
    *  different 1/STRIDE slice of it (see driftBackground). */
   private bgCursor = 0;
@@ -56,8 +61,10 @@ export class Simulation {
     this.lifeP = new Float32Array(256);
     this.lifeInto = new Uint8Array(256);
     this.magneticId = new Uint8Array(256);
+    this.radiationP = new Float32Array(256);
     for (const m of allMaterials()) {
       if (m.magnetic) this.magneticId[m.id] = 1;
+      if (m.radiation) this.radiationP[m.id] = m.radiation;
       this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
       if (m.life) {
         // Memoryless decay: P(decay this tick) = 1/ticks gives a mean lifetime of
@@ -509,6 +516,14 @@ export class Simulation {
       this.magneticId[id] === 1 && this.ctx.magnetGripping && this.ctx.isMagnetHeld(i, id);
     if (!g.moved[i] && !held) {
       if (id !== EMPTY) {
+        // 방사선 (Material.radiation): a 방사능 cell doses its eight neighbours on
+        // its turn, killing whatever living matter is touching it (see
+        // engine/radiation.ts). Driven from here rather than from each source's
+        // `update` so no radioactive material can be added without it — and run
+        // before that update, since a source whose update transforms the cell
+        // (uranium melting down) would otherwise skip its own last dose.
+        const rp = this.radiationP[id];
+        if (rp > 0) irradiate(x, y, this.ctx, rp);
         // Generalized lifetime (Material.life): a memoryless per-tick decay into
         // its successor material. A cell that decays this tick is done — it skips
         // both the reaction pass and its own update.

@@ -27,15 +27,27 @@ import { BLEACHED_CORAL } from './bleachedcoral';
 //      self-similar taper that makes a fan read as coral rather than as a shrub.
 //      A tip may only take a cell with at most one coral neighbour, so branches
 //      stay one cell thin and two fans that drift together never fuse into a slab.
-//   3. 백화 (bleaching) — a coral cell that is too hot, or that no longer has
-//      brine around it, accumulates STRESS in its `aux`; when the stress maxes
-//      out the polyp dies and the cell becomes Bleached Coral, a white skeleton
-//      (bleachedcoral.ts). Both triggers are the real thing: warm the tank past
-//      BLEACH_TEMP, or drain it / flood it with fresh water, and the colour goes
+//   3. 백화 (bleaching) — a coral cell that is too hot, that no longer has brine
+//      around it, or that is being irradiated, accumulates STRESS in its `aux`;
+//      when the stress maxes out the polyp dies and the cell becomes Bleached
+//      Coral, a white skeleton (bleachedcoral.ts). All three triggers are the
+//      real thing: warm the tank past BLEACH_TEMP, drain it / flood it with fresh
+//      water, or drop something out of the 방사능 tab in it, and the colour goes
 //      out of the reef from wherever the damage started. Stress recovers far more
 //      slowly than it builds, so a brief scare heals and a sustained one doesn't;
 //      put the brine back and cool it down and even bleached skeleton can be
 //      recolonised in time (see bleachedcoral.ts).
+//
+//      Radiation is routed through the stress meter (`Material.radiationHit`,
+//      see engine/radiation.ts) rather than killing a polyp outright the way it
+//      kills every other living material precisely because coral already *has* a
+//      way of dying that the player reads at a glance: a reef in a hot tank should
+//      lose its colour outward over seconds, not blink into skeleton cell by cell.
+//      The dose arrives already attenuated by distance, so a corium pool whitens a
+//      reef several times faster than a bar of U238 does — and a weak enough dose
+//      is simply outrun by HEAL_CHANCE, which is the quiet, correct answer to "how
+//      far from the drum is far enough": far enough that the polyps repair faster
+//      than they're damaged. Nothing in here special-cases that; it falls out.
 //
 // A stressed polyp also stops growing, so a reef that is losing colour is visibly
 // a reef that has stopped building.
@@ -251,10 +263,22 @@ function updateCoral(x: number, y: number, sim: SimContext): void {
   // freshly painted cell, whether it starts as a live polyp or plain skeleton.
   a = hydrate(x, y, sim, a);
   const wet = hydOf(a) > 0;
-  if ((a & INIT_BIT) === 0) a = withHydration(initCell(sim, wet), hydOf(a));
+  // A structure-less cell gets its role now — but hydration and stress are cell
+  // *state*, not structure, so they survive the initialisation rather than being
+  // reset with it. Stress matters here for one narrow case that is easy to lose:
+  // a freshly painted polyp can be irradiated (radiationHit writes stress into
+  // aux from outside this update) before it has ever taken its own first turn, and
+  // the scan order decides which happens first — a source *below* a new cell is
+  // scanned before it. Without carrying stress across, that first dose would be
+  // silently dropped.
+  if ((a & INIT_BIT) === 0) {
+    a = withStress(withHydration(initCell(sim, wet), hydOf(a)), stressOf(a));
+  }
 
   // 백화 — too hot, or cut off from the brine, and the polyp starts dying. The
   // stress it has built up is what decides, so damage has to be sustained.
+  // (Radiation adds to that same meter from outside this update — see
+  // `radiationHit` on the registration below.)
   const hot = sim.getTemp(x, y) >= BLEACH_TEMP;
   let stress = stressOf(a);
   if (!wet && sim.chance(DRY_STRESS_CHANCE)) stress++;
@@ -293,6 +317,19 @@ export const CORAL = register({
   colorVary: 20,
   density: 1000,
   category: 'life',
+  // 피폭 = 백화. Instead of dying outright like the rest of the 생명 tab, an
+  // irradiated polyp gains the same bleaching stress a drought or a warm tank
+  // gives it (see the 백화 note at the top of this file), so a reef in a hot zone
+  // whitens outward over seconds and visibly stops building while it does. The
+  // roll is the arriving dose, so distance and the source's strength both read
+  // straight through. Stress is written into the cell's own aux from outside its
+  // update, which is safe because updates are sequential per cell: whichever of
+  // the two runs first this tick, the other reads the result.
+  radiationHit: (sim, x, y, dose) => {
+    if (!sim.chance(dose)) return;
+    const a = sim.getAux(x, y);
+    sim.setAux(x, y, withStress(a, stressOf(a) + 1));
+  },
   // Calcium carbonate skeleton — it conducts about like the limestone it is.
   thermal: { conductivity: 0.4 },
   update: updateCoral,

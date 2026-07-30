@@ -7,6 +7,7 @@ import { WATER } from './water';
 import { MUD } from './mud';
 import { DIRT } from './dirt';
 import { SEED } from './seed';
+import { ASH } from './ash';
 import { findMoisture, moistDrinkable, ROOT_REACH } from './soil';
 import { tryBurn, type Combustible } from './combustion';
 
@@ -503,6 +504,12 @@ export const PLANT = register({
   // mutually exclusive by design (combustion.ts) to keep the per-fuel burn rate.
   combustible: true,
   category: 'life',
+  // 피폭사 — radiation from anything in the 방사능 tab kills a cell outright and it
+  // crumbles to Ash (see engine/radiation.ts). Ash rather than nothing because a
+  // stand of growth beside a waste drum should visibly *collapse* into a grey
+  // heap, and because Ash is a seed bed (seed.ts) — clear the source away and the
+  // dead ground can be replanted.
+  radiationDeath: ASH.id,
   thermal: { conductivity: 0.3 },
   update: updatePlant,
 });

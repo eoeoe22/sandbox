@@ -81,6 +81,9 @@ export const MOLTEN_U238 = register({
   color: rgb(200, 220, 120),
   density: 10, // as dense as Molten U235 — sinks through everything liquid
   category: 'radioactive',
+  // 방사선 — a melt, so well above either solid, but with its chain reaction already
+  // stopped it never reaches Molten U235's corium dose (see engine/radiation.ts).
+  radiation: 0.06,
   explosionProof: true, // 방폭 — see uranium.ts
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   viscosity: 0.5,

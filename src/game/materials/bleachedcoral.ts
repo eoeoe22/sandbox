@@ -27,8 +27,23 @@ import { CORAL } from './coral';
 const RECOVER_CHANCE = 0.0008; // per tick, and only while fully submerged and cool
 const RECOVER_BRINE = 3; // saltwater neighbours needed before polyps take hold
 const RECOVER_TEMP = 30; // comfortably below Coral's own bleaching threshold
+/** Ticks a skeleton stays "recently irradiated" after a dose reaches it, held in
+ *  its `aux` (the only thing a skeleton uses aux for — coral.ts zeroes it when it
+ *  bleaches, so a fresh one always reads 0). Only has to outlast the gap between
+ *  doses, and a source in range delivers every tick, so a handful is plenty. */
+const RAD_MEMORY = 8;
 
 function updateBleachedCoral(x: number, y: number, sim: SimContext): void {
+  // 방사능 지대에서는 암초가 돌아오지 않는다 — polyps don't settle anywhere a source
+  // can still reach (see engine/radiation.ts). Without this a skeleton beside a
+  // waste drum would flicker: a polyp takes hold, bleaches straight back out on
+  // the stress the same dose gives it, over and over. Clear the source out and it
+  // recovers exactly as before, a few ticks later.
+  const irradiated = sim.getAux(x, y);
+  if (irradiated > 0) {
+    sim.setAux(x, y, irradiated - 1);
+    return;
+  }
   if (sim.getTemp(x, y) > RECOVER_TEMP || !sim.chance(RECOVER_CHANCE)) return;
 
   let brine = 0;
@@ -58,6 +73,11 @@ export const BLEACHED_CORAL = register({
   colorVary: 12,
   density: 1000,
   category: 'life',
+  // No `radiationDeath` — there's nothing left in it to kill. What a dose does
+  // instead is stamp the "recently irradiated" countdown its update reads, which
+  // suspends recolonisation: a skeleton anywhere a source can still reach simply
+  // stays white (see updateBleachedCoral and engine/radiation.ts).
+  radiationHit: (sim, x, y) => sim.setAux(x, y, RAD_MEMORY),
   // Same skeleton as living Coral, so it conducts the same.
   thermal: { conductivity: 0.4 },
   update: updateBleachedCoral,

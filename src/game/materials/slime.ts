@@ -167,6 +167,15 @@ export const SLIME = register({
   // actually passes through it is what seeds the blob's own electric-dissolve
   // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
   conductive: true,
+  // No `radiationDeath`, deliberately — the goo is 방사선 내성, one of only three
+  // things in the 생명 tab a 방사능 source can't touch (see engine/radiation.ts).
+  // There's a real organism behind it: the radiation-tolerant extremophiles that
+  // shrug off doses which sterilise everything else. It also settles a mechanical
+  // problem cleanly — slime *drinks water and grows*, so any corpse that left
+  // water behind would just be drunk back by the rest of the blob, and the dose
+  // would spend forever in a tug-of-war with the thing it was meant to kill.
+  // Together with Nanobot (a machine) it's what still lives in a hot zone: the
+  // fallout gets a resident, not just a caretaker.
   thermal: { conductivity: 0.2 },
   update: updateSlime,
 });

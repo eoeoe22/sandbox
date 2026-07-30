@@ -116,6 +116,11 @@ export const VIRUS = register({
   density: 1000,
   flammable: true,
   category: 'life',
+  // 피폭사 — 방사선 멸균, and a fourth counter to an outbreak alongside fire, acid
+  // and steam: a cell touching anything radioactive is sterilised to nothing, the
+  // same remains its other deaths leave (see engine/radiation.ts). A wall of Nuke
+  // Waste is a firebreak a plague can't cross.
+  radiationDeath: EMPTY,
   thermal: { conductivity: 0.3 },
   update: updateVirus,
 });
