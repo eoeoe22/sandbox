@@ -12,7 +12,7 @@ import { MERCURY_VAPOR } from './mercuryvapor';
 export const MERCURY_BOIL_TEMP = 357;
 
 // Mercury — liquid metal: the densest fluid in the game (9), so it sinks beneath
-// everything, even Molten Metal, and shoulders lighter liquids up and out of its
+// everything, even Molten Iron, and shoulders lighter liquids up and out of its
 // way. Its party trick is that it's `conductive`: a Spark travels through a
 // puddle of mercury exactly as it does through solid Iron, so you can bridge a
 // circuit across a pool of it or let it flow into a gap to close a switch. As a

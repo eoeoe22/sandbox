@@ -65,7 +65,7 @@ function updateAluminum(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= ALUMINUM_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten
     // Aluminum reads as molten instead of instantly re-freezing next tick
-    // (mirrors Iron → Molten Metal).
+    // (mirrors Iron → Molten Iron).
     sim.set(x, y, MOLTEN_ALUMINUM.id);
   }
 }

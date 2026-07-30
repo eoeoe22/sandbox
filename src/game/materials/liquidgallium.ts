@@ -16,7 +16,7 @@ import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 // a proper liquid metal like Mercury: `conductive`, so a Spark runs through a
 // gallium puddle exactly as through solid metal, and it beads up a little with
 // surface tension. Lighter than Mercury (density 6 vs 9) so it floats where
-// Mercury sinks. Like every molten pair (Iron↔Molten Metal, Lava↔Stone) it
+// Mercury sinks. Like every molten pair (Iron↔Molten Iron, Lava↔Stone) it
 // freezes back to solid Gallium once conduction pulls it below the set point.
 //
 // Melt/freeze use a small hysteresis gap so a cell hovering right at the melt

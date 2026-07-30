@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updatePowder } from '../engine/behaviors';
-import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST_POWDER } from './rustpowder';
 
@@ -15,16 +15,16 @@ const INSIDE_RUST_CHANCE = 0.0002; // 안쪽(스며든 부위) 부식 확률 (0.
 // blown to bits rather than cleanly melting, so it rains down as a heap of heavy
 // steel grains instead of a molten puddle. It falls and piles like Sand, and —
 // being metal — it still melts: heated past Iron's melting point it turns to
-// Molten Metal exactly as solid Iron does, so a pile of drum shrapnel dropped in
+// Molten Iron exactly as solid Iron does, so a pile of drum shrapnel dropped in
 // Lava pools back into liquid metal. Denser than the lighter mineral powders
 // (sand ~5) so a metal-dust heap settles beneath them and sinks through
 // water and liquid Slag (5.75) alike — heavy metal grains settling under the
 // light waste slag — yet nowhere near solid Iron's block density.
 function updateMetalPowder(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten Metal
+    // In-place `set` keeps the (now high) temperature so the fresh Molten Iron
     // reads as molten instead of instantly re-freezing next tick (mirrors Iron).
-    sim.set(x, y, MOLTEN_METAL.id);
+    sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
 

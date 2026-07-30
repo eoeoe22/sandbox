@@ -114,15 +114,15 @@ function makeFloatingRaft(w: number, h: number): Snapshot {
 }
 
 /** A jagged Limestone comb sealed inside a hot, layered Molten Iron
- *  Ore/Slag/Molten Metal melt (no open air, no carbon so nothing reduces) —
+ *  Ore/Slag/Molten Iron melt (no open air, no carbon so nothing reduces) —
  *  the melt-pinned sibling of makeFloatingRaft's ordinary-liquid case.
  *  Exercises moveSidewaysContained/the containerIds-scoped swapOntoLiquid
  *  path (SimContext.ts) reached via moltenironore.ts's tryHoldInActiveMelt
  *  (see docs/MATERIAL-SYSTEMS.md's "제련 중 갇힌 플럭스가 못 퍼지던 문제").
  *  The comb's depth varies enough per column to reach past the Slag/Molten
- *  Metal boundary on some columns, so some Limestone cells end up flanked by
- *  Molten Metal at that boundary — the case containerIds was widened to cover
- *  ([...pinIds, MOLTEN_METAL.id], see tryHoldInActiveMelt's doc comment), not
+ *  Iron boundary on some columns, so some Limestone cells end up flanked by
+ *  Molten Iron at that boundary — the case containerIds was widened to cover
+ *  ([...pinIds, MOLTEN_IRON.id], see tryHoldInActiveMelt's doc comment), not
  *  just Slag. A narrow strip of unrelated Water along one edge (never
  *  touched by the comb) also exercises swapOntoLiquid's containerIds
  *  rejection path for a genuinely foreign liquid. Deterministic (no RNG) so
@@ -131,17 +131,17 @@ function makeMeltPinnedFlux(w: number, h: number): Snapshot {
   const LIMESTONE = 69;
   const MOLTEN_IRON_ORE = 71;
   const SLAG = 68;
-  const MOLTEN_METAL = 29;
+  const MOLTEN_IRON = 29;
   const WATER = 3;
   const n = w * h;
   const cells = new Uint8Array(n);
   const temp = new Float32Array(n).fill(1000); // well above Ore/Slag's solidify points
   const tint = new Uint8Array(n);
   const r1 = (h / 3) | 0; // Ore/Slag boundary
-  const r2 = ((h * 2) / 3) | 0; // Slag/Molten Metal boundary
+  const r2 = ((h * 2) / 3) | 0; // Slag/Molten Iron boundary
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      cells[y * w + x] = y < r1 ? MOLTEN_IRON_ORE : y < r2 ? SLAG : MOLTEN_METAL;
+      cells[y * w + x] = y < r1 ? MOLTEN_IRON_ORE : y < r2 ? SLAG : MOLTEN_IRON;
     }
   }
   const waterCols = 3;
@@ -162,9 +162,9 @@ function makeMeltPinnedFlux(w: number, h: number): Snapshot {
 }
 
 /** A shelf of alternating Coal Powder / Limestone cells over a thick Coal
- *  Powder slab over Molten Metal — every shelf cell's own-row lateral
+ *  Powder slab over Molten Iron — every shelf cell's own-row lateral
  *  neighbor is the *other* floating powder, never Liquid, and the slab is
- *  thick enough to keep Molten Metal's soak-into-a-powder-bed seepage from
+ *  thick enough to keep Molten Iron's soak-into-a-powder-bed seepage from
  *  reaching the shelf within this scene's tick budget. Exercises
  *  SimContext.swapOntoPowder/moveSidewaysMix, the free-floating counterpart
  *  to makeMeltPinnedFlux's moveSidewaysContained coverage (see
@@ -180,7 +180,7 @@ function makeMeltPinnedFlux(w: number, h: number): Snapshot {
 function makeMixedFloat(w: number, h: number): Snapshot {
   const COAL_POWDER = 70;
   const LIMESTONE = 69;
-  const MOLTEN_METAL = 29;
+  const MOLTEN_IRON = 29;
   const n = w * h;
   const cells = new Uint8Array(n);
   const temp = new Float32Array(n).fill(200);
@@ -188,7 +188,7 @@ function makeMixedFloat(w: number, h: number): Snapshot {
   const floorTop = (h * 0.6) | 0;
   for (let y = floorTop; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      cells[y * w + x] = MOLTEN_METAL;
+      cells[y * w + x] = MOLTEN_IRON;
       temp[y * w + x] = 900; // above its 650 freeze point
     }
   }
@@ -297,7 +297,7 @@ function verifyNoVerticalJitter(initial: Snapshot, frames: Snapshot[]): string |
 }
 
 /** A single row of alternating Coal Powder/Limestone sandwiched between a
- *  Slag ceiling and a Molten Metal floor (mirrors makeMixedFloat's flat
+ *  Slag ceiling and a Molten Iron floor (mirrors makeMixedFloat's flat
  *  shelf, not makeMeltPinnedFlux's multi-row comb) — every interior cell's
  *  own-row lateral neighbor is the *other* melt-pinned powder, and every
  *  cell's against-gravity neighbor is Slag, so every cell is genuinely
@@ -310,7 +310,7 @@ function verifyNoVerticalJitter(initial: Snapshot, frames: Snapshot[]): string |
  *  regression test that disabled swapOntoPinnedPowder entirely still passed
  *  as a result).
  *
- *  Molten Metal (not Slag/Molten Iron Ore) as the floor specifically because
+ *  Molten Iron (not Slag/Molten Iron Ore) as the floor specifically because
  *  Coal Powder (7.5) is *lighter* than it (8): the shelf's Coal Powder cells
  *  can't displace down (or diagonally) into it via the ordinary
  *  fallAndPile/tryMove path either, unlike Slag or Molten Iron Ore (which
@@ -322,7 +322,7 @@ function verifyNoVerticalJitter(initial: Snapshot, frames: Snapshot[]): string |
  *  consume the shelf's own Coal Powder/Limestone cells over the run,
  *  contaminating "did this cell change" with an unrelated reaction; Slag has
  *  no such reaction (see slag.ts) and coalpowder.ts's touchingMelt shields
- *  the shelf from auto-ignition via the Molten Metal floor regardless of the
+ *  the shelf from auto-ignition via the Molten Iron floor regardless of the
  *  Slag ceiling. Exercises SimContext.swapOntoPinnedPowder/
  *  moveSidewaysContained's mixIds fallback, the melt-pinned counterpart to
  *  makeMixedFloat's free-floating coverage — reported after that
@@ -338,7 +338,7 @@ function verifyNoVerticalJitter(initial: Snapshot, frames: Snapshot[]): string |
  *  into it (soakDown) and clear itself to EMPTY — silently unpinning a shelf
  *  cell through a route that has nothing to do with the fix under test;
  *  tint 255 fails that roll outright. Explicit per-material temperatures
- *  (not a single uniform fill): Slag/Molten Metal need to stay well above
+ *  (not a single uniform fill): Slag/Molten Iron need to stay well above
  *  their own softening/freeze points for the run's duration, while the shelf
  *  itself is kept far below Coal Powder's 580 autoignite threshold (moot
  *  given the touchingMelt shield above, but keeps the scene's intent
@@ -347,7 +347,7 @@ function makeMeltPinnedMix(w: number, h: number): Snapshot {
   const LIMESTONE = 69;
   const COAL_POWDER = 70;
   const SLAG = 68;
-  const MOLTEN_METAL = 29;
+  const MOLTEN_IRON = 29;
   const n = w * h;
   const cells = new Uint8Array(n);
   const temp = new Float32Array(n);
@@ -355,9 +355,9 @@ function makeMeltPinnedMix(w: number, h: number): Snapshot {
   const shelfY = (h / 2) | 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const id = y < shelfY ? SLAG : y > shelfY ? MOLTEN_METAL : x % 2 === 0 ? COAL_POWDER : LIMESTONE;
+      const id = y < shelfY ? SLAG : y > shelfY ? MOLTEN_IRON : x % 2 === 0 ? COAL_POWDER : LIMESTONE;
       cells[y * w + x] = id;
-      temp[y * w + x] = id === SLAG ? 700 : id === MOLTEN_METAL ? 900 : 25;
+      temp[y * w + x] = id === SLAG ? 700 : id === MOLTEN_IRON ? 900 : 25;
     }
   }
   return { w, h, cells, temp, aux: new Uint8Array(n), overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
@@ -493,7 +493,7 @@ interface Case {
   meltFlux?: boolean; // if set, use a jagged Limestone comb pinned inside a Molten Iron Ore melt
   meltPinnedMix?: boolean; // if set, use a uniform-depth Coal Powder/Limestone comb pinned inside a Molten Iron Ore melt
   verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
-  mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Metal slab
+  mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Iron slab
   loadedMixedRaft?: boolean; // if set, use a mixed Ash/Sawdust raft loaded by Sand on Water (jitter repro)
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
@@ -525,7 +525,7 @@ const CASES: Case[] = [
   // covered by melt on every side, not open air a plain moveSideways or the
   // unrestricted moveSidewaysBuoyant could already handle.
   { seed: 0xb3, w: 54, h: 60, fill: 0, gravity: 'down', ticks: 120, mixEvery: 0, meltFlux: true },
-  // Targeted: alternating Coal Powder/Limestone shelf over Molten Metal —
+  // Targeted: alternating Coal Powder/Limestone shelf over Molten Iron —
   // swapOntoPowder/moveSidewaysMix's only path to being exercised, since
   // every shelf cell's own-row neighbor is the other floating powder, not
   // open air or Liquid a plain moveSideways/moveSidewaysBuoyant could
@@ -534,7 +534,7 @@ const CASES: Case[] = [
   // Targeted: jagged Coal Powder/Limestone comb pinned inside a Molten Iron
   // Ore melt — swapOntoPinnedPowder/moveSidewaysContained's mixIds fallback's
   // only path to being exercised, since adjacent comb columns here are each
-  // other (not Ore/Slag/Molten Metal), which the plain containerIds-only
+  // other (not Ore/Slag/Molten Iron), which the plain containerIds-only
   // swapOntoLiquid fallback could already handle.
   {
     seed: 0xb5,

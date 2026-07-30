@@ -4,7 +4,7 @@ import { AMBIENT_TEMP, SIM_HZ_AT_1X } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST, detonate } from '../materials/blast';
-import { MOLTEN_METAL } from '../materials/moltenmetal';
+import { MOLTEN_IRON } from '../materials/molteniron';
 import { METAL_POWDER } from '../materials/metalpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
@@ -505,7 +505,7 @@ export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * SIM_HZ_AT_1X);
 /** Tip temperature (°) at/above which a snuffed (dud) fuse catches again and the
  *  countdown resumes — a flame/ember/hot surface touched to the fuse re-lights it.
  *  Above ambient/boiling so warmth alone won't, but any real flame (Fire 1000°,
- *  embers, molten metal) or hotter will; below the autoignite temp, so re-lighting
+ *  embers, molten iron) or hotter will; below the autoignite temp, so re-lighting
  *  resumes the timer rather than detonating outright. */
 const FUSE_RELIGHT_TEMP = 200;
 /** Footprint temperature (°) at/above which an external heat source cooks the
@@ -1808,7 +1808,7 @@ function scanBodyExposure(
  *  shell, not a solid block — but applied across the whole footprint (~160 cells)
  *  it yields a clearly visible heap of steel grains instead of a few stray specks
  *  (the old 5-point medial scatter left only 1–4 grains, easy to mistake for
- *  nothing). Melt still leaves Molten Metal; only the shatter's yield changed. */
+ *  nothing). Melt still leaves Molten Iron; only the shatter's yield changed. */
 const DRUM_DEBRIS_CHANCE = 0.2;
 
 /**
@@ -1817,7 +1817,7 @@ const DRUM_DEBRIS_CHANCE = 0.2;
  * arcing up and raining back down as a visible heap of steel grains rather than
  * the drum vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
  * destroyed form: an explosion shatters the metal into dust, and the powder still
- * melts back to Molten Metal if it later lands in heat. Being a hollow shell only
+ * melts back to Molten Iron if it later lands in heat. Being a hollow shell only
  * a fraction of the footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are
  * skipped (the object layer is read-only over terrain). The fill spill, if any,
  * is spawned separately (see spawnFillSpill).
@@ -1848,8 +1848,8 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
 }
 
 /**
- * Melted by sustained heat: leave a Molten Metal puddle where the drum was — a
- * pure-metal melt (moltenmetal.ts), NOT smelting-line Molten Iron Ore. A drum is
+ * Melted by sustained heat: leave a Molten Iron puddle where the drum was — a
+ * pure-metal melt (molteniron.ts), NOT smelting-line Molten Iron Ore. A drum is
  * a hollow shell, so only a fraction of the footprint becomes metal (a modest
  * glowing puddle that then flows), and only over cells that aren't solid terrain
  * — the object writes the grid solely on this melt event.
@@ -1873,7 +1873,7 @@ function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
       const id = ctx.get(cx, cy);
       if (id !== EMPTY && getMaterial(id).phase === Phase.Solid) continue;
       if (!ctx.chance(0.3)) continue;
-      ctx.spawn(cx, cy, MOLTEN_METAL.id);
+      ctx.spawn(cx, cy, MOLTEN_IRON.id);
     }
   }
 }
@@ -1905,7 +1905,7 @@ function fillSpillId(fill: DrumFill): number | null {
  * — the 기름/산 that pours out (쏟아짐). Floods the cells the drum occupied with
  * its fill liquid, but only over air/loose matter — never over solid terrain (the
  * object layer stays read-only over solids, same Phase.Solid guard as the
- * molten-metal puddle; a frozen liquid isn't treated as solid here).
+ * molten-iron puddle; a frozen liquid isn't treated as solid here).
  * The liquid is spawned at ambient temperature, so a spill into a hot zone (an
  * oil drum melted in lava) heats up and ignites/boils on its own the next few
  * ticks rather than vanishing on contact. An empty drum has no fill: no-op.
@@ -2361,7 +2361,7 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
 // field only takes ferromagnetic matter. On the grid that's `Material.magnetic`;
 // up here it's the body's *kind*, because a body is a thing, not a substance —
 // and the object layer already keys every material judgement off `kind` this way
-// (a drum melts to Molten Metal, a crate burns, a ball scorches).
+// (a drum melts to Molten Iron, a crate burns, a ball scorches).
 //
 // A body has no grid cell, so the magnet's own sweep (`pullField`) can never see
 // one — it walks cells. The object layer therefore reads the field the magnet
@@ -2611,7 +2611,7 @@ function resolveObjectPairs(objects: SimBody[]): void {
  * Evaluate a body's terminal triggers after all motion this tick has settled.
  * Priority: a direct blast hit or being crushed in solid destroys it outright;
  * otherwise sustained heat destroys it over time. A drum leaves a byproduct
- * (metal powder when shattered by blast/crush, a molten-metal puddle when melted
+ * (metal powder when shattered by blast/crush, a molten-iron puddle when melted
  * by heat); a rubber ball leaves nothing. Returns true to KEEP the body, false to
  * drop it (byproducts, if any, already spawned).
  */
@@ -3064,7 +3064,7 @@ function randSigned(ctx: SimContext): number {
  * Quenching matter is CO₂ / Liquid N₂ (the engine's named extinguishers, same
  * pair the dynamite's fuse recognizes) or a non-frozen liquid that is genuinely
  * capable of putting a fire out. That last qualifier does real work: a *liquid*
- * is not automatically wet-blanket. A pool of Lava or Molten Metal is a liquid
+ * is not automatically wet-blanket. A pool of Lava or Molten Iron is a liquid
  * and would otherwise "douse" the crate floating on it — the exact opposite of
  * what should happen — so a liquid only counts when it is cooler than the timber's
  * own ignition point, and Gasoline/Oil/Alcohol are excluded outright for being
@@ -3098,7 +3098,7 @@ function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
       const m = getMaterial(id);
       if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) continue;
       if (m.combustible === true || m.explosive === true) continue; // fuel, not water
-      if (ctx.getTemp(cx, cy) >= WOOD_BOX_IGNITE_TEMP) continue; // lava/molten metal: not a dousing
+      if (ctx.getTemp(cx, cy) >= WOOD_BOX_IGNITE_TEMP) continue; // lava/molten iron: not a dousing
       quench++;
     }
   }
@@ -3375,7 +3375,7 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
   if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);
-  // Sustained heat: drum melts to Molten Metal, ball burns away to nothing.
+  // Sustained heat: drum melts to Molten Iron, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
   if (heat >= threshold) {

@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { FIRE } from './fire';
 
 // Nichrome (니크롬) — the resistive heating element that finally joins the
@@ -21,7 +21,7 @@ import { FIRE } from './fire';
 // melting point, so an element never destroys itself no matter how long the
 // current runs — real heating wire's whole job. Only an *external* source
 // hotter than that (Lava, Blue Flame, Thermite) can push it past
-// NICHROME_MELT_TEMP, where it fails like any metal into Molten Metal.
+// NICHROME_MELT_TEMP, where it fails like any metal into Molten Iron.
 //
 // As befits the corrosion-resistant alloy, it's `acidResistant` — the one
 // wiring material acid can't eat through (Iron dissolves), so a wire run
@@ -37,7 +37,7 @@ export const NICHROME_MAX_JOULE_TEMP = 1050;
 // wiring, but Blue Flame / Thermite / Lava still destroy an element they engulf.
 const NICHROME_MELT_TEMP = 1450;
 // Glowing this hot it radiantly ignites `flammable` neighbors (same contact
-// ignition Molten Metal uses) — the element sets fuel alight without a flame.
+// ignition Molten Iron uses) — the element sets fuel alight without a flame.
 const RADIANT_IGNITE_TEMP = 300;
 const IGNITE_CHANCE = 0.08;
 // Radiative cooling: fraction of the excess over ambient shed per tick per
@@ -99,8 +99,8 @@ function updateNichrome(x: number, y: number, sim: SimContext): void {
   const temp = sim.getTemp(x, y);
   if (temp >= NICHROME_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature, so the fresh Molten
-    // Metal reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, MOLTEN_METAL.id);
+    // Iron reads as molten instead of instantly re-freezing next tick.
+    sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
 

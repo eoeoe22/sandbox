@@ -33,7 +33,7 @@ import { igniterAdjacent } from './deflagrate';
 // a 1000° sealed vessel indefinitely without catching. That's deliberate and it
 // is also the honest reading: a cracker is an oxygen-free tube, and what it does
 // to hydrocarbons is crack them, not burn them. The danger is still fully there,
-// it's just gated on *contact*: a flame, lava or molten metal touching the cloud
+// it's just gated on *contact*: a flame, lava or molten iron touching the cloud
 // flashes it over at once, cell to cell, the same deflagration LPG does (shared
 // igniter roster in deflagrate.ts). Vent your reactor into an open flame and the
 // whole cloud goes up; keep it sealed and it's inert.

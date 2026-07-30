@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST } from './rust';
 import { RUST_POWDER } from './rustpowder';
@@ -37,7 +37,7 @@ function getSaltWaterDepth(x: number, y: number, sim: SimContext): number {
 //  • Heat: it conducts heat better than any other material (conductivity 0.85),
 //    so a bar of Iron carries a flame's warmth to its far end and, heated past
 //    its melting point (by Lava, Blue Flame, or Thermite), turns molten and
-//    flows away as Molten Metal — which then re-freezes to Iron when it cools.
+//    flows away as Molten Iron — which then re-freezes to Iron when it cools.
 //  • Electricity: it's `conductive`, so a Spark travels along it (see spark.ts).
 //    When a spark passes through and reverts, it stamps this cell's `aux` byte
 //    with a short refractory countdown; Iron's only per-tick job as a static
@@ -53,9 +53,9 @@ function updateIron(x: number, y: number, sim: SimContext): void {
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature, so the fresh Molten Metal
+    // In-place `set` keeps the (now high) temperature, so the fresh Molten Iron
     // reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, MOLTEN_METAL.id);
+    sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
 

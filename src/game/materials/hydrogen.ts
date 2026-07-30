@@ -7,7 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 import { BLAST } from './blast';
 import { OXYGEN } from './oxygen';
@@ -25,7 +25,7 @@ import { STEAM } from './steam';
 // a blast. With no Oxygen adjacent it just burns off to ordinary Fire, the way a
 // flammable gas whooshes.
 //
-// Ignition is self-detected by id (Fire/Lava/Blue Flame/Blast/molten metal or
+// Ignition is self-detected by id (Fire/Lava/Blue Flame/Blast/molten iron or
 // glass), not the generic `flammable` tag: handling it here lets the O₂→water
 // reaction take priority over Fire's plain ignite pass (which would otherwise
 // convert it straight to Fire). It also self-ignites once heated past its low
@@ -41,7 +41,7 @@ function isIgniter(id: number): boolean {
     id === LAVA.id ||
     id === BLUE_FLAME.id ||
     id === BLAST.id ||
-    id === MOLTEN_METAL.id ||
+    id === MOLTEN_IRON.id ||
     id === MOLTEN_GLASS.id
   );
 }

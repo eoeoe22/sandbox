@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { MOLTEN_METAL, IRON_MELT_TEMP } from './moltenmetal';
+import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 
 // Wire (전선) — insulated cable: a conductor that carries a pulse the full length
 // of a run at no loss (a metal core), but whose jacket keeps the current *inside*.
@@ -43,10 +43,10 @@ function updateWire(x: number, y: number, sim: SimContext): void {
 
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
     // The jacket is no protection against a forge: at the core metal's melting
-    // point the cable goes the way Iron does, running away as Molten Metal (and
+    // point the cable goes the way Iron does, running away as Molten Iron (and
     // taking the circuit with it). In-place `set` keeps the (now high)
     // temperature so the fresh melt doesn't instantly re-freeze.
-    sim.set(x, y, MOLTEN_METAL.id);
+    sim.set(x, y, MOLTEN_IRON.id);
   }
 }
 

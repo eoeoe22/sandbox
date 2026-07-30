@@ -9,7 +9,7 @@ import { MOLTEN_GLASS, SAND_MELT_TEMP } from './moltenglass';
 // sinks through it. Heated past its melting point (by Lava, Blue Flame, or a
 // Thermite burn) it fuses into Molten Glass, which then flows and cools back
 // into a clear pane of solid Glass — a whole sand→glass pipeline that mirrors
-// the Stone↔Lava and Iron↔Molten-Metal phase pairs.
+// the Stone↔Lava and Iron↔Molten-Iron phase pairs.
 function updateSand(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= SAND_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten Glass

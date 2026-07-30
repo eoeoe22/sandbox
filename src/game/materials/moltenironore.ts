@@ -7,7 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { COAL } from './coal';
 import { COAL_POWDER } from './coalpowder';
 import { LIMESTONE } from './limestone';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { SLAG } from './slag';
 import { SMOKE } from './smoke';
 
@@ -21,7 +21,7 @@ import { SMOKE } from './smoke';
 //    burn — it's a reductant, shielded from combustion (see coalpowder.ts) — so
 //    it's spent by reduction instead of flashing off, and coal dusted on the pool
 //    sinks in to disperse (also coalpowder.ts) so the whole depth reduces rather
-//    than only the surface. The cell becomes *hot* Molten Metal (or Slag on a
+//    than only the surface. The cell becomes *hot* Molten Iron (or Slag on a
 //    yield miss): reduction is treated as exothermic, forcing the fresh iron
 //    molten (≥ REDUCE_HEAT) so it stays liquid and flows clear (sinking out of the
 //    pool, since the reduced metal is now the densest phase) instead of freezing
@@ -35,17 +35,17 @@ import { SMOKE } from './smoke';
 // Density 6.5: Coal Powder (7.5) is now *denser* than the pool, so dusted carbon
 // sinks straight into it on its own (touching, and reducing, ore cells along the
 // way down) rather than needing to be skimmed off the surface; the reduced
-// Molten Metal (8) sinks below everything to pool on the floor, and Slag (5.75)
+// Molten Iron (8) sinks below everything to pool on the floor, and Slag (5.75)
 // floats up above — the furnace's vertical layers still emerge on their own,
 // with the heavy iron settling under the light slag as in a real hearth, just
 // with carbon now plunging through the melt instead of riding on top of it (a
 // deliberate gameplay call, not a real-world coal density — see
 // docs/MATERIAL-SYSTEMS.md's 제련 밀도 재서열 section).
-// Kept above Molten Metal's own freeze point (moltenmetal.ts) on purpose: a
+// Kept above Molten Iron's own freeze point (molteniron.ts) on purpose: a
 // reduction pulls a cell out of *this* pool into that one while both are still
 // liquid, so the fresh metal needs to be able to outlive this cell's own
 // remaining liquid life, or it freezes into a stray Iron fleck mid-transit
-// before it can sink clear (see the comment on Molten Metal's freeze temp).
+// before it can sink clear (see the comment on Molten Iron's freeze temp).
 const SOLIDIFY_TEMP = 750; // cools below this without reduction → Slag
 const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (fast,
 // 1:1 — one carbon grain spent per ore cell, ~4 ticks: contact keeps up so a
@@ -53,9 +53,9 @@ const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (f
 const IRON_YIELD = 0.7; // chance a reduction yields iron (else slag)
 const FLUX_YIELD = 0.95; // …raised when a Limestone flux grain is adjacent
 const FLUX_CONSUME = 0.5; // chance that flux grain is spent
-const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Metal)
+const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Iron)
 const REDUCE_HEAT = 1450; // exothermic: fresh iron is forced this hot so it stays
-// molten (well above Molten Metal's 650° freeze) and sinks clear instead of crusting.
+// molten (well above Molten Iron's 650° freeze) and sinks clear instead of crusting.
 
 function isCarbon(id: number): boolean {
   return id === COAL.id || id === COAL_POWDER.id;
@@ -82,15 +82,15 @@ function isCarbon(id: number): boolean {
 // or Slag on density alone, so blocking it again here changes nothing. The
 // *sideways* half isn't always a no-op, though — updatePowderSink's own
 // shouldFlatten check looks at what's directly below, not above, so a Coal
-// Powder cell that's sunk through Ore/Slag to rest on Molten Metal (8, still
+// Powder cell that's sunk through Ore/Slag to rest on Molten Iron (8, still
 // denser than Coal Powder) reads as floating and does attempt the sideways
 // step, even while its own above-cell still pins it via this function (see
-// the Molten Metal boundary case a few paragraphs below). Left shared rather
+// the Molten Iron boundary case a few paragraphs below). Left shared rather
 // than split out either way, since the shared call is correct for both.
 //
 // This returns false for every other liquid — including the finished Molten
-// Metal layer — so the caller's ordinary `updatePowderMix` fallback takes over
-// there; Molten Metal needs no special case of its own because Limestone (and
+// Iron layer — so the caller's ordinary `updatePowderMix` fallback takes over
+// there; Molten Iron needs no special case of its own because Limestone (and
 // Coal Powder, though it gets there by sinking through Ore/Slag first now
 // rather than starting out on top of everything) is lighter than it, so the
 // generic buoyancy already floats each clear on its own (same rise mechanics
@@ -101,15 +101,15 @@ function isCarbon(id: number): boolean {
 // doc comment (SimContext.ts) for why that restriction exists at all (the
 // short version: an unrestricted swap could leak a pinned grain sideways into
 // an unrelated liquid, defeating the containment this hold exists for). The
-// set passed here is `[...pinIds, MOLTEN_METAL.id]`, one liquid wider than the
-// pin check itself: Molten Metal is this furnace's own product layer (made by
+// set passed here is `[...pinIds, MOLTEN_IRON.id]`, one liquid wider than the
+// pin check itself: Molten Iron is this furnace's own product layer (made by
 // reduction, always structurally connected to the Ore/Slag body sitting on
 // top of it), not a foreign liquid a player placed nearby, so it's safe to
 // spread into even though it doesn't trigger the pin. It has to be included —
-// Molten Metal is the densest phase and settles beneath Ore/Slag as the
+// Molten Iron is the densest phase and settles beneath Ore/Slag as the
 // routine end state of any smelt, so a grain pinned above by Ore/Slag but
-// flanked on both sides by Molten Metal at that boundary is common, not a
-// contrived edge case. Without Molten Metal in the spread set, such a grain
+// flanked on both sides by Molten Iron at that boundary is common, not a
+// contrived edge case. Without Molten Iron in the spread set, such a grain
 // could sink no further (too light for Metal), rise no further (the pin
 // blocks it while Ore/Slag stays above), and spread no further either —
 // reproducing the exact frozen-comb bug this fix exists to prevent, just
@@ -122,7 +122,7 @@ function isCarbon(id: number): boolean {
 // `containerIds` (see SimContext.swapOntoPinnedPowder) — reported after the
 // free-floating comb fix shipped: two melt-pinned powders sitting side by
 // side, still mixed in with Molten Iron Ore, could freeze the same way one
-// step earlier in the smelt, before either had cleared onto Molten Metal.
+// step earlier in the smelt, before either had cleared onto Molten Iron.
 export function tryHoldInActiveMelt(
   x: number,
   y: number,
@@ -135,7 +135,7 @@ export function tryHoldInActiveMelt(
   const aboveId = sim.get(ux, uy);
   const pinIds = [MOLTEN_IRON_ORE.id, SLAG.id];
   if (!pinIds.includes(aboveId)) return false;
-  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_METAL.id], mixIds);
+  updatePowderSink(x, y, sim, [...pinIds, MOLTEN_IRON.id], mixIds);
   return true;
 }
 
@@ -174,12 +174,12 @@ function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
     // reprocessing; the conversion below is an in-place self write.
     sim.set(cx, cy, EMPTY);
     sim.spawn(cx, cy, SMOKE.id);
-    sim.setAux(x, y, 0); // clear before handing the cell to Molten Metal
+    sim.setAux(x, y, 0); // clear before handing the cell to Molten Iron
     const yield_ = fx >= 0 ? FLUX_YIELD : IRON_YIELD;
     if (sim.chance(yield_)) {
-      // Success → hot Molten Metal that sinks clear (see REDUCE_HEAT). In-place set
+      // Success → hot Molten Iron that sinks clear (see REDUCE_HEAT). In-place set
       // keeps temp, so force it molten if the pool was only just melted.
-      sim.set(x, y, MOLTEN_METAL.id);
+      sim.set(x, y, MOLTEN_IRON.id);
       if (sim.getTemp(x, y) < REDUCE_HEAT) sim.setTemp(x, y, REDUCE_HEAT);
     } else {
       sim.set(x, y, SLAG.id); // yield miss → waste slag (in-place keeps temp)
@@ -191,7 +191,7 @@ function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
     return;
   }
 
-  // Still a molten pool: flow viscously (thicker than water, like Molten Metal).
+  // Still a molten pool: flow viscously (thicker than water, like Molten Iron).
   if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
 

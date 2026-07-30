@@ -1031,7 +1031,7 @@ checkThrows('Obsidian stays legible against the empty board', () => {
 // 4. Glow materials show the ramp, gases dissolve.
 // ---------------------------------------------------------------------------
 
-for (const name of ['Lava', 'Molten Metal', 'Slag']) {
+for (const name of ['Lava', 'Molten Iron', 'Slag']) {
   const label = `${name} shows a heat ramp, hot at the top`;
   checkThrows(label, () => {
     const m = byName(name);

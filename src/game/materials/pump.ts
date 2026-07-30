@@ -22,7 +22,7 @@ import { floodDeviceBody } from '../engine/deviceBody';
 //
 // Switch the power on and every pore turns into a riser: each cell hands its
 // occupant to the cell above, so a column of pump lifts whatever is inside it one
-// cell per tick — water, oil, molten metal, sand, gunpowder — and the bottom of
+// cell per tick — water, oil, molten iron, sand, gunpowder — and the bottom of
 // the column sucks the cell directly beneath it in to refill. Matter climbs a
 // pump block visibly, cell by cell, instead of teleporting from face to face.
 //

@@ -7,7 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { BLUE_FLAME } from './blueflame';
 import { LAVA } from './lava';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 import { BLAST } from './blast';
 import { HYDROGEN } from './hydrogen';
@@ -37,7 +37,7 @@ function isIgniter(id: number): boolean {
     id === FIRE.id ||
     id === BLUE_FLAME.id ||
     id === LAVA.id ||
-    id === MOLTEN_METAL.id ||
+    id === MOLTEN_IRON.id ||
     id === MOLTEN_GLASS.id ||
     id === BLAST.id
   );

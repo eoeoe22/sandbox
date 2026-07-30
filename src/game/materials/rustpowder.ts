@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updatePowder } from '../engine/behaviors';
-import { IRON_MELT_TEMP } from './moltenmetal';
+import { IRON_MELT_TEMP } from './molteniron';
 import { SLAG } from './slag';
 import { MOLTEN_IRON_ORE } from './moltenironore';
 

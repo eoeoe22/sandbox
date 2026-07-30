@@ -15,7 +15,7 @@ import type { SimContext } from '../engine/SimContext';
 // glow ramp, so reheating a cold crust past SOFTEN_TEMP makes it flow again
 // (build a furnace out of slag and it slumps when the furnace gets hot). It's the
 // lightest of the three molten smelting liquids (Slag 5.75 < Molten Iron Ore 6.5 <
-// Molten Metal 8 — Coal Powder at 7.5 sits between the ore and the finished metal,
+// Molten Iron 8 — Coal Powder at 7.5 sits between the ore and the finished metal,
 // see coalpowder.ts/moltenironore.ts), so — as in a real hearth — the waste slag
 // floats up and skims the top while the denser reduced iron sinks below it: a
 // readable dark band riding over the bright pooled metal on the floor. Deliberately

@@ -16,7 +16,7 @@ import { tryHoldInActiveMelt } from './moltenironore';
 //
 // "가벼운 가루" (light powder) — the lightest thing in the whole smelting stack
 // (Limestone 5 < Slag 5.75 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
-// Metal 8, see moltenironore.ts/coalpowder.ts/slag.ts/moltenmetal.ts), the same
+// Iron 8, see moltenironore.ts/coalpowder.ts/slag.ts/molteniron.ts), the same
 // generic density-based buoyancy every powder gets (updatePowderMix/updatePowder —
 // see engine/behaviors.ts): against ordinary liquids (water, oil, Mercury,
 // Molten Uranium, …) it just floats or sinks by density like any other powder.
@@ -33,7 +33,7 @@ import { tryHoldInActiveMelt } from './moltenironore';
 // mixIds too, so a Limestone grain boxed in by a pinned Coal Powder neighbor
 // can still swap past it right there (see SimContext.swapOntoPinnedPowder) —
 // otherwise a mixed charge could freeze into the same comb shape one step
-// before either grain clears onto Molten Metal. Molten Metal needs no such
+// before either grain clears onto Molten Iron. Molten Iron needs no such
 // override: once the grain is below both Ore and Slag, in the finished layer
 // (nothing left for it to flux), tryHoldInActiveMelt returns false and
 // updatePowderMix's ordinary generic buoyancy floats it clear on its own, the
@@ -60,7 +60,7 @@ export const LIMESTONE = register({
   phase: Phase.Powder,
   color: rgb(216, 210, 196),
   // Lighter than every smelting liquid, but only actually floats clear of
-  // Molten Metal (see updateLimestone) — Slag and Molten Iron Ore hold it in.
+  // Molten Iron (see updateLimestone) — Slag and Molten Iron Ore hold it in.
   density: 5,
   category: 'smelt',
   thermal: { conductivity: 0.35 },

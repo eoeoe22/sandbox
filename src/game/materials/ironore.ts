@@ -42,7 +42,7 @@ export const IRON_ORE = register({
   // 밀도 재서열 round it's also denser than its own melt (Molten Iron Ore, 6.5 —
   // was an intentional tie at 7 before), so an unmelted charge can settle down
   // into the pool it's about to become rather than merely riding level with it;
-  // still sinks under Molten Metal (8). A fresh ore charge still ends up
+  // still sinks under Molten Iron (8). A fresh ore charge still ends up
   // beneath the light waste slag while the heavy reduced iron pools on the
   // floor — this just changes how it gets there before it melts.
   density: 7,

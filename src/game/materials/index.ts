@@ -36,7 +36,7 @@ import { COAL } from './coal';
 import { WOOD } from './wood';
 import { SAWDUST } from './sawdust';
 import { IRON } from './iron';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 import { MOLTEN_GLASS } from './moltenglass';
 import { BROKEN_GLASS } from './brokenglass';
 import { GLASS } from './glass';
@@ -176,7 +176,7 @@ export {
   WOOD,
   SAWDUST,
   IRON,
-  MOLTEN_METAL,
+  MOLTEN_IRON,
   MOLTEN_GLASS,
   BROKEN_GLASS,
   GLASS,
@@ -368,7 +368,7 @@ export const MATERIALS = [
   ALUMINUM,
   RUST,
   GALLIUM,
-  MOLTEN_METAL,
+  MOLTEN_IRON,
   MOLTEN_ALUMINUM,
   MOLTEN_GLASS,
   BROKEN_GLASS,

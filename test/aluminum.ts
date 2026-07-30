@@ -487,14 +487,14 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
 }
 
 // 9. Molten Aluminum reads as a *metal* pour, not as fire: it never glows in the
-//    orange band Molten Metal/Lava do, and a fresh cell starts genuinely molten.
+//    orange band Molten Iron/Lava do, and a fresh cell starts genuinely molten.
 {
   check('Molten Aluminum starts above its own melt point',
     (MOLTEN_ALUMINUM.thermal?.init ?? 0) > ALUMINUM_MELT_TEMP,
     `${MOLTEN_ALUMINUM.thermal?.init}°`);
   check('…and its glow ramp bottoms out below the melt point (a visible set front)',
     (MOLTEN_ALUMINUM.glow?.min ?? Infinity) < ALUMINUM_MELT_TEMP);
-  const floatsOver = ['Lava', 'Molten Glass', 'Slag', 'Molten Iron Ore', 'Molten Metal'];
+  const floatsOver = ['Lava', 'Molten Glass', 'Slag', 'Molten Iron Ore', 'Molten Iron'];
   check('…and it floats clear of lava and of every smelting liquid',
     floatsOver.every((n) => MOLTEN_ALUMINUM.density < getMaterial(ID(n)).density),
     floatsOver.map((n) => `${n} ${getMaterial(ID(n)).density}`).join(', '));

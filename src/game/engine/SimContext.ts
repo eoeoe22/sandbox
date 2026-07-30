@@ -1229,7 +1229,7 @@ export class SimContext {
    * sideways into some unrelated liquid a player placed next to the furnace,
    * defeating the very containment the hold exists for. `containerIds` can
    * still be wider than the pin check itself (see tryHoldInActiveMelt's own
-   * comment for why it includes Molten Metal, which doesn't trigger the pin
+   * comment for why it includes Molten Iron, which doesn't trigger the pin
    * but is safe to spread into) — the requirement is just that every id in it
    * is a liquid the caller has already established is part of the same body
    * the grain is confirmed to be inside, not "any Liquid" indiscriminately.
@@ -1288,7 +1288,7 @@ export class SimContext {
    * (tx,ty) instead of (x,y)) — i.e. it's embedded in the same active melt,
    * not a disconnected pile of the same material a player left resting
    * against the furnace's outer wall (which has open air or solid ground
-   * above it, not the furnace's own Ore/Slag/Molten Metal).
+   * above it, not the furnace's own Ore/Slag/Molten Iron).
    *
    * This checks *one specific* neighbor of (tx,ty), not "any of its 8
    * neighbors": a full 8-neighbor scan was tried first and is wrong here —

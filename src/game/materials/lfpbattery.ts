@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { PULSE_PERIOD, injectPulses } from './battery';
-import { MOLTEN_METAL } from './moltenmetal';
+import { MOLTEN_IRON } from './molteniron';
 
 // LFP Battery — the safe chemistry. Pulses exactly like the Lithium Battery
 // (same cadence, same full-strength injection — see battery.ts), but with no
@@ -11,11 +11,11 @@ import { MOLTEN_METAL } from './moltenmetal';
 // The trade-off for that safety is that it's an ordinary solid in every other
 // way — a blast that reaches it destroys it like any solid (it is NOT
 // explosion-proof), and only truly extreme heat undoes it: well past an
-// ordinary flame's ~1000° ceiling it finally melts down into Molten Metal
+// ordinary flame's ~1000° ceiling it finally melts down into Molten Iron
 // (Blue Flame / Lava / Thermite grade — 1400°, held deliberately high so a
 // battery is *tougher* than plain Iron (which now melts at 1200°) and won't
 // slump in an ordinary oxygen-blown coal fire; it also sits well above Molten
-// Metal's 650° freeze so the melt stays molten instead of instantly setting
+// Iron's 650° freeze so the melt stays molten instead of instantly setting
 // back to Iron). In between, it just
 // keeps ticking — the right power source to bury next to a Nichrome heater or
 // run through a burning building.
@@ -24,8 +24,8 @@ const MELT_TEMP = 1400;
 function updateLfpBattery(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten
-    // Metal reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, MOLTEN_METAL.id);
+    // Iron reads as molten instead of instantly re-freezing next tick.
+    sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
 
