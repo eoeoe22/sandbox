@@ -1114,14 +1114,22 @@ export class CanvasRenderer implements Renderer {
         // reference art's proportions, scaled down — see SOLAR_CELL_W). Positional
         // (tied to x/y, not to the particle) like
         // the Mesh weave, so however you drag the brush the seams line up into one
-        // continuous array rather than restarting per stroke. The panel has no
-        // powered state to show — it's a source, not a sink — so unlike the Pump's
-        // stripes nothing here brightens.
+        // continuous array rather than restarting per stroke.
+        //
+        // The *cells* brighten while the array is active — a panel in the light is
+        // generating, one in the dark does nothing (materials/solarpanel.ts) — which
+        // is the same "it's running" cue the Pump's stripes and the Electromagnet's
+        // windings give, just on the cell faces rather than the lattice. A panel
+        // packs two counters into its aux, and only the low byte is the active
+        // countdown, so this masks rather than testing the whole word (the seams are
+        // left alone: brightening both washes the grid out).
         const x = i % w;
         const y = (i / w) | 0;
         c = x % SOLAR_CELL_W === SOLAR_CELL_W - 1 || y % SOLAR_CELL_H === SOLAR_CELL_H - 1
           ? latCol[id]
-          : pal[id];
+          : auxArr[i] & 0xff
+            ? tinted(pal[id], 45)
+            : pal[id];
       } else if (brickPattern[id]) {
         // A Wall draws running-bond masonry: a `lattice`-coloured mortar bed on the
         // last row of every course and a head joint on the last column of every

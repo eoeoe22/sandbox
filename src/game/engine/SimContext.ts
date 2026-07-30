@@ -271,6 +271,19 @@ export class SimContext {
   readonly solarFlood = new BodyFlood();
 
   /**
+   * Per-tick memo for the Solar Panel's *emission* flood — the other half of the
+   * panel, and a separate memo on purpose. `solarFlood` above covers the flood
+   * light drives (refreshing the array's active countdown, once per tick however
+   * wide the beam); this one covers the flood the panel's own **beat** drives
+   * (emitting a pulse from every face, once every PULSE_PERIOD ticks — see
+   * materials/solarpanel.ts). They land in the same tick whenever a lit array
+   * beats, and `BodyFlood` doubles as its walk's visited set, so sharing one would
+   * make the light flood swallow the beat flood — a lit panel would refresh
+   * forever and never emit anything. Sim-local, same reasoning as `wooferFlood`.
+   */
+  readonly solarBeatFlood = new BodyFlood();
+
+  /**
    * Per-tick memo for the Electromagnet's body-flood (materials/electromagnet.ts)
    * — the same one-way "outside → inside" electric sink as `fanFlood` above,
    * refreshing the whole connected magnet's powered countdown from any powered

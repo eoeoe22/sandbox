@@ -82,6 +82,9 @@ export const ALUMINUM = register({
   // sinks or floats, so the number is only a "never displaced" sentinel.
   density: 1000,
   conductive: true,
+  // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
+  // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
+  wiring: true,
   category: 'solid',
   // The real-world mirror metal: a Heat Ray reflects off it cleanly (정반사).
   laserReflective: true,

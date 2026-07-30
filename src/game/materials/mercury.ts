@@ -40,6 +40,9 @@ export const MERCURY = register({
   color: rgb(205, 208, 216),
   density: 9,
   conductive: true,
+  // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
+  // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
+  wiring: true,
   category: 'liquid',
   // Beads up hard (표면장력): scattered drops pull themselves into tight rounded
   // balls instead of wetting a surface — the signature "quicksilver beads".

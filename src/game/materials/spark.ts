@@ -179,6 +179,21 @@ if (CONDUCTOR_LOSS.length !== CONDUCTOR_IDS.length) {
     `CONDUCTOR_LOSS has ${CONDUCTOR_LOSS.length} entries for ${CONDUCTOR_IDS.length} conductors — they must line up.`,
   );
 }
+// `Material.wiring` (배선재 — read by the `'wiring'` emission gate below) is a
+// declared tag, so it *can* drift from this table. Half of it is still derivable
+// and is checked here: wiring is a cable or a metal, and every one of those
+// conducts at the engine's floor, so a `wiring` conductor with a non-zero loss is
+// a mistake — either the tag is on the wrong material or its loss was retuned
+// without anyone noticing that a generator feeds it. The converse is NOT asserted:
+// a zero-loss conductor that isn't wiring is exactly the Acid Slime case, and the
+// whole point of the tag is to be able to say that.
+CONDUCTOR_IDS.forEach((id, i) => {
+  if (getMaterial(id).wiring === true && CONDUCTOR_LOSS[i] !== 0) {
+    throw new Error(
+      `${getMaterial(id).name} is tagged Material.wiring but loses strength per cell — wiring is zero-loss by definition.`,
+    );
+  }
+});
 
 // Electrolysis: a spark passing through Water/Saltwater/Acid occasionally splits
 // it into Hydrogen (and, half the time, an Oxygen bubble too). Deliberately low so
@@ -205,6 +220,15 @@ function classToId(cls: number): number {
 }
 function classLoss(cls: number): number {
   return CONDUCTOR_LOSS[cls - 1];
+}
+/** Is this material proper wiring — a cable or a metal (`Material.wiring`)? The
+ *  test behind the `'wiring'` emission gate below. A declared tag rather than a
+ *  `classLoss === 0` test, because zero-loss and wiring are different questions:
+ *  Acid Slime conducts as far as any metal (전기전도성 최대치) and is still goo, not
+ *  a wire, so it is not something a generator should be pushing power into. The
+ *  half that *is* derivable is asserted at load instead — see the guard below. */
+function isWiring(id: number): boolean {
+  return getMaterial(id).wiring === true;
 }
 /** Pack a spark's (strength, conductor class) into its aux word. */
 export function packSpark(strength: number, cls: number): number {
@@ -277,6 +301,30 @@ export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: numbe
 }
 
 /**
+ * Which conductors a pulse *source* is willing to feed — the emission-side knob
+ * of `pulseCell`, chosen by the source rather than by the material being entered
+ * (that's `Material.insulated`, which governs a travelling Spark's hand-off).
+ *
+ *   • `'any'` — every ready conductor, lossy media included. What a Battery
+ *     terminal, a Solar Panel face and the 전기 브러시 use: a bare terminal in a
+ *     puddle electrifies the puddle, which is the honest reading of a bare
+ *     terminal.
+ *   • `'wiring'` — 전선처럼 (wired output): only cables and metals
+ *     (`Material.wiring`). Water, brine, acid, Slime *and Acid Slime* are skipped
+ *     outright — Acid Slime carries a pulse at zero loss but is goo, not wire, and
+ *     the tag is declared rather than derived from loss precisely so that
+ *     distinction survives. A source gated this way pushes its power into wiring
+ *     instead of into whatever it happens to be sitting in. The Turbine uses it
+ *     (see turbine.ts): it stands in a boiler by construction, and a bare face
+ *     used to dump every beat into the condensate around it — electrolysing the
+ *     boiler water away. The non-conductor branch is deliberately untouched,
+ *     exactly like Wire's jacket: appliances (`directPulse`) and explosive
+ *     charges are one-way sinks that *consume* a pulse rather than spread it, so
+ *     도체 없이 직접 연결 still works.
+ */
+export type PulseGate = 'any' | 'wiring';
+
+/**
  * Deliver one full-strength pulse to the cell (x,y) *itself* — the single
  * "what does a pulse do to this cell" rule, shared by every direct-contact
  * source: a Battery/LFP Battery terminal and a Turbine face (each applying it
@@ -292,11 +340,21 @@ export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: numbe
  * through `reactToPulse`, so an appliance (`directPulse`) or an explosive charge
  * reacts exactly as it would to a pulse relayed down a wire. Returns whether the
  * pulse did anything at all.
+ *
+ * `gate` narrows only the conductor branch (see PulseGate): a `'wiring'` source
+ * refuses to energize anything that isn't a cable or a metal, while reacting to
+ * devices and charges exactly as an ungated one does.
  */
-export function pulseCell(sim: SimContext, x: number, y: number): boolean {
+export function pulseCell(
+  sim: SimContext,
+  x: number,
+  y: number,
+  gate: PulseGate = 'any',
+): boolean {
   const id = sim.get(x, y);
   if (id === EMPTY) return false;
   if (getMaterial(id).conductive) {
+    if (gate === 'wiring' && !isWiring(id)) return false;
     if (sim.getAux(x, y) !== 0) return false; // refractory / carrying other state
     const cls = conductorClass(id);
     if (cls === 0) return false;

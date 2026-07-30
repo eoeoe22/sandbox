@@ -96,6 +96,9 @@ export const LIQUID_GALLIUM = register({
   color: rgb(198, 206, 218),
   density: 6,
   conductive: true,
+  // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
+  // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
+  wiring: true,
   category: 'liquid',
   // Beads up like Mercury (표면장력) — scattered drops round into shiny balls.
   surfaceTension: 0.5,

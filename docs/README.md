@@ -6,7 +6,7 @@
 - [FEATURES.md](./FEATURES.md) — 기능(UI·UX·편의): 화면비·경계 모드·HUD·브러시·컨트롤 UI·저장/복원·속도·연기·중력·오버레이·검색·즐겨찾기 등.
 - [SNAPSHOTS.md](./SNAPSHOTS.md) — 스냅샷 계통: 이름 붙인 세이브 슬롯(설명 필드·썸네일·갤러리/목록 뷰), `.psbx.json` 파일 내보내기/가져오기 포맷과 검증 규칙, 불러오기 미리보기 모달(자동 맞춤·수동·원본 크기)의 배치 모델과 리샘플 알고리즘.
 - [PHYSICS.md](./PHYSICS.md) — 물리·엔진 시스템: 열전도·어는점·밀도 변위·색상 틴트·물리 엔진 고도화 1~3차·전기(스파크) 패킹과 `aux` 16비트 확장.
-- [ELECTRICITY.md](./ELECTRICITY.md) — 전기 계통(장치 쪽): 전기 장치 카테고리의 공용 활성화 규약 — **전기 세기에 관계없이 연결 부위 전역 즉시 활성화**, 공용 몸체 플러드(`engine/deviceBody.ts`)와 틱당 1회 memo, 새 장치 추가 절차, 검증 하네스. **전선(`insulated` — 옆으로 안 새는 배선)과 태양광 패널(`lightPulse` — 빛으로 발전)** 절도 여기. 배선 쪽(도체·펄스 세기 패킹)은 PHYSICS.md.
+- [ELECTRICITY.md](./ELECTRICITY.md) — 전기 계통(장치 쪽): 전기 장치 카테고리의 공용 활성화 규약 — **전기 세기에 관계없이 연결 부위 전역 즉시 활성화**, 공용 몸체 플러드(`engine/deviceBody.ts`)와 틱당 1회 memo, 새 장치 추가 절차, 검증 하네스. **전선(`insulated` — 옆으로 안 새는 배선), 터빈의 배선 전용 출력(`PulseGate`/`Material.wiring`), 태양광 패널(`lightPulse` — 빛으로 활성화, 배터리와 같은 박자로 발전)** 절도 여기. 배선 쪽(도체·펄스 세기 패킹)은 PHYSICS.md.
 - [MATERIALS.md](./MATERIALS.md) — 물질 도감: 전체 물질과 핵심 상호작용 카탈로그(카테고리별 표·상호작용 사슬).
 - [PETROCHEMISTRY.md](./PETROCHEMISTRY.md) — 석유화학 라인: 원유 분별증류(boil-in-place·reflux·유분별 수율)와 그 후속 도전과제인 **열분해 → 중합**(에틸렌·촉매·폴리에틸렌) — 크래킹 온도 게이트와 화력 위계, 중합 발열에 의한 자기 정지와 냉각, 사슬 세대 제한.
 - [MATERIAL-SYSTEMS.md](./MATERIAL-SYSTEMS.md) — 물질군·시스템 노트: 물질군 도입 라운드의 엔진/인프라 설계 노트(공용 헬퍼·데이터 태그·크로스-물질 메커니즘)와 플레이 가이드 링크.
