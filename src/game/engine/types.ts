@@ -148,12 +148,18 @@ export interface Material {
   acidResistant?: boolean;
   /**
    * 산에 녹으면서 수소를 내놓는 금속 — a metal *above hydrogen in the reactivity
-   * series* (이온화 경향이 수소보다 큰 금속: Na·Al·U·Fe·Ga…). Acid's corrosion pass
+   * series* (이온화 경향이 수소보다 큰 금속: Al·U·Fe·Ga…). Acid's corrosion pass
    * (acid.ts) reads this: instead of blinking the cell out silently, the acid cell
    * doing the eating *becomes* a hydrogen bubble, so the fizz is visible and the
    * two are consumed 1:1. Omit for anything that dissolves without giving off
    * hydrogen — the metals *below* hydrogen (Copper/Wire, Mercury), oxides and
    * carbonates (Rust, Iron Ore, Limestone), and every non-metal.
+   *
+   * Sodium is the one deliberate omission at the *top* of the series rather than
+   * the bottom: it is violent enough in plain water that a polite stream of cool
+   * bubbles would be a downgrade, so it handles acid in its own update instead
+   * (flame + hot hydrogen, detonating when packed — see sodium.ts). Adding the
+   * tag to it would not be a fix.
    *
    * This is the generalization of what the aluminum line used to do with three
    * copies of the same `reactions` row (see docs/MATERIAL-IDEAS.md's
