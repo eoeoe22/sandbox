@@ -25,6 +25,15 @@ export const WOOD = register({
   name: 'Wood',
   phase: Phase.Solid,
   color: rgb(140, 96, 56),
+  // Timber is never one flat brown — sapwood, heartwood and the grain between
+  // them all catch light differently, so a plank wall of a single colour reads as
+  // painted board rather than as wood. 16 matches Plant, the nearest sibling (the
+  // other organic solid); it is wide enough to see on a mid-brown without turning
+  // a big block into static, which is what a powder-width 18 does on this base.
+  // One number feeds both the canvas and the palette chip (`varyAmplitude`), so
+  // the swatch grains exactly as much as the material does — which is why Wood
+  // no longer needs a drawing to have a surface.
+  colorVary: 16,
   density: 1000,
   combustible: true,
   category: 'fire',

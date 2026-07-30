@@ -28,6 +28,22 @@ export const STONE = register({
   name: 'Stone',
   phase: Phase.Solid,
   color: rgb(150, 140, 128),
+  // A granular rock, so it carries a per-particle brightness grain rather than being
+  // one painted rectangle — a slab of stone is mineral grains catching the light at
+  // slightly different angles, and a wall of it was reading as flat plaster.
+  //
+  // Deliberately *low dynamic range*: 7 is the same amplitude Concrete carries (the
+  // other mineral solid) and well under the powders' default 18. Stone is placed by
+  // the screenful, so what looks like pleasant texture on one cell becomes visual
+  // noise across a cavern wall — the point is to break the flatness, not to make the
+  // rock sparkle. One number feeds both the canvas and the palette chip
+  // (`varyAmplitude`).
+  //
+  // Per cell rather than blocked (contrast Obsidian's `tintBlock: 2`): obsidian
+  // fractures into broad curved faces many cells wide, and stone does not — its
+  // features really are grain-sized, so sampling at the cell is the honest reading
+  // here even though it was the wrong one there.
+  colorVary: 7,
   density: 1000,
   thermal: { conductivity: 0.5 },
   update: updateStone,

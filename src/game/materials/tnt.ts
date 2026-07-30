@@ -53,7 +53,19 @@ export const TNT = register({
   id: 52,
   name: 'TNT',
   phase: Phase.Solid,
-  color: rgb(196, 58, 48),
+  // The reference art's red (#db2a2a) rather than the older, duller #c43a30. The
+  // canvas tile hoists this exact colour as its background (a stick's body is the
+  // largest share of the tile), so the material's registered colour and the field it
+  // paints are one value — which is also what `test/materialicons.ts` asserts of a
+  // golden tile.
+  color: rgb(0xdb, 0x2a, 0x2a),
+  // A bundle of dynamite behind a printed label rather than a red slab: four sticks
+  // per tile, lit on one side and shaded on the other in this tone, with a paper band
+  // reading TNT wrapped across the middle (see Material.tntPattern and
+  // render/tntTile.ts). `lattice` is the shaded side of each stick — the dark half of
+  // the light/dark pair that makes a flat column read as a round.
+  lattice: rgb(0x8d, 0x0f, 0x0f),
+  tntPattern: true,
   density: 1000,
   explosive: true,
   blastRadius: BLAST_RADIUS,

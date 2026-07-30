@@ -17,8 +17,8 @@
   import { canAdopt } from '../game/materials/clone';
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoryOf } from '../game/materials/categories';
-  import { toCss } from '../game/render/color';
   import { objectSvgFor } from '../game/render/objectSvg';
+  import { materialSvgFor } from '../game/render/materialSvg';
   import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
@@ -533,7 +533,12 @@
             ondblclick={() => pickClone(m.id)}
             title={materialName(m.id, m.name)}
           >
-            <span class="swatch" style={`background:${toCss(m.color)}`}></span>
+            <!-- The material's real in-world look as SVG — the same speckle,
+                 weave, chevron or heat ramp the renderer draws (see
+                 materialSvgFor). {@html} is safe here for the same reason it is
+                 on the object chips: the markup is generated from the material
+                 registry, never from user input. -->
+            <span class="swatch mat">{@html materialSvgFor(m)}</span>
             <span class="label">{materialName(m.id, m.name)}</span>
           </button>
         {/each}
@@ -554,7 +559,7 @@
       ondblclick={() => pickClone(m.id)}
       title={materialName(m.id, m.name)}
     >
-      <span class="swatch" style={`background:${toCss(m.color)}`}></span>
+      <span class="swatch mat">{@html materialSvgFor(m)}</span>
       <span class="label">{materialName(m.id, m.name)}</span>
     </button>
     <button
@@ -823,6 +828,22 @@
     background: none;
   }
   .chip .swatch.obj :global(svg.obj-svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  /* A material swatch keeps the rounded, bordered tile it always was — it stands
+     for a block of the stuff, not for a free-floating shape the way an object
+     chip does — but its fill is now the generated pattern (materialSvgFor)
+     instead of a flat background colour. `overflow: hidden` is what makes the
+     SVG honour the tile's border-radius; without it the pattern would square off
+     the corners the border still rounds. */
+  .chip .swatch.mat {
+    overflow: hidden;
+    padding: 0;
+    line-height: 0;
+  }
+  .chip .swatch.mat :global(svg.mat-svg) {
     display: block;
     width: 100%;
     height: 100%;

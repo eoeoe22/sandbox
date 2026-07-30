@@ -34,6 +34,26 @@ export const COAL = register({
   name: 'Coal',
   phase: Phase.Solid,
   color: rgb(26, 24, 30),
+  // Broken rock, drawn the same way Obsidian is: a WIDE brightness spread between
+  // 2×2 flakes and a NARROW one inside each (`colorVary` + `tintBlock` +
+  // `tintCellVary`). The two levels are the whole point — the blocked level makes
+  // faces that are several cells across, which is the size a fracture face actually
+  // is, and the fine level puts grit inside them so a face reads as coal rather than
+  // as a painted square. Coal used to be one flat near-black on the board and
+  // textured only in the palette; it was in the group of materials whose chip was
+  // hand-drawn *because* the canvas had nothing to reflect, and now it does.
+  //
+  // The chip stays the hand-drawn lumps — a 24-cell drawing can show whole chunks
+  // with silhouettes, which a repeating world grain cannot, so this is one of the
+  // places the two layers are deliberately not the same picture.
+  //
+  // 14 is a wide spread on a base this dark (channels sit at 24–30, so a flake swings
+  // roughly 12–44), and that is intended: coal is high-contrast rubble, not a smooth
+  // solid. 4 inside a flake is well below a visible step on its own and only shows as
+  // texture on the face.
+  colorVary: 14,
+  tintBlock: 2,
+  tintCellVary: 4,
   // Density is inert for a Solid (solids never move or get displaced); kept for
   // completeness alongside the other materials.
   density: 5,

@@ -104,6 +104,30 @@ export const TURBINE = register({
   name: 'Turbine',
   phase: Phase.Solid,
   color: rgb(150, 160, 172),
+  // An eight-blade wheel keyed to a dark hub (`rotorPattern`), the same picture as
+  // the hand-drawn Turbine chip: `lattice` is a blade's lit leading edge, and the
+  // trailing edge and the hub are this colour scaled down (see render/rotorTile.ts).
+  // Eight blades is what separates it at a glance from the Fan, which draws four on
+  // the same tile — a steam wheel is a dense disc of blades, a household fan is not.
+  //
+  // **The wheel turns while steam is passing through it.** The second frame is the
+  // same wheel 22.5° on — half a blade pitch, because a 45° turn of an eight-blade
+  // wheel lands every blade where its neighbour was and the picture would not change
+  // at all. The frame comes straight from the steam-tick counter this material keeps
+  // in `aux` (so no `rotorSpinShift`: the whole byte is the counter), which advances
+  // only on ticks where steam actually flows and is held across a gap — so the wheel
+  // stops the moment the steam does.
+  //
+  // **That counter is per cell, and a wheel is not.** `updateTurbine` returns before
+  // touching aux on any cell steam is not currently inside, so mid-operation a block
+  // holds a spread of counts: soaked cells leading, grazed cells lagging, dry cells
+  // still at 0. Drawn per cell that came out as a wheel whose blades moved only where
+  // the steam was and stood still everywhere else. The renderer therefore takes the
+  // *maximum* count across each drawn wheel and animates the whole tile from it (see
+  // CanvasRenderer's rotorBlockFrame), so the wheel turns as the rigid thing it is,
+  // driven by whichever part of it the steam is hitting hardest.
+  lattice: rgb(192, 205, 220),
+  rotorPattern: 8,
   density: 1000,
   category: 'electric',
   // Porous like the Mesh — fluids (and its working steam) pass through any

@@ -296,12 +296,34 @@ export const FAN = register({
   id: 112,
   name: 'Fan',
   phase: Phase.Solid,
-  // A dark machine housing with a bright light-blue rotor chevron pointing the
-  // way it blows (drawn from the aux direction; brightens while powered — see
-  // CanvasRenderer's windArrow path).
+  // A dark machine housing with a bright light-blue four-blade rotor set into it
+  // (`rotorPattern`), the same picture as the hand-drawn Fan chip: `lattice` is each
+  // blade's lit leading edge, and the trailing edge and hub are this colour scaled
+  // down (see render/rotorTile.ts). The Turbine draws eight blades on the same tile,
+  // which is what tells the two machines apart on the board.
+  //
+  // **The wheel turns while the fan runs**, alternating with a second tile drawn 45°
+  // on — half a blade pitch, so it is the biggest step four blades can take. The
+  // frame comes from the powered countdown in `aux >> 2` (hence `rotorSpinShift: 2`,
+  // which skips the direction bits), so it spins exactly while energized and stops
+  // dead at 0. That is the replacement for the old chevron's brightening.
+  //
+  // The renderer animates a whole drawn wheel as one unit rather than cell by cell
+  // (see CanvasRenderer's rotorBlockFrame). A Fan body's cells all carry the same
+  // countdown — `energizeFanBody` writes the whole body at once — so for this material
+  // that changes nothing; it is the Turbine, whose counter only advances where steam
+  // is passing, that needs it.
+  //
+  // What the chevron also did and a face-on rotor cannot is *point*. The blow
+  // direction now reads only off the wind streaks the fan throws, which show only
+  // while it is blowing — an unpowered fan no longer says which way it faces. The
+  // trade is deliberate (the block reads as a fan at a glance instead of as a
+  // chevron); the aux direction bits are untouched, so restoring `windArrow` — which
+  // the Laser still uses — is a one-line change.
   color: rgb(70, 80, 95),
   lattice: rgb(150, 200, 240),
-  windArrow: true,
+  rotorPattern: 4,
+  rotorSpinShift: 2,
   density: 1000,
   category: 'electric',
   // Doesn't burn or corrode away underfoot, like the other electric machines.

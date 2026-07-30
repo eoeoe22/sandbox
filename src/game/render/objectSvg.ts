@@ -16,52 +16,8 @@ import {
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import type { DrumFill } from '../engine/objects';
 import type { ObjectKind } from '../../state/store';
-
-/** A packed 0xAABBGGRR color → `#rrggbb`. Alpha is dropped (sprite pixels are
- *  fully opaque; 0 is the transparent sentinel handled before this is called). */
-function hex(packed: number): string {
-  const r = packed & 0xff;
-  const g = (packed >> 8) & 0xff;
-  const b = (packed >> 16) & 0xff;
-  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
-}
-
-/**
- * Turn a sprite pixel buffer into SVG `<rect>`s, merging horizontal runs of the
- * same color into one rect each so the markup stays compact (a drum is a few
- * dozen rects, not ~700). Transparent pixels (0) are skipped. `ox`/`oy` offset
- * every rect, so callers can leave room in the viewBox for extra art drawn
- * around the sprite (the dynamite fuse).
- */
-function spriteRects(buf: Uint32Array, w: number, h: number, ox = 0, oy = 0): string {
-  let out = '';
-  for (let y = 0; y < h; y++) {
-    let x = 0;
-    while (x < w) {
-      const c = buf[y * w + x];
-      if (c === 0) {
-        x++;
-        continue;
-      }
-      let run = 1;
-      while (x + run < w && buf[y * w + x + run] === c) run++;
-      out += `<rect x="${x + ox}" y="${y + oy}" width="${run}" height="1" fill="${hex(c)}"/>`;
-      x += run;
-    }
-  }
-  return out;
-}
-
-/** Wrap inner SVG in a pixel-art `<svg>`: crisp edges (nearest-neighbor look,
- *  matching the in-world rasterizer) and `meet` so the shape scales to fit the
- *  chip's box while keeping its aspect ratio, centered. */
-function pixelSvg(vbW: number, vbH: number, inner: string): string {
-  return (
-    `<svg class="obj-svg" viewBox="0 0 ${vbW} ${vbH}" ` +
-    `preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" ` +
-    `xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">${inner}</svg>`
-  );
-}
+import { hex } from './color';
+import { spriteRects, pixelSvg } from './spriteSvg';
 
 function drumSvg(fill: DrumFill): string {
   return pixelSvg(

@@ -51,7 +51,10 @@ import { floodDeviceBody } from '../engine/deviceBody';
 //
 // Like the Electromagnet — and unlike the Fan/Laser — the pump has no direction to
 // record, so its whole `aux` byte is the countdown and the renderer draws
-// brightening vertical channel stripes instead of a chevron (Material.stripePattern).
+// brightening vertical channel stripes instead of a directional mark
+// (Material.stripePattern). Of the two, only the Laser still *draws* its direction
+// as a chevron; the Fan keeps its direction bits but draws a rotor wheel now
+// (Material.rotorPattern).
 
 /** Ticks a single power pulse keeps the pump running. Set well above the
  *  Battery's PULSE_PERIOD (12) so the flow never lapses between pulses — it winds
