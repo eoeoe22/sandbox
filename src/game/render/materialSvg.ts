@@ -41,6 +41,13 @@ import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
 import { TNT_N, buildTntTile } from './tntTile';
 import { ROTOR_N, buildRotorTile } from './rotorTile';
+import {
+  WOOFER_P,
+  WOOFER_CAP_R2,
+  WOOFER_CONE_R2,
+  WOOFER_R2,
+  WOOFER_REST,
+} from './wooferDriver';
 
 /** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
  *
@@ -78,16 +85,15 @@ const BRICK_W = 6;
 const BRICK_H = 4;
 const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
-const WOOFER_P = 12;
-const WOOFER_R2 = 64;
-const WOOFER_CONE_R2 = 42;
-const WOOFER_CAP_R2 = 16;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
-// The two bitmap patterns are the exception: TNT's bundle and the rotor wheels are
-// pictures rather than rules, so instead of mirroring constants this module shares
-// the pictures themselves (tntTile / rotorTile). An ASCII block copied into two
-// files would diverge invisibly.
+// Two patterns are the exception, for one reason: what they are made of is too big to
+// write twice. TNT's bundle and the rotor wheels are pictures rather than rules, and
+// an ASCII block copied into two files diverges invisibly — so this module shares the
+// pictures themselves (tntTile / rotorTile). The Woofer's driver is a rule, but its
+// three band radii became a *table* when the diaphragm started moving (four excursion
+// steps, of which the icon draws the first), so its geometry is shared the same way
+// (wooferDriver) rather than mirrored here.
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -442,15 +448,19 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
             : base;
       } else if (m.wooferPattern) {
         // Woofer: one speaker driver per tile — rim, `lattice` cone, dark dust cap,
-        // on the base colour's baffle. Squared radii in doubled coordinates.
+        // on the base colour's baffle. Squared radii in doubled coordinates, at the
+        // resting excursion: on the board the driver swells while the cabinet thumps
+        // (see wooferDriver), and a chip is a picture of a thing, not of a thing in
+        // the middle of doing something — the same call the rotors make in drawing
+        // their unspun frame.
         const ax = 2 * (x % WOOFER_P) - (WOOFER_P - 1);
         const ay = 2 * (y % WOOFER_P) - (WOOFER_P - 1);
         const d2 = ax * ax + ay * ay;
-        c = d2 <= WOOFER_CAP_R2
+        c = d2 <= WOOFER_CAP_R2[WOOFER_REST]
           ? tinted(base, WOOFER_CAP)
-          : d2 <= WOOFER_CONE_R2
+          : d2 <= WOOFER_CONE_R2[WOOFER_REST]
             ? lat
-            : d2 <= WOOFER_R2
+            : d2 <= WOOFER_R2[WOOFER_REST]
               ? tinted(base, WOOFER_RIM)
               : base;
       } else if (m.tntPattern) {

@@ -53,7 +53,24 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
-import { ROTOR_N, ROTOR_TILE_ROWS, rotorFrame, rotorSpin } from '../src/game/render/rotorTile';
+import {
+  ROTOR_N,
+  ROTOR_TILE_ROWS,
+  rotorAccumulate,
+  rotorBlockIndex,
+  rotorFrame,
+  rotorSpin,
+} from '../src/game/render/rotorTile';
+import {
+  WOOFER_P,
+  WOOFER_CAP_R2,
+  WOOFER_CONE_R2,
+  WOOFER_R2,
+  WOOFER_REST,
+  WOOFER_THUMP_STEPS,
+  wooferExcursion,
+  wooferTileIndex,
+} from '../src/game/render/wooferDriver';
 import '../src/game/materials';
 
 let failures = 0;
@@ -563,47 +580,185 @@ checkThrows('a rotor is at rest on a fresh cell and turns as its counter runs', 
 });
 
 // **One wheel, one phase.** The renderer draws a whole ROTOR_N tile from the MAX of its
-// cells' spin counters rather than from each cell's own (CanvasRenderer's
-// rotorBlockFrame), and this is the arithmetic that has to hold for that to be worth
-// doing. The case it exists for is the Turbine: it advances the counter only on cells
-// steam is actually passing through and leaves the rest at 0, so a tile mid-operation
-// holds a spread of counters, not one value.
+// cells' spin counters rather than from each cell's own, and everything below runs the
+// renderer's *actual* aggregation to check it: `rotorBlockIndex` and `rotorAccumulate`
+// are the two functions CanvasRenderer's rotor branch calls per cell, walked here over
+// a patch of cells exactly the way the render loop walks the grid. (They were pulled
+// out of the loop body for this: a test that re-implements the aggregation passes just
+// as happily when the renderer regresses to per-cell frames.)
 //
-// Two things get pinned. First that the spread is a real problem — the per-cell frames
-// genuinely disagree, i.e. the old code drew a wheel torn between its two frames.
-// Second that the two obvious aggregates are not interchangeable: an OR of the frames
-// sticks on the spun frame as soon as any one cell reaches it (which, for a tile with a
-// cell at every count, is always), so the wheel would have swapped tearing for being
-// frozen. The max tracks the leading cell and steps once per tick, which is a wheel.
+// The case this exists for is the Turbine: it advances the counter only on cells steam
+// is actually passing through and leaves the rest at 0, so a tile mid-operation holds a
+// spread of counters, not one value.
 checkThrows('a wheel animates as one tile, off its leading cell', () => {
   const turbine = byName('Turbine');
   const sh = turbine.rotorSpinShift ?? 0;
-  // A tile of turbine cells partway through a pulse: the soaked cells lead, the ones
-  // steam only grazes lag, the ones it never reaches sit at 0.
-  const tile = [0, 0, 0, 1, 2, 2, 3, 4, 5, 5];
-  const frames = new Set(tile.map((a) => rotorFrame(rotorSpin(a, sh))));
-  check('per-cell frames really do disagree across one wheel', frames.size === 2,
-    `counters ${tile.join(',')}`);
-  const or = tile.reduce((acc, a) => acc | rotorFrame(rotorSpin(a, sh)), 0);
-  const max = tile.reduce((acc, a) => Math.max(acc, rotorSpin(a, sh)), 0);
-  check('…and an OR of them would have stuck on the spun frame', or === 1 && rotorFrame(max) === 0,
-    `or=${or}, max=${max} → frame ${rotorFrame(max)}`);
-  // Run a full pulse cycle with a laggard present: the tile's frame must flip on the
+  const TILES_W = 2; // a patch two wheels wide, one wheel tall
+  const W = ROTOR_N * TILES_W;
+  /** Run the renderer's per-cell aggregation over the patch; one entry per wheel. */
+  const wheels = (auxAt: (x: number, y: number) => number): Uint8Array => {
+    const acc = new Uint8Array(TILES_W);
+    for (let y = 0; y < ROTOR_N; y++) {
+      for (let x = 0; x < W; x++) {
+        rotorAccumulate(acc, rotorBlockIndex(x, y, TILES_W), auxAt(x, y), sh);
+      }
+    }
+    return acc;
+  };
+
+  // A cabinet of steam-fed turbine mid-pulse: counters strung out over the cycle on the
+  // left wheel (soaked cells leading, grazed cells lagging, dry cells at 0), and a
+  // second wheel beside it that no steam has ever reached.
+  const spread = (x: number, y: number): number => (x < ROTOR_N ? (x * 7 + y * 3) % 6 : 0);
+  const perCell = new Set<number>();
+  for (let y = 0; y < ROTOR_N; y++) {
+    for (let x = 0; x < ROTOR_N; x++) perCell.add(rotorFrame(rotorSpin(spread(x, y), sh)));
+  }
+  check('per-cell frames really do disagree across one wheel', perCell.size === 2,
+    'counters 0-5 scattered over the tile');
+  const spun = wheels(spread);
+  check('…but the tile aggregates to one counter — its leader', spun[0] === 5, `max ${spun[0]}`);
+  // The two obvious aggregates are not interchangeable, and this is the tile that shows
+  // it: an OR of the frames is 1 the moment any single cell reaches the spun frame,
+  // which for a tile holding a cell at every count is always — so the wheel would have
+  // swapped tearing for being frozen on frame 1.
+  const or = perCell.has(1) ? 1 : 0;
+  check('…and an OR of the frames would have said the opposite',
+    or === 1 && rotorFrame(spun[0]) === 0, `or=${or}, max=${spun[0]} → frame ${rotorFrame(spun[0])}`);
+  check('the wheel next to it is untouched by the aggregation', spun[1] === 0, `${spun[1]}`);
+  // …and the reverse direction: a single hot cell raises its own wheel and only it.
+  const oneHot = wheels((x, y) => (x === ROTOR_N && y === 0 ? 9 : 0));
+  check('a lone spinning cell drives its own wheel and no other',
+    oneHot[0] === 0 && oneHot[1] === 9, `${oneHot[0]}, ${oneHot[1]}`);
+
+  // Run a full pulse cycle with laggards present: the wheel's frame must flip on the
   // same beat a lone cell would, i.e. every ROTOR_SPIN_SHIFT+1 ticks, never sticking.
   const seq: number[] = [];
   for (let t = 0; t < 12; t++) {
-    // leader at t, one cell half as fast, one dead cell — the worst case for the max.
-    const cells = [t, t >> 1, 0];
-    seq.push(rotorFrame(cells.reduce((acc, a) => Math.max(acc, rotorSpin(a, sh)), 0)));
+    // leader at t, one cell half as fast, the rest of the wheel dead — worst case.
+    const w = wheels((x, y) => (y === 0 && x === 0 ? t : y === 0 && x === 1 ? t >> 1 : 0));
+    seq.push(rotorFrame(w[0]));
   }
   check('the wheel flips every two ticks even with laggards on it',
     seq.join('') === '001100110011', seq.join(''));
-  // And the counter the Turbine actually holds across a steam gap is what makes the
-  // wheel stop: a stalled tile keeps its leader's count, so it freezes on the frame it
-  // died on rather than snapping back to rest because most of its cells read 0.
-  const stalled = [6, 3, 0, 0, 0, 0];
+
+  // And the counter the Turbine holds across a steam gap is what makes the wheel stop:
+  // a stalled tile keeps its leader's count, so it freezes on the frame it died on
+  // rather than snapping back to rest because most of its cells read 0. Frame 1 is the
+  // discriminating answer here — a per-cell majority, or any aggregate that let the
+  // zeros vote, would read 0, which is also what the all-dead wheel below reads.
+  const stalled = wheels((x, y) => (y === 0 && x === 0 ? 6 : y === 0 && x === 1 ? 3 : 0));
   check('a stalled wheel freezes on its leader\'s frame, not on rest',
-    rotorFrame(stalled.reduce((acc, v) => Math.max(acc, rotorSpin(v, sh)), 0)) === rotorFrame(6));
+    rotorFrame(stalled[0]) === 1, `counter ${stalled[0]} → frame ${rotorFrame(stalled[0])}`);
+  check('…while a wheel that never ran is at rest', rotorFrame(wheels(() => 0)[0]) === 0);
+});
+
+// **One driver, one thump.** The Woofer's driver swells while the cabinet fires and
+// settles back as the shockwave it launched reaches its rim (see wooferDriver.ts). The
+// Woofer stamps no cell state at all, so unlike the rotors there is no counter to read
+// — the excursion is read off the wave's own position, which is what makes the two
+// exactly synchronous rather than merely both animated.
+//
+// The geometry is a table of squared radii per step, so what has to hold is that every
+// step is still a legible speaker: four tones, in order, inside its own tile.
+checkThrows('a Woofer driver swells as one tile, in step with its own shockwave', () => {
+  /** Cells of each band at one excursion step, replaying the renderer's own test. */
+  const bands = (step: number): { cap: number; cone: number; rim: number; wide: number } => {
+    let cap = 0;
+    let cone = 0;
+    let rim = 0;
+    let wide = 0;
+    for (let y = 0; y < WOOFER_P; y++) {
+      let row = 0;
+      for (let x = 0; x < WOOFER_P; x++) {
+        const ax = 2 * x - (WOOFER_P - 1);
+        const ay = 2 * y - (WOOFER_P - 1);
+        const d2 = ax * ax + ay * ay;
+        if (d2 <= WOOFER_CAP_R2[step]) cap++;
+        else if (d2 <= WOOFER_CONE_R2[step]) cone++;
+        else if (d2 <= WOOFER_R2[step]) rim++;
+        else continue;
+        row++;
+      }
+      if (row > wide) wide = row;
+    }
+    return { cap, cone, rim, wide };
+  };
+
+  // The resting step is the picture the palette chip draws, and the golden above is
+  // that picture — so the rest entry of the table has to reproduce it tone for tone.
+  // This is the join between the animation and the chip: widen the rest step by one
+  // ring and the icon silently changes shape.
+  const tally = (ch: string): number => GOLDEN.Woofer.split(ch).length - 1;
+  const rest = bands(WOOFER_REST);
+  check('the resting driver is exactly the golden chip',
+    rest.cap === tally('O') && rest.cone === tally('i') && rest.rim === tally('o'),
+    `cap ${rest.cap}/${tally('O')}, cone ${rest.cone}/${tally('i')}, rim ${rest.rim}/${tally('o')}`);
+
+  // Every step has to stay a speaker: all three bands present, in order, so the driver
+  // never collapses into a flat disc or loses its outline mid-thump.
+  for (let s = 0; s < WOOFER_THUMP_STEPS; s++) {
+    const b = bands(s);
+    check(`step ${s} keeps all three bands`, b.cap > 0 && b.cone > 0 && b.rim > 0,
+      `cap ${b.cap}, cone ${b.cone}, rim ${b.rim}`);
+    check(`…in radial order`,
+      WOOFER_CAP_R2[s] < WOOFER_CONE_R2[s] && WOOFER_CONE_R2[s] < WOOFER_R2[s]);
+  }
+  // And it has to actually *grow* — the whole point of the animation. Cell counts
+  // rather than radii, because between two consecutive rings of a 12-cell tile a
+  // bigger radius can draw the identical picture.
+  const area = (s: number): number => bands(s).cap + bands(s).cone + bands(s).rim;
+  const areas = Array.from({ length: WOOFER_THUMP_STEPS }, (_, s) => area(s));
+  check('each step draws a strictly bigger driver',
+    areas.every((a, s) => s === 0 || a > areas[s - 1]), areas.join(' → '));
+  check('…and the dust cap grows with it',
+    WOOFER_CAP_R2.every((r, s) => s === 0 || r > WOOFER_CAP_R2[s - 1]), WOOFER_CAP_R2.join(' → '));
+
+  // Fully out, a driver must still leave baffle around itself: neighbouring drivers are
+  // WOOFER_P apart, so a driver that reached its tile's edge would fuse a cabinet into
+  // one blob of cones. Checked as "the tile's outer ring stays baffle at every step".
+  const top = WOOFER_THUMP_STEPS - 1;
+  let edge = 0;
+  for (let y = 0; y < WOOFER_P; y++) {
+    for (let x = 0; x < WOOFER_P; x++) {
+      if (x !== 0 && y !== 0 && x !== WOOFER_P - 1 && y !== WOOFER_P - 1) continue;
+      const ax = 2 * x - (WOOFER_P - 1);
+      const ay = 2 * y - (WOOFER_P - 1);
+      if (ax * ax + ay * ay <= WOOFER_R2[top]) edge++;
+    }
+  }
+  check('a fully-out driver still leaves baffle between cabinets', edge === 0,
+    `${edge} edge cells painted, widest row ${bands(top).wide} of ${WOOFER_P}`);
+
+  // The synchronisation itself: full excursion at the instant the front leaves the
+  // cabinet, back at rest as it reaches the rim, and monotone in between — a cone that
+  // went back out partway through would read as two thumps for one wave. Expressed
+  // against the front's *fraction* of the reach, which is exactly what the function
+  // takes, so it holds at any wave speed or reach.
+  const REACH = 8; // the shipped SHOCK_VIS_REACH; the shape must not depend on it
+  check('the cone is fully out as the front leaves the body',
+    wooferExcursion(0, REACH) === top, `${wooferExcursion(0, REACH)} of ${top}`);
+  check('and back at rest as the front reaches the rim',
+    wooferExcursion(REACH, REACH) === WOOFER_REST
+    && wooferExcursion(REACH * 2, REACH) === WOOFER_REST);
+  const walk = Array.from({ length: 33 }, (_, k) => wooferExcursion((k * REACH) / 32, REACH));
+  check('…settling monotonically, never swelling twice for one wave',
+    walk.every((e, k) => k === 0 || e <= walk[k - 1]), walk.join(''));
+  check('…through every step on the way down', new Set(walk).size === WOOFER_THUMP_STEPS,
+    `${new Set(walk).size} of ${WOOFER_THUMP_STEPS} steps used`);
+  check('a wave with no reach at all leaves the driver alone',
+    wooferExcursion(0, 0) === WOOFER_REST);
+
+  // One excursion per drawn driver, not per cell — the Woofer's version of the wheel's
+  // tile. Two cabinets that share a tile swell together; a driver never tears in half.
+  const TILES_W = 2;
+  let sameTile = true;
+  for (let y = 0; y < WOOFER_P; y++) {
+    for (let x = 0; x < WOOFER_P; x++) if (wooferTileIndex(x, y, TILES_W) !== 0) sameTile = false;
+  }
+  check('every cell of one driver shares one excursion', sameTile);
+  check('…and the driver beside it has its own',
+    wooferTileIndex(WOOFER_P, 0, TILES_W) === 1 && wooferTileIndex(0, WOOFER_P, TILES_W) === 2);
 });
 
 // The two rotors are one tile module with a blade count, so the failure worth naming is

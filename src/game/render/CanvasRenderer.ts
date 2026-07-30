@@ -14,7 +14,16 @@ import {
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { TNT_N, buildTntTile } from './tntTile';
-import { ROTOR_N, buildRotorTile, rotorFrame, rotorSpin } from './rotorTile';
+import { ROTOR_N, buildRotorTile, rotorAccumulate, rotorBlockIndex, rotorFrame } from './rotorTile';
+import {
+  WOOFER_P,
+  WOOFER_CAP_R2,
+  WOOFER_CONE_R2,
+  WOOFER_R2,
+  WOOFER_REST,
+  wooferExcursion,
+  wooferTileIndex,
+} from './wooferDriver';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -130,32 +139,12 @@ const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
 
 // Tiling of the `wooferPattern` speaker-driver grid (Woofer — see the render loop).
-// One period holds one round driver 8 cells across with 4 cells of baffle between
-// neighbours, drawn as three radial bands: a 1-cell rim, a cone, and a 2-cell dust cap.
+// The geometry — the period, the three bands' squared radii at each step of a thump,
+// and the tile index the excursion is keyed by — lives in ./wooferDriver, shared with
+// the palette icon generator: it is a table now that the diaphragm moves, and a table
+// is not something to mirror by hand. Only the two dark *tones* stay here, because
+// they are colour rather than shape.
 //
-// Every one of those numbers is the hand-drawn Woofer chip's, halved. The chip is a
-// 24-cell tile holding a driver of diameter 16, a cone starting at r = 6.5 and a cap of
-// r = 4; this is a 12-cell tile holding diameter 8, cone at r = 3.25 and cap r = 2. So
-// the driver takes the same 0.67 of its tile in both, the rim is the same 1/12 of the
-// tile thick in both, and the cap is the same third of the driver across — the chip and
-// the board are one picture at two scales rather than two drawings of a speaker.
-//
-// The period was 9 with a 7-cell driver, which was the same *idea* built by eye: 0.78 of
-// the tile, a 1-cell rim where the chip has two cells' worth, and a cap barely a third
-// the cone's width. Before that it was 8 with a 6-cell driver, and that one was wrong
-// rather than merely off-proportion — an EVEN diameter has no centre row, so it
-// rasterized 4/6/6/6/6/4 and read as a hexagon. 8 is even too, but at this radius the
-// widths come out 4/6/8/8/8/8/6/4: two graduated steps into each pole, which is what
-// reads as round. (The chip's own 16-across driver is even for the same reason and
-// rasterizes the same way, which is exactly why halving it works.)
-//
-// Membership is tested on SQUARED radii in doubled coordinates, so a cell's band
-// falls out of integer arithmetic with no sqrt and no lookup table: `2*(x % P) - (P-1)`
-// puts the tile's centre at 0 whether the period is odd or even.
-const WOOFER_P = 12; // period, in cells (8-cell driver + 4-cell baffle)
-const WOOFER_R2 = 64; // (2r)² of the driver's outer edge — r = 4, so 8 across
-const WOOFER_CONE_R2 = 42; // (2r)² inside the rim — r = 3.25, the chip's cone, halved
-const WOOFER_CAP_R2 = 16; // (2r)² of the dust cap — r = 2, the chip's cap halved
 // The two dark tones, as brightness offsets from the material's own colour. The cone
 // is the `lattice` colour and therefore exact; these two are offsets because a
 // material carries only one second colour, and the chip's ramp is very slightly
@@ -423,6 +412,22 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a grid of speaker drivers — a rim, a `lattice`
    *  cone and a dark cap on the base baffle (Woofer — see Material.wooferPattern). */
   private wooferPattern: Uint8Array;
+  /** Diaphragm excursion of each WOOFER_P × WOOFER_P driver tile — one entry per drawn
+   *  driver, not per cell (see wooferDriver.ts): 0 at rest, up to WOOFER_THUMP_STEPS-1
+   *  fully out.
+   *
+   *  Rebuilt from scratch at the top of every pass out of the live shockwaves
+   *  (`this.shocks`), each of which knows which driver tiles its own firing came from.
+   *  So it needs no double buffer the way the rotor frames do: the excursion is known
+   *  before the first cell is drawn rather than being collected from the cells as they
+   *  go past, and a driver is a still picture until something fires it.
+   *
+   *  Overlapping firings take the MAX, for the same reason a wheel does — a driver
+   *  thumped twice in a frame should show the bigger thump, not the second one. */
+  private wooferThump: Uint8Array;
+  /** Tile-grid width `wooferThump` was sized for; -1 = never (see rotorBlocksW for why
+   *  the width and not just the total is the key). */
+  private wooferTilesW = -1;
   /** id → the rim / dust-cap colours of a `wooferPattern` material, precomputed from
    *  its base colour for the same reason `brickLit` is. */
   private wooferRim: Uint32Array;
@@ -478,9 +483,14 @@ export class CanvasRenderer implements Renderer {
    *  grid. One rendered frame of lag on an animation that holds each frame for two
    *  sim ticks (~67 ms) is not visible; a wheel whose top half is a frame ahead of
    *  its bottom half is exactly what this fixes. Sized to the grid on first use and
-   *  re-sized when it changes. */
+   *  re-sized when it changes — keyed on the tile grid's *width* as well as its total
+   *  size, because `rotorBlocksW` is what turns a cell into a tile index and a resize
+   *  can change it while leaving the product alone (a corner drag that gains a column
+   *  of tiles and loses a row), which would leave one pass reading last pass's phases
+   *  through a shifted mapping. */
   private rotorBlockFrame: Uint8Array;
   private rotorBlockNext: Uint8Array;
+  private rotorBlocksW = -1;
   /** id → the edge, in cells, of the square block that shares one tint sample — 0
    *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
    *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
@@ -521,7 +531,13 @@ export class CanvasRenderer implements Renderer {
    *  where unreachable), `x0,y0` the bbox's fine-grid origin, `bw,bh` its dims,
    *  `maxR` the terminal radius (= reach), `age` frames since spawn. Built from
    *  Grid.shockwaves on drain and dropped once the front clears the rim. Purely
-   *  cosmetic renderer state, animated per rendered frame like windPhase. */
+   *  cosmetic renderer state, animated per rendered frame like windPhase.
+   *
+   *  `tiles` is the driver tiles this firing's own *Woofer* cells sit in (empty for a
+   *  brush fired over anything else, and for the Electromagnet's rings, which borrow
+   *  the same field builder) — what lets the cabinet's diaphragms swell in step with
+   *  the wave they launched. Collected once on drain rather than looked up per frame,
+   *  and deduplicated, so a wall-sized cabinet costs its handful of tiles. */
   private shocks: {
     dist: Float64Array;
     x0: number;
@@ -530,6 +546,7 @@ export class CanvasRenderer implements Renderer {
     bh: number;
     maxR: number;
     age: number;
+    tiles: number[];
   }[] = [];
   /** Live Electromagnet field rings, baked down to the flat indices of their
    *  candidate pixels (band boundaries with the static dither already applied
@@ -614,6 +631,9 @@ export class CanvasRenderer implements Renderer {
     this.wooferPattern = new Uint8Array(256);
     this.wooferRim = new Uint32Array(256);
     this.wooferCap = new Uint32Array(256);
+    // Sized on the first render like the rotor frames; empty until then, which the
+    // render loop reads as "every driver is at rest".
+    this.wooferThump = new Uint8Array(0);
     this.tntPattern = new Uint8Array(256);
     this.tntTile = new Array(256).fill(null);
     this.rotorPattern = new Uint8Array(256);
@@ -822,13 +842,35 @@ export class CanvasRenderer implements Renderer {
     // gating on "does this world contain a rotor at all".
     const rotorBlocksW = Math.ceil(grid.width / ROTOR_N);
     const rotorBlockCount = rotorBlocksW * Math.ceil(grid.height / ROTOR_N);
-    if (this.rotorBlockFrame.length !== rotorBlockCount) {
+    if (this.rotorBlocksW !== rotorBlocksW || this.rotorBlockFrame.length !== rotorBlockCount) {
+      this.rotorBlocksW = rotorBlocksW;
       this.rotorBlockFrame = new Uint8Array(rotorBlockCount);
       this.rotorBlockNext = new Uint8Array(rotorBlockCount);
     }
     const rotorFrames = this.rotorBlockFrame;
     const rotorNext = this.rotorBlockNext;
     rotorNext.fill(0);
+    // Per-driver diaphragm excursion, rebuilt from the live shockwaves before a single
+    // cell is drawn (see wooferThump). Same sizing rule as the wheels', and the same
+    // argument for not gating it on "is there a Woofer in this world": the buffer is a
+    // few hundred bytes and the loop below is over the *waves*, of which an idle world
+    // has none.
+    const wooferTilesW = Math.ceil(grid.width / WOOFER_P);
+    const wooferTileCount = wooferTilesW * Math.ceil(grid.height / WOOFER_P);
+    if (this.wooferTilesW !== wooferTilesW || this.wooferThump.length !== wooferTileCount) {
+      this.wooferTilesW = wooferTilesW;
+      this.wooferThump = new Uint8Array(wooferTileCount);
+    }
+    const wooferThump = this.wooferThump;
+    wooferThump.fill(0);
+    for (const s of this.shocks) {
+      // `age * SHOCK_SPEED` is exactly the front radius drawShockwaves will paint at
+      // the end of *this* pass (it advances the age after drawing), so the swell and
+      // the ring it launched are read off the same clock in the same frame.
+      const e = wooferExcursion(s.age * SHOCK_SPEED, s.maxR);
+      if (e === WOOFER_REST) continue;
+      for (const t of s.tiles) if (e > wooferThump[t]) wooferThump[t] = e;
+    }
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -1095,21 +1137,31 @@ export class CanvasRenderer implements Renderer {
         // rim, `lattice`-coloured cone, dark dust cap — on the base colour's baffle,
         // the same four tones in the same radial order as the hand-drawn chip.
         // Positional like the Mesh weave, so a cabinet dragged out with the brush is
-        // one continuous array of drivers rather than a fresh one per stroke. The
-        // Woofer stamps no cell state (it thumps and is done), so unlike the Pump's
-        // stripes there is nothing here to brighten when it fires — the shockwave
-        // wavefront is drawn separately, as its own background layer.
+        // one continuous array of drivers rather than a fresh one per stroke.
+        //
+        // **And it thumps.** The Woofer stamps no cell state at all — it fires and is
+        // done, so there is nothing in aux to read the way the Pump's stripes or the
+        // rotor wheels do. What it does leave is the shockwave it launched, so the
+        // driver's excursion is read off that instead (see wooferThump /
+        // wooferExcursion): the whole driver swells the instant the front leaves the
+        // cabinet and settles back as the front reaches its rim. The band radii are the
+        // only thing that changes — same three compares, indexed instead of constant —
+        // so an idle cabinet costs exactly what it did before, and draws exactly what
+        // the palette chip does.
         const x = i % w;
         const y = (i / w) | 0;
         // Doubled offsets from the tile centre keep the radius test integral.
         const ax = 2 * (x % WOOFER_P) - (WOOFER_P - 1);
         const ay = 2 * (y % WOOFER_P) - (WOOFER_P - 1);
         const d2 = ax * ax + ay * ay;
-        c = d2 <= WOOFER_CAP_R2
+        // One excursion per drawn driver, not per cell: two cabinets sharing a tile
+        // swell together rather than tearing a driver in half (see wooferTileIndex).
+        const e = wooferThump[wooferTileIndex(x, y, wooferTilesW)];
+        c = d2 <= WOOFER_CAP_R2[e]
           ? wooferCap[id]
-          : d2 <= WOOFER_CONE_R2
+          : d2 <= WOOFER_CONE_R2[e]
             ? latCol[id]
-            : d2 <= WOOFER_R2
+            : d2 <= WOOFER_R2[e]
               ? wooferRim[id]
               : pal[id];
       } else if (tntPattern[id]) {
@@ -1152,9 +1204,8 @@ export class CanvasRenderer implements Renderer {
         // the animation unit are then the same square, which is the whole point.
         const y2 = (i / w) | 0;
         const x2 = i - y2 * w;
-        const bi = ((y2 / ROTOR_N) | 0) * rotorBlocksW + ((x2 / ROTOR_N) | 0);
-        const spin = rotorSpin(auxArr[i], rotorSpinShift[id]);
-        if (spin > rotorNext[bi]) rotorNext[bi] = spin;
+        const bi = rotorBlockIndex(x2, y2, rotorBlocksW);
+        rotorAccumulate(rotorNext, bi, auxArr[i], rotorSpinShift[id]);
         const rt = rotorFrame(rotorFrames[bi]) ? rotorTileSpun[id]! : rotorTile[id]!;
         c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (chk2x2[id]) {
@@ -1601,7 +1652,9 @@ export class CanvasRenderer implements Renderer {
     if (q.length > 0) {
       for (const s of q) {
         const field = this.buildShockField(grid, s.bx, s.by, s.reach);
-        if (field) this.shocks.push(field);
+        if (!field) continue;
+        this.collectWooferTiles(grid, s.bx, s.by, field.tiles);
+        this.shocks.push(field);
       }
       q.length = 0;
     }
@@ -1676,6 +1729,34 @@ export class CanvasRenderer implements Renderer {
       }
     }
     this.shocks = survivors;
+  }
+
+  /**
+   * Collect the driver tiles a firing's own Woofer cells sit in, deduplicated, into
+   * `out` — what the diaphragm animation is keyed by (see wooferThump).
+   *
+   * Only cells that are *actually* a `wooferPattern` material count, so the 충격파
+   * 브러시 fired over open ground animates nothing, and fired across a cabinet
+   * animates exactly the cabinet: a driver swells because it thumped, never because a
+   * wave washed over it. (That also means a Woofer standing in someone else's blast
+   * stays still, which is right — it was shoved, it didn't fire.)
+   *
+   * Run once per firing, over the body the pulse already walked. The dedupe is what
+   * keeps it honest for a wall-sized cabinet: a thousand cells collapse to the eight
+   * or nine tiles they are drawn in.
+   */
+  private collectWooferTiles(grid: Grid, bx: number[], by: number[], out: number[]): void {
+    const cells = grid.cells;
+    const w = grid.width;
+    const tilesW = Math.ceil(w / WOOFER_P);
+    const seen = new Set<number>();
+    for (let i = 0; i < bx.length; i++) {
+      if (!this.wooferPattern[cells[by[i] * w + bx[i]]]) continue;
+      const t = wooferTileIndex(bx[i], by[i], tilesW);
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
   }
 
   /** Build a Woofer shockwave's geodesic distance field: a multi-source Dijkstra
@@ -1781,7 +1862,9 @@ export class CanvasRenderer implements Renderer {
         }
       }
     }
-    return { dist, x0, y0, bw, bh, maxR: reach, age: 0 };
+    // `tiles` is filled by the shockwave drain for a Woofer firing (see
+    // drawShockwaves); the magnet rings borrow this builder and leave it empty.
+    return { dist, x0, y0, bw, bh, maxR: reach, age: 0, tiles: [] };
   }
 
   /**

@@ -93,6 +93,40 @@ export function rotorFrame(spin: number): number {
 }
 
 /**
+ * Which wheel a cell belongs to: the row-major index of its ROTOR_N tile on a
+ * board `blocksW` tiles across.
+ *
+ * The tile is the animation unit *because* it is already the drawing unit — the
+ * pattern is positional (`x % ROTOR_N`), so one tile is exactly one wheel, and
+ * grouping the phase by anything else would group parts of two wheels together.
+ */
+export function rotorBlockIndex(x: number, y: number, blocksW: number): number {
+  return ((y / ROTOR_N) | 0) * blocksW + ((x / ROTOR_N) | 0);
+}
+
+/**
+ * Fold one cell's aux into its wheel's spin accumulator: a wheel's counter is the
+ * **maximum** of its cells'.
+ *
+ * Max rather than an OR of the cells' frames, which is the other obvious way to
+ * make a tile agree with itself. A Turbine mid-operation holds a cell at nearly
+ * every count (soaked cells leading, grazed cells lagging, dry cells at 0), so an
+ * OR is 1 as good as always and the wheel would have swapped tearing for standing
+ * still on the spun frame. The max is the leading cell's count, which advances one
+ * per tick like a real counter — so the wheel turns at the machine's own rate, and
+ * a stalled one freezes on the frame its leader died on rather than snapping back
+ * to rest because most of its cells read 0.
+ *
+ * Max rather than a mean for a duller reason too: a wheel being driven anywhere
+ * should look driven, and the leader is the part of it the steam is actually
+ * hitting.
+ */
+export function rotorAccumulate(acc: Uint8Array, bi: number, aux: number, shift: number): void {
+  const spin = rotorSpin(aux, shift);
+  if (spin > acc[bi]) acc[bi] = spin;
+}
+
+/**
  * A rotor tile's alphabet.
  *
  * | char | drawn as |

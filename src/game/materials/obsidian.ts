@@ -53,10 +53,10 @@ export const OBSIDIAN = register({
   // Two steps down from the original `rgb(48, 36, 68)`, which read as a dark *purple
   // stone* rather than as black glass, via `rgb(43, 31, 60)`, which was darker but
   // still carried enough chroma to read as purple. This one takes another eighth of
-  // the light out and, as much to the point, takes a third of the chroma out with it:
-  // blue sits 18 above green here where it sat 29 in the first colour. Nearly a
-  // quarter darker than the original overall, and the violet is now a cast rather
-  // than a hue.
+  // the light out and, as much to the point, takes the chroma down with it: blue over
+  // green runs 32 → 29 → 18 across the three colours, so most of that drop is this
+  // step. Nearly a quarter darker than the original overall, and the violet is now a
+  // cast rather than a hue.
   //
   // **How dark it can go is set by the grain, not by taste.** The floor is the eraser's
   // `rgb(16, 16, 22)`, and what has to clear it is not this colour but the material's

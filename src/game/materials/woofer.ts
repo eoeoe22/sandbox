@@ -325,6 +325,18 @@ export const WOOFER = register({
   // driver on a 9-cell tile — the same idea sized by eye, which left the driver
   // fatter than the drawing's and its cap and rim thinner.
   //
+  // **And the driver thumps.** While a firing's shockwave is on screen the whole driver
+  // swells and settles back — fully out as the front leaves the cabinet, back at rest as
+  // it reaches the rim — so the speaker visibly moves the air the wave is made of. The
+  // Woofer stamps no cell state at all (it fires and is done, unlike the Fan's powered
+  // countdown), so unlike every other animated machine here there is no aux counter to
+  // read: the excursion is taken from the wave's own position instead, which is what
+  // makes the two exactly synchronous rather than merely both animated. A cabinet whose
+  // wave is walled in on every side still thumps visibly, which it previously did not.
+  // The geometry of the four steps lives in render/wooferDriver.ts, shared with the
+  // palette chip — the chip draws the resting step, so an idle cabinet and its chip stay
+  // one picture.
+  //
   // The base is the chip's own `#2a2a32` (was `#282a30`, two units off in red and
   // blue): the harness requires a hand icon to open on its material's registered
   // colour, and matching the drawing rather than repainting it keeps one base for the
