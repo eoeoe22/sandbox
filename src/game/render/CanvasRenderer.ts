@@ -867,6 +867,16 @@ export class CanvasRenderer implements Renderer {
       // `age * SHOCK_SPEED` is exactly the front radius drawShockwaves will paint at
       // the end of *this* pass (it advances the age after drawing), so the swell and
       // the ring it launched are read off the same clock in the same frame.
+      //
+      // This loop reads waves that are ALREADY live, and the frame a Woofer fires on
+      // drains its wave into `this.shocks` later, at the end of the pass — which looks
+      // like the swell is a frame behind the ring, and is not. A wave's first pass is
+      // its age-0 one, and an age-0 front has radius 0, which the spawn dither gates
+      // out entirely (`fade = r / SHOCK_FADE` = 0 ⇒ `continue`, painting nothing). So
+      // the ring's first *drawn* frame and the diaphragm's first swollen frame are the
+      // same one — the wave's age-1 pass, the first pass this loop can see it on. The
+      // coupling is real though: a SHOCK_FADE of 0 would paint that age-0 ring, and
+      // then the swell WOULD trail it by a frame.
       const e = wooferExcursion(s.age * SHOCK_SPEED, s.maxR);
       if (e === WOOFER_REST) continue;
       for (const t of s.tiles) if (e > wooferThump[t]) wooferThump[t] = e;

@@ -119,7 +119,10 @@ export function wooferTileIndex(x: number, y: number, tilesW: number): number {
  *
  * At the shipped SHOCK_SPEED (1.2 cells/frame) and reach (8), a firing runs the steps
  * 3, 2, 2, 1, 1, 0, 0 over its seven drawn frames — about an eighth of a second of
- * swell at 60 fps, which is a thump rather than a wobble.
+ * swell at 60 fps, which is a thump rather than a wobble. Seven and not eight because
+ * a wave's first pass (age 0, radius 0) paints no ring at all: the spawn dither gates
+ * it out at fade 0. That is also what keeps the swell and the ring in the same frame
+ * rather than one apart — see the build loop in CanvasRenderer.render.
  */
 export function wooferExcursion(r: number, maxR: number): number {
   const top = WOOFER_THUMP_STEPS - 1;
