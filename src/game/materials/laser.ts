@@ -94,8 +94,9 @@ export const LASER = register({
   name: 'Laser',
   phase: Phase.Solid,
   // A dark machine housing with a bright red emitter chevron pointing the way it
-  // fires (drawn from the aux direction; brightens while powered — the same
-  // windArrow path the Fan uses).
+  // fires (drawn from the aux direction; brightens while powered). The Laser is
+  // the sole `windArrow` user now — the Fan, which the flag is named for, draws a
+  // `rotorPattern` wheel instead.
   color: rgb(60, 55, 70),
   lattice: rgb(255, 90, 120),
   windArrow: true,

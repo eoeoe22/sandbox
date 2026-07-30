@@ -313,10 +313,37 @@ export const WOOFER = register({
   id: 109,
   name: 'Woofer',
   phase: Phase.Solid,
-  // Dark speaker-cone body; the lattice weave (copper grille tone) reads as a
-  // speaker grille over the cone.
-  color: rgb(40, 42, 48),
-  lattice: rgb(150, 108, 66),
+  // A cabinet baffle with speaker drivers set into it (`wooferPattern`): one round
+  // driver per 12-cell tile, drawn as a rim, a cone in `lattice`, and a dark dust cap
+  // — the same four tones in the same radial order as the hand-drawn Woofer chip, so
+  // the thing on the board and the thing in the palette are one picture. Replaces the
+  // old copper `lattice` weave, which read as a grille laid over the cone rather than
+  // as the driver itself.
+  //
+  // The tile is the chip halved, cell for cell: driver 8 across on 12 where the chip
+  // is 16 on 24, cone and cap at half the chip's radii. It used to be a 7-across
+  // driver on a 9-cell tile — the same idea sized by eye, which left the driver
+  // fatter than the drawing's and its cap and rim thinner.
+  //
+  // **And the driver thumps.** While a firing's shockwave is on screen the whole driver
+  // swells and settles back — fully out as the front leaves the cabinet, back at rest as
+  // it reaches the rim — so the speaker visibly moves the air the wave is made of. The
+  // Woofer stamps no cell state at all (it fires and is done, unlike the Fan's powered
+  // countdown), so unlike every other animated machine here there is no aux counter to
+  // read: the excursion is taken from the wave's own position instead, which is what
+  // makes the two exactly synchronous rather than merely both animated. A cabinet whose
+  // wave is walled in on every side still thumps visibly, which it previously did not.
+  // The geometry of the four steps lives in render/wooferDriver.ts, shared with the
+  // palette chip — the chip draws the resting step, so an idle cabinet and its chip stay
+  // one picture.
+  //
+  // The base is the chip's own `#2a2a32` (was `#282a30`, two units off in red and
+  // blue): the harness requires a hand icon to open on its material's registered
+  // colour, and matching the drawing rather than repainting it keeps one base for the
+  // canvas and the chip both.
+  color: rgb(42, 42, 50),
+  lattice: rgb(63, 63, 74),
+  wooferPattern: true,
   density: 1000,
   category: 'electric',
   thermal: { conductivity: 0.3 },

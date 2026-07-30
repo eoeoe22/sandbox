@@ -419,11 +419,50 @@ export interface Material {
    * this material reads as a grainy/shimmering mass of slightly different shades
    * instead of a flat slab. Omit to inherit a sensible default by phase (powders
    * and liquids vary, everything else stays flat); set `0` to force a material
-   * flat. Powders re-roll their tint only while moving; liquids drift it slowly
-   * even at rest. Ignored for `glow` materials (they're shaded by temperature
-   * instead). See game/tint.ts and the renderer/Simulation.
+   * flat. A powder's tint byte is seeded once when the grain is created and then
+   * travels with it unchanged — it never re-rolls, moving or not; a liquid has no
+   * tint of its own and instead samples a positional background field that drifts
+   * slowly even at rest. Ignored for `glow` materials (they're shaded by
+   * temperature instead). See game/tint.ts and the renderer/Simulation.
    */
   colorVary?: number;
+  /**
+   * Edge, in cells, of the square block that shares one `colorVary` sample
+   * (Obsidian: `2`). Omitted ⇒ 1, i.e. every cell reads its own tint byte and the
+   * grain is per-cell white noise.
+   *
+   * With `2` the renderer samples the tint field at the cell's block anchor
+   * (`x & ~1, y & ~1`) instead of at the cell itself, so the grain comes out as
+   * chunky 2×2 flakes rather than single-cell static — for volcanic glass that
+   * reads as conchoidal fracture faces catching the light, where per-cell noise
+   * read as dust. The palette icon hashes the same anchor coordinates, so chip and
+   * canvas are blocked identically (see render/materialSvg.ts).
+   *
+   * Only meaningful for a material that doesn't move: the anchor is *positional*,
+   * so a travelling grain would swap flakes as it crossed a block boundary rather
+   * than carrying its own shade the way `colorVary` otherwise promises. Every
+   * blocked material today is a static Solid.
+   */
+  tintBlock?: number;
+  /**
+   * A second, *finer* brightness spread applied on top of a blocked grain: the
+   * block-anchored sample shades the whole `tintBlock` square by `colorVary`, and
+   * then each cell inside it is shifted again by its own sample by this much.
+   *
+   * The point is a two-level texture. A blocked grain alone gives flat facets with
+   * a hard step between them — right for the *shape* of a fracture, but the facets
+   * themselves come out as painted squares. A per-cell grain alone gives features
+   * one cell across, which read as dust on the surface rather than as stone. Coal
+   * and Obsidian carry both: a wide spread between 2×2 flakes (`colorVary`) and a
+   * narrow one within each (this), so a facet catches the light as a facet and
+   * still has grit in it.
+   *
+   * Meaningful only alongside `colorVary` and a `tintBlock` above 1 — without a
+   * block the two samples are the same sample and this would just widen
+   * `colorVary`. The two amplitudes add, so the total spread a material can show is
+   * `colorVary + tintCellVary` either way.
+   */
+  tintCellVary?: number;
   /**
    * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine, Pump).
    * To powders and solids it's an ordinary blocking Solid — piles rest on it —
@@ -498,7 +537,9 @@ export interface Material {
    */
   checker2x2?: boolean;
   /**
-   * Draw a fixed 14x14 pixel-art battery pattern (Lithium Battery, LFP Battery).
+   * Draw a repeating battery pattern (Lithium Battery, LFP Battery): a 2-step
+   * diagonal staircase of flat black on a 4x5 tile, leaving a 1px border of the
+   * battery's own `color` around each pair of cells.
    */
   batteryPattern?: boolean;
   /**
@@ -512,19 +553,25 @@ export interface Material {
   arrow?: boolean;
   /**
    * Draw a 4-directional chevron (in the `lattice` color, over the base `color`)
-   * pointing the way the cell's `aux` byte says it blows — the low 2 bits are the
-   * direction (0 up / 1 down / 2 left / 3 right, see materials/fan.ts) and the
-   * rest a powered countdown, so the chevron brightens while the fan is running.
-   * The Fan uses it so which way a fan blows (and whether it's powered) reads at a
-   * glance. Like `arrow`, purely a rendering hint the simulation never reads; omit
-   * for an ordinary material.
+   * pointing the way the cell's `aux` byte says it faces — the low 2 bits are the
+   * direction (0 up / 1 down / 2 left / 3 right, see materials/fan.ts, which still
+   * defines the encoding) and the rest a powered countdown, so the chevron
+   * brightens while the machine is running. The **Laser** uses it, so which way it
+   * fires (and whether it's powered) reads at a glance.
+   *
+   * The Fan used to be the other user and is where the name comes from; it draws a
+   * `rotorPattern` wheel now, which is why an unpowered fan no longer points. The
+   * aux layout is unchanged, so switching a machine back is just swapping the flag.
+   *
+   * Like `arrow`, purely a rendering hint the simulation never reads; omit for an
+   * ordinary material.
    */
   windArrow?: boolean;
   /**
    * Draw a solid 4-directional TRIANGLE (in the `lattice` color, over the base
    * `color`) pointing the way the cell's `aux` byte says it faces — the low 2
    * bits are the direction, same codes as `windArrow` (0 up / 1 down / 2 left /
-   * 3 right). Where `windArrow` draws a thin chevron line (Fan/Laser), this
+   * 3 right). Where `windArrow` draws a thin chevron line (Laser), this
    * tiles filled triangles 6 cells across the axis by 3 deep along it, each
    * side stepping in one cell per lane and separated by a 2-cell gutter on
    * every side — the Shaped Charge uses it so its liner cone (성형작약의 원뿔
@@ -538,8 +585,8 @@ export interface Material {
    * that brighten while the cell's `aux` byte is non-zero — the Electromagnet,
    * whose whole aux byte is its powered countdown (see materials/electromagnet.ts).
    * A magnet has no direction to point at, so it gets stripes rather than the
-   * Fan's chevron; the brightening is what makes "the field is on" readable at a
-   * glance, the same job `windArrow`'s brightening does for a running fan. Purely
+   * Laser's chevron; the brightening is what makes "the field is on" readable at a
+   * glance, the same job `windArrow`'s brightening does for a firing laser. Purely
    * a rendering hint the simulation never reads; omit for an ordinary material.
    */
   coilPattern?: boolean;
@@ -600,13 +647,83 @@ export interface Material {
   tintPalette?: readonly number[];
   /**
    * Draw a photovoltaic cell grid (Solar Panel): rectangular cells of the base
-   * `color` separated by thin `lattice`-coloured seams — a seam on every 5th
-   * column and every 8th row, so each cell reads 4 wide × 7 tall like the panel's
-   * reference art. Positional (tied to x/y, not to the particle) like the Mesh
-   * weave, so a painted array lines up into one continuous panel however it's
-   * drawn. Purely a rendering hint the simulation never reads.
+   * `color` separated by thin `lattice`-coloured seams — one seam column of every
+   * SOLAR_CELL_W and one seam row of every SOLAR_CELL_H, so each cell reads 3
+   * wide × 5 tall (the reference art's 4×7 proportions scaled down so a small
+   * panel still shows its structure — see CanvasRenderer's SOLAR_CELL_W).
+   * Positional (tied to x/y, not to the particle) like the Mesh weave, so a
+   * painted array lines up into one continuous panel however it's drawn. Purely a
+   * rendering hint the simulation never reads.
    */
   solarPattern?: boolean;
+  /**
+   * Draw running-bond masonry (Wall): a `lattice`-coloured mortar bed under every
+   * course and a mortar head joint between bricks, with the top row of each brick
+   * lit a step above the base `color` so a slab reads as stacked blocks with light
+   * falling on their top edges. Alternate courses are offset half a brick, which is
+   * what makes it masonry rather than a grid. Positional (tied to x/y, not to the
+   * particle) like the Mesh weave and the panel's seams, so however the brush is
+   * dragged the courses line up into one continuous wall instead of restarting per
+   * stroke. Purely a rendering hint the simulation never reads.
+   */
+  brickPattern?: boolean;
+  /**
+   * Draw a grid of speaker drivers (Woofer): one round driver per tile — a rim, a
+   * cone in the `lattice` colour, and a dark dust cap at the centre — with the base
+   * `color` as the baffle between them. The same four tones, in the same radial
+   * order, as the hand-drawn Woofer chip. Positional (tied to x/y, not to the
+   * particle) like the Mesh weave and the panel's seams, so a cabinet dragged out
+   * with the brush reads as one continuous array of drivers. Purely a rendering hint
+   * the simulation never reads — the Woofer stamps no cell state at all (it fires a
+   * shockwave and is done), so unlike the Pump's stripes nothing here brightens.
+   */
+  wooferPattern?: boolean;
+  /**
+   * Draw bundles of labelled dynamite (TNT): four sticks per tile — each a lit column
+   * in the base `color` brightened, two of the plain colour, and a shaded one in
+   * `lattice` — above and below a paper band carrying the word TNT. Positional (tied
+   * to x/y, not to the particle) like the Wall's courses, so dragging the brush
+   * extends one continuous bundle rather than tiling a block per cell. Purely a
+   * rendering hint the simulation never reads.
+   *
+   * The only pattern in the engine that is a **bitmap** rather than an expression, and
+   * the only art in the project carrying lettering: the tile, its palette and the
+   * reasoning for both live in `render/tntTile.ts`, shared by the renderer and the
+   * palette icon generator instead of being restated in each. Its period is therefore
+   * fixed at TNT_N (16) — far coarser than the other patterns, because that is the
+   * smallest grid the word fits on.
+   */
+  tntPattern?: boolean;
+  /**
+   * Draw a bladed rotor (Turbine: 8, Fan: 4): one wheel per tile — blades whose
+   * leading edge is the `lattice` colour and whose trailing edge is the base
+   * `color` darkened, keyed to a darker hub. The value is the blade count and
+   * picks which wheel; the tiles themselves live in `render/rotorTile.ts`, shared
+   * with the palette icon generator, so its period is fixed at ROTOR_N (12) rather
+   * than being a rule this type could restate.
+   *
+   * Positional (tied to x/y, not to the particle) like the Wall's courses, so a
+   * dragged-out machine is one continuous array of wheels. Purely a rendering hint
+   * the simulation never reads.
+   *
+   * A Fan carrying this draws no chevron: the rotor replaces `windArrow` rather
+   * than layering on it, so the *direction* it blows is read off the wind streaks
+   * it throws rather than off the block face. That is a deliberate trade for the
+   * machine reading as a fan at a glance — see docs/MATERIAL-ICONS.md §4.1.
+   */
+  rotorPattern?: 4 | 8;
+  /**
+   * Right-shift applied to a `rotorPattern` cell's `aux` before its low bit is read
+   * as the spin phase — 2 for the Fan (whose low two bits are its blow direction),
+   * 0 (the default) for the Turbine, whose whole aux is its steam-tick count.
+   *
+   * The wheel alternates between its two frames as that counter advances, so it
+   * turns exactly while the machine is working and freezes when it stops. See
+   * `rotorFrame` in render/rotorTile.ts for why the animation is driven off sim
+   * state rather than off a renderer clock. Purely a rendering hint; ignored unless
+   * `rotorPattern` is set.
+   */
+  rotorSpinShift?: number;
   /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound

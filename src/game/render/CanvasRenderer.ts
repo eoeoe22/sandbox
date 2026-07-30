@@ -3,8 +3,8 @@ import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, Phase, type BorderMode } from '../engine/types';
-import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
-import { rgb } from './color';
+import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import { rgb, tinted, frosted, buildGlow, shade, type GlowRamp } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
 import {
@@ -13,6 +13,17 @@ import {
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
+import { TNT_N, buildTntTile } from './tntTile';
+import { ROTOR_N, buildRotorTile, rotorAccumulate, rotorBlockIndex, rotorFrame } from './rotorTile';
+import {
+  WOOFER_P,
+  WOOFER_CAP_R2,
+  WOOFER_CONE_R2,
+  WOOFER_R2,
+  WOOFER_REST,
+  wooferExcursion,
+  wooferTileIndex,
+} from './wooferDriver';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -101,6 +112,55 @@ const TRI_STEP = 5; // cells along the axis per triangle (3 drawn + 2 front gutt
 // structure (비율 유지하며 격자 무늬 사이즈 줄이기).
 const SOLAR_CELL_W = 4; // columns per panel cell (3 drawn + 1 seam)
 const SOLAR_CELL_H = 6; // rows per panel cell (5 drawn + 1 seam)
+
+// Tiling of the `brickPattern` running-bond masonry (Wall — see the render loop).
+// One period is a brick plus the mortar on its right and bottom edges, so a brick
+// reads 5 wide × 3 tall with a 1-cell joint on two of its sides.
+//
+// This is the hand-drawn Wall icon's pattern brought down to world scale — the three
+// structural features (running bond, mortar joints, a lit top edge) rather than its
+// measurements. The icon's own bricks are near-square (11 × 11 with a 2-cell joint)
+// only because two 2:1 bricks will not fit side by side across a 24-cell tile; the
+// world grid has no such limit, so the period is free to be brick-shaped, and 5 × 3
+// reads as masonry where 4 × 4 would read as tile.
+//
+// Kept small for the same reason SOLAR_CELL_W stepped down from its reference art:
+// the pattern is drawn in *world* cells, not screen pixels, so a period that shows
+// its structure on a wall a handful of cells wide is worth more than a larger, more
+// faithful brick. At 6×4 a 12-cell wall already shows two bricks and the offset
+// course under them.
+const BRICK_W = 6; // columns per brick (5 drawn + 1 head joint)
+const BRICK_H = 4; // rows per brick (3 drawn + 1 mortar bed)
+// Half-brick offset applied to odd courses — what makes it masonry and not a grid.
+const BRICK_OFFSET = BRICK_W >> 1;
+// How far the top row of each brick is lifted above the base colour. 40 is the
+// exact step from Wall's own colour to the highlight in its icon (#787c82 →
+// #a0a4aa), so the canvas and the palette chip are lit the same way.
+const BRICK_LIT = 40;
+
+// Tiling of the `wooferPattern` speaker-driver grid (Woofer — see the render loop).
+// The geometry — the period, the three bands' squared radii at each step of a thump,
+// and the tile index the excursion is keyed by — lives in ./wooferDriver, shared with
+// the palette icon generator: it is a table now that the diaphragm moves, and a table
+// is not something to mirror by hand. Only the two dark *tones* stay here, because
+// they are colour rather than shape.
+//
+// The two dark tones, as brightness offsets from the material's own colour. The cone
+// is the `lattice` colour and therefore exact; these two are offsets because a
+// material carries only one second colour, and the chip's ramp is very slightly
+// blue-biased (its rim is #16161c where base − 20 gives #16161e), so they land within
+// 3 units on the blue channel rather than dead on. On a near-black that is below a
+// visible step; if a future pattern needs all four exact it needs a colour list, not
+// a bigger offset.
+const WOOFER_RIM = -20;
+const WOOFER_CAP = -29;
+
+// The two bitmap patterns — `tntPattern` (TNT) and `rotorPattern` (Turbine, Fan) —
+// have no constants to state here. They are pictures rather than rules, so the ASCII,
+// the tone alphabet and the reasoning all live in ./tntTile and ./rotorTile, shared
+// with the palette icon generator instead of being restated on each side. Each module
+// exports its tile edge in cells and a `build…` that resolves the ASCII against one
+// material's colours.
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -275,17 +335,6 @@ const HEAT_STOPS: readonly [number, number, number, number][] = [
 ];
 
 /** Precomputed temperature→color ramp for a glowing material (see Material.glow). */
-interface GlowRamp {
-  min: number;
-  invRange: number;
-  // cool-end channels and the per-channel delta up to the hot (base) color.
-  cr: number;
-  cg: number;
-  cb: number;
-  dr: number;
-  dg: number;
-  db: number;
-}
 
 export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -336,8 +385,9 @@ export class CanvasRenderer implements Renderer {
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
   /** id → 1 if the material draws a 4-directional chevron from its aux byte, with
-   *  the low 2 bits the blow direction and the rest a powered countdown that
-   *  brightens the chevron (Fan — see Material.windArrow). */
+   *  the low 2 bits the facing and the rest a powered countdown that brightens the
+   *  chevron (Laser — see Material.windArrow. The Fan drew this until it took the
+   *  rotor wheel; the flag is named for it). */
   private windArrow: Uint8Array;
   /** id → 1 if the material draws solid 4-directional triangles from its aux byte
    *  — filled arrowheads pointing the low-2-bit direction, the Shaped Charge's
@@ -353,6 +403,102 @@ export class CanvasRenderer implements Renderer {
    *  separated by `lattice`-coloured seams (Solar Panel — see
    *  Material.solarPattern). */
   private solarPattern: Uint8Array;
+  /** id → 1 if the material draws running-bond masonry — `lattice`-coloured mortar
+   *  joints with the top row of each brick lit (Wall — see Material.brickPattern). */
+  private brickPattern: Uint8Array;
+  /** id → the lit colour of a `brickPattern` material's brick top, precomputed from
+   *  its base colour so the render loop never shades per pixel. */
+  private brickLit: Uint32Array;
+  /** id → 1 if the material draws a grid of speaker drivers — a rim, a `lattice`
+   *  cone and a dark cap on the base baffle (Woofer — see Material.wooferPattern). */
+  private wooferPattern: Uint8Array;
+  /** Diaphragm excursion of each WOOFER_P × WOOFER_P driver tile — one entry per drawn
+   *  driver, not per cell (see wooferDriver.ts): 0 at rest, up to WOOFER_THUMP_STEPS-1
+   *  fully out.
+   *
+   *  Rebuilt from scratch at the top of every pass out of the live shockwaves
+   *  (`this.shocks`), each of which knows which driver tiles its own firing came from.
+   *  So it needs no double buffer the way the rotor frames do: the excursion is known
+   *  before the first cell is drawn rather than being collected from the cells as they
+   *  go past, and a driver is a still picture until something fires it.
+   *
+   *  Overlapping firings take the MAX, for the same reason a wheel does — a driver
+   *  thumped twice in a frame should show the bigger thump, not the second one. */
+  private wooferThump: Uint8Array;
+  /** Tile-grid width `wooferThump` was sized for; -1 = never (see rotorBlocksW for why
+   *  the width and not just the total is the key). */
+  private wooferTilesW = -1;
+  /** id → the rim / dust-cap colours of a `wooferPattern` material, precomputed from
+   *  its base colour for the same reason `brickLit` is. */
+  private wooferRim: Uint32Array;
+  private wooferCap: Uint32Array;
+  /** id → 1 if the material draws a bundle of labelled dynamite (TNT — see
+   *  Material.tntPattern). */
+  private tntPattern: Uint8Array;
+  /** id → that material's finished TNT_N × TNT_N tile, its two colours resolved into
+   *  the shared bitmap once at construction (see tntTile.ts). Null for every id that
+   *  doesn't set `tntPattern`; the render loop only reads it inside that branch.
+   *
+   *  A table rather than the precomputed scalars `brickLit`/`wooferRim` are: this
+   *  pattern isn't a rule the loop can evaluate, so there is nothing to precompute
+   *  *into* except the picture itself. 256 cells per material, one material today. */
+  private tntTile: (Uint32Array | null)[];
+  /** id → 1 if the material draws a bladed rotor wheel (Turbine, Fan — see
+   *  Material.rotorPattern), and id → that material's finished ROTOR_N × ROTOR_N
+   *  tiles. Same shape and the same argument as `tntTile`: the pattern is a picture,
+   *  so the only thing to precompute is the picture with this material's colours in
+   *  it (see rotorTile.ts).
+   *
+   *  TWO tiles, because the wheel turns: `rotorTile` is the wheel at rest and
+   *  `rotorTileSpun` is the same wheel half a blade pitch on. Which frame a wheel
+   *  draws comes from the machine's own aux counter (`rotorFrame`), so the animation
+   *  costs one shift and one array pick and needs no renderer clock. `rotorSpinShift`
+   *  is the per-material shift that isolates that counter from the rest of aux. */
+  private rotorPattern: Uint8Array;
+  private rotorTile: (Uint32Array | null)[];
+  private rotorTileSpun: (Uint32Array | null)[];
+  private rotorSpinShift: Uint8Array;
+  /** The spin counter of each ROTOR_N × ROTOR_N *tile* — one entry per drawn wheel,
+   *  not per cell — plus the accumulator the current pass is filling.
+   *
+   *  **A wheel is one rigid picture, so its phase has to be one value.** Read per
+   *  cell it is not: a Turbine only advances the aux counter of cells that steam is
+   *  actually passing through (materials/turbine.ts returns early on the others, and
+   *  a cell whose steam is intermittent falls behind one that is soaked), so a wheel
+   *  drawn from per-cell aux spun along the steam's path and stood still — or ran
+   *  late — on the rest of itself. A wheel tearing down the middle of itself
+   *  (수증기가 통과하는 부분만 변화하는 게 어색함). Aggregating over the tile makes the
+   *  unit of animation the drawn wheel, which is the thing that physically turns.
+   *
+   *  The aggregate is the MAX of its cells' counters, not an OR of their frames.
+   *  With cells strung out across the cycle an OR is 1 as soon as any single cell
+   *  is on the spun frame, which for a scattered tile is nearly always — the wheel
+   *  would have stuck on frame 1 instead of tearing. The max is the leading cell's
+   *  count, which advances one per tick for as long as any part of the wheel is in
+   *  the flow, and the laggards simply don't show.
+   *
+   *  It is collected during the pass and used by the *next* one (hence two arrays),
+   *  because a wheel's last row is reached long after its first and there is no
+   *  reading the whole tile before drawing any of it without a second pass over the
+   *  grid. One rendered frame of lag on an animation that holds each frame for two
+   *  sim ticks (~67 ms) is not visible; a wheel whose top half is a frame ahead of
+   *  its bottom half is exactly what this fixes. Sized to the grid on first use and
+   *  re-sized when it changes — keyed on the tile grid's *width* as well as its total
+   *  size, because `rotorBlocksW` is what turns a cell into a tile index and a resize
+   *  can change it while leaving the product alone (a corner drag that gains a column
+   *  of tiles and loses a row), which would leave one pass reading last pass's phases
+   *  through a shifted mapping. */
+  private rotorBlockFrame: Uint8Array;
+  private rotorBlockNext: Uint8Array;
+  private rotorBlocksW = -1;
+  /** id → the edge, in cells, of the square block that shares one tint sample — 0
+   *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
+   *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
+   *  (`& ~1` for a 2-cell block), so the hot path needs no division. */
+  /** id → the finer per-cell brightness spread a blocked material adds on top of its
+   *  block shade — 0 for everything but Coal and Obsidian (see Material.tintCellVary). */
+  private varyCell: Uint8Array;
+  private tintBlockMask: Int32Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
    *  field draw in render()). Purely cosmetic; not tied to the sim tick. */
@@ -385,7 +531,13 @@ export class CanvasRenderer implements Renderer {
    *  where unreachable), `x0,y0` the bbox's fine-grid origin, `bw,bh` its dims,
    *  `maxR` the terminal radius (= reach), `age` frames since spawn. Built from
    *  Grid.shockwaves on drain and dropped once the front clears the rim. Purely
-   *  cosmetic renderer state, animated per rendered frame like windPhase. */
+   *  cosmetic renderer state, animated per rendered frame like windPhase.
+   *
+   *  `tiles` is the driver tiles this firing's own *Woofer* cells sit in (empty for a
+   *  brush fired over anything else, and for the Electromagnet's rings, which borrow
+   *  the same field builder) — what lets the cabinet's diaphragms swell in step with
+   *  the wave they launched. Collected once on drain rather than looked up per frame,
+   *  and deduplicated, so a wall-sized cabinet costs its handful of tiles. */
   private shocks: {
     dist: Float64Array;
     x0: number;
@@ -394,6 +546,7 @@ export class CanvasRenderer implements Renderer {
     bh: number;
     maxR: number;
     age: number;
+    tiles: number[];
   }[] = [];
   /** Live Electromagnet field rings, baked down to the flat indices of their
    *  candidate pixels (band boundaries with the static dither already applied
@@ -473,6 +626,28 @@ export class CanvasRenderer implements Renderer {
     this.coilPattern = new Uint8Array(256);
     this.stripePattern = new Uint8Array(256);
     this.solarPattern = new Uint8Array(256);
+    this.brickPattern = new Uint8Array(256);
+    this.brickLit = new Uint32Array(256);
+    this.wooferPattern = new Uint8Array(256);
+    this.wooferRim = new Uint32Array(256);
+    this.wooferCap = new Uint32Array(256);
+    // Sized on the first render like the rotor frames; empty until then, which the
+    // render loop reads as "every driver is at rest".
+    this.wooferThump = new Uint8Array(0);
+    this.tntPattern = new Uint8Array(256);
+    this.tntTile = new Array(256).fill(null);
+    this.rotorPattern = new Uint8Array(256);
+    this.rotorTile = new Array(256).fill(null);
+    this.rotorTileSpun = new Array(256).fill(null);
+    this.rotorSpinShift = new Uint8Array(256);
+    // Sized on the first render (the grid's dimensions aren't known here); empty
+    // until then, which the render loop reads as "every wheel is at rest".
+    this.rotorBlockFrame = new Uint8Array(0);
+    this.rotorBlockNext = new Uint8Array(0);
+    // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
+    // loop can skip the whole block-anchor computation with one compare.
+    this.varyCell = new Uint8Array(256);
+    this.tintBlockMask = new Int32Array(256).fill(-1);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
     this.packed = new Uint8Array(256);
@@ -480,9 +655,10 @@ export class CanvasRenderer implements Renderer {
     for (let i = 0; i < 256; i++) {
       const m = getMaterial(i);
       this.palette[i] = m ? m.color : 0;
-      if (m?.glow) this.glow[i] = CanvasRenderer.buildGlow(m.glow, m.color);
+      if (m?.glow) this.glow[i] = buildGlow(m.glow, m.color);
       if (m) {
         this.vary[i] = varyAmplitude(m);
+        this.varyCell[i] = varyCellAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
         if (m.auxPalette) this.auxPalette[i] = Uint32Array.from(m.auxPalette);
@@ -501,29 +677,46 @@ export class CanvasRenderer implements Renderer {
         if (m.coilPattern) this.coilPattern[i] = 1;
         if (m.stripePattern) this.stripePattern[i] = 1;
         if (m.solarPattern) this.solarPattern[i] = 1;
+        if (m.brickPattern) {
+          this.brickPattern[i] = 1;
+          this.brickLit[i] = tinted(m.color, BRICK_LIT);
+        }
+        if (m.wooferPattern) {
+          this.wooferPattern[i] = 1;
+          this.wooferRim[i] = tinted(m.color, WOOFER_RIM);
+          this.wooferCap[i] = tinted(m.color, WOOFER_CAP);
+        }
+        if (m.tntPattern) {
+          this.tntPattern[i] = 1;
+          this.tntTile[i] = buildTntTile(m.color, m.lattice ?? m.color);
+        }
+        if (m.rotorPattern) {
+          this.rotorPattern[i] = 1;
+          const lat = m.lattice ?? m.color;
+          this.rotorTile[i] = buildRotorTile(m.rotorPattern, m.color, lat);
+          this.rotorTileSpun[i] = buildRotorTile(m.rotorPattern, m.color, lat, true);
+          this.rotorSpinShift[i] = m.rotorSpinShift ?? 0;
+        }
+        // A block edge of B clears the low log2(B) bits of x and y, which is only a
+        // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
+        // a lattice nobody asked for rather than a 3×3 flake.
+        //
+        // That invariant is pinned in `test/materialicons.ts`, NOT thrown on here. This
+        // constructor runs from `startGame()` with nothing catching it, so a throw would
+        // leave the page loaded and the sandbox dead — no game loop, no painter, no
+        // on-screen error — over a mis-typed render hint. Same trade as GAS_CLOUD's row
+        // width (see materialSvg.ts): the blast radius of the guard is far worse than
+        // the wrong-looking grain it guards against, and the registry is a static fact a
+        // test can check without ever building a renderer.
+        if (m.tintBlock !== undefined && m.tintBlock > 1) this.tintBlockMask[i] = ~(m.tintBlock - 1);
         if (m.phase === Phase.Liquid) this.isLiquid[i] = 1;
         if (m.phase === Phase.Solid) this.isSolid[i] = 1;
         if (m.freeze) {
           this.freezeTemp[i] = m.freeze.temp;
-          this.frost[i] = CanvasRenderer.frosted(m.color);
+          this.frost[i] = frosted(m.color);
         }
       }
     }
-  }
-
-  /** Blend a packed colour toward an icy white-blue, for rendering a frozen
-   *  liquid (see Material.freeze) as a frosted block distinct from its liquid
-   *  self. Keeps a little of the base hue so frozen oil still reads dark-frosty
-   *  and frozen mercury pale-frosty. */
-  private static frosted(base: number): number {
-    const fr = 210;
-    const fg = 232;
-    const fb = 248;
-    const mix = (c: number, f: number): number => ((c * 45 + f * 55) / 100) | 0;
-    const r = mix(base & 0xff, fr);
-    const g = mix((base >> 8) & 0xff, fg);
-    const b = mix((base >> 16) & 0xff, fb);
-    return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
   }
 
   /** Blend a cell's rendered color toward its 겹침 overlap fluid's base color
@@ -546,50 +739,6 @@ export class CanvasRenderer implements Renderer {
     const g = ((((host >> 8) & 0xff) * it + ((other >> 8) & 0xff) * t) | 0) & 0xff;
     const b = ((((host >> 16) & 0xff) * it + ((other >> 16) & 0xff) * t) | 0) & 0xff;
     return ((host & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
-  }
-
-  /** Shift a packed 0xAABBGGRR color's brightness by `d` (per channel, clamped),
-   *  preserving alpha. Used to render each particle's individual tint. */
-  private static tinted(base: number, d: number): number {
-    let r = (base & 0xff) + d;
-    let g = ((base >> 8) & 0xff) + d;
-    let b = ((base >> 16) & 0xff) + d;
-    if (r < 0) r = 0;
-    else if (r > 255) r = 255;
-    if (g < 0) g = 0;
-    else if (g > 255) g = 255;
-    if (b < 0) b = 0;
-    else if (b > 255) b = 255;
-    return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
-  }
-
-  /** Split the cool and base (hot) colors into channels so the render loop can
-   *  lerp between them per cell without unpacking on every pixel. */
-  private static buildGlow(
-    glow: { min: number; max: number; cool: number },
-    hot: number,
-  ): GlowRamp {
-    return {
-      min: glow.min,
-      invRange: 1 / Math.max(1, glow.max - glow.min),
-      cr: glow.cool & 0xff,
-      cg: (glow.cool >> 8) & 0xff,
-      cb: (glow.cool >> 16) & 0xff,
-      dr: (hot & 0xff) - (glow.cool & 0xff),
-      dg: ((hot >> 8) & 0xff) - ((glow.cool >> 8) & 0xff),
-      db: ((hot >> 16) & 0xff) - ((glow.cool >> 16) & 0xff),
-    };
-  }
-
-  /** Interpolate a glow ramp at temperature `t` into a packed 0xAABBGGRR color. */
-  private static shade(g: GlowRamp, t: number): number {
-    let f = (t - g.min) * g.invRange;
-    if (f < 0) f = 0;
-    else if (f > 1) f = 1;
-    const r = (g.cr + g.dr * f) & 0xff;
-    const gr = (g.cg + g.dg * f) & 0xff;
-    const b = (g.cb + g.db * f) & 0xff;
-    return (0xff000000 | (b << 16) | (gr << 8) | r) >>> 0;
   }
 
   /** Build the temperature→colour lookup for the heat overlay by linearly
@@ -658,6 +807,7 @@ export class CanvasRenderer implements Renderer {
     const pal = this.palette;
     const glow = this.glow;
     const vary = this.vary;
+    const varyCell = this.varyCell;
     const mode = this.varyMode;
     const asAux = this.renderAsAux;
     const auxPal = this.auxPalette;
@@ -674,6 +824,63 @@ export class CanvasRenderer implements Renderer {
     const coilPattern = this.coilPattern;
     const stripePattern = this.stripePattern;
     const solarPattern = this.solarPattern;
+    const brickPattern = this.brickPattern;
+    const brickLit = this.brickLit;
+    const wooferPattern = this.wooferPattern;
+    const wooferRim = this.wooferRim;
+    const wooferCap = this.wooferCap;
+    const tntPattern = this.tntPattern;
+    const tntTile = this.tntTile;
+    const rotorPattern = this.rotorPattern;
+    const rotorTile = this.rotorTile;
+    const rotorTileSpun = this.rotorTileSpun;
+    const rotorSpinShift = this.rotorSpinShift;
+    const tintBlockMask = this.tintBlockMask;
+    // Per-wheel animation frames: last pass's aggregate is what gets drawn, this
+    // pass's is being collected (see rotorBlockFrame). Re-allocated only when the
+    // grid is resized; a few hundred bytes for a full board, so it is not worth
+    // gating on "does this world contain a rotor at all".
+    const rotorBlocksW = Math.ceil(grid.width / ROTOR_N);
+    const rotorBlockCount = rotorBlocksW * Math.ceil(grid.height / ROTOR_N);
+    if (this.rotorBlocksW !== rotorBlocksW || this.rotorBlockFrame.length !== rotorBlockCount) {
+      this.rotorBlocksW = rotorBlocksW;
+      this.rotorBlockFrame = new Uint8Array(rotorBlockCount);
+      this.rotorBlockNext = new Uint8Array(rotorBlockCount);
+    }
+    const rotorFrames = this.rotorBlockFrame;
+    const rotorNext = this.rotorBlockNext;
+    rotorNext.fill(0);
+    // Per-driver diaphragm excursion, rebuilt from the live shockwaves before a single
+    // cell is drawn (see wooferThump). Same sizing rule as the wheels', and the same
+    // argument for not gating it on "is there a Woofer in this world": the buffer is a
+    // few hundred bytes and the loop below is over the *waves*, of which an idle world
+    // has none.
+    const wooferTilesW = Math.ceil(grid.width / WOOFER_P);
+    const wooferTileCount = wooferTilesW * Math.ceil(grid.height / WOOFER_P);
+    if (this.wooferTilesW !== wooferTilesW || this.wooferThump.length !== wooferTileCount) {
+      this.wooferTilesW = wooferTilesW;
+      this.wooferThump = new Uint8Array(wooferTileCount);
+    }
+    const wooferThump = this.wooferThump;
+    wooferThump.fill(0);
+    for (const s of this.shocks) {
+      // `age * SHOCK_SPEED` is exactly the front radius drawShockwaves will paint at
+      // the end of *this* pass (it advances the age after drawing), so the swell and
+      // the ring it launched are read off the same clock in the same frame.
+      //
+      // This loop reads waves that are ALREADY live, and the frame a Woofer fires on
+      // drains its wave into `this.shocks` later, at the end of the pass — which looks
+      // like the swell is a frame behind the ring, and is not. A wave's first pass is
+      // its age-0 one, and an age-0 front has radius 0, which the spawn dither gates
+      // out entirely (`fade = r / SHOCK_FADE` = 0 ⇒ `continue`, painting nothing). So
+      // the ring's first *drawn* frame and the diaphragm's first swollen frame are the
+      // same one — the wave's age-1 pass, the first pass this loop can see it on. The
+      // coupling is real though: a SHOCK_FADE of 0 would paint that age-0 ring, and
+      // then the swell WOULD trail it by a frame.
+      const e = wooferExcursion(s.age * SHOCK_SPEED, s.maxR);
+      if (e === WOOFER_REST) continue;
+      for (const t of s.tiles) if (e > wooferThump[t]) wooferThump[t] = e;
+    }
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -731,6 +938,45 @@ export class CanvasRenderer implements Renderer {
         }
       }
       let c: number;
+      // Which cell's tint byte this cell shades from. Normally its own — but a
+      // `tintBlock` material samples the anchor of the square block it sits in, so a
+      // whole 2×2 of cells shares one shade and the grain reads as flakes instead of
+      // per-cell static (Obsidian). The mask is -1 for every other material, so the
+      // compare below is the entire cost they pay: no division, no branch taken.
+      //
+      // The anchor cell may hold a different material at a block boundary, but
+      // `Grid.tint` is a full plane of bytes with a value everywhere, so that only
+      // ever picks a different shade of THIS material — never a wrong colour.
+      let ti = i;
+      const blockMask = tintBlockMask[id];
+      if (blockMask !== -1) {
+        const by = (i / w) | 0;
+        ti = (by & blockMask) * w + ((i - by * w) & blockMask);
+      }
+      // The brightness grain, computed once here rather than five times below.
+      //
+      // Every branch that shades — the two palette branches, the checkerboard, the
+      // glow ramp and the plain default — used to repeat this same expression, and
+      // repeating it is what made the second, finer level (below) a five-place edit
+      // instead of a one-place one. `grained` is the "does this material vary at all"
+      // gate the branches used to spell as `amp !== 0`.
+      //
+      // TWO levels, and only Coal and Obsidian use the second. The first shades from
+      // the (possibly block-anchored) sample by `colorVary` — for a blocked material
+      // that is one shade for the whole 2×2 flake. The second shades again from the
+      // cell's OWN sample by the much narrower `tintCellVary`, which puts grit back
+      // inside a flake that would otherwise be a flat painted square. The offsets add,
+      // so the total swing stays `colorVary + tintCellVary` either way, and a material
+      // with no `tintCellVary` pays one load and one compare (see Material.tintCellVary).
+      const amp = vary[id];
+      const cellAmp = varyCell[id];
+      const grained = amp !== 0 || cellAmp !== 0;
+      let grainD = 0;
+      if (grained) {
+        const particle = mode[id] === VARY_PARTICLE;
+        if (amp !== 0) grainD = (((particle ? tintArr[ti] : bgArr[ti]) - TINT_NEUTRAL) * amp) >> 7;
+        if (cellAmp !== 0) grainD += (((particle ? tintArr[i] : bgArr[i]) - TINT_NEUTRAL) * cellAmp) >> 7;
+      }
       // `renderAsAux` and `auxPalette` are two mutually exclusive readings of the
       // SAME aux word — "this is the material id I'm carrying" vs. "this is my own
       // colour index" — so a carrier cell must never be handed to the palette
@@ -746,16 +992,14 @@ export class CanvasRenderer implements Renderer {
       const tintPal3 = tintPal[id];
       if (pal8) {
         c = pal8[auxArr[i] % pal8.length];
-        const amp = vary[id];
-        if (amp !== 0) {
+        if (grained) {
           // The ordinary brightness grain rides on top of the palette colour, the
           // same way it does over the tintPalette branch below — otherwise a
           // powder that uses `auxPalette` to show a *state* (a germinating Seed's
           // progress) would lose the speckle every other powder has and read as
           // one flat block. Firework Burst, the other auxPalette material, is a
           // Gas with no variation (amp 0), so this is a no-op for it.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, grainD);
         }
       } else if (tintPal3) {
         // A multi-coloured *particle* material (Fireworks): each grain draws the
@@ -765,16 +1009,14 @@ export class CanvasRenderer implements Renderer {
         // the chosen colour, exactly as it does over the checkerboard branch below.
         // Indexing by `% n` rather than banding the byte keeps the colour
         // uncorrelated with the `liquidOverlap` split read off the same byte.
-        c = tintPal3[tintArr[i] % tintPal3.length];
-        const amp = vary[id];
-        if (amp !== 0) {
+        c = tintPal3[tintArr[ti] % tintPal3.length];
+        if (grained) {
           // The COLOUR is per-particle by definition, so it always reads tintArr.
           // The brightness offset on top is the ordinary one, so it takes the
           // material's own vary source like every sibling branch — otherwise a
           // future liquid-phase tintPalette material would shade itself from a
           // plane it doesn't use.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          c = CanvasRenderer.tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, grainD);
         }
       } else if (arrow[id]) {
         // A directional-arrow material (Conveyor) draws a chevron pointing the way
@@ -788,10 +1030,12 @@ export class CanvasRenderer implements Renderer {
         const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
         c = on ? latCol[id] : pal[id];
       } else if (windArrow[id]) {
-        // A Fan (blow) or Laser (fire) draws a 4-directional chevron pointing its
-        // way: the low 2 bits of aux are the direction (0 up / 1 down / 2 left /
-        // 3 right) and the rest a powered countdown, so a running one lights up
-        // brighter.
+        // A Laser draws a 4-directional chevron pointing the way it fires: the low
+        // 2 bits of aux are the direction (0 up / 1 down / 2 left / 3 right) and the
+        // rest a powered countdown, so a running one lights up brighter. The Fan
+        // drew the same chevron from the same bits until it took the rotor wheel
+        // (see the rotorPattern branch), which is why the comments here and the flag
+        // itself are named for a fan.
         // Same period-4 tent as the Conveyor '>' (0,1,1,0 over four steps), folded
         // over y for a horizontal blow and over x for a vertical one, and mirrored
         // for the up/left senses.
@@ -813,10 +1057,10 @@ export class CanvasRenderer implements Renderer {
         }
         // aux >> 2 is the powered countdown — brighten the lit chevron while it's
         // running so a powered fan reads as active at a glance.
-        c = on ? (a >> 2 ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = on ? (a >> 2 ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (triArrow[id]) {
         // A Shaped Charge draws solid arrowhead triangles pointing its jet
-        // direction (aux low 2 bits, same codes as the Fan's chevron) — the
+        // direction (aux low 2 bits, same codes as the Laser's chevron) — the
         // liner cone made visible. Each triangle is 6 cells ACROSS the jet axis
         // by 3 deep ALONG it, filling 1,2,3,3,2,1 cells so every side steps in
         // exactly one cell per lane (a real triangle rather than a stubby
@@ -843,15 +1087,15 @@ export class CanvasRenderer implements Renderer {
         // An Electromagnet draws copper windings around a dark core: two lit rows
         // out of every four (a period-4 stripe in the `lattice` colour), so a bar
         // of it reads as a wound coil rather than another flat machine block. It
-        // has no direction to point at, so unlike the Fan's chevron the pattern is
+        // has no direction to point at, so unlike the Laser's chevron the pattern is
         // positional only. Its whole aux byte is the powered countdown (see
         // materials/electromagnet.ts), so a non-zero aux brightens the windings
-        // exactly the way a running fan's chevron brightens — that's the only cue
+        // exactly the way a running laser's chevron brightens — that's the only cue
         // that the field is up.
         const y = (i / w) | 0;
         const band = y & 3;
         const a = auxArr[i];
-        c = band === 1 || band === 2 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = band === 1 || band === 2 ? (a ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (stripePattern[id]) {
         // A Pump draws vertical channel stripes — one lit column of every three,
         // in the `lattice` colour — so a block of it reads as open risers matter
@@ -862,7 +1106,7 @@ export class CanvasRenderer implements Renderer {
         // stripes — the cue that it's lifting rather than just sieving.
         const x = i % w;
         const a = auxArr[i];
-        c = x % 3 === 1 ? (a ? CanvasRenderer.tinted(latCol[id], 45) : latCol[id]) : pal[id];
+        c = x % 3 === 1 ? (a ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (solarPattern[id]) {
         // A Solar Panel draws its photovoltaic cell grid: rectangular cells of the
         // base colour separated by thin `lattice`-coloured seams — a seam on every
@@ -884,19 +1128,110 @@ export class CanvasRenderer implements Renderer {
         c = x % SOLAR_CELL_W === SOLAR_CELL_W - 1 || y % SOLAR_CELL_H === SOLAR_CELL_H - 1
           ? latCol[id]
           : auxArr[i] & 0xff
-            ? CanvasRenderer.tinted(pal[id], 45)
+            ? tinted(pal[id], 45)
             : pal[id];
+      } else if (brickPattern[id]) {
+        // A Wall draws running-bond masonry: a `lattice`-coloured mortar bed on the
+        // last row of every course and a head joint on the last column of every
+        // brick, with alternate courses offset half a brick so the joints stagger.
+        // The top row of each brick is lit BRICK_LIT above the base, which is what
+        // turns a flat two-tone grid into blocks with light on their top edges — the
+        // same three tones, in the same places, as the hand-drawn Wall chip.
+        // Positional like the Mesh weave and the panel's seams, so dragging the
+        // brush extends one continuous wall instead of restarting the courses.
+        const x = i % w;
+        const y = (i / w) | 0;
+        const row = y % BRICK_H;
+        const course = (y / BRICK_H) | 0;
+        // Odd courses shift the head joints half a brick to the right.
+        const col = (x + (course & 1 ? BRICK_OFFSET : 0)) % BRICK_W;
+        c = row === BRICK_H - 1 || col === BRICK_W - 1
+          ? latCol[id]
+          : row === 0
+            ? brickLit[id]
+            : pal[id];
+      } else if (wooferPattern[id]) {
+        // A Woofer draws its speaker drivers: one round driver per WOOFER_P tile —
+        // rim, `lattice`-coloured cone, dark dust cap — on the base colour's baffle,
+        // the same four tones in the same radial order as the hand-drawn chip.
+        // Positional like the Mesh weave, so a cabinet dragged out with the brush is
+        // one continuous array of drivers rather than a fresh one per stroke.
+        //
+        // **And it thumps.** The Woofer stamps no cell state at all — it fires and is
+        // done, so there is nothing in aux to read the way the Pump's stripes or the
+        // rotor wheels do. What it does leave is the shockwave it launched, so the
+        // driver's excursion is read off that instead (see wooferThump /
+        // wooferExcursion): the whole driver swells the instant the front leaves the
+        // cabinet and settles back as the front reaches its rim. The band radii are the
+        // only thing that changes — same three compares, indexed instead of constant —
+        // so an idle cabinet costs exactly what it did before, and draws exactly what
+        // the palette chip does.
+        const x = i % w;
+        const y = (i / w) | 0;
+        // Doubled offsets from the tile centre keep the radius test integral.
+        const ax = 2 * (x % WOOFER_P) - (WOOFER_P - 1);
+        const ay = 2 * (y % WOOFER_P) - (WOOFER_P - 1);
+        const d2 = ax * ax + ay * ay;
+        // One excursion per drawn driver, not per cell: two cabinets sharing a tile
+        // swell together rather than tearing a driver in half (see wooferTileIndex).
+        const e = wooferThump[wooferTileIndex(x, y, wooferTilesW)];
+        c = d2 <= WOOFER_CAP_R2[e]
+          ? wooferCap[id]
+          : d2 <= WOOFER_CONE_R2[e]
+            ? latCol[id]
+            : d2 <= WOOFER_R2[e]
+              ? wooferRim[id]
+              : pal[id];
+      } else if (tntPattern[id]) {
+        // TNT draws a bundle of dynamite behind a printed paper label: four lit-and-
+        // shaded stick columns above and below a wrapped band carrying the word (see
+        // tntTile.ts). Unlike every other pattern here this one is a bitmap rather than
+        // a rule — the letters are art — so the branch is a single lookup into the tile
+        // this material's colours were resolved into at construction.
+        //
+        // Positional like the Wall's courses, so a dragged charge is one continuous
+        // bundle rather than a per-cell tile, and squarely aligned rather than offset:
+        // staggering would break the sticks and misalign the label.
+        const y = (i / w) | 0;
+        const x = i - y * w;
+        c = tntTile[id]![(y % TNT_N) * TNT_N + (x % TNT_N)];
+      } else if (rotorPattern[id]) {
+        // A Turbine (8 blades) or a Fan (4) draws its rotor wheel: blades lit on the
+        // leading edge and shaded on the trailing one, keyed to a dark hub, one wheel
+        // per ROTOR_N tile (see rotorTile.ts). A bitmap rather than a rule for the same
+        // reason TNT's bundle is — the sweep that makes a wheel read as *turning* has no
+        // short closed form at twelve cells.
+        //
+        // **And it turns.** The wheel alternates between the tile at rest and the tile
+        // half a blade pitch on, driven by the machine's own aux counter — a Fan's
+        // powered countdown, a Turbine's steam-tick count — so it spins exactly while
+        // the machine works and freezes when it stops (see rotorFrame). That is what
+        // replaced the Fan's old chevron brightening as the "this one is running" cue;
+        // what the chevron also did and this cannot is point, which the wind streaks
+        // now carry alone.
+        //
+        // The frame is read and written *per wheel*, not per cell: this cell's own
+        // counter goes into the tile's accumulator for the next pass, and what it
+        // draws is the tile's aggregate from the last one (see rotorBlockFrame). A
+        // Turbine only counts on cells steam is passing through, so per-cell frames
+        // made a wheel spin along the steam's path and stand still on the rest of
+        // itself; per-tile, the whole wheel turns together the way a rigid wheel does.
+        //
+        // Positional like the Wall's courses, so a machine dragged out with the brush
+        // is one array of wheels rather than a fresh tile per cell — and the wheel and
+        // the animation unit are then the same square, which is the whole point.
+        const y2 = (i / w) | 0;
+        const x2 = i - y2 * w;
+        const bi = rotorBlockIndex(x2, y2, rotorBlocksW);
+        rotorAccumulate(rotorNext, bi, auxArr[i], rotorSpinShift[id]);
+        const rt = rotorFrame(rotorFrames[bi]) ? rotorTileSpun[id]! : rotorTile[id]!;
+        c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
         const y = (i / w) | 0;
         c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
-        const amp = vary[id];
-        if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(c, d);
-        }
+        if (grained) c = tinted(c, grainD);
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -917,30 +1252,17 @@ export class CanvasRenderer implements Renderer {
           (px === 2 && (py === 2 || py === 3));
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
-        c = CanvasRenderer.shade(glow[id]!, temp[i]);
-        const amp = vary[id];
-        if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(c, d);
-        }
+        c = shade(glow[id]!, temp[i]);
+        if (grained) c = tinted(c, grainD);
       } else if (temp[i] <= freezeTemp[id]) {
         // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
         // -Infinity for non-freeze materials, so this never fires for them.
         c = frost[id];
       } else {
-        const amp = vary[id];
-        if (amp === 0) {
-          c = pal[id];
-        } else {
-          // Powders read their own fixed per-grain tint; liquids sample the
-          // positional background field at this cell (see game/tint.ts).
-          const src = mode[id] === VARY_PARTICLE ? tintArr[i] : bgArr[i];
-          // Map the tint byte to a signed brightness offset in [-amp, +amp]:
-          // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = CanvasRenderer.tinted(pal[id], d);
-        }
+        // Powders read their own fixed per-grain tint; liquids sample the positional
+        // background field (see game/tint.ts). Both were mapped to a signed brightness
+        // offset above; a flat material has none and draws its bare colour.
+        c = grained ? tinted(pal[id], grainD) : pal[id];
       }
       // Fan wind streaks: an animated low-res effect painted over the empty air of
       // a gust (Grid.wind — a transient one-way field, never a cell). Only bare air
@@ -1077,6 +1399,11 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    // Hand this pass's per-wheel frames to the next one. A swap rather than a copy:
+    // the array just drawn from becomes the accumulator and is cleared at the top of
+    // the next pass (see rotorBlockFrame).
+    this.rotorBlockFrame = rotorNext;
+    this.rotorBlockNext = rotorFrames;
     this.windWasActive = sawWind;
     this.windMinX = bxMin;
     this.windMaxX = bxMax;
@@ -1343,7 +1670,9 @@ export class CanvasRenderer implements Renderer {
     if (q.length > 0) {
       for (const s of q) {
         const field = this.buildShockField(grid, s.bx, s.by, s.reach);
-        if (field) this.shocks.push(field);
+        if (!field) continue;
+        this.collectWooferTiles(grid, s.bx, s.by, field.tiles);
+        this.shocks.push(field);
       }
       q.length = 0;
     }
@@ -1418,6 +1747,34 @@ export class CanvasRenderer implements Renderer {
       }
     }
     this.shocks = survivors;
+  }
+
+  /**
+   * Collect the driver tiles a firing's own Woofer cells sit in, deduplicated, into
+   * `out` — what the diaphragm animation is keyed by (see wooferThump).
+   *
+   * Only cells that are *actually* a `wooferPattern` material count, so the 충격파
+   * 브러시 fired over open ground animates nothing, and fired across a cabinet
+   * animates exactly the cabinet: a driver swells because it thumped, never because a
+   * wave washed over it. (That also means a Woofer standing in someone else's blast
+   * stays still, which is right — it was shoved, it didn't fire.)
+   *
+   * Run once per firing, over the body the pulse already walked. The dedupe is what
+   * keeps it honest for a wall-sized cabinet: a thousand cells collapse to the eight
+   * or nine tiles they are drawn in.
+   */
+  private collectWooferTiles(grid: Grid, bx: number[], by: number[], out: number[]): void {
+    const cells = grid.cells;
+    const w = grid.width;
+    const tilesW = Math.ceil(w / WOOFER_P);
+    const seen = new Set<number>();
+    for (let i = 0; i < bx.length; i++) {
+      if (!this.wooferPattern[cells[by[i] * w + bx[i]]]) continue;
+      const t = wooferTileIndex(bx[i], by[i], tilesW);
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
   }
 
   /** Build a Woofer shockwave's geodesic distance field: a multi-source Dijkstra
@@ -1523,7 +1880,9 @@ export class CanvasRenderer implements Renderer {
         }
       }
     }
-    return { dist, x0, y0, bw, bh, maxR: reach, age: 0 };
+    // `tiles` is filled by the shockwave drain for a Woofer firing (see
+    // drawShockwaves); the magnet rings borrow this builder and leave it empty.
+    return { dist, x0, y0, bw, bh, maxR: reach, age: 0, tiles: [] };
   }
 
   /**

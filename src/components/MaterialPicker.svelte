@@ -11,7 +11,7 @@
   // `overflow-y: auto`, either of which would clip an in-flow flyout.
   import { onDestroy } from 'svelte';
   import { buildCategories } from '../game/materials/categories';
-  import { toCss } from '../game/render/color';
+  import { materialSvgFor } from '../game/render/materialSvg';
   import type { Material } from '../game/engine/types';
   import { $locale as locale, t, materialName } from '../i18n';
 
@@ -37,7 +37,10 @@
     void $locale;
     return selectedMat ? materialName(selectedMat.id, selectedMat.name) : t('picker.missing');
   });
-  const selectedColor = $derived(selectedMat ? toCss(selectedMat.color) : '#888');
+  // The trigger shows the same generated tile as the chips below it (see
+  // materialSvgFor); the empty string falls back to the CSS placeholder fill
+  // for the can't-happen case where `value` names no registered material.
+  const selectedSvg = $derived(selectedMat ? materialSvgFor(selectedMat) : '');
 
   // Popover open state and which category is drilled into (null = category list).
   let open = $state(false);
@@ -255,7 +258,7 @@
     aria-label={ariaLabel ? `${ariaLabel}: ${selectedName}` : selectedName}
     title={selectedName}
   >
-    <span class="swatch" style={`background:${selectedColor}`}></span>
+    <span class="swatch mat">{@html selectedSvg}</span>
     <span class="name">{selectedName}</span>
     <i class="bi bi-chevron-down chevron" aria-hidden="true"></i>
   </button>
@@ -312,7 +315,7 @@
               onclick={() => pick(m.id)}
               title={materialName(m.id, m.name)}
             >
-              <span class="swatch" style={`background:${toCss(m.color)}`}></span>
+              <span class="swatch mat">{@html materialSvgFor(m)}</span>
               <span class="chip-label">{materialName(m.id, m.name)}</span>
             </button>
           {/each}
@@ -356,6 +359,7 @@
     height: 16px;
     border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #888;
   }
   .trigger .name {
     flex: 1 1 auto;
@@ -500,6 +504,31 @@
     border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     flex: none;
+    background: #888;
+  }
+  /* Shared by the trigger and the chips: the swatch is filled by the generated
+     material tile (materialSvgFor) rather than a flat background colour.
+     `overflow: hidden` clips the pattern to the tile's border-radius. Svelte
+     scopes styles per component, so these mirror MaterialPalette's .swatch.mat
+     rules rather than sharing them.
+
+     The chips are 18px like the palette's, but the trigger is 16px to sit on the
+     text line — 9 patch cells do not divide 16 device pixels evenly, so crisp
+     edges there would round some cells away. `shape-rendering: auto` lets that
+     one site resample smoothly instead, which for a texture reads better than
+     dropped rows. */
+  .swatch.mat {
+    overflow: hidden;
+    padding: 0;
+    line-height: 0;
+  }
+  .swatch.mat :global(svg.mat-svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .trigger .swatch.mat :global(svg.mat-svg) {
+    shape-rendering: auto;
   }
   .chip-label {
     max-width: 100%;

@@ -15,6 +15,14 @@ export const WALL = register({
   name: 'Wall',
   phase: Phase.Solid,
   color: rgb(120, 124, 130),
+  // Running-bond masonry, the pattern the hand-drawn Wall chip already shows,
+  // brought to the canvas: `lattice` is the mortar and the renderer lights the top
+  // row of each brick a step above `color` (see Material.brickPattern). Both tones
+  // are the icon's own — #484c52 mortar under a #787c82 brick — so a wall on the
+  // board and the wall on its palette chip are lit the same way. `lattice` here is
+  // only the mortar colour: Wall is not `latticeFilter`, so nothing seeps through it.
+  lattice: rgb(72, 76, 82),
+  brickPattern: true,
   density: 1000,
   acidResistant: true,
   isWall: true,

@@ -66,9 +66,12 @@ import type { SimContext } from '../engine/SimContext';
 // periodic pulses, so the field holds steadily instead of strobing its grip on and
 // off.
 //
-// Unlike the Fan and Laser the magnet has no direction, so its whole `aux` byte is
-// the countdown and the renderer draws brightening coil windings rather than a
-// chevron (see Material.coilPattern).
+// Unlike the Fan and Laser the magnet has no direction to record, so its whole
+// `aux` byte is the countdown and the renderer draws brightening coil windings
+// rather than a directional mark (see Material.coilPattern). The mark it is being
+// contrasted with is the Laser's chevron — the Fan still *stores* a direction in
+// its low aux bits, it just stopped drawing one when it took the rotor wheel
+// (Material.rotorPattern).
 
 /** Ticks a single power pulse keeps the field up. Set well above the Battery's
  *  PULSE_PERIOD (12) so the grip never lapses between pulses — a held clump would

@@ -236,8 +236,8 @@ export const SHAPED_CHARGE = register({
   name: 'Shaped Charge',
   phase: Phase.Solid,
   // Olive-drab casing with copper liner-cone triangles pointing the muzzle
-  // (the renderer's triArrow path — filled ▶ wedges along the jet axis, where
-  // Fan/Laser draw a thin chevron line).
+  // (the renderer's triArrow path — filled ▶ wedges along the jet axis, where the
+  // Laser draws a thin chevron line).
   color: rgb(96, 104, 72),
   lattice: rgb(228, 148, 64),
   triArrow: true,
