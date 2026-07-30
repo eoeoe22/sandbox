@@ -308,18 +308,23 @@ const GOLDEN: Record<string, string> = {
     'ooooooooo',
     'iiiiioiii',
   ].join('\n'),
-  // Woofer: one speaker driver per 8-cell tile — rim (`o`), cone (`i`), dust cap
+  // Woofer: one speaker driver per 9-cell tile — rim (`o`), cone (`i`), dust cap
   // (`O`) — on the baffle. The Woofer used to draw the plain lattice weave in a
   // copper tone, so this golden is also what catches it falling back there.
+  //
+  // Widths 3/5/7/7/7/5/3 are the point of the tile, not incidental: the driver was
+  // 6 across on an 8-cell period, and an even diameter has no centre row, so it
+  // rasterized 4/6/6/6/6/4 and read as a hexagon. A golden that goes back to four
+  // flat rows means the period went back to even.
   Woofer: [
     '.........',
-    '..oooo...',
-    '.oiiiio..',
-    '.oiOOio..',
-    '.oiOOio..',
-    '.oiiiio..',
-    '..oooo...',
-    '.........',
+    '...ooo...',
+    '..oiiio..',
+    '.oiiOiio.',
+    '.oiOOOio.',
+    '.oiiOiio.',
+    '..oiiio..',
+    '...ooo...',
     '.........',
   ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.

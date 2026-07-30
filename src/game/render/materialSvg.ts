@@ -76,10 +76,10 @@ const BRICK_W = 6;
 const BRICK_H = 4;
 const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
-const WOOFER_P = 8;
-const WOOFER_R2 = 34;
-const WOOFER_CONE_R2 = 18;
-const WOOFER_CAP_R2 = 2;
+const WOOFER_P = 9;
+const WOOFER_R2 = 49;
+const WOOFER_CONE_R2 = 25;
+const WOOFER_CAP_R2 = 4;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
 

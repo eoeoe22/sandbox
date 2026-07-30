@@ -128,21 +128,26 @@ const BRICK_OFFSET = BRICK_W >> 1;
 const BRICK_LIT = 40;
 
 // Tiling of the `wooferPattern` speaker-driver grid (Woofer — see the render loop).
-// One period holds one round driver 6 cells across with 2 cells of baffle between
-// neighbours, drawn as three radial bands: a 1-cell rim, a 1-cell cone, and a 2×2
-// dust cap. That is the hand-drawn Woofer chip's structure at 1/3 scale — its driver
-// is 16 across on a 24-cell tile (0.75 of the tile, matched exactly here) with a
-// 1-cell rim (also matched). Only the cap is off: 8/16 of the driver on the chip
-// against 2/6 here, because at six cells across there is no room for a wider cap
-// without the cone band disappearing entirely.
+// One period holds one round driver 7 cells across with 2 cells of baffle between
+// neighbours, drawn as three radial bands: a 1-cell rim, a cone, and a plus-shaped
+// 5-cell dust cap. That is the hand-drawn Woofer chip's structure shrunk — its driver
+// is 16 across on a 24-cell tile (0.67 of the tile against 0.78 here) with a 2-cell
+// rim, which 7 cells across has no room for: a second rim ring would leave the cone
+// with nothing.
+//
+// The period was 8, giving a 6-across driver. Both are honest circle rasters, but an
+// EVEN diameter has no centre row, so its widths come out 4/6/6/6/6/4 — four of the six
+// rows at full width, which reads as a hexagon. At 7 they are 3/5/7/7/7/5/3: only three
+// rows flat and two graduated steps into each pole, which is what actually reads as
+// round. The chip had the same problem in a worse form and was redrawn with it.
 //
 // Membership is tested on SQUARED radii in doubled coordinates, so a cell's band
 // falls out of integer arithmetic with no sqrt and no lookup table: `2*(x % P) - (P-1)`
 // puts the tile's centre at 0 whether the period is odd or even.
-const WOOFER_P = 8; // period, in cells (6-cell driver + 2-cell baffle)
-const WOOFER_R2 = 34; // (2r)² of the driver's outer edge — r ≈ 2.9, so 6 across
-const WOOFER_CONE_R2 = 18; // (2r)² inside the rim — the cone band starts here
-const WOOFER_CAP_R2 = 2; // (2r)² of the dust cap — the 2×2 centre
+const WOOFER_P = 9; // period, in cells (7-cell driver + 2-cell baffle)
+const WOOFER_R2 = 49; // (2r)² of the driver's outer edge — r = 3.5, so 7 across
+const WOOFER_CONE_R2 = 25; // (2r)² inside the rim — the cone band starts here
+const WOOFER_CAP_R2 = 4; // (2r)² of the dust cap — the centre cell plus its four sides
 // The two dark tones, as brightness offsets from the material's own colour. The cone
 // is the `lattice` colour and therefore exact; these two are offsets because a
 // material carries only one second colour, and the chip's ramp is very slightly
