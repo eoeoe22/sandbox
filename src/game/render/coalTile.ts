@@ -72,7 +72,7 @@ export const COAL_TILE_ROWS: readonly string[] = TILE;
 /** A lump's shaded face, as a fraction of the material's colour. Above 1 because
  *  Coal's registered colour is very nearly black (`#1a181e`): the *base* is the
  *  crack, and every lump face has to sit above it or the tile is one dark smear.
- *  1.6 lands on `#29262f`, within a unit of the drawn chip's `#292731`. */
+ *  1.6 lands on `#292630`, within a unit of the drawn chip's `#292731`. */
 export const COAL_MID = 1.6;
 /** The pocket between two lumps, below the base for the same reason: it is the one
  *  place light does not reach at all. 0.5 gives `#0d0c0f` against the chip's

@@ -397,8 +397,9 @@ export class CanvasRenderer implements Renderer {
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
   /** id → 1 if the material draws a 4-directional chevron from its aux byte, with
-   *  the low 2 bits the blow direction and the rest a powered countdown that
-   *  brightens the chevron (Fan — see Material.windArrow). */
+   *  the low 2 bits the facing and the rest a powered countdown that brightens the
+   *  chevron (Laser — see Material.windArrow. The Fan drew this until it took the
+   *  rotor wheel; the flag is named for it). */
   private windArrow: Uint8Array;
   /** id → 1 if the material draws solid 4-directional triangles from its aux byte
    *  — filled arrowheads pointing the low-2-bit direction, the Shaped Charge's
@@ -905,10 +906,12 @@ export class CanvasRenderer implements Renderer {
         const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
         c = on ? latCol[id] : pal[id];
       } else if (windArrow[id]) {
-        // A Fan (blow) or Laser (fire) draws a 4-directional chevron pointing its
-        // way: the low 2 bits of aux are the direction (0 up / 1 down / 2 left /
-        // 3 right) and the rest a powered countdown, so a running one lights up
-        // brighter.
+        // A Laser draws a 4-directional chevron pointing the way it fires: the low
+        // 2 bits of aux are the direction (0 up / 1 down / 2 left / 3 right) and the
+        // rest a powered countdown, so a running one lights up brighter. The Fan
+        // drew the same chevron from the same bits until it took the rotor wheel
+        // (see the rotorPattern branch), which is why the comments here and the flag
+        // itself are named for a fan.
         // Same period-4 tent as the Conveyor '>' (0,1,1,0 over four steps), folded
         // over y for a horizontal blow and over x for a vertical one, and mirrored
         // for the up/left senses.
@@ -933,7 +936,7 @@ export class CanvasRenderer implements Renderer {
         c = on ? (a >> 2 ? tinted(latCol[id], 45) : latCol[id]) : pal[id];
       } else if (triArrow[id]) {
         // A Shaped Charge draws solid arrowhead triangles pointing its jet
-        // direction (aux low 2 bits, same codes as the Fan's chevron) — the
+        // direction (aux low 2 bits, same codes as the Laser's chevron) — the
         // liner cone made visible. Each triangle is 6 cells ACROSS the jet axis
         // by 3 deep ALONG it, filling 1,2,3,3,2,1 cells so every side steps in
         // exactly one cell per lane (a real triangle rather than a stubby
@@ -960,10 +963,10 @@ export class CanvasRenderer implements Renderer {
         // An Electromagnet draws copper windings around a dark core: two lit rows
         // out of every four (a period-4 stripe in the `lattice` colour), so a bar
         // of it reads as a wound coil rather than another flat machine block. It
-        // has no direction to point at, so unlike the Fan's chevron the pattern is
+        // has no direction to point at, so unlike the Laser's chevron the pattern is
         // positional only. Its whole aux byte is the powered countdown (see
         // materials/electromagnet.ts), so a non-zero aux brightens the windings
-        // exactly the way a running fan's chevron brightens — that's the only cue
+        // exactly the way a running laser's chevron brightens — that's the only cue
         // that the field is up.
         const y = (i / w) | 0;
         const band = y & 3;

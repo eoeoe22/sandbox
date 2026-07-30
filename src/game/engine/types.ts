@@ -518,19 +518,25 @@ export interface Material {
   arrow?: boolean;
   /**
    * Draw a 4-directional chevron (in the `lattice` color, over the base `color`)
-   * pointing the way the cell's `aux` byte says it blows — the low 2 bits are the
-   * direction (0 up / 1 down / 2 left / 3 right, see materials/fan.ts) and the
-   * rest a powered countdown, so the chevron brightens while the fan is running.
-   * The Fan uses it so which way a fan blows (and whether it's powered) reads at a
-   * glance. Like `arrow`, purely a rendering hint the simulation never reads; omit
-   * for an ordinary material.
+   * pointing the way the cell's `aux` byte says it faces — the low 2 bits are the
+   * direction (0 up / 1 down / 2 left / 3 right, see materials/fan.ts, which still
+   * defines the encoding) and the rest a powered countdown, so the chevron
+   * brightens while the machine is running. The **Laser** uses it, so which way it
+   * fires (and whether it's powered) reads at a glance.
+   *
+   * The Fan used to be the other user and is where the name comes from; it draws a
+   * `rotorPattern` wheel now, which is why an unpowered fan no longer points. The
+   * aux layout is unchanged, so switching a machine back is just swapping the flag.
+   *
+   * Like `arrow`, purely a rendering hint the simulation never reads; omit for an
+   * ordinary material.
    */
   windArrow?: boolean;
   /**
    * Draw a solid 4-directional TRIANGLE (in the `lattice` color, over the base
    * `color`) pointing the way the cell's `aux` byte says it faces — the low 2
    * bits are the direction, same codes as `windArrow` (0 up / 1 down / 2 left /
-   * 3 right). Where `windArrow` draws a thin chevron line (Fan/Laser), this
+   * 3 right). Where `windArrow` draws a thin chevron line (Laser), this
    * tiles filled triangles 6 cells across the axis by 3 deep along it, each
    * side stepping in one cell per lane and separated by a 2-cell gutter on
    * every side — the Shaped Charge uses it so its liner cone (성형작약의 원뿔
@@ -544,8 +550,8 @@ export interface Material {
    * that brighten while the cell's `aux` byte is non-zero — the Electromagnet,
    * whose whole aux byte is its powered countdown (see materials/electromagnet.ts).
    * A magnet has no direction to point at, so it gets stripes rather than the
-   * Fan's chevron; the brightening is what makes "the field is on" readable at a
-   * glance, the same job `windArrow`'s brightening does for a running fan. Purely
+   * Laser's chevron; the brightening is what makes "the field is on" readable at a
+   * glance, the same job `windArrow`'s brightening does for a firing laser. Purely
    * a rendering hint the simulation never reads; omit for an ordinary material.
    */
   coilPattern?: boolean;

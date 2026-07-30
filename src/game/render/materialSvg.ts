@@ -403,8 +403,9 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         const fold = y & 2 ? 3 - (y & 3) : y & 3;
         c = (x & 3) === fold ? lat : base;
       } else if (m.windArrow) {
-        // Fan / Laser, stamped FAN_RIGHT: chevron along x, folded over y. The
-        // powered countdown is 0 on a fresh cell, so no brightening.
+        // Laser, stamped FAN_RIGHT: chevron along x, folded over y. The powered
+        // countdown is 0 on a fresh cell, so no brightening. (The Fan shared this
+        // path until it took the rotor wheel — hence FAN_RIGHT and the flag's name.)
         const fold = y & 2 ? 3 - (y & 3) : y & 3;
         c = (x & 3) === fold ? lat : base;
       } else if (m.triArrow) {
