@@ -558,11 +558,18 @@ checkThrows('a glowing gas still takes the glow branch', () => {
 // ---------------------------------------------------------------------------
 // 5. The hand-drawn override layer.
 //
-// Eleven materials whose identity is an idea rather than a colour or a texture
-// ship a checked-in drawing instead of a derived tile. What matters here is that
-// the layer is a thin cap: it replaces the chip and nothing else, the derived
-// tile underneath is still built and still correct, and a drawing whose filename
-// matches no material never silently disappears.
+// Twenty-eight materials ship a checked-in drawing instead of a derived tile, and
+// they are there for two opposite reasons. Thirteen have an identity that is an
+// idea rather than a colour or a texture — no pattern the renderer draws could
+// stand for "deletes whatever it touches". The other fifteen are the reverse: they
+// are honestly one flat colour in-world, so the generator has nothing to reflect
+// and the drawing is the only place their surface can show grain, facets or a
+// sheen at all.
+//
+// Either way what matters here is that the layer stays a thin cap: it replaces the
+// chip and nothing else, the derived tile underneath is still built and still
+// correct, and a drawing whose filename matches no material never silently
+// disappears.
 // ---------------------------------------------------------------------------
 
 checkThrows('hand-drawn icons replace the chip', () => {
