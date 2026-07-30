@@ -44,7 +44,8 @@ export const ROTOR_N = 12;
 export const ROTOR_SPIN_SHIFT = 1;
 
 /**
- * Which of the two frames a cell draws, from the machine's own aux counter.
+ * One cell's contribution to its wheel's spin: the machine's own working counter,
+ * dug out of the cell's aux byte.
  *
  * Deliberately driven by sim state rather than by a renderer clock (contrast the
  * wind streaks' `windPhase`), because both machines already carry a counter that
@@ -62,15 +63,33 @@ export const ROTOR_SPIN_SHIFT = 1;
  * no correct one — a stalled turbine's counter stays non-zero, so "aux ≠ 0" would
  * have left a dead turbine spinning forever.
  *
+ * `shift` drops the bits of aux that are not the counter — 2 for the Fan, whose low
+ * two bits are its blow direction, 0 for the Turbine. Clamped to a byte so the
+ * renderer can hold a whole wheel's aggregate in a Uint8Array; both counters are
+ * far below that (Fan ≤ POWERED_TICKS, Turbine < PULSE_PERIOD) and a clamp keeps a
+ * stray large aux from wrapping into a *small* number and faking a rewind.
+ */
+export function rotorSpin(aux: number, shift: number): number {
+  const c = aux >> shift;
+  return c < 0 ? 0 : c > 255 ? 255 : c;
+}
+
+/**
+ * Which of the two frames a spin counter draws.
+ *
+ * Takes the counter rather than a raw aux because the unit of animation is the
+ * *wheel*, not the cell: the renderer aggregates `rotorSpin` across a whole tile
+ * first and only then asks for a frame (see CanvasRenderer's rotorBlockFrame). A
+ * Turbine advances the counter only on the cells steam is actually passing through,
+ * so asking each cell for its own frame drew a wheel spinning along the steam's
+ * path and standing still on the rest of itself.
+ *
  * A stopped machine freezes on whichever frame it was on, not necessarily frame 0.
  * A freshly painted cell has aux 0 and so does the palette chip, which is why the
  * icon always shows frame 0.
- *
- * `shift` drops the bits of aux that are not the counter — 2 for the Fan, whose low
- * two bits are its blow direction, 0 for the Turbine.
  */
-export function rotorFrame(aux: number, shift: number): number {
-  return ((aux >> shift) >> ROTOR_SPIN_SHIFT) & 1;
+export function rotorFrame(spin: number): number {
+  return (spin >> ROTOR_SPIN_SHIFT) & 1;
 }
 
 /**

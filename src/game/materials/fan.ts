@@ -308,6 +308,12 @@ export const FAN = register({
   // which skips the direction bits), so it spins exactly while energized and stops
   // dead at 0. That is the replacement for the old chevron's brightening.
   //
+  // The renderer animates a whole drawn wheel as one unit rather than cell by cell
+  // (see CanvasRenderer's rotorBlockFrame). A Fan body's cells all carry the same
+  // countdown — `energizeFanBody` writes the whole body at once — so for this material
+  // that changes nothing; it is the Turbine, whose counter only advances where steam
+  // is passing, that needs it.
+  //
   // What the chevron also did and a face-on rotor cannot is *point*. The blow
   // direction now reads only off the wind streaks the fan throws, which show only
   // while it is blowing — an unpowered fan no longer says which way it faces. The

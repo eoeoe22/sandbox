@@ -116,8 +116,16 @@ export const TURBINE = register({
   // at all. The frame comes straight from the steam-tick counter this material keeps
   // in `aux` (so no `rotorSpinShift`: the whole byte is the counter), which advances
   // only on ticks where steam actually flows and is held across a gap — so the wheel
-  // stops the moment the steam does, and a whole turbine body turns as one because
-  // `energizeBody` re-zeros its counters together.
+  // stops the moment the steam does.
+  //
+  // **That counter is per cell, and a wheel is not.** `updateTurbine` returns before
+  // touching aux on any cell steam is not currently inside, so mid-operation a block
+  // holds a spread of counts: soaked cells leading, grazed cells lagging, dry cells
+  // still at 0. Drawn per cell that came out as a wheel whose blades moved only where
+  // the steam was and stood still everywhere else. The renderer therefore takes the
+  // *maximum* count across each drawn wheel and animates the whole tile from it (see
+  // CanvasRenderer's rotorBlockFrame), so the wheel turns as the rigid thing it is,
+  // driven by whichever part of it the steam is hitting hardest.
   lattice: rgb(192, 205, 220),
   rotorPattern: 8,
   density: 1000,

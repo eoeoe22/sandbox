@@ -14,7 +14,7 @@ import {
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { TNT_N, buildTntTile } from './tntTile';
-import { ROTOR_N, buildRotorTile, rotorFrame } from './rotorTile';
+import { ROTOR_N, buildRotorTile, rotorFrame, rotorSpin } from './rotorTile';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -445,14 +445,42 @@ export class CanvasRenderer implements Renderer {
    *  it (see rotorTile.ts).
    *
    *  TWO tiles, because the wheel turns: `rotorTile` is the wheel at rest and
-   *  `rotorTileSpun` is the same wheel half a blade pitch on. Which one a cell draws
-   *  comes from its own aux counter (`rotorFrame`), so the animation costs one shift
-   *  and one array pick per cell and no renderer state at all. `rotorSpinShift` is
-   *  the per-material shift that isolates that counter from the rest of aux. */
+   *  `rotorTileSpun` is the same wheel half a blade pitch on. Which frame a wheel
+   *  draws comes from the machine's own aux counter (`rotorFrame`), so the animation
+   *  costs one shift and one array pick and needs no renderer clock. `rotorSpinShift`
+   *  is the per-material shift that isolates that counter from the rest of aux. */
   private rotorPattern: Uint8Array;
   private rotorTile: (Uint32Array | null)[];
   private rotorTileSpun: (Uint32Array | null)[];
   private rotorSpinShift: Uint8Array;
+  /** The spin counter of each ROTOR_N × ROTOR_N *tile* — one entry per drawn wheel,
+   *  not per cell — plus the accumulator the current pass is filling.
+   *
+   *  **A wheel is one rigid picture, so its phase has to be one value.** Read per
+   *  cell it is not: a Turbine only advances the aux counter of cells that steam is
+   *  actually passing through (materials/turbine.ts returns early on the others, and
+   *  a cell whose steam is intermittent falls behind one that is soaked), so a wheel
+   *  drawn from per-cell aux spun along the steam's path and stood still — or ran
+   *  late — on the rest of itself. A wheel tearing down the middle of itself
+   *  (수증기가 통과하는 부분만 변화하는 게 어색함). Aggregating over the tile makes the
+   *  unit of animation the drawn wheel, which is the thing that physically turns.
+   *
+   *  The aggregate is the MAX of its cells' counters, not an OR of their frames.
+   *  With cells strung out across the cycle an OR is 1 as soon as any single cell
+   *  is on the spun frame, which for a scattered tile is nearly always — the wheel
+   *  would have stuck on frame 1 instead of tearing. The max is the leading cell's
+   *  count, which advances one per tick for as long as any part of the wheel is in
+   *  the flow, and the laggards simply don't show.
+   *
+   *  It is collected during the pass and used by the *next* one (hence two arrays),
+   *  because a wheel's last row is reached long after its first and there is no
+   *  reading the whole tile before drawing any of it without a second pass over the
+   *  grid. One rendered frame of lag on an animation that holds each frame for two
+   *  sim ticks (~67 ms) is not visible; a wheel whose top half is a frame ahead of
+   *  its bottom half is exactly what this fixes. Sized to the grid on first use and
+   *  re-sized when it changes. */
+  private rotorBlockFrame: Uint8Array;
+  private rotorBlockNext: Uint8Array;
   /** id → the edge, in cells, of the square block that shares one tint sample — 0
    *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
    *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
@@ -592,6 +620,10 @@ export class CanvasRenderer implements Renderer {
     this.rotorTile = new Array(256).fill(null);
     this.rotorTileSpun = new Array(256).fill(null);
     this.rotorSpinShift = new Uint8Array(256);
+    // Sized on the first render (the grid's dimensions aren't known here); empty
+    // until then, which the render loop reads as "every wheel is at rest".
+    this.rotorBlockFrame = new Uint8Array(0);
+    this.rotorBlockNext = new Uint8Array(0);
     // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
     // loop can skip the whole block-anchor computation with one compare.
     this.varyCell = new Uint8Array(256);
@@ -784,6 +816,19 @@ export class CanvasRenderer implements Renderer {
     const rotorTileSpun = this.rotorTileSpun;
     const rotorSpinShift = this.rotorSpinShift;
     const tintBlockMask = this.tintBlockMask;
+    // Per-wheel animation frames: last pass's aggregate is what gets drawn, this
+    // pass's is being collected (see rotorBlockFrame). Re-allocated only when the
+    // grid is resized; a few hundred bytes for a full board, so it is not worth
+    // gating on "does this world contain a rotor at all".
+    const rotorBlocksW = Math.ceil(grid.width / ROTOR_N);
+    const rotorBlockCount = rotorBlocksW * Math.ceil(grid.height / ROTOR_N);
+    if (this.rotorBlockFrame.length !== rotorBlockCount) {
+      this.rotorBlockFrame = new Uint8Array(rotorBlockCount);
+      this.rotorBlockNext = new Uint8Array(rotorBlockCount);
+    }
+    const rotorFrames = this.rotorBlockFrame;
+    const rotorNext = this.rotorBlockNext;
+    rotorNext.fill(0);
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
     const ovArr = grid.overlay;
@@ -1087,22 +1132,30 @@ export class CanvasRenderer implements Renderer {
         // reason TNT's bundle is — the sweep that makes a wheel read as *turning* has no
         // short closed form at twelve cells.
         //
-        // **And it turns.** The cell picks between the wheel at rest and the wheel half
-        // a blade pitch on, from its own aux counter — a Fan's powered countdown, a
-        // Turbine's steam-tick count — so the wheel spins exactly while the machine
-        // works and freezes when it stops (see rotorFrame). That is what replaced the
-        // Fan's old chevron brightening as the "this one is running" cue; what the
-        // chevron also did and this cannot is point, which the wind streaks now carry
-        // alone.
+        // **And it turns.** The wheel alternates between the tile at rest and the tile
+        // half a blade pitch on, driven by the machine's own aux counter — a Fan's
+        // powered countdown, a Turbine's steam-tick count — so it spins exactly while
+        // the machine works and freezes when it stops (see rotorFrame). That is what
+        // replaced the Fan's old chevron brightening as the "this one is running" cue;
+        // what the chevron also did and this cannot is point, which the wind streaks
+        // now carry alone.
         //
-        // Positional like the Wall's courses, so a machine dragged out with the brush is
-        // one array of wheels rather than a fresh tile per cell — and, since the frame
-        // comes from aux and a body's counters are flooded in step, one wheel per body
-        // rather than a shimmer of cells out of phase.
+        // The frame is read and written *per wheel*, not per cell: this cell's own
+        // counter goes into the tile's accumulator for the next pass, and what it
+        // draws is the tile's aggregate from the last one (see rotorBlockFrame). A
+        // Turbine only counts on cells steam is passing through, so per-cell frames
+        // made a wheel spin along the steam's path and stand still on the rest of
+        // itself; per-tile, the whole wheel turns together the way a rigid wheel does.
+        //
+        // Positional like the Wall's courses, so a machine dragged out with the brush
+        // is one array of wheels rather than a fresh tile per cell — and the wheel and
+        // the animation unit are then the same square, which is the whole point.
         const y2 = (i / w) | 0;
         const x2 = i - y2 * w;
-        const frame = rotorFrame(auxArr[i], rotorSpinShift[id]);
-        const rt = frame ? rotorTileSpun[id]! : rotorTile[id]!;
+        const bi = ((y2 / ROTOR_N) | 0) * rotorBlocksW + ((x2 / ROTOR_N) | 0);
+        const spin = rotorSpin(auxArr[i], rotorSpinShift[id]);
+        if (spin > rotorNext[bi]) rotorNext[bi] = spin;
+        const rt = rotorFrame(rotorFrames[bi]) ? rotorTileSpun[id]! : rotorTile[id]!;
         c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
@@ -1277,6 +1330,11 @@ export class CanvasRenderer implements Renderer {
       const ov = ovArr[i];
       buf[i] = ov !== 0 ? CanvasRenderer.wetted(c, pal[ov]) : c;
     }
+    // Hand this pass's per-wheel frames to the next one. A swap rather than a copy:
+    // the array just drawn from becomes the accumulator and is cleared at the top of
+    // the next pass (see rotorBlockFrame).
+    this.rotorBlockFrame = rotorNext;
+    this.rotorBlockNext = rotorFrames;
     this.windWasActive = sawWind;
     this.windMinX = bxMin;
     this.windMaxX = bxMax;

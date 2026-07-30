@@ -349,18 +349,17 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
     return { buf, n: GAS_N };
   }
 
-  // Most patterns are drawn on the N-cell patch; four are drawn on their own period.
+  // Most patterns are drawn on the N-cell patch; three are drawn on their own period.
   // The rule is what a 9-cell *window* of the pattern is: for a rule-shaped tile it is
   // an honest sample (a 9-cell patch of the Wall shows 1½ bricks, and 1½ bricks read as
   // masonry), but for a tile built around one centred object it is a crop of that
   // object. A slice of two TNT glyphs is not a sample of TNT; three quarters of a
-  // speaker driver, a rotor with two of its blades cut off, or a coal lump sheared at
-  // the edge are the same failure. Those four use their own edge, so the tile shows
-  // exactly one of whatever it draws.
+  // speaker driver, or a rotor with two of its blades cut off, are the same failure.
+  // Those three use their own edge, so the tile shows exactly one of whatever it draws.
   //
   // 12 and 16 do not land on whole device pixels in the palette's 18 px swatch the way
-  // 9 and 18 do (see N). That is acceptable *only* because none of these four is the
-  // shipped chip — all of TNT, Woofer, Turbine, Fan and Coal are hand-drawn art, and
+  // 9 and 18 do (see N). That is acceptable *only* because none of these three is the
+  // shipped chip — TNT, Woofer, Turbine and Fan are all hand-drawn art, and
   // `generatedSvgFor` exists to keep the branches pinned. A future material setting one
   // of these patterns with no hand art would want the resampling `hazardPatch` does,
   // not this.

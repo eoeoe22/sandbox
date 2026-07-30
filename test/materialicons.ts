@@ -53,7 +53,7 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
-import { ROTOR_N, ROTOR_TILE_ROWS, rotorFrame } from '../src/game/render/rotorTile';
+import { ROTOR_N, ROTOR_TILE_ROWS, rotorFrame, rotorSpin } from '../src/game/render/rotorTile';
 import '../src/game/materials';
 
 let failures = 0;
@@ -547,18 +547,63 @@ checkThrows('each rotor has two distinct frames of equal weight', () => {
 checkThrows('a rotor is at rest on a fresh cell and turns as its counter runs', () => {
   const fan = byName('Fan');
   const turbine = byName('Turbine');
-  check('a freshly painted rotor is at rest', rotorFrame(0, fan.rotorSpinShift ?? 0) === 0
-    && rotorFrame(0, turbine.rotorSpinShift ?? 0) === 0);
+  const spin = (m: Material, aux: number): number => rotorSpin(aux, m.rotorSpinShift ?? 0);
+  check('a freshly painted rotor is at rest',
+    rotorFrame(spin(fan, 0)) === 0 && rotorFrame(spin(turbine, 0)) === 0);
   check('…for every direction a Fan can be stamped in',
-    [0, 1, 2, 3].every((dir) => rotorFrame(dir, fan.rotorSpinShift ?? 0) === 0), 'unpowered fan, dirs 0-3');
+    [0, 1, 2, 3].every((dir) => rotorFrame(spin(fan, dir)) === 0), 'unpowered fan, dirs 0-3');
   // A running counter must produce both frames rather than sticking on one.
   const seen = (m: Material, hi: number): Set<number> => {
     const out = new Set<number>();
-    for (let v = 0; v <= hi; v++) out.add(rotorFrame(v, m.rotorSpinShift ?? 0));
+    for (let v = 0; v <= hi; v++) out.add(rotorFrame(spin(m, v)));
     return out;
   };
   check('a running Turbine shows both frames', seen(turbine, 11).size === 2);
   check('a running Fan shows both frames', seen(fan, 24 << 2).size === 2);
+});
+
+// **One wheel, one phase.** The renderer draws a whole ROTOR_N tile from the MAX of its
+// cells' spin counters rather than from each cell's own (CanvasRenderer's
+// rotorBlockFrame), and this is the arithmetic that has to hold for that to be worth
+// doing. The case it exists for is the Turbine: it advances the counter only on cells
+// steam is actually passing through and leaves the rest at 0, so a tile mid-operation
+// holds a spread of counters, not one value.
+//
+// Two things get pinned. First that the spread is a real problem — the per-cell frames
+// genuinely disagree, i.e. the old code drew a wheel torn between its two frames.
+// Second that the two obvious aggregates are not interchangeable: an OR of the frames
+// sticks on the spun frame as soon as any one cell reaches it (which, for a tile with a
+// cell at every count, is always), so the wheel would have swapped tearing for being
+// frozen. The max tracks the leading cell and steps once per tick, which is a wheel.
+checkThrows('a wheel animates as one tile, off its leading cell', () => {
+  const turbine = byName('Turbine');
+  const sh = turbine.rotorSpinShift ?? 0;
+  // A tile of turbine cells partway through a pulse: the soaked cells lead, the ones
+  // steam only grazes lag, the ones it never reaches sit at 0.
+  const tile = [0, 0, 0, 1, 2, 2, 3, 4, 5, 5];
+  const frames = new Set(tile.map((a) => rotorFrame(rotorSpin(a, sh))));
+  check('per-cell frames really do disagree across one wheel', frames.size === 2,
+    `counters ${tile.join(',')}`);
+  const or = tile.reduce((acc, a) => acc | rotorFrame(rotorSpin(a, sh)), 0);
+  const max = tile.reduce((acc, a) => Math.max(acc, rotorSpin(a, sh)), 0);
+  check('…and an OR of them would have stuck on the spun frame', or === 1 && rotorFrame(max) === 0,
+    `or=${or}, max=${max} → frame ${rotorFrame(max)}`);
+  // Run a full pulse cycle with a laggard present: the tile's frame must flip on the
+  // same beat a lone cell would, i.e. every ROTOR_SPIN_SHIFT+1 ticks, never sticking.
+  const seq: number[] = [];
+  for (let t = 0; t < 12; t++) {
+    // leader at t, one cell half as fast, one dead cell — the worst case for the max.
+    const cells = [t, t >> 1, 0];
+    seq.push(rotorFrame(cells.reduce((acc, a) => Math.max(acc, rotorSpin(a, sh)), 0)));
+  }
+  check('the wheel flips every two ticks even with laggards on it',
+    seq.join('') === '001100110011', seq.join(''));
+  // And the counter the Turbine actually holds across a steam gap is what makes the
+  // wheel stop: a stalled tile keeps its leader's count, so it freezes on the frame it
+  // died on rather than snapping back to rest because most of its cells read 0.
+  const stalled = [6, 3, 0, 0, 0, 0];
+  check('a stalled wheel freezes on its leader\'s frame, not on rest',
+    rotorFrame(stalled.reduce((acc, v) => Math.max(acc, rotorSpin(v, sh)), 0)) === rotorFrame(6));
 });
 
 // The two rotors are one tile module with a blade count, so the failure worth naming is
@@ -796,15 +841,31 @@ checkThrows('Obsidian stays legible against the empty board', () => {
   // BOTH levels, because both pull the same way at the dark end and it is that corner
   // the shell is judged on. Widening the grain to 14 + 4 without moving the colour put
   // this at −2.9 — the deepest flakes of an obsidian shell were darker than open air,
-  // reading as holes punched through it — which is why the colour could not go as dark
-  // as `rgb(36, 26, 51)`. Every step of amplitude added here costs a step of darkness.
+  // reading as holes punched through it. Every step of amplitude added here costs a
+  // step of darkness, which is the whole reason the grain narrowed when the colour
+  // went down: at 14 + 4 the darkest flake could not clear the bar below at any colour
+  // that still read as black.
+  //
+  // **The bar is a ratio, not a fixed number of steps, and that matters.** Both sides
+  // of this comparison are near-black, where the eye judges by relative difference
+  // (Weber) rather than by absolute distance: 9 steps above the board is a ~55%
+  // brightening and reads immediately, while the same 9 steps between two mid-greys
+  // would be nearly invisible. 1.5× is the threshold used here — comfortably above the
+  // few-percent detection floor, and low enough to leave a black material somewhere to
+  // stand. An earlier version of this check spelled the same idea as a flat `margin >=
+  // 8` and, when the grain widened, the number was quietly cut to 3 to keep it green;
+  // stating it as a ratio is what makes moving it a visible argument rather than a
+  // knob. Nothing in the current material sits near the line: the margin is printed on
+  // failure so a future colour edit shows its own headroom.
   const amp = varyAmplitude(obs) + varyCellAmplitude(obs);
   const ch = (c: number, i: number): number => (c >> (8 * i)) & 0xff;
   const lum = (c: number, d = 0): number =>
     (ch(c, 0) + d) * 0.3 + (ch(c, 1) + d) * 0.59 + (ch(c, 2) + d) * 0.11;
-  const margin = lum(obs.color, -amp) - lum(board);
-  check('Obsidian stays legible against the empty board', margin >= 3,
-    `darkest grain sits ${margin.toFixed(1)} above the board at total amplitude ${amp}`);
+  const darkest = lum(obs.color, -amp);
+  const floor = lum(board);
+  check('Obsidian stays legible against the empty board', darkest >= floor * 1.5,
+    `darkest grain ${darkest.toFixed(1)} vs board ${floor.toFixed(1)} `
+    + `(${(darkest / floor).toFixed(2)}×, needs 1.50×) at total amplitude ${amp}`);
   // …and it is still darker than the grey rock it is the glassy cousin of, which is the
   // direction the colour has been moving.
   check('…and darker than Stone', lum(obs.color) < lum(byName('Stone').color),
