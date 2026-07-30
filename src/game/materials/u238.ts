@@ -24,6 +24,12 @@ import { MOLTEN_U238 } from './moltenu238';
 // into Nuke Waste. No criticality, no Nuclear Ray, no detonation — meltdown is the
 // worst it can do. So U238 is the "slow, dirty" fuel: it'll cook itself down into
 // a pile of waste, but it will never blow the screen apart the way U235 does.
+//
+// Chemistry, though, does not know about isotopes: U235 and U238 are the *same
+// element*, so they dissolve in acid at exactly the same rate and give off the
+// same hydrogen. The constant is therefore identical to uranium.ts's on purpose
+// — see that file for why uranium fizzes harder than aluminum does.
+const ACID_HYDROGEN_CHANCE = 0.05;
 const HEAT_PER_NEIGHBOR = 1;
 const MELT_TEMP = 1500;
 const COOL_CHANCE = 0.12;
@@ -79,6 +85,8 @@ export const U238 = register({
   explosionProof: true, // 방폭 — see uranium.ts
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { conductivity: 0.5 },
+  // Same element, same fizz as U235 — see the constant above.
+  acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   // Duller, more metallic olive than U235's brighter yellow-green, brightening as
   // it heats toward meltdown.
   glow: { min: AMBIENT_TEMP, max: MELT_TEMP, cool: rgb(60, 70, 40) },

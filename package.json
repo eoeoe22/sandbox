@@ -23,7 +23,8 @@
     "test:magnetobjects": "node test/run-magnetobjects.mjs",
     "test:smokebomb": "node test/run-smokebomb.mjs",
     "test:materialicons": "node test/run-materialicons.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons",
+    "test:acidmetal": "node test/run-acidmetal.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal",
     "check:hand-icons": "node scripts/build-hand-icons.mjs --check",
     "build:hand-icons": "node scripts/build-hand-icons.mjs"
   },

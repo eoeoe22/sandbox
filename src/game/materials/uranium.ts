@@ -36,6 +36,16 @@ import { MOLTEN_URANIUM } from './moltenuranium';
 // steady flow of water and the mass stays sub-critical indefinitely — the
 // rising Steam is the visible sign the reactor is running. Cut the water
 // supply and cooling stops; the chain reaction resumes and meltdown follows.
+//
+// ACID — uranium metal is far more reactive than its "heavy, inert-looking rock"
+// silhouette suggests: it sits *above* aluminum in the reactivity series
+// (E°(U³⁺/U) = −1.80 V against aluminum's −1.66 V), and a lump dropped in
+// hydrochloric acid dissolves briskly, giving off hydrogen. Acid already ate a
+// deposit — uranium isn't `acidResistant`, and its explosion/jet immunity is a
+// containment invariant, not armor — so all this tag changes is that the pit
+// now bubbles while it eats. 방폭·jetProof stay exactly as they were: acid is
+// the one way through the uranium series, as it always has been.
+const ACID_HYDROGEN_CHANCE = 0.05;
 const HEAT_PER_NEIGHBOR = 1;
 const MELT_TEMP = 1500;
 const COOL_CHANCE = 0.12;
@@ -99,6 +109,8 @@ export const URANIUM = register({
   // series — this immunity is the containment invariant above, not armor.
   jetProof: true,
   thermal: { conductivity: 0.5 },
+  // Dissolves in acid *fizzing* — more briskly than aluminum does (see above).
+  acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   glow: { min: AMBIENT_TEMP, max: MELT_TEMP, cool: rgb(70, 90, 30) },
   update: updateUranium,
 });
