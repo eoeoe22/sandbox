@@ -147,6 +147,29 @@ export interface Material {
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
   /**
+   * 산 + 금속 → 수소 — per-tick, per-contact chance that *liquid Acid* eating a
+   * cell of this material dissolves it into a hydrogen bubble instead of merely
+   * blinking it out: the acid cell that ate it becomes Hydrogen (see
+   * materials/acidhydrogen.ts, which owns the reaction and the rate table).
+   *
+   * Only tag a metal that is genuinely **above hydrogen in the activity series**
+   * (이온화 경향) — that ordering is the whole content of the tag. Na, Mg, Al, Zn,
+   * Fe and Ga displace H⁺ from an acid and give off H₂; Cu, Hg, Ag and Au sit
+   * below hydrogen and do not, so Mercury stays untagged and dissolves silently.
+   * An already-oxidized material (Rust, Iron Ore) has no metal left to oxidize
+   * and stays untagged too.
+   *
+   * The number replaces the medium's own corrosion chance for this material, so
+   * it is also "how fast does acid eat it" — quoted against liquid Acid's plain
+   * 0.03 (the fumes scale it down; see acidvapor.ts). This is the generalization
+   * `docs/MATERIAL-IDEAS.md` asked for once a fourth material needed it: acid.ts
+   * decides on the phase alone, so before this the aluminum trio each carried a
+   * near-identical `reactions` row that *raced* acid's own corrosion pass. With
+   * one tag on the metal there is no race left — every cell acid dissolves gives
+   * off its gas.
+   */
+  acidHydrogen?: number;
+  /**
    * A polished, highly-reflective surface that a Heat Ray beam bounces off with a
    * clean specular (정반사) reflection instead of being absorbed — Mercury and the
    * shiny metals (Iron, Heatpipe, Gallium, Liquid Gallium). The Heat Ray walk

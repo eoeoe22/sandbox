@@ -19,6 +19,7 @@ import { SLIME, SLIME_DISSOLVE_BUDGET } from './slime';
 import { ACID_SLIME } from './acidslime';
 import { WIRE } from './wire';
 import { ALUMINUM } from './aluminum';
+import { ZINC } from './zinc';
 
 // Spark — a travelling electric charge, the moving pulse of the electricity
 // subsystem. It's never a material you paint (like Ember, it's deliberately
@@ -127,6 +128,7 @@ const CONDUCTOR_IDS = [
   LIQUID_GALLIUM.id,
   WIRE.id,
   ALUMINUM.id,
+  ZINC.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
 // resistance, and the lever for "how far does current reach". At FULL_STRENGTH 63:
@@ -156,7 +158,12 @@ const CONDUCTOR_IDS = [
 // lines are aluminum rather than copper, so a lossless run is the honest
 // reading; what makes it different from Iron isn't reach but that you can pour
 // it out of a fire (see aluminum.ts) instead of smelting ore for it.
-const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0, 0];
+// (…, ZINC 0) — another cast metal, another run at the engine's floor. Nothing
+// about zinc's electricity is special (it conducts about a third as well as
+// copper, which is ordinary metal territory); it is here because every metal
+// conducts, and because a zinc hydrogen tank shouldn't be an insulating island
+// in a wired build.
+const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0];
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // word, with class 0 reserved for "no conductor" (classes 1..CLASS_MASK = 1..255).

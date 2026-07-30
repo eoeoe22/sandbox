@@ -42,5 +42,13 @@ export const GALLIUM = register({
   // A metal, so it carries heat readily — which, with its very low melt point,
   // is exactly why the smallest warm touch spreads through a bar and melts it.
   thermal: { conductivity: 0.7 },
+  // 산 + 갈륨 → 수소, and the slowest entry on the table (see acidhydrogen.ts).
+  // Gallium is above hydrogen (−0.55 V) and amphoteric, so mineral acid really does
+  // dissolve it with a fizz — but grudgingly, so this sits at *half* acid's plain
+  // corrosion rate: the one metal acid eats more slowly than an ordinary solid.
+  // Only the cold, solid bar qualifies. Liquid Gallium is a Liquid, and acid's
+  // corrosion pass only ever looks at solids and powders, so a puddle of it is
+  // untouched — melt your gallium and the acid stops working on it entirely.
+  acidHydrogen: 0.015,
   update: updateGallium,
 });

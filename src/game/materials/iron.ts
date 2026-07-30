@@ -46,7 +46,9 @@ function getSaltWaterDepth(x: number, y: number, sim: SimContext): number {
 //    down a wire instead of sloshing back and forth (see spark.ts's comment).
 //
 // Acid dissolves Iron outright via Acid's own corrosion pass (Iron isn't tagged
-// acidResistant), so a wet-but-safe metal is still vulnerable to acid.
+// acidResistant), so a wet-but-safe metal is still vulnerable to acid — and it
+// gives off hydrogen doing it (Fe + 2HCl → FeCl₂ + H₂, the second-most famous
+// acid-metal fizz after zinc's). See `acidHydrogen` below.
 function updateIron(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again.
   const refractory = sim.getAux(x, y);
@@ -92,6 +94,14 @@ export const IRON = register({
   // The best heat conductor in the game: an Iron bar shuttles heat end-to-end,
   // so it both melts readily against a hot source and makes a fine cold bridge.
   thermal: { conductivity: 0.85 },
+  // 산 + 철 → 수소. Iron sits above hydrogen in the activity series (−0.44 V), so
+  // an iron wall in acid fizzes as it goes. The rate is exactly acid's own plain
+  // corrosion chance (0.03), which is the *point*: acid eats iron neither faster
+  // nor slower than it did before this tag existed, it just no longer eats it
+  // silently. Slowest of the structural metals that react — cast aluminum (0.04)
+  // and zinc (0.08) both outpace it, matching the series ordering (Al > Zn > Fe).
+  // See acidhydrogen.ts for the whole table.
+  acidHydrogen: 0.03,
   update: updateIron,
 });
 

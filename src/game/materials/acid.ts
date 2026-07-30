@@ -6,6 +6,7 @@ import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ACID_VAPOR } from './acidvapor';
 import { WATER } from './water';
+import { corrodeChance, releaseHydrogen } from './acidhydrogen';
 
 // Liquid: flows like water, but each tick has a chance to corrode any
 // non-resistant Solid/Powder neighbor (dissolving it to Empty). If it
@@ -13,6 +14,10 @@ import { WATER } from './water';
 // bounds how much a given puddle of acid can eat through before running out.
 // With no corrodible neighbor, it just sits there — acid only ever shrinks
 // as a byproduct of actually corroding something, never on its own.
+// One family of neighbors it does more than dissolve: a metal above hydrogen in
+// the activity series (`Material.acidHydrogen` — Zinc, Iron, the aluminums, …)
+// turns the acid cell that ate it into a rising Hydrogen bubble. That whole
+// reaction, and which metals qualify, lives in acidhydrogen.ts.
 // Heated past its boiling point it flashes to Acid Vapor (corrosive fumes), the
 // gaseous counterpart that rises, etches, and condenses back to acid — the same
 // pattern as Water↔Steam (see acidvapor.ts).
@@ -27,6 +32,9 @@ const CORRODE_CHANCE = 0.03;
 const SELF_CONSUME_CHANCE = 0.08;
 const ACID_BOIL_TEMP = 100;
 const DIFFUSE_CHANCE = 0.02;
+// Liquid acid is the medium every `Material.acidHydrogen` rate is quoted against
+// (see acidhydrogen.ts), so it applies them at full strength.
+const METAL_SCALE = 1;
 
 function isCorrodible(id: number): boolean {
   if (id === EMPTY) return false;
@@ -54,10 +62,18 @@ function updateAcid(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (isCorrodible(nid) && sim.chance(CORRODE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
-      corroded = true;
+    if (!isCorrodible(nid)) continue;
+    if (!sim.chance(corrodeChance(nid, CORRODE_CHANCE, METAL_SCALE))) continue;
+    sim.set(nx, ny, EMPTY);
+    // A metal above hydrogen in the activity series doesn't just vanish: this
+    // acid cell becomes the hydrogen bubble the reaction liberated, which ends
+    // the corrosion sweep (this cell is no longer acid) and consumes both sides
+    // 1:1 — see acidhydrogen.ts for the roster and why it lives there.
+    if (getMaterial(nid).acidHydrogen !== undefined) {
+      releaseHydrogen(x, y, sim);
+      return;
     }
+    corroded = true;
   }
   if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
     sim.set(x, y, EMPTY);

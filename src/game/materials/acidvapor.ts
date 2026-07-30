@@ -6,6 +6,7 @@ import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
 import { ACID } from './acid';
+import { corrodeChance, releaseHydrogen } from './acidhydrogen';
 
 // The gaseous half of Acid — corrosive fumes. Boiling Acid flashes to Acid Vapor
 // (see acid.ts), the vapor rises/diffuses like any gas, eats away at solids and
@@ -16,6 +17,11 @@ import { ACID } from './acid';
 // It never just vanishes on its own — boil → rise → corrode → condense always
 // relocates it back to liquid Acid rather than destroying it.
 const CORRODE_CHANCE = 0.015; // vs the liquid's 0.03 — fumes bite more slowly
+// …and the same halving applies to a hydrogen-releasing metal's own rate, which is
+// quoted against liquid Acid (see acidhydrogen.ts). So the fumes etching a zinc or
+// iron ceiling do fizz hydrogen off it — at half the pace the puddle would, and the
+// gas is already up where it collects.
+const METAL_SCALE = 0.5;
 const SELF_CONSUME_CHANCE = 0.05; // a puff that corroded may be used up doing so
 const CONDENSE_CHANCE = 0.006; // drifting fumes mostly find their way back to acid…
 const CONDENSE_CHANCE_BLOCKED = 0.03; // pooled under a ceiling → condenses faster
@@ -33,10 +39,17 @@ function updateAcidVapor(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (isCorrodible(sim.get(nx, ny)) && sim.chance(CORRODE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
-      corroded = true;
+    const nid = sim.get(nx, ny);
+    if (!isCorrodible(nid)) continue;
+    if (!sim.chance(corrodeChance(nid, CORRODE_CHANCE, METAL_SCALE))) continue;
+    sim.set(nx, ny, EMPTY);
+    // Same rule as the liquid's (acidhydrogen.ts): a metal above hydrogen turns
+    // the fume cell that ate it into a Hydrogen bubble, ending the sweep.
+    if (getMaterial(nid).acidHydrogen !== undefined) {
+      releaseHydrogen(x, y, sim);
+      return;
     }
+    corroded = true;
   }
   if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
     sim.set(x, y, EMPTY);

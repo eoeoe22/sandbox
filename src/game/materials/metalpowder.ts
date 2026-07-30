@@ -94,6 +94,12 @@ export const METAL_POWDER = register({
   // Loose grains bridge heat far worse than a solid Iron bar (0.85), but metal
   // still carries warmth better than mineral dust.
   thermal: { conductivity: 0.35 },
+  // 산 + 철가루 → 수소 (see acidhydrogen.ts). Same metal as solid Iron and the same
+  // reaction, faster: a heap of shavings presents all of itself to the acid where a
+  // bar presents one wetted face, so it fizzes at 0.05 against Iron's 0.03 — the
+  // same surface-area split Aluminum Powder (0.12) keeps over cast Aluminum (0.04),
+  // and the cheapest hydrogen generator you can get out of a burst drum.
+  acidHydrogen: 0.05,
   update: updateMetalPowder,
 });
 

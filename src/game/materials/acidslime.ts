@@ -8,6 +8,7 @@ import { isFlame } from './combustion';
 import { SMOKE } from './smoke';
 import { SLIME, SLIME_FLOW_CHANCE } from './slime';
 import { WATER } from './water';
+import { corrodeChance, releaseHydrogen } from './acidhydrogen';
 
 // Acid Slime (산성 슬라임) — Slime's corrosive cousin. It behaves almost exactly
 // like ordinary Slime (slime.ts): a thick, gooey semi-fluid that oozes rather
@@ -43,6 +44,9 @@ const MELT_TEMP = 130; // …or enough ambient heat does the same
 // Empty, and — if it corroded anything — a chance to consume itself doing so, which
 // bounds how much a given blob can eat through.
 const CORRODE_CHANCE = 0.03;
+// 동일한 부식력 applies to the metal rates too: they're quoted against liquid Acid
+// (see acidhydrogen.ts) and the blob is as strong as the liquid, so no scaling.
+const METAL_SCALE = 1;
 const SELF_CONSUME_CHANCE = 0.08;
 
 // Slow, occasional swap with a neighbouring plain-Slime cell so the two miscible
@@ -124,10 +128,18 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (isCorrodible(sim.get(nx, ny)) && sim.chance(CORRODE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
-      corroded = true;
+    const nid = sim.get(nx, ny);
+    if (!isCorrodible(nid)) continue;
+    if (!sim.chance(corrodeChance(nid, CORRODE_CHANCE, METAL_SCALE))) continue;
+    sim.set(nx, ny, EMPTY);
+    // 동일한 부식력 extends to the metal reaction too: a blob eating zinc or iron
+    // gives off hydrogen exactly as the puddle does, and the cell that did it is
+    // spent as the bubble (so the blob shrinks by one, ending its sweep).
+    if (getMaterial(nid).acidHydrogen !== undefined) {
+      releaseHydrogen(x, y, sim);
+      return;
     }
+    corroded = true;
   }
   if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
     sim.set(x, y, EMPTY);

@@ -141,6 +141,8 @@ import { CATALYST } from './catalyst';
 import { POLYETHYLENE } from './polyethylene';
 import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 import { AMMONAL } from './ammonal';
+import { MOLTEN_ZINC } from './moltenzinc';
+import { ZINC } from './zinc';
 
 export {
   EMPTY_MAT,
@@ -281,6 +283,8 @@ export {
   POLYETHYLENE,
   ACTIVATED_ALUMINUM,
   AMMONAL,
+  MOLTEN_ZINC,
+  ZINC,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -366,10 +370,12 @@ export const MATERIALS = [
   SAWDUST,
   IRON,
   ALUMINUM,
+  ZINC,
   RUST,
   GALLIUM,
   MOLTEN_METAL,
   MOLTEN_ALUMINUM,
+  MOLTEN_ZINC,
   MOLTEN_GLASS,
   BROKEN_GLASS,
   GLASS,

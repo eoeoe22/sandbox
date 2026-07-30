@@ -1,10 +1,8 @@
 import { register } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
-import { ACID } from './acid';
-import { HYDROGEN } from './hydrogen';
 
 // Aluminum — cast solid metal, the product end of the aluminum line:
 // **Aluminum Powder → (heat past 660°) → Molten Aluminum → (cool) → Aluminum**.
@@ -52,9 +50,7 @@ import { HYDROGEN } from './hydrogen';
 // the slower rate is what makes the difference visible: a bar fizzes away over
 // a while, a pinch of powder is gone in a flurry.
 const ACID_REACT_CHANCE = 0.04;
-// Matches the powder's, and for the same reason: under Hydrogen's 200°
-// autoignition so the gas gets to rise and collect instead of lighting at birth.
-const ACID_REACT_HEAT = 25;
+
 function updateAluminum(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again
   // (the same one-way "recently energized" memory Iron and Wire keep — see
@@ -91,19 +87,11 @@ export const ALUMINUM = register({
   // Better than Iron (0.85), short of Diamond (0.95) — the honest ordering for
   // a metal that conducts heat roughly three times as well as iron does.
   thermal: { conductivity: 0.9 },
-  // Acid eats it either way (it isn't `acidResistant`, so acid.ts's phase-only
-  // corrosion pass already dissolved it to nothing) — this row only makes sure
-  // the reaction has the product it should: the acid cell becomes a rising
-  // hydrogen bubble instead of both cells quietly blinking out. Same shape and
-  // same reasoning as the powder's row (aluminumpowder.ts), just slower.
-  reactions: [
-    {
-      with: ACID.id,
-      produce: EMPTY,
-      otherBecomes: HYDROGEN.id,
-      probability: ACID_REACT_CHANCE,
-      heat: ACID_REACT_HEAT,
-    },
-  ],
+  // 산 + 금속 → 수소. Acid eats it either way (it isn't `acidResistant`), but not
+  // silently: the acid cell that dissolves a cast face becomes a rising hydrogen
+  // bubble instead of both cells quietly blinking out. One tag now rather than a
+  // `reactions` row racing acid's own corrosion pass — the rate table and the
+  // activity-series reasoning live in acidhydrogen.ts.
+  acidHydrogen: ACID_REACT_CHANCE,
   update: updateAluminum,
 });

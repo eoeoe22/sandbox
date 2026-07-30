@@ -6,6 +6,7 @@ import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
+import { ACID } from './acid';
 import { FIRE } from './fire';
 import { HYDROGEN } from './hydrogen';
 import { detonate } from './blast';
@@ -23,6 +24,15 @@ import { detonate } from './blast';
 // as a proper shockwave that scales with how much you piled up — "물 조금이면 불,
 // 뭉쳐두면 폭발". It's tagged `explosive` purely so that blast surveys the whole
 // connected sodium mass for a proportional crater; nothing but water sets it off.
+//
+// **Acid counts as water here**, and it is the top of the activity series doing it:
+// sodium is the most reactive metal in the palette (−2.71 V), so an acid that merely
+// fizzes hydrogen off zinc or iron (see acidhydrogen.ts) sets sodium alight or blows
+// the pile up, exactly as plain water does. It reacts on its own terms rather than
+// through the shared `acidHydrogen` tag: that tag makes a bubble and nothing else,
+// which for this metal would be the *quietest* thing acid could possibly do to it.
+// Its own path at REACT_CHANCE 0.5 is also sixteen times acid's corrosion roll, so
+// the grain always gets to react before the acid can quietly eat it.
 const REACT_CHANCE = 0.5; // reacts with water fast, but not every single tick
 const REACT_TEMP = 720; // heat of reaction — hot enough to light the released H₂
 // A grain with at least this many sodium neighbours is buried in a pile, so its
@@ -42,7 +52,9 @@ function updateSodium(x: number, y: number, sim: SimContext): void {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === WATER.id || nid === SALTWATER.id) {
+    // Fresh water, brine and acid all count: they are all aqueous, and the metal
+    // that tears hydrogen out of neutral water tears it out of an acid harder still.
+    if (nid === WATER.id || nid === SALTWATER.id || nid === ACID.id) {
       if (waterX < 0) {
         waterX = nx;
         waterY = ny;
