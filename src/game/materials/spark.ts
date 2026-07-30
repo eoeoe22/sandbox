@@ -206,6 +206,17 @@ function classToId(cls: number): number {
 function classLoss(cls: number): number {
   return CONDUCTOR_LOSS[cls - 1];
 }
+/** Does this material carry a pulse end to end with *no* strength loss — the
+ *  metal class (Iron/Mercury/Gallium/Liquid Gallium/Nichrome/Aluminum), Wire, and
+ *  Acid Slime, the one non-metal that conducts at the maximum (전기전도성 최대치)?
+ *  Derived from CONDUCTOR_LOSS rather than a hand-kept list, so a conductor's
+ *  reach and its "is this good wiring" answer can never drift apart: retune a
+ *  medium's loss and everything reading this follows. Used by the `'lossless'`
+ *  emission gate below. */
+export function isLosslessConductor(id: number): boolean {
+  const cls = conductorClass(id);
+  return cls !== 0 && classLoss(cls) === 0;
+}
 /** Pack a spark's (strength, conductor class) into its aux word. */
 export function packSpark(strength: number, cls: number): number {
   const s = strength < 0 ? 0 : strength > MAX_STRENGTH ? MAX_STRENGTH : strength;
@@ -277,6 +288,29 @@ export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: numbe
 }
 
 /**
+ * Which conductors a pulse *source* is willing to feed — the emission-side knob
+ * of `pulseCell`, chosen by the source rather than by the material being entered
+ * (that's `Material.insulated`, which governs a travelling Spark's hand-off).
+ *
+ *   • `'any'` — every ready conductor, lossy media included. What a Battery
+ *     terminal, a Solar Panel face and the 전기 브러시 use: a bare terminal in a
+ *     puddle electrifies the puddle, which is the honest reading of a bare
+ *     terminal.
+ *   • `'lossless'` — 전선처럼 (wired output): only conductors that carry a pulse
+ *     at zero strength loss (`isLosslessConductor` — the metals, Wire, Acid
+ *     Slime). Water, brine, acid and plain Slime are skipped outright, so a
+ *     source that lives *inside* wet machinery pushes its power into wiring
+ *     instead of into its own working fluid. The Turbine uses this (see
+ *     turbine.ts): it sits in a boiler by construction, and a bare face used to
+ *     dump every beat into the condensate around it — electrolysing the boiler
+ *     water away. The non-conductor branch is deliberately untouched, exactly
+ *     like Wire's jacket: appliances (`directPulse`) and explosive charges are
+ *     one-way sinks that *consume* a pulse rather than spread it, so 도체 없이
+ *     직접 연결 still works.
+ */
+export type PulseGate = 'any' | 'lossless';
+
+/**
  * Deliver one full-strength pulse to the cell (x,y) *itself* — the single
  * "what does a pulse do to this cell" rule, shared by every direct-contact
  * source: a Battery/LFP Battery terminal and a Turbine face (each applying it
@@ -292,11 +326,21 @@ export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: numbe
  * through `reactToPulse`, so an appliance (`directPulse`) or an explosive charge
  * reacts exactly as it would to a pulse relayed down a wire. Returns whether the
  * pulse did anything at all.
+ *
+ * `gate` narrows only the conductor branch (see PulseGate): a `'lossless'` source
+ * refuses to energize a lossy medium at all, while reacting to devices and
+ * charges exactly as an ungated one does.
  */
-export function pulseCell(sim: SimContext, x: number, y: number): boolean {
+export function pulseCell(
+  sim: SimContext,
+  x: number,
+  y: number,
+  gate: PulseGate = 'any',
+): boolean {
   const id = sim.get(x, y);
   if (id === EMPTY) return false;
   if (getMaterial(id).conductive) {
+    if (gate === 'lossless' && !isLosslessConductor(id)) return false;
     if (sim.getAux(x, y) !== 0) return false; // refractory / carrying other state
     const cls = conductorClass(id);
     if (cls === 0) return false;

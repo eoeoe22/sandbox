@@ -11,7 +11,8 @@ import { PULSE_PERIOD } from './battery';
 // Turbine — a steam-driven generator. Like the Mesh it's a porous solid that
 // fluids pass straight through via the 겹침 overlap layer (see Grid.overlay),
 // and while a puff of *Steam* is blowing through the blades it makes power:
-// a fresh Spark is injected into every ready conductive neighbor — exactly the
+// a fresh Spark is injected into every ready piece of wiring on its faces (see
+// the wired-output note below) — exactly the
 // pulse a Battery emits, on the very same cadence (PULSE_PERIOD, shared from
 // battery.ts): while steam keeps flowing the turbine beats once every
 // PULSE_PERIOD ticks, so anything downstream (a wire, a Fan, a Woofer) can't tell
@@ -30,6 +31,19 @@ import { PULSE_PERIOD } from './battery';
 // never travel *into* it or across it; it only ever *emits*. That keeps a
 // turbine from acting as a free wire that back-feeds a circuit, while still
 // solving "steam in the center can't reach the terminal on the edge".
+//
+// Its output is WIRED, not bare (전선처럼): a turbine face only ever feeds
+// proper wiring — Wire, the metals, anything that carries a pulse at zero loss
+// (`isLosslessConductor`) — plus electric appliances and charges bolted straight
+// onto it. Lossy media (water, brine, acid, Slime) are skipped entirely, the
+// `'lossless'` emission gate in spark.ts's `pulseCell`. The reason is that a
+// turbine lives inside wet machinery *by design*: it stands over a boiler with
+// steam blowing through it and condensate draining back down through its own
+// pores. A bare face dumped every beat into that water, which spread a pulse
+// through the whole pool, electrolysed it into hydrogen and oxygen — the boiler
+// slowly ate itself — and bled the generated strength off into a puddle instead
+// of down the cable. So the turbine's terminals behave like insulated wiring:
+// power goes where you route it, not into whatever it happens to be standing in.
 
 /** Inject a full-strength Spark into every ready conductive neighbor of (x,y) —
  *  the same hand-off a Battery does, triggered here by steam in the body. A
@@ -41,20 +55,25 @@ import { PULSE_PERIOD } from './battery';
  *  Both cases go through the one shared per-cell rule every pulse source uses
  *  (spark.ts's `pulseCell`, also behind Battery's injectPulses and the 전기
  *  브러시), so the turbine stays consistent with them by construction — a new
- *  `directPulse`/explosive material needs no turbine edit. */
+ *  `directPulse`/explosive material needs no turbine edit.
+ *
+ *  The one thing the turbine asks of that shared rule is the `'lossless'`
+ *  emission gate (see PulseGate): of the conductors, only zero-loss wiring gets
+ *  a pulse, never the boiler water/brine/acid/goo the machine is standing in
+ *  (see the header note). Devices and charges are unaffected. */
 function energizeNeighbors(x: number, y: number, sim: SimContext): void {
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    pulseCell(sim, nx, ny);
+    pulseCell(sim, nx, ny, 'lossless');
   }
 }
 
 /** Deliver a generation pulse to every conductor attached to the connected
  *  turbine body containing (sx,sy): flood the whole body through turbine cells
  *  (4-connected, the shared `floodDeviceBody` every electric device's body walk
- *  uses) and energize each one's external conductive neighbors. The pulse only
+ *  uses) and energize each one's external wiring neighbors. The pulse only
  *  travels turbine→turbine and out to a conductor, never the other way, so it's
  *  inherently one-directional (inside → out). The walk is uncapped, the same way
  *  a device's activation is (see engine/deviceBody.ts): a steam-fed block powers

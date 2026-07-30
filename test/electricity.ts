@@ -37,6 +37,10 @@ import { IRON } from '../src/game/materials/iron';
 import { STONE } from '../src/game/materials/stone';
 import { WIRE } from '../src/game/materials/wire';
 import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
+import { TURBINE } from '../src/game/materials/turbine';
+import { STEAM } from '../src/game/materials/steam';
+import { SLIME } from '../src/game/materials/slime';
+import { NICHROME } from '../src/game/materials/nichrome';
 import { emitHeatRay } from '../src/game/materials/heatray';
 import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials'; // register all materials (side effect)
@@ -661,6 +665,118 @@ function farLeadReached(barId: number): boolean {
     'and after it shrinks',
     shrunk === 100,
     `${shrunk}/100 fan cells`,
+  );
+}
+
+// --- 9. Turbine: wired output only (전선처럼) ----------------------------------
+// A turbine stands in wet machinery by design — steam through the blades,
+// condensate draining back down through its pores — so a *bare* terminal was the
+// wrong model for it: every beat energized the boiler water touching it, spread a
+// pulse through the whole pool, electrolysed it into gas and bled the generated
+// strength into a puddle instead of down the cable. Its faces now emit only into
+// zero-loss wiring (the `'lossless'` PulseGate in spark.ts): Wire and the metals
+// yes, water/brine/acid/Slime no. What must NOT change is the other branch —
+// appliances and charges bolted straight onto a face still fire (도체 없이 직접
+// 연결), because those consume a pulse instead of spreading it, exactly like the
+// far end of a Wire run.
+//
+// Every check runs the same scene with a Battery swapped in for the Turbine as
+// the control: a bare battery terminal still soaks its surroundings, which proves
+// both that the scene really does deliver current and that this is a property of
+// the turbine's output rather than something that quietly leaked into the shared
+// `pulseCell` for every source.
+
+/** Sealed one-cell channel: two source cells at the left end, then the rest of
+ *  the row filled with `mediumId`. Returns whether any medium cell ever carried a
+ *  Spark. The channel is capped at both ends and completely full so the liquid
+ *  media stay in line instead of draining away (the same trick `reach` uses), and
+ *  a Turbine source gets Steam re-stamped into its 겹침 slot every tick — steam
+ *  in the body is what gates generation, and re-stamping is what keeps a puff in
+ *  the blades for the whole run (it blows on or condenses otherwise). Stamped
+ *  before the step, since a cell's own update runs ahead of its 겹침 passenger's.
+ *
+ *  Deliberately at ambient temperature: an earlier version of this scene held the
+ *  turbine at 300° to stop the steam condensing, and quietly boiled the media it
+ *  was supposed to be testing — a "does not electrify the water" pass that only
+ *  meant the water had already flashed to vapor. */
+function sourceFeeds(sourceId: number, mediumId: number): boolean {
+  const grid = new Grid(16, 3);
+  const sim = new Simulation(grid);
+  for (let x = 0; x < grid.width; x++) {
+    grid.set(x, 0, WALL.id);
+    grid.set(x, 2, WALL.id);
+  }
+  grid.set(0, 1, WALL.id);
+  grid.set(grid.width - 1, 1, WALL.id);
+  grid.set(1, 1, sourceId);
+  grid.set(2, 1, sourceId);
+  for (let x = 3; x < grid.width - 1; x++) grid.set(x, 1, mediumId);
+
+  let sparked = false;
+  for (let t = 0; t < PULSE_PERIOD * 6; t++) {
+    if (sourceId === TURBINE.id) {
+      for (const sx of [1, 2]) grid.setOverlay(sx, 1, STEAM.id);
+    }
+    sim.step();
+    for (let x = 3; x < grid.width - 1; x++) {
+      if (grid.get(x, 1) === SPARK.id) sparked = true;
+    }
+  }
+  return sparked;
+}
+
+{
+  // Zero-loss wiring — the turbine's output has to reach all of it, or a steam
+  // plant simply doesn't work.
+  for (const wiring of [WIRE, IRON, NICHROME]) {
+    check(
+      `a Turbine feeds ${wiring.name} bolted to its face (무손실 도체)`,
+      sourceFeeds(TURBINE.id, wiring.id),
+      'wired output',
+    );
+  }
+  // Lossy media — skipped outright, and the battery control proves the scene works.
+  for (const wet of [WATER, SALTWATER, ACID, SLIME]) {
+    check(
+      `a Turbine does NOT electrify the ${wet.name} it stands in`,
+      !sourceFeeds(TURBINE.id, wet.id),
+      '13 cells of contact',
+    );
+    check(
+      `  …while a bare Battery terminal still does (the check can fail)`,
+      sourceFeeds(BATTERY.id, wet.id),
+      `${wet.name}`,
+    );
+  }
+}
+
+{
+  // …and the non-conductor branch is untouched: a Fan clipped straight onto a
+  // turbine face still runs with no wire between them. This is the half most at
+  // risk from a gate on emission — narrow it by material instead of by conductor
+  // loss and 직결 가전 stops working.
+  const grid = new Grid(14, 8);
+  const sim = new Simulation(grid);
+  for (let y = 2; y < 6; y++) grid.set(3, y, TURBINE.id);
+  for (let y = 2; y < 6; y++) {
+    for (let x = 4; x < 8; x++) grid.set(x, y, FAN.id);
+  }
+  for (let t = 0; t < PULSE_PERIOD * 4; t++) {
+    for (let y = 2; y < 6; y++) grid.setOverlay(3, y, STEAM.id);
+    sim.step();
+  }
+  let fanCells = 0;
+  let powered = 0;
+  for (let y = 2; y < 6; y++) {
+    for (let x = 4; x < 8; x++) {
+      fanCells++;
+      if (grid.getAux(x, y) >> 2 > 0) powered++;
+    }
+  }
+  check(
+    'a Fan bolted straight onto a Turbine face still runs (도체 없이 직접 연결)',
+    powered === fanCells,
+    `${powered}/${fanCells} fan cells`,
   );
 }
 
