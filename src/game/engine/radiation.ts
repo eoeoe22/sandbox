@@ -51,6 +51,17 @@ export const RADIATION_RANGE = 6;
 // (2R+1)×(2R+1) box around its source, so "visited" is a small local grid indexed
 // relative to that source rather than anything grid-sized — clearing it is a
 // 169-byte memset, and nothing here has to know how big the world is.
+//
+// The queue is sized to that same box and cannot overrun it: a cell is enqueued
+// only on the transition that sets its `seen` byte, and the source's own byte is
+// set before the loop starts, so across a whole flood there is at most one
+// enqueue per box cell.
+//
+// Being module-level scratch, this is NOT re-entrant. Nothing re-enters it today
+// — `irradiate` is called only from Simulation's per-cell scan, and the
+// `radiationHit` hooks it dispatches to only write aux — but a hook that somehow
+// caused another irradiation would corrupt the flood in progress. A hook is for
+// recording damage on the cell it was handed; it must not set the world off.
 const SPAN = RADIATION_RANGE * 2 + 1;
 const CELLS = SPAN * SPAN;
 const seen = new Uint8Array(CELLS);
