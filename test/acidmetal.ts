@@ -13,6 +13,10 @@
 //   • **the ordering is the reactivity series** — read straight off the tags, so
 //     a future retune can't quietly put iron above aluminum. Plus the
 //     surface-area split each metal keeps between its powder and its bulk form;
+//   • **the roster itself**, scanned off the registry — this file holds the one
+//     copy of "which metals are tagged, at what rate" that is checked by code
+//     rather than restated in prose, so adding or retuning a tagged metal fails
+//     here first and that failure is the prompt to walk the comments and docs;
 //   • **1:1 consumption** — the acid is spent as it works, so a small puddle on a
 //     big block of iron stops rather than acting as a free hydrogen catalyst;
 //   • **the bubble is born cool** — under Hydrogen's 200° autoignition even off
@@ -236,6 +240,50 @@ function bath(
       rate(WIRE.id) === 0 &&
       rate(MERCURY.id) === 0 &&
       rate(NICHROME.id) === 0,
+  );
+
+  // The roster itself, scanned off the registry rather than restated by hand —
+  // and this is the *canonical* copy of it. Prose can't help enumerating this
+  // list (acid.ts's header, the `acidHydrogen` JSDoc, MATERIALS.md's 사슬,
+  // MATERIAL-SYSTEMS.md's 등급 표 all do), and a hand-copied roster in a file
+  // away from the constant it describes is exactly what went stale three times
+  // while this branch was in review — twice by listing Sodium, which declines
+  // the tag on purpose, and once by calling 0.12 the fastest rate when the
+  // activated dust sits at 0.2. Every one of those was invisible to the tests
+  // because no test knew what the complete list was supposed to be.
+  //
+  // So: adding or retuning a tagged metal fails *here* first, with the new
+  // roster printed out, and the failure is the reminder to walk the prose. Same
+  // trick as `npm run check:material-ids` — believe the registry, not a comment.
+  const tagged: string[] = [];
+  for (let id = 1; id < 256; id++) {
+    const m = getMaterial(id);
+    if (m?.acidHydrogen !== undefined) tagged.push(`${m.name} ${m.acidHydrogen.chance}`);
+  }
+  const EXPECTED = [
+    'Activated Aluminum 0.2',
+    'Aluminum 0.04',
+    'Aluminum Powder 0.12',
+    'Gallium 0.015',
+    'Iron 0.03',
+    'Metal Powder 0.09',
+    'U235 0.05',
+    'U238 0.05',
+  ];
+  const sorted = tagged.sort(); // registry order is arbitrary; compare as a set
+  check(
+    'the tagged roster is exactly the eight metals above hydrogen',
+    sorted.length === EXPECTED.length && sorted.every((v, i) => v === EXPECTED[i]),
+    `${sorted.length}종: ${sorted.join(', ')}`,
+  );
+  // …and none of them overrides the shared heat of reaction, which is what makes
+  // "the bubble is born cool" a property of acid.ts's one default rather than a
+  // claim that has to be re-measured per metal.
+  check(
+    'no metal overrides the default heat of reaction',
+    [IRON, METAL_POWDER, URANIUM, U238, GALLIUM, ALUMINUM, ALUMINUM_POWDER, ACTIVATED_ALUMINUM].every(
+      (m) => m.acidHydrogen?.heat === undefined,
+    ),
   );
 }
 
