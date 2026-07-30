@@ -18,11 +18,12 @@
     "test:fireworks": "node test/run-fireworks.mjs",
     "test:aluminum": "node test/run-aluminum.mjs",
     "test:plantcoral": "node test/run-plantcoral.mjs",
+    "test:radiation": "node test/run-radiation.mjs",
     "test:plastic": "node test/run-plastic.mjs",
     "test:magnetobjects": "node test/run-magnetobjects.mjs",
     "test:smokebomb": "node test/run-smokebomb.mjs",
     "test:materialicons": "node test/run-materialicons.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons",
     "check:hand-icons": "node scripts/build-hand-icons.mjs --check",
     "build:hand-icons": "node scripts/build-hand-icons.mjs"
   },

@@ -177,6 +177,11 @@ export const MOLTEN_URANIUM = register({
   color: rgb(235, 255, 90),
   density: 10, // densest liquid in the game — sinks through even Mercury (9)
   category: 'radioactive',
+  // 방사선 — the hottest thing in the game: an exposed corium pool. Anything alive
+  // that a meltdown flows against dies almost at once (see engine/radiation.ts),
+  // which is the point — the melt escaping containment should scour the ground it
+  // crosses long before its heat gets there.
+  radiation: 0.1,
   explosionProof: true, // 방폭 — see uranium.ts (Nuclear Ray still feeds it as before)
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { init: MOLTEN_URANIUM_TEMP, conductivity: 0.5 },

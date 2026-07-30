@@ -40,6 +40,12 @@ export const NUKE_WASTE = register({
   colorVary: POWDER_VARY,
   density: 6,
   category: 'radioactive',
+  // 방사선 — hotter than the fresh fuel it came from, which is the real thing: it's
+  // the fission products in spent fuel that are fiercely active, not the U235 that
+  // made them. So the waste you're left with after a meltdown is the one solid
+  // that reliably sterilises the ground it's dumped on (see engine/radiation.ts) —
+  // and, like every source, one cell of anything shields it, so burying it works.
+  radiation: 0.08,
   explosionProof: true, // 방폭 — see uranium.ts
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { init: WARM_TEMP, conductivity: 0.3 },

@@ -72,6 +72,10 @@ export const U238 = register({
   color: rgb(150, 165, 95),
   density: 1000,
   category: 'radioactive',
+  // 방사선 — the family's weakest dose: U238 is the slow, barely-active isotope,
+  // so a bar of it kills a plant leaning on it only after a good while. It still
+  // sterilises everything it touches eventually (see engine/radiation.ts).
+  radiation: 0.02,
   explosionProof: true, // 방폭 — see uranium.ts
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
   thermal: { conductivity: 0.5 },

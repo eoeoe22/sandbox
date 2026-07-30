@@ -167,6 +167,12 @@ export const SLIME = register({
   // actually passes through it is what seeds the blob's own electric-dissolve
   // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
   conductive: true,
+  // 피폭사 — the living goo dies of radiation the way it dies of heat, boiling off
+  // as a puff of Smoke (see engine/radiation.ts). Deliberately Smoke and not the
+  // Water its electric dissolve leaves: water is slime's *food*, so a corpse of it
+  // would just be drunk back by the rest of the blob and the dose would fight a
+  // losing tug-of-war with the thing it's meant to kill.
+  radiationDeath: SMOKE.id,
   thermal: { conductivity: 0.2 },
   update: updateSlime,
 });

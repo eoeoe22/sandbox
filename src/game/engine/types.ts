@@ -147,6 +147,41 @@ export interface Material {
   /** Acid never corrodes this (see acid.ts). */
   acidResistant?: boolean;
   /**
+   * 방사선원 — this material continuously irradiates its surroundings, and the
+   * value is the per-tick, per-neighbour probability that the dose kills an
+   * adjacent *living* cell (one that declares `radiationDeath`, below). Every
+   * material in the 방사능 palette tab declares it, at a strength matching how
+   * hot the isotope actually is — spent fuel is far more radioactive than fresh,
+   * so Nuke Waste out-doses solid U235 (see materials/nukewaste.ts).
+   *
+   * The engine drives it, not the material: Simulation flattens this into a
+   * per-id table and runs `irradiate` (engine/radiation.ts) on the cell's turn,
+   * exactly the way `Material.life` decay is driven. So a new radioactive
+   * material becomes lethal by declaring this one number — there is no call to
+   * forget in its `update`.
+   *
+   * Range is the 8-neighbourhood and nothing else, which makes shielding free
+   * and obvious: one cell of anything between the source and the reef stops it.
+   */
+  radiation?: number;
+  /**
+   * 피폭사 — what a cell of this (living) material leaves behind when adjacent
+   * radiation kills it, and the tag that makes it *count* as alive in the first
+   * place: `irradiate` only ever touches a material that declares this. Each
+   * living thing dies the way it already dies of everything else — a Termite to
+   * Sawdust, Plant/Seed to Ash, the slimes to Smoke, Yeast/Virus to nothing
+   * (`EMPTY`, which is why this is checked for `undefined` rather than
+   * truthiness).
+   *
+   * Two 생명 tab materials deliberately don't declare it: Nanobot is a machine,
+   * not life (it is the one thing that keeps working in a hot zone), and
+   * Bleached Coral is already a dead skeleton. Living Coral doesn't declare it
+   * either — it handles its exposure itself, feeding the dose into its own 백화
+   * stress meter so a reef whitens gradually instead of snapping (see
+   * materials/coral.ts and `radiationLevel` in engine/radiation.ts).
+   */
+  radiationDeath?: MatId;
+  /**
    * A polished, highly-reflective surface that a Heat Ray beam bounces off with a
    * clean specular (정반사) reflection instead of being absorbed — Mercury and the
    * shiny metals (Iron, Heatpipe, Gallium, Liquid Gallium). The Heat Ray walk

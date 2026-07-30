@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
+import { radiationLevel } from '../engine/radiation';
 import { SALTWATER } from './saltwater';
 import { CORAL } from './coral';
 
@@ -39,6 +40,13 @@ function updateBleachedCoral(x: number, y: number, sim: SimContext): void {
   }
   if (brine < RECOVER_BRINE) return;
 
+  // Nothing settles in a hot tank: a dose from anything in the 방사능 tab blocks
+  // recolonisation outright (see engine/radiation.ts). Without this a skeleton
+  // beside a waste drum would keep flickering — a polyp taking hold, bleaching
+  // straight back out on its accumulated stress, over and over. Clear the source
+  // out and the reef can come back exactly as before.
+  if (radiationLevel(x, y, sim) > 0) return;
+
   // Recolonised. In-place `set` keeps the cell's temperature; a zeroed aux means
   // "no structure yet", so coral.ts's own init gives the fresh polyp a heading
   // and a full run of vigour on its next tick. CORAL's id is read here rather
@@ -58,6 +66,10 @@ export const BLEACHED_CORAL = register({
   colorVary: 12,
   density: 1000,
   category: 'life',
+  // No `radiationDeath` — there's nothing left in it to kill (see
+  // engine/radiation.ts). Radiation reaches this material the other way round: it
+  // keeps the living Coral it would recolonise from ever taking hold, so a
+  // skeleton in an irradiated tank simply stays white.
   // Same skeleton as living Coral, so it conducts the same.
   thermal: { conductivity: 0.4 },
   update: updateBleachedCoral,

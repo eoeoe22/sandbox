@@ -83,6 +83,11 @@ export const URANIUM = register({
   color: rgb(210, 225, 70),
   density: 1000,
   category: 'radioactive',
+  // 방사선 — fresh fuel bathes whatever is touching it in a dose that kills living
+  // matter outright (see engine/radiation.ts). Middling on the family's scale:
+  // hotter than the barely-active U238 it's enriched from, far cooler than either
+  // melt or than the fission products in spent Nuke Waste.
+  radiation: 0.04,
   // 방폭: every uranium-series material is immune to explosions — a Blast front
   // stops at it, a flying Ember shatters on it, Antimatter skips it (see
   // blast.ts/ember.ts/antimatter.ts). It does NOT stop a critical uranium's

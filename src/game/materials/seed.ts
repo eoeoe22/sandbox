@@ -5,6 +5,7 @@ import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
+import { ASH } from './ash';
 import { isSoil, isFreshWater, findMoisture, ROOT_REACH } from './soil';
 import { PLANT, plantSproutAux } from './plant';
 
@@ -119,6 +120,11 @@ export const SEED = register({
   // on the surface out of germinating reach.
   density: 3.45,
   category: 'life',
+  // 피폭사 — a kernel is alive too, so radiation kills it where it lies and it goes
+  // the same way a grown Plant does, to Ash (see engine/radiation.ts). Sowing into
+  // a hot zone is therefore futile in the most legible way possible: the seeds you
+  // scatter never green, they just grey out one by one.
+  radiationDeath: ASH.id,
   thermal: { conductivity: 0.3 },
   update: updateSeed,
 });

@@ -89,6 +89,11 @@ export const NANOBOT = register({
   // despite being a Solid for the same reason `shockLoose` is set — it walks
   // instead of piling, so it isn't structure.
   magnetic: true,
+  // No `radiationDeath`, deliberately — it is the one thing in the 생명 tab that a
+  // 방사능 source doesn't kill (see engine/radiation.ts). A nanobot is a machine,
+  // not life: it has no drowning death and no cooking death either, and letting it
+  // work in a hot zone gives the fallout the player *can't* clear with anything
+  // living a swarm that eats its way through it regardless.
   // Metallic, so it conducts heat about as well as loose Metal Powder — it warms
   // toward its melting point at a metal's pace, not an insulator's.
   thermal: { conductivity: 0.35 },
