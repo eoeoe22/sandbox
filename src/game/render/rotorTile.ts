@@ -32,6 +32,48 @@ import { scaled } from './color';
 export const ROTOR_N = 12;
 
 /**
+ * Simulation ticks each animation frame is held for, as a right-shift on the
+ * spin counter (see `rotorFrame`). 1 = every two ticks.
+ *
+ * The sim runs at 30 Hz at ×1 (config's SIM_HZ_AT_1X), so this alternates the two
+ * frames at 7.5 Hz. Flipping every tick reads as a strobe rather than as a wheel;
+ * every four is slow enough that you see two pictures instead of one turning
+ * thing. Both frames are half a blade pitch apart, so one flip is the largest
+ * apparent step the wheel can make — which is what buys the low rate.
+ */
+export const ROTOR_SPIN_SHIFT = 1;
+
+/**
+ * Which of the two frames a cell draws, from the machine's own aux counter.
+ *
+ * Deliberately driven by sim state rather than by a renderer clock (contrast the
+ * wind streaks' `windPhase`), because both machines already carry a counter that
+ * advances exactly when they are *working*:
+ *
+ *   - a Fan's `aux >> 2` is its powered countdown, which ticks down while energized
+ *     and sits at 0 when it isn't (materials/fan.ts POWERED_TICKS);
+ *   - a Turbine's whole aux is its steam-tick count, which advances only on ticks
+ *     where steam is actually passing through and is deliberately *held* across a
+ *     gap rather than reset (materials/turbine.ts).
+ *
+ * So the wheel turns while the machine runs and freezes the instant it stops, with
+ * no extra state and nothing for the renderer to keep in sync. A renderer clock
+ * would have needed a separate "is it running" test, and for the Turbine there is
+ * no correct one — a stalled turbine's counter stays non-zero, so "aux ≠ 0" would
+ * have left a dead turbine spinning forever.
+ *
+ * A stopped machine freezes on whichever frame it was on, not necessarily frame 0.
+ * A freshly painted cell has aux 0 and so does the palette chip, which is why the
+ * icon always shows frame 0.
+ *
+ * `shift` drops the bits of aux that are not the counter — 2 for the Fan, whose low
+ * two bits are its blow direction, 0 for the Turbine.
+ */
+export function rotorFrame(aux: number, shift: number): number {
+  return ((aux >> shift) >> ROTOR_SPIN_SHIFT) & 1;
+}
+
+/**
  * A rotor tile's alphabet.
  *
  * | char | drawn as |
@@ -77,6 +119,40 @@ const ROTOR8 = [
 ];
 
 /**
+ * The Turbine, half a blade pitch on — eight spokes at 22.5°/67.5° instead of on
+ * the axes and diagonals.
+ *
+ * **Half a pitch, not the 45° the four-blade frame turns.** An eight-blade wheel
+ * has 45° between blades, so turning it 45° lands every blade exactly where its
+ * neighbour was and the picture does not change at all — the animation would be a
+ * still. 22.5° is the largest step that actually moves the blades, and it is also
+ * the step that reads as the fastest rotation, which is why the frame rate above
+ * can be as low as it is.
+ *
+ * Authored rather than rotated from ROTOR8 by program. A nearest-neighbour rotate
+ * of a wheel whose spokes are one and two cells thick comes back as scattered dots
+ * — it was tried, and it destroyed the spokes. Instead the same construction is
+ * repeated at the new angles: one spoke traced along each of 22.5° and 67.5° from
+ * the tile centre, each a lit run with a shaded run beside it, then both turned
+ * three times. That keeps the wheel exactly symmetric under a quarter turn (the
+ * harness checks it) and keeps the same 60 painted cells as ROTOR8.
+ */
+const ROTOR8_SPUN = [
+  '............',
+  '...+-..+-...',
+  '...+-.+-....',
+  '.-..+-+-.++.',
+  '.+--+-.++--.',
+  '..++.##--...',
+  '...--##.++..',
+  '.--++.-+--+.',
+  '.++.-+-+..-.',
+  '....-+.-+...',
+  '...-+..-+...',
+  '............',
+];
+
+/**
  * The Fan: four blades, each a paddle that widens away from the hub.
  *
  * Straight paddles rather than the drawn chip's swept ones. The chip has 24 cells
@@ -102,12 +178,44 @@ const ROTOR4 = [
   '............',
 ];
 
+/**
+ * The Fan, half a blade pitch on — the same four paddles turned 45° onto the
+ * diagonals.
+ *
+ * Four blades sit 90° apart, so half a pitch is exactly the 45° an X is from a +,
+ * and the two frames are about as different as two pictures of one wheel can be.
+ * That is what lets the flip rate stay low enough not to strobe.
+ *
+ * Same construction as ROTOR4, one blade rotated three times, so the paddle keeps
+ * its twelve cells and its lit-leading / shaded-trailing split, and the tile stays
+ * symmetric under a quarter turn.
+ */
+const ROTOR4_SPUN = [
+  '............',
+  '.++......-+.',
+  '.-++....-++.',
+  '..-++..-++..',
+  '...-++-++...',
+  '....-##+....',
+  '....+##-....',
+  '...++-++-...',
+  '..++-..++-..',
+  '.++-....++-.',
+  '.+-......++.',
+  '............',
+];
+
 /** Exported for `test/materialicons.ts` only — same argument as TNT_TILE_ROWS: a
  *  row narrower than ROTOR_N is indexed past its end and falls through to the base
  *  colour, which on these tiles reads as a chipped blade rather than as an error.
  *  Pinned in the harness rather than thrown at module load because this module
  *  ships to the browser (see tntTile.ts). */
-export const ROTOR_TILE_ROWS: Readonly<Record<number, readonly string[]>> = { 8: ROTOR8, 4: ROTOR4 };
+export const ROTOR_TILE_ROWS: Readonly<Record<string, readonly string[]>> = {
+  '8': ROTOR8,
+  '4': ROTOR4,
+  '8-spun': ROTOR8_SPUN,
+  '4-spun': ROTOR4_SPUN,
+};
 
 /** How dark a blade's trailing edge is, as a fraction of the material's colour.
  *  0.72 is the ratio the drawn Turbine chip already used (`#96a0ac` → `#6c737b`),
@@ -120,14 +228,15 @@ export const ROTOR_HUB = 0.45;
  * Resolve one rotor's ASCII against a material's two colours, giving the finished
  * tile as packed pixels.
  *
- * Called once per material — from the renderer's constructor and from the icon
- * generator's patch — never per cell, so the render loop's whole cost for this
- * pattern is one array index (the same shape as buildTntTile). `blades` picks
- * which wheel; anything but 4 or 8 falls back to the four-blade tile rather than
- * throwing, because this runs at page load in the browser.
+ * Called once per material *per frame of the animation* — from the renderer's
+ * constructor and from the icon generator's patch — never per cell, so the render
+ * loop's whole cost for this pattern is one array index (the same shape as
+ * buildTntTile). `blades` picks which wheel and `spun` which of its two frames;
+ * anything but 4 or 8 falls back to the four-blade tile rather than throwing,
+ * because this runs at page load in the browser.
  */
-export function buildRotorTile(blades: number, base: number, lat: number): Uint32Array {
-  const rows = blades === 8 ? ROTOR8 : ROTOR4;
+export function buildRotorTile(blades: number, base: number, lat: number, spun = false): Uint32Array {
+  const rows = blades === 8 ? (spun ? ROTOR8_SPUN : ROTOR8) : spun ? ROTOR4_SPUN : ROTOR4;
   const shade = scaled(base, ROTOR_SHADE);
   const hub = scaled(base, ROTOR_HUB);
   const buf = new Uint32Array(ROTOR_N * ROTOR_N);

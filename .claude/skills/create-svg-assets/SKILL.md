@@ -274,7 +274,7 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
   `varyMode(m)`, 밝기 오프셋은 `d = ((src - 128) * amp) >> 7` 뒤 채널별 클램프.
   셰이딩 함수(`tinted` / `frosted` / `buildGlow` / `shade`)는 `render/color.ts`에
   있고 **렌더러와 아이콘이 같은 구현을 공유**한다 — 복사하지 말 것.
-- **분기 순서가 곧 동작이다.** Fan은 `lattice`이면서 `windArrow`, Diamond는
+- **분기 순서가 곧 동작이다.** Laser는 `lattice`이면서 `windArrow`(Fan은 `rotorPattern`), Coal은 `lattice` 없이 2단 틴트, Diamond는
   `lattice`이면서 `checker2x2`, TNT는 `lattice`이면서 `tntPattern`이다. 먼저 걸리는
   분기만 그리고, 그런 물질의 `lattice`는 두 번째 톤을 공급할 뿐이다(TNT만 예외로
   막대의 그늘진 쪽이다). 재정렬하면 전기 탭 절반이 조용히 체커보드가 된다.

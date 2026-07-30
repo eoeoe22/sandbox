@@ -109,6 +109,15 @@ export const TURBINE = register({
   // trailing edge and the hub are this colour scaled down (see render/rotorTile.ts).
   // Eight blades is what separates it at a glance from the Fan, which draws four on
   // the same tile — a steam wheel is a dense disc of blades, a household fan is not.
+  //
+  // **The wheel turns while steam is passing through it.** The second frame is the
+  // same wheel 22.5° on — half a blade pitch, because a 45° turn of an eight-blade
+  // wheel lands every blade where its neighbour was and the picture would not change
+  // at all. The frame comes straight from the steam-tick counter this material keeps
+  // in `aux` (so no `rotorSpinShift`: the whole byte is the counter), which advances
+  // only on ticks where steam actually flows and is held across a gap — so the wheel
+  // stops the moment the steam does, and a whole turbine body turns as one because
+  // `energizeBody` re-zeros its counters together.
   lattice: rgb(192, 205, 220),
   rotorPattern: 8,
   density: 1000,

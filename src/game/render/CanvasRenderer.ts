@@ -3,7 +3,7 @@ import type { Grid } from '../engine/Grid';
 import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, Phase, type BorderMode } from '../engine/types';
-import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb, tinted, frosted, buildGlow, shade, type GlowRamp } from './color';
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
@@ -14,8 +14,7 @@ import {
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { TNT_N, buildTntTile } from './tntTile';
-import { ROTOR_N, buildRotorTile } from './rotorTile';
-import { COAL_N, buildCoalTile } from './coalTile';
+import { ROTOR_N, buildRotorTile, rotorFrame } from './rotorTile';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -167,12 +166,12 @@ const WOOFER_CAP_R2 = 16; // (2r)² of the dust cap — r = 2, the chip's cap ha
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
 
-// The three bitmap patterns — `tntPattern` (TNT), `rotorPattern` (Turbine, Fan) and
-// `coalPattern` (Coal) — have no constants to state here. They are pictures rather than
-// rules, so the ASCII, the tone alphabet and the reasoning all live in ./tntTile,
-// ./rotorTile and ./coalTile, shared with the palette icon generator instead of being
-// restated on each side. Each module exports its tile edge in cells and a `build…`
-// that resolves the ASCII against one material's colours.
+// The two bitmap patterns — `tntPattern` (TNT) and `rotorPattern` (Turbine, Fan) —
+// have no constants to state here. They are pictures rather than rules, so the ASCII,
+// the tone alphabet and the reasoning all live in ./tntTile and ./rotorTile, shared
+// with the palette icon generator instead of being restated on each side. Each module
+// exports its tile edge in cells and a `build…` that resolves the ASCII against one
+// material's colours.
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -441,20 +440,26 @@ export class CanvasRenderer implements Renderer {
   private tntTile: (Uint32Array | null)[];
   /** id → 1 if the material draws a bladed rotor wheel (Turbine, Fan — see
    *  Material.rotorPattern), and id → that material's finished ROTOR_N × ROTOR_N
-   *  tile. Same shape and the same argument as `tntTile`: the pattern is a picture,
+   *  tiles. Same shape and the same argument as `tntTile`: the pattern is a picture,
    *  so the only thing to precompute is the picture with this material's colours in
-   *  it (see rotorTile.ts). */
+   *  it (see rotorTile.ts).
+   *
+   *  TWO tiles, because the wheel turns: `rotorTile` is the wheel at rest and
+   *  `rotorTileSpun` is the same wheel half a blade pitch on. Which one a cell draws
+   *  comes from its own aux counter (`rotorFrame`), so the animation costs one shift
+   *  and one array pick per cell and no renderer state at all. `rotorSpinShift` is
+   *  the per-material shift that isolates that counter from the rest of aux. */
   private rotorPattern: Uint8Array;
   private rotorTile: (Uint32Array | null)[];
-  /** id → 1 if the material draws a bed of coal lumps (Coal — see
-   *  Material.coalPattern), and id → its finished COAL_N × COAL_N tile. Same shape
-   *  as `tntTile` / `rotorTile` (see coalTile.ts). */
-  private coalPattern: Uint8Array;
-  private coalTile: (Uint32Array | null)[];
+  private rotorTileSpun: (Uint32Array | null)[];
+  private rotorSpinShift: Uint8Array;
   /** id → the edge, in cells, of the square block that shares one tint sample — 0
    *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
    *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
    *  (`& ~1` for a 2-cell block), so the hot path needs no division. */
+  /** id → the finer per-cell brightness spread a blocked material adds on top of its
+   *  block shade — 0 for everything but Coal and Obsidian (see Material.tintCellVary). */
+  private varyCell: Uint8Array;
   private tintBlockMask: Int32Array;
   /** Advancing animation phase for the Fan's wind streaks — bumped once per
    *  rendered frame so the dashes flow along the blow direction (see the wind
@@ -585,10 +590,11 @@ export class CanvasRenderer implements Renderer {
     this.tntTile = new Array(256).fill(null);
     this.rotorPattern = new Uint8Array(256);
     this.rotorTile = new Array(256).fill(null);
-    this.coalPattern = new Uint8Array(256);
-    this.coalTile = new Array(256).fill(null);
+    this.rotorTileSpun = new Array(256).fill(null);
+    this.rotorSpinShift = new Uint8Array(256);
     // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
     // loop can skip the whole block-anchor computation with one compare.
+    this.varyCell = new Uint8Array(256);
     this.tintBlockMask = new Int32Array(256).fill(-1);
     this.isLiquid = new Uint8Array(256);
     this.isSolid = new Uint8Array(256);
@@ -600,6 +606,7 @@ export class CanvasRenderer implements Renderer {
       if (m?.glow) this.glow[i] = buildGlow(m.glow, m.color);
       if (m) {
         this.vary[i] = varyAmplitude(m);
+        this.varyCell[i] = varyCellAmplitude(m);
         this.varyMode[i] = varyMode(m);
         if (m.renderAsAux) this.renderAsAux[i] = 1;
         if (m.auxPalette) this.auxPalette[i] = Uint32Array.from(m.auxPalette);
@@ -633,11 +640,10 @@ export class CanvasRenderer implements Renderer {
         }
         if (m.rotorPattern) {
           this.rotorPattern[i] = 1;
-          this.rotorTile[i] = buildRotorTile(m.rotorPattern, m.color, m.lattice ?? m.color);
-        }
-        if (m.coalPattern) {
-          this.coalPattern[i] = 1;
-          this.coalTile[i] = buildCoalTile(m.color, m.lattice ?? m.color);
+          const lat = m.lattice ?? m.color;
+          this.rotorTile[i] = buildRotorTile(m.rotorPattern, m.color, lat);
+          this.rotorTileSpun[i] = buildRotorTile(m.rotorPattern, m.color, lat, true);
+          this.rotorSpinShift[i] = m.rotorSpinShift ?? 0;
         }
         // A block edge of B clears the low log2(B) bits of x and y, which is only a
         // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
@@ -749,6 +755,7 @@ export class CanvasRenderer implements Renderer {
     const pal = this.palette;
     const glow = this.glow;
     const vary = this.vary;
+    const varyCell = this.varyCell;
     const mode = this.varyMode;
     const asAux = this.renderAsAux;
     const auxPal = this.auxPalette;
@@ -774,8 +781,8 @@ export class CanvasRenderer implements Renderer {
     const tntTile = this.tntTile;
     const rotorPattern = this.rotorPattern;
     const rotorTile = this.rotorTile;
-    const coalPattern = this.coalPattern;
-    const coalTile = this.coalTile;
+    const rotorTileSpun = this.rotorTileSpun;
+    const rotorSpinShift = this.rotorSpinShift;
     const tintBlockMask = this.tintBlockMask;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
@@ -849,6 +856,30 @@ export class CanvasRenderer implements Renderer {
         const by = (i / w) | 0;
         ti = (by & blockMask) * w + ((i - by * w) & blockMask);
       }
+      // The brightness grain, computed once here rather than five times below.
+      //
+      // Every branch that shades — the two palette branches, the checkerboard, the
+      // glow ramp and the plain default — used to repeat this same expression, and
+      // repeating it is what made the second, finer level (below) a five-place edit
+      // instead of a one-place one. `grained` is the "does this material vary at all"
+      // gate the branches used to spell as `amp !== 0`.
+      //
+      // TWO levels, and only Coal and Obsidian use the second. The first shades from
+      // the (possibly block-anchored) sample by `colorVary` — for a blocked material
+      // that is one shade for the whole 2×2 flake. The second shades again from the
+      // cell's OWN sample by the much narrower `tintCellVary`, which puts grit back
+      // inside a flake that would otherwise be a flat painted square. The offsets add,
+      // so the total swing stays `colorVary + tintCellVary` either way, and a material
+      // with no `tintCellVary` pays one load and one compare (see Material.tintCellVary).
+      const amp = vary[id];
+      const cellAmp = varyCell[id];
+      const grained = amp !== 0 || cellAmp !== 0;
+      let grainD = 0;
+      if (grained) {
+        const particle = mode[id] === VARY_PARTICLE;
+        if (amp !== 0) grainD = (((particle ? tintArr[ti] : bgArr[ti]) - TINT_NEUTRAL) * amp) >> 7;
+        if (cellAmp !== 0) grainD += (((particle ? tintArr[i] : bgArr[i]) - TINT_NEUTRAL) * cellAmp) >> 7;
+      }
       // `renderAsAux` and `auxPalette` are two mutually exclusive readings of the
       // SAME aux word — "this is the material id I'm carrying" vs. "this is my own
       // colour index" — so a carrier cell must never be handed to the palette
@@ -864,16 +895,14 @@ export class CanvasRenderer implements Renderer {
       const tintPal3 = tintPal[id];
       if (pal8) {
         c = pal8[auxArr[i] % pal8.length];
-        const amp = vary[id];
-        if (amp !== 0) {
+        if (grained) {
           // The ordinary brightness grain rides on top of the palette colour, the
           // same way it does over the tintPalette branch below — otherwise a
           // powder that uses `auxPalette` to show a *state* (a germinating Seed's
           // progress) would lose the speckle every other powder has and read as
           // one flat block. Firework Burst, the other auxPalette material, is a
           // Gas with no variation (amp 0), so this is a no-op for it.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
-          c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, grainD);
         }
       } else if (tintPal3) {
         // A multi-coloured *particle* material (Fireworks): each grain draws the
@@ -884,15 +913,13 @@ export class CanvasRenderer implements Renderer {
         // Indexing by `% n` rather than banding the byte keeps the colour
         // uncorrelated with the `liquidOverlap` split read off the same byte.
         c = tintPal3[tintArr[ti] % tintPal3.length];
-        const amp = vary[id];
-        if (amp !== 0) {
+        if (grained) {
           // The COLOUR is per-particle by definition, so it always reads tintArr.
           // The brightness offset on top is the ordinary one, so it takes the
           // material's own vary source like every sibling branch — otherwise a
           // future liquid-phase tintPalette material would shade itself from a
           // plane it doesn't use.
-          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
-          c = tinted(c, ((src - TINT_NEUTRAL) * amp) >> 7);
+          c = tinted(c, grainD);
         }
       } else if (arrow[id]) {
         // A directional-arrow material (Conveyor) draws a chevron pointing the way
@@ -1060,33 +1087,29 @@ export class CanvasRenderer implements Renderer {
         // reason TNT's bundle is — the sweep that makes a wheel read as *turning* has no
         // short closed form at twelve cells.
         //
+        // **And it turns.** The cell picks between the wheel at rest and the wheel half
+        // a blade pitch on, from its own aux counter — a Fan's powered countdown, a
+        // Turbine's steam-tick count — so the wheel spins exactly while the machine
+        // works and freezes when it stops (see rotorFrame). That is what replaced the
+        // Fan's old chevron brightening as the "this one is running" cue; what the
+        // chevron also did and this cannot is point, which the wind streaks now carry
+        // alone.
+        //
         // Positional like the Wall's courses, so a machine dragged out with the brush is
-        // one array of wheels rather than a fresh tile per cell. Nothing here brightens:
-        // the Fan's chevron used to light up while powered, and the running fan's cue is
-        // now the wind streaks it throws (drawn as their own background layer), which
-        // says the same thing and says which way.
+        // one array of wheels rather than a fresh tile per cell — and, since the frame
+        // comes from aux and a body's counters are flooded in step, one wheel per body
+        // rather than a shimmer of cells out of phase.
         const y2 = (i / w) | 0;
         const x2 = i - y2 * w;
-        c = rotorTile[id]![(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
-      } else if (coalPattern[id]) {
-        // Coal draws its bed of lumps: angular chunks with a lit face, a shaded face and
-        // the deep pocket where two of them meet (see coalTile.ts). Coal was flat here
-        // and textured only in the palette — this is the drawn chip brought down to world
-        // scale, so a seam finally looks like broken rock on the board too.
-        const y2 = (i / w) | 0;
-        const x2 = i - y2 * w;
-        c = coalTile[id]![(y2 % COAL_N) * COAL_N + (x2 % COAL_N)];
+        const frame = rotorFrame(auxArr[i], rotorSpinShift[id]);
+        const rt = frame ? rotorTileSpun[id]! : rotorTile[id]!;
+        c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;
         const y = (i / w) | 0;
         c = ((x >> 1) ^ (y >> 1)) & 1 ? latCol[id] : pal[id];
-        const amp = vary[id];
-        if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = tinted(c, d);
-        }
+        if (grained) c = tinted(c, grainD);
       } else if (hasLat[id]) {
         // A lattice material (Mesh) is a two-tone positional checkerboard, so a
         // screen reads as a woven grid rather than a flat slab. Computed from the
@@ -1108,29 +1131,16 @@ export class CanvasRenderer implements Renderer {
         c = isPattern ? 0xff000000 : pal[id];
       } else if (glow[id]) {
         c = shade(glow[id]!, temp[i]);
-        const amp = vary[id];
-        if (amp !== 0) {
-          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = tinted(c, d);
-        }
+        if (grained) c = tinted(c, grainD);
       } else if (temp[i] <= freezeTemp[id]) {
         // A frozen liquid (see Material.freeze) is drawn frosted. freezeTemp is
         // -Infinity for non-freeze materials, so this never fires for them.
         c = frost[id];
       } else {
-        const amp = vary[id];
-        if (amp === 0) {
-          c = pal[id];
-        } else {
-          // Powders read their own fixed per-grain tint; liquids sample the
-          // positional background field at this cell (see game/tint.ts).
-          const src = mode[id] === VARY_PARTICLE ? tintArr[ti] : bgArr[ti];
-          // Map the tint byte to a signed brightness offset in [-amp, +amp]:
-          // (tint - 128) / 128 * amp, done in integer math (>> 7 divides by 128).
-          const d = ((src - TINT_NEUTRAL) * amp) >> 7;
-          c = tinted(pal[id], d);
-        }
+        // Powders read their own fixed per-grain tint; liquids sample the positional
+        // background field (see game/tint.ts). Both were mapped to a signed brightness
+        // offset above; a flat material has none and draws its bare colour.
+        c = grained ? tinted(pal[id], grainD) : pal[id];
       }
       // Fan wind streaks: an animated low-res effect painted over the empty air of
       // a gust (Grid.wind — a transient one-way field, never a cell). Only bare air

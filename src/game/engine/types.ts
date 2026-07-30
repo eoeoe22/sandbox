@@ -429,6 +429,25 @@ export interface Material {
    */
   tintBlock?: number;
   /**
+   * A second, *finer* brightness spread applied on top of a blocked grain: the
+   * block-anchored sample shades the whole `tintBlock` square by `colorVary`, and
+   * then each cell inside it is shifted again by its own sample by this much.
+   *
+   * The point is a two-level texture. A blocked grain alone gives flat facets with
+   * a hard step between them — right for the *shape* of a fracture, but the facets
+   * themselves come out as painted squares. A per-cell grain alone gives features
+   * one cell across, which read as dust on the surface rather than as stone. Coal
+   * and Obsidian carry both: a wide spread between 2×2 flakes (`colorVary`) and a
+   * narrow one within each (this), so a facet catches the light as a facet and
+   * still has grit in it.
+   *
+   * Meaningful only alongside `colorVary` and a `tintBlock` above 1 — without a
+   * block the two samples are the same sample and this would just widen
+   * `colorVary`. The two amplitudes add, so the total spread a material can show is
+   * `colorVary + tintCellVary` either way.
+   */
+  tintCellVary?: number;
+  /**
    * A porous solid: liquids and gases ignore it entirely (Mesh, Turbine, Pump).
    * To powders and solids it's an ordinary blocking Solid — piles rest on it —
    * but a fluid moving into it slips into the cell's 겹침 (overlap) slot
@@ -678,16 +697,17 @@ export interface Material {
    */
   rotorPattern?: 4 | 8;
   /**
-   * Draw a bed of coal lumps (Coal): angular chunks with a lit face in the
-   * `lattice` colour, a shaded face in the base `color` lifted, and the deep
-   * pocket where two lumps meet darker than either. A bitmap rather than a rule
-   * — the tile lives in `render/coalTile.ts`, shared with the palette icon
-   * generator — so its period is fixed at COAL_N (12).
+   * Right-shift applied to a `rotorPattern` cell's `aux` before its low bit is read
+   * as the spin phase — 2 for the Fan (whose low two bits are its blow direction),
+   * 0 (the default) for the Turbine, whose whole aux is its steam-tick count.
    *
-   * Positional like the Wall's courses, so a seam dug out with the brush is one
-   * continuous bed of lumps. Purely a rendering hint the simulation never reads.
+   * The wheel alternates between its two frames as that counter advances, so it
+   * turns exactly while the machine is working and freezes when it stops. See
+   * `rotorFrame` in render/rotorTile.ts for why the animation is driven off sim
+   * state rather than off a renderer clock. Purely a rendering hint; ignored unless
+   * `rotorPattern` is set.
    */
-  coalPattern?: boolean;
+  rotorSpinShift?: number;
   /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound

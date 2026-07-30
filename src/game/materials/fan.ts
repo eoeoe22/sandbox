@@ -302,16 +302,22 @@ export const FAN = register({
   // down (see render/rotorTile.ts). The Turbine draws eight blades on the same tile,
   // which is what tells the two machines apart on the board.
   //
-  // This replaced a chevron that pointed the blow direction and brightened while
-  // powered (`windArrow`, which the Laser still uses). A face-on rotor cannot point,
-  // so the direction now reads off the wind streaks the fan throws — which only show
-  // while it is actually blowing. A fan sitting unpowered no longer says which way it
-  // faces: the trade is deliberate (the block reads as a fan at a glance instead of
-  // as a chevron), and the aux direction bits are untouched, so restoring the chevron
-  // is a one-line change if it turns out to matter more than the picture does.
+  // **The wheel turns while the fan runs**, alternating with a second tile drawn 45°
+  // on — half a blade pitch, so it is the biggest step four blades can take. The
+  // frame comes from the powered countdown in `aux >> 2` (hence `rotorSpinShift: 2`,
+  // which skips the direction bits), so it spins exactly while energized and stops
+  // dead at 0. That is the replacement for the old chevron's brightening.
+  //
+  // What the chevron also did and a face-on rotor cannot is *point*. The blow
+  // direction now reads only off the wind streaks the fan throws, which show only
+  // while it is blowing — an unpowered fan no longer says which way it faces. The
+  // trade is deliberate (the block reads as a fan at a glance instead of as a
+  // chevron); the aux direction bits are untouched, so restoring `windArrow` — which
+  // the Laser still uses — is a one-line change.
   color: rgb(70, 80, 95),
   lattice: rgb(150, 200, 240),
   rotorPattern: 4,
+  rotorSpinShift: 2,
   density: 1000,
   category: 'electric',
   // Doesn't burn or corrode away underfoot, like the other electric machines.

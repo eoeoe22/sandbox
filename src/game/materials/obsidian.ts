@@ -51,31 +51,46 @@ export const OBSIDIAN = register({
   //
   // Darkened from `rgb(48, 36, 68)`: at that value the violet read as a dark *purple
   // stone* rather than as black glass. This keeps the cast (which is what makes it
-  // obsidian and not coal) at about three quarters of the ratio and takes a quarter of
-  // the light out.
+  // obsidian and not coal) and takes about an eighth of the light out.
   //
-  // How far it can go is set by the eraser, `rgb(16, 16, 22)`: what has to stay legible
-  // against open air is not this colour but the *darkest grain* of it, the base taken
-  // down by the full `colorVary`. `test/materialicons.ts` measures that margin in
-  // luminance rather than per channel — the green is deliberately the low channel here,
-  // so a per-channel floor would be a floor on the hue instead of on the contrast.
-  color: rgb(36, 26, 51),
-  // A glassy, uneven fracture — a little per-particle variation keeps a big
-  // slab from looking like one flat painted rectangle.
+  // **How dark it can go is set by the grain, not by taste.** The floor is the eraser's
+  // `rgb(16, 16, 22)`, and what has to clear it is not this colour but the material's
+  // DARKEST flake — the base taken down by the full `colorVary` + `tintCellVary`, which
+  // is 18 steps. It briefly sat at `rgb(36, 26, 51)`, which looked right on its own and
+  // put that darkest flake at luminance 13.8 against the board's 16.7: the deep flakes
+  // of a shell would have been *darker than open air*, i.e. holes. Every step this
+  // colour goes down, the widest grain has to give one back.
   //
-  // Deliberately *narrow* (below Concrete's 7, well below Diamond's 10): the base
-  // is near-black, so a channel sits around 36–68 and the ±spread reads as a much
-  // larger swing than the same number does on a mid-tone material — at the original
-  // 14 a slab (and its palette chip) came out as coarse noise rather than glass.
-  // The amplitude is shared by the canvas and the icon generator through
-  // `varyAmplitude`, so this one number narrows both.
-  colorVary: 6,
-  // …and *blocked* into 2×2 flakes rather than left as per-cell noise. Obsidian
+  // `test/materialicons.ts` measures the margin in luminance rather than per channel —
+  // the green is deliberately the low channel here, so a per-channel floor would be a
+  // floor on the hue instead of on the contrast.
+  color: rgb(43, 31, 60),
+  // A glassy, conchoidal fracture, drawn as a TWO-LEVEL grain: a wide spread
+  // between 2×2 flakes and a narrow one inside each. Coal carries exactly the same
+  // three settings for the same reason — both are dark rock that breaks into broad
+  // faces, and this is the one texture that says so.
+  //
+  // **The wide level went 14 → 6 → 14, and the round trip is the point.** 14 was the
+  // original value and it came out as coarse noise, so it was narrowed to 6. That
+  // diagnosis was half right: the base is near-black, so the same number does swing
+  // further here than on a mid-tone material — but what actually made it noise was
+  // that its features were ONE CELL across, which reads as dust settled on the
+  // surface rather than as stone. Narrowing the spread hid the symptom and cost the
+  // material its contrast. Blocking the sample (below) fixed the real cause, and once
+  // a face is several cells wide a 14-step difference *between* faces is a facet
+  // catching the light. So the fix was feature size, not amplitude.
+  //
+  // What stays narrow is the grain *inside* a face: 4, under Diamond's deliberately
+  // low 10. Without it a flake is a flat painted square — the blocked level alone
+  // gives shape with no surface.
+  //
+  // Both numbers are shared by the canvas and the icon generator (`varyAmplitude` /
+  // `varyCellAmplitude`), so this pair narrows or widens both at once.
+  colorVary: 14,
+  tintCellVary: 4,
+  // The block that makes the wide level a *facet* rather than static. Obsidian
   // fractures conchoidally: it breaks into broad curved faces, and a face is many
-  // cells wide, not one. Sampling the tint at the cell itself gave a grain whose
-  // features were a single cell across, which reads as dust settled on the surface
-  // — doubling the sample block makes the same six brightness steps read as facets
-  // catching the light. Positional, so it only holds up on a material that doesn't
+  // cells wide, not one. Positional, so it only holds up on a material that doesn't
   // move; Obsidian never does (see Material.tintBlock).
   tintBlock: 2,
   density: 1000,

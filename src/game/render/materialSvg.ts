@@ -35,13 +35,12 @@
 // nothing the user did would be noise.
 import { EMPTY, Phase, type Material } from '../engine/types';
 import { getMaterial } from '../materials/registry';
-import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
+import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { hex, tinted, buildGlow, shade } from './color';
 import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
 import { TNT_N, buildTntTile } from './tntTile';
 import { ROTOR_N, buildRotorTile } from './rotorTile';
-import { COAL_N, buildCoalTile } from './coalTile';
 
 /** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
  *
@@ -85,10 +84,10 @@ const WOOFER_CONE_R2 = 42;
 const WOOFER_CAP_R2 = 16;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
-// The three bitmap patterns are the exception: TNT's bundle, the rotor wheels and
-// the coal bed are pictures rather than rules, so instead of mirroring constants
-// this module shares the pictures themselves (tntTile / rotorTile / coalTile). An
-// ASCII block copied into two files would diverge invisibly.
+// The two bitmap patterns are the exception: TNT's bundle and the rotor wheels are
+// pictures rather than rules, so instead of mirroring constants this module shares
+// the pictures themselves (tntTile / rotorTile). An ASCII block copied into two
+// files would diverge invisibly.
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -306,12 +305,21 @@ function tintAnchor(m: Material): number {
   return b > 1 ? ~(b - 1) : -1;
 }
 
-/** The renderer's brightness grain, applied exactly as it is in-world. */
+/** The renderer's brightness grain, applied exactly as it is in-world — both levels
+ *  of it. The coarse one shades from the (possibly block-anchored) sample by
+ *  `colorVary`; the fine one shades again from the cell's own sample by
+ *  `tintCellVary`, which is what keeps a 2×2 flake from reading as a flat painted
+ *  square (Coal, Obsidian — see Material.tintCellVary). The two offsets add, exactly
+ *  as they do in the render loop. */
 function grain(m: Material, c: number, x: number, y: number): number {
   const amp = varyAmplitude(m);
-  if (amp === 0) return c;
+  const cellAmp = varyCellAmplitude(m);
+  if (amp === 0 && cellAmp === 0) return c;
   const mask = tintAnchor(m);
-  return tinted(c, ((tintSrc(m, x & mask, y & mask) - TINT_NEUTRAL) * amp) >> 7);
+  let d = 0;
+  if (amp !== 0) d = ((tintSrc(m, x & mask, y & mask) - TINT_NEUTRAL) * amp) >> 7;
+  if (cellAmp !== 0) d += ((tintSrc(m, x, y) - TINT_NEUTRAL) * cellAmp) >> 7;
+  return tinted(c, d);
 }
 
 /**
@@ -321,8 +329,8 @@ function grain(m: Material, c: number, x: number, y: number): number {
  * several materials set more than one hint (a Laser is `lattice` *and*
  * `windArrow`, Diamond is `lattice` *and* `checker2x2`, Solar Panel is `lattice`
  * *and* `solarPattern`, Wall is `lattice` *and* `brickPattern`, TNT is `lattice`
- * *and* `tntPattern`, a Fan/Turbine is `lattice` *and* `rotorPattern`, Coal is
- * `lattice` *and* `coalPattern`) and only the first matching branch draws.
+ * *and* `tntPattern`, a Fan/Turbine is `lattice` *and* `rotorPattern`) and only the
+ * first matching branch draws.
  * `Material.lattice` on those is just supplying the second tone. Reordering these
  * would quietly change what half the electric category looks like.
  */
@@ -360,14 +368,11 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
     ? TNT_N
     : m.rotorPattern
       ? ROTOR_N
-      : m.coalPattern
-        ? COAL_N
-        : m.wooferPattern
-          ? WOOFER_P
-          : N;
+      : m.wooferPattern
+        ? WOOFER_P
+        : N;
   const tntTile = m.tntPattern ? buildTntTile(base, lat) : null;
   const rotorTile = m.rotorPattern ? buildRotorTile(m.rotorPattern, base, lat) : null;
-  const coalTile = m.coalPattern ? buildCoalTile(base, lat) : null;
   const buf = new Uint32Array(n * n);
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
@@ -458,10 +463,6 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // Turbine (8 blades) / Fan (4): one bladed wheel per tile, lit on each blade's
         // leading edge and shaded on its trailing one. A bitmap, like TNT's bundle.
         c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
-      } else if (m.coalPattern) {
-        // Coal: a bed of angular lumps, lit face, shaded face and the deep pocket
-        // between two of them. Also a bitmap.
-        c = coalTile![(y % COAL_N) * COAL_N + (x % COAL_N)];
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);

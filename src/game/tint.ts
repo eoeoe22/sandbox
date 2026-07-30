@@ -66,6 +66,21 @@ export function varyAmplitude(m: Material): number {
   return 0;
 }
 
+/**
+ * The *finer* spread a blocked material adds on top of its block shade, in the
+ * same 0..255 channel units (see Material.tintCellVary). 0 for everything that
+ * isn't Coal or Obsidian.
+ *
+ * Read from the same one place by the renderer and by the palette icon generator,
+ * exactly as `varyAmplitude` is, so the two can't drift. It is deliberately NOT
+ * folded into `varyAmplitude`: that value is the amplitude of the sample the
+ * material *anchors* (the block), and `varyMode` keys off it — a material whose
+ * coarse level went to 0 should stop varying, not quietly keep a fine grain.
+ */
+export function varyCellAmplitude(m: Material): number {
+  return m.tintCellVary ?? 0;
+}
+
 /** Which tint field this material samples: per-particle (powder/solid with colorVary),
  *  positional background (liquid), or none. */
 export function varyMode(m: Material): number {

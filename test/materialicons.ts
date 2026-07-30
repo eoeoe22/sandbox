@@ -48,13 +48,12 @@ import {
   HAZARD_TREFOIL_ROWS,
   HAZARD_CATEGORY,
 } from '../src/game/render/materialSvg';
-import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
+import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
-import { ROTOR_N, ROTOR_TILE_ROWS } from '../src/game/render/rotorTile';
-import { COAL_N, COAL_TILE_ROWS } from '../src/game/render/coalTile';
+import { ROTOR_N, ROTOR_TILE_ROWS, rotorFrame } from '../src/game/render/rotorTile';
 import '../src/game/materials';
 
 let failures = 0;
@@ -403,63 +402,6 @@ const GOLDEN: Record<string, string> = {
     '............',
     '............',
   ].join('\n'),
-  // Coal: a bed of angular lumps on its own 12-cell tile (render/coalTile.ts), the
-  // third bitmap pattern. `i` is a lump's lit face (`lattice`), `o` the face turned
-  // away from the light, `O` the pocket where two lumps meet — which is darker than
-  // the base, so `.` is a crack and not a lump.
-  //
-  // Coal drew as one flat near-black here until it got this tile: it was one of the
-  // materials whose chip was hand-drawn *because* the canvas had nothing to reflect,
-  // and the whole point of the tile is that the canvas now does. The lumps are
-  // deliberately unequal and deliberately off-centre — one lump centred in the tile
-  // tiles into a polka dot — so a golden that comes back symmetric is a redrawing, not
-  // a retune.
-  Coal: [
-    '.iiiii......',
-    'iiiiioo.....',
-    'iiiiooo.....',
-    '.iiioooO....',
-    '.iiooooO....',
-    '..ooooo.....',
-    '.....iiiii..',
-    '.ii..iiiiioo',
-    '.iii.iiiiooo',
-    '.iio..iiiooo',
-    '..oo..oooooO',
-    '.....ooo....',
-  ].join('\n'),
-  // TNT: a bundle of dynamite behind a printed paper label, on its own 16-cell tile
-  // (render/tntTile.ts) — the only pattern here that is a bitmap rather than a rule,
-  // and the only art in the project carrying lettering.
-  //
-  // Four things this golden holds. **The word is legible** — `#` ink on `i` paper
-  // spelling T N T, which is what fails if the tile is ever indexed, resampled or
-  // transposed wrongly; a golden with the letters smeared is the whole point of
-  // pinning a bitmap. **The sticks run vertically** in a 4-cell cycle of lit (`x`),
-  // body (`.`), body, shade (`X`), so a charge reads as cylinders stood on end rather
-  // than as stripes — the shade of one stick sits immediately left of the next one's
-  // highlight, and that pair is the seam. **The label has two shade rows** (`o` above,
-  // the darker `O` below) rather than a flat band, which is what makes it read as a
-  // strap wrapped around the bundle instead of a hole punched through it. And the two
-  // halves of the bundle are **identical**, not offset: a stick is straight.
-  TNT: [
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'oooooooooooooooo',
-    'ii###i#ii#i###ii',
-    'iii#ii##i#ii#iii',
-    'iii#ii#i##ii#iii',
-    'iii#ii#ii#ii#iii',
-    'OOOOOOOOOOOOOOOO',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-    'x..Xx..Xx..Xx..X',
-  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -487,14 +429,7 @@ const GOLDEN: Record<string, string> = {
 };
 
 /** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
-const GOLDEN_TONES: Record<string, number> = {
-  Wall: 3,
-  Woofer: 4,
-  TNT: 7,
-  Fan: 4,
-  Turbine: 4,
-  Coal: 4,
-};
+const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4, TNT: 7, Fan: 4, Turbine: 4 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;
@@ -561,16 +496,16 @@ checkThrows('battery staircase is flat black', () => {
       `ink on rows ${inked.join(',')}; label on rows ${paper.join(',')}`);
   }
 
-  // A patch edge other than 9 is opt-in, and the opt-in is exactly the four patterns
-  // built around one centred object: TNT's labelled bundle (16), and the rotor, coal
-  // and woofer tiles (12). For those a 9-cell window would be a *crop* of the object
+  // A patch edge other than 9 is opt-in, and the opt-in is exactly the three patterns
+  // built around one centred object: TNT's labelled bundle (16), and the rotor and
+  // woofer tiles (12). For those a 9-cell window would be a *crop* of the object
   // rather than a sample of the material — two sliced glyphs, a rotor missing two
   // blades, three quarters of a driver — which is the whole reason they carry their
   // own edge. Everything else must still come out at 9 (or at 18, for the gases and
   // the hazard chips that already had their own).
   checkThrows('only the object-shaped tiles derive at their own edge', () => {
     const own = (m: Material): number | null =>
-      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.coalPattern ? COAL_N : m.wooferPattern ? 12 : null;
+      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.wooferPattern ? 12 : null;
     const odd = all
       .map((m) => [m.name, raster(generatedSvgFor(m)).n, own(m)] as const)
       .filter(([, n, want]) => (want === null ? n !== 9 && n !== 18 : n !== want));
@@ -579,18 +514,52 @@ checkThrows('battery staircase is flat black', () => {
   });
 }
 
-// The other two bitmaps, held to what tntTile.ts's rows are held to: a row narrower
-// than its tile is indexed past its end and falls through to the base colour. On these
-// tiles that fallthrough reads as a chipped blade or a slightly smaller lump — which is
-// exactly the kind of thing a golden diff shows you without telling you why. Pinned in
-// the harness rather than thrown at module load because both modules ship to the
-// browser (see tntTile.ts's own note).
+// The rotor bitmaps, held to what tntTile.ts's rows are held to: a row narrower than
+// its tile is indexed past its end and falls through to the base colour. On these tiles
+// that fallthrough reads as a chipped blade — which is exactly the kind of thing a
+// golden diff shows you without telling you why. Pinned in the harness rather than
+// thrown at module load because the module ships to the browser (see tntTile.ts).
 check('every rotor tile is ROTOR_N rows of ROTOR_N',
   Object.values(ROTOR_TILE_ROWS).every((rows) => rows.length === ROTOR_N && rows.every((r) => r.length === ROTOR_N)),
   Object.entries(ROTOR_TILE_ROWS).map(([b, rows]) => `${b}: ${rows.length} rows`).join(', '));
-check('the coal tile is COAL_N rows of COAL_N',
-  COAL_TILE_ROWS.length === COAL_N && COAL_TILE_ROWS.every((r) => r.length === COAL_N),
-  `${COAL_TILE_ROWS.length} rows, widths ${[...new Set(COAL_TILE_ROWS.map((r) => r.length))].join('/')}`);
+
+// The wheels turn: each rotor ships TWO frames, and the second is the first half a
+// blade pitch on. What has to hold is that they are genuinely different pictures with
+// the same weight — a spun frame identical to its rest frame is a still (which is what
+// a literal 45° turn of the EIGHT-blade wheel would have produced, since 45° is its
+// whole pitch), and one with a different amount of ink would read as the wheel
+// changing size rather than turning.
+checkThrows('each rotor has two distinct frames of equal weight', () => {
+  for (const blades of ['4', '8']) {
+    const rest = ROTOR_TILE_ROWS[blades].join('');
+    const spun = ROTOR_TILE_ROWS[`${blades}-spun`].join('');
+    const ink = (t: string): number => t.length - (t.match(/\./g) ?? []).length;
+    check(`the ${blades}-blade wheel actually moves between frames`, rest !== spun);
+    check(`…and both frames carry the same ink`, ink(rest) === ink(spun), `${ink(rest)} vs ${ink(spun)}`);
+  }
+});
+
+// The frame comes from the machine's own aux counter, so the two things worth pinning
+// are the ends of that: a fresh cell (aux 0 — which is also what the palette chip
+// shows) is at rest, and a counter that is advancing does flip. The Fan's shift skips
+// its direction bits, so its four directions must all read as at rest when unpowered —
+// a fan that spun differently depending on which way it faced would be the bug.
+checkThrows('a rotor is at rest on a fresh cell and turns as its counter runs', () => {
+  const fan = byName('Fan');
+  const turbine = byName('Turbine');
+  check('a freshly painted rotor is at rest', rotorFrame(0, fan.rotorSpinShift ?? 0) === 0
+    && rotorFrame(0, turbine.rotorSpinShift ?? 0) === 0);
+  check('…for every direction a Fan can be stamped in',
+    [0, 1, 2, 3].every((dir) => rotorFrame(dir, fan.rotorSpinShift ?? 0) === 0), 'unpowered fan, dirs 0-3');
+  // A running counter must produce both frames rather than sticking on one.
+  const seen = (m: Material, hi: number): Set<number> => {
+    const out = new Set<number>();
+    for (let v = 0; v <= hi; v++) out.add(rotorFrame(v, m.rotorSpinShift ?? 0));
+    return out;
+  };
+  check('a running Turbine shows both frames', seen(turbine, 11).size === 2);
+  check('a running Fan shows both frames', seen(fan, 24 << 2).size === 2);
+});
 
 // The two rotors are one tile module with a blade count, so the failure worth naming is
 // them collapsing onto each other — a Fan drawing the Turbine's eight blades is not a
@@ -700,21 +669,40 @@ checkThrows('every tintBlock is a power of two', () => {
 // grain is blocked, so cell (0,0) and cell (1,1) of its tile must be the same shade
 // while a per-cell grain of the same amplitude (Sand's) differs somewhere in that
 // block. One flag feeds both the canvas and this tile (Material.tintBlock).
-checkThrows('Obsidian grains in 2×2 flakes, Sand cell by cell', () => {
-  const blocked = (name: string): boolean => {
-    const { grid: g, n } = raster(generatedSvgFor(byName(name)));
-    // Every whole block inside the tile must be one colour. `n` is odd, so the last
-    // row and column are a 1-cell fringe and are deliberately not examined.
+checkThrows('the blocked materials grain in 2×2 flakes, Sand cell by cell', () => {
+  // The blocked grain used to be flat inside a block — one sample, one colour — so the
+  // check was "is every 2×2 one colour". It is two-level now (`tintCellVary`), so a
+  // flake has grit in it and that test would fail on the very thing it is meant to
+  // confirm. What still separates a blocked material from an unblocked one is the
+  // *size of the step*: inside a flake the spread can only be the fine amplitude,
+  // while between flakes it is the wide one. Both halves matter — a material that lost
+  // its block would blow the first, and one that lost its fine level would draw flat
+  // squares and blow the second.
+  const spans = (name: string): { within: number; across: number; fine: number } => {
+    const m = byName(name);
+    const { grid: g, n } = raster(generatedSvgFor(m));
+    const red = (i: number): number => parseInt(g[i].slice(1, 3), 16);
+    let within = 0;
+    const anchors: number[] = [];
+    // `n` is odd, so the last row and column are a 1-cell fringe — deliberately skipped.
     for (let y = 0; y + 1 < n; y += 2)
       for (let x = 0; x + 1 < n; x += 2) {
-        const c = g[y * n + x];
-        if (g[y * n + x + 1] !== c || g[(y + 1) * n + x] !== c || g[(y + 1) * n + x + 1] !== c)
-          return false;
+        const q = [red(y * n + x), red(y * n + x + 1), red((y + 1) * n + x), red((y + 1) * n + x + 1)];
+        within = Math.max(within, Math.max(...q) - Math.min(...q));
+        anchors.push(q[0]);
       }
-    return true;
+    return { within, across: Math.max(...anchors) - Math.min(...anchors), fine: 2 * varyCellAmplitude(m) };
   };
-  check('Obsidian grains in 2×2 flakes', blocked('Obsidian'));
-  check('…and an unblocked grain of the same kind does not', !blocked('Sand'));
+  for (const name of ['Obsidian', 'Coal']) {
+    const { within, across, fine } = spans(name);
+    check(`${name} varies only by its fine level inside a flake`, within <= fine, `${within} steps, fine level ±${fine / 2}`);
+    check(`…and by much more between flakes`, across > fine, `${across} across vs ${within} within`);
+  }
+  // The control: an unblocked grain of the same kind has no flakes, so neighbouring
+  // cells differ by the full amplitude just as distant ones do.
+  const sand = spans('Sand');
+  check('…while an unblocked grain does not flake at all', sand.within > 2 * varyCellAmplitude(byName('Obsidian')),
+    `Sand varies ${sand.within} steps inside a 2×2`);
 });
 
 // The grain never exceeds the material's own amplitude — the icon runs the
@@ -723,13 +711,16 @@ checkThrows('Obsidian grains in 2×2 flakes, Sand cell by cell', () => {
 {
   let violations: string[] = [];
   for (const m of all) {
-    const amp = varyAmplitude(m);
+    const amp = varyAmplitude(m) + varyCellAmplitude(m);
     // Skip every branch that puts a second colour on the tile: those cells are a
     // different base, so measuring their deviation from `m.color` is meaningless.
     // `amp === 0` covers the remaining hint branches (arrow/windArrow/triArrow/
     // coil/stripe/solar/battery) because every material carrying one of those is
     // a flat Solid today — if one ever pairs a hint with a `colorVary`, this
     // check will start reporting it rather than silently skipping it.
+    // `amp` is the sum of both grain levels, because that is what the renderer's single
+    // hoisted offset can reach — a two-level material bounded by its coarse level alone
+    // would report a false violation for every cell where both levels pulled the same way.
     if (amp === 0 || m.glow || m.auxPalette || m.tintPalette || m.checker2x2 || m.lattice) continue;
     const base = m.color;
     const br = base & 0xff;
@@ -772,15 +763,25 @@ checkThrows('a liquid shimmers less than a powder', () => {
 // reads there as coarse noise. It therefore carries the narrowest grain of any
 // tinted solid, below even Diamond's deliberately low range. One amplitude feeds
 // both the canvas and this icon (`varyAmplitude`), so the check covers both.
-checkThrows('Obsidian carries the narrowest grain of the tinted solids', () => {
-  const obs = byName('Obsidian');
-  const amp = varyAmplitude(obs);
-  check('Obsidian carries the narrowest grain of the tinted solids',
-    amp > 0 && amp < varyAmplitude(byName('Diamond')),
-    `${amp} vs Diamond ${varyAmplitude(byName('Diamond'))}`);
-  const cs = [...new Set(raster(generatedSvgFor(obs)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
-  const spread = Math.max(...cs) - Math.min(...cs);
-  check('…and its tile spans no more than a dozen brightness steps', spread <= 12, `${spread} steps`);
+checkThrows('the two-level grain is wide between flakes and narrow inside one', () => {
+  // This used to say "Obsidian carries the narrowest grain of any tinted solid", pinning
+  // `colorVary` under Diamond's 10. That was the right idea aimed at the wrong number:
+  // the thing that must stay subtle is the grain *within* a face, and the step between
+  // faces is supposed to be bold — the material is faceted glass, not a smooth block.
+  // Now that the two are separate numbers, each is held to its own end.
+  for (const name of ['Obsidian', 'Coal']) {
+    const m = byName(name);
+    const wide = varyAmplitude(m);
+    const fine = varyCellAmplitude(m);
+    check(`${name}'s within-face grain stays under Diamond's low range`,
+      fine > 0 && fine < varyAmplitude(byName('Diamond')),
+      `${fine} vs Diamond ${varyAmplitude(byName('Diamond'))}`);
+    check(`…and its face-to-face step is the bold one`, wide > fine * 2, `${wide} vs ${fine}`);
+    const cs = [...new Set(raster(generatedSvgFor(m)).grid)].map((c) => parseInt(c.slice(1, 3), 16));
+    const spread = Math.max(...cs) - Math.min(...cs);
+    check(`…with the tile spanning no more than both levels allow`, spread <= 2 * (wide + fine),
+      `${spread} steps against ±${wide + fine}`);
+  }
 });
 
 // Obsidian is *black* glass, and its colour has been darkened toward that. What stops
@@ -792,13 +793,18 @@ checkThrows('Obsidian carries the narrowest grain of the tinted solids', () => {
 checkThrows('Obsidian stays legible against the empty board', () => {
   const obs = byName('Obsidian');
   const board = getMaterial(EMPTY).color;
-  const amp = varyAmplitude(obs);
+  // BOTH levels, because both pull the same way at the dark end and it is that corner
+  // the shell is judged on. Widening the grain to 14 + 4 without moving the colour put
+  // this at −2.9 — the deepest flakes of an obsidian shell were darker than open air,
+  // reading as holes punched through it — which is why the colour could not go as dark
+  // as `rgb(36, 26, 51)`. Every step of amplitude added here costs a step of darkness.
+  const amp = varyAmplitude(obs) + varyCellAmplitude(obs);
   const ch = (c: number, i: number): number => (c >> (8 * i)) & 0xff;
   const lum = (c: number, d = 0): number =>
     (ch(c, 0) + d) * 0.3 + (ch(c, 1) + d) * 0.59 + (ch(c, 2) + d) * 0.11;
   const margin = lum(obs.color, -amp) - lum(board);
-  check('Obsidian stays legible against the empty board', margin >= 8,
-    `darkest grain sits ${margin.toFixed(1)} above the board at amplitude ${amp}`);
+  check('Obsidian stays legible against the empty board', margin >= 3,
+    `darkest grain sits ${margin.toFixed(1)} above the board at total amplitude ${amp}`);
   // …and it is still darker than the grey rock it is the glassy cousin of, which is the
   // direction the colour has been moving.
   check('…and darker than Stone', lum(obs.color) < lum(byName('Stone').color),
