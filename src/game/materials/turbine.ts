@@ -12,16 +12,15 @@ import { PULSE_PERIOD } from './battery';
 // fluids pass straight through via the 겹침 overlap layer (see Grid.overlay),
 // and while a puff of *Steam* is blowing through the blades it makes power:
 // a fresh Spark is injected into every ready piece of wiring on its faces (see
-// the wired-output note below) — exactly the
-// pulse a Battery emits, on the very same cadence (PULSE_PERIOD, shared from
-// battery.ts): while steam keeps flowing the turbine beats once every
-// PULSE_PERIOD ticks, so anything downstream (a wire, a Fan, a Woofer) can't tell
-// a turbine's supply from a battery's. The steam flow is what *gates* the beat —
-// no steam, no pulse — rather than setting its rate. Boil water beneath a turbine
-// and wire its output into a
-// circuit and you've built a steam power plant: heat → steam → turbine →
-// electricity. Condensed water drains back down through it (it passes liquids
-// too), so a sealed boiler loop can keep the pulses coming.
+// the wired-output note below) — exactly the pulse a Battery emits, on the very
+// same cadence (PULSE_PERIOD, shared from battery.ts): while steam keeps flowing
+// the turbine beats once every PULSE_PERIOD ticks, so anything downstream (a
+// wire, a Fan, a Woofer) can't tell a turbine's supply from a battery's. The
+// steam flow is what *gates* the beat — no steam, no pulse — rather than setting
+// its rate. Boil water beneath a turbine and wire its output into a circuit and
+// you've built a steam power plant: heat → steam → turbine → electricity.
+// Condensed water drains back down through it (it passes liquids too), so a
+// sealed boiler loop can keep the pulses coming.
 //
 // The turbine conducts its own generated current *internally*: steam passing
 // through the middle of a solid turbine block powers a wire attached only at
