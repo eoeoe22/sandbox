@@ -51,6 +51,7 @@ import { varyAmplitude, varyMode, VARY_PARTICLE } from '../src/game/tint';
 import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
+import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
 import '../src/game/materials';
 
 let failures = 0;
@@ -161,10 +162,15 @@ function raster(svg: string): { grid: string[]; n: number } {
  *
  *  `want` is the number of distinct tones the whole tile must have. Almost every
  *  pattern is two-tone (base + `lattice`); Wall's masonry also lights the top of
- *  each brick, so it needs three. Asserting the count is part of the golden: a
- *  branch that lost or gained a tone would otherwise still render as plausible
- *  ASCII. */
-const PATTERN_GLYPHS = ['i', 'o', 'O'];
+ *  each brick, so it needs three, and TNT's labelled bundle needs seven. Asserting
+ *  the count is part of the golden: a branch that lost or gained a tone would
+ *  otherwise still render as plausible ASCII.
+ *
+ *  Ranking by lightness only stays stable while the tones are well separated, which
+ *  they are — TNT's six run 236 / 206 / 175 / 151 / 53 / 26 in luminance. A pattern
+ *  whose tones sat a unit or two apart would swap glyphs on an unrelated retune and
+ *  fail here with a picture rather than a reason. */
+const PATTERN_GLYPHS = ['i', 'o', 'O', 'x', 'X', '#'];
 
 function ascii(m: Material, want = 2): string {
   // Reads the generator directly. Solar Panel's chip is hand-drawn art now, but
@@ -356,28 +362,37 @@ const GOLDEN: Record<string, string> = {
     '...ooo...',
     '.........',
   ].join('\n'),
-  // TNT: explosive crates — a seam (`o`) down the last column of every block and
-  // along the last row of every course, one binding band of the same colour down the
-  // block's middle, and each block's leading column lit (`i`).
+  // TNT: a bundle of dynamite behind a printed paper label, on its own 16-cell tile
+  // (render/tntTile.ts) — the only pattern here that is a bitmap rather than a rule,
+  // and the only art in the project carrying lettering.
   //
-  // Three things this golden holds. **The band and the lit edge run vertically**, so
-  // a charge reads as sticks stood on end; a golden whose `o`/`i` run in rows means
-  // the pattern was transposed back. The courses are **NOT** staggered — the seam
-  // column runs straight down, unlike the Wall's alternating joints, because
-  // staggered crates read as brickwork. And the band and the seam are **NOT** an
-  // equal distance apart: the band on column 2 would put both dark columns three
-  // apart either way and collapse the field into even stripes with nothing marking
-  // where a crate ends. Column 3 gives gaps of 2 and 4.
+  // Four things this golden holds. **The word is legible** — `#` ink on `i` paper
+  // spelling T N T, which is what fails if the tile is ever indexed, resampled or
+  // transposed wrongly; a golden with the letters smeared is the whole point of
+  // pinning a bitmap. **The sticks run vertically** in a 4-cell cycle of lit (`x`),
+  // body (`.`), body, shade (`X`), so a charge reads as cylinders stood on end rather
+  // than as stripes — the shade of one stick sits immediately left of the next one's
+  // highlight, and that pair is the seam. **The label has two shade rows** (`o` above,
+  // the darker `O` below) rather than a flat band, which is what makes it read as a
+  // strap wrapped around the bundle instead of a hole punched through it. And the two
+  // halves of the bundle are **identical**, not offset: a stick is straight.
   TNT: [
-    'i..o.oi..',
-    'i..o.oi..',
-    'i..o.oi..',
-    'i..o.oi..',
-    'i..o.oi..',
-    'ooooooooo',
-    'i..o.oi..',
-    'i..o.oi..',
-    'i..o.oi..',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'oooooooooooooooo',
+    'ii###i#ii#i###ii',
+    'iii#ii##i#ii#iii',
+    'iii#ii#i##ii#iii',
+    'iii#ii#ii#ii#iii',
+    'OOOOOOOOOOOOOOOO',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
+    'x..Xx..Xx..Xx..X',
   ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
@@ -406,7 +421,7 @@ const GOLDEN: Record<string, string> = {
 };
 
 /** Tones a golden's tile must have, where it isn't the usual base + `lattice`. */
-const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4, TNT: 3 };
+const GOLDEN_TONES: Record<string, number> = { Wall: 3, Woofer: 4, TNT: 7 };
 
 for (const [name, want] of Object.entries(GOLDEN)) {
   const label = `${name} tile matches its golden`;
@@ -422,6 +437,57 @@ checkThrows('battery staircase is flat black', () => {
   const { grid: g } = raster(generatedSvgFor(byName('Lithium Battery')));
   check('battery staircase is flat black', g.includes('#000000'), [...new Set(g)].join(' '));
 });
+
+// TNT's tile is the one pattern held as a bitmap rather than as an expression, which
+// moves the failure modes: a rule can only be wrong in its arithmetic, but a picture
+// can be wrong by one character in a string nobody re-reads. The golden above covers
+// the shape; these cover the ways the shape could be right and the tile still wrong.
+{
+  // A row shorter than TNT_N gets indexed past its end and `buildTntTile` falls
+  // through to the base colour, so a truncated shade row paints as plain red rather
+  // than failing. The golden would catch that in the sticks and in the letters, but a
+  // short all-`u`/all-`d` row is exactly the case it cannot see. Pinned here rather
+  // than thrown on at module load: tntTile.ts ships to the browser (see its comment).
+  check('the TNT tile is TNT_N rows of TNT_N',
+    TNT_TILE_ROWS.length === TNT_N && TNT_TILE_ROWS.every((r) => r.length === TNT_N),
+    `${TNT_TILE_ROWS.length} rows, widths ${[...new Set(TNT_TILE_ROWS.map((r) => r.length))].join('/')}`);
+
+  // The label is printed paper, not shaded material: its ink is a literal near-black
+  // and its paper a literal cream, neither derived from whatever colour the material
+  // registers. A regression to `lattice` or to a `tinted()` offset would still golden
+  // as plausible ASCII, because the glyphs are assigned by rank rather than by value.
+  checkThrows('the TNT label is printed, not tinted', () => {
+    const { grid: g, n } = raster(generatedSvgFor(byName('TNT')));
+    check('the TNT label is printed, not tinted',
+      n === TNT_N && g.includes('#1a1a1a') && g.includes('#f0ece1'),
+      `${n} cells: ${[...new Set(g)].sort().join(' ')}`);
+  });
+
+  // The word stays on its label. Ink that reached a stick row would read as damage to
+  // the dynamite rather than as printing, and it is the kind of slip a one-character
+  // edit to the wrong row makes.
+  {
+    const inked = TNT_TILE_ROWS.map((r, y) => (r.includes('#') ? y : -1)).filter((y) => y >= 0);
+    const paper = TNT_TILE_ROWS.map((r, y) => (/^[pud]+$/.test(r.replace(/#/g, 'p')) ? y : -1))
+      .filter((y) => y >= 0);
+    check('the TNT lettering stays inside the label',
+      inked.length > 0 && inked.every((y) => paper.includes(y)),
+      `ink on rows ${inked.join(',')}; label on rows ${paper.join(',')}`);
+  }
+
+  // The tile's edge is TNT's alone. Giving one material its own patch size means the
+  // generator now reads a per-material edge where it used to read a constant, so the
+  // thing worth pinning is that nothing else moved off 9 (or off 18, for the gases and
+  // the hazard chips that already had their own).
+  checkThrows('only TNT derives its tile at TNT_N', () => {
+    const odd = all
+      .filter((m) => !m.tntPattern)
+      .map((m) => [m.name, raster(generatedSvgFor(m)).n] as const)
+      .filter(([, n]) => n !== 9 && n !== 18);
+    check('only TNT derives its tile at TNT_N', odd.length === 0,
+      odd.map(([name, n]) => `${name} ${n}`).join(', '));
+  });
+}
 
 // ---------------------------------------------------------------------------
 // 3. Flat stays flat; textured stays textured.

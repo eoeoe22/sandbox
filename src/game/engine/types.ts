@@ -638,17 +638,19 @@ export interface Material {
    */
   wooferPattern?: boolean;
   /**
-   * Draw a grid of explosive crates (TNT): one block per tile — a `lattice`-coloured
-   * seam down its right edge and along its bottom, a binding band of the same colour
-   * across its middle, and its top row lit a step above the base `color`. The same
-   * three features as the hand-drawn TNT chip (dark outline, lit top edge, one band)
-   * at world scale, so a painted charge reads as stacked blocks of explosive rather
-   * than a red slab. Positional (tied to x/y, not to the particle) like the Wall's
-   * courses, so dragging the brush extends one continuous stack. Purely a rendering
-   * hint the simulation never reads.
+   * Draw bundles of labelled dynamite (TNT): four sticks per tile — each a lit column
+   * in the base `color` brightened, two of the plain colour, and a shaded one in
+   * `lattice` — above and below a paper band carrying the word TNT. Positional (tied
+   * to x/y, not to the particle) like the Wall's courses, so dragging the brush
+   * extends one continuous bundle rather than tiling a block per cell. Purely a
+   * rendering hint the simulation never reads.
    *
-   * Unlike the Wall's masonry the courses are NOT offset half a block — crates stack
-   * square, and staggering them would read as brickwork.
+   * The only pattern in the engine that is a **bitmap** rather than an expression, and
+   * the only art in the project carrying lettering: the tile, its palette and the
+   * reasoning for both live in `render/tntTile.ts`, shared by the renderer and the
+   * palette icon generator instead of being restated in each. Its period is therefore
+   * fixed at TNT_N (16) — far coarser than the other patterns, because that is the
+   * smallest grid the word fits on.
    */
   tntPattern?: boolean;
   /**

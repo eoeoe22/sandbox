@@ -13,6 +13,7 @@ import {
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
+import { TNT_N, buildTntTile } from './tntTile';
 import type { DrumFill, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
@@ -158,41 +159,10 @@ const WOOFER_CAP_R2 = 4; // (2r)² of the dust cap — the centre cell plus its 
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
 
-// Tiling of the `tntPattern` explosive-crate grid (TNT — see the render loop). One
-// period is a block plus the seam on its right and bottom edges, so a crate reads
-// 5 wide × 5 tall with a 1-cell seam on two of its sides, and carries one binding
-// band down its middle.
-//
-// This is the hand-drawn TNT chip's three features — dark outline, lit edge, one
-// band — at world scale, not its measurements. The chip's outline runs all four
-// sides because a chip draws one object with air around it; a *field* of crates has
-// no outside, so only the two trailing edges are drawn and each block's outline is
-// its neighbour's.
-//
-// **The band and the lit edge run vertically**, so a painted charge reads as sticks
-// stood on end rather than as stacked horizontal slabs. The seam row still closes
-// each course, so the field is a grid of blocks either way — what the orientation
-// decides is which way the eye travels across it.
-//
-// Square, unlike the Wall's 6×4 running bond, and the courses are deliberately NOT
-// staggered: offsetting them turns explosive into brickwork, which is the one thing
-// this pattern must not read as.
-const TNT_W = 6; // columns per crate (5 drawn + 1 seam)
-const TNT_H = 6; // rows per course (5 drawn + 1 seam)
-// Column within the crate carrying the binding band. 3 rather than the block's
-// geometric middle 2, because the band and the seam are the same colour: at 2 the two
-// dark columns sit at 2 and 5, three apart either way, and the whole field collapses
-// into evenly spaced stripes with nothing left to say where one crate ends. At 3 the
-// gaps alternate 2 and 4, and the seam is immediately followed by the next crate's lit
-// edge — so a dark line with a bright line beside it reads as a block edge and a dark
-// line alone reads as a strap.
-const TNT_BAND = 3;
-// How far the lit edge of each crate is lifted above the base colour. The chip's lit
-// edge is #e0655a against a #c43a30 base, which is +28/+43/+42 — not one offset, so
-// this is the mid channel rather than an exact match (a material carries only one
-// second colour, and `lattice` is spent on the seams). It lands within 15 units per
-// channel, which on a mid-tone red is a step in the same direction, not a new hue.
-const TNT_LIT = 38;
+// `tntPattern`'s tile (TNT — see the render loop) is a bitmap, not a rule, so it has
+// no constants to state here: the ASCII, the label's colours and the highlight offset
+// all live in ./tntTile, shared with the palette icon generator. TNT_N is the tile's
+// edge in cells; buildTntTile resolves it against one material's two colours.
 
 /** Fractional part, kept in [0, 1). */
 function windFrac(v: number): number {
@@ -447,13 +417,17 @@ export class CanvasRenderer implements Renderer {
    *  its base colour for the same reason `brickLit` is. */
   private wooferRim: Uint32Array;
   private wooferCap: Uint32Array;
-  /** id → 1 if the material draws a grid of explosive crates — `lattice`-coloured
-   *  seams and a binding band with each block's top row lit (TNT — see
+  /** id → 1 if the material draws a bundle of labelled dynamite (TNT — see
    *  Material.tntPattern). */
   private tntPattern: Uint8Array;
-  /** id → the lit colour of a `tntPattern` material's crate top, precomputed from its
-   *  base colour for the same reason `brickLit` is. */
-  private tntLit: Uint32Array;
+  /** id → that material's finished TNT_N × TNT_N tile, its two colours resolved into
+   *  the shared bitmap once at construction (see tntTile.ts). Null for every id that
+   *  doesn't set `tntPattern`; the render loop only reads it inside that branch.
+   *
+   *  A table rather than the precomputed scalars `brickLit`/`wooferRim` are: this
+   *  pattern isn't a rule the loop can evaluate, so there is nothing to precompute
+   *  *into* except the picture itself. 256 cells per material, one material today. */
+  private tntTile: (Uint32Array | null)[];
   /** id → the edge, in cells, of the square block that shares one tint sample — 0
    *  for the ordinary per-cell grain, 2 for Obsidian's flakes (see
    *  Material.tintBlock). Stored as the bit mask the render loop applies to x and y
@@ -585,7 +559,7 @@ export class CanvasRenderer implements Renderer {
     this.wooferRim = new Uint32Array(256);
     this.wooferCap = new Uint32Array(256);
     this.tntPattern = new Uint8Array(256);
-    this.tntLit = new Uint32Array(256);
+    this.tntTile = new Array(256).fill(null);
     // -1 is every bit set, i.e. "sample this cell" — the identity mask, so the render
     // loop can skip the whole block-anchor computation with one compare.
     this.tintBlockMask = new Int32Array(256).fill(-1);
@@ -628,7 +602,7 @@ export class CanvasRenderer implements Renderer {
         }
         if (m.tntPattern) {
           this.tntPattern[i] = 1;
-          this.tntLit[i] = tinted(m.color, TNT_LIT);
+          this.tntTile[i] = buildTntTile(m.color, m.lattice ?? m.color);
         }
         // A block edge of B clears the low log2(B) bits of x and y, which is only a
         // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
@@ -762,7 +736,7 @@ export class CanvasRenderer implements Renderer {
     const wooferRim = this.wooferRim;
     const wooferCap = this.wooferCap;
     const tntPattern = this.tntPattern;
-    const tntLit = this.tntLit;
+    const tntTile = this.tntTile;
     const tintBlockMask = this.tintBlockMask;
     const packed = this.packed;
     const overlayTemp = this.overlayTemp;
@@ -1026,22 +1000,18 @@ export class CanvasRenderer implements Renderer {
               ? wooferRim[id]
               : pal[id];
       } else if (tntPattern[id]) {
-        // TNT draws a grid of explosive crates: a `lattice`-coloured seam on the last
-        // column of every block and the last row of every course, one band of the same
-        // colour down the block's middle, and the block's leading column lit TNT_LIT
-        // above the base — the same three features as the hand-drawn TNT chip, run
-        // vertically so a charge reads as sticks on end. Positional like the Wall's
-        // courses so a dragged charge is one continuous stack, but squarely aligned
-        // rather than offset: staggered courses would read as brickwork, and a wall of
-        // bricks is exactly what a charge must not look like.
-        const x = i % w;
+        // TNT draws a bundle of dynamite behind a printed paper label: four lit-and-
+        // shaded stick columns above and below a wrapped band carrying the word (see
+        // tntTile.ts). Unlike every other pattern here this one is a bitmap rather than
+        // a rule — the letters are art — so the branch is a single lookup into the tile
+        // this material's colours were resolved into at construction.
+        //
+        // Positional like the Wall's courses, so a dragged charge is one continuous
+        // bundle rather than a per-cell tile, and squarely aligned rather than offset:
+        // staggering would break the sticks and misalign the label.
         const y = (i / w) | 0;
-        const col = x % TNT_W;
-        c = col === TNT_W - 1 || col === TNT_BAND || y % TNT_H === TNT_H - 1
-          ? latCol[id]
-          : col === 0
-            ? tntLit[id]
-            : pal[id];
+        const x = i - y * w;
+        c = tntTile[id]![(y % TNT_N) * TNT_N + (x % TNT_N)];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

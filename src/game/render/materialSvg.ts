@@ -39,6 +39,7 @@ import { varyAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { hex, tinted, buildGlow, shade } from './color';
 import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
+import { TNT_N, buildTntTile } from './tntTile';
 
 /** Hand-drawn icons are authored on a 24-cell tile (see MATERIAL-ICON-BRIEF.md).
  *
@@ -63,8 +64,8 @@ const HAND_ICON_CELLS = 24;
  */
 const N = 9;
 
-/** The default patch edge (a flat gas uses GAS_N instead — see GAS_CLOUD). A
- *  harness should read the generated `viewBox` rather than assume either. */
+/** The default patch edge (a flat gas uses GAS_N, a `tntPattern` material TNT_N). A
+ *  harness should read the generated `viewBox` rather than assume any of them. */
 export const MATERIAL_ICON_CELLS = N;
 
 /** The renderer's tile constants, mirrored (see CanvasRenderer). */
@@ -82,10 +83,9 @@ const WOOFER_CONE_R2 = 25;
 const WOOFER_CAP_R2 = 4;
 const WOOFER_RIM = -20;
 const WOOFER_CAP = -29;
-const TNT_W = 6;
-const TNT_H = 6;
-const TNT_BAND = 3;
-const TNT_LIT = 38;
+// TNT is the exception: its tile is a bitmap rather than a rule, so instead of
+// mirroring constants this module shares the picture itself (see tntTile.ts). A
+// 16-row ASCII block copied into two files would diverge invisibly.
 
 /** How far a glow icon's ramp reaches down toward the cool end. A glow material
  *  is drawn from its live temperature, so there is no single honest colour for
@@ -337,9 +337,23 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
     return { buf, n: GAS_N };
   }
 
-  const buf = new Uint32Array(N * N);
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
+  // Every pattern but one is drawn on the N-cell patch. TNT's tile is 16 cells and
+  // carries lettering, so a 9-cell window would show a slice of two glyphs and
+  // nothing else — the one case where a partial period isn't a fair sample of the
+  // material (every other tile's window is: a 9-cell patch shows 1½ bricks, and 1½
+  // bricks read as masonry). Its own edge instead, so the chip shows exactly one
+  // labelled block.
+  //
+  // 16 does not land on whole device pixels in the palette's 18 px swatch the way 9
+  // and 18 do (see N). That is acceptable *only* because this tile is never the
+  // shipped chip — TNT's chip is hand-drawn art, and `generatedSvgFor` exists to keep
+  // the branch pinned. A future `tntPattern` material with no hand art would want the
+  // resampling `hazardPatch` does, not this.
+  const n = m.tntPattern ? TNT_N : N;
+  const tntTile = m.tntPattern ? buildTntTile(base, lat) : null;
+  const buf = new Uint32Array(n * n);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
       let c: number;
 
       if (m.auxPalette) {
@@ -348,7 +362,7 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // says "pebble", not "this grows". So the icon runs the ramp up the tile,
         // squared so the lower two-thirds stay the dormant brown you actually
         // place and only the crown greens up: a seed with a sprout on it.
-        const p = (N - 1 - y) / (N - 1);
+        const p = (n - 1 - y) / (n - 1);
         const idx = Math.round(p * p * (m.auxPalette.length - 1));
         c = grain(m, m.auxPalette[idx % m.auxPalette.length], x, y);
       } else if (m.tintPalette) {
@@ -418,15 +432,10 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
               ? tinted(base, WOOFER_RIM)
               : base;
       } else if (m.tntPattern) {
-        // TNT: one explosive crate per tile — `lattice` seams on the trailing edges, a
-        // binding band down the middle, and the leading column lit. Vertical, and
-        // squarely aligned rather than offset like the Wall's courses.
-        const col = x % TNT_W;
-        c = col === TNT_W - 1 || col === TNT_BAND || y % TNT_H === TNT_H - 1
-          ? lat
-          : col === 0
-            ? tinted(base, TNT_LIT)
-            : base;
+        // TNT: one bundle of labelled dynamite per tile. The only branch here that
+        // reads a bitmap instead of evaluating a rule — the modulo is kept anyway so
+        // this stays the renderer's expression even though `n` is the tile's own edge.
+        c = tntTile![(y % TNT_N) * TNT_N + (x % TNT_N)];
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);
@@ -450,7 +459,7 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // end still dominates. The grain rides on top for the two glow materials
         // that also vary (Thermite, Nuke Waste), exactly as it does in-world.
         const span = m.glow.max - m.glow.min;
-        const up = (N - 1 - y) / (N - 1);
+        const up = (n - 1 - y) / (n - 1);
         const jitter = (hash8(m.id, x, y) / 255 - 0.5) * 2 * GLOW_ICON_MOTTLE;
         let f = GLOW_ICON_FLOOR + up * (1 - GLOW_ICON_FLOOR) + jitter;
         if (f < 0) f = 0;
@@ -465,10 +474,10 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         c = grain(m, base, x, y);
       }
 
-      buf[y * N + x] = c;
+      buf[y * n + x] = c;
     }
   }
-  return { buf, n: N };
+  return { buf, n };
 }
 
 /**
