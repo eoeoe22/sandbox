@@ -117,25 +117,41 @@ const GLOW_ICON_MOTTLE = 0.09;
  * Authored as ASCII rather than generated from circles so that what ships is
  * what someone read and approved, and so `test/materialicons.ts` can golden it
  * directly. `#` is the gas, `.` is the board behind it.
+ *
+ * The silhouette itself is the approved 24-unit drawing kept in
+ * `docs/MATERIAL-ICONS.md` ("실루엣 개정", §4) — a domed puff with its cap right of centre,
+ * widening to a near-full-width waist and tapering back under — resampled here
+ * to 18 units at authoring time. The first shape filled all but one row of the
+ * tile, which put a gas at the same ink weight as the solids it has to be told
+ * apart from; this one keeps the drawing's own proportions (the body spans half
+ * the tile's height, board above and below), so a gas chip reads as vapour
+ * floating rather than as a differently-shaped brick.
+ *
+ * Resampled rather than shipped at 24 units, even though the hand-drawn layer
+ * uses that grid: 18 is the only patch edge that lands on whole device pixels at
+ * the palette's 18 CSS px swatch (1 px at DPR 1, 2 at DPR 2), and 24 would leave
+ * `crispEdges` to drop every fourth row of a curve at render time — unevenly,
+ * and differently per DPR. Doing the 0.75× reduction here instead means the
+ * lumps are chosen once, by eye, and goldened.
  */
 const GAS_CLOUD = [
+  '..................',
+  '..................',
+  '..................',
+  '..................',
   '.......#####......',
-  '.....########.....',
-  '....##########....',
+  '.....#########....',
+  '....###########...',
+  '...#############..',
+  '..##############..',
+  '.################.',
+  '.################.',
+  '.################.',
   '...############...',
-  '..##############..',
-  '.################.',
-  '.################.',
-  '##################',
-  '##################',
-  '##################',
-  '##################',
-  '##################',
-  '.################.',
-  '.################.',
-  '.################.',
-  '.################.',
-  '..##############..',
+  '..................',
+  '..................',
+  '..................',
+  '..................',
   '..................',
 ];
 

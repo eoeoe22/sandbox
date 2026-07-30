@@ -557,24 +557,30 @@ for (const name of ['Lava', 'Molten Metal', 'Slag']) {
 // background, on a finer 18-cell grid than everything else. The first attempt
 // scattered cells instead and read as damage rather than as a shape, so the
 // golden here is the whole point of the branch — see GAS_CLOUD.
+//
+// The picture is also the only place the *proportions* are pinned: the body
+// spans half the tile's height with board above and below, which is what makes a
+// gas chip read as vapour floating rather than as a differently-shaped brick.
+// The margin check below says that in words, since a golden diff alone would not
+// explain why a fatter cloud is a regression.
 const GAS_GOLDEN = [
+  '..................',
+  '..................',
+  '..................',
+  '..................',
   '.......ooooo......',
-  '.....oooooooo.....',
-  '....oooooooooo....',
+  '.....ooooooooo....',
+  '....ooooooooooo...',
+  '...ooooooooooooo..',
+  '..oooooooooooooo..',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
+  '.oooooooooooooooo.',
   '...oooooooooooo...',
-  '..oooooooooooooo..',
-  '.oooooooooooooooo.',
-  '.oooooooooooooooo.',
-  'oooooooooooooooooo',
-  'oooooooooooooooooo',
-  'oooooooooooooooooo',
-  'oooooooooooooooooo',
-  'oooooooooooooooooo',
-  '.oooooooooooooooo.',
-  '.oooooooooooooooo.',
-  '.oooooooooooooooo.',
-  '.oooooooooooooooo.',
-  '..oooooooooooooo..',
+  '..................',
+  '..................',
+  '..................',
+  '..................',
   '..................',
 ].join('\n');
 
@@ -607,6 +613,27 @@ for (const name of ['Steam', 'Smoke', 'Chlorine']) {
 check('every GAS_CLOUD row is as wide as the cloud is tall',
   GAS_CLOUD_ROWS.every((r) => r.length === GAS_CLOUD_ROWS.length),
   `${GAS_CLOUD_ROWS.length} rows, widths ${[...new Set(GAS_CLOUD_ROWS.map((r) => r.length))].join('/')}`);
+
+// The puff floats: it is a body of vapour with board around it, not a tile-filling
+// blob whose ink weight equals the square it exists to be distinguished from. The
+// original silhouette filled 17 of 18 rows and lost that distinction, so the
+// margin is pinned as a rule and not only as a picture — a redraw that swells back
+// to the edges fails here with the reason attached.
+{
+  const rows = GAS_CLOUD_ROWS;
+  const n = rows.length;
+  const inked = rows.filter((r) => r.includes('#'));
+  const clear = (r: string) => !r.includes('#');
+  check('the gas cloud floats — board above and below it',
+    clear(rows[0]) && clear(rows[n - 1]) && inked.length <= n / 2,
+    `${inked.length} of ${n} rows inked`);
+  // Sideways it very nearly fills the tile: the drawing's waist is 22 of 24 units,
+  // so a cloud that shrank away from the left and right edges too would be a small
+  // lozenge rather than a wide puff.
+  check('…but is nearly full width at the waist',
+    Math.max(...inked.map((r) => r.replace(/^\.+|\.+$/g, '').length)) >= n - 2,
+    `widest row ${Math.max(...inked.map((r) => r.replace(/^\.+|\.+$/g, '').length))} of ${n}`);
+}
 
 // The board showing around the puff is the eraser's colour — the same thing that
 // is actually behind a gas cell in play, not an invented dark.
