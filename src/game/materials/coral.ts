@@ -263,7 +263,17 @@ function updateCoral(x: number, y: number, sim: SimContext): void {
   // freshly painted cell, whether it starts as a live polyp or plain skeleton.
   a = hydrate(x, y, sim, a);
   const wet = hydOf(a) > 0;
-  if ((a & INIT_BIT) === 0) a = withHydration(initCell(sim, wet), hydOf(a));
+  // A structure-less cell gets its role now — but hydration and stress are cell
+  // *state*, not structure, so they survive the initialisation rather than being
+  // reset with it. Stress matters here for one narrow case that is easy to lose:
+  // a freshly painted polyp can be irradiated (radiationHit writes stress into
+  // aux from outside this update) before it has ever taken its own first turn, and
+  // the scan order decides which happens first — a source *below* a new cell is
+  // scanned before it. Without carrying stress across, that first dose would be
+  // silently dropped.
+  if ((a & INIT_BIT) === 0) {
+    a = withStress(withHydration(initCell(sim, wet), hydOf(a)), stressOf(a));
+  }
 
   // 백화 — too hot, or cut off from the brine, and the polyp starts dying. The
   // stress it has built up is what decides, so damage has to be sustained.

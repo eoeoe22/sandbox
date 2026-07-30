@@ -33,9 +33,12 @@ import { DIR8 } from './directions';
 //   • **방사성 물질은 스스로를 막는다** (자기차폐). A material that declares
 //     `radiation` is opaque to the flood, so a pile's interior grains are blocked
 //     on every side and only its *surface* emits. That is real self-absorption in
-//     a thick source, and it's also what bounds the cost: the work a body of fuel
-//     does per tick scales with its surface area, not its volume, so a lake of
-//     corium costs about what its shoreline costs.
+//     a thick source, and it's also what bounds the cost. An interior cell isn't
+//     free — it still probes its own eight neighbours and finds them all opaque —
+//     but it stops there, so it costs O(8) instead of a surface cell's O((2R+1)²).
+//     The expensive part of the work therefore scales with a body of fuel's
+//     surface, not its volume: a lake of corium costs about what its shore costs,
+//     plus a cheap constant for the water.
 //
 // Distance is geodesic (steps through open matter, not line-of-sight), so a dose
 // leaks around a corner along a water channel the way the Electromagnet's field

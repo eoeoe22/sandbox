@@ -165,9 +165,9 @@ export interface Material {
    * over a waste drum shields nothing and a pool carries the dose across itself,
    * while a stone or concrete casing is real shielding. Declaring this also makes
    * the material *opaque to radiation itself* (자기차폐, self-shielding): a pile's
-   * interior grains are blocked in every direction, so only its surface emits —
-   * which is what keeps the flood's cost proportional to a source's surface area
-   * rather than to its volume.
+   * interior grains are blocked in every direction, so only its surface emits — a
+   * buried grain still probes its eight neighbours each tick but stops there, so
+   * the *flood* cost tracks a source's surface rather than its volume.
    */
   radiation?: number;
   /**

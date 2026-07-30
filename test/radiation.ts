@@ -96,6 +96,7 @@ const ACID_SLIME = ID('Acid Slime');
 const CORAL = ID('Coral');
 const BLEACHED = ID('Bleached Coral');
 const NANOBOT = ID('Nanobot');
+const URANIUM = ID('U235');
 const U238 = ID('U238');
 const NUKE_WASTE = ID('Nuke Waste');
 
@@ -207,14 +208,9 @@ for (const source of RADIOACTIVE) {
 // most inert source there is (a lone cell has no fellow uranium to chain off, so
 // it never self-heats), so nothing but the dose is acting on the target.
 //
-// Two targets need their geometry adjusted rather than their source:
-//   • Termite crawls, so it's given a one-cell pocket to be trapped in; a bug
-//     that wandered off would "survive" for reasons that have nothing to do with
-//     radiation.
-//   • Acid Slime corrodes any non-resistant solid it touches *cardinally*, U238
-//     included, so it's placed diagonally from the source: the dose reaches over
-//     the diagonal (8-neighbourhood), its corrosion doesn't (DIR4), and the test
-//     measures the slime dying rather than the slime eating its executioner.
+// One target needs its geometry adjusted rather than its source: Termite crawls,
+// so it's given a one-cell pocket to be trapped in — a bug that wandered off
+// would "survive" for reasons that have nothing to do with radiation.
 const CORPSES: { name: string; id: number; remains: number; diagonal?: boolean }[] = [
   { name: 'Plant', id: PLANT, remains: ASH },
   { name: 'Seed', id: SEED, remains: ASH },
@@ -250,10 +246,28 @@ for (const t of CORPSES) {
 
 // ── 3b. 방사선 내성 — 슬라임 두 종과 나노봇은 아무렇지 않다 ─────────────────────
 //
-// Against the strongest source there is (Molten U235, dose 0.10), pressed right
-// up against it, for long enough that anything with a `radiationDeath` would have
-// died hundreds of times over. Molten U235 is thermally boxed in Wall as usual —
-// otherwise its 1600° would melt the slimes and the test would prove nothing.
+// Held a single step from a source for 3000 ticks: long enough that anything with
+// a `radiationDeath` would have died hundreds of times over (U235's 0.04 leaves a
+// survival chance around 1e-53), so the check has real regression teeth — add the
+// tag back to any of these three by mistake and this fails immediately.
+//
+// Two constraints decide the scene, and getting either wrong makes the test lie:
+//   • The source must be COOL. Not the strongest source (Molten U235, 0.10) —
+//     boxing it in Wall keeps its 1600° off the *rest* of the world, but the
+//     target sits on its one open face and would simply be cooked (both slimes
+//     melt at 130°), which proves nothing about radiation. A lone U235 cell has no
+//     fellow uranium to chain off, so it never self-heats: it is all dose and no
+//     heat, which is exactly the variable under test.
+//   • The target must be placed DIAGONALLY, because Acid Slime corrodes any
+//     non-resistant Solid or Powder it touches *cardinally* — and every cool
+//     source is one or the other. Cardinally placed it eats the bar out from
+//     under itself in ~27 ticks and then survives for want of an executioner: the
+//     assertion still passes, but for the wrong reason, and it would go on passing
+//     even if Acid Slime were made radiation-lethal again. The dose crosses a
+//     diagonal (the flood is 8-connected), its corrosion doesn't (DIR4). All three
+//     targets share the geometry so they share the argument.
+// The source is checked to still be standing afterwards, which is what pins the
+// second constraint down rather than leaving it to the comment.
 for (const t of [
   { name: 'Slime', id: SLIME },
   { name: 'Acid Slime', id: ACID_SLIME },
@@ -262,13 +276,18 @@ for (const t of [
   reseed();
   const { grid, sim } = makeWorld();
   fill(grid, 0, 0, 20, 20, WALL);
-  put(grid, 10, 10, U238); // cool source: the point is the dose, not the heat
-  put(grid, 10, 9, t.id);
+  put(grid, 10, 10, URANIUM); // cool source: the point is the dose, not the heat
+  put(grid, 9, 9, t.id); // diagonal — irradiated, but out of corrosion's reach
   run(sim, 3000);
   check(
     `${t.name} 은 방사선에 죽지 않는다`,
     count(grid, t.id) === 1 && count(grid, SMOKE) === 0,
     `남은 수 ${count(grid, t.id)}`,
+  );
+  check(
+    `${t.name} 내성 검사의 선원이 3000틱 내내 살아 있다 (부식으로 사라지지 않음)`,
+    at(grid, 10, 10) === URANIUM,
+    `선원 = ${getMaterial(at(grid, 10, 10))?.name}`,
   );
 }
 
