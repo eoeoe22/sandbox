@@ -181,7 +181,7 @@ export const DEFAULT_CONDUCTIVITY = 0.3;
  * ever reaches a literal orthogonal neighbor, and Empty conducts nothing at
  * all, so a solid sitting a cell or two above a scorching pool but not
  * *touching* it (e.g. a splash of Iron that set mid-air just above a Molten
- * Metal pool) sits at ambient forever — it visibly ignores the heat right
+ * Iron pool) sits at ambient forever — it visibly ignores the heat right
  * next to it. Once per tick (not per conduction substep — this is meant to
  * be gentle, not a primary heat path), every cell hot enough to glow
  * (`RADIANT_HEAT_MIN_TEMP`) casts a short ray along each of the 8 directions;

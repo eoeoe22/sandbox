@@ -89,7 +89,7 @@ function isCarbon(id: number): boolean {
 // than split out either way, since the shared call is correct for both.
 //
 // This returns false for every other liquid — including the finished Molten
-// Metal layer — so the caller's ordinary `updatePowderMix` fallback takes over
+// Iron layer — so the caller's ordinary `updatePowderMix` fallback takes over
 // there; Molten Iron needs no special case of its own because Limestone (and
 // Coal Powder, though it gets there by sinking through Ore/Slag first now
 // rather than starting out on top of everything) is lighter than it, so the

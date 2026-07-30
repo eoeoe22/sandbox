@@ -99,7 +99,7 @@ function updateNichrome(x: number, y: number, sim: SimContext): void {
   const temp = sim.getTemp(x, y);
   if (temp >= NICHROME_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature, so the fresh Molten
-    // Metal reads as molten instead of instantly re-freezing next tick.
+    // Iron reads as molten instead of instantly re-freezing next tick.
     sim.set(x, y, MOLTEN_IRON.id);
     return;
   }

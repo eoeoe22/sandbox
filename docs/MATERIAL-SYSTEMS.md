@@ -708,7 +708,7 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   동작했다), `updatePowderSink`로 고쳐 "뜨는 것만 금지, 가라앉는 건 여느 가루와 동일"로
   바로잡았다. 위 칸이 Molten Iron Ore/Slag가 아니면(Molten Iron 포함, 그 무엇도
   아니어도) `false`를 반환해 호출자의 `updatePowder` 폴백으로 넘긴다 — **Molten
-  Metal은 더 이상 이 함수 안에서 따로 처리하지 않는다**: 두 가루 다 Molten Iron(8)
+  Iron은 더 이상 이 함수 안에서 따로 처리하지 않는다**: 두 가루 다 Molten Iron(8)
   보다 가벼우므로, `updatePowder`의 일반 밀도 부력이 어차피 똑같은 방식(같은 확률
   상수)으로 떠오르게 하기 때문에 예전처럼 이 함수 안에 거의 동일한 부상 로직을 따로
   복제해 둘 필요가 없었다(리뷰에서 지적된 중복 제거). 그 결과 Coal Powder·Limestone은
@@ -813,7 +813,7 @@ Molten Iron=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 
   스텁 패턴, 실행 후 삭제)로 5개 시나리오 확인 — Coal Powder가 Molten Iron
   Ore/Slag를 뚫고 가라앉음, Coal Powder가 Molten Iron에서는 여전히 뜸(회귀 없음),
   Limestone은 Molten Iron Ore에서 여전히 붙잡혀 있음(회귀 없음), Limestone은 Molten
-  Metal에서 여전히 뜸(회귀 없음), 철광석 장입(Iron Ore + Coal Powder 혼합, 850°↑)을
+  Iron에서 여전히 뜸(회귀 없음), 철광석 장입(Iron Ore + Coal Powder 혼합, 850°↑)을
   수천 틱 헤드리스 실행해 Molten Iron/Iron과 Slag가 모두 생성되고 쇳물이 슬래그보다
   아래에 자리 잡는 전체 제련 플로우 완주 확인. `npm run check`·`npm run
   test:active-tiles`(10 시나리오 전건)도 재통과.
@@ -1095,7 +1095,7 @@ Molten Iron=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 
   `tryHoldInActiveMelt`가 확인하는 건 "바로 위 칸이 제련액"뿐이지 "옆 칸도
   같은 제련액"이 아니다. 그래서 플레이어가 제련로 바로 옆에 다른 액체(물,
   수은 등)를 놓아뒀거나, 아직 `tryHoldInActiveMelt`가 안 붙잡는 Molten
-  Metal 층과 옆으로 이어져 있으면, 붙잡린 플럭스가 그 액체 쪽으로 옆으로
+  Iron 층과 옆으로 이어져 있으면, 붙잡린 플럭스가 그 액체 쪽으로 옆으로
   새어나갈 수 있었다 — "제련액이라는 그릇 밖으로 나가는 경로가 아예 없다"는
   최초 주석의 주장이 사실은 틀렸다는 지적. `containerIds`로
   `tryHoldInActiveMelt`가 확인한 바로 그 두 재질(Molten Iron Ore/Slag)만
@@ -1116,20 +1116,20 @@ Molten Iron=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 
   높아 Ore/Slag 아래로 가라앉아 쌓이는, 모든 제련의 자연스러운 최종 층 —
   드물게 놓이는 상황이 아니라 매 제련마다 생기는 흔한 경계다. 이 경계
   바로 위쪽, 위로는 Ore/Slag에 덮여 붙잡려 있으면서 양옆이 전부 Molten
-  Metal인 Limestone 알갱이는: 아래로는 못 가라앉고(Molten Iron이 너무
+  Iron인 Limestone 알갱이는: 아래로는 못 가라앉고(Molten Iron이 너무
   무거움), 위로도 못 뜨고(pin이 막음), 옆으로도 못 퍼진다(`containerIds`에
   Molten Iron이 없어 거부됨) — 이 PR 시리즈 전체가 고치려던 바로 그
   "일자로 얼어붙는" 증상이 장소만 바뀌어 재발하는 것. **수정**:
   `tryHoldInActiveMelt`가 `updatePowderSink`에 넘기는 목록을
   `[...pinIds, MOLTEN_IRON.id]`로 한 칸 넓혔다 — pin을 거는 기준(위 칸이
   Ore/Slag인가)은 그대로 두고, 옆으로 퍼질 수 있는 대상만 넓힌 것. Molten
-  Metal은 플레이어가 우연히 근처에 놓은 무관한 액체가 아니라 바로 이 제련
+  Iron은 플레이어가 우연히 근처에 놓은 무관한 액체가 아니라 바로 이 제련
   과정 자체가 만들어내는, 항상 그 Ore/Slag 덩어리 바로 아래 구조적으로 붙어
   있는 산출물이라 이 재질을 옆 이동 대상에 포함해도 1라운드가 막은 "무관한
   액체로 새어나감" 문제는 재발하지 않는다. 헤드리스 스크립트로 확인: 위는
   Ore, 양옆·아래는 전부 Molten Iron인 고립된 Limestone 알갱이들이 300틱 뒤
   전부(6/6) 원래 자리를 벗어나 재배치됨을 확인(수정 전 이 목록에 Molten
-  Metal이 없었다면 전부 그대로 얼어붙어 있었을 자리).
+  Iron이 없었다면 전부 그대로 얼어붙어 있었을 자리).
 - **2차 리뷰의 나머지 지적**: Reuse/Simplification 앵글이 독립적으로 같은
   중복 두 가지를 지적 — (1) `moltenironore.ts`에서
   `[MOLTEN_IRON_ORE.id, SLAG.id]`가 pin 검사용 체인과 배열 리터럴 두 곳에
@@ -1342,7 +1342,7 @@ Ore/Slag에 붙잡힌(pinned) 상태에서도 Coal Powder·Limestone 두 재질�
   한계로 남겨둔다 — 인접한 두 제련로가 흔한 시나리오가 되면 그때 "같은
   충전물" 개념(예: 연결-성분 태그) 자체를 엔진에 추가하는 걸 고려한다.
 - **검증**: 저장소 루트 임시 헤드리스 스크립트로 확인 — Slag 천장·Molten
-  Metal 바닥 사이에 낀 Coal Powder/Limestone 한 칸짜리 선반(모든 칸이
+  Iron 바닥 사이에 낀 Coal Powder/Limestone 한 칸짜리 선반(모든 칸이
   진짜로 붙잡힌 상태: 위가 Slag라 `tryHoldInActiveMelt`가 붙잡고, 아래가
   Molten Iron이라 Limestone은 뜬 상태로 읽힘) 중 가운데 알갱이 하나로
   고립 테스트 — 수정 전엔 2000틱 내내 단 한 번도 이동하지 않음, 수정

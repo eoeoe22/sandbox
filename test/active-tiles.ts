@@ -120,7 +120,7 @@ function makeFloatingRaft(w: number, h: number): Snapshot {
  *  path (SimContext.ts) reached via moltenironore.ts's tryHoldInActiveMelt
  *  (see docs/MATERIAL-SYSTEMS.md's "제련 중 갇힌 플럭스가 못 퍼지던 문제").
  *  The comb's depth varies enough per column to reach past the Slag/Molten
- *  Metal boundary on some columns, so some Limestone cells end up flanked by
+ *  Iron boundary on some columns, so some Limestone cells end up flanked by
  *  Molten Iron at that boundary — the case containerIds was widened to cover
  *  ([...pinIds, MOLTEN_IRON.id], see tryHoldInActiveMelt's doc comment), not
  *  just Slag. A narrow strip of unrelated Water along one edge (never

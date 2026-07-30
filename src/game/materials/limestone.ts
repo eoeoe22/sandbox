@@ -16,7 +16,7 @@ import { tryHoldInActiveMelt } from './moltenironore';
 //
 // "가벼운 가루" (light powder) — the lightest thing in the whole smelting stack
 // (Limestone 5 < Slag 5.75 < Molten Iron Ore 6.5 < Coal Powder 7.5 < Molten
-// Metal 8, see moltenironore.ts/coalpowder.ts/slag.ts/molteniron.ts), the same
+// Iron 8, see moltenironore.ts/coalpowder.ts/slag.ts/molteniron.ts), the same
 // generic density-based buoyancy every powder gets (updatePowderMix/updatePowder —
 // see engine/behaviors.ts): against ordinary liquids (water, oil, Mercury,
 // Molten Uranium, …) it just floats or sinks by density like any other powder.

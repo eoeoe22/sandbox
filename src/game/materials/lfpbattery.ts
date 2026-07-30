@@ -15,7 +15,7 @@ import { MOLTEN_IRON } from './molteniron';
 // (Blue Flame / Lava / Thermite grade — 1400°, held deliberately high so a
 // battery is *tougher* than plain Iron (which now melts at 1200°) and won't
 // slump in an ordinary oxygen-blown coal fire; it also sits well above Molten
-// Metal's 650° freeze so the melt stays molten instead of instantly setting
+// Iron's 650° freeze so the melt stays molten instead of instantly setting
 // back to Iron). In between, it just
 // keeps ticking — the right power source to bury next to a Nichrome heater or
 // run through a burning building.
@@ -24,7 +24,7 @@ const MELT_TEMP = 1400;
 function updateLfpBattery(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten
-    // Metal reads as molten instead of instantly re-freezing next tick.
+    // Iron reads as molten instead of instantly re-freezing next tick.
     sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
