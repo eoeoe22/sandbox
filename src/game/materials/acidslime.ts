@@ -1,10 +1,11 @@
-import { register, getMaterial } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { register } from './registry';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
 import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
+import { tryCorrode, ACID_SLIME_CORROSION } from './corrosion';
 import { SMOKE } from './smoke';
 import { SLIME, SLIME_FLOW_CHANCE } from './slime';
 import { WATER } from './water';
@@ -17,7 +18,11 @@ import { WATER } from './water';
 // tick it has a chance to eat any non-resistant Solid/Powder neighbour down to
 // Empty (the very same CORRODE_CHANCE the liquid Acid uses — 동일한 부식력), and
 // like Acid it can use *itself* up as a byproduct of corroding, so a blob only
-// shrinks by actually eating through something, never on its own.
+// shrinks by actually eating through something, never on its own. That bite is
+// not reimplemented here: all three corrosive materials run the one pass in
+// corrosion.ts, and `ACID_SLIME_CORROSION` reuses the liquid's own numbers, so
+// "동일한 부식력" is now enforced by sharing a constant rather than by two files
+// agreeing to spell 0.03 the same way.
 //
 // Against ordinary Slime it doesn't corrode (Slime is a liquid, not a corrodible
 // solid/powder) — the two simply *interdiffuse* across their shared boundary,
@@ -38,13 +43,6 @@ const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more acid slim
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
 
-// Acid's own corrosion knobs, reused verbatim so the bite is identical to the
-// liquid (동일한 부식력): a chance to eat a non-resistant solid/powder neighbour to
-// Empty, and — if it corroded anything — a chance to consume itself doing so, which
-// bounds how much a given blob can eat through.
-const CORRODE_CHANCE = 0.03;
-const SELF_CONSUME_CHANCE = 0.08;
-
 // Slow, occasional swap with a neighbouring plain-Slime cell so the two miscible
 // goos gradually interdiffuse across their boundary (mirrors Acid↔Water).
 const DIFFUSE_CHANCE = 0.02;
@@ -55,13 +53,6 @@ const DIFFUSE_CHANCE = 0.02;
 // being re-eaten (mirrors slime.ts DISSOLVE_WATER_GRACE; Water's update ticks it
 // down each turn). Kept in step with plain Slime so the two behave identically.
 const DISSOLVE_WATER_GRACE = 40;
-
-function isCorrodible(id: number): boolean {
-  if (id === EMPTY) return false;
-  const m = getMaterial(id);
-  if (m.acidResistant) return false;
-  return m.phase === Phase.Solid || m.phase === Phase.Powder;
-}
 
 // One electric-dissolve-front step (aux = remaining reach), mirroring slime.ts:
 // revert this cell to Water and, while reach is left, hand budget-1 to ONE random
@@ -117,22 +108,10 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // Corrode like Acid: eat a non-resistant solid/powder neighbour, and if we ate
-  // anything this tick, maybe get used up doing so (bounds a blob's total reach).
-  let corroded = false;
-  for (const [dx, dy] of DIR4) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    if (isCorrodible(sim.get(nx, ny)) && sim.chance(CORRODE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
-      corroded = true;
-    }
-  }
-  if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
-    sim.set(x, y, EMPTY);
-    return;
-  }
+  // Corrode like Acid — literally like Acid: the same pass, with the same numbers
+  // (corrosion.ts). True means this cell was used up doing it, bounding how much
+  // a given blob can eat through, so stop here.
+  if (tryCorrode(x, y, sim, ACID_SLIME_CORROSION)) return;
 
   // Feed: absorb an adjacent Water cell, growing the blob by one cell — but NOT
   // water still marked as freshly electrolysed (aux !== 0), so a blob can't heal

@@ -144,12 +144,14 @@ export interface Material {
    * `flammable`, which hands ignition to Fire's own global-rate pass instead.
    */
   combustible?: boolean;
-  /** Acid never corrodes this (see acid.ts). */
+  /** No corroder ever eats this — Acid, Acid Vapor and Acid Slime all read this
+   *  one flag through the shared pass in materials/corrosion.ts. */
   acidResistant?: boolean;
   /**
    * 산에 녹으면서 수소를 내놓는 금속 — a metal *above hydrogen in the reactivity
-   * series* (이온화 경향이 수소보다 큰 금속: Al·U·Fe·Ga…). Acid's corrosion pass
-   * (acid.ts) reads this: instead of blinking the cell out silently, the acid cell
+   * series* (이온화 경향이 수소보다 큰 금속: Al·U·Fe·Ga…). The shared corrosion pass
+   * (materials/corrosion.ts) reads this: instead of blinking the cell out silently,
+   * the acid cell
    * doing the eating *becomes* a hydrogen bubble, so the fizz is visible and the
    * two are consumed 1:1. Omit for anything that dissolves without giving off
    * hydrogen — the metals *below* hydrogen (Copper/Wire, Mercury), oxides and
@@ -878,7 +880,7 @@ export interface Material {
 
 /**
  * How briskly a metal fizzes hydrogen off in acid (see `Material.acidHydrogen`
- * and acid.ts). One number per metal, and that number *is* the reactivity
+ * and materials/corrosion.ts). One number per metal, and that number *is* the reactivity
  * ordering as the player reads it: aluminum bubbles harder than iron because its
  * chance is higher, and a loose powder harder than a cast bar because dust
  * presents all of itself where bulk metal presents one face.
@@ -886,7 +888,7 @@ export interface Material {
 export interface AcidHydrogen {
   /** Per-tick, per-acid-contact chance the metal cell dissolves into a bubble. */
   chance: number;
-  /** Heat of reaction dumped into the fresh Hydrogen. Omit for acid.ts's default,
+  /** Heat of reaction dumped into the fresh Hydrogen. Omit for corrosion.ts's default,
    *  which is picked to stay under Hydrogen's 200° autoignition so the gas gets to
    *  rise and collect instead of lighting at birth. */
   heat?: number;

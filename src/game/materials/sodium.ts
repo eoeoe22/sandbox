@@ -27,7 +27,7 @@ import { detonate } from './blast';
 // (water, brine, acid) sets it off.
 //
 // **Acid counts as water here**, and takes the same path rather than the quiet
-// `acidHydrogen` fizz every other metal got (types.ts / acid.ts). Sodium is the
+// `acidHydrogen` fizz every other metal got (types.ts / corrosion.ts). Sodium is the
 // top of the reactivity series — it tears hydrogen out of *neutral* water, so an
 // acid can only be worse — and routing it through the tag would have been an
 // outright downgrade: the drop-a-lump-in-acid outcome would have been a polite

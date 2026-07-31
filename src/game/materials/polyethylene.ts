@@ -25,6 +25,24 @@ import { tryBurn, type Combustible } from './combustion';
 // high autoignition point (380°, well clear of the 200° polymerization ceiling
 // so a running reactor can never light its own product), leaving sooty Ash
 // behind more often than the wood fuels do.
+//
+// And Acid runs off it (`acidResistant`). That is the plainest chemistry in the
+// file: polyethylene is what acid is *shipped in* — the HDPE jerrycan and the
+// pipe lining exist because the polymer is a saturated hydrocarbon chain with
+// no bond for an acid to attack, so hydrochloric and sulfuric alike sit in it
+// indefinitely. (Real PE does eventually give way to hot concentrated oxidizers
+// like fuming nitric; this sandbox has one generic Acid, so it gets the one
+// generic answer — the same simplification Glass and Nichrome already take.)
+// The flag is read by all three corrosive materials — Acid, Acid Vapor and Acid
+// Slime run the one corrosion pass in corrosion.ts — so the resin shrugs off the
+// fumes and the goo too.
+//
+// In play that's the plastics line's payoff, and the shape it takes comes from
+// the density: every other acid-proof material on the roster sits at 1000, so
+// the resin at 2.75 is the only one lighter than Acid (3) — the only one that
+// *floats* on it. A scoop poured onto a pool spreads into an acid-proof lid
+// rather than sinking out of sight, and a heaped dam holds a spill back. (Broken
+// Glass is the other acid-proof powder and goes straight to the bottom.)
 const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 380, ashChance: 0.2 };
 
 /**
@@ -52,6 +70,8 @@ export const POLYETHYLENE = register({
   color: rgb(232, 234, 228),
   density: 2.75,
   combustible: true,
+  // 내산성 — see the header. Acid, Acid Vapor and Acid Slime all read this.
+  acidResistant: true,
   category: 'polymer',
   // A plastic is a thermal insulator — a heaped pile holds the polymerization
   // exotherm in rather than shedding it, which is exactly why a reactor needs
