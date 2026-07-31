@@ -695,11 +695,11 @@ export function createDrum(
  *
  * The geometry comes straight from that shard's art (render/drumSprite.ts
  * PIECE_ART), the wooden crate's rule rather than the barrel's: the sprite's pixel
- * box scaled into cells is the display box, and the disc inscribed in it is what
- * the world collides with, so the picture and the physics can't drift apart. That
- * disc is why a shard needs no capsule — rotation changes what it LOOKS like
- * without changing what it collides with, which is what lets a torn, jagged
- * outline reuse the whole capsule machinery unchanged.
+ * box scaled into cells is BOTH the display box and — with the corners filed off
+ * by `cornerRadius` — the shape the world collides with (see bodyCore), so the
+ * picture and the physics can't drift apart. A torn scrap of plate therefore lies
+ * flat on the ground it landed on and can be stacked on like anything else, and
+ * it needs no medial segment to do it: its `halfLength` is 0.
  *
  * `scale` carries a non-default barrel size through to its wreckage (1 for the
  * palette's drums), so the shards always add back up to the drum they came off.
@@ -1083,11 +1083,12 @@ function woodBoxBurnTicks(part: WoodBoxPart): number {
 /**
  * Build a wooden box centered at (x,y) — the whole crate by default, or one of
  * the three shards. The body's size comes straight from that part's art (see
- * render/woodenBoxSprite.ts): the sprite's pixel box scaled into cells is the
- * display box, and the disc inscribed in it is what the world collides with, so
- * the picture and the physics can't drift apart. Mass follows that disc's area ×
- * the timber density, so the crate is heavier than any single shard of it.
- * Spawned cold and unlit.
+ * render/woodenBoxSprite.ts): the sprite's pixel box scaled into cells is BOTH the
+ * display box and — with the corners filed off by `cornerRadius` — the shape the
+ * world collides with (see bodyCore), so the picture and the physics can't drift
+ * apart, and every face the sprite shows is a face other bodies can rest on. Mass
+ * follows that shape's area × the timber density, so the crate is heavier than any
+ * single shard of it. Spawned cold and unlit.
  */
 export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate'): SimWoodBox {
   const sprite = WOOD_BOX_SPRITES[part];
@@ -2488,7 +2489,7 @@ function scanBodyExposure(
 
 /** Per-cell chance a shattered drum SHARD flings a Metal Powder fragment from that
  *  footprint cell. Denser than the hollow barrel's old whole-body scatter (0.2)
- *  because a shard's disc footprint is much smaller than the barrel's capsule was:
+ *  because a shard's footprint is much smaller than the whole barrel's:
  *  at 0.35 the three shards together still yield the same clearly visible heap of
  *  steel grains the drum used to leave in one go, rather than a few stray specks.
  *  Melt still leaves Molten Iron; this is the shatter path only. */
@@ -2681,9 +2682,13 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   const enteredLiquid = ms.liquidCells === 0 && entrySpeed >= SPLASH_MIN_SPEED;
   const enteredPowder = ms.powderCells === 0 && entrySpeed >= POWDER_IMPACT_MIN_SPEED;
   // Integrate position AND orientation in tunneling-safe substeps. The substep
-  // budget accounts for the rim's linear speed from spin (|ω|·(halfLength+radius))
-  // so a fast-spinning drum still resolves contacts each fraction of a cell.
-  const reach = o.halfLength + o.radius;
+  // budget accounts for the rim's linear speed from spin (|ω|·reach, reach being
+  // the distance from the centre to the farthest point of the shape) so a
+  // fast-spinning body still resolves contacts each fraction of a cell. Taken from
+  // the CORE and not from halfLength+radius, which is the old capsule's figure and
+  // now falls short of a boxy body's corner — by ~15% for a barrel and ~24% for a
+  // crate, i.e. exactly the part of the rim that would tunnel first.
+  const reach = coreReach(bodyCore(o));
   let remaining = 1;
   let guard = 0;
   let grounded = false;
