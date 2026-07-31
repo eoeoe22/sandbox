@@ -14,6 +14,7 @@ import {
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
+import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from './molotovSprite';
 import type { DrumFill } from '../engine/objects';
 import type { ObjectKind } from '../../state/store';
 import { hex } from './color';
@@ -59,6 +60,17 @@ const crateSvg = pixelSvg(
   spriteRects(crateArt.pixels, crateArt.w, crateArt.h),
 );
 
+// The molotov: the FULL bottle straight through — the palette spawns a fresh,
+// fuelled one, so that is what the chip previews. The spent 빈 유리병 has no chip of
+// its own for the same reason the crate's shards don't: it only ever exists as a
+// molotov that has burnt out (팔레트에서 소환 불가). And the lit wick's flame is
+// absent here too — it's real Fire particles in-world, like the dynamite's.
+const molotovSvg = pixelSvg(
+  MOLOTOV_SPRITE_W,
+  MOLOTOV_SPRITE_H,
+  spriteRects(MOLOTOV_SPRITES.full, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H),
+);
+
 // The rubber ball: a flat red disc with a thin dark rim, mirroring rasterizeBall
 // (BALL_COLOR / BALL_BORDER_COLOR). A vector circle here (not pixel rects) — the
 // in-world ball is a rasterized disc, and a smooth circle reads truer at this
@@ -82,6 +94,7 @@ const OBJECT_SVG: Record<ObjectKind, string> = {
   dynamite: dynamiteSvg,
   smokebomb: smokeBombSvg,
   crate: crateSvg,
+  molotov: molotovSvg,
 };
 
 /** SVG markup for an object kind's palette preview — inject with Svelte `{@html}`.
