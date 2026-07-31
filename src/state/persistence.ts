@@ -17,7 +17,8 @@ import {
   $gridDivision,
   $bottomDeadzone,
   $favorites,
-  $recentMaterials,
+  $recentPicks,
+  OBJECT_KINDS,
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
@@ -26,6 +27,8 @@ import {
   type BrushMode,
   type Tool,
   type BlendComponent,
+  type ObjectKind,
+  type RecentPick,
 } from './store';
 import { $locale, LOCALES, type Locale } from '../i18n';
 import { syncHtmlLang } from '../i18n';
@@ -216,6 +219,34 @@ function parseIdList(v: unknown, cap: number): number[] {
   return out;
 }
 
+/**
+ * Parse the persisted recent-picks list. Same contract as `parseIdList`, widened
+ * to the two things the palette can paint: numbers are material ids (gated by
+ * PALETTE_IDS as before) and strings are object kinds (gated by OBJECT_KINDS).
+ * A save written before objects joined the list holds numbers only and survives
+ * untouched; an unknown kind string from a hand-edited save is dropped.
+ */
+function parseRecentList(v: unknown, cap: number): RecentPick[] {
+  if (!Array.isArray(v)) return [];
+  const out: RecentPick[] = [];
+  const seen = new Set<RecentPick>();
+  for (const item of v) {
+    let pick: RecentPick;
+    if (typeof item === 'number' && Number.isInteger(item) && PALETTE_IDS.has(item)) {
+      pick = item;
+    } else if (typeof item === 'string' && OBJECT_KINDS.includes(item as ObjectKind)) {
+      pick = item as ObjectKind;
+    } else {
+      continue;
+    }
+    if (seen.has(pick)) continue;
+    seen.add(pick);
+    out.push(pick);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 /** Apply saved settings to the atoms. Every field is validated independently,
  *  so one corrupt value falls back to its default without dropping the rest. */
 function hydrateSettings(): void {
@@ -268,9 +299,11 @@ function hydrateSettings(): void {
 
   // Favorites/recents are validated against the curated palette (ids not in
   // PALETTE_IDS — hidden/unknown — are dropped). Favorites can hold at most one
-  // of every palette material.
+  // of every palette material. The recents list also holds object kinds, so it
+  // goes through `parseRecentList`; the storage field keeps its old
+  // `recentMaterials` name so existing saves still hydrate.
   $favorites.set(parseIdList(s.favorites, MATERIALS.length));
-  $recentMaterials.set(parseIdList(s.recentMaterials, RECENT_MATERIALS_MAX));
+  $recentPicks.set(parseRecentList(s.recentMaterials, RECENT_MATERIALS_MAX));
 
   // Locale: a persisted choice overrides the browser-detected default. Only
   // known locales are accepted; anything else leaves the detected value.
@@ -303,7 +336,7 @@ function saveSettings(): void {
       snapshotFit: $snapshotFit.get(),
       bottomDeadzone: $bottomDeadzone.get(),
       favorites: $favorites.get(),
-      recentMaterials: $recentMaterials.get(),
+      recentMaterials: $recentPicks.get(),
       locale: $locale.get(),
     }),
   );
@@ -365,7 +398,7 @@ export function initSettingsPersistence(): void {
   $snapshotFit.listen(schedule);
   $bottomDeadzone.listen(schedule);
   $favorites.listen(schedule);
-  $recentMaterials.listen(schedule);
+  $recentPicks.listen(schedule);
   $locale.listen(schedule);
 
   // Keep <html lang> in sync with the active locale (screen readers, browser
