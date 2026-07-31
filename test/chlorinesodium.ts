@@ -186,7 +186,7 @@ function hottest(grid: Grid, id: number): number {
   }
   const sodium = count(grid, SODIUM);
   const salt = count(grid, SALT);
-  // Without the thump this stalls at ~26 of 50 left (the crust), so the bar is set
+  // Without the thump this stalls at 24 of 50 left (the crust), so the bar is set
   // far below that but not at a flat zero: a grain thrown clear by the shove can
   // land alone under falling salt, and one grain on its own has no pile to stir
   // itself out of — measured across seeds, 0 or occasionally 1 survivor.
