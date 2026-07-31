@@ -639,8 +639,9 @@ function hottestEthylene(grid: Grid): number {
   // 0/30, which was the tell that the liquid had taken over.)
   //
   // Long enough that clearing that row is a certainty and not a coin flip: at
-  // 0.015 a tick the last of ten cells goes at ~200 ticks on average, so 1200 is
-  // roughly six times the mean.
+  // 0.015 a tick the last of the face's W=20 cells goes at ~240 ticks on average
+  // (the mean is (1/0.015)·H(W), and the harmonic number grows slowly enough that
+  // widening the box barely moves it), so 1200 is about five times the mean.
   const VAPOR_TICKS = 1200;
   const vaporKept = bath(POLYETHYLENE.id, ACID_VAPOR.id, VAPOR_TICKS, reflux);
   const vaporControl = bath(SAWDUST.id, ACID_VAPOR.id, VAPOR_TICKS, reflux);
