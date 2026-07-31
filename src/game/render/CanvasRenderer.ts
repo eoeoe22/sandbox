@@ -13,6 +13,7 @@ import {
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
+import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from './molotovSprite';
 import { TNT_N, buildTntTile } from './tntTile';
 import { ROTOR_N, buildRotorTile, rotorAccumulate, rotorBlockIndex, rotorFrame } from './rotorTile';
 import {
@@ -25,6 +26,7 @@ import {
   wooferTileIndex,
 } from './wooferDriver';
 import type { SimCapsule, SimWoodBox } from '../engine/objects';
+import { molotovBottle } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -1911,6 +1913,13 @@ export class CanvasRenderer implements Renderer {
       if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor);
       else if (o.kind === 'woodbox') this.rasterizeWoodBox(buf, w, h, s, o, heatColor);
       else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
+      else if (o.kind === 'molotov')
+        // Full bottle or spent shell — one silhouette, contents swapped (the flame
+        // is real Fire particles at the neck, so it isn't drawn here).
+        this.rasterizeSprite(
+          buf, w, h, s, o, o.radius, o.halfLength + o.radius,
+          MOLOTOV_SPRITES[molotovBottle(o)], MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H, heatColor,
+        );
       else if (o.kind === 'smokebomb')
         this.rasterizeSprite(
           buf, w, h, s, o, o.radius, o.halfLength + o.radius,

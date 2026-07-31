@@ -140,7 +140,8 @@ export type ObjectKind =
   | 'aciddrum'
   | 'dynamite'
   | 'smokebomb'
-  | 'crate';
+  | 'crate'
+  | 'molotov';
 export const $selectedObject = atom<ObjectKind>('ball');
 
 // Object display names now live in src/i18n/materials.ts (objectLabelsEn /

@@ -48,6 +48,7 @@ import {
   createDynamite,
   createSmokeBomb,
   createWoodBox,
+  createMolotov,
   pickBody,
   distanceToBody,
   bodyReach,
@@ -589,6 +590,11 @@ export class PointerPainter {
     } else if (kind === 'smokebomb') {
       // 연막탄: dropped already burning — a wisp of smoke now, the dense cloud in four seconds.
       this.grid.objects.push(createSmokeBomb(cx + 0.5, cy + 0.5));
+    } else if (kind === 'molotov') {
+      // 화염병: dropped with its wick already lit (불붙은 상태로 스폰). It burns for
+      // fifteen seconds and then it's just an empty bottle — but it breaks at the
+      // first real knock long before that, which is what it's for.
+      this.grid.objects.push(createMolotov(cx + 0.5, cy + 0.5));
     } else if (kind === 'crate') {
       // 나무 상자: the whole crate, cold and unlit. Only the crate is spawnable —
       // its three shards exist solely as the wreckage of one being broken, so
