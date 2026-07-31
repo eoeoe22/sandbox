@@ -598,7 +598,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     melted > 0, `${melted} cells`);
 }
 
-// 12. Acid + aluminum → hydrogen. Until now acid.ts's phase-only corrosion just
+// 12. Acid + aluminum → hydrogen. Until now the phase-only corrosion pass just
 //     blinked the grains out with no product at all; now the acid cell it eats
 //     becomes a rising bubble. Both the loose powder and a cast bar do it.
 {

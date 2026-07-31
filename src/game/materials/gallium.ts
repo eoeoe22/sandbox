@@ -15,7 +15,7 @@ import { LIQUID_GALLIUM, GALLIUM_MELT_TEMP } from './liquidgallium';
 // enough to melt.
 
 // Per-tick, per-acid-contact chance a face dissolves into a hydrogen bubble
-// (`Material.acidHydrogen`, driven by acid.ts). Gallium is above hydrogen in the
+// (`Material.acidHydrogen`, driven by corrosion.ts). Gallium is above hydrogen in the
 // reactivity series — it is amphoteric, dissolving in acids *and* alkalis — but
 // it is also the sluggish end of the roster: a tough oxide film and a low place
 // in the series make it the slowest fizz here, well under solid Iron's 0.03.
@@ -58,7 +58,7 @@ export const GALLIUM = register({
   // A metal, so it carries heat readily — which, with its very low melt point,
   // is exactly why the smallest warm touch spreads through a bar and melts it.
   thermal: { conductivity: 0.7 },
-  // The slowest fizz on the roster (see the constant above and acid.ts).
+  // The slowest fizz on the roster (see the constant above and corrosion.ts).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateGallium,
 });

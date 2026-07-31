@@ -11,7 +11,7 @@ const SURFACE_RUST_CHANCE = 0.001;  // 표면 부식 확률 (0.1%)
 const INSIDE_RUST_CHANCE = 0.0002; // 안쪽(스며든 부위) 부식 확률 (0.02%)
 
 // Per-tick, per-acid-contact chance a grain dissolves into a hydrogen bubble
-// (`Material.acidHydrogen`, driven by acid.ts). These are iron filings, and iron
+// (`Material.acidHydrogen`, driven by corrosion.ts). These are iron filings, and iron
 // is above hydrogen in the reactivity series, so acid doesn't erase them
 // silently — it fizzes. Three times solid Iron's 0.03 for the surface-area
 // reason the aluminum pair encodes (0.12 dust / 0.04 bar), and under aluminum
@@ -105,7 +105,7 @@ export const METAL_POWDER = register({
   // still carries warmth better than mineral dust.
   thermal: { conductivity: 0.35 },
   // Iron filings in acid fizz hydrogen off, faster than the bar they came from —
-  // see the constant above and acid.ts.
+  // see the constant above and corrosion.ts.
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateMetalPowder,
 });

@@ -2976,8 +2976,8 @@ function footprintTouchesVoid(o: SimBody, ctx: SimContext): boolean {
  * refuses to let an icy puddle douse a fire). So freezing an acid bath is a real
  * way to park a crate in one.
  *
- * Read-only, including the acid: unlike a corroded *cell*, which acid.ts consumes
- * itself over 1:1, a dissolved body takes nothing out of the puddle. The object
+ * Read-only, including the acid: unlike a corroded *cell*, which the shared
+ * corrosion pass (materials/corrosion.ts) spends the puddle 1:1 over, a dissolved body takes nothing out of the puddle. The object
  * layer stays read-only over terrain it didn't put there, and the alternative —
  * a splash that runs out halfway through and leaves the crate standing — trades
  * away the one thing this rule is for (닿으면 파괴). The puddle still gets its

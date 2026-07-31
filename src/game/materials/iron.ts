@@ -105,7 +105,7 @@ export const IRON = register({
   // so it both melts readily against a hot source and makes a fine cold bridge.
   thermal: { conductivity: 0.85 },
   // 이온화 경향이 수소보다 크다 — acid doesn't just erase an iron bar, it fizzes
-  // hydrogen off the wetted face (see the constant above and acid.ts).
+  // hydrogen off the wetted face (see the constant above and corrosion.ts).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateIron,
 });

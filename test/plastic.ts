@@ -507,17 +507,28 @@ function hottestEthylene(grid: Grid): number {
   // the resin survives is contact the control demonstrably had. Without that
   // pairing "resistant" is indistinguishable from "never touched it", which is
   // the failure mode a survivor count on its own cannot see.
-  const POWDER_ROWS = 3;
-  const W = 10;
-  const H = 12;
+  // The box is bigger than these scenes need for contact, and the acid ledger is
+  // why. Acid only rolls to spend itself on a tick where it actually ate, so the
+  // odds it never spends any is (1 - 0.08) ^ (cells eaten): at a 30-cell heap
+  // that is a 1-in-12 spurious red, which is roughly what this scene was doing.
+  // 140 cells eaten puts it at 1 in 100,000.
+  //
+  // The powder stays a MINORITY of the box, which is not cosmetic. A deep heap
+  // under a thin acid layer is interface-limited — the buoyant grains can only
+  // rise into acid that is there to be displaced — and a 8-rows-of-powder version
+  // of this scene ate 8 cells instead of 140 and flaked worse than what it
+  // replaced. Keep the ~1:3 ratio if these numbers are ever retuned.
+  const POWDER_ROWS = 7;
+  const W = 20;
+  const H = 28;
 
   /** Cells of `id` on the main layer PLUS cells carrying it as a liquid overlay.
    *  Both layers have to be counted or the acid ledger below reads wrong for a
    *  reason that has nothing to do with corrosion: a buoyant powder that has
    *  surfaced through a pool holds the liquid it displaced in its own cell's
-   *  overlay slot (behaviors.ts), so a submerged resin raft parks 30 cells of
-   *  acid off the main layer. Counting only `grid.get` would score that as 30
-   *  cells "consumed" — which is exactly the thing under test. */
+   *  overlay slot (behaviors.ts), so a submerged resin raft parks a cell of acid
+   *  apiece off the main layer. Counting only `grid.get` would score all of those
+   *  as "consumed" — which is exactly the thing under test. */
   function countAll(grid: Grid, id: number): number {
     let n = 0;
     for (let y = 0; y < grid.height; y++) {
@@ -575,10 +586,10 @@ function hottestEthylene(grid: Grid): number {
     `${dust.powderLeft}/${dust.powderStart} sawdust left`,
   );
   // The other direction, and the reason it belongs next to the check above: acid
-  // only ever spends itself as a byproduct of corroding (acid.ts). A box holding
+  // only ever spends itself as a byproduct of corroding (corrosion.ts). A box holding
   // nothing corrodible must therefore come out with every acid cell it went in
   // with — so if some future change quietly made the resin corrodible-but-slow,
-  // this fails even in the run where all 30 resin cells happen to survive.
+  // this fails even in the run where every resin cell happens to survive.
   check(
     'acid in a resin-lined box is not consumed either',
     resin.attackerLeft === resin.attackerStart,
@@ -644,10 +655,15 @@ function hottestEthylene(grid: Grid): number {
     `${vaporControl.powderLeft}/${vaporControl.powderStart} sawdust left ` +
       `(${vaporControl.powderStart - vaporControl.powderLeft} eaten, the ${W}-cell face)`,
   );
-  // …and the scene really was fumes throughout: no cell survived a tick boundary
-  // as liquid Acid, so nothing above can be credited to the liquid's stronger bite.
+  // The scaffolding is load-bearing, so say what this last line does and does not
+  // show. That no cell ever took a turn as liquid Acid is true *by construction* —
+  // `reflux` runs after every step and before the next, so a condensate is always
+  // gone before the sim could reach it — and there is nothing left to measure about
+  // it. What is worth measuring is that the confound was real in the first place:
+  // if condensation ever stopped happening here, the two checks above would quietly
+  // become a weaker test than they look, and this is the line that would notice.
   check(
-    'the vapour scenes stayed vapour (no cell ever took a turn as liquid Acid)',
+    'the condensation this scene is scaffolded against really happens',
     refluxed > 0,
     `${refluxed} condensate cells boiled back before they could act`,
   );

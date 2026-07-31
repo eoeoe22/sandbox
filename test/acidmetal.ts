@@ -1,4 +1,4 @@
-// Headless behavioural harness for 산 + 금속 → 수소 (materials/acid.ts's
+// Headless behavioural harness for 산 + 금속 → 수소 (materials/corrosion.ts's
 // `tryEvolveHydrogen`, driven by the `Material.acidHydrogen` tag in
 // engine/types.ts). What it pins down:
 //
@@ -95,7 +95,7 @@ function count(grid: Grid, id: number): number {
  * Returns how much hydrogen was ever in the air at once, how much of the slab
  * survived, and the hottest bubble seen — the three numbers every check below
  * is phrased in. The slab is 4 columns wide and reaches the surface, so it has
- * plenty of orthogonal acid contact (acid.ts corrodes over DIR4).
+ * plenty of orthogonal acid contact (corrosion.ts corrodes over DIR4).
  */
 function bath(
   id: number,
@@ -244,7 +244,8 @@ function bath(
 
   // The roster itself, scanned off the registry rather than restated by hand —
   // and this is the *canonical* copy of it. Prose can't help enumerating this
-  // list (acid.ts's header, the `acidHydrogen` JSDoc, MATERIALS.md's 사슬,
+  // list (acid.ts's and corrosion.ts's headers, the `acidHydrogen` JSDoc,
+  // MATERIALS.md's 사슬,
   // MATERIAL-SYSTEMS.md's 등급 표 all do), and a hand-copied roster in a file
   // away from the constant it describes is exactly what went stale three times
   // while this branch was in review — twice by listing Sodium, which declines
@@ -288,7 +289,7 @@ function bath(
     `${sorted.length}종: ${sorted.join(', ')}`,
   );
   // …and nothing in that roster overrides the shared heat of reaction, which is
-  // what makes "the bubble is born cool" a property of acid.ts's one default
+  // what makes "the bubble is born cool" a property of corrosion.ts's one default
   // rather than a claim that has to be re-measured per metal. Off the same scan,
   // so a ninth metal arriving with an override is caught on the day it lands.
   const overrides = tagged.filter((m) => m.acidHydrogen!.heat !== undefined);
