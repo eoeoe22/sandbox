@@ -122,6 +122,12 @@ function stirShock(sim: SimContext, x: number, y: number): void {
     // Each thump is its own small, self-contained wave — never pooled with a
     // neighbouring one into a bigger mass survey (see DetonateOptions).
     soloSource: true,
+    // …and it doesn't craze glass, which a Woofer's pulse (and any real blast)
+    // does. This one fires continuously for as long as a pile burns, so the
+    // default would quietly dismantle any glass vessel the burn was set up in —
+    // the player built that container to *hold* the reaction. The pane still
+    // shadows the wave; it just doesn't break.
+    shatters: false,
     onCell: (s, cx, cy, prevId, entryDx, entryDy, outB) => {
       if (prevId === EMPTY) return true; // invisible: claimed, no flash
       const m = getMaterial(prevId);

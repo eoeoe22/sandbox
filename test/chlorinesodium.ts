@@ -229,27 +229,26 @@ function hottest(grid: Grid, id: number): number {
     + 'flashes an explosive)', !sawBlast);
 }
 
-// 4d. The one thing the thump does leave a mark on is glass, exactly as a Woofer's
-//     pulse does (blast.ts's shatterFragile: a fragile solid crazes under a shock
-//     it shadows). Flush against the burn a pane goes to Broken Glass; one cell of
-//     clearance and it rides it out — which doubles as the reach measurement, so
-//     "the wave is local" isn't just an assertion about a constant.
+// 4d. Glass is the one thing a shockwave normally *does* mark: any real blast, and
+//     the Woofer's pulse too, crazes a fragile solid it washes over (blast.ts's
+//     shatterFragile). This thump opts out (`shatters: false`), because it fires
+//     for as long as the pile burns and would otherwise take apart the very vessel
+//     the player built to hold the reaction. A pane flush against the burn — well
+//     inside the reach the sand probe in 4b measured — has to come out whole.
 {
   reseed();
   const { grid, sim } = makeWorld(60, 60);
   fill(grid, 0, 45, 59, 59, STONE);
   fill(grid, 26, 42, 33, 44, SODIUM);
   fill(grid, 34, 42, 34, 44, GLASS); // touching the pile
-  fill(grid, 40, 42, 40, 44, GLASS); // well clear of it
+  const glassBefore = count(grid, GLASS);
   fill(grid, 5, 25, 54, 41, CHLORINE);
   for (let t = 0; t < 300; t++) sim.step();
-  let intactNear = 0;
-  for (let y = 42; y <= 44; y++) if (grid.get(34, y) === GLASS) intactNear++;
-  check('glass touching the burn shatters under the thump (as a Woofer would)',
-    count(grid, BROKEN_GLASS) > 0 && intactNear < 3,
-    `${count(grid, BROKEN_GLASS)} broken, ${intactNear}/3 of the near pane still glass`);
-  check('…while glass clear of it is untouched (the wave really is local)',
-    grid.get(40, 42) === GLASS && grid.get(40, 43) === GLASS && grid.get(40, 44) === GLASS);
+  check('glass touching the burn is not broken by the thump',
+    count(grid, GLASS) === glassBefore && count(grid, BROKEN_GLASS) === 0,
+    `${glassBefore} → ${count(grid, GLASS)} glass, ${count(grid, BROKEN_GLASS)} broken`);
+  check('…and the pile it was standing against still burned', count(grid, SODIUM) <= 2,
+    `${count(grid, SODIUM)} sodium left`);
 }
 
 // 4c. A lone grain has nothing to stir, so it doesn't thump — otherwise every

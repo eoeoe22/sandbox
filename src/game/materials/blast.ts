@@ -642,6 +642,15 @@ export interface DetonateOptions {
    *  true, so every blast gets the concussion; set false for a self-contained blast
    *  that shouldn't disturb its surroundings. */
   pressure?: boolean;
+  /** Whether a *fragile* solid the wave washes over crazes into its `shatterId`
+   *  (Glass → Broken Glass — see shatterFragile). Defaults to true: any real
+   *  detonation, and the Woofer's thump, breaks glass. Set false for a wave meant
+   *  to be felt but not heard — one that only stirs loose matter and must leave
+   *  every solid, brittle ones included, exactly as it found them (chlorine.ts's
+   *  stirShock, which fires continuously while a sodium pile burns and would
+   *  otherwise dismantle any glass vessel touching it). The fragile solid still
+   *  *shadows* the wave either way; only the crazing is switched off. */
+  shatters?: boolean;
   /** Override the blast's destructive power (파괴력) — what it can break — instead
    *  of taking it from the surveyed mass (or DEFAULT_DESTRUCTIVE_POWER for a seed).
    *  A low value makes a deliberately *weak* blast that shoves loose matter aside
@@ -757,6 +766,7 @@ export function detonate(
   const onCell = opts.onCell;
   const costMul = opts.costMul;
   const pierceProof = opts.pierceProof === true;
+  const shatters = opts.shatters !== false;
   const callCap =
     opts.maxCells !== undefined && opts.maxCells < MAX_DETONATE_CELLS
       ? opts.maxCells
@@ -817,10 +827,11 @@ export function detonate(
       // front and shadow what's beyond, with no ejecta. Loose matter never blocks
       // (a weak blast shoves it and passes through; see blocksBlast). A *fragile*
       // solid caught here (Glass) still crazes into its shattered form (Broken
-      // Glass) under the shock even as it shadows — see shatterFragile.
+      // Glass) under the shock even as it shadows — see shatterFragile, unless
+      // this wave was declared not to craze at all (`shatters: false`).
       const blockedId = sim.get(nx, ny);
       if (blocksBlast(blockedId, power, pierceProof)) {
-        shatterFragile(sim, nidx, nx, ny, blockedId, stamp, id_d);
+        if (shatters) shatterFragile(sim, nidx, nx, ny, blockedId, stamp, id_d);
         continue;
       }
       stamp[nidx] = id_d;
@@ -845,7 +856,7 @@ export function detonate(
   // radially outward (concussion), without breaking anything. On by default, its
   // reach scaling with this blast's crater reach R (bigger blast → wider shove).
   if (opts.pressure !== false) {
-    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R));
+    pressureRing(sim, rimX, rimY, rimDX, rimDY, stamp, id_d, pressureReachFor(R), shatters);
   }
 
   const rimHandler = opts.rimHandler;
@@ -872,7 +883,9 @@ export function detonate(
  * around solids through open gaps. `stamp`/`id_d` are the destruction flood's
  * visited buffer + id, so the ring never re-enters the crater; it claims its own
  * fresh stamp id for its visited set. Bounded by the shared per-tick `pressureLeft`
- * budget so a field of blasts can't blow the frame.
+ * budget so a field of blasts can't blow the frame. `shatters` carries the
+ * caller's DetonateOptions choice about crazing fragile solids (see there); false
+ * makes the wave shadow off glass without breaking it.
  */
 function pressureRing(
   sim: SimContext,
@@ -883,6 +896,7 @@ function pressureRing(
   stamp: Int32Array,
   id_d: number,
   reach: number,
+  shatters: boolean,
 ): void {
   const w = sim.width;
   const h = sim.height;
@@ -909,8 +923,9 @@ function pressureRing(
     const nid = sim.get(nx, ny);
     if (shadowsPressure(nid)) {
       // Solid or 방폭 matter shadows the wave at once — but a *fragile* solid
-      // (Glass) still shatters into Broken Glass under the passing shockwave.
-      shatterFragile(sim, nidx, nx, ny, nid, stamp, id_p);
+      // (Glass) still shatters into Broken Glass under the passing shockwave,
+      // unless this wave doesn't craze (see DetonateOptions.shatters).
+      if (shatters) shatterFragile(sim, nidx, nx, ny, nid, stamp, id_p);
       continue;
     }
     stamp[nidx] = id_p;
@@ -970,7 +985,7 @@ function pressureRing(
       // solid (Glass) shatters into Broken Glass under the passing shockwave as it
       // shadows — see shatterFragile.
       if (shadowsPressure(nid)) {
-        shatterFragile(sim, nidx, nx, ny, nid, stamp, id_p);
+        if (shatters) shatterFragile(sim, nidx, nx, ny, nid, stamp, id_p);
         continue;
       }
       stamp[nidx] = id_p;
