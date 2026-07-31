@@ -7,12 +7,19 @@
 //     the gas was — and does it without any water, air or ignition source.
 //   • Loose grains convert completely and exactly 1:1, so nothing is lost or
 //     minted in the exchange.
-//   • It's a **burn, not a detonation**: a packed pile crusts over with its own
-//     salt and stalls with the core intact and the stone floor whole, where the
-//     same pile dropped in water detonates (the control that keeps someone from
-//     "unifying" sodium's two reaction paths). The stall is checked to be the
-//     crust — survivors sealed in salt with gas still in the room — and not
-//     merely a spent cloud.
+//   • A packed pile burns all the way down as well, because a reaction inside a
+//     pile thumps out an invisible shockwave that keeps the grit stirred
+//     (stirShock) — without it the salt settles into a lid and the burn stalls
+//     after one layer.
+//   • That thump shoves loose matter and breaks nothing: sand nearby is thrown
+//     around (the positive control that the wave arrives at all), a stone pillar
+//     at the same distance is untouched, and no Blast is ever painted — which is
+//     also what proves it never flashes an `explosive`, sodium included.
+//   • It stays a **burn, not a detonation**: the same pile dropped in water
+//     detonates instead (the control that keeps someone from "unifying" sodium's
+//     two reaction paths).
+//   • A lone grain doesn't thump — only a pile-buried one does, so sprinkling
+//     stays the clean, quiet rain of salt it should be.
 //   • The product stays **Salt**, never Molten Salt — the flame is deliberately
 //     cooler than salt's 800° melting point, so the reaction can't melt its own
 //     output.
@@ -72,6 +79,9 @@ const BLAST = ID('Blast');
 const WATER = ID('Water');
 const STONE = ID('Stone');
 const WALL = ID('Wall');
+const SAND = ID('Sand');
+const GLASS = ID('Glass');
+const BROKEN_GLASS = ID('Broken Glass');
 const PLANT = ID('Plant');
 
 function makeWorld(w = 60, h = 60): { grid: Grid; sim: Simulation } {
@@ -150,11 +160,11 @@ function hottest(grid: Grid, id: number): number {
     `${count(grid, SALT)} salt from 30 grains`);
 }
 
-// 4. A *packed* pile is the opposite story, and this is the whole point of making
-//    it a burn: the surface flares off into salt, that salt buries the pile, and
-//    the front stalls against its own crust with the core still metal and the
-//    stone floor untouched. Water's answer to the same pile is one crater
-//    (sodium.ts's detonate); chlorine's is a salt tomb.
+// 4. A *packed* pile burns all the way down too, and that is the stirring thump's
+//    doing (stirShock): without it the salt made at the surface settles into a lid
+//    over the metal and the reaction dies after one layer with the core intact.
+//    It still has to end as a burn, not a blast — the same pile in water craters
+//    (test 5), here the stone floor comes out whole and no Blast is ever painted.
 {
   reseed();
   const { grid, sim } = makeWorld(60, 60);
@@ -169,37 +179,95 @@ function hottest(grid: Grid, id: number): number {
   }
   const sodium = count(grid, SODIUM);
   const salt = count(grid, SALT);
-  check('a packed pile burns from the surface inward', sodium > 0 && sodium < 40,
-    `${sodium} of 50 grains left, ${salt} salt`);
+  // Without the thump this stalls at ~26 of 50 left (the crust), so the bar is set
+  // far below that but not at a flat zero: a grain thrown clear by the shove can
+  // land alone under falling salt, and one grain on its own has no pile to stir
+  // itself out of — measured across seeds, 0 or occasionally 1 survivor.
+  check('a packed pile burns all the way down (the thump keeps it stirred)',
+    sodium <= 2, `${sodium} of 50 grains left`);
+  check('…still exactly one salt per grain consumed', salt === 50 - sodium,
+    `${salt} salt, ${sodium} sodium left`);
   check('…and never detonates the way water makes it (no blast)', !sawBlast);
   check('…leaving the stone floor whole', count(grid, STONE) === stoneBefore,
     `${stoneBefore} → ${count(grid, STONE)} stone`);
   check('…none of the salt melting to Molten Salt', count(grid, MOLTEN_SALT) === 0);
   check('…and the salt staying well under its 800° melting point',
     hottest(grid, SALT) < 800, `hottest salt ${hottest(grid, SALT).toFixed(0)}°`);
-  // What stopped it has to be the crust, not a spent cloud: there is still plenty
-  // of gas in the room, it simply can't touch metal any more.
-  let sealed = true;
-  let crusted = 0;
-  for (let y = 0; y < grid.height; y++)
-    for (let x = 0; x < grid.width; x++) {
-      if (grid.get(x, y) !== SODIUM) continue;
-      let touchesSalt = false;
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-          const n = grid.get(nx, ny);
-          if (n === CHLORINE) sealed = false;
-          if (n === SALT) touchesSalt = true;
-        }
-      if (touchesSalt) crusted++;
-    }
-  check('…because the survivors are sealed under salt, not out of gas',
-    sealed && crusted > 0 && count(grid, CHLORINE) > 100,
-    `${crusted} crusted grains, ${count(grid, CHLORINE)} chlorine still in the room`);
+}
+
+// 4b. What the thump is allowed to do: shove loose grit, break nothing. A sand
+//     column and a stone pillar stand the same distance from a burning pile — the
+//     sand is thrown around (the positive control that the wave really is reaching
+//     that far, so "the pillar survived" can't mean "nothing arrived") while the
+//     pillar is untouched, because the pulse carries POWER 0 exactly like a
+//     Woofer's. Sodium being `explosive` is the third probe and the important one:
+//     it sits at ground zero of every thump for the whole burn, so if the wave
+//     could flash an explosive there would be Blast cells and fewer than one salt
+//     per grain — test 4 checks both.
+{
+  reseed();
+  const { grid, sim } = makeWorld(60, 60);
+  fill(grid, 0, 45, 59, 59, STONE);
+  fill(grid, 26, 42, 33, 44, SODIUM); // the pile that will be burning
+  fill(grid, 36, 42, 36, 44, STONE); // a pillar 2 cells clear of it
+  fill(grid, 23, 42, 23, 44, SAND); // loose grit, same 2-cell gap on the other side
+  const stoneBefore = count(grid, STONE);
+  const sandBefore: number[] = [];
+  for (let y = 42; y <= 44; y++) sandBefore.push(grid.get(23, y));
+  fill(grid, 5, 25, 54, 41, CHLORINE);
+  let sawBlast = false;
+  for (let t = 0; t < 300; t++) {
+    sim.step();
+    if (count(grid, BLAST) > 0) sawBlast = true;
+  }
+  let sandMoved = false;
+  for (let y = 42, i = 0; y <= 44; y++, i++) if (grid.get(23, y) !== sandBefore[i]) sandMoved = true;
+  check('the thump reaches loose grit nearby and throws it around', sandMoved);
+  check('…but breaks no structure — the stone pillar in the same reach is whole',
+    count(grid, STONE) === stoneBefore, `${stoneBefore} → ${count(grid, STONE)} stone`);
+  check('…and paints no Blast anywhere in the whole burn (invisible, and it never '
+    + 'flashes an explosive)', !sawBlast);
+}
+
+// 4d. The one thing the thump does leave a mark on is glass, exactly as a Woofer's
+//     pulse does (blast.ts's shatterFragile: a fragile solid crazes under a shock
+//     it shadows). Flush against the burn a pane goes to Broken Glass; one cell of
+//     clearance and it rides it out — which doubles as the reach measurement, so
+//     "the wave is local" isn't just an assertion about a constant.
+{
+  reseed();
+  const { grid, sim } = makeWorld(60, 60);
+  fill(grid, 0, 45, 59, 59, STONE);
+  fill(grid, 26, 42, 33, 44, SODIUM);
+  fill(grid, 34, 42, 34, 44, GLASS); // touching the pile
+  fill(grid, 40, 42, 40, 44, GLASS); // well clear of it
+  fill(grid, 5, 25, 54, 41, CHLORINE);
+  for (let t = 0; t < 300; t++) sim.step();
+  let intactNear = 0;
+  for (let y = 42; y <= 44; y++) if (grid.get(34, y) === GLASS) intactNear++;
+  check('glass touching the burn shatters under the thump (as a Woofer would)',
+    count(grid, BROKEN_GLASS) > 0 && intactNear < 3,
+    `${count(grid, BROKEN_GLASS)} broken, ${intactNear}/3 of the near pane still glass`);
+  check('…while glass clear of it is untouched (the wave really is local)',
+    grid.get(40, 42) === GLASS && grid.get(40, 43) === GLASS && grid.get(40, 44) === GLASS);
+}
+
+// 4c. A lone grain has nothing to stir, so it doesn't thump — otherwise every
+//     sprinkled grain would fling the scenery around it. Sand resting on the floor
+//     of a sealed pocket, two cells from a single-grain reaction, stays put.
+{
+  reseed();
+  const { grid, sim } = makeWorld(30, 30);
+  fill(grid, 10, 10, 20, 20, WALL);
+  fill(grid, 11, 11, 19, 19, CHLORINE);
+  // A single grain resting on the pocket floor: it can neither fall nor slump on
+  // its own, so if it isn't exactly where it was put, something shoved it.
+  fill(grid, 13, 19, 13, 19, SAND);
+  fill(grid, 16, 19, 16, 19, SODIUM); // one grain on the floor, nothing burying it
+  for (let t = 0; t < 60; t++) sim.step();
+  check('a lone grain reacts without thumping (nothing nearby is shoved)',
+    grid.get(13, 19) === SAND && count(grid, SAND) === 1 && count(grid, SALT) === 1,
+    `sand at (13,19)=${grid.get(13, 19) === SAND}, ${count(grid, SALT)} salt`);
 }
 
 // 5. The detonation control for #4: the same pile, same floor, put in water

@@ -1,4 +1,4 @@
-import { register } from './registry';
+import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
@@ -14,6 +14,8 @@ import { CORAL } from './coral';
 import { SODIUM } from './sodium';
 import { SALT } from './salt';
 import { FIRE } from './fire';
+import { detonate } from './blast';
+import { launchDebris } from './debris';
 
 // Chlorine (염소가스) — a heavy, sickly yellow-green poison gas. Like CO₂ it's
 // denser than air, so it slumps and pools along the floor (see updateHeavyGas),
@@ -35,13 +37,13 @@ import { FIRE } from './fire';
 // than a catalyst.
 //
 // It is deliberately a *burn*, not the detonation sodium does in water or acid
-// (sodium.ts). Sprinkle sodium into a cloud and every grain converts, flames
-// popping and salt raining down; dump the gas on a packed pile instead and only
-// the surface goes, because the salt it makes falls onto the pile and crusts it
-// over (powders don't sink through each other). Water's rule is "the more you
-// pile up the bigger the bang", chlorine's is the mirror of it — "the more you
-// pile up the less of it burns", and the player's answer is to scatter or stir.
-// See docs/MATERIAL-SYSTEMS.md for why the crust was kept rather than fixed.
+// (sodium.ts) — but a burn that shakes. A grain reacting from *inside* a pile
+// thumps out an invisible shockwave (see stirShock below), which tosses the loose
+// grit around it and keeps turning fresh metal up into the gas. Without it a pile
+// simply crusts over in its own salt after one layer and the reaction dies with
+// the core untouched, since powders don't sink through each other. So a stockpile
+// gassed with chlorine churns and burns down instead of sealing itself, and the
+// player doesn't have to hand-stir it.
 const KILL_CHANCE = 0.3; // living neighbors wither fairly fast
 const DISSIPATE_CHANCE = 0.004; // disperses back into air over time
 const SODIUM_REACT_CHANCE = 0.35; // contact burns fast, but grain by grain
@@ -52,6 +54,17 @@ const REACT_TEMP = 720;
 // The fresh grain of salt is hot from the reaction but not glowing — it has to
 // stay well clear of 800° even after the flame beside it warms it a while.
 const SALT_TEMP = 400;
+// ── The stirring thump (see stirShock) ───────────────────────────────────────
+// A grain with at least this many sodium neighbours is reacting from inside a
+// pile rather than as a loose sprinkle, and only that case thumps: a lone grain
+// popping in mid-air has nothing to stir, and throwing its salt around would
+// spoil the clean "sprinkle it and it rains salt" picture for nothing.
+const STIR_NEIGHBORS = 3;
+const STIR_REACH = 4; // × the global 2/3 blast-scale ⇒ ~3 cells: it churns the
+// pile it's standing in, and nothing further. (A Woofer's own REACH is 12; this
+// fires once per reacting grain instead of once per electric pulse, so it has to
+// be local or a burning stockpile would hose the whole scene.)
+const STIR_POWER = 0; // identical to the Woofer: too weak to break anything at all
 
 function isLiving(id: number): boolean {
   return (
@@ -70,6 +83,55 @@ function isLiving(id: number): boolean {
   );
 }
 
+/** How many of a cell's 8 neighbours are sodium — "is this grain part of a pile,
+ *  or a loose sprinkle?" (mirrors sodium.ts's own DENSE_NEIGHBORS test, which
+ *  splits its water fizzle from its water detonation on the same question). */
+function sodiumNeighbors(x: number, y: number, sim: SimContext): number {
+  let n = 0;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === SODIUM.id) n++;
+  }
+  return n;
+}
+
+/**
+ * The invisible thump a pile-buried reaction gives off — the Woofer's shockwave
+ * (woofer.ts) borrowed wholesale: the blast subsystem's *physics* only, pinned to
+ * POWER 0 so it cannot break anything however flimsy, structural solids shadow it
+ * untouched, and loose grit within reach is flung as mass-conserving Debris that
+ * arcs out and rains back. That shove is the whole point here: it re-mixes the
+ * salt crust with the metal under it.
+ *
+ * Two things it must never do, both handled by `onCell`:
+ *   • **Show itself.** Every EMPTY cell the front reaches is claimed and left
+ *     alone, so no Blast flash is painted (same trick as wooferPulse). A flash
+ *     would read as an explosion, and it can decay into stray Fire besides.
+ *   • **Set anything off.** The default cell handler consumes an `explosive` cell
+ *     into a flash *regardless of power* — which here would mean the shockwave
+ *     detonating the very sodium it exists to stir, and any charge stored nearby
+ *     with it. So explosives are intercepted: loose ones (sodium is a powder) take
+ *     the ordinary Debris shove instead, solid ones are passed over untouched.
+ *     Everything non-explosive falls through to the normal handling.
+ */
+function stirShock(sim: SimContext, x: number, y: number): void {
+  detonate(sim, x, y, 0, {
+    power: STIR_POWER,
+    reach: STIR_REACH,
+    // Each thump is its own small, self-contained wave — never pooled with a
+    // neighbouring one into a bigger mass survey (see DetonateOptions).
+    soloSource: true,
+    onCell: (s, cx, cy, prevId, entryDx, entryDy, outB) => {
+      if (prevId === EMPTY) return true; // invisible: claimed, no flash
+      const m = getMaterial(prevId);
+      if (!m.explosive) return false; // ordinary matter: default handling
+      if (m.phase !== Phase.Solid) launchDebris(s, cx, cy, prevId, entryDx, entryDy, outB);
+      return true;
+    },
+  });
+}
+
 function updateChlorine(x: number, y: number, sim: SimContext): void {
   // Poison: kill any living neighbor. A write to EMPTY is always safe (it can't
   // cause same-tick re-processing).
@@ -86,10 +148,17 @@ function updateChlorine(x: number, y: number, sim: SimContext): void {
       // where it stands, so the front stalls against a crust that never had to
       // fall there in the first place. Made in the gas, the salt falls clear —
       // and where it lands is then the pile's own doing, not the rule's.
+      const buried = sodiumNeighbors(nx, ny, sim) >= STIR_NEIGHBORS;
       sim.spawn(nx, ny, FIRE.id);
       sim.setTemp(nx, ny, REACT_TEMP);
       sim.set(x, y, SALT.id);
       sim.setTemp(x, y, SALT_TEMP);
+      // Reacting inside a pile: thump, so the salt just made doesn't settle into
+      // a lid over the metal (see stirShock). Fired from this cell — the gas side
+      // — because it's the one facing away from the pile, so the wave lifts the
+      // covering grit rather than driving it in. Counted *before* the writes
+      // above, while the neighbourhood is still the pile it was.
+      if (buried) stirShock(sim, x, y);
       return;
     }
     if (isLiving(nid) && sim.chance(KILL_CHANCE)) {
