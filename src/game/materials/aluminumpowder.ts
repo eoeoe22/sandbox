@@ -202,11 +202,11 @@ export const ALUMINUM_POWDER = register({
   // enough to carry a burn front through a pile without a flame between grains.
   thermal: { conductivity: 0.4 },
   // **Acid → Hydrogen.** Pouring acid on aluminum used to do the least
-  // interesting thing in the game: acid.ts's `isCorrodible` looks at nothing but
+  // interesting thing in the game: corrosion.ts's `isCorrodible` looks at nothing but
   // the phase, so the grains simply blinked out with no product at all. Now the
   // acid cell that eats a grain *becomes* the bubble — 1:1, so the puddle is
   // spent as it works and its size is the cap on how much gas you get (see
-  // acid.ts's tryEvolveHydrogen for why the bubble replaces the acid cell rather
+  // corrosion.ts's tryEvolveHydrogen for why the bubble replaces the acid cell rather
   // than venting into a free neighbour).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   // The thermite recipe. Unlike black powder's three-body mix — which needed a

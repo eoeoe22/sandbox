@@ -22,7 +22,8 @@ import { LIQUID_GALLIUM, GALLIUM_MELT_TEMP } from './liquidgallium';
 //
 // Only the *solid* carries the tag. That isn't a judgement about liquid gallium's
 // chemistry, it's the engine's rule: acid's corrosion pass eats solids and
-// powders only (`isCorrodible`), so no liquid in the game dissolves in acid, and
+// powders only (corrosion.ts's `isCorrodible`), so no liquid in the game dissolves
+// in acid, and
 // a gallium puddle is no exception. Warm a bar past 30° and it stops fizzing
 // because it stopped being a solid — which, for the metal whose whole identity is
 // "temperature is the switch", is a quirk rather than a hole.

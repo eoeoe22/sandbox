@@ -34,8 +34,8 @@ import { tryBurn, type Combustible } from './combustion';
 // like fuming nitric; this sandbox has one generic Acid, so it gets the one
 // generic answer — the same simplification Glass and Nichrome already take.)
 // The flag is read by all three corrosive materials — Acid, Acid Vapor and Acid
-// Slime share one `isCorrodible` shape — so the resin shrugs off the fumes and
-// the goo too.
+// Slime run the one corrosion pass in corrosion.ts — so the resin shrugs off the
+// fumes and the goo too.
 //
 // In play that's the plastics line's payoff, and the shape it takes comes from
 // the density: every other acid-proof material on the roster sits at 1000, so

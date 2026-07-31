@@ -42,19 +42,26 @@
  *      seen over ~80 runs); the bar is a loose "does it run at all" — it passes
  *      at 5 — so the quoted range is colour, not a threshold.
  *  10. Acid resistance — the resin is what acid is shipped in, so none of the
- *      three corrosive materials (Acid, Acid Vapor, Acid Slime, all reading the
- *      one `acidResistant` flag) may take a single cell of it. Each scene runs
- *      twice over identical geometry, once with resin and once with Sawdust,
- *      because "nothing dissolved" and "nothing was ever in contact" look the
- *      same from a survivor count — the control is what tells them apart. The
- *      liquid-acid scene also pins the other direction: with nothing corrodible
- *      in the box the acid must not shrink either, since a puddle only ever
- *      spends itself as a byproduct of eating something.
+ *      three corrosive materials (Acid, Acid Vapor, Acid Slime, which now share
+ *      the one corrosion pass in materials/corrosion.ts) may take a single cell
+ *      of it. Each scene runs twice over identical geometry, once with resin and
+ *      once with Sawdust, because "nothing dissolved" and "nothing was ever in
+ *      contact" look the same from a survivor count — the control is what tells
+ *      them apart. The liquid-acid scene also pins the other direction: with
+ *      nothing corrodible in the box the acid must not shrink either, since a
+ *      puddle only ever spends itself as a byproduct of eating something. The
+ *      vapour scene needs scaffolding to stay honest — a sealed box condenses
+ *      its whole charge to liquid Acid early, which would silently turn it into
+ *      a second copy of the liquid scene; see `reflux` there. Keeping the liquid
+ *      out is also what exposed what fumes on their own actually do: they eat a
+ *      heap's top face and stop dead, because a gas will not descend into the
+ *      void it just opened.
  *
  * Run: `node test/run-plastic.mjs`.
  */
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
+import { EMPTY } from '../src/game/engine/types';
 import { PETROLEUM_VAPOR } from '../src/game/materials/petroleumvapor';
 import { ETHYLENE } from '../src/game/materials/ethylene';
 import { CATALYST } from '../src/game/materials/catalyst';
@@ -523,11 +530,14 @@ function hottestEthylene(grid: Grid): number {
   }
 
   /** Bottom `POWDER_ROWS` rows of a sealed box are `powder`, the rest `attacker`.
-   *  Returns what is left of each after `ticks`. */
+   *  Returns what is left of each after `ticks`. `perTick`, if given, runs at the
+   *  end of every tick — see the vapour scene, which uses it to keep the chamber
+   *  saturated. */
   function bath(
     powder: number,
     attacker: number,
     ticks: number,
+    perTick?: (grid: Grid) => void,
   ): { powderLeft: number; powderStart: number; attackerLeft: number; attackerStart: number } {
     const { grid, sim } = box(W, H);
     for (let y = 1; y <= H; y++) {
@@ -535,7 +545,10 @@ function hottestEthylene(grid: Grid): number {
     }
     const powderStart = countAll(grid, powder);
     const attackerStart = countAll(grid, attacker);
-    for (let t = 0; t < ticks; t++) sim.step();
+    for (let t = 0; t < ticks; t++) {
+      sim.step();
+      perTick?.(grid);
+    }
     return {
       powderLeft: countAll(grid, powder),
       powderStart,
@@ -578,28 +591,83 @@ function hottestEthylene(grid: Grid): number {
     `${dust.attackerLeft}/${dust.attackerStart} acid left`,
   );
 
-  // (b) Acid Vapor and (c) Acid Slime. Same flag, separate `isCorrodible` copies
-  // in acidvapor.ts / acidslime.ts — so each one gets its own scene rather than
-  // being assumed to follow from the liquid. (No exact-conservation assertion on
-  // the attacker here: vapour condenses back to Acid on its own schedule and the
-  // slime can be diluted, so only the powder side is a clean count.)
-  for (const [label, attacker, limit] of [
-    ['Acid Vapor', ACID_VAPOR.id, 0.7],
-    ['Acid Slime', ACID_SLIME.id, 0.7],
-  ] as const) {
-    const kept = bath(POLYETHYLENE.id, attacker, TICKS);
-    const control = bath(SAWDUST.id, attacker, TICKS);
-    check(
-      `${label} does not eat Polyethylene`,
-      kept.powderLeft === kept.powderStart,
-      `${kept.powderLeft}/${kept.powderStart} resin left`,
-    );
-    check(
-      `control — the same ${label} eats Sawdust`,
-      control.powderLeft < control.powderStart * limit,
-      `${control.powderLeft}/${control.powderStart} sawdust left`,
-    );
-  }
+  // (b) Acid Vapor. The fumes need one piece of scaffolding that the liquid and
+  // the slime don't. Sealed in a full box every vapour cell has something over
+  // its head, which is the *fast* condensation branch (0.03 a tick), so the whole
+  // charge is liquid Acid inside ~150 of the 600 ticks — after which this scene
+  // is just the liquid test again, and a vapour-only regression would sail past
+  // it. So the chamber is kept saturated instead: `reflux` boils any condensate
+  // back to fumes at the end of every tick, before the sim can give that cell a
+  // turn as liquid Acid. `refluxed` counts what it caught, which is both proof
+  // the confound is real and proof the scaffolding is doing something.
+  let refluxed = 0;
+  const reflux = (grid: Grid): void => {
+    for (let y = 1; y <= H; y++) {
+      for (let x = 1; x <= W; x++) {
+        if (grid.get(x, y) === ACID.id) {
+          grid.set(x, y, ACID_VAPOR.id);
+          refluxed++;
+        }
+        // A drop caught under a floating grain sits in the overlay slot, which
+        // only ever holds a fluid the host is submerged in — vent it rather than
+        // put a gas there.
+        if (grid.getOverlay(x, y) === ACID.id) {
+          grid.setOverlay(x, y, EMPTY);
+          refluxed++;
+        }
+      }
+    }
+  };
+  // The control's target is exact rather than a fraction, and that is worth
+  // stating because it is a fact about the engine, not about acid: fumes eat the
+  // heap's top face and then STOP, at exactly W cells. A gas rises, so once the
+  // interface row is gone the vapour will not descend into the void it just made,
+  // and the row beneath is never touched again. So the control must lose its whole
+  // top row — the resin, in the identical box, loses none — and neither side is
+  // expected to go further. (The old version of this scene ran the sawdust to
+  // 0/30, which was the tell that the liquid had taken over.)
+  //
+  // Long enough that clearing that row is a certainty and not a coin flip: at
+  // 0.015 a tick the last of ten cells goes at ~200 ticks on average, so 1200 is
+  // roughly six times the mean.
+  const VAPOR_TICKS = 1200;
+  const vaporKept = bath(POLYETHYLENE.id, ACID_VAPOR.id, VAPOR_TICKS, reflux);
+  const vaporControl = bath(SAWDUST.id, ACID_VAPOR.id, VAPOR_TICKS, reflux);
+  check(
+    'Acid Vapor does not eat Polyethylene',
+    vaporKept.powderLeft === vaporKept.powderStart,
+    `${vaporKept.powderLeft}/${vaporKept.powderStart} resin left`,
+  );
+  check(
+    'control — the same Acid Vapor eats the whole face of a Sawdust heap',
+    vaporControl.powderStart - vaporControl.powderLeft >= W,
+    `${vaporControl.powderLeft}/${vaporControl.powderStart} sawdust left ` +
+      `(${vaporControl.powderStart - vaporControl.powderLeft} eaten, the ${W}-cell face)`,
+  );
+  // …and the scene really was fumes throughout: no cell survived a tick boundary
+  // as liquid Acid, so nothing above can be credited to the liquid's stronger bite.
+  check(
+    'the vapour scenes stayed vapour (no cell ever took a turn as liquid Acid)',
+    refluxed > 0,
+    `${refluxed} condensate cells boiled back before they could act`,
+  );
+
+  // (c) Acid Slime. Same flag, its own material file — checked rather than assumed
+  // to follow from the liquid. (No exact-conservation assertion on the attacker in
+  // either of these two: the vapour is being topped up by hand and the slime can
+  // be diluted, so only the powder side is a clean count.)
+  const slimeKept = bath(POLYETHYLENE.id, ACID_SLIME.id, TICKS);
+  const slimeControl = bath(SAWDUST.id, ACID_SLIME.id, TICKS);
+  check(
+    'Acid Slime does not eat Polyethylene',
+    slimeKept.powderLeft === slimeKept.powderStart,
+    `${slimeKept.powderLeft}/${slimeKept.powderStart} resin left`,
+  );
+  check(
+    'control — the same Acid Slime eats Sawdust',
+    slimeControl.powderLeft < slimeControl.powderStart * 0.7,
+    `${slimeControl.powderLeft}/${slimeControl.powderStart} sawdust left`,
+  );
 }
 
 console.log(failed === 0 ? '\nAll plastics checks passed.' : `\n${failed} check(s) FAILED.`);

@@ -1,10 +1,10 @@
-import { register, getMaterial } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { register } from './registry';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
+import { tryCorrode, ACID_VAPOR_CORROSION } from './corrosion';
 import { ACID } from './acid';
 
 // The gaseous half of Acid — corrosive fumes. Boiling Acid flashes to Acid Vapor
@@ -15,33 +15,18 @@ import { ACID } from './acid';
 // sends corrosive fumes up to etch a ceiling, which then drip back down as acid.
 // It never just vanishes on its own — boil → rise → corrode → condense always
 // relocates it back to liquid Acid rather than destroying it.
-const CORRODE_CHANCE = 0.015; // vs the liquid's 0.03 — fumes bite more slowly
-const SELF_CONSUME_CHANCE = 0.05; // a puff that corroded may be used up doing so
+//
+// The bite itself is the shared pass in corrosion.ts, the same one the liquid
+// and the slime run; `ACID_VAPOR_CORROSION` is what makes it the fumes' version
+// (weaker, and no hydrogen fizz — see that file). What's local to this material
+// is the condensation below.
 const CONDENSE_CHANCE = 0.006; // drifting fumes mostly find their way back to acid…
 const CONDENSE_CHANCE_BLOCKED = 0.03; // pooled under a ceiling → condenses faster
 
-function isCorrodible(id: number): boolean {
-  if (id === EMPTY) return false;
-  const m = getMaterial(id);
-  if (m.acidResistant) return false;
-  return m.phase === Phase.Solid || m.phase === Phase.Powder;
-}
-
 function updateAcidVapor(x: number, y: number, sim: SimContext): void {
-  let corroded = false;
-  for (const [dx, dy] of DIR4) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    if (isCorrodible(sim.get(nx, ny)) && sim.chance(CORRODE_CHANCE)) {
-      sim.set(nx, ny, EMPTY);
-      corroded = true;
-    }
-  }
-  if (corroded && sim.chance(SELF_CONSUME_CHANCE)) {
-    sim.set(x, y, EMPTY);
-    return;
-  }
+  // True means this puff was used up doing the corroding — stop here.
+  if (tryCorrode(x, y, sim, ACID_VAPOR_CORROSION)) return;
+
   const blocked = !sim.inBounds(x, y - 1) || !sim.isEmpty(x, y - 1);
   if (sim.chance(blocked ? CONDENSE_CHANCE_BLOCKED : CONDENSE_CHANCE)) {
     // Shed its heat as it condenses so the fresh Acid doesn't sit above boiling

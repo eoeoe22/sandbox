@@ -154,7 +154,7 @@ export const ACTIVATED_ALUMINUM = register({
   ],
   // Acid does the same thing faster, and the same way — it just isn't a rule row:
   // acid's own corrosion pass drives every metal's fizz through this tag so the
-  // reaction can't lose a race against the silent bite (see acid.ts).
+  // reaction can't lose a race against the silent bite (see corrosion.ts).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
   update: updateActivatedAluminum,
 });
