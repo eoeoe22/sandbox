@@ -291,35 +291,60 @@ const SETTLE_TICKS = 40;
 }
 
 // 10. Heat far past its own flame bursts the bottle where it stands — the fuel
-//     boils and the glass lets go. Driven through the body's own heat reservoir,
-//     which is exactly what the 가열 브러시 and the Laser's heat ray write
-//     (PointerPainter.heatObjectsWhere / footprintHazards.rayHeat).
-//     The control is the point, and its temperature is chosen to make the design
-//     claim testable: 1050° is HOTTER than the Fire the lit wick puts out right
-//     beside itself (fire.ts pins its own cells at 1000°) and still under
-//     MOLOTOV_BURST_TEMP, so surviving it is exactly the guarantee the threshold
-//     is placed to give — a burning molotov can never burst itself. A control set
-//     below 1000° would only have shown "cooler than my own flame is safe", which
-//     is a weaker claim than the surrounding prose makes.
+//     boils and the glass lets go.
+//
+//     The control is the point, and getting it to actually PROVE the point took
+//     two goes. What has to be shown is the guarantee MOLOTOV_BURST_TEMP is placed
+//     to give: a bottle sitting in heat *hotter than the Fire its own wick emits*
+//     (fire.ts pins its cells at 1000°) still doesn't burst, so a burning molotov
+//     can never burst itself. A control below 1000° would only show the weaker
+//     "cooler than my own flame is safe".
+//
+//     The temperature is therefore applied to the SURROUNDING CELLS, not by
+//     assigning the body's `temp` reservoir. Writing the reservoir directly does
+//     not hold: evaluateTriggers relaxes it toward the footprint's own temperature
+//     *before* it computes the heat it judges by (OBJECT_HEAT_CONDUCTION, 8% per
+//     tick), so a reservoir stamped at 1050° each tick in ~20° air is compared at
+//     ≈968° — under Fire's 1000°, i.e. not testing the claim at all. A cell bath
+//     enters through `exp.maxTemp`, which is read fresh with no relaxation.
+//     The check on the reservoir below is what makes that visible rather than
+//     assumed: the body warms toward the bath, so a reservoir past 1000° after the
+//     hold is direct evidence the bottle really did sit hotter than its own flame.
 {
-  const hold = (deg: number, ticks: number): { survived: boolean; glass: number } => {
+  /** Hold the body in a `deg` bath for `ticks` ticks. Only EMPTY cells are heated
+   *  — the stone floor is left alone, since at 1600° it would melt and change the
+   *  scene out from under the measurement. */
+  const hold = (
+    deg: number,
+    ticks: number,
+  ): { survived: boolean; glass: number; reservoir: number } => {
     const { grid, sim } = makeWorld();
     floor(grid, 70);
     const m = createMolotov(50, 62);
     grid.objects.push(m);
+    const BATH = 10; // cells around the body, comfortably past its 7-cell reach
     for (let t = 0; t < ticks; t++) {
       if (grid.objects.length === 0) break;
-      m.temp = deg; // one tick of the 가열 브러시
+      for (let y = Math.floor(m.y) - BATH; y <= Math.floor(m.y) + BATH; y++) {
+        for (let x = Math.floor(m.x) - BATH; x <= Math.floor(m.x) + BATH; x++) {
+          if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+          if (grid.cells[grid.idx(x, y)] !== 0) continue; // air only — never the floor
+          grid.setTemp(x, y, deg);
+        }
+      }
       sim.step();
     }
+    const reservoir = m.temp;
     for (let t = 0; t < SETTLE_TICKS; t++) sim.step(); // let any thrown shards land
-    return { survived: grid.objects.length === 1, glass: count(grid, GLASS) };
+    return { survived: grid.objects.length === 1, glass: count(grid, GLASS), reservoir };
   };
   const hot = hold(1600, 60);
-  check('sustained 1600° bursts the bottle', !hot.survived);
+  check('a sustained 1600° bath bursts the bottle', !hot.survived);
   check('leaving glass behind', hot.glass > 0, `${hot.glass} cells`);
   const warm = hold(1050, 200);
-  check('but 1050° — hotter than its own Fire (1000°) — never does (대조군)', warm.survived);
+  check('a 1050° bath really does get the bottle past Fire\'s own 1000°',
+    warm.reservoir > 1000, `reservoir settled at ${warm.reservoir.toFixed(0)}°`);
+  check('and it still never bursts (대조군)', warm.survived);
   check('and spills nothing', warm.glass === 0, `${warm.glass} cells`);
 }
 
