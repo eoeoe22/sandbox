@@ -3506,6 +3506,8 @@ function resolveObjectPairs(
         if (impacts === null || iter > 0 || hit === 0) continue;
         // Both halves of a collision feel it: a crate slammed into a parked crate
         // bursts, and so does the one it hit (둘 다 파괴).
+        // 오브젝트 고무공은 오브젝트간 충돌 파괴 미적용 (파괴 가능 오브젝트와 충돌해도 서로 튕겨나감).
+        if (objects[i].kind === 'ball' || objects[j].kind === 'ball') continue;
         for (const o of [objects[i], objects[j]]) {
           if (hit > (impacts.get(o) ?? 0)) impacts.set(o, hit);
         }
