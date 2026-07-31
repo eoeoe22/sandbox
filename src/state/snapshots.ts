@@ -1,5 +1,5 @@
 import type { Grid } from '../game/engine/Grid';
-import { serializeWorld, deserializeWorld, type PersistedWorld } from './persistence';
+import { serializeWorld, deserializeWorld, sanitizeObject, type PersistedWorld } from './persistence';
 import {
   buildSnapshotFile,
   parseSnapshotFile,
@@ -9,13 +9,7 @@ import {
 
 /**
  * Named snapshot save/load — user-created slots that capture the whole sandbox
- * (cells + temps + per-cell state + 겹침 overlay, the same envelope the auto-
- * save uses) under a chosen name, so a scene or setup can be banked and pulled
- * back at any time. Lives beside the automatic world save (which still runs on
- * its interval): the two are independent keys in localStorage.
- *
- * Best-effort like the rest of persistence: storage can be missing, disabled,
- * or full — every call degrades to a no-op rather than throwing.
+ * (cells + temps + per-cell state + 겹침 overlay + free objects) under a chosen name.
  */
 
 const SNAPSHOT_KEY = 'particle-sandbox:snapshots:v1';
@@ -291,13 +285,18 @@ export function registerGridForSnapshots(
  * apply the very world it previewed rather than recomputing it, which is what
  * makes "what you see is what you get" true rather than approximately true.
  *
- * Free objects (balls, drums) are cleared first — snapshots don't serialize the
- * object layer, so leaving the current session's objects on top of loaded cells
- * would mix two unrelated scenes.
+ * Free objects (balls, drums, etc.) from the previous scene are replaced with the
+ * loaded world's objects.
  */
 export function applyWorld(world: PersistedWorld): boolean {
   if (!liveGrid) return false;
   liveGrid.objects.length = 0;
+  if (world.objects && world.objects.length > 0) {
+    for (const obj of world.objects) {
+      const sanitized = sanitizeObject(obj);
+      if (sanitized) liveGrid.objects.push(sanitized);
+    }
+  }
   liveGrid.resizeFrom(
     liveGrid.width,
     liveGrid.height,

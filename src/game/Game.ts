@@ -7,8 +7,9 @@ import { TICK_HZ, MAX_STEPS_PER_FRAME, WORLD_AUTOSAVE_MS, USE_WASM_HEAT } from '
 import { initHeatWasm } from './engine/heatWasm';
 import { profiler } from './engine/profiler';
 import { seedBenchScenario, isBenchScenario } from './engine/benchScenarios';
-import { initSettingsPersistence, loadWorld, saveWorld } from '../state/persistence';
+import { initSettingsPersistence, loadWorld, saveWorld, sanitizeObject } from '../state/persistence';
 import { registerGridForSnapshots, captureThumbnail } from '../state/snapshots';
+import { fitWorld, autoPlacement } from '../state/snapshotFit';
 import {
   $running,
   $fps,
@@ -28,6 +29,7 @@ import {
   $particleCount,
   $frameMs,
   $perfPasses,
+  $snapshotFit,
 } from '../state/store';
 import { EMPTY } from './engine/types';
 import './materials'; // register all materials (side effect)
@@ -89,17 +91,28 @@ export function startGame(canvas: HTMLCanvasElement): void {
   if (forceFullScan) grid.dirty.enabled = false; // A/B: measure with the full scan
 
   if (savedWorld) {
+    const fitted = (savedWorld.w === layout.gw && savedWorld.h === layout.gh)
+      ? savedWorld
+      : fitWorld(savedWorld, layout.gw, layout.gh, autoPlacement(savedWorld.w, savedWorld.h, layout.gw, layout.gh, $snapshotFit.get()));
+
     grid.resizeFrom(
       layout.gw,
       layout.gh,
-      savedWorld.cells,
-      savedWorld.w,
-      savedWorld.h,
-      savedWorld.temp,
-      savedWorld.aux, // restore per-cell state (electricity/Clone/…) — see persistence.ts
-      savedWorld.overlay, // restore 겹침 overlap fluids (soaked beds stay wet)
-      savedWorld.overlayAux, // …and their parked aux (tagged fluids keep identity)
+      fitted.cells,
+      fitted.w,
+      fitted.h,
+      fitted.temp,
+      fitted.aux, // restore per-cell state (electricity/Clone/…) — see persistence.ts
+      fitted.overlay, // restore 겹침 overlap fluids (soaked beds stay wet)
+      fitted.overlayAux, // …and their parked aux (tagged fluids keep identity)
     );
+    if (fitted.objects && fitted.objects.length > 0) {
+      grid.objects.length = 0;
+      for (const obj of fitted.objects) {
+        const sanitized = sanitizeObject(obj);
+        if (sanitized) grid.objects.push(sanitized);
+      }
+    }
     // Tint isn't persisted; reseed it so a restored world is grainy from the
     // first frame rather than a flat block until its particles move.
     grid.randomizeTints();

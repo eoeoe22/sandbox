@@ -118,6 +118,53 @@
       for (let sx = sx0; sx < sx1; sx++) buf[dstRow + sx] = palette[sc.cells[srcRow + sx]];
     }
     ctx.putImageData(img, 0, 0);
+
+    const placedWorld = placeScene(sc, dstW, dstH, p.offX, p.offY);
+    if (placedWorld.objects && placedWorld.objects.length > 0) {
+      ctx.lineWidth = 1.5;
+      for (const o of placedWorld.objects) {
+        ctx.save();
+        ctx.translate(o.x, o.y);
+        if ('angle' in o && typeof o.angle === 'number') {
+          ctx.rotate(o.angle);
+        }
+        if (o.kind === 'ball') {
+          ctx.fillStyle = 'rgba(235, 90, 90, 0.75)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.beginPath();
+          ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        } else if (o.kind === 'drum') {
+          ctx.fillStyle =
+            o.fill === 'oil'
+              ? 'rgba(60, 60, 60, 0.85)'
+              : o.fill === 'acid'
+                ? 'rgba(60, 190, 100, 0.85)'
+                : 'rgba(70, 130, 220, 0.85)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.beginPath();
+          ctx.roundRect(-o.halfW, -o.halfH, o.halfW * 2, o.halfH * 2, o.cornerRadius);
+          ctx.fill();
+          ctx.stroke();
+        } else if (o.kind === 'woodbox') {
+          ctx.fillStyle = 'rgba(170, 110, 50, 0.85)';
+          ctx.strokeStyle = 'rgba(255, 220, 160, 0.9)';
+          ctx.beginPath();
+          ctx.roundRect(-o.halfW, -o.halfH, o.halfW * 2, o.halfH * 2, o.cornerRadius);
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = 'rgba(220, 70, 70, 0.85)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.beginPath();
+          ctx.arc(0, 0, o.radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
   }
 
   // The live grid can change size under the modal — a window resize moves it —
