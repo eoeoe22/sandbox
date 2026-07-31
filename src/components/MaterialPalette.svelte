@@ -8,8 +8,9 @@
     $selectedObject as selectedObject,
     $cloneTarget as cloneTarget,
     $favorites as favorites,
-    $recentMaterials as recentMaterials,
-    recordMaterialUse,
+    $recentPicks as recentPicks,
+    OBJECT_KINDS,
+    recordRecentPick,
     toggleFavorite,
   } from '../state/store';
   import type { ObjectKind } from '../state/store';
@@ -42,16 +43,8 @@
   // `$locale` (same reason as `categories`/`quickItems`): `objectLabel()` reads
   // the locale atom with a plain `.get()`, so a constant array would freeze the
   // flyout's labels at whatever language was active when it was built.
-  const OBJECT_KINDS: readonly ObjectKind[] = [
-    'ball',
-    'drum',
-    'oildrum',
-    'aciddrum',
-    'dynamite',
-    'smokebomb',
-    'crate',
-    'molotov',
-  ];
+  // The kind list itself lives in the store (OBJECT_KINDS) so persistence can
+  // validate saved recent picks against the same source.
   const OBJECT_ITEMS = $derived.by<{ key: ObjectKind; label: string }[]>(() => {
     void $locale;
     return OBJECT_KINDS.map((key) => ({ key, label: objectLabel(key) }));
@@ -80,25 +73,43 @@
   // --- Favorites / recent quick-access ------------------------------------
   const favSet = $derived(new Set($favorites));
   const isFav = (id: number): boolean => favSet.has(id);
-  // Favorites first (in the order they were starred), then recently-used
-  // materials not already starred. Ids that no longer resolve are dropped.
-  // Holds materials, not labels: the chips resolve their own name through
-  // `materialName()` in the markup, which tracks the locale by itself
-  // (i18n/reactive.svelte.ts), so this list has no locale dependency to declare.
-  const quickItems = $derived.by<Material[]>(() => {
-    const resolve = (ids: number[]): Material[] =>
-      ids.map((id) => getMaterial(id)).filter((m): m is Material => m !== undefined);
-    const favs = resolve($favorites);
-    const recents = resolve($recentMaterials.filter((id) => !favSet.has(id)));
+  // A quick-access slot holds either a material chip or an 독립 오브젝트 chip —
+  // the recents list tracks both, since picking an object is just as much "what
+  // the user last painted" as picking a material is. Favorites stay
+  // material-only (the star toggle lives on material chips), so an object entry
+  // is never a favorite.
+  type QuickItem = { kind: 'material'; mat: Material } | { kind: 'object'; key: ObjectKind };
+
+  // Favorites first (in the order they were starred), then recent picks not
+  // already starred. Ids that no longer resolve are dropped. Holds materials and
+  // object kinds, not labels: the chips resolve their own name through
+  // `materialName()`/`objectLabel()` in the markup, which track the locale by
+  // themselves (i18n/reactive.svelte.ts), so this list has no locale dependency
+  // to declare.
+  const quickItems = $derived.by<QuickItem[]>(() => {
+    const favs: QuickItem[] = $favorites
+      .map((id) => getMaterial(id))
+      .filter((m): m is Material => m !== undefined)
+      .map((mat) => ({ kind: 'material', mat }));
+    const recents: QuickItem[] = [];
+    for (const pick of $recentPicks) {
+      if (typeof pick === 'string') {
+        recents.push({ kind: 'object', key: pick });
+        continue;
+      }
+      if (favSet.has(pick)) continue; // already shown in the favorites run
+      const mat = getMaterial(pick);
+      if (mat) recents.push({ kind: 'material', mat });
+    }
     return [...favs, ...recents];
   });
   // The quick-access strip is a fixed-size grid so it never reflows the layout as
-  // materials come and go: always QUICK_SLOTS cells, each either a material chip
-  // or an empty placeholder box. Desktop shows all QUICK_SLOTS; mobile shows only
-  // the first QUICK_SLOTS_MOBILE (the rest hidden via CSS) so the strip stays a
-  // compact tap target beside the category buttons. See `.quick` styles.
+  // items come and go: always QUICK_SLOTS cells, each either a chip (material or
+  // object) or an empty placeholder box. Desktop shows all QUICK_SLOTS; mobile
+  // shows only the first six (the rest hidden via CSS) so the strip stays a
+  // compact part of the scrolling bottom row. See `.quick` styles.
   const QUICK_SLOTS = 9;
-  const quickSlots = $derived.by<(Material | null)[]>(() => {
+  const quickSlots = $derived.by<(QuickItem | null)[]>(() => {
     const items = quickItems.slice(0, QUICK_SLOTS);
     return Array.from({ length: QUICK_SLOTS }, (_, i) => items[i] ?? null);
   });
@@ -294,7 +305,7 @@
     // this way latches onto whatever it touches in-world, the normal way.
     cloneTarget.set(null);
     tool.set('material');
-    recordMaterialUse(id);
+    recordRecentPick(id);
     closeFlyoutSoon();
   }
 
@@ -318,7 +329,7 @@
     selected.set(CLONE.id);
     cloneTarget.set(id);
     tool.set('material');
-    recordMaterialUse(CLONE.id);
+    recordRecentPick(CLONE.id);
     closeFlyoutNow();
   }
 
@@ -330,11 +341,15 @@
   }
 
   // Picking an object selects it and switches to the 'object' placement tool (a
-  // canvas click then spawns it). Mirrors pick() for materials — closes the flyout.
+  // canvas click then spawns it). Mirrors pick() for materials — records the
+  // pick in the recent list (objects share that list with materials) and closes
+  // the flyout. No deferred close here: object chips have no 더블클릭 shortcut to
+  // keep alive, so the flyout can go away immediately.
   function pickObject(kind: ObjectKind): void {
     clearTimeout(closeTimer);
     selectedObject.set(kind);
     tool.set('object');
+    recordRecentPick(kind);
     pinned = null;
     hovered = null;
   }
@@ -407,9 +422,11 @@
 
     {#if !searching}
       <div class="quick" role="group" aria-label={t('palette.quickGroup')}>
-        {#each quickSlots as m, i (i)}
-          {#if m}
-            {@render starChip(m)}
+        {#each quickSlots as slot, i (i)}
+          {#if slot?.kind === 'material'}
+            {@render starChip(slot.mat)}
+          {:else if slot?.kind === 'object'}
+            {@render quickObjectChip(slot.key)}
           {:else}
             <div class="chip-wrap placeholder" aria-hidden="true">
               <div class="chip empty"></div>
@@ -574,6 +591,24 @@
       title={isFav(m.id) ? t('palette.favRemoveTooltip') : t('palette.favAddTooltip')}
     >
       <i class={`bi ${isFav(m.id) ? 'bi-star-fill' : 'bi-star'}`} aria-hidden="true"></i>
+    </button>
+  </div>
+{/snippet}
+
+<!-- An 독립 오브젝트 chip in the quick-access bar. Same wrapper and chip as a
+     material slot so the strip's rhythm doesn't break, but with no star: only
+     materials can be favorited, so an object chip has nothing to toggle. Picking
+     it goes through the same pickObject() the object flyout uses. -->
+{#snippet quickObjectChip(kind: ObjectKind)}
+  <div class="chip-wrap">
+    <button
+      class="chip"
+      class:active={$tool === 'object' && $selectedObject === kind}
+      onclick={() => pickObject(kind)}
+      title={objectLabel(kind)}
+    >
+      <span class="swatch obj">{@html objectSvgFor(kind)}</span>
+      <span class="label">{objectLabel(kind)}</span>
     </button>
   </div>
 {/snippet}
@@ -833,6 +868,17 @@
     width: 100%;
     height: 100%;
   }
+  /* …except in the quick-access strip, where an object swatch is capped to the
+     material swatch's height. The strip is a fixed-size grid whose whole point is
+     that it doesn't reflow as items come and go; a 26px-tall object chip would
+     stretch its whole row (flex stretch) the moment an object entered the recent
+     list, and on mobile the bar's height is fixed, so the extra 8px would just be
+     clipped. The SVG still scales to fit while keeping its aspect ratio, so the
+     upright drum simply reads a bit smaller here. */
+  .quick .chip .swatch.obj {
+    width: 24px;
+    height: 18px;
+  }
   /* A material swatch keeps the rounded, bordered tile it always was — it stands
      for a block of the stuff, not for a free-floating shape the way an object
      chip does — but its fill is now the generated pattern (materialSvgFor)
@@ -925,11 +971,13 @@
       white-space: nowrap;
     }
 
-    /* Quick-access recents/favorites: only the first three slots show on mobile
-       (slots 4–9 stay in the DOM but are hidden) so the strip is a compact,
-       predictable part of the scrolling row. Each visible chip keeps its swatch,
-       material name, and corner star (favorite toggle) — same as desktop. */
-    .quick > *:nth-child(n + 4) {
+    /* Quick-access recents/favorites: the first six slots show on mobile (slots
+       7–9 stay in the DOM but are hidden). The bar already scrolls sideways, so
+       six chips cost no layout — they just push the category buttons further
+       along the row — and six is enough to reach the last handful of picks
+       without reopening a category. Each visible chip keeps its swatch, name,
+       and (materials only) corner star — same as desktop. */
+    .quick > *:nth-child(n + 7) {
       display: none;
     }
   }
