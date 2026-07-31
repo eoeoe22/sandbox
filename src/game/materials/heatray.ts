@@ -52,6 +52,15 @@ import { DIAMOND } from './diamond';
 //     a low chance to scatter one step (산란), or a low chance to be absorbed and
 //     die, dumping its heat there (가열 후 소멸). So a beam mostly bores through
 //     water, warming it here and there, instead of stopping at the surface.
+//   • A free OBJECT body (드럼통·나무 상자·고무공·다이너마이트·연막탄 — the rigid
+//     bodies of engine/objects.ts) also ABSORBS it, exactly like an opaque solid:
+//     the beam stops at the body and its heat goes into that body's own reservoir,
+//     so a laser trained on a crate cooks it (녹이거나 태우거나 유폭시킨다) and never
+//     reaches whatever is behind it. Objects live *beside* the grid, so this one
+//     can't be resolved in the walk below — the beam has no way to see them. The
+//     object layer reads the grid instead (the direction every object↔cell
+//     interaction runs in) and calls `absorbHeatRayCell` on any beam cell resting
+//     inside its footprint; see objects.ts footprintHazards.
 //
 // The clean reflections here are true mirrors (unlike the Nuclear Ray's chaotic
 // scatter), so a Heat Ray is a predictable, buildable beam — the point of a laser
@@ -307,6 +316,26 @@ function heatImpact(sim: SimContext, x: number, y: number): void {
     if (nm.packedTemp || nm.thermal?.conductivity === 0) continue;
     sim.setTemp(nx, ny, sim.getTemp(nx, ny) + SPLASH_HEAT);
   }
+}
+
+/**
+ * Absorb the Heat Ray beam cell at (x,y) on behalf of something the beam struck
+ * that does NOT live on the grid — a free rigid body (engine/objects.ts). The
+ * cell is vacated exactly as when the beam moves off it (putting back any
+ * transparent pane it was resting inside, so the glass is never disturbed), and
+ * the heat one strike carries is RETURNED for the caller to deposit into whatever
+ * it hit, rather than written to the grid: an object's heat lives in its own
+ * reservoir (`SimBody.temp`), not in a cell.
+ *
+ * Returns 0 — and touches nothing — if (x,y) doesn't hold a beam, so a caller may
+ * probe cells freely. This is the single seam through which the object layer sees
+ * the beam, which keeps the strike's heat (IMPACT_HEAT) defined in exactly one
+ * place for grid and objects alike.
+ */
+export function absorbHeatRayCell(sim: SimContext, x: number, y: number): number {
+  if (!sim.inBounds(x, y) || sim.get(x, y) !== HEAT_RAY.id) return 0;
+  restoreCell(sim, x, y, sim.getAux(x, y));
+  return IMPACT_HEAT;
 }
 
 /** Spawn a Heat Ray beam cell at (x,y) flying along the unit direction

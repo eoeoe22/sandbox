@@ -10,6 +10,7 @@ import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
 import { ANTIMATTER } from '../materials/antimatter';
 import { NUCLEAR_RAY } from '../materials/nuclearray';
+import { HEAT_RAY, absorbHeatRayCell } from '../materials/heatray';
 import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
@@ -1748,7 +1749,7 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 function scanBodyExposure(
   o: SimBody,
   ctx: SimContext,
-): { blast: boolean; heatRay: boolean; maxTemp: number; solidFrac: number } {
+): { blast: boolean; nuclearRay: boolean; maxTemp: number; solidFrac: number } {
   const r = bodyRadius(o);
   const r2 = r * r;
   const [ax, ay, bx, by] = bodyEnds(o);
@@ -1757,7 +1758,7 @@ function scanBodyExposure(
   const y0 = Math.floor(Math.min(ay, by) - r);
   const y1 = Math.ceil(Math.max(ay, by) + r);
   let blast = false;
-  let heatRay = false;
+  let nuclearRay = false;
   let maxTemp = -Infinity;
   let footprint = 0;
   let solid = 0;
@@ -1781,7 +1782,7 @@ function scanBodyExposure(
       // full of Stone is, so it must never read as crushed for it.
       if (m !== null && (m.isWall === true || m.phase === Phase.Solid)) solid++;
       if (id === BLAST.id) blast = true;
-      else if (id === NUCLEAR_RAY.id) heatRay = true;
+      else if (id === NUCLEAR_RAY.id) nuclearRay = true;
       // Materials whose `temp` holds packed non-thermal bookkeeping (a flying
       // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
       // read as a real degree reading here — a water splash's Debris droplets
@@ -1800,7 +1801,7 @@ function scanBodyExposure(
       if (t > maxTemp) maxTemp = t;
     }
   }
-  return { blast, heatRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
+  return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
 /** Per-cell chance a shattered drum flings a Metal Powder fragment from that
@@ -2123,12 +2124,14 @@ const CRUSH_SOLID_FRAC = 0.6;
 const OBJECT_HEAT_CONDUCTION = 0.08;
 
 /**
- * Scan the body's footprint once for the three instant-destruction contacts
- * captured at the tick's *start* (before knockback can move the body clear of the
- * check): a shockwave Blast flash cell overlapping it (직격 — an explosion swept
- * over it), a Nuclear Ray beam cell overlapping it (직격 — the beam grazed it; see
- * scanBodyExposure for why this is instant rather than judged by heat-over-time),
- * and an Antimatter grain touching it (접촉). Reports which were found.
+ * Scan the body's footprint once for the contacts captured at the tick's *start*
+ * (before knockback can move the body clear of the check). Three of them are
+ * instant destruction: a shockwave Blast flash cell overlapping it (직격 — an
+ * explosion swept over it), a Nuclear Ray beam cell overlapping it (직격 — the beam
+ * grazed it; see scanBodyExposure for why this is instant rather than judged by
+ * heat-over-time), and an Antimatter grain touching it (접촉). The fourth is not
+ * destruction at all: a Laser's Heat Ray beam cell (열선), which merely *heats* —
+ * see below. Reports which were found, plus the heat the beams delivered.
  *
  * Antimatter is *consumed* on contact — each touching grain is annihilated to
  * EMPTY (a body is far bigger than one grain, so contact destroys the whole body
@@ -2136,14 +2139,26 @@ const OBJECT_HEAT_CONDUCTION = 0.08;
  * swap; Antimatter 접촉시 모든 오브젝트 파괴, no object is antimatter-proof). So this
  * scan mutates the grid, unconditionally over the whole footprint — a body that a
  * Blast/Nuclear Ray also dooms this tick still annihilates its touching grains.
- * Blast and Nuclear Ray cells are left alone (they expire on their own). One shared
- * footprint pass rather than separate ones so the bounding-box / culling geometry
- * can't drift between them.
+ * Blast and Nuclear Ray cells are left alone (they expire on their own).
+ *
+ * A Heat Ray cell is likewise consumed, but as an *absorption* rather than an
+ * annihilation: the body blocks the beam the same way an opaque solid on the grid
+ * does (materials/heatray.ts), so the beam visibly stops at the crate instead of
+ * flying through it, and the strike's heat (returned by `absorbHeatRayCell`, which
+ * also puts back any glass pane the beam was resting in) is summed into `rayHeat`
+ * for the caller to pour into the body's own reservoir. Objects are invisible to
+ * the beam's own walk — they don't live on the grid — so this footprint read is
+ * the only place the two layers can meet, in the same object-reads-grid direction
+ * every other object↔cell interaction runs. A body being *dragged* is shielded
+ * from its whole physics phase and so never absorbs a beam either (보기 드래그).
+ *
+ * One shared footprint pass rather than separate ones so the bounding-box /
+ * culling geometry can't drift between them.
  */
 function footprintHazards(
   o: SimBody,
   ctx: SimContext,
-): { blast: boolean; heatRay: boolean; antimatter: boolean } {
+): { blast: boolean; nuclearRay: boolean; antimatter: boolean; rayHeat: number } {
   const r = bodyRadius(o);
   const r2 = r * r;
   const [ax, ay, bx, by] = bodyEnds(o);
@@ -2152,13 +2167,15 @@ function footprintHazards(
   const y0 = Math.floor(Math.min(ay, by) - r);
   const y1 = Math.ceil(Math.max(ay, by) + r);
   let blast = false;
-  let heatRay = false;
+  let nuclearRay = false;
   let antimatter = false;
+  let rayHeat = 0;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
-      if (id !== BLAST.id && id !== NUCLEAR_RAY.id && id !== ANTIMATTER.id) continue;
+      if (id !== BLAST.id && id !== NUCLEAR_RAY.id && id !== ANTIMATTER.id && id !== HEAT_RAY.id)
+        continue;
       const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
@@ -2166,14 +2183,16 @@ function footprintHazards(
       if (id === BLAST.id) {
         blast = true;
       } else if (id === NUCLEAR_RAY.id) {
-        heatRay = true;
+        nuclearRay = true;
+      } else if (id === HEAT_RAY.id) {
+        rayHeat += absorbHeatRayCell(ctx, cx, cy); // beam stopped by the body, heat kept
       } else {
         antimatter = true;
         ctx.set(cx, cy, EMPTY); // grain consumed in the annihilation
       }
     }
   }
-  return { blast, heatRay, antimatter };
+  return { blast, nuclearRay, antimatter, rayHeat };
 }
 
 /**
@@ -3342,7 +3361,7 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // reads as crushed; a momentarily-overlapping one is freed first. Blast/Nuclear Ray
   // are secondary to the phase-A doomed capture (covers a body knocked into a
   // lingering flash or into the beam's path).
-  if (exp.blast || exp.heatRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
+  if (exp.blast || exp.nuclearRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
     // Only the blast is a blow: a crate pinched in solid (끼임) or eaten away by
     // the beam collapses where it stands rather than bursting outward.
     destroyByproduct(o, ctx, spawn, exp.blast ? 'impact' : 'collapse');
@@ -3430,16 +3449,25 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   for (let i = 0; i < objects.length; i++) {
     const o = objects[i];
     if (o.held) continue;
-    // One footprint pass captures a direct Blast/Nuclear Ray hit and consumes any
-    // touching Antimatter grain; any of the three dooms the body this tick (see
-    // footprintHazards).
+    // One footprint pass captures a direct Blast/Nuclear Ray hit, consumes any
+    // touching Antimatter grain and absorbs any Laser Heat Ray beam resting on the
+    // body; the first three doom it this tick (see footprintHazards).
     const hz = footprintHazards(o, ctx);
-    if (hz.blast || hz.heatRay || hz.antimatter) {
+    if (hz.blast || hz.nuclearRay || hz.antimatter) {
       // A blast or an annihilating grain is a shock the wreckage carries away; the
       // Nuclear Ray just eats the body where it is, so that one is a collapse.
       doomed.set(o, hz.blast || hz.antimatter ? 'impact' : 'collapse'); // destroyed below
       continue;
     }
+    // 열선 가열: the absorbed beams' heat goes straight into the body's own
+    // reservoir — the only way a Heat Ray can warm an object, since the reservoir's
+    // ordinary source is the footprint's *cell* temperatures (scanBodyExposure) and
+    // a beam cell's `temp` is packed flight state, never a real reading. Phase C
+    // then relaxes the reservoir toward the surroundings as usual, so a held beam
+    // ramps the body up to a destroying temperature over a second or so while a
+    // beam that moves on lets it cool back down (드럼통은 녹고, 나무 상자는 불붙고,
+    // 다이너마이트는 유폭한다).
+    if (hz.rayHeat > 0) o.temp += hz.rayHeat;
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);
