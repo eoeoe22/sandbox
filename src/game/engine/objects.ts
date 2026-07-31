@@ -988,7 +988,7 @@ export const MOLOTOV_IGNITE_TEMP = 300;
  *  sandbox's speed dial scales it too. Counts down only while lit. */
 export const MOLOTOV_FUEL_TICKS = Math.round(15 * SIM_HZ_AT_1X);
 /** Fraction of the footprint that has to be quenching matter (liquid, CO₂) for the
- *  wick to go out. A quarter of the wooden crate's 0.25 — 소화 기준이 다이너마이트보다
+ *  wick to go out. Well under the wooden crate's 0.25 — 소화 기준이 다이너마이트보다
  *  훨씬 쉽다: a splash is enough, and a bottle that has actually fallen in water is
  *  submerged far past this (it floats at ~87% under). The dynamite's fuse, by
  *  contrast, water can't touch at all. */
@@ -3512,7 +3512,7 @@ function stepWoodBox(
 // The molotov is the first body whose *destruction is the feature*. Every other
 // one is built to survive: the crate wants a real hurl, the drum wants sustained
 // heat, the ball wants a fire. A bottle wants to be thrown at something, so it
-// breaks at a quarter of the crate's speed (MOLOTOV_SMASH_SPEED) and everything
+// breaks at under a third of the crate's speed (MOLOTOV_SMASH_SPEED) and everything
 // interesting happens in what it leaves behind.
 
 /**
