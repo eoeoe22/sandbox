@@ -25,6 +25,9 @@ export const RUST = register({
   name: 'Rust',
   phase: Phase.Solid,
   color: rgb(175, 75, 45),
+  // Deliberately low dynamic range (7, matching Stone and Concrete) to break visual
+  // flatness across solid rust structures without visual noise.
+  colorVary: 7,
   density: 900,
   category: 'solid',
   thermal: { conductivity: 0.3 },
