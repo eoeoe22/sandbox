@@ -128,12 +128,31 @@ function stirShock(sim: SimContext, x: number, y: number): void {
     // the player built that container to *hold* the reaction. The pane still
     // shadows the wave; it just doesn't break.
     shatters: false,
+    // No pressure ring either. The ring is the one part of a detonation with no
+    // `onCell` hook, so it would keep flinging (and, via shockDeathChance,
+    // killing) `shockLoose` bodies past the crater no matter what the handler
+    // below says — and the stirring only ever needed the cells it can already
+    // reach. Leaving it out is what makes "touches no solid at all" true of every
+    // path, not just most of them.
+    pressure: false,
     onCell: (s, cx, cy, prevId, entryDx, entryDy, outB) => {
       if (prevId === EMPTY) return true; // invisible: claimed, no flash
       const m = getMaterial(prevId);
-      if (!m.explosive) return false; // ordinary matter: default handling
-      if (m.phase !== Phase.Solid) launchDebris(s, cx, cy, prevId, entryDx, entryDy, outB);
-      return true;
+      // Solids are never touched, full stop. Structural ones already shadow a
+      // POWER 0 front on their own, but a `shockLoose` solid (a crawling
+      // Termite/Nanobot) is matter the wave would otherwise carry — flung as
+      // Debris, and for the Termite killed outright by its `shockDeathChance`.
+      // This thump is scenery-neutral: claim the cell and do nothing.
+      if (m.phase === Phase.Solid) return true;
+      // A loose charge (sodium itself, gunpowder, …) is shoved like any other
+      // grain but never flashed — the default handler consumes an `explosive`
+      // cell into a flash *regardless of power*, i.e. the wave would detonate the
+      // very metal it exists to stir, plus anything stockpiled beside it.
+      if (m.explosive) {
+        launchDebris(s, cx, cy, prevId, entryDx, entryDy, outB);
+        return true;
+      }
+      return false; // ordinary loose matter: the plain Debris shove
     },
   });
 }

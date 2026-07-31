@@ -11,10 +11,13 @@
 //     pile thumps out an invisible shockwave that keeps the grit stirred
 //     (stirShock) — without it the salt settles into a lid and the burn stalls
 //     after one layer.
-//   • That thump shoves loose matter and breaks nothing: sand nearby is thrown
-//     around (the positive control that the wave arrives at all), a stone pillar
-//     at the same distance is untouched, and no Blast is ever painted — which is
-//     also what proves it never flashes an `explosive`, sodium included.
+//   • That thump moves loose matter and touches no solid whatsoever: sand nearby
+//     is thrown around (the positive control that the wave arrives at all), a
+//     stone pillar at the same distance is untouched, a `shockLoose` solid — the
+//     one kind a shockwave normally carries off, and kills — is left alone
+//     (Nanobot probe, plus the general "no Debris ever carries a solid" scan),
+//     glass touching the burn doesn't craze, and no Blast is ever painted, which
+//     is also what proves it never flashes an `explosive`, sodium included.
 //   • It stays a **burn, not a detonation**: the same pile dropped in water
 //     detonates instead (the control that keeps someone from "unifying" sodium's
 //     two reaction paths).
@@ -83,6 +86,10 @@ const SAND = ID('Sand');
 const GLASS = ID('Glass');
 const BROKEN_GLASS = ID('Broken Glass');
 const PLANT = ID('Plant');
+const NANOBOT = ID('Nanobot');
+const DEBRIS = ID('Debris');
+/** Phase.Solid — read off a known solid rather than importing the engine enum. */
+const SOLID_PHASE = getMaterial(ID('Stone')).phase;
 
 function makeWorld(w = 60, h = 60): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -227,6 +234,43 @@ function hottest(grid: Grid, id: number): number {
     count(grid, STONE) === stoneBefore, `${stoneBefore} → ${count(grid, STONE)} stone`);
   check('…and paints no Blast anywhere in the whole burn (invisible, and it never '
     + 'flashes an explosive)', !sawBlast);
+}
+
+// 4c-2. "Breaks no structure" is stronger than it sounds: a POWER 0 front is
+//     already shadowed by ordinary solids, but a `shockLoose` solid — a crawling
+//     Termite/Nanobot — is matter a shockwave *carries*, so a Woofer flings those
+//     like powder (and its shockDeathChance crushes a termite outright). This
+//     thump touches no solid of any kind. Nanobot is the probe that can prove it:
+//     chlorine doesn't gas it (it's a machine, not life), it has no heat death and
+//     no shockDeathChance, so the only thing that could ever remove it from the
+//     grid here is the wave picking it up as Debris.
+{
+  reseed();
+  const { grid, sim } = makeWorld(60, 60);
+  fill(grid, 0, 45, 59, 59, STONE);
+  fill(grid, 26, 42, 33, 44, SODIUM);
+  fill(grid, 23, 43, 24, 44, NANOBOT); // right up against the pile
+  const bots = count(grid, NANOBOT);
+  fill(grid, 5, 25, 54, 41, CHLORINE);
+  let minBots = bots;
+  let debrisCarriedSolid = false;
+  for (let t = 0; t < 300; t++) {
+    sim.step();
+    minBots = Math.min(minBots, count(grid, NANOBOT));
+    // The general form of the same claim, for every solid at once rather than one
+    // probe: a fragment in flight carries its origin material in `aux`, so if the
+    // wave ever picked a solid up it shows up here.
+    for (let i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] !== DEBRIS) continue;
+      const carried = grid.aux[i];
+      if (carried !== 0 && getMaterial(carried)?.phase === SOLID_PHASE) debrisCarriedSolid = true;
+    }
+  }
+  check('a shockLoose solid (Nanobot) is never picked up or crushed by the thump',
+    minBots >= bots, `${bots} bots, dipped to ${minBots}`);
+  check('…and no Debris fragment ever carries a solid at all', !debrisCarriedSolid);
+  check('…while the pile beside it still burned down', count(grid, SODIUM) <= 2,
+    `${count(grid, SODIUM)} sodium left`);
 }
 
 // 4d. Glass is the one thing a shockwave normally *does* mark: any real blast, and
