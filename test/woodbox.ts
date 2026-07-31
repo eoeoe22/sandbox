@@ -41,6 +41,8 @@ const SAWDUST = ID('Sawdust');
 const FIRE = ID('Fire');
 const SAND = ID('Sand');
 const DEBRIS = ID('Debris');
+const ACID = ID('Acid');
+const GLASS = ID('Glass');
 
 function makeWorld(w = 100, h = 100): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -638,6 +640,155 @@ function shoveIntoWall(
   }
   check('a near-miss blast alone never smashes a crate', alive && peak > 1,
     `shoved to ${peak.toFixed(1)} cells/tick`);
+}
+
+// 11. 산에 닿으면 파괴. Timber has nothing to resist Acid with, so contact — not a
+//     hurl, not a fire — is the whole condition, and the crate gives way after about
+//     a second of it. Every scene here has a control that shares the geometry, so
+//     "it dissolved" can never be read off a crate that would have died anyway.
+{
+  // The dunk, run twice over the same pool geometry: Acid eats it, Water holds it up.
+  const dunk = (fluid: number, ticks: number) => {
+    const { grid, sim } = makeWorld();
+    floor(grid, 90);
+    for (let y = 60; y < 90; y++)
+      for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = fluid;
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    const crate = createWoodBox(50, 40);
+    grid.objects.push(crate);
+    let brokeAt = -1;
+    let goneAt = -1;
+    let partsAtBreak: string[] = [];
+    // The crate's own motion the tick it gives way, and what the wreckage left with
+    // — a collapse hands each shard exactly the parent's velocity (see placeShard).
+    let crateV = [0, 0];
+    let shardV: number[][] = [];
+    let shardSpin: number[] = [];
+    for (let t = 1; t <= ticks; t++) {
+      sim.step();
+      if (brokeAt < 0 && !grid.objects.includes(crate as SimBody)) {
+        brokeAt = t;
+        partsAtBreak = boxes(grid).map((b) => b.part).sort();
+        crateV = [crate.vx, crate.vy];
+        shardV = boxes(grid).map((b) => [b.vx, b.vy]);
+        shardSpin = boxes(grid).map((b) => b.angularVelocity);
+      }
+      if (goneAt < 0 && grid.objects.length === 0) goneAt = t;
+    }
+    return { grid, crate, brokeAt, goneAt, partsAtBreak, crateV, shardV, shardSpin };
+  };
+  const acid = dunk(ACID, 400);
+  const water = dunk(WATER, 400);
+  check('acid dissolves a crate that falls into it', acid.brokeAt > 0, `tick ${acid.brokeAt}`);
+  check('the same crate in water is untouched (대조군)',
+    water.brokeAt < 0 && water.grid.objects.includes(water.crate as SimBody));
+  check('an acid break yields the same 3 shards',
+    JSON.stringify(acid.partsAtBreak) === JSON.stringify(['piece1', 'piece2', 'piece3']),
+    JSON.stringify(acid.partsAtBreak));
+  // Nothing struck it — it was eaten — so the wreckage carries only the motion the
+  // crate already had ('collapse'), rather than being thrown outward.
+  check('acid wreckage is not flung (collapse, not impact)',
+    acid.shardV.length === 3 &&
+      acid.shardV.every(([vx, vy]) => vx === acid.crateV[0] && vy === acid.crateV[1]),
+    `crate v=${acid.crateV.map((v) => v.toFixed(3)).join(',')} shards ${acid.shardV
+      .map(([vx, vy]) => `${vx.toFixed(3)},${vy.toFixed(3)}`)
+      .join(' ')}`);
+  check('nor spun', acid.shardSpin.every((w) => w === acid.shardSpin[0]),
+    acid.shardSpin.map((w) => w.toFixed(4)).join(' '));
+  // The shards are timber too, so the puddle goes on eating them: the crate is a
+  // chain down to nothing, not a one-off.
+  check('the shards dissolve in their turn', acid.goneAt > acid.brokeAt,
+    `crate at ${acid.brokeAt}, last shard at ${acid.goneAt}`);
+}
+
+// 11b. Contact is all it takes: a thin film poured on the floor BESIDE a resting
+//      crate spreads over to it and eats it, with Sawdust turning up on the way
+//      down — the dry-land counterpart of the dunk above. The floor is Glass
+//      (acid-resistant) so the film flows to the crate instead of eating its way
+//      down through the stone first.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70, GLASS);
+  const crate = createWoodBox(50, 63);
+  grid.objects.push(crate);
+  for (let t = 0; t < 60; t++) sim.step(); // settle on the floor first, in clean air
+  check('the crate is fine before the acid arrives', grid.objects.includes(crate as SimBody));
+  for (let x = 62; x < 76; x++) grid.cells[grid.idx(x, 69)] = ACID; // a thin film, clear of the crate
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  let brokeAt = -1;
+  let sawdustSeen = 0;
+  for (let t = 1; t <= 600; t++) {
+    sim.step();
+    if (brokeAt < 0 && !grid.objects.includes(crate as SimBody)) brokeAt = t;
+    sawdustSeen = Math.max(sawdustSeen, count(grid, SAWDUST));
+  }
+  check('a puddle that flows up against a crate destroys it', brokeAt > 0, `tick ${brokeAt}`);
+  check('the wreckage still leaves Sawdust behind', sawdustSeen > 0, `${sawdustSeen} cells`);
+}
+
+// 11c. It is SUSTAINED contact, not a touch: a crate splashed and pulled clear
+//      before the second is up survives, and its counter bleeds back to zero.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const crate = createWoodBox(50, 63);
+  grid.objects.push(crate);
+  for (let t = 0; t < 60; t++) sim.step();
+  for (let y = 66; y < 70; y++)
+    for (let x = 44; x < 57; x++) grid.cells[grid.idx(x, y)] = ACID;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  for (let t = 0; t < 15; t++) sim.step(); // half of WOOD_BOX_ACID_TICKS (1초 = 30틱)
+  const survivedSplash = grid.objects.includes(crate as SimBody);
+  const soaked = crate.acidTicks;
+  for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === ACID) grid.cells[i] = 0;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  for (let t = 0; t < 200; t++) sim.step();
+  check('a brief splash does not dissolve a crate', survivedSplash, `acidTicks=${soaked}`);
+  check('the splash did register while it lasted', soaked > 0 && soaked <= 15, `${soaked} ticks`);
+  check('pulled out of the acid, the crate keeps standing',
+    grid.objects.includes(crate as SimBody) && crate.acidTicks === 0, `acidTicks=${crate.acidTicks}`);
+}
+
+// 11d. Frozen acid is a block of ice, not a puddle: a crate parked on one is safe
+//      (the same rule that stops icy slush from dousing a fire). The liquid pool is
+//      the control — same scene, same ticks, only the temperature differs.
+{
+  const chilled = (temp: number) => {
+    const { grid, sim } = makeWorld();
+    floor(grid, 90);
+    for (let y = 60; y < 90; y++)
+      for (let x = 0; x < grid.width; x++) {
+        grid.cells[grid.idx(x, y)] = ACID;
+        grid.temp[grid.idx(x, y)] = temp;
+      }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    const crate = createWoodBox(50, 55);
+    grid.objects.push(crate);
+    for (let t = 0; t < 150; t++) sim.step();
+    return grid.objects.includes(crate as SimBody);
+  };
+  check('frozen acid does not dissolve a crate', chilled(-200));
+  check('the same pool unfrozen does (대조군)', !chilled(20));
+}
+
+// 11e. Only timber reacts. A steel drum and a rubber ball sitting in the same acid
+//      that eats a crate are untouched — acid is the wooden box's ending, not a
+//      universal object solvent.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  for (let y = 60; y < 90; y++)
+    for (let x = 0; x < grid.width; x++) grid.cells[grid.idx(x, y)] = ACID;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const drum = createDrum(25, 55);
+  const ball = createRubberBall(75, 55);
+  const crate = createWoodBox(50, 55);
+  grid.objects.push(drum, ball, crate);
+  for (let t = 0; t < 300; t++) sim.step();
+  check('a steel drum shrugs the acid off', grid.objects.includes(drum as SimBody));
+  check('so does a rubber ball', grid.objects.includes(ball as SimBody));
+  check('while the crate in the same pool is gone',
+    !grid.objects.includes(crate as SimBody));
 }
 
 console.log(failures === 0 ? '\nAll wooden-box checks passed.' : `\n${failures} check(s) FAILED.`);

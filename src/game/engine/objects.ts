@@ -379,6 +379,10 @@ export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
  * (가연성). Sustained heat sets it alight; while alight it emits real Fire
  * particles into the grid and `burnTicks` counts down to collapse; a good soaking
  * puts it out again.
+ *
+ * The one material that ends it without heat is Acid: timber has nothing to resist
+ * it with, so a second of contact eats through the body (산에 닿으면 파괴 — see
+ * `acidTicks` and WOOD_BOX_ACID_TICKS). No other body reacts to a puddle at all.
  */
 export interface SimWoodBox {
   kind: 'woodbox';
@@ -425,6 +429,11 @@ export interface SimWoodBox {
   /** Ticks of fire left before the body burns through and collapses. 0 means it
    *  isn't alight; set when it catches, cleared back to 0 if it's doused. */
   burnTicks: number;
+  /** Consecutive ticks the body has been in contact with Acid (산에 닿으면 파괴).
+   *  Its own counter rather than a share of `heatTicks`, because a crate can be
+   *  standing in acid *and* heating toward its ignition point at the same time —
+   *  see WOOD_BOX_ACID_TICKS. Bleeds back down once it's pulled out of the acid. */
+  acidTicks: number;
   /** True while the pointer is dragging this body (see SimObject.held): its
    *  physics and its fire alike are suspended so it tracks the cursor. */
   held?: boolean;
@@ -1013,6 +1022,20 @@ const WOOD_BOX_FLAME_CHANCE = 0.02;
  *  the fire to go out. Above a stray splash, below the ~47% a floating crate is
  *  submerged by — so dunking a burning crate really does save it. */
 const WOOD_BOX_DOUSE_FRAC = 0.25;
+/** Sustained ticks of Acid contact before the timber dissolves through (산에 닿으면
+ *  파괴). Sized in *seconds* at the default sim rate like the burn timers, so the
+ *  speed dial scales it too. One second — much quicker than the 5-second burn,
+ *  because acid eating a crate should read as a distinct, decisive way to lose one
+ *  rather than a slow cook — but still long enough that a crate hauled through a
+ *  splash and straight back out survives (the counter bleeds back down at the same
+ *  rate it built up). The shards it leaves are timber too, so each of them then
+ *  takes its own second in the same puddle: a crate dropped in acid is a ~2-second
+ *  chain down to Sawdust, which the acid itself goes on to corrode on the grid. */
+const WOOD_BOX_ACID_TICKS = Math.round(1 * SIM_HZ_AT_1X);
+/** How far past its own footprint a body feels acid (cells). Half a cell, so a
+ *  crate resting *against* a puddle counts as touching it and not only one
+ *  wading in it. */
+const ACID_CONTACT_MARGIN = 0.5;
 /** Per-cell chance a shattered shard leaves Sawdust, scattered over the body's
  *  INSCRIBED DISC rather than its full collision box — a tuned yield, not a
  *  property of the shape, so it must not grow just because the box gained flat
@@ -1127,6 +1150,7 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
     heatTicks: 0,
     temp: AMBIENT_TEMP,
     burnTicks: 0,
+    acidTicks: 0,
   };
 }
 
@@ -2935,6 +2959,54 @@ function footprintTouchesVoid(o: SimBody, ctx: SimContext): boolean {
 }
 
 /**
+ * Is there liquid Acid against this body? The wooden crate is the only body that
+ * cares (산에 닿으면 파괴 — timber has nothing to resist it with, where the drum's
+ * steel and the ball's rubber both shrug the puddle off), and it dissolves only
+ * after sustained contact rather than the instant it lands (WOOD_BOX_ACID_TICKS),
+ * so this reports contact and lets the caller run the clock.
+ *
+ * The margin catches the puddle a body has come to rest *against* as well as the
+ * one it is wading in, which matters because acid is a liquid a crate FLOATS on:
+ * buoyancy leaves it riding the surface, and a hair of tilt or wave can put the
+ * footprint just clear of the topmost acid cell for a tick.
+ *
+ * Frozen acid deliberately does NOT count — a puddle chilled below its freeze
+ * point is a block of ice, structure rather than liquid, and the rest of the
+ * engine already treats it that way (the same call `bodyQuenchFrac` makes when it
+ * refuses to let an icy puddle douse a fire). So freezing an acid bath is a real
+ * way to park a crate in one.
+ *
+ * Read-only, including the acid: unlike a corroded *cell*, which acid.ts consumes
+ * itself over 1:1, a dissolved body takes nothing out of the puddle. The object
+ * layer stays read-only over terrain it didn't put there, and the alternative —
+ * a splash that runs out halfway through and leaves the crate standing — trades
+ * away the one thing this rule is for (닿으면 파괴). The puddle still gets its
+ * bill: the Sawdust the wreckage leaves behind IS corrodible, so the acid spends
+ * itself eating that.
+ */
+function footprintTouchesAcid(o: SimBody, ctx: SimContext): boolean {
+  const core = bodyCore(o);
+  const r = core.r + ACID_CONTACT_MARGIN;
+  const r2 = r * r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX - ACID_CONTACT_MARGIN);
+  const x1 = Math.ceil(o.x + spanX + ACID_CONTACT_MARGIN);
+  const y0 = Math.floor(o.y - spanY - ACID_CONTACT_MARGIN);
+  const y1 = Math.ceil(o.y + spanY + ACID_CONTACT_MARGIN);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== ACID.id || ctx.isFrozen(cx, cy)) continue;
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * A blast that doesn't consume a body still shoves it. Scan the ring just outside
  * the body's footprint for shockwave flash cells; if any are near, push the body
  * outward along the summed away-from-blast direction. The push is a *floor* on
@@ -3982,11 +4054,11 @@ function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
  *     real shock to pass on, so the shards are thrown clear and a shard's own
  *     crumbs (Sawdust / Metal Powder) are flung across the scene.
  *   - 'collapse': nothing struck it — it simply gave way. It burnt through, it
- *     melted open, it was crushed/entombed in solid with nowhere to go, or a
- *     Nuclear Ray ate it away. Wreckage from a collapse just DROPS where the body
- *     stood: the shards fall apart in place carrying only the motion the body
- *     already had, and the crumbs settle into a heap instead of spraying
- *     (불타거나 끼인 경우엔 튀지 않고 그냥 부서짐).
+ *     melted open, it was eaten through by Acid, it was crushed/entombed in solid
+ *     with nowhere to go, or a Nuclear Ray ate it away. Wreckage from a collapse
+ *     just DROPS where the body stood: the shards fall apart in place carrying
+ *     only the motion the body already had, and the crumbs settle into a heap
+ *     instead of spraying (불타거나 끼인 경우엔 튀지 않고 그냥 부서짐).
  */
 export type BreakCause = 'impact' | 'collapse';
 
@@ -4163,14 +4235,29 @@ function breakWoodBox(
 }
 
 /**
- * Per-tick flammability for a wooden box, after this tick's heat conduction
- * (called from evaluateTriggers with the resolved `heat`). Three states and
- * nothing else:
+ * Per-tick chemistry and flammability for a wooden box, after this tick's heat
+ * conduction (called from evaluateTriggers with the resolved `heat`).
+ *
+ * ACID first, because it is the one end that doesn't care what state the timber is
+ * in: touching a puddle for WOOD_BOX_ACID_TICKS eats through the body whether it
+ * is cold, warm or alight (산에 닿으면 파괴). Ordinary contact is enough — where the
+ * crate's other break needs a genuine hurl and its burn needs a real fire, acid
+ * only has to be there. It is a 'collapse': nothing struck the box, it was eaten,
+ * so a crate slumps into its three shards on the spot and a shard settles into a
+ * heap of Sawdust (which the acid then corrodes on the grid, as it would any
+ * powder). A crate carried through a splash and back out survives — the counter
+ * bleeds back down.
+ *
+ * Then the fire, which is three states and nothing else:
  *   1. NOT ALIGHT — sustained heat at/above the timber's ignition point sets it
  *      burning; anything less lets the counter bleed back down.
  *   2. ALIGHT — a good soaking (a pond, a poured bucket, CO₂ over a quarter of the
  *      footprint) puts it straight back out, otherwise it throws real Fire cells
- *      and its burn timer runs down.
+ *      and its burn timer runs down. Acid is a liquid and cool, so a bath of it
+ *      douses the crate on the way to dissolving it — which is why an acid break
+ *      normally hands the shards no fire, and a mere splash (too little to douse
+ *      with, enough to touch) is the case where a burning crate does pass its
+ *      flames on.
  *   3. BURNT THROUGH — the body gives way: a crate into its three shards, a shard
  *      into Sawdust (see breakWoodBox). Nothing struck it, so the wreckage falls
  *      apart in place rather than being thrown ('collapse').
@@ -4182,6 +4269,14 @@ function stepWoodBox(
   heat: number,
   spawn: SimBody[],
 ): boolean {
+  if (footprintTouchesAcid(o, ctx)) {
+    if (++o.acidTicks >= WOOD_BOX_ACID_TICKS) {
+      breakWoodBox(o, ctx, spawn, o.burnTicks > 0, 'collapse');
+      return false;
+    }
+  } else if (o.acidTicks > 0) {
+    o.acidTicks--;
+  }
   if (o.burnTicks <= 0) {
     if (heat >= WOOD_BOX_IGNITE_TEMP) {
       o.heatTicks++;
