@@ -89,6 +89,22 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
   }
   return -1;
 }
+/** Horizontal spread of material `id` on the grid, in cells (0 if there is none) —
+ *  how far it travelled, which is what tells a thrown scatter from a heap. */
+function spread(grid: Grid, id: number): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < grid.cells.length; i++) {
+    if (grid.cells[i] !== id) continue;
+    const x = i % grid.width;
+    if (x < lo) lo = x;
+    if (x > hi) hi = x;
+  }
+  return hi < lo ? 0 : hi - lo + 1;
+}
+/** Ticks for launched Debris fragments to finish their arc and deposit their
+ *  cargo (LIFE_MIN..LIFE_MIN+LIFE_VAR is 9..16 ticks; see materials/debris.ts). */
+const SETTLE_TICKS = 40;
 
 // 1. Geometry: the body is sized from its own art, so the sprite and the capsule
 //    the world collides with cannot disagree. (Row widths are checked by the
@@ -128,8 +144,14 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
   grid.objects.push(createMolotov(50, 40)); // ~23 cells of free fall
   const broke = stepUntilGone(sim, grid, 120);
   check('a ~23-cell drop shatters the bottle', broke >= 0, `broke on tick ${broke}`);
-  check('it leaves Broken Glass', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
   check('it leaves Alcohol', count(grid, ALCOHOL) > 0, `${count(grid, ALCOHOL)} cells`);
+  // The shards LAUNCH, so on the break tick they are Debris in flight — no Broken
+  // Glass has landed yet. That gap is the proof they were thrown rather than laid
+  // down in place; it fills in once the arcs finish.
+  check('the shards are in flight on the break tick', count(grid, GLASS) === 0,
+    `${count(grid, GLASS)} landed`);
+  for (let t = 0; t < SETTLE_TICKS; t++) sim.step();
+  check('and land as Broken Glass', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
 
   const w2 = makeWorld();
   floor(w2.grid, 70);
@@ -164,11 +186,18 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
   grid.objects.push(m);
   const broke = stepUntilGone(sim, grid, 120);
   const spillHeat = hottest(grid, ALCOHOL);
+  const spillW = spread(grid, ALCOHOL); // measured on the break tick, before it flows
   check('an unlit bottle still spills alcohol', broke >= 0 && count(grid, ALCOHOL) > 0,
     `${count(grid, ALCOHOL)} cells`);
   check('and it is cold', spillHeat < 250, `hottest spill cell ${spillHeat.toFixed(0)}°`);
-  for (let t = 0; t < 40; t++) sim.step();
+  for (let t = 0; t < SETTLE_TICKS; t++) sim.step();
   check('no fire comes of it', count(grid, FIRE) === 0, `${count(grid, FIRE)} Fire cells`);
+  // 사방으로 튄다: the shards land spread WIDER than the bottle that threw them,
+  // while the fuel — same break, same footprint, spawned in place — starts out no
+  // wider than the bottle itself. One flies, one doesn't.
+  const glassW = spread(grid, GLASS);
+  check('the shards scatter wider than the bottle', glassW > spillW,
+    `glass ${glassW} cells vs the spill's ${spillW}`);
 }
 
 // 6. 물에 빠져도 소화 — and the contrast that makes the claim mean something: a stick
@@ -253,9 +282,10 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
   m.vy = 20; // hurl it at the floor
   const broke = stepUntilGone(sim, grid, 60);
   check('an empty bottle still shatters', broke >= 0, `broke on tick ${broke}`);
-  check('into Broken Glass', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
   check('and no Alcohol at all', count(grid, ALCOHOL) === alcoholBefore,
     `${count(grid, ALCOHOL)} vs ${alcoholBefore} before`);
+  for (let t = 0; t < SETTLE_TICKS; t++) sim.step(); // let the thrown shards land
+  check('into Broken Glass', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
 }
 
 // 10. Heat far past its own flame bursts the bottle where it stands — the fuel
@@ -276,6 +306,7 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
       m.temp = deg; // one tick of the 가열 브러시
       sim.step();
     }
+    for (let t = 0; t < SETTLE_TICKS; t++) sim.step(); // let any thrown shards land
     return { survived: grid.objects.length === 1, glass: count(grid, GLASS) };
   };
   const hot = hold(1600, 60);
@@ -296,6 +327,7 @@ function stepUntilGone(sim: Simulation, grid: Grid, limit: number): number {
   detonate(sim.context, Math.floor(m.x), Math.floor(m.y), 0, { reach: 20, power: 6, pressure: false });
   const broke = stepUntilGone(sim, grid, 20);
   check('a blast direct hit shatters it', broke >= 0, `broke on tick ${broke}`);
+  for (let t = 0; t < SETTLE_TICKS; t++) sim.step(); // let the thrown shards land
   check('with the usual glass wreckage', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
 }
 

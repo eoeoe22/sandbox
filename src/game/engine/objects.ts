@@ -1003,13 +1003,16 @@ export const MOLOTOV_BURST_TEMP = 1100;
 /** Sustained ticks above MOLOTOV_BURST_TEMP before it bursts, so a single hot
  *  splash doesn't pop it. */
 const MOLOTOV_BURST_TICKS = 5;
-/** Per-cell chance a shattered bottle leaves Broken Glass, and — if it still had
- *  fuel — Alcohol in the cells the glass didn't take. Deliberately sparse (소량):
- *  the two together cover well under two-thirds of a footprint that is itself only
- *  the bottle's own silhouette, so a broken molotov leaves a puddle and a scatter
- *  of shards rather than a drum's flood. */
+/** Per-cell chance a shattered bottle throws a Broken Glass shard, and — if it
+ *  still had fuel — leaves Alcohol in the cells the shards didn't take. The
+ *  footprint is only the bottle's own silhouette, so even at these rates a broken
+ *  molotov is a puddle and a scatter of shards, not a drum's flood. */
 const MOLOTOV_GLASS_CHANCE = 0.22;
-const MOLOTOV_ALCOHOL_CHANCE = 0.4;
+const MOLOTOV_ALCOHOL_CHANCE = 0.55;
+/** How hard the shards are thrown (the `out` budget launchDebris scales its speed
+ *  from). Level with the wooden crate's Sawdust scatter — a bursting bottle sprays
+ *  glass the way a bursting shard sprays shavings. */
+const MOLOTOV_GLASS_SCATTER = 1.5;
 
 /** Which bottle to draw and to shatter: it still has fuel, or it's a spent shell. */
 export function molotovBottle(o: SimMolotov): MolotovBottle {
@@ -3534,25 +3537,38 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
 }
 
 /**
- * Shatter the bottle across its own footprint: Broken Glass everywhere (깨진 유리),
- * plus its Alcohol in the cells the glass didn't take — but only if it still HAD
- * fuel, so a spent 빈 유리병 leaves nothing but shards (알콜 생성 없이). If the wick
- * was lit, the spilt fuel is spawned already burning (불붙은 alcohol): pinned to
- * FUEL_BURN_TEMP, which is what combustion.ts reads as a cell that is alight, so
- * the puddle wreathes itself in flame and spreads on its own from the next tick.
+ * Shatter the bottle across its own footprint. Two byproducts, and they leave in
+ * deliberately different ways:
  *
- * Spawned in place rather than flung with launchDebris the way a crate's Sawdust
- * is, for two reasons that point the same way. A bottle bursting against a wall
- * *paints* it — the fuel goes onto what it hit, it doesn't arc away — and, more
- * decisively, a Debris grain packs its flight state into the cell's `temp`
- * (materials/debris.ts) and deposits its cargo at that material's own initial
- * temperature. A launched fuel grain would therefore land cold, and the burning
- * molotov would be indistinguishable from the cold one. So the break has no
- * impact/collapse split at all (contrast WoodBoxBreakCause): however the bottle
- * died, its contents land where it stood.
+ *   - BROKEN GLASS **flies**. Each shard launches as a blast fragment
+ *     (`launchDebris`, the crate's Sawdust scatter), thrown outward from the
+ *     bottle's centre so the left half sprays left and the right half right, then
+ *     arcs and rains back down (깨진 부위에서 사방으로 튄다). Like a blast's ejecta it
+ *     may take over any non-solid cell.
+ *   - ALCOHOL **stays**. It is spawned in place, and only if the bottle still HAD
+ *     fuel — so a spent 빈 유리병 leaves nothing but shards (알콜 생성 없이). If the
+ *     wick was lit the fuel is born already burning (불붙은 alcohol): pinned to
+ *     FUEL_BURN_TEMP, which is what combustion.ts reads as a cell that is alight,
+ *     so the puddle wreathes itself in flame and spreads on its own next tick.
  *
- * Solid terrain is skipped, so the object layer stays read-only over anything it
- * didn't put there — the same Phase.Solid guard the drum's spill uses.
+ * The fuel cannot be flung, and that is a hard constraint rather than a taste
+ * call: a Debris grain packs its flight state into the cell's `temp`
+ * (materials/debris.ts) and deposits its cargo at that material's own *initial*
+ * temperature, so a launched fuel grain would always land cold and the burning
+ * molotov would be indistinguishable from the doused one. It also reads better —
+ * a bottle bursting against a wall paints it rather than arcing the fuel away.
+ * Glass carries no state to lose, so it is free to fly.
+ *
+ * Neither writes over solid terrain (the object layer stays read-only over
+ * anything it didn't put there). The two use the drum's established pair of
+ * guards for exactly these two roles: `isSolidCell` for the thrown fragments
+ * (spawnDrumDebris) and the Phase.Solid test for the poured liquid
+ * (spawnFillSpill) — which differ only over a frozen puddle, where shards skitter
+ * off the ice and the fuel spreads across it.
+ *
+ * However the bottle died, this is what it leaves: there is no impact/collapse
+ * split (contrast WoodBoxBreakCause), because a crate can give way without being
+ * struck whereas glass only ever ends one way.
  */
 function breakMolotov(o: SimMolotov, ctx: SimContext): void {
   const fuelled = o.fuelTicks > 0;
@@ -3571,13 +3587,14 @@ function breakMolotov(o: SimMolotov, ctx: SimContext): void {
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
-      const cell = ctx.get(cx, cy);
-      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
       if (ctx.chance(MOLOTOV_GLASS_CHANCE)) {
-        ctx.spawn(cx, cy, BROKEN_GLASS.id);
+        if (isSolidCell(cx, cy, ctx)) continue;
+        launchDebris(ctx, cx, cy, BROKEN_GLASS.id, cx + 0.5 < o.x ? -1 : 1, -1, MOLOTOV_GLASS_SCATTER);
         continue;
       }
       if (!fuelled || !ctx.chance(MOLOTOV_ALCOHOL_CHANCE)) continue;
+      const cell = ctx.get(cx, cy);
+      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
       ctx.spawn(cx, cy, ALCOHOL.id);
       // spawn() resets the cell to the material's own initial temperature, so the
       // burning pin has to go on afterwards.
