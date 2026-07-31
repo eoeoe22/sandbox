@@ -5,7 +5,7 @@ import { getMaterial } from '../materials/registry';
 import { EMPTY, Phase, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
 import { rgb, tinted, frosted, buildGlow, shade, type GlowRamp } from './color';
-import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
+import { drumSpriteFor, drumPieceSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
 import {
   SMOKE_BOMB_SPRITE,
@@ -24,7 +24,7 @@ import {
   wooferExcursion,
   wooferTileIndex,
 } from './wooferDriver';
-import type { DrumFill, SimWoodBox } from '../engine/objects';
+import type { SimCapsule, SimWoodBox } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -2056,27 +2056,30 @@ export class CanvasRenderer implements Renderer {
     }
   }
 
-  /** Rasterize one drum: the shared capsule-sprite pass with the sprite its `fill`
-   *  selects (the body tint varies by fill; the shape is shared). */
+  /** Rasterize one drum — the whole barrel or one of the three shards it bursts
+   *  into — through the shared capsule-sprite pass. The sprite its `fill` selects
+   *  (the body tint varies by fill; the barrel's shape is shared), or that shard's
+   *  own torn outline, tinted the same way. Both draw into the body's `halfW`/
+   *  `halfH` display box: for the barrel that IS its capsule box, so nothing
+   *  changed there; a shard's is its own art's rectangle. */
   private rasterizeDrum(
     buf: Uint32Array,
     w: number,
     h: number,
     s: number,
-    o: {
-      x: number;
-      y: number;
-      angle: number;
-      halfLength: number;
-      radius: number;
-      fill: DrumFill;
-    },
+    o: SimCapsule,
     heatColor: number | null = null,
   ): void {
-    const sprite = drumSpriteFor(o.fill);
+    if (o.part !== 'drum') {
+      const art = drumPieceSpriteFor(o.fill, o.part);
+      this.rasterizeSprite(
+        buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor,
+      );
+      return;
+    }
     this.rasterizeSprite(
-      buf, w, h, s, o, o.radius, o.halfLength + o.radius,
-      sprite, DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor,
+      buf, w, h, s, o, o.halfW, o.halfH,
+      drumSpriteFor(o.fill), DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor,
     );
   }
 
