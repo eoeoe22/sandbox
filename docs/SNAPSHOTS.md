@@ -17,10 +17,11 @@
 
 - 저장 키는 `particle-sandbox:snapshots:v1`, 상한 **50개**(`MAX_SNAPSHOTS`).
 - 월드 페이로드는 자동 저장과 **완전히 동일한** RLE+base64 봉투(`serializeWorld`)
-  — 셀·온도·`aux`(16비트, `aux`/`auxHi` 두 평면)·겹침 `overlay`/`overlayAux`.
+  — 셀·온도·`aux`(16비트, `aux`/`auxHi` 두 평면)·겹침 `overlay`/`overlayAux` 및 독립 오브젝트(`obj` 배열; 고무공·드럼통·다이나마이트·연막탄·나무상자·화염병 등).
 - 슬롯 메타는 `id` · `name`(≤40자) · **`desc`(≤200자)** · `createdAt` · `w`/`h` ·
   `thumb`.
 - 스토리지 미지원·용량 초과는 조용히 실패한다(`null` 반환 → UI가 빨간 flash).
+- 스냅샷 불러오기 시 `snapshotFit` (`resampleScene`, `placeScene`) 과정에서 독립 오브젝트의 좌표·크기·질량·관성모멘트도 격자 스케일에 맞추어 자동 리샘플링 및 크롭 배치된다.
 
 ### 설명(`desc`) 필드
 

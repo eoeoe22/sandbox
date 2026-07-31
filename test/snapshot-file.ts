@@ -50,11 +50,13 @@ function check(name: string, ok: boolean, detail = ''): void {
   if (!ok) failed++;
 }
 
+import { createRubberBall, createDrum } from '../src/game/engine/objects';
+
 /**
  * A small scene with something in every plane the format carries: a Wall floor,
  * a Sand pile above it, a Water pocket with a live overlay (겹침) cell, a hot
- * cell, and a non-zero aux word — so a dropped plane shows up as a diff rather
- * than passing unnoticed.
+ * cell, a non-zero aux word, and free rigid objects (독립 오브젝트) — so a dropped
+ * plane shows up as a diff rather than passing unnoticed.
  */
 function makeScene(w = 24, h = 16): Grid {
   const grid = new Grid(w, h);
@@ -70,6 +72,8 @@ function makeScene(w = 24, h = 16): Grid {
   const soaked = (h - 3) * w + 7;
   grid.overlay[soaked] = WATER.id;
   grid.overlayAux[soaked] = 0x0201;
+  grid.objects.push(createRubberBall(10, 8, 3));
+  grid.objects.push(createDrum(18, 5, 'oil'));
   return grid;
 }
 
@@ -127,6 +131,13 @@ if (parsed) {
     const soaked = (grid.height - 3) * grid.width + 7;
     check('overlay survives', back.overlay?.[soaked] === WATER.id);
     check('overlayAux survives', back.overlayAux?.[soaked] === 0x0201);
+    check(
+      'objects survive the file round trip',
+      back.objects?.length === 2 &&
+        back.objects[0].kind === 'ball' &&
+        back.objects[0].x === 10 &&
+        back.objects[1].kind === 'drum',
+    );
   }
 }
 

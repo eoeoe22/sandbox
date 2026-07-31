@@ -62,6 +62,7 @@ import {
 import type { SimSpeed, SmokeLevel, HeatRateMode, SnapshotFit } from '../game/config';
 import { EMPTY, type BorderMode } from '../game/engine/types';
 import type { Grid } from '../game/engine/Grid';
+import type { SimBody, DrumPart, DrumFill, DrumState, WoodBoxPart } from '../game/engine/objects';
 
 // localStorage persistence for the whole session: every control-panel setting
 // and the world itself (cells + temperatures), so a reload resumes exactly
@@ -581,17 +582,210 @@ export interface PersistedWorld {
   /** The overlap fluid's parked aux state (Grid.overlayAux), paired with
    *  `overlay`. Undefined on saves that predate it (reloads as zero). */
   overlayAux?: Uint16Array;
+  /** Free rigid objects (독립 오브젝트), when the save carried them. */
+  objects?: SimBody[];
+}
+
+/** Sanitize an arbitrary object into a valid SimBody, or return null if invalid. */
+export function sanitizeObject(raw: unknown): SimBody | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const kind = o.kind;
+  if (typeof kind !== 'string') return null;
+
+  const num = (v: unknown, fallback = 0): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  const bool = (v: unknown, fallback = false): boolean =>
+    typeof v === 'boolean' ? v : fallback;
+
+  const x = num(o.x);
+  const y = num(o.y);
+  const vx = num(o.vx);
+  const vy = num(o.vy);
+
+  if (kind === 'ball') {
+    const r = num(o.r, 4);
+    if (r <= 0) return null;
+    return {
+      kind: 'ball',
+      x,
+      y,
+      vx,
+      vy,
+      r,
+      mass: num(o.mass, 1),
+      restitution: num(o.restitution, 0.8),
+      heatTicks: Math.max(0, Math.round(num(o.heatTicks))),
+      temp: num(o.temp, AMBIENT_TEMP),
+    };
+  }
+
+  const angle = num(o.angle);
+  const angularVelocity = num(o.angularVelocity);
+  const halfLength = Math.max(0, num(o.halfLength));
+  const radius = Math.max(0.1, num(o.radius, 1));
+  const mass = Math.max(0.001, num(o.mass, 1));
+  const momentOfInertia = Math.max(0.001, num(o.momentOfInertia, 1));
+  const restitution = num(o.restitution, 0.2);
+  const heatTicks = Math.max(0, Math.round(num(o.heatTicks)));
+  const temp = num(o.temp, AMBIENT_TEMP);
+
+  if (kind === 'drum') {
+    const part = (['drum', 'piece1', 'piece2', 'piece3'].includes(o.part as string)
+      ? o.part
+      : 'drum') as DrumPart;
+    const fill = (['empty', 'oil', 'acid'].includes(o.fill as string)
+      ? o.fill
+      : 'empty') as DrumFill;
+    const state = (['intact', 'destroyed', 'melted'].includes(o.state as string)
+      ? o.state
+      : 'intact') as DrumState;
+    const halfW = Math.max(0.1, num(o.halfW, radius));
+    const halfH = Math.max(0.1, num(o.halfH, halfLength + radius));
+    const cornerRadius = Math.max(0, num(o.cornerRadius, 0.5));
+    const blastGraceTicks = Math.max(0, Math.round(num(o.blastGraceTicks)));
+
+    return {
+      kind: 'drum',
+      part,
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      halfW,
+      halfH,
+      cornerRadius,
+      mass,
+      momentOfInertia,
+      restitution,
+      state,
+      fill,
+      heatTicks,
+      temp,
+      blastGraceTicks,
+    };
+  }
+
+  if (kind === 'dynamite') {
+    return {
+      kind: 'dynamite',
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      mass,
+      momentOfInertia,
+      restitution,
+      heatTicks,
+      temp,
+      lit: bool(o.lit, true),
+      fuseTicks: Math.max(0, Math.round(num(o.fuseTicks, 100))),
+    };
+  }
+
+  if (kind === 'smokebomb') {
+    return {
+      kind: 'smokebomb',
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      mass,
+      momentOfInertia,
+      restitution,
+      heatTicks,
+      temp,
+      fuseTicks: Math.max(0, Math.round(num(o.fuseTicks, 200))),
+      ventTicks: Math.max(0, Math.round(num(o.ventTicks))),
+    };
+  }
+
+  if (kind === 'woodbox') {
+    const part = (['crate', 'piece1', 'piece2', 'piece3'].includes(o.part as string)
+      ? o.part
+      : 'crate') as WoodBoxPart;
+    const halfW = Math.max(0.1, num(o.halfW, radius));
+    const halfH = Math.max(0.1, num(o.halfH, radius));
+    const cornerRadius = Math.max(0, num(o.cornerRadius, 0.5));
+    const burnTicks = Math.max(0, Math.round(num(o.burnTicks)));
+    const acidTicks = Math.max(0, Math.round(num(o.acidTicks)));
+
+    return {
+      kind: 'woodbox',
+      part,
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      halfW,
+      halfH,
+      cornerRadius,
+      mass,
+      momentOfInertia,
+      restitution,
+      heatTicks,
+      temp,
+      burnTicks,
+      acidTicks,
+    };
+  }
+
+  if (kind === 'molotov') {
+    return {
+      kind: 'molotov',
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      mass,
+      momentOfInertia,
+      restitution,
+      heatTicks,
+      temp,
+      lit: bool(o.lit, true),
+      fuelTicks: Math.max(0, Math.round(num(o.fuelTicks, 300))),
+    };
+  }
+
+  return null;
 }
 
 let lastWorldJson: string | null = null;
 
 /**
  * Serialize a grid into the v1 JSON envelope (RLE+base64 cells/temps/aux/
- * overlay). The same format `saveWorld` writes to localStorage, returned as a
+ * overlay + objects). The same format `saveWorld` writes to localStorage, returned as a
  * string so callers (the named-snapshot store) can stash it under their own
  * keys. No storage side effects.
  */
 export function serializeWorld(grid: Grid): string {
+  const objList: SimBody[] = [];
+  if (grid.objects && grid.objects.length > 0) {
+    for (const item of grid.objects) {
+      const sanitized = sanitizeObject(item);
+      if (sanitized) objList.push(sanitized);
+    }
+  }
   return JSON.stringify({
     v: 1,
     w: grid.width,
@@ -618,6 +812,7 @@ export function serializeWorld(grid: Grid): string {
     // into `ova` (low byte) + `ovaHi` (high). Also mostly zero.
     ova: bytesToBase64(encodeCellsRle(auxPlane(grid.overlayAux, 0))),
     ovaHi: bytesToBase64(encodeCellsRle(auxPlane(grid.overlayAux, 8))),
+    ...(objList.length > 0 ? { obj: objList } : {}),
   });
 }
 
@@ -681,7 +876,19 @@ export function deserializeWorld(raw: unknown): PersistedWorld | null {
     if (overlayAux && (!overlay || overlay[i] === 0)) overlayAux[i] = 0;
   }
 
-  return { w, h, cells, temp, aux, overlay, overlayAux };
+  let objects: SimBody[] | undefined;
+  const rawObj = j.obj ?? j.objects;
+  if (Array.isArray(rawObj)) {
+    const list: SimBody[] = [];
+    for (const item of rawObj) {
+      const sanitized = sanitizeObject(item);
+      if (sanitized) list.push(sanitized);
+      if (list.length >= 200) break;
+    }
+    if (list.length > 0) objects = list;
+  }
+
+  return { w, h, cells, temp, aux, overlay, overlayAux, objects };
 }
 
 /**

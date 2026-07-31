@@ -177,6 +177,95 @@ export function clampPlacement(
  * Returns `src` itself when it's already the requested size, so a 1:1 placement
  * — and the common "loaded on the machine that saved it" case — costs nothing.
  */
+import type { SimBody } from '../game/engine/objects';
+import { sanitizeObject } from './persistence';
+
+function resampleObjects(
+  objects: SimBody[] | undefined,
+  srcW: number,
+  srcH: number,
+  cw: number,
+  ch: number,
+): SimBody[] | undefined {
+  if (!objects || objects.length === 0) return undefined;
+  if (srcW === cw && srcH === ch) {
+    return objects.map((o) => sanitizeObject(o)).filter((o): o is SimBody => o !== null);
+  }
+
+  const sx = cw / srcW;
+  const sy = ch / srcH;
+  const s = (sx + sy) / 2;
+
+  const out: SimBody[] = [];
+  for (const orig of objects) {
+    const o = sanitizeObject(orig);
+    if (!o) continue;
+
+    o.x = o.x * sx;
+    o.y = o.y * sy;
+    o.vx = o.vx * sx;
+    o.vy = o.vy * sy;
+
+    if (o.kind === 'ball') {
+      o.r = o.r * s;
+      o.mass = o.mass * s * s;
+    } else if (o.kind === 'drum' || o.kind === 'woodbox') {
+      o.radius = o.radius * s;
+      o.halfLength = o.halfLength * s;
+      o.halfW = o.halfW * s;
+      o.halfH = o.halfH * s;
+      o.cornerRadius = o.cornerRadius * s;
+      o.mass = o.mass * s * s;
+      o.momentOfInertia = o.momentOfInertia * s * s * s * s;
+    } else if (o.kind === 'dynamite' || o.kind === 'smokebomb' || o.kind === 'molotov') {
+      o.radius = o.radius * s;
+      o.halfLength = o.halfLength * s;
+      o.mass = o.mass * s * s;
+      o.momentOfInertia = o.momentOfInertia * s * s * s * s;
+    }
+
+    out.push(o);
+  }
+
+  return out.length > 0 ? out : undefined;
+}
+
+function placeObjects(
+  objects: SimBody[] | undefined,
+  dstW: number,
+  dstH: number,
+  offX: number,
+  offY: number,
+): SimBody[] | undefined {
+  if (!objects || objects.length === 0) return undefined;
+
+  const out: SimBody[] = [];
+  for (const orig of objects) {
+    const o = sanitizeObject(orig);
+    if (!o) continue;
+
+    const nx = o.x + offX;
+    const ny = o.y + offY;
+
+    let ext = 1;
+    if (o.kind === 'ball') {
+      ext = o.r;
+    } else if (o.kind === 'drum' || o.kind === 'woodbox') {
+      ext = Math.max(o.halfW, o.halfH);
+    } else {
+      ext = o.radius + o.halfLength;
+    }
+
+    if (nx + ext >= 0 && nx - ext <= dstW && ny + ext >= 0 && ny - ext <= dstH) {
+      o.x = nx;
+      o.y = ny;
+      out.push(o);
+    }
+  }
+
+  return out.length > 0 ? out : undefined;
+}
+
 export function resampleScene(src: PersistedWorld, cw: number, ch: number): PersistedWorld {
   if (src.w === cw && src.h === ch) return src;
 
@@ -255,7 +344,8 @@ export function resampleScene(src: PersistedWorld, cw: number, ch: number): Pers
     }
   }
 
-  return { w: cw, h: ch, cells, temp, aux, overlay, overlayAux };
+  const objects = resampleObjects(src.objects, src.w, src.h, cw, ch);
+  return { w: cw, h: ch, cells, temp, aux, overlay, overlayAux, objects };
 }
 
 /**
@@ -319,7 +409,8 @@ export function placeScene(
       overlayAux.set(scene.overlayAux.subarray(srcRow + sx0, srcRow + sx1), dstRow + sx0);
   }
 
-  return { w: dstW, h: dstH, cells, temp, aux, overlay, overlayAux };
+  const objects = placeObjects(scene.objects, dstW, dstH, offX, offY);
+  return { w: dstW, h: dstH, cells, temp, aux, overlay, overlayAux, objects };
 }
 
 /**
