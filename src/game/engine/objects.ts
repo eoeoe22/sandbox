@@ -22,6 +22,7 @@ import { BROKEN_GLASS } from '../materials/brokenglass';
 import { FUEL_BURN_TEMP } from '../materials/combustion';
 import { VOID } from '../materials/void';
 import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
+import { drumPieceSpriteFor } from '../render/drumSprite';
 import { MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from '../render/molotovSprite';
 
 /**
@@ -151,8 +152,25 @@ export type DrumState = 'intact' | 'destroyed' | 'melted';
  */
 export type DrumFill = 'empty' | 'oil' | 'acid';
 
+/**
+ * Which piece of a drum a body is. `drum` is the whole barrel — the only one the
+ * palette can spawn — and the three `piece*` shards exist ONLY as the wreckage a
+ * burst drum leaves (드럼통을 부술 때만 소환), exactly as the wooden crate's shards
+ * do (see WoodBoxPart, which this mirrors deliberately: 드럼통 3종도 나무 상자처럼
+ * 부서진다). Kept as a field rather than as separate `kind`s for the same reason
+ * DrumFill is: every part runs one physics path, is steel to the electromagnet and
+ * melts the same way; only its size, its sprite and what it leaves behind vary —
+ * the barrel comes apart into the three shards, a shard shatters into Metal Powder.
+ */
+export type DrumPart = 'drum' | 'piece1' | 'piece2' | 'piece3';
+
+/** Just the shards — the parts that only ever exist as wreckage. */
+export type DrumPiecePart = Exclude<DrumPart, 'drum'>;
+
 export interface SimCapsule {
   kind: 'drum';
+  /** Whole barrel, or which shard of one (see DrumPart). */
+  part: DrumPart;
   /** Center position (float, grid coordinates). */
   x: number;
   y: number;
@@ -164,10 +182,19 @@ export interface SimCapsule {
   angle: number;
   /** Spin rate in radians/tick, integrated from contact torque. */
   angularVelocity: number;
-  /** Half the straight segment between the two round caps (cells). */
+  /** Half the straight segment between the two round caps (cells). A SHARD's is 0
+   *  — its medial "segment" is a single point, so it collides as the plain disc
+   *  inscribed in its own torn outline, the wooden box's trick (see SimWoodBox). */
   halfLength: number;
   /** Cap radius (cells). */
   radius: number;
+  /** Half-extents of the *display* box (cells): the sprite is drawn into
+   *  2·halfW × 2·halfH and rotated by `angle`. Never used by physics. The whole
+   *  barrel's is simply its capsule box (radius × halfLength+radius), so nothing
+   *  changed for it; a shard's is its own art's pixel box, which (unlike the
+   *  barrel's) is a genuine rectangle that differs per part. */
+  halfW: number;
+  halfH: number;
   /** Mass — buoyancy and collision response. */
   mass: number;
   /** Rotational inertia (angular accel = torque / momentOfInertia). Homogeneous
@@ -179,7 +206,9 @@ export interface SimCapsule {
    *  terminal — the object is dropped from the array the tick it reaches one. */
   state: DrumState;
   /** What the drum is carrying — what (if anything) it spills when destroyed.
-   *  Does not affect physics; see DrumFill and spawnFillSpill. */
+   *  Does not affect physics; see DrumFill and spawnFillSpill. A shard inherits it
+   *  from the barrel it came off for the sprite tint alone: the contents already
+   *  poured out when the barrel burst, and spawnFillSpill never fires twice. */
   fill: DrumFill;
   /** Consecutive ticks the footprint has sampled above the melt threshold, so a
    *  brief brush with heat doesn't melt it — only sustained exposure does. */
@@ -188,6 +217,9 @@ export interface SimCapsule {
    *  brush melt a drum floating in air, and holds heat picked up from a hot
    *  surrounding so it keeps melting briefly after being pulled out. */
   temp: number;
+  /** Ticks left of a fresh shard's blast grace — see DRUM_PIECE_BLAST_GRACE. 0 on
+   *  a whole barrel, which has no such window. */
+  blastGraceTicks: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimObject via SimBody. */
@@ -328,7 +360,7 @@ export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
  * sits exactly flush on flat ground, stacks flush on another crate, and sits
  * flush against a wall. A box resting at an odd angle would instead poke its
  * corners through the floor, which is why a settled box is eased back upright
- * (see settleWoodBoxUpright) — it tumbles freely while it's moving and squares up
+ * (see settleBodyUpright) — it tumbles freely while it's moving and squares up
  * once it has stopped.
  *
  * `halfW`/`halfH` are carried alongside `radius` because the sprite is (unlike
@@ -510,6 +542,82 @@ export const DRUM_MELT_TEMP = 1200;
 export const DRUM_MELT_TICKS = 24;
 
 /**
+ * Shard melt point (°), and how long it has to be held there. Deliberately a
+ * NOTCH above the whole barrel's 1200° rather than level with it, so the two
+ * stages of a melt are distinguishable: whatever melts the barrel down into its
+ * three shards very nearly always melts the shards too, and the shard stage is a
+ * quick glowing beat on the way to the puddle (조각 단계를 빠르게 거치도록) — but a
+ * heat source sitting in the 1200–1300° band (an oxygen-blown coal fire, the 가열
+ * brush held just so) melts the barrel open and then leaves the wreckage lying
+ * there, which is a more interesting outcome than one threshold could give. The
+ * hold is much shorter than the barrel's 24 ticks for the same reason: a torn
+ * scrap of shell gives way far faster than a sealed drum does.
+ */
+export const DRUM_PIECE_MELT_TEMP = 1300;
+export const DRUM_PIECE_MELT_TICKS = 8;
+
+/** Melt point (°) / sustained ticks for this part of a drum. */
+function drumMeltTemp(part: DrumPart): number {
+  return part === 'drum' ? DRUM_MELT_TEMP : DRUM_PIECE_MELT_TEMP;
+}
+function drumMeltTicks(part: DrumPart): number {
+  return part === 'drum' ? DRUM_MELT_TICKS : DRUM_PIECE_MELT_TICKS;
+}
+
+/** Cells per shard-sprite pixel — the same 1:2 mapping the whole drum has (its
+ *  24×32 sprite spans 12×16 cells at DRUM_RADIUS/DRUM_HALF_LENGTH), so the shards
+ *  come out at exactly the size they were inside the barrel. A drum built at a
+ *  non-default radius scales its shards by the same ratio (see createDrumPiece). */
+export const DRUM_CELLS_PER_PX = 0.5;
+
+/** Shard density. NOT the barrel's 1.6: that figure is the *effective* density of
+ *  a sealed hollow drum, which is why an empty one floats. Burst it open and there
+ *  is no trapped air left — a shard is a torn plate of steel, so it takes Metal
+ *  Powder's density (7, materials/metalpowder.ts) and sinks like the scrap it is. */
+export const DRUM_PIECE_DENSITY = 7;
+
+/** Outward speed (cells/tick) the three shards are thrown at as the barrel comes
+ *  apart, plus the lift that pops them out of the wreckage, plus the max magnitude
+ *  (rad/tick) of the random spin each is kicked with. Applies to an IMPACT break
+ *  only (see BreakCause) — a barrel that merely melted or was crushed drops its
+ *  shards where it stood. A shade livelier than the crate's (1.4) since what threw
+ *  these is always an explosion, never a fall. */
+const DRUM_SHATTER_SPEED = 1.6;
+const DRUM_SHATTER_LIFT = 0.6;
+const DRUM_SHATTER_SPIN = 0.09;
+
+/**
+ * Ticks a freshly-made drum shard ignores Blast flash cells for.
+ *
+ * A shockwave flash lives 3–6 ticks (materials/blast.ts), and the shards of a
+ * barrel it just opened are spawned right inside it. Without this window the
+ * explosion would pulverize its own wreckage on the very next tick — measured:
+ * the three shards lasted exactly one tick at every blast size — and a bombed drum
+ * would go straight from barrel to Metal Powder without ever visibly coming apart,
+ * which is the whole thing this is for. Long enough to outlast the flash that made
+ * them (and for their outward throw to carry them clear of the crater), short
+ * enough that a SECOND charge dropped on the wreckage still shatters it.
+ *
+ * Narrow on purpose: only the Blast flash is waved off. Being crushed, touched by
+ * Antimatter, grazed by a Nuclear Ray, swallowed by Void or melted all still work
+ * on a shard the tick it is born.
+ *
+ * The wooden crate has no such window — its shards ARE consumed by the blast that
+ * burst them, which is the behaviour it shipped with. Giving the crate one is a
+ * separate tuning call, deliberately not made here so this can't regress it.
+ */
+const DRUM_PIECE_BLAST_GRACE = 8;
+
+/** Is this body waving off Blast flash cells right now (see DRUM_PIECE_BLAST_GRACE)?
+ *  Only ever true for a drum shard in the first few ticks of its life. */
+function blastImmune(o: SimBody): boolean {
+  return o.kind === 'drum' && o.blastGraceTicks > 0;
+}
+
+/** The three shards a drum bursts into, in sprite draw order. */
+const DRUM_PIECES: readonly DrumPiecePart[] = ['piece1', 'piece2', 'piece3'];
+
+/**
  * Build a drum centered at (x,y), at rest and upright, carrying `fill` (default
  * an empty blue drum). Mass is the capsule area × density; the moment of inertia
  * uses the bounding-box rectangle approximation I = m(w² + h²)/12 (w=2·radius,
@@ -535,6 +643,7 @@ export function createDrum(
   const momentOfInertia = (mass * (w * w + h * h)) / 12;
   return {
     kind: 'drum',
+    part: 'drum',
     x,
     y,
     vx: 0,
@@ -543,12 +652,80 @@ export function createDrum(
     angularVelocity: 0,
     halfLength: l,
     radius: r,
+    // The barrel's display box IS its capsule box — the sprite was authored at
+    // that aspect (see render/drumSprite.ts), so this changes nothing for it.
+    halfW: r,
+    halfH: l + r,
     mass,
     momentOfInertia,
     restitution: DRUM_RESTITUTION,
     state: 'intact',
     heatTicks: 0,
     temp: AMBIENT_TEMP,
+    blastGraceTicks: 0, // a sealed barrel has no newborn-wreckage window
+    fill,
+  };
+}
+
+/**
+ * Build one shard of a burst drum, centered at (x,y), at rest and upright. Only
+ * breakDrum calls this — a shard is wreckage, never something the palette places.
+ *
+ * The geometry comes straight from that shard's art (render/drumSprite.ts
+ * PIECE_ART), the wooden crate's rule rather than the barrel's: the sprite's pixel
+ * box scaled into cells is the display box, and the disc inscribed in it is what
+ * the world collides with, so the picture and the physics can't drift apart. That
+ * disc is why a shard needs no capsule — rotation changes what it LOOKS like
+ * without changing what it collides with, which is what lets a torn, jagged
+ * outline reuse the whole capsule machinery unchanged.
+ *
+ * `scale` carries a non-default barrel size through to its wreckage (1 for the
+ * palette's drums), so the shards always add back up to the drum they came off.
+ */
+export function createDrumPiece(
+  x: number,
+  y: number,
+  fill: DrumFill,
+  part: DrumPiecePart,
+  scale = 1,
+): SimCapsule {
+  const art = drumPieceSpriteFor(fill, part);
+  const px = DRUM_CELLS_PER_PX * scale;
+  const halfW = (art.w * px) / 2;
+  const halfH = (art.h * px) / 2;
+  // The INSCRIBED disc: the shard's nearest edge is tangent to the circle, so a
+  // settled shard sits flush on the ground it landed on (see settleBodyUpright).
+  const radius = halfW < halfH ? halfW : halfH;
+  // Mass follows the COLLISION disc, because that same disc is the footprint
+  // buoyancy samples — pairing them is what makes the density ratio (steel 7 vs
+  // Water 3) come out as the submerged fraction it should, i.e. straight down.
+  const mass = DRUM_PIECE_DENSITY * Math.PI * radius * radius;
+  // Inertia, though, follows the REAL rectangle (I = m(w² + h²)/12), not the disc:
+  // how hard a shard is to spin should depend on how long it actually is.
+  const w = 2 * halfW;
+  const h = 2 * halfH;
+  return {
+    kind: 'drum',
+    part,
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: 0,
+    halfLength: 0, // a shard's medial segment is a point: the capsule is a disc
+    radius,
+    halfW,
+    halfH,
+    mass,
+    momentOfInertia: (mass * (w * w + h * h)) / 12,
+    restitution: DRUM_RESTITUTION,
+    state: 'intact',
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    // Born already inside the fireball that made it: wave the flash off while it
+    // gets clear (see DRUM_PIECE_BLAST_GRACE).
+    blastGraceTicks: DRUM_PIECE_BLAST_GRACE,
     fill,
   };
 }
@@ -815,7 +992,7 @@ const WOOD_BOX_SAWDUST_CHANCE = 0.5;
 /** Outward speed (cells/tick) the three shards are thrown at as the crate comes
  *  apart, plus the lift that pops them up out of the wreckage. Enough that they
  *  visibly scatter instead of settling in a neat stack of the box they were.
- *  Applies to an IMPACT break only — see WoodBoxBreakCause. */
+ *  Applies to an IMPACT break only — see BreakCause. */
 const WOOD_BOX_SHATTER_SPEED = 1.4;
 const WOOD_BOX_SHATTER_LIFT = 0.6;
 /** Max magnitude (rad/tick) of the random spin each shard is kicked with as the
@@ -849,17 +1026,17 @@ const WOOD_BOX_SHATTER_SPIN = 0.09;
  *
  * Crashing yields the same wreckage as any other break — a crate bursts into its
  * three shards, a shard into Sawdust — and, being a blow, it is the case that
- * throws that wreckage clear (see WoodBoxBreakCause).
+ * throws that wreckage clear (see BreakCause).
  */
 export const WOOD_BOX_SMASH_SPEED = 9;
-/** Rest gates for settleWoodBoxUpright: a box is "settled" only when it is both
+/** Rest gates for settleBodyUpright: a body is "settled" only when it is both
  *  barely spinning and barely moving, so nothing that is still tumbling, rolling
  *  or flying is ever squared up mid-flight. */
-const WOOD_BOX_SETTLE_SPIN = 0.02;
-const WOOD_BOX_SETTLE_SPEED = 0.25;
+const SETTLE_SPIN = 0.02;
+const SETTLE_SPEED = 0.25;
 /** Fraction of the remaining tilt a settled box sheds per tick — a visible ease
  *  onto square (a few tenths of a second), not a snap. */
-const WOOD_BOX_SETTLE_RATE = 0.12;
+const SETTLE_RATE = 0.12;
 /** The three shards a crate breaks into, in sprite draw order. */
 const WOOD_BOX_PIECES: readonly WoodBoxPart[] = ['piece1', 'piece2', 'piece3'];
 
@@ -916,22 +1093,30 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
 }
 
 /**
- * Ease a settled wooden box back to square. A box collides as a DISC, so nothing
- * in the contact solve prefers one orientation over another — a crate that rolls
- * to a stop stops at whatever angle it happened to reach, and then its corners
- * (which stick out past the collision disc by up to √2−1 of its half-width) hang
- * through the floor it's resting on. So once a box has actually come to rest —
- * barely translating AND barely spinning — its angle is eased toward the nearest
- * quarter turn, a fraction of the remaining tilt per tick.
+ * Ease a settled rectangular body back to square. Such a body collides as a DISC,
+ * so nothing in the contact solve prefers one orientation over another — a crate
+ * (or a drum shard) that rolls to a stop stops at whatever angle it happened to
+ * reach, and then its corners (which stick out past the collision disc by up to
+ * √2−1 of its half-width) hang through the floor it's resting on. So once it has
+ * actually come to rest — barely translating AND barely spinning — its angle is
+ * eased toward the nearest quarter turn, a fraction of the remaining tilt per tick.
  *
- * The gates matter: this never touches a box that is still moving, so tumbling,
+ * The gates matter: this never touches a body that is still moving, so tumbling,
  * rolling down a slope and being flung by a blast all play out in full. It only
- * decides how the box looks *after* it has stopped. Delete this call to have
- * boxes keep whatever angle they land at.
+ * decides how the body looks *after* it has stopped.
+ *
+ * Applies to the disc-shaped bodies only — the wooden box and its shards, and a
+ * drum's shards. NOT to a whole drum: that one is a real capsule, a cylinder that
+ * is *meant* to come to rest lying on its side at whatever angle it rolled to.
  */
-function settleWoodBoxUpright(o: SimWoodBox): void {
-  if (Math.abs(o.angularVelocity) > WOOD_BOX_SETTLE_SPIN) return;
-  if (Math.hypot(o.vx, o.vy) > WOOD_BOX_SETTLE_SPEED) return;
+function settleBodyUpright(o: {
+  angle: number;
+  angularVelocity: number;
+  vx: number;
+  vy: number;
+}): void {
+  if (Math.abs(o.angularVelocity) > SETTLE_SPIN) return;
+  if (Math.hypot(o.vx, o.vy) > SETTLE_SPEED) return;
   const QUARTER_TURN = Math.PI / 2;
   const target = Math.round(o.angle / QUARTER_TURN) * QUARTER_TURN;
   const tilt = target - o.angle;
@@ -939,7 +1124,7 @@ function settleWoodBoxUpright(o: SimWoodBox): void {
     o.angle = target;
     return;
   }
-  o.angle += tilt * WOOD_BOX_SETTLE_RATE;
+  o.angle += tilt * SETTLE_RATE;
 }
 
 /**
@@ -1990,24 +2175,25 @@ function scanBodyExposure(
   return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
-/** Per-cell chance a shattered drum flings a Metal Powder fragment from that
- *  footprint cell. Sparse like the hollow shell's melt puddle (0.3) — a thin
- *  shell, not a solid block — but applied across the whole footprint (~160 cells)
- *  it yields a clearly visible heap of steel grains instead of a few stray specks
- *  (the old 5-point medial scatter left only 1–4 grains, easy to mistake for
- *  nothing). Melt still leaves Molten Iron; only the shatter's yield changed. */
-const DRUM_DEBRIS_CHANCE = 0.2;
+/** Per-cell chance a shattered drum SHARD flings a Metal Powder fragment from that
+ *  footprint cell. Denser than the hollow barrel's old whole-body scatter (0.2)
+ *  because a shard's disc footprint is much smaller than the barrel's capsule was:
+ *  at 0.35 the three shards together still yield the same clearly visible heap of
+ *  steel grains the drum used to leave in one go, rather than a few stray specks.
+ *  Melt still leaves Molten Iron; this is the shatter path only. */
+const DRUM_DEBRIS_CHANCE = 0.35;
 
 /**
- * Destroyed by a blast/crush: the shell is torn apart, so fling Metal Powder
- * fragments (reusing debris.ts's scatter) from across the drum's whole footprint,
- * arcing up and raining back down as a visible heap of steel grains rather than
- * the drum vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
+ * A shard shattered by a blast/crush crumbles to Metal Powder across its footprint
+ * — the end of the drum's wreckage chain (barrel → three shards → powder), and the
+ * exact counterpart of a wooden shard crumbling to Sawdust. Reuses debris.ts's
+ * scatter so the grains arc up and rain back down as a visible heap rather than
+ * the shard vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
  * destroyed form: an explosion shatters the metal into dust, and the powder still
- * melts back to Molten Iron if it later lands in heat. Being a hollow shell only
- * a fraction of the footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are
- * skipped (the object layer is read-only over terrain). The fill spill, if any,
- * is spawned separately (see spawnFillSpill).
+ * melts back to Molten Iron if it later lands in heat. Only a fraction of the
+ * footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are skipped (the
+ * object layer is read-only over terrain). The barrel's fill spill, if any, went
+ * out one step earlier, when the barrel itself burst (see spawnFillSpill).
  */
 function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
   const r = o.radius;
@@ -2035,11 +2221,13 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
 }
 
 /**
- * Melted by sustained heat: leave a Molten Iron puddle where the drum was — a
- * pure-metal melt (molteniron.ts), NOT smelting-line Molten Iron Ore. A drum is
- * a hollow shell, so only a fraction of the footprint becomes metal (a modest
- * glowing puddle that then flows), and only over cells that aren't solid terrain
- * — the object writes the grid solely on this melt event.
+ * Melted by sustained heat: leave a Molten Iron puddle where the shard was — a
+ * pure-metal melt (molteniron.ts), NOT smelting-line Molten Iron Ore. This is the
+ * *second* stage of a drum melting: the barrel first sags open into its three
+ * shards, and it is the shards that run to liquid (가열로 녹을 때도 조각 → 녹은 금속
+ * 단계를 거친다). Steel plate is thin, so only a fraction of the footprint becomes
+ * metal (a modest glowing puddle that then flows), and only over cells that aren't
+ * solid terrain — the object writes the grid solely on this melt event.
  */
 function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
   const r = o.radius;
@@ -2087,6 +2275,15 @@ function fillSpillId(fill: DrumFill): number | null {
   return null;
 }
 
+/** Does this body still hold its contents? Only a whole barrel does: the moment it
+ *  bursts, everything in it pours out (조각으로 나눠질 때 내용물이 쏟아진다), and the
+ *  shards that survive that are empty scrap carrying the tint alone. Without this,
+ *  breaking the three shards afterwards would conjure a second drum's worth of oil
+ *  — three times over. */
+function drumHoldsContents(o: SimCapsule): boolean {
+  return o.part === 'drum';
+}
+
 /**
  * Spill a filled drum's liquid contents across its footprint when it's destroyed
  * — the 기름/산 that pours out (쏟아짐). Floods the cells the drum occupied with
@@ -2095,9 +2292,12 @@ function fillSpillId(fill: DrumFill): number | null {
  * molten-iron puddle; a frozen liquid isn't treated as solid here).
  * The liquid is spawned at ambient temperature, so a spill into a hot zone (an
  * oil drum melted in lava) heats up and ignites/boils on its own the next few
- * ticks rather than vanishing on contact. An empty drum has no fill: no-op.
+ * ticks rather than vanishing on contact. An empty drum has no fill: no-op — and
+ * neither does a shard, which spilled everything it had when the barrel it was
+ * part of burst (see drumHoldsContents).
  */
 function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
+  if (!drumHoldsContents(o)) return;
   const id = fillSpillId(o.fill);
   if (id === null) return;
   const r = o.radius * FILL_SPILL_AREA_SCALE;
@@ -3345,20 +3545,112 @@ function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
 }
 
 /**
- * What broke a wooden box — and therefore whether the wreckage FLIES.
+ * What broke a body that breaks into pieces (the wooden crate and the drum) — and
+ * therefore whether the wreckage FLIES.
  *
  *   - 'impact' (충격): something hit it. A crash into a wall or the ground at
  *     smashing speed, an explosion's direct hit, an Antimatter touch. There is a
- *     real shock to pass on, so the crate's shards are thrown clear and a shard's
- *     Sawdust is flung across the scene.
- *   - 'collapse': nothing struck it — it simply gave way. It burnt through, it was
- *     crushed/entombed in solid with nowhere to go, or a Nuclear Ray ate it away.
- *     Wreckage from a collapse just DROPS where the body stood: the shards fall
- *     apart in place carrying only the motion the crate already had, and the
- *     shavings settle into a heap instead of spraying (불타거나 끼인 경우엔 튀지
- *     않고 그냥 부서짐).
+ *     real shock to pass on, so the shards are thrown clear and a shard's own
+ *     crumbs (Sawdust / Metal Powder) are flung across the scene.
+ *   - 'collapse': nothing struck it — it simply gave way. It burnt through, it
+ *     melted open, it was crushed/entombed in solid with nowhere to go, or a
+ *     Nuclear Ray ate it away. Wreckage from a collapse just DROPS where the body
+ *     stood: the shards fall apart in place carrying only the motion the body
+ *     already had, and the crumbs settle into a heap instead of spraying
+ *     (불타거나 끼인 경우엔 튀지 않고 그냥 부서짐).
  */
-export type WoodBoxBreakCause = 'impact' | 'collapse';
+export type BreakCause = 'impact' | 'collapse';
+
+/**
+ * Place a freshly-built shard `piece` into the slot it occupied inside `parent`
+ * and give it its parting motion — the one piece of arithmetic the wooden crate
+ * and the drum genuinely share when they come apart.
+ *
+ * `lx`/`ly` are the shard's offset from the parent's center in the parent's
+ * UPRIGHT frame (cells), straight out of its art. Carrying it through the parent's
+ * own rotation is what makes a body that broke while tumbling scatter along the
+ * axis it was actually lying on rather than along the screen's.
+ *
+ * On an 'impact' the shard is thrown outward from the parent's center with a lift
+ * against gravity (so it pops out of the wreckage instead of sliding out of it), a
+ * little random spread, and a random spin — for the first instant the wreckage
+ * still reads as the body that just burst. On a 'collapse' it inherits exactly the
+ * motion the parent had and drops out of the wreck under gravity. Either way it
+ * inherits the parent's angle and heat (`temp`), so a red-hot barrel leaves red-hot
+ * shards; anything else the caller sets afterwards (the crate's burn timer).
+ */
+function placeShard(
+  parent: { x: number; y: number; vx: number; vy: number; angle: number; angularVelocity: number; temp: number },
+  piece: { x: number; y: number; vx: number; vy: number; angle: number; angularVelocity: number; temp: number },
+  lx: number,
+  ly: number,
+  ctx: SimContext,
+  cause: BreakCause,
+  kick: number,
+  lift: number,
+  spin: number,
+): void {
+  const cos = Math.cos(parent.angle);
+  const sin = Math.sin(parent.angle);
+  const dx = lx * cos + ly * sin;
+  const dy = -lx * sin + ly * cos;
+  piece.x = parent.x + dx;
+  piece.y = parent.y + dy;
+  piece.angle = parent.angle; // it starts as the part of the body it just was
+  piece.temp = parent.temp;
+  if (cause === 'impact') {
+    const d = Math.hypot(dx, dy) || 1;
+    piece.vx = parent.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * lift;
+    piece.vy = parent.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * lift;
+    // Splinters tumble: the parent's own spin plus a random kick of its own.
+    piece.angularVelocity = parent.angularVelocity + randSigned(ctx) * spin;
+  } else {
+    piece.vx = parent.vx;
+    piece.vy = parent.vy;
+    piece.angularVelocity = parent.angularVelocity;
+  }
+}
+
+/**
+ * Break a drum, whatever broke it (an explosion, a crush, heat melting it open).
+ * The drum's half of the 2차 오브젝트 rule, and the exact shape of the crate's
+ * (breakWoodBox):
+ *
+ *   - a whole BARREL comes apart into its three shards, each spawned at exactly the
+ *     spot it occupied inside the drum (see drumSprite.ts PIECE_OFFSET). They
+ *     inherit its velocity, its rotation and its heat, and they are steel scrap
+ *     from here on: they sink, they still answer the electromagnet, and they melt
+ *     at a slightly higher temperature than the barrel did. The shards exist ONLY
+ *     through this path.
+ *   - a SHARD has nothing left to break into, so it shatters into Metal Powder.
+ *
+ * `cause` decides how violently that happens (see BreakCause). What it does NOT
+ * decide is whether the contents pour out: that happens the moment the barrel
+ * opens, however it opened (spawnFillSpill, called by the two callers before this).
+ *
+ * New bodies go into `spawn` rather than straight into the live object array:
+ * stepObjects is compacting that array in place when this runs, so appending to it
+ * mid-pass would clobber the compaction. The caller appends them afterwards.
+ */
+function breakDrum(o: SimCapsule, ctx: SimContext, spawn: SimBody[], cause: BreakCause): void {
+  if (o.part !== 'drum') {
+    spawnDrumDebris(o, ctx);
+    return;
+  }
+  // Carry a non-default barrel size through to its wreckage, so the shards always
+  // add back up to the drum they came off.
+  const scale = o.radius / DRUM_RADIUS;
+  const px = DRUM_CELLS_PER_PX * scale;
+  for (const part of DRUM_PIECES) {
+    const art = drumPieceSpriteFor(o.fill, part);
+    const piece = createDrumPiece(o.x, o.y, o.fill, part, scale);
+    placeShard(
+      o, piece, art.ox * px, art.oy * px, ctx, cause,
+      DRUM_SHATTER_SPEED, DRUM_SHATTER_LIFT, DRUM_SHATTER_SPIN,
+    );
+    spawn.push(piece);
+  }
+}
 
 /**
  * A shard crumbles to Sawdust (materials/sawdust.ts) across its footprint, so it
@@ -3373,7 +3665,7 @@ export type WoodBoxBreakCause = 'impact' | 'collapse';
  * them, so they fall straight down as a pile and never displace the water or sand
  * the body was sitting in.
  */
-function spawnSawdust(o: SimWoodBox, ctx: SimContext, cause: WoodBoxBreakCause): void {
+function spawnSawdust(o: SimWoodBox, ctx: SimContext, cause: BreakCause): void {
   const impact = cause === 'impact';
   const r = o.radius;
   const r2 = r * r;
@@ -3407,11 +3699,12 @@ function spawnSawdust(o: SimWoodBox, ctx: SimContext, cause: WoodBoxBreakCause):
  *     create one (조각은 나무 상자를 부술 때만 소환).
  *   - a SHARD has nothing left to break into, so it crumbles to Sawdust cells.
  *
- * `cause` decides how violently that happens (see WoodBoxBreakCause): an impact
- * throws the shards outward from the crate's centre with a little lift and a spin
- * each, so for the first instant the wreckage still reads as the box that just
- * burst; a collapse leaves them exactly where they were, carrying only the motion
- * the crate already had, so the box slumps into three pieces on the spot.
+ * `cause` decides how violently that happens (see BreakCause and placeShard, the
+ * scatter this shares with the drum): an impact throws the shards outward from the
+ * crate's centre with a little lift and a spin each, so for the first instant the
+ * wreckage still reads as the box that just burst; a collapse leaves them exactly
+ * where they were, carrying only the motion the crate already had, so the box
+ * slumps into three pieces on the spot.
  *
  * New bodies go into `spawn` rather than straight into the live object array:
  * stepObjects is compacting that array in place when this runs, so appending to
@@ -3422,44 +3715,19 @@ function breakWoodBox(
   ctx: SimContext,
   spawn: SimBody[],
   alight: boolean,
-  cause: WoodBoxBreakCause,
+  cause: BreakCause,
 ): void {
   if (o.part !== 'crate') {
     spawnSawdust(o, ctx, cause);
     return;
   }
-  // Each shard's slot inside the crate, carried out through the crate's own
-  // rotation so a box that broke while tumbling scatters along the axis it was
-  // actually lying on rather than along the screen's.
-  const cos = Math.cos(o.angle);
-  const sin = Math.sin(o.angle);
   for (const part of WOOD_BOX_PIECES) {
     const art = WOOD_BOX_SPRITES[part];
-    const lx = art.ox * WOOD_BOX_CELLS_PER_PX;
-    const ly = art.oy * WOOD_BOX_CELLS_PER_PX;
-    const dx = lx * cos + ly * sin;
-    const dy = -lx * sin + ly * cos;
-    const px = o.x + dx;
-    const py = o.y + dy;
-    const piece = createWoodBox(px, py, part);
-    piece.angle = o.angle; // it starts as the part of the crate it just was
-    if (cause === 'impact') {
-      // Outward from the crate's centre, plus a lift against gravity so the shards
-      // pop up out of the wreckage instead of sliding out of it.
-      const d = Math.hypot(dx, dy) || 1;
-      const kick = WOOD_BOX_SHATTER_SPEED;
-      piece.vx = o.vx + (dx / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityX * WOOD_BOX_SHATTER_LIFT;
-      piece.vy = o.vy + (dy / d) * kick + randSigned(ctx) * kick * 0.3 - ctx.gravityY * WOOD_BOX_SHATTER_LIFT;
-      // Splinters tumble: the crate's own spin plus a random kick of its own.
-      piece.angularVelocity = o.angularVelocity + randSigned(ctx) * WOOD_BOX_SHATTER_SPIN;
-    } else {
-      // Nothing hit it: the box just gives way, so each piece carries on with
-      // exactly the motion the crate had and drops out of the wreck under gravity.
-      piece.vx = o.vx;
-      piece.vy = o.vy;
-      piece.angularVelocity = o.angularVelocity;
-    }
-    piece.temp = o.temp;
+    const piece = createWoodBox(o.x, o.y, part);
+    placeShard(
+      o, piece, art.ox * WOOD_BOX_CELLS_PER_PX, art.oy * WOOD_BOX_CELLS_PER_PX, ctx, cause,
+      WOOD_BOX_SHATTER_SPEED, WOOD_BOX_SHATTER_LIFT, WOOD_BOX_SHATTER_SPIN,
+    );
     if (alight) piece.burnTicks = woodBoxBurnTicks(part);
     spawn.push(piece);
   }
@@ -3571,7 +3839,7 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
  * cell the fuel is turned away from).
  *
  * However the bottle died, this is what it leaves: there is no impact/collapse
- * split (contrast WoodBoxBreakCause), because a crate can give way without being
+ * split (contrast BreakCause), because a crate can give way without being
  * struck whereas glass only ever ends one way.
  */
 function breakMolotov(o: SimMolotov, ctx: SimContext): void {
@@ -3646,28 +3914,30 @@ function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
   return true;
 }
 
-/** The byproduct of a body destroyed by blast or crush: a drum shatters into
- *  scattered Metal Powder and, if it was carrying anything, gushes its contents
- *  (원유/산) across the wreckage; a stick of dynamite detonates (a knock or a
- *  passing blast sets it off — chain reactions); a smoke bomb's canister ruptures
- *  and dumps its whole remaining charge at once; a wooden crate bursts into its
- *  three shards (and a shard into Sawdust — see breakWoodBox), carrying its fire
- *  over to the wreckage if it was burning; a rubber ball leaves nothing.
- *  `cause` matters only to the crate, and only for how far its wreckage travels
- *  (see WoodBoxBreakCause): a blast or a crash throws it, being crushed doesn't.
- *  `spawn` collects any *bodies* the byproduct creates (only the crate makes
- *  any); see breakWoodBox for why they aren't pushed straight into the live array. */
+/** The byproduct of a body destroyed by blast or crush: a drum bursts into its
+ *  three shards and, if it was carrying anything, gushes its contents (원유/산)
+ *  across the wreckage — and a shard, having nothing left to break into, shatters
+ *  into scattered Metal Powder (see breakDrum); a stick of dynamite detonates (a
+ *  knock or a passing blast sets it off — chain reactions); a smoke bomb's canister
+ *  ruptures and dumps its whole remaining charge at once; a wooden crate bursts
+ *  into its three shards (and a shard into Sawdust — see breakWoodBox), carrying
+ *  its fire over to the wreckage if it was burning; a rubber ball leaves nothing.
+ *  `cause` matters only to the two bodies that break into pieces, and only for how
+ *  far their wreckage travels (see BreakCause): a blast or a crash throws it, being
+ *  crushed doesn't. `spawn` collects any *bodies* the byproduct creates (the crate
+ *  and the barrel); see breakWoodBox for why they aren't pushed straight into the
+ *  live array. */
 function destroyByproduct(
   o: SimBody,
   ctx: SimContext,
   spawn: SimBody[],
-  cause: WoodBoxBreakCause,
+  cause: BreakCause,
 ): void {
   if (o.kind === 'woodbox') {
     breakWoodBox(o, ctx, spawn, o.burnTicks > 0, cause);
   } else if (o.kind === 'drum') {
-    spawnFillSpill(o, ctx); // pour contents first; the shell fragments then launch
-    spawnDrumDebris(o, ctx); // out through the spill (each from its own footprint cell)
+    spawnFillSpill(o, ctx); // pour the contents out first; the shell comes apart
+    breakDrum(o, ctx, spawn, cause); // over the spill (barrel → shards → powder)
     o.state = 'destroyed';
   } else if (o.kind === 'dynamite') {
     detonateDynamite(o, ctx);
@@ -3697,10 +3967,13 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // reads as crushed; a momentarily-overlapping one is freed first. Blast/Nuclear Ray
   // are secondary to the phase-A doomed capture (covers a body knocked into a
   // lingering flash or into the beam's path).
-  if (exp.blast || exp.nuclearRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
+  // Fresh drum wreckage waves the flash off (see DRUM_PIECE_BLAST_GRACE); the
+  // countdown itself runs once a tick, in phase A.
+  const blast = exp.blast && !blastImmune(o);
+  if (blast || exp.nuclearRay || exp.solidFrac >= CRUSH_SOLID_FRAC) {
     // Only the blast is a blow: a crate pinched in solid (끼임) or eaten away by
     // the beam collapses where it stands rather than bursting outward.
-    destroyByproduct(o, ctx, spawn, exp.blast ? 'impact' : 'collapse');
+    destroyByproduct(o, ctx, spawn, blast ? 'impact' : 'collapse');
     return false; // ball: no byproduct
   }
   // The body's own heat reservoir relaxes toward its surroundings each tick
@@ -3733,15 +4006,23 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // A molotov neither melts nor burns away: it runs its wick down and waits to be
   // broken (which is the point of it). See stepMolotov.
   if (o.kind === 'molotov') return stepMolotov(o, ctx, heat);
-  // Sustained heat: drum melts to Molten Iron, ball burns away to nothing.
-  const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
-  const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
+  // Sustained heat: a drum melts in TWO stages, a ball burns away to nothing.
+  // The barrel doesn't run straight to liquid — it sags open into its three shards
+  // (and pours out whatever it held), and those shards, held a notch hotter for a
+  // much shorter time, are what actually run to Molten Iron. Nothing hit it, so the
+  // wreckage slumps in place rather than being thrown ('collapse').
+  const threshold = o.kind === 'drum' ? drumMeltTemp(o.part) : BALL_BURN_TEMP;
+  const ticksNeeded = o.kind === 'drum' ? drumMeltTicks(o.part) : BALL_BURN_TICKS;
   if (heat >= threshold) {
     o.heatTicks++;
     if (o.heatTicks >= ticksNeeded) {
       if (o.kind === 'drum') {
-        spawnFillSpill(o, ctx); // contents pour out, then the shell melts over them
-        spawnMoltenPuddle(o, ctx);
+        if (o.part === 'drum') {
+          spawnFillSpill(o, ctx); // contents pour out, then the shell gives way
+          breakDrum(o, ctx, spawn, 'collapse'); // stage 1: barrel → three shards
+        } else {
+          spawnMoltenPuddle(o, ctx); // stage 2: shard → a puddle of Molten Iron
+        }
         o.state = 'melted';
       }
       return false;
@@ -3777,8 +4058,8 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
   // near-miss blast has no footprint overlap here, so it falls through to the
   // knockback shove instead; the beam has no knockback to fall through to.)
   // Each entry carries WHY it was doomed, because a wooden crate's wreckage is
-  // thrown clear only when something actually hit it (see WoodBoxBreakCause).
-  const doomed = new Map<SimBody, WoodBoxBreakCause>();
+  // thrown clear only when something actually hit it (see BreakCause).
+  const doomed = new Map<SimBody, BreakCause>();
   // Bodies a destruction spawns this tick (only the wooden crate does: it bursts
   // into its three shards). Collected here and appended after phase C, because
   // that phase compacts `objects` in place — appending mid-pass would clobber it,
@@ -3792,10 +4073,15 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // touching Antimatter grain and absorbs any Laser Heat Ray beam resting on the
     // body; the first three doom it this tick (see footprintHazards).
     const hz = footprintHazards(o, ctx);
-    if (hz.blast || hz.nuclearRay || hz.antimatter) {
+    // Fresh drum wreckage waves off the flash that made it for a few ticks, and
+    // this is where that clock runs (once per body per tick, before the flash is
+    // judged — see DRUM_PIECE_BLAST_GRACE).
+    if (o.kind === 'drum' && o.blastGraceTicks > 0) o.blastGraceTicks--;
+    const blast = hz.blast && !blastImmune(o);
+    if (blast || hz.nuclearRay || hz.antimatter) {
       // A blast or an annihilating grain is a shock the wreckage carries away; the
       // Nuclear Ray just eats the body where it is, so that one is a collapse.
-      doomed.set(o, hz.blast || hz.antimatter ? 'impact' : 'collapse'); // destroyed below
+      doomed.set(o, blast || hz.antimatter ? 'impact' : 'collapse'); // destroyed below
       continue;
     }
     // 열선 가열: the absorbed beams' heat goes straight into the body's own
@@ -3825,6 +4111,21 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       if (impact >= MOLOTOV_SMASH_SPEED) doomed.set(o, 'impact');
       continue;
     }
+    // A drum's SHARD squares up once it has stopped, for the same reason the crate
+    // does below — it collides as a disc, so the contact solve has no orientation to
+    // prefer and a stopped shard would otherwise lie at whatever angle it reached,
+    // corners hanging through the floor. The whole barrel is left alone: that one is
+    // a real capsule, a cylinder that is *meant* to come to rest on its side.
+    //
+    // Note what is NOT here: a drum has no smash-on-impact rule. Steel takes a
+    // hurl into a wall and dents; only explosives open it (충돌 충격에는 파괴되지
+    // 않고 폭발물에만 파괴), which is the one place the drum deliberately parts ways
+    // with the crate it otherwise now breaks exactly like — and with the molotov
+    // just above, which is glass and breaks at a third of the crate's speed.
+    if (o.kind === 'drum') {
+      if (o.part !== 'drum') settleBodyUpright(o);
+      continue;
+    }
     if (o.kind !== 'woodbox') continue;
     // Timber that meets a wall hard enough doesn't bounce, it bursts (매우 빠른
     // 속도로 벽/고체에 부딪히면 파괴). Queued as doomed rather than destroyed here so
@@ -3838,7 +4139,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // orientation to prefer and a stopped crate would otherwise rest at whatever
     // angle it happened to reach, corners hanging through the floor. Gated on the
     // body having actually stopped, so tumbling and rolling are untouched.
-    settleWoodBoxUpright(o);
+    settleBodyUpright(o);
   }
   // Phase B — resolve collisions between bodies (fully interactive layer).
   resolveObjectPairs(objects);
@@ -3864,7 +4165,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       // its byproduct, UNLESS it's also being swallowed by Void, which deletes it
       // cleanly (no byproduct) and wins.
       if (!footprintTouchesVoid(o, ctx)) {
-        destroyByproduct(o, ctx, spawned, doomed.get(o) as WoodBoxBreakCause);
+        destroyByproduct(o, ctx, spawned, doomed.get(o) as BreakCause);
       }
     } else if (evaluateTriggers(o, ctx, spawned)) {
       objects[w++] = o;

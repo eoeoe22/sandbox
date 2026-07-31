@@ -172,13 +172,28 @@ function columnHeat(grid: Grid, x: number): number {
 //    against a dark-emitter control of the same world so "it died" can't be the
 //    world doing it.
 {
-  // A steel drum melts (DRUM_MELT_TEMP 1200 held for DRUM_MELT_TICKS).
+  // A steel drum melts (DRUM_MELT_TEMP 1200 held for DRUM_MELT_TICKS) — in two
+  // stages, since the barrel gives way into its three shards first and it is those
+  // that run to Molten Iron (engine/objects.ts breakDrum). So the beam has to be
+  // held long enough to work through the wreckage as well as the barrel.
   const w = makeWorld();
   const drum = place(w, createDrum(TARGET_X, 0)) as SimCapsule;
   const aim = aimAt(drum);
-  run(w, 120, aim);
-  check('a laser held on a drum melts it', !w.grid.objects.includes(drum) || drum.state === 'melted', `state ${drum.state}, ${drum.temp.toFixed(0)}° (melts at ${DRUM_MELT_TEMP}°)`);
-  check('and leaves a molten puddle behind', count(w.grid, ID('Molten Iron')) > 0);
+  let openedInto = '';
+  // Sampled tick by tick: a puddle that forms early flows off and freezes back to
+  // solid Iron, so a count taken only at the end can read zero for a melt that
+  // definitely happened.
+  let molten = 0;
+  for (let i = 0; i < 360; i++) {
+    run(w, 1, aim);
+    molten = Math.max(molten, count(w.grid, ID('Molten Iron')));
+    if (!openedInto && !w.grid.objects.includes(drum))
+      openedInto = w.grid.objects.map((o) => (o.kind === 'drum' ? o.part : o.kind)).sort().join(' ');
+  }
+  check('a laser held on a drum melts it open', !w.grid.objects.includes(drum) || drum.state === 'melted', `state ${drum.state}, ${drum.temp.toFixed(0)}° (melts at ${DRUM_MELT_TEMP}°)`);
+  check('into its three shards', openedInto === 'piece1 piece2 piece3', openedInto);
+  check('and holding the beam on the wreckage leaves a molten puddle behind', molten > 0,
+    `${molten} Molten Iron cells at its peak`);
 }
 {
   const w = makeWorld();
