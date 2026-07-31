@@ -78,10 +78,12 @@ function makeWorld(opts: { powered?: boolean; shielded?: boolean; floorY?: numbe
   return { grid, sim };
 }
 
-/** Stand `body` on the floor — its own half-extent decides where that is — and
- *  drop it into the world. Returns its resting centre. */
+/** Stand `body` on the floor — its own VERTICAL half-extent decides where that is
+ *  — and drop it into the world. Returns its resting centre. Boxy bodies (the
+ *  drums, the crate) carry that as `halfH`; `bodyReach` would be wrong for them,
+ *  being the radius of the circle around the whole box, i.e. out to its corner. */
 function place(w: World, body: SimBody, floorY = FLOOR_Y): number {
-  body.y = floorY - bodyReach(body);
+  body.y = floorY - ('halfH' in body ? body.halfH : bodyReach(body));
   w.grid.objects.push(body);
   return body.y;
 }

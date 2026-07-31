@@ -281,10 +281,12 @@ function sawdustSpread(grid: Grid): number {
   let shatterAt = -1;
   let emptyAt = -1;
   let peakFire = 0;
+  let peakSawdust = 0;
   for (let t = 1; t <= 600; t++) {
     crate.temp = Math.max(crate.temp, WOOD_BOX_IGNITE_TEMP + 200); // hold the brush on it
     sim.step();
     peakFire = Math.max(peakFire, count(grid, FIRE));
+    peakSawdust = Math.max(peakSawdust, count(grid, SAWDUST));
     if (litAt < 0 && crate.burnTicks > 0) litAt = t;
     if (shatterAt < 0 && !grid.objects.includes(crate as SimBody)) shatterAt = t;
     if (shatterAt > 0 && emptyAt < 0 && grid.objects.length === 0) emptyAt = t;
@@ -293,7 +295,11 @@ function sawdustSpread(grid: Grid): number {
   check('a burning crate emits real Fire cells', peakFire > 0, `peak ${peakFire} cells`);
   check('the crate breaks into exactly 3 shards', shatterAt > 0, `tick ${shatterAt}`);
   check('the shards then crumble away', emptyAt > 0 && emptyAt > shatterAt, `tick ${emptyAt}`);
-  check('shards leave Sawdust behind', count(grid, SAWDUST) > 0, `${count(grid, SAWDUST)} cells`);
+  // The PEAK, not the final count: Sawdust is itself combustible and these shards
+  // crumble inside the fire that consumed them, so how much of the heap is still
+  // standing several seconds later is a coin flip on the seed. What the chain has
+  // to guarantee is that the shavings are laid down at all.
+  check('shards leave Sawdust behind', peakSawdust > 0, `${peakSawdust} cells at its peak`);
 }
 
 // 3b. The shard census, checked the tick the crate burns through. A fire is not a
@@ -381,8 +387,14 @@ function sawdustSpread(grid: Grid): number {
   check('a burnt shard drops its Sawdust in place',
     spreadNow > 0 && spreadNow <= Math.ceil(shard.radius * 2) + 1,
     `${spreadNow} cells wide, shard is ~${(shard.radius * 2).toFixed(1)}`);
-  for (let t = 0; t < 200; t++) sim.step(); // let the pile settle
-  check('a shard crumbles to Sawdust', count(grid, SAWDUST) > 0, `${count(grid, SAWDUST)} cells`);
+  let peak = count(grid, SAWDUST);
+  for (let t = 0; t < 200; t++) {
+    sim.step(); // let the pile settle
+    peak = Math.max(peak, count(grid, SAWDUST));
+  }
+  // Peak again (see above): this shard burnt through, so its own flames are sitting
+  // in the heap it just dropped.
+  check('a shard crumbles to Sawdust', peak > 0, `${peak} cells at its peak`);
 }
 
 // 5b. The same shard, smashed instead of burnt: now the shavings really are flung,

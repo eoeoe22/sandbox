@@ -142,6 +142,24 @@ export type ObjectKind =
   | 'smokebomb'
   | 'crate'
   | 'molotov';
+
+/**
+ * Every object kind, in palette order. The single source of truth for the list:
+ * the palette's 독립 오브젝트 tab renders it, and `persistence` validates the
+ * persisted recent-picks list against it (an unknown string from a corrupt save
+ * is dropped rather than surfacing as a broken chip).
+ */
+export const OBJECT_KINDS: readonly ObjectKind[] = [
+  'ball',
+  'drum',
+  'oildrum',
+  'aciddrum',
+  'dynamite',
+  'smokebomb',
+  'crate',
+  'molotov',
+];
+
 export const $selectedObject = atom<ObjectKind>('ball');
 
 // Object display names now live in src/i18n/materials.ts (objectLabelsEn /
@@ -304,10 +322,20 @@ export const $bottomDeadzone = atom<number>(BOTTOM_DEADZONE_DEFAULT);
 export const $favorites = atom<number[]>([]);
 
 /**
- * Recently-used material ids, most-recent first, capped at RECENT_MATERIALS_MAX.
- * Updated by `recordMaterialUse` on every material pick. Persisted; user data.
+ * One entry of the recent-picks list. The palette paints two different things —
+ * materials (numeric id) and 독립 오브젝트 (string kind) — and both belong in the
+ * quick-access bar, so an entry is the union of the two primitives. They can
+ * never collide (number vs string), dedup is plain `!==`, and the list stays
+ * JSON-native for persistence: an older save holding only numbers loads as-is.
  */
-export const $recentMaterials = atom<number[]>([]);
+export type RecentPick = number | ObjectKind;
+
+/**
+ * Recently-picked materials *and* objects, most-recent first, capped at
+ * RECENT_MATERIALS_MAX. Updated by `recordRecentPick` on every palette pick.
+ * Persisted; user data.
+ */
+export const $recentPicks = atom<RecentPick[]>([]);
 
 /**
  * How a loaded snapshot is fitted onto the current sandbox when the sizes differ
@@ -344,15 +372,17 @@ export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1)
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
 
 /**
- * Record that material `id` was just selected, moving it to the front of the
- * recent-materials list (deduped, capped at RECENT_MATERIALS_MAX). Called from
- * every palette pick so the quick-access bar tracks what the user actually uses.
+ * Record that a material id or an object kind was just picked, moving it to the
+ * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX). Called
+ * from every palette pick — material chips and 독립 오브젝트 chips alike — so the
+ * quick-access bar tracks everything the user actually paints, not just
+ * materials.
  */
-export const recordMaterialUse = (id: number): void => {
-  const prev = $recentMaterials.get();
-  if (prev[0] === id) return; // already most-recent — no churn
-  const next = [id, ...prev.filter((m) => m !== id)].slice(0, RECENT_MATERIALS_MAX);
-  $recentMaterials.set(next);
+export const recordRecentPick = (pick: RecentPick): void => {
+  const prev = $recentPicks.get();
+  if (prev[0] === pick) return; // already most-recent — no churn
+  const next = [pick, ...prev.filter((p) => p !== pick)].slice(0, RECENT_MATERIALS_MAX);
+  $recentPicks.set(next);
 };
 
 /** Toggle a material id in the favorites list (star / unstar). */

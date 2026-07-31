@@ -178,13 +178,15 @@ CLAUDE.md `# 검증 스크립트` 절이 "무엇을 건드리면 무엇을 돌�
 2. **`src/game/render/<name>Sprite.ts`** — 아트.
    → **[create-svg-assets 스킬](../create-svg-assets/SKILL.md)** 을 먼저 읽을 것.
    요약: 셀당 2px, 색 2~4개, 어두운 실루엣 + 1px 인셋, 불/연기/손상은 그리지 않음.
-3. **`src/state/store.ts`** — `ObjectKind` 유니온에 리터럴 추가.
+3. **`src/state/store.ts`** — `ObjectKind` 유니온에 리터럴 추가 **+ 바로 아래
+   `OBJECT_KINDS` 배열에도 추가**(팔레트 탭 목록이자, 저장된 최근 사용 목록의
+   검증 기준이다 — 유니온에만 넣으면 팔레트에 뜨지 않는다).
 4. **`src/i18n/materials.ts`** — `objectLabelsEn` **과** `objectLabelsKo` 양쪽.
    (타입체크 강제)
 5. **`src/game/render/objectSvg.ts`** — `spriteRects` + `pixelSvg`로 만든 항목을
    `OBJECT_SVG`에 추가. (타입체크 강제)
-6. **`src/components/MaterialPalette.svelte`** — `OBJECT_KINDS` 배열에 추가.
-   라벨·개수·플라이아웃은 따라온다.
+6. **팔레트** — 3번에서 `OBJECT_KINDS`에 넣었으면 `MaterialPalette.svelte`는
+   손댈 것이 없다. 라벨·개수·플라이아웃·빠른접근(최근 사용) 칩이 따라온다.
 7. **`src/game/input/PointerPainter.ts`** — `spawnObject()` 분기 + import.
 8. **`src/game/render/CanvasRenderer.ts`** — `rasterizeObjects`에 분기 하나.
    회전 스프라이트는 공용 `rasterizeSprite`를 쓴다(루프 복사 금지).

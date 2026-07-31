@@ -182,19 +182,28 @@ export interface SimCapsule {
   angle: number;
   /** Spin rate in radians/tick, integrated from contact torque. */
   angularVelocity: number;
-  /** Half the straight segment between the two round caps (cells). A SHARD's is 0
-   *  — its medial "segment" is a single point, so it collides as the plain disc
-   *  inscribed in its own torn outline, the wooden box's trick (see SimWoodBox). */
+  /** Half the straight segment between the two ends (cells), and the half-width
+   *  of the barrel. Together they are the sprite's box — 2·radius wide by
+   *  2·(halfLength+radius) tall — which is where `halfW`/`halfH` below come from
+   *  and, through them, the rounded rectangle the drum collides as. A SHARD's
+   *  halfLength is 0: its box comes from its own torn art instead. Neither field
+   *  is read by the contact solve any more (see bodyCore); the renderer still
+   *  draws the barrel from them. */
   halfLength: number;
-  /** Cap radius (cells). */
   radius: number;
-  /** Half-extents of the *display* box (cells): the sprite is drawn into
-   *  2·halfW × 2·halfH and rotated by `angle`. Never used by physics. The whole
-   *  barrel's is simply its capsule box (radius × halfLength+radius), so nothing
-   *  changed for it; a shard's is its own art's pixel box, which (unlike the
-   *  barrel's) is a genuine rectangle that differs per part. */
+  /** Half-extents of the body's box (cells): the sprite is drawn into
+   *  2·halfW × 2·halfH and rotated by `angle`, and — since a drum is a BOXY body
+   *  (see bodyCore) — this is also the rectangle it collides as, rounded off by
+   *  `cornerRadius`. The whole barrel's is simply its silhouette
+   *  (radius × halfLength+radius); a shard's is its own art's pixel box, which
+   *  (unlike the barrel's) is a genuine rectangle that differs per part. */
   halfW: number;
   halfH: number;
+  /** Corner radius (cells) of the rounded rectangle the drum collides as — the
+   *  amount its four corners are filed off (see boxCornerRadius). A barrel's flat
+   *  lid and flat wall are what let other bodies be STACKED on it; the rounding is
+   *  what keeps it from catching on grid seams and lets a shoved one tip. */
+  cornerRadius: number;
   /** Mass — buoyancy and collision response. */
   mass: number;
   /** Rotational inertia (angular accel = torque / momentOfInertia). Homogeneous
@@ -346,27 +355,25 @@ export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
 
 /**
  * A wooden box — the crate, or one of the three shards it breaks into. Like the
- * drum, the dynamite and the smoke bomb it is a **capsule body with 1-axis
- * rotation**, so contact torque (r × J) spins it: a crate shoved along the ground
- * tips and tumbles, one landing on a slope rolls down it, a blast sends the
- * shards spinning off. Its capsule is the degenerate one — `halfLength` 0, i.e.
- * the medial "segment" is a single point — so the shape it collides with is a
- * plain disc inscribed in its own box. Rotation therefore changes what the box
- * LOOKS like without changing what it collides with, which is what lets a square
- * reuse the whole capsule machinery unchanged.
+ * drum, the dynamite and the smoke bomb it is a **body with 1-axis rotation**, so
+ * contact torque (r × J) spins it: a crate shoved along the ground tips and
+ * tumbles, one landing on a slope runs down it, a blast sends the shards spinning
+ * off.
  *
- * That inscribed disc is a deliberately good fit for an upright box on an
- * axis-aligned grid: the box's edges are tangent to it, so a crate at rest at 0°
- * sits exactly flush on flat ground, stacks flush on another crate, and sits
- * flush against a wall. A box resting at an odd angle would instead poke its
- * corners through the floor, which is why a settled box is eased back upright
- * (see settleBodyUpright) — it tumbles freely while it's moving and squares up
- * once it has stopped.
+ * It is a BOXY body (see bodyCore): the shape it collides with is its own
+ * rectangle `halfW`×`halfH` with the corners filed off by `cornerRadius`, so all
+ * four of its faces are genuinely FLAT. That is what lets crates be stacked —
+ * one set on another rests on a flat face and stays there, rather than balancing
+ * on the apex of the inscribed disc this used to collide as and sliding off. The
+ * flat face also sits exactly flush on flat ground and flush against a wall.
  *
- * `halfW`/`halfH` are carried alongside `radius` because the sprite is (unlike
- * every other body's) genuinely rectangular and different per part: `radius` is
- * what the world collides with, `halfW`×`halfH` is the box the sprite is drawn
- * into and rotated within.
+ * A box resting at an odd angle would poke its corners through the floor, which is
+ * why a settled box is eased back upright (see settleBodyUpright) — it tumbles
+ * freely while it's moving and squares up once it has stopped.
+ *
+ * `radius` survives as the half-width of the box's SHORTER side (the disc that
+ * used to be the collision shape); the contact solve reads `halfW`/`halfH`/
+ * `cornerRadius` instead.
  *
  * The genuinely new ingredient over the earlier bodies is that it *burns*
  * (가연성). Sustained heat sets it alight; while alight it emits real Fire
@@ -391,15 +398,19 @@ export interface SimWoodBox {
   angle: number;
   /** Spin rate in radians/tick, integrated from contact torque (see SimCapsule). */
   angularVelocity: number;
-  /** Always 0 — a box's medial segment is a point, so its capsule is a disc. Kept
-   *  so the body is assignable to CapsuleBody and reuses the capsule routines. */
+  /** Always 0 — a box has no medial segment. Kept so the body is assignable to
+   *  CapsuleBody and reuses the shared capsule routines. */
   halfLength: number;
-  /** Collision radius (cells) — the disc inscribed in the display box below. */
+  /** Half-width of the box's shorter side (cells) — the disc that used to be the
+   *  collision shape. Not read by the contact solve; see bodyCore. */
   radius: number;
-  /** Half-extents of the *display* box (cells): the sprite is drawn into
-   *  2·halfW × 2·halfH and rotated by `angle`. Never used by physics. */
+  /** Half-extents of the box (cells): the sprite is drawn into 2·halfW × 2·halfH
+   *  and rotated by `angle`, and this same rectangle — rounded off by
+   *  `cornerRadius` — is what the world collides with. */
   halfW: number;
   halfH: number;
+  /** Corner radius (cells) of that rounded rectangle (see boxCornerRadius). */
+  cornerRadius: number;
   /** Mass — buoyancy and collision response. */
   mass: number;
   /** Rotational inertia of the real rectangle (not of the collision disc), so a
@@ -504,14 +515,19 @@ export interface SimMolotov {
 export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox | SimMolotov;
 
 /**
- * The physics-only fields every capsule body shares — a medial segment of
- * half-length `halfLength` with cap radius `radius`, plus 1-axis rotation. The
- * capsule collision / buoyancy / integration routines (capsuleEnds,
- * deepestCapsuleContact, resolveCapsuleCollision, sampleMediumCapsule, stepCapsule)
- * operate through this structural type, so the drum, the dynamite and the smoke
- * bomb all reuse them with no per-kind branch — only the sprite and the
- * destroy/trigger rules differ by kind. SimCapsule, SimDynamite and SimSmokeBomb
- * are all assignable to it.
+ * The physics-only fields every rotating (non-ball) body shares, plus 1-axis
+ * rotation. The collision / buoyancy / integration routines
+ * (gridContacts, resolveCapsuleCollision, sampleMediumCapsule,
+ * stepCapsule) operate through this structural type, so the drum, the dynamite,
+ * the smoke bomb, the crate and the molotov all reuse them with no per-kind
+ * branch — only the sprite and the destroy/trigger rules differ by kind.
+ *
+ * The shape those routines actually read is the body's CORE (see bodyCore), and
+ * the last three fields are what pick it: a body carrying `halfW`/`halfH`/
+ * `cornerRadius` is boxy (flat faces — the drums and the crate), one without them
+ * falls back to the stadium its `halfLength`/`radius` describe (the dynamite, the
+ * smoke bomb, the molotov). Structural, like the rest of this type: nothing here
+ * branches on `kind`.
  */
 type CapsuleBody = {
   x: number;
@@ -525,6 +541,9 @@ type CapsuleBody = {
   mass: number;
   momentOfInertia: number;
   restitution: number;
+  halfW?: number;
+  halfH?: number;
+  cornerRadius?: number;
 };
 
 /**
@@ -644,11 +663,15 @@ export function createDrum(
 ): SimCapsule {
   const r = radius > 1 ? radius : 1;
   const l = halfLength > 0 ? halfLength : 0;
-  // Capsule area = central rectangle (2r × 2l) + the two end caps (a full disc).
-  const area = 4 * r * l + Math.PI * r * r;
-  const mass = DRUM_DENSITY * area;
-  const w = 2 * r;
-  const h = 2 * (l + r);
+  // The barrel's box IS its silhouette — the sprite was authored at that aspect
+  // (see render/drumSprite.ts) — and that box, corners filed off, is what it
+  // collides as: a barrel has flat LIDS, so things stack on it (see bodyCore).
+  const halfW = r;
+  const halfH = l + r;
+  const cornerRadius = boxCornerRadius(halfW, halfH);
+  const mass = DRUM_DENSITY * roundedBoxArea(halfW - cornerRadius, halfH - cornerRadius, cornerRadius);
+  const w = 2 * halfW;
+  const h = 2 * halfH;
   const momentOfInertia = (mass * (w * w + h * h)) / 12;
   return {
     kind: 'drum',
@@ -661,10 +684,9 @@ export function createDrum(
     angularVelocity: 0,
     halfLength: l,
     radius: r,
-    // The barrel's display box IS its capsule box — the sprite was authored at
-    // that aspect (see render/drumSprite.ts), so this changes nothing for it.
-    halfW: r,
-    halfH: l + r,
+    halfW,
+    halfH,
+    cornerRadius,
     mass,
     momentOfInertia,
     restitution: DRUM_RESTITUTION,
@@ -682,11 +704,11 @@ export function createDrum(
  *
  * The geometry comes straight from that shard's art (render/drumSprite.ts
  * PIECE_ART), the wooden crate's rule rather than the barrel's: the sprite's pixel
- * box scaled into cells is the display box, and the disc inscribed in it is what
- * the world collides with, so the picture and the physics can't drift apart. That
- * disc is why a shard needs no capsule — rotation changes what it LOOKS like
- * without changing what it collides with, which is what lets a torn, jagged
- * outline reuse the whole capsule machinery unchanged.
+ * box scaled into cells is BOTH the display box and — with the corners filed off
+ * by `cornerRadius` — the shape the world collides with (see bodyCore), so the
+ * picture and the physics can't drift apart. A torn scrap of plate therefore lies
+ * flat on the ground it landed on and can be stacked on like anything else, and
+ * it needs no medial segment to do it: its `halfLength` is 0.
  *
  * `scale` carries a non-default barrel size through to its wreckage (1 for the
  * palette's drums), so the shards always add back up to the drum they came off.
@@ -702,15 +724,16 @@ export function createDrumPiece(
   const px = DRUM_CELLS_PER_PX * scale;
   const halfW = (art.w * px) / 2;
   const halfH = (art.h * px) / 2;
-  // The INSCRIBED disc: the shard's nearest edge is tangent to the circle, so a
-  // settled shard sits flush on the ground it landed on (see settleBodyUpright).
+  // Its own pixel box with the corners filed off is what it collides as, so a
+  // settled shard sits flush on the ground it landed on and carries a load.
+  const cornerRadius = boxCornerRadius(halfW, halfH);
   const radius = halfW < halfH ? halfW : halfH;
-  // Mass follows the COLLISION disc, because that same disc is the footprint
-  // buoyancy samples — pairing them is what makes the density ratio (steel 7 vs
-  // Water 3) come out as the submerged fraction it should, i.e. straight down.
-  const mass = DRUM_PIECE_DENSITY * Math.PI * radius * radius;
-  // Inertia, though, follows the REAL rectangle (I = m(w² + h²)/12), not the disc:
-  // how hard a shard is to spin should depend on how long it actually is.
+  // Mass follows that shape, because the same shape is the footprint buoyancy
+  // samples — pairing them is what makes the density ratio (steel 7 vs Water 3)
+  // come out as the submerged fraction it should, i.e. straight down.
+  const mass = DRUM_PIECE_DENSITY * roundedBoxArea(halfW - cornerRadius, halfH - cornerRadius, cornerRadius);
+  // Inertia follows the REAL rectangle (I = m(w² + h²)/12): how hard a shard is to
+  // spin should depend on how long it actually is.
   const w = 2 * halfW;
   const h = 2 * halfH;
   return {
@@ -722,10 +745,11 @@ export function createDrumPiece(
     vy: 0,
     angle: 0,
     angularVelocity: 0,
-    halfLength: 0, // a shard's medial segment is a point: the capsule is a disc
+    halfLength: 0, // a shard has no medial segment: its box comes from its art
     radius,
     halfW,
     halfH,
+    cornerRadius,
     mass,
     momentOfInertia: (mass * (w * w + h * h)) / 12,
     restitution: DRUM_RESTITUTION,
@@ -988,7 +1012,11 @@ const WOOD_BOX_PIECE_BURN_TICKS = Math.round(3 * SIM_HZ_AT_1X);
  *  footprint cell. Like the dynamite's fuse flame, the fire is genuine Fire
  *  particles rather than something painted on the sprite, so a burning crate
  *  actually lights the wood pile it was stacked on. Small — a 113-cell crate
- *  footprint puts out a couple of flames a tick, which the CA then carries. */
+ *  footprint puts out a couple of flames a tick, which the CA then carries.
+ *  Seeded over the body's INSCRIBED DISC rather than its full collision box: the
+ *  rate is a tuned figure, and a scatter quoted per cell would have silently grown
+ *  with the footprint when the box gained its flat faces (see spawnSawdust, which
+ *  is scattered over the same disc for the same reason). */
 const WOOD_BOX_FLAME_CHANCE = 0.02;
 /** Fraction of the footprint that has to be quenching matter (liquid, CO₂) for
  *  the fire to go out. Above a stray splash, below the ~47% a floating crate is
@@ -1008,7 +1036,10 @@ const WOOD_BOX_ACID_TICKS = Math.round(1 * SIM_HZ_AT_1X);
  *  crate resting *against* a puddle counts as touching it and not only one
  *  wading in it. */
 const ACID_CONTACT_MARGIN = 0.5;
-/** Per-cell chance a shattered shard leaves Sawdust. Denser than the drum's
+/** Per-cell chance a shattered shard leaves Sawdust, scattered over the body's
+ *  INSCRIBED DISC rather than its full collision box — a tuned yield, not a
+ *  property of the shape, so it must not grow just because the box gained flat
+ *  faces (a shard's box is ~2.5× the disc inside it). Denser than the drum's
  *  hollow-shell scatter (0.2): a shard is solid timber all the way through, so it
  *  crumbles into a proper heap of shavings. */
 const WOOD_BOX_SAWDUST_CHANCE = 0.5;
@@ -1060,6 +1091,10 @@ const SETTLE_SPEED = 0.25;
 /** Fraction of the remaining tilt a settled box sheds per tick — a visible ease
  *  onto square (a few tenths of a second), not a snap. */
 const SETTLE_RATE = 0.12;
+/** What a settled body's leftover spin is multiplied by each tick, so the rock a
+ *  corner contact keeps feeding it dies out instead of running forever (see
+ *  settleBodyUpright). Only ever applied under the two rest gates above. */
+const SETTLE_SPIN_DECAY = 0.5;
 /** The three shards a crate breaks into, in sprite draw order. */
 const WOOD_BOX_PIECES: readonly WoodBoxPart[] = ['piece1', 'piece2', 'piece3'];
 
@@ -1071,26 +1106,28 @@ function woodBoxBurnTicks(part: WoodBoxPart): number {
 /**
  * Build a wooden box centered at (x,y) — the whole crate by default, or one of
  * the three shards. The body's size comes straight from that part's art (see
- * render/woodenBoxSprite.ts): the sprite's pixel box scaled into cells is the
- * display box, and the disc inscribed in it is what the world collides with, so
- * the picture and the physics can't drift apart. Mass follows that disc's area ×
- * the timber density, so the crate is heavier than any single shard of it.
- * Spawned cold and unlit.
+ * render/woodenBoxSprite.ts): the sprite's pixel box scaled into cells is BOTH the
+ * display box and — with the corners filed off by `cornerRadius` — the shape the
+ * world collides with (see bodyCore), so the picture and the physics can't drift
+ * apart, and every face the sprite shows is a face other bodies can rest on. Mass
+ * follows that shape's area × the timber density, so the crate is heavier than any
+ * single shard of it. Spawned cold and unlit.
  */
 export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate'): SimWoodBox {
   const sprite = WOOD_BOX_SPRITES[part];
   const halfW = (sprite.w * WOOD_BOX_CELLS_PER_PX) / 2;
   const halfH = (sprite.h * WOOD_BOX_CELLS_PER_PX) / 2;
-  // The INSCRIBED disc: with it, the box's nearest edge is tangent to the circle,
-  // so an axis-aligned contact (resting on flat ground, stacked on another crate,
-  // pushed up against a wall) puts the sprite exactly flush against the surface.
+  // The box collides as its OWN rectangle with the corners filed off, so every one
+  // of its four faces is flat: it sits flush on flat ground, flush against a wall,
+  // and — the point of the shape — flat enough on another crate to be stacked.
+  const cornerRadius = boxCornerRadius(halfW, halfH);
   const radius = halfW < halfH ? halfW : halfH;
-  // Mass follows the COLLISION disc's area, because that same disc is the
-  // footprint buoyancy samples — pairing them is what makes the density ratio
-  // (timber 1.4 vs Water 3) come out as the submerged fraction it should.
-  const mass = WOOD_BOX_DENSITY * Math.PI * radius * radius;
-  // Inertia, though, follows the REAL rectangle (I = m(w² + h²)/12), not the
-  // disc: how hard a shard is to spin should depend on how long it actually is.
+  // Mass follows that shape's area, because the same shape is the footprint
+  // buoyancy samples — pairing them is what makes the density ratio (timber 1.4
+  // vs Water 3) come out as the submerged fraction it should.
+  const mass = WOOD_BOX_DENSITY * roundedBoxArea(halfW - cornerRadius, halfH - cornerRadius, cornerRadius);
+  // Inertia follows the REAL rectangle (I = m(w² + h²)/12): how hard a shard is to
+  // spin should depend on how long it actually is.
   const w = 2 * halfW;
   const h = 2 * halfH;
   return {
@@ -1102,10 +1139,11 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
     vy: 0,
     angle: 0,
     angularVelocity: 0,
-    halfLength: 0, // a box's medial segment is a point: the capsule is a disc
+    halfLength: 0, // a box has no medial segment: its box comes from its sprite
     radius,
     halfW,
     halfH,
+    cornerRadius,
     mass,
     momentOfInertia: (mass * (w * w + h * h)) / 12,
     restitution: WOOD_BOX_RESTITUTION,
@@ -1117,21 +1155,31 @@ export function createWoodBox(x: number, y: number, part: WoodBoxPart = 'crate')
 }
 
 /**
- * Ease a settled rectangular body back to square. Such a body collides as a DISC,
- * so nothing in the contact solve prefers one orientation over another — a crate
- * (or a drum shard) that rolls to a stop stops at whatever angle it happened to
- * reach, and then its corners (which stick out past the collision disc by up to
- * √2−1 of its half-width) hang through the floor it's resting on. So once it has
+ * Ease a settled boxy body back onto a face — and bleed off the last of its
+ * jitter while doing it.
+ *
+ * A box that rolls to a stop stops at whatever angle it happened to reach, and
+ * balanced part-way onto a corner it rests on that ONE corner, with the rest of
+ * the face hanging in the air and its other corner poking down. So once it has
  * actually come to rest — barely translating AND barely spinning — its angle is
- * eased toward the nearest quarter turn, a fraction of the remaining tilt per tick.
+ * eased toward the nearest quarter turn, a fraction of the remaining tilt per
+ * tick, until it is sitting flat on a face.
+ *
+ * The spin damping in the same breath is not cosmetic; without it a settled box
+ * never actually settles. Perched on a corner it lands each tick on that one
+ * contact, whose off-centre impulse spins it (measured: ~0.025 rad/tick), it
+ * rocks through square onto the opposite corner, and the cycle repeats forever —
+ * an undamped rock the tilt easing alone can't win against, that walks the box
+ * sideways as its contact friction changes sign with it. Halving the residual
+ * spin each settled tick kills that oscillation in a few ticks and lets the tilt
+ * easing finish the job. It is unreachable for anything genuinely in motion: the
+ * gate is a twentieth of the spin a shoved crate reaches.
  *
  * The gates matter: this never touches a body that is still moving, so tumbling,
  * rolling down a slope and being flung by a blast all play out in full. It only
- * decides how the body looks *after* it has stopped.
+ * decides how the body comes to rest *after* it has stopped.
  *
- * Applies to the disc-shaped bodies only — the wooden box and its shards, and a
- * drum's shards. NOT to a whole drum: that one is a real capsule, a cylinder that
- * is *meant* to come to rest lying on its side at whatever angle it rolled to.
+ * Applies to the boxy bodies — the wooden crate and its shards, and every drum.
  */
 function settleBodyUpright(o: {
   angle: number;
@@ -1141,6 +1189,7 @@ function settleBodyUpright(o: {
 }): void {
   if (Math.abs(o.angularVelocity) > SETTLE_SPIN) return;
   if (Math.hypot(o.vx, o.vy) > SETTLE_SPEED) return;
+  o.angularVelocity *= SETTLE_SPIN_DECAY;
   const QUARTER_TURN = Math.PI / 2;
   const target = Math.round(o.angle / QUARTER_TURN) * QUARTER_TURN;
   const tilt = target - o.angle;
@@ -1557,22 +1606,17 @@ function sampleMedium(o: SimObject, ctx: SimContext): {
 /**
  * The rim a surface-entry effect works over: how far the footprint reaches
  * sideways from the centre (where the droplets are spread), and the vertical span
- * to search for the surface the body is punching through. A ball's rim is simply
- * its radius; a capsule's follows its medial segment, so a drum that comes down
+ * to search for the surface the body is punching through. Straight off the body's
+ * core (bodyCore), so a ball's rim is simply its radius and a drum that comes down
  * flat presents a wider waterline than one that comes down on its end.
  */
 function bodyRim(o: SimObject | CapsuleBody): { halfW: number; yTop: number; yBot: number } {
-  // Structural, like the rest of the capsule machinery (see CapsuleBody): a ball
-  // carries `r` and no medial segment, a capsule carries `radius`/`halfLength`.
-  if ('r' in o) {
-    return { halfW: o.r, yTop: Math.floor(o.y - o.r), yBot: Math.floor(o.y + o.r) };
-  }
-  const r = o.radius;
-  const [ax, ay, bx, by] = capsuleEnds(o);
+  const core = bodyCore(o);
+  const [spanX, spanY] = coreHalfSpan(core);
   return {
-    halfW: Math.max(Math.abs(ax - o.x), Math.abs(bx - o.x)) + r,
-    yTop: Math.floor(Math.min(ay, by) - r),
-    yBot: Math.floor(Math.max(ay, by) + r),
+    halfW: spanX,
+    yTop: Math.floor(o.y - spanY),
+    yBot: Math.floor(o.y + spanY),
   };
 }
 
@@ -1767,59 +1811,148 @@ function capsuleAxis(o: CapsuleBody): [number, number] {
   return [Math.sin(o.angle), Math.cos(o.angle)];
 }
 
-/** The two segment endpoints A,B = center ∓ halfLength · axis. `scale` (default 1)
- *  optionally lengthens the segment about its center — used by spawnFillSpill to
- *  widen the flood zone past the drum's real shell without a second copy of the
- *  axis math. */
-function capsuleEnds(o: CapsuleBody, scale = 1): [number, number, number, number] {
-  const [ux, uy] = capsuleAxis(o);
-  const h = o.halfLength * scale;
-  const hx = h * ux;
-  const hy = h * uy;
-  return [o.x - hx, o.y - hy, o.x + hx, o.y + hy];
+// ── Body-generic geometry: the rounded-box core ──────────────────────────────
+// Every body reduces to ONE shape — a *medial rectangle* swept by a cap radius,
+// i.e. an oriented rounded rectangle. The three silhouettes the sandbox needs are
+// the three ways that rectangle is allowed to degenerate:
+//
+//   hx = 0, hy = 0  →  a disc     — the rubber ball
+//   hx = 0, hy > 0  →  a stadium  — the dynamite, the smoke bomb, the molotov
+//   hx > 0, hy > 0  →  a box      — the drums (barrel and shards) and the crate
+//
+// The last case is why this exists. A capsule has no flat face anywhere: a
+// barrel's lid was a dome and a crate collided as the disc inscribed in its own
+// sprite, so anything set on top of either met a curve and slid straight off —
+// you could not stack them (드럼통·나무 상자 쌓기). Giving those bodies their real
+// rectangle, with the corners filed off, hands them four genuinely FLAT faces to
+// rest on and to carry a load with, and costs nothing anywhere else: the ball and
+// the bottles keep cores that degenerate back to exactly the point and segment
+// they always were, so every routine below returns for them precisely what it
+// returned before.
+//
+// Expressing all of it this way lets object-object collision, picking, the
+// footprint scans and the exposure scan run one code path over `SimBody` instead
+// of per-kind branches. Balls carry no rotation, so their inverse inertia is 0 (a
+// contact torque can't spin them) — that single difference is all the pair solver
+// needs.
+
+/**
+ * How much of a boxy body's corner is filed off, as a fraction of its SHORTER
+ * half-extent. A tuning knob between two failure modes rather than a physical
+ * figure: at 0 the box is a hard-cornered rectangle that catches on every grid
+ * seam it slides over and can never tip (its corner has no radius to roll over),
+ * and at 1 the shorter pair of faces vanishes back into the disc this replaced.
+ * A quarter leaves the faces long and flat — a crate's flat top is three quarters
+ * of its width, plenty to stack on — while keeping enough curve that a shoved
+ * crate still rolls up onto its corner and tips over it.
+ */
+const BOX_CORNER_FRAC = 0.25;
+
+/** The corner radius of a boxy body of these half-extents (see BOX_CORNER_FRAC).
+ *  Taken off the shorter side so a long thin shard is rounded in proportion to its
+ *  thickness and never has its whole width swallowed by the rounding. */
+export function boxCornerRadius(halfW: number, halfH: number): number {
+  return (halfW < halfH ? halfW : halfH) * BOX_CORNER_FRAC;
 }
 
-/** Closest point on segment A→B to point P (clamped to the segment). */
-function closestOnSegment(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  px: number,
-  py: number,
-): [number, number] {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len2 = dx * dx + dy * dy;
-  let t = len2 > 1e-9 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return [ax + t * dx, ay + t * dy];
+/**
+ * Area of a rounded box of core half-extents `hx`,`hy` and corner radius `r` —
+ * the central rectangle, the four flat flanks, and the four corner quarters that
+ * add up to one full disc. Every body's MASS is its density times this, because
+ * the very same shape is the footprint buoyancy samples: pairing them is what
+ * makes a density ratio (timber 1.4 vs Water 3) come out as the submerged
+ * fraction it should, whatever shape the body is. The degenerate cores give back
+ * the old formulas exactly — πr² for a ball, 4rl + πr² for a stadium.
+ */
+function roundedBoxArea(hx: number, hy: number, r: number): number {
+  return 4 * hx * hy + 4 * r * (hx + hy) + Math.PI * r * r;
 }
 
-// ── Body-generic geometry (balls and drums share one representation) ─────────
-// Every body reduces to a *medial segment + a cap radius*: a ball is the
-// degenerate case where the segment is a single point (its center), a drum is a
-// real segment. Expressing both this way lets object-object collision, picking,
-// and the exposure scan run one code path over `SimBody` instead of per-kind
-// branches. Balls carry no rotation, so their inverse inertia is 0 (a contact
-// torque can't spin them) — that single difference is all the pair solver needs.
-
-/** The cap radius of any body (ball radius or drum cap radius). */
-export function bodyRadius(o: SimBody): number {
-  return o.kind === 'ball' ? o.r : o.radius;
+/**
+ * A body's collision core: the medial rectangle (half-extents `hx`,`hy` measured
+ * along the body's OWN axes) plus the cap radius `r` swept around it. `ux,uy` is
+ * the body's local width axis in world space and `lx,ly` its local length axis —
+ * carried here so the callers never re-derive sin/cos.
+ */
+interface BodyCore {
+  x: number;
+  y: number;
+  hx: number;
+  hy: number;
+  r: number;
+  ux: number;
+  uy: number;
+  lx: number;
+  ly: number;
 }
 
-/** The body's medial segment endpoints [ax,ay,bx,by]. A ball's segment is its
- *  center twice (a point); a drum's is its capsule axis. */
-function bodyEnds(o: SimBody): [number, number, number, number] {
-  if (o.kind === 'ball') return [o.x, o.y, o.x, o.y];
-  return capsuleEnds(o);
+/**
+ * The collision core of any body. Boxy bodies (those carrying `halfW`/`halfH`/
+ * `cornerRadius` — the drums and the wooden crate) give their own rectangle with
+ * the corners filed off; everything else gives the stadium/disc its
+ * `halfLength`/`radius` always described. Structural, not a `kind` switch, so a
+ * new body opts into flat faces purely by carrying the three fields.
+ *
+ * `scale` (default 1) blows the whole core up about its center without touching
+ * the body — spawnFillSpill uses it to flood past the drum's real shell.
+ */
+function bodyCore(o: SimObject | CapsuleBody, scale = 1): BodyCore {
+  if ('r' in o) {
+    // A ball: no orientation and no medial extent at all — a plain disc.
+    return { x: o.x, y: o.y, hx: 0, hy: 0, r: o.r * scale, ux: 1, uy: 0, lx: 0, ly: 1 };
+  }
+  // The length axis is the capsule axis (sin θ, cos θ) — angle 0 = upright, the
+  // way every sprite is drawn — and the width axis is its perpendicular.
+  const sin = Math.sin(o.angle);
+  const cos = Math.cos(o.angle);
+  const boxy = o.cornerRadius !== undefined && o.halfW !== undefined && o.halfH !== undefined;
+  const r = boxy ? (o.cornerRadius as number) : o.radius;
+  const hx = boxy ? (o.halfW as number) - r : 0;
+  const hy = boxy ? (o.halfH as number) - r : o.halfLength;
+  return {
+    x: o.x,
+    y: o.y,
+    hx: (hx > 0 ? hx : 0) * scale,
+    hy: (hy > 0 ? hy : 0) * scale,
+    r: r * scale,
+    ux: cos,
+    uy: -sin,
+    lx: sin,
+    ly: cos,
+  };
+}
+
+/** Closest point on the core's medial rectangle to (px,py) — the generalization
+ *  of closestOnSegment, and identical to it when `hx` is 0. Project into the
+ *  body's own frame, clamp to the rectangle, project back. */
+function coreClosest(c: BodyCore, px: number, py: number): [number, number] {
+  const dx = px - c.x;
+  const dy = py - c.y;
+  let u = dx * c.ux + dy * c.uy;
+  let l = dx * c.lx + dy * c.ly;
+  u = u < -c.hx ? -c.hx : u > c.hx ? c.hx : u;
+  l = l < -c.hy ? -c.hy : l > c.hy ? c.hy : l;
+  return [c.x + u * c.ux + l * c.lx, c.y + u * c.uy + l * c.ly];
+}
+
+/** World-space AABB half-extents of the whole rounded shape (core + cap radius) —
+ *  what every footprint scan sizes its cell loop from. */
+function coreHalfSpan(c: BodyCore): [number, number] {
+  return [
+    c.hx * Math.abs(c.ux) + c.hy * Math.abs(c.lx) + c.r,
+    c.hx * Math.abs(c.uy) + c.hy * Math.abs(c.ly) + c.r,
+  ];
+}
+
+/** Radius of the smallest circle covering the core's shape. */
+function coreReach(c: BodyCore): number {
+  return Math.hypot(c.hx, c.hy) + c.r;
 }
 
 /** Half-extent from center to the farthest point of the body — the radius of the
  *  smallest circle covering it. Used to size scan/pick bounding boxes. */
 export function bodyReach(o: SimBody): number {
-  return o.kind === 'ball' ? o.r : o.halfLength + o.radius;
+  return coreReach(bodyCore(o));
 }
 
 /** Inverse mass — 0 while held (the pointer pins it as an immovable anchor, so
@@ -1834,12 +1967,12 @@ function invInertiaOf(o: SimBody): number {
 }
 
 /** Shortest distance from point (px,py) to the body's solid shape (0 if inside).
- *  Distance to the medial segment minus the cap radius, floored at 0. Exported
+ *  Distance to the medial rectangle minus the cap radius, floored at 0. Exported
  *  for pointer picking / eraser hit-testing over the object layer. */
 export function distanceToBody(o: SimBody, px: number, py: number): number {
-  const [ax, ay, bx, by] = bodyEnds(o);
-  const [qx, qy] = closestOnSegment(ax, ay, bx, by, px, py);
-  const d = Math.hypot(px - qx, py - qy) - bodyRadius(o);
+  const c = bodyCore(o);
+  const [qx, qy] = coreClosest(c, px, py);
+  const d = Math.hypot(px - qx, py - qy) - c.r;
   return d < 0 ? 0 : d;
 }
 
@@ -1852,51 +1985,108 @@ export function pickBody(objects: SimBody[], px: number, py: number): SimBody | 
   return null;
 }
 
-/** Closest points between two segments P1→Q1 and P2→Q2, returned as
- *  [c1x,c1y,c2x,c2y]. Handles degenerate (zero-length) segments, so a ball's
- *  point-segment and point-point cases fall out of the same routine (Ericson,
- *  Real-Time Collision Detection §5.1.9). This is the whole of capsule-capsule
- *  proximity: the two bodies touch iff |c1−c2| < rA+rB. */
-function closestBetweenSegments(
-  p1x: number, p1y: number, q1x: number, q1y: number,
-  p2x: number, p2y: number, q2x: number, q2y: number,
-): [number, number, number, number] {
-  const d1x = q1x - p1x, d1y = q1y - p1y; // direction of segment 1
-  const d2x = q2x - p2x, d2y = q2y - p2y; // direction of segment 2
-  const rx = p1x - p2x, ry = p1y - p2y;
-  const a = d1x * d1x + d1y * d1y; // squared length of seg 1
-  const e = d2x * d2x + d2y * d2y; // squared length of seg 2
-  const f = d2x * rx + d2y * ry;
-  const EPS = 1e-9;
-  const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
-  let s: number;
-  let t: number;
-  if (a <= EPS && e <= EPS) {
-    s = 0;
-    t = 0;
-  } else if (a <= EPS) {
-    s = 0;
-    t = clamp01(f / e);
-  } else {
-    const c = d1x * rx + d1y * ry;
-    if (e <= EPS) {
-      t = 0;
-      s = clamp01(-c / a);
-    } else {
-      const b = d1x * d2x + d1y * d2y;
-      const denom = a * e - b * b;
-      s = denom > EPS ? clamp01((b * f - c * e) / denom) : 0;
-      t = (b * s + f) / e;
-      if (t < 0) {
-        t = 0;
-        s = clamp01(-c / a);
-      } else if (t > 1) {
-        t = 1;
-        s = clamp01((b - c) / a);
-      }
+/**
+ * The closest pair of points between two cores — one on each — returned as
+ * [ax,ay,bx,by]. Both cores are convex rectangles (possibly degenerate to a
+ * segment or a point), and for two convex sets *alternating projection* — clamp
+ * onto B, clamp the result back onto A, repeat — converges on that pair. Boxes
+ * converge almost immediately: two parallel faces land on it in a single round,
+ * which is exactly the case that matters for a stack.
+ *
+ * This is the whole of body-body proximity while the cores are APART: the two
+ * bodies touch iff |a−b| < rA+rB, and a→b is the exact contact normal of the two
+ * rounded shapes. Once the cores actually overlap the pair collapses to a point
+ * and carries no direction, which is what coreSat is for.
+ */
+function closestBetweenCores(a: BodyCore, b: BodyCore): [number, number, number, number] {
+  let [px, py] = coreClosest(b, a.x, a.y);
+  let qx = a.x;
+  let qy = a.y;
+  for (let i = 0; i < 4; i++) {
+    [qx, qy] = coreClosest(a, px, py);
+    const [nx, ny] = coreClosest(b, qx, qy);
+    const settled = Math.abs(nx - px) < 1e-9 && Math.abs(ny - py) < 1e-9;
+    px = nx;
+    py = ny;
+    if (settled) break;
+  }
+  return [qx, qy, px, py];
+}
+
+/**
+ * Minimum-penetration separating axis for two OVERLAPPING cores, oriented from A
+ * toward B. Only reached when the cores have interpenetrated far enough that their
+ * closest points coincide and the direction is lost — a deep, rare case (bodies
+ * normally stay a cap radius apart). Four candidate axes, the two of each core:
+ * for boxes that is the complete SAT axis set, and for the degenerate cores it is
+ * a serviceable fallback rather than an exact one, which is all a recovery push
+ * needs to be.
+ */
+function coreSat(a: BodyCore, b: BodyCore): { nx: number; ny: number; depth: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const axes = [
+    [a.ux, a.uy],
+    [a.lx, a.ly],
+    [b.ux, b.uy],
+    [b.lx, b.ly],
+  ];
+  let depth = Infinity;
+  let nx = 0;
+  let ny = -1;
+  for (const [axx, axy] of axes) {
+    const d = dx * axx + dy * axy;
+    const ra = a.hx * Math.abs(axx * a.ux + axy * a.uy) + a.hy * Math.abs(axx * a.lx + axy * a.ly);
+    const rb = b.hx * Math.abs(axx * b.ux + axy * b.uy) + b.hy * Math.abs(axx * b.lx + axy * b.ly);
+    const overlap = ra + rb - Math.abs(d);
+    if (overlap < depth) {
+      depth = overlap;
+      nx = d >= 0 ? axx : -axx;
+      ny = d >= 0 ? axy : -axy;
     }
   }
-  return [p1x + d1x * s, p1y + d1y * s, p2x + d2x * t, p2y + d2y * t];
+  return { nx, ny, depth: depth > 0 ? depth : 0 };
+}
+
+/**
+ * The core's extreme FEATURE along (nx,ny) — the face it presents to a contact
+ * coming from that direction — written into `out` as x,y pairs and returned as a
+ * count of 1 or 2. A rectangle offers a whole edge when the normal is square to
+ * one of its axes and a single corner otherwise; a stadium's core offers its whole
+ * segment side-on and one end otherwise; a ball's core is always the one point.
+ *
+ * Two points instead of one is what makes stacking hold still. A single contact
+ * has to act somewhere along the face, and wherever that is, any offset from the
+ * body's centre is a lever the impulse torques it around — a crate resting square
+ * on another crate would rock. Two contacts spanning the overlap apply equal and
+ * opposite levers that cancel, so a supported face just sits there.
+ */
+function coreSupport(c: BodyCore, nx: number, ny: number, out: number[]): number {
+  /** How square to an axis the normal must be for that whole edge to count as the
+   *  contact face (≈0.06 rad of tilt). Wider than a settled body's residual tilt,
+   *  narrow enough that a genuinely tipped body still contacts on its corner. */
+  const FACE_EPS = 0.06;
+  const du = nx * c.ux + ny * c.uy;
+  const dl = nx * c.lx + ny * c.ly;
+  const su = du >= 0 ? c.hx : -c.hx;
+  const sl = dl >= 0 ? c.hy : -c.hy;
+  if (Math.abs(du) < FACE_EPS && c.hx > 1e-9) {
+    out[0] = c.x - c.hx * c.ux + sl * c.lx;
+    out[1] = c.y - c.hx * c.uy + sl * c.ly;
+    out[2] = c.x + c.hx * c.ux + sl * c.lx;
+    out[3] = c.y + c.hx * c.uy + sl * c.ly;
+    return 2;
+  }
+  if (Math.abs(dl) < FACE_EPS && c.hy > 1e-9) {
+    out[0] = c.x + su * c.ux - c.hy * c.lx;
+    out[1] = c.y + su * c.uy - c.hy * c.ly;
+    out[2] = c.x + su * c.ux + c.hy * c.lx;
+    out[3] = c.y + su * c.uy + c.hy * c.ly;
+    return 2;
+  }
+  out[0] = c.x + su * c.ux + sl * c.lx;
+  out[1] = c.y + su * c.uy + sl * c.ly;
+  return 1;
 }
 
 interface CapsuleContact {
@@ -1909,29 +2099,47 @@ interface CapsuleContact {
 }
 
 /**
- * Deepest contact between the capsule and the solid grid, or null if free. The
- * point→segment generalization of `deepestContact`: for each solid cell, take
- * the closest point P on the medial segment to the cell center, then — exactly
- * as the circle does from its center — the closest point q on the cell square to
- * P. The outward vector P−q is the normal and radius−|P−q| the penetration; q is
- * the contact point that gives the torque lever arm. The same buried-internal-
- * face culling as the circle keeps a drum from rattling across a flat floor.
+ * Every contact between the body and the solid grid that matters this iteration —
+ * a manifold of one to three points, deepest first, or empty if the body is free.
+ *
+ * Per solid cell it is the point→core generalization of `deepestContact`: take the
+ * closest point P on the medial rectangle to the cell center, then — exactly as
+ * the circle does from its center — the closest point q on the cell square to P.
+ * The outward vector P−q is the normal and radius−|P−q| the penetration; q is the
+ * contact point that gives the torque lever arm. The same buried-internal-face
+ * culling as the circle keeps a body from rattling across a flat floor.
+ *
+ * Why more than the deepest one, now that bodies have flat faces: a disc resting
+ * on flat ground touches at a single point under its centre, so one contact is the
+ * whole truth about it. A crate's flat bottom instead meets a whole ROW of cells,
+ * and resolving that row through any single one of them puts the impulse out at
+ * some offset from the centre — a lever the crate is then torqued around. Measured:
+ * a settled crate picked up ~0.025 rad/tick of spin from that, every tick, and
+ * rocked from corner to corner forever instead of coming to rest.
+ *
+ * So the deepest contact fixes the NORMAL, and the manifold is then the two
+ * extreme contacts sharing that normal — the far ends of the face actually in
+ * touch — each keeping its own penetration, plus the deepest itself if it lies
+ * between them. A squarely supported face gives a symmetric pair whose torques
+ * cancel exactly; a tilted one gives a lopsided pair that rights it; and a crate
+ * overhanging a ledge finds contacts only on its supported side, so it still tips
+ * off, which is the behaviour worth keeping.
  */
-function deepestCapsuleContact(o: CapsuleBody, ctx: SimContext): CapsuleContact | null {
-  const r = o.radius;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.floor(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.floor(Math.max(ay, by) + r);
-  let best: CapsuleContact | null = null;
-  let bestPen = 0;
+function gridContacts(o: CapsuleBody, ctx: SimContext): CapsuleContact[] {
+  const core = bodyCore(o);
+  const r = core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.floor(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.floor(o.y + spanY);
+  const all: CapsuleContact[] = [];
   for (let cy = y0; cy <= y1; cy++) {
     for (let cx = x0; cx <= x1; cx++) {
       if (!isSolidCell(cx, cy, ctx)) continue;
-      // Segment point nearest this cell's center, then the cell-square point
-      // nearest that — the circle's contact test, re-based on the segment.
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      // Core point nearest this cell's center, then the cell-square point
+      // nearest that — the circle's contact test, re-based on the core.
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const qx = spx < cx ? cx : spx > cx + 1 ? cx + 1 : spx;
       const qy = spy < cy ? cy : spy > cy + 1 ? cy + 1 : spy;
       const dx = spx - qx;
@@ -2007,23 +2215,99 @@ function deepestCapsuleContact(o: CapsuleBody, ctx: SimContext): CapsuleContact 
         py = spy;
       }
 
-      if (pen > bestPen) {
-        bestPen = pen;
-        best = { nx, ny, pen, px, py };
-      }
+      all.push({ nx, ny, pen, px, py });
     }
   }
-  return best;
+  if (all.length < 2) return all;
+  // The deepest contact fixes the normal the whole manifold is resolved along.
+  let deepest = 0;
+  for (let i = 1; i < all.length; i++) if (all[i].pen > all[deepest].pen) deepest = i;
+  const primary = all[deepest];
+  // Walk the contacts that share that normal and keep the two extremes along the
+  // contact tangent — the far ends of the face genuinely in touch.
+  const tx = -primary.ny;
+  const ty = primary.nx;
+  /** How parallel a contact's normal must be to the deepest one's to belong to the
+   *  same face (≈8°). Loose enough to gather a whole flat row, tight enough that a
+   *  perpendicular wall never joins the floor's manifold. */
+  const SAME_NORMAL = 0.99;
+  let lo = primary;
+  let hi = primary;
+  let loT = (primary.px - o.x) * tx + (primary.py - o.y) * ty;
+  let hiT = loT;
+  for (const c of all) {
+    if (c === primary) continue;
+    if (c.nx * primary.nx + c.ny * primary.ny < SAME_NORMAL) continue;
+    const t = (c.px - o.x) * tx + (c.py - o.y) * ty;
+    if (t < loT) {
+      loT = t;
+      lo = c;
+    } else if (t > hiT) {
+      hiT = t;
+      hi = c;
+    }
+  }
+  // Both ends answer along the deepest contact's normal — they are within 8° of it
+  // by construction, and one shared normal is what lets the two impulses be solved
+  // together (see solveNormalPair).
+  lo.nx = primary.nx;
+  lo.ny = primary.ny;
+  hi.nx = primary.nx;
+  hi.ny = primary.ny;
+  // Deepest of the two leads: the caller clears its penetration positionally, and
+  // anything still buried after that is caught by the next relaxation iteration.
+  if (lo === hi) return [lo];
+  return lo.pen >= hi.pen ? [lo, hi] : [hi, lo];
 }
 
 /**
- * Resolve the capsule out of the solid grid with rotation. For the deepest
- * contact each iteration: push out along the normal, then apply a contact
- * impulse at the contact point. The impulse has a normal part (restitution) and
- * a Coulomb-clamped tangential (friction) part; BOTH feed `angularVelocity`
- * through the torque r × J (r = contact − center). Friction at an off-center
- * contact is exactly what turns a drop into a roll — the piece the earlier
- * capsule attempt lacked.
+ * Normal impulses for a TWO-point manifold, solved together rather than one after
+ * the other. `aIK` is the manifold's effective-mass matrix (how much contact K's
+ * impulse changes the closing speed at contact I) and `bI` the closing speed each
+ * contact has to shed.
+ *
+ * Sequential impulses get this wrong in exactly the case that matters: applied
+ * first, contact 1 spins the body, which makes contact 2 look like it is closing
+ * harder than it was, so contact 2 over-answers and the body ends the tick with a
+ * residual rock. Solving the 2×2 system instead gives a squarely-landed flat body
+ * two equal impulses whose torques cancel to nothing.
+ *
+ * An impulse may only PUSH, so the both-active solution is taken only when both
+ * come out non-negative; otherwise the manifold really is a one-point contact and
+ * whichever single contact is consistent (its own impulse leaves the other one
+ * separating) is used — the standard two-contact enumeration.
+ */
+function solveNormalPair(
+  a11: number,
+  a12: number,
+  a22: number,
+  b1: number,
+  b2: number,
+): [number, number] {
+  const det = a11 * a22 - a12 * a12;
+  if (Math.abs(det) > 1e-12) {
+    const j1 = (b1 * a22 - b2 * a12) / det;
+    const j2 = (a11 * b2 - a12 * b1) / det;
+    if (j1 >= 0 && j2 >= 0) return [j1, j2];
+  }
+  const only1 = a11 > 0 ? b1 / a11 : 0;
+  if (only1 >= 0 && a12 * only1 >= b2) return [only1, 0];
+  const only2 = a22 > 0 ? b2 / a22 : 0;
+  if (only2 >= 0 && a12 * only2 >= b1) return [0, only2];
+  return [0, 0];
+}
+
+/**
+ * Resolve the body out of the solid grid with rotation. Each iteration takes the
+ * grid manifold (gridContacts): push out along the deepest contact's normal, then
+ * apply a contact impulse at EVERY point of the manifold. Each impulse has a
+ * normal part (restitution) and a Coulomb-clamped tangential (friction) part;
+ * BOTH feed `angularVelocity` through the torque r × J (r = contact − center).
+ * Friction at an off-center contact is exactly what turns a drop into a roll —
+ * the piece the earlier capsule attempt lacked — while the manifold's opposite
+ * ends are what let a flat-bottomed crate rest without rocking (see gridContacts).
+ * The impulse budget is split across the points so a two-point landing lands the
+ * same total blow a one-point landing does.
  *
  * Returns HOW HARD the body met the grid: the largest normal closing speed it
  * resolved (cells/tick), 0 if it was touching but not closing (resting on the
@@ -2039,54 +2323,82 @@ function resolveCapsuleCollision(o: CapsuleBody, ctx: SimContext): number {
   const invI = 1 / o.momentOfInertia;
   let impact = -1;
   for (let iter = 0; iter < 4; iter++) {
-    const c = deepestCapsuleContact(o, ctx);
-    if (!c) break;
+    const contacts = gridContacts(o, ctx);
+    if (contacts.length === 0) break;
     if (impact < 0) impact = 0; // in contact — at minimum, grounded
-    // Positional correction along the contact normal.
-    o.x += c.nx * c.pen;
-    o.y += c.ny * c.pen;
-    // Lever arm and the surface velocity at the contact point (2D rigid body:
+    // Positional correction along the deepest contact's normal.
+    const deepest = contacts[0];
+    const nx = deepest.nx;
+    const ny = deepest.ny;
+    o.x += nx * deepest.pen;
+    o.y += ny * deepest.pen;
+    // Lever arms and the surface velocity at each contact point (2D rigid body:
     // v_p = v + ω × r, where ω × r = ω·(−r_y, r_x)).
-    const rx = c.px - o.x;
-    const ry = c.py - o.y;
-    const vpx = o.vx - o.angularVelocity * ry;
-    const vpy = o.vy + o.angularVelocity * rx;
-    const vn = vpx * c.nx + vpy * c.ny;
-    if (vn >= 0) continue; // separating — no impulse
-    if (-vn > impact) impact = -vn; // hardest closing speed seen this call
-    // Slow contacts don't bounce (kills gravity-driven micro-bounce at rest).
-    const e = -vn < CAPSULE_REST_EPS ? 0 : o.restitution;
-    // Normal impulse: jn = −(1+e)·v_n / (1/m + (r×n)²/I).
-    const rnCross = rx * c.ny - ry * c.nx;
-    const jn = (-(1 + e) * vn) / (invMass + invI * rnCross * rnCross);
-    o.vx += jn * c.nx * invMass;
-    o.vy += jn * c.ny * invMass;
-    o.angularVelocity += invI * (rx * (jn * c.ny) - ry * (jn * c.nx));
-    // Tangential (friction) impulse, Coulomb-clamped to μ·jn, recomputed from
-    // the post-normal contact velocity for stability. This is the torque source
-    // that spins the drum into a roll.
-    const tx = -c.ny;
-    const ty = c.nx;
-    const vpx2 = o.vx - o.angularVelocity * ry;
-    const vpy2 = o.vy + o.angularVelocity * rx;
-    const vt = vpx2 * tx + vpy2 * ty;
-    const rtCross = rx * ty - ry * tx;
-    let jt = -vt / (invMass + invI * rtCross * rtCross);
-    const maxF = DRUM_FRICTION * jn;
-    if (jt > maxF) jt = maxF;
-    else if (jt < -maxF) jt = -maxF;
-    o.vx += jt * tx * invMass;
-    o.vy += jt * ty * invMass;
-    o.angularVelocity += invI * (rx * (jt * ty) - ry * (jt * tx));
+    const n = contacts.length;
+    const rx: number[] = [];
+    const ry: number[] = [];
+    const cross: number[] = [];
+    const vn: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const c = contacts[i];
+      rx[i] = c.px - o.x;
+      ry[i] = c.py - o.y;
+      cross[i] = rx[i] * ny - ry[i] * nx;
+      vn[i] = (o.vx - o.angularVelocity * ry[i]) * nx + (o.vy + o.angularVelocity * rx[i]) * ny;
+      if (vn[i] < 0 && -vn[i] > impact) impact = -vn[i]; // hardest closing speed
+    }
+    // Slow contacts don't bounce (kills gravity-driven micro-bounce at rest), and
+    // the manifold shares one restitution so its two impulses stay comparable.
+    const closing = Math.min(vn[0], n > 1 ? vn[1] : 0);
+    const e = -closing < CAPSULE_REST_EPS ? 0 : o.restitution;
+    // Normal impulses: jn = −(1+e)·v_n / (1/m + (r×n)²/I), solved TOGETHER when the
+    // manifold has two points so a flat landing produces no net torque.
+    const jn: number[] = [];
+    const eff = (i: number, k: number): number => invMass + invI * cross[i] * cross[k];
+    if (n === 1) {
+      jn[0] = vn[0] < 0 ? (-(1 + e) * vn[0]) / eff(0, 0) : 0;
+    } else {
+      const [j0, j1] = solveNormalPair(
+        eff(0, 0), eff(0, 1), eff(1, 1),
+        vn[0] < 0 ? -(1 + e) * vn[0] : 0,
+        vn[1] < 0 ? -(1 + e) * vn[1] : 0,
+      );
+      jn[0] = j0;
+      jn[1] = j1;
+    }
+    for (let i = 0; i < n; i++) {
+      if (jn[i] <= 0) continue;
+      o.vx += jn[i] * nx * invMass;
+      o.vy += jn[i] * ny * invMass;
+      o.angularVelocity += invI * cross[i] * jn[i];
+    }
+    // Tangential (friction) impulse per contact, Coulomb-clamped to μ·jn and
+    // recomputed from the post-normal contact velocity for stability. This is the
+    // torque source that spins the drum into a roll.
+    const tx = -ny;
+    const ty = nx;
+    for (let i = 0; i < n; i++) {
+      if (jn[i] <= 0) continue;
+      const vt =
+        (o.vx - o.angularVelocity * ry[i]) * tx + (o.vy + o.angularVelocity * rx[i]) * ty;
+      const rtCross = rx[i] * ty - ry[i] * tx;
+      let jt = -vt / (invMass + invI * rtCross * rtCross);
+      const maxF = DRUM_FRICTION * jn[i];
+      if (jt > maxF) jt = maxF;
+      else if (jt < -maxF) jt = -maxF;
+      o.vx += jt * tx * invMass;
+      o.vy += jt * ty * invMass;
+      o.angularVelocity += invI * rtCross * jt;
+    }
   }
   return impact;
 }
 
 /**
- * Sample the medium under the capsule's footprint (cells whose center is within
- * `radius` of the medial segment — the capsule generalization of the circle's
- * disc footprint), bucketed for buoyancy (liquid density + submerged count) and
- * granular penetration (powder count), plus the total footprint. Read-only.
+ * Sample the medium under the body's footprint (cells whose center is within the
+ * cap radius of the medial rectangle — see bodyCore), bucketed for buoyancy
+ * (liquid density + submerged count) and granular penetration (powder count),
+ * plus the total footprint. Read-only.
  */
 function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
   liquidDensity: number;
@@ -2094,20 +2406,20 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
   powderCells: number;
   footprint: number;
 } {
-  const r = o.radius;
-  const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   let liquidDensity = 0;
   let liquidCells = 0;
   let powderCells = 0;
   let footprint = 0;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2145,13 +2457,13 @@ function scanBodyExposure(
   o: SimBody,
   ctx: SimContext,
 ): { blast: boolean; nuclearRay: boolean; maxTemp: number; solidFrac: number } {
-  const r = bodyRadius(o);
-  const r2 = r * r;
-  const [ax, ay, bx, by] = bodyEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   let blast = false;
   let nuclearRay = false;
   let maxTemp = -Infinity;
@@ -2159,7 +2471,7 @@ function scanBodyExposure(
   let solid = 0;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2201,7 +2513,7 @@ function scanBodyExposure(
 
 /** Per-cell chance a shattered drum SHARD flings a Metal Powder fragment from that
  *  footprint cell. Denser than the hollow barrel's old whole-body scatter (0.2)
- *  because a shard's disc footprint is much smaller than the barrel's capsule was:
+ *  because a shard's footprint is much smaller than the whole barrel's:
  *  at 0.35 the three shards together still yield the same clearly visible heap of
  *  steel grains the drum used to leave in one go, rather than a few stray specks.
  *  Melt still leaves Molten Iron; this is the shatter path only. */
@@ -2220,17 +2532,17 @@ const DRUM_DEBRIS_CHANCE = 0.35;
  * out one step earlier, when the barrel itself burst (see spawnFillSpill).
  */
 function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
-  const r = o.radius;
-  const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2254,17 +2566,17 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
  * solid terrain — the object writes the grid solely on this melt event.
  */
 function spawnMoltenPuddle(o: SimCapsule, ctx: SimContext): void {
-  const r = o.radius;
-  const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2324,19 +2636,19 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
   if (!drumHoldsContents(o)) return;
   const id = fillSpillId(o.fill);
   if (id === null) return;
-  const r = o.radius * FILL_SPILL_AREA_SCALE;
-  const r2 = r * r;
-  // Scaled capsule ends (capsuleEnds with a >1 scale) — only the flood zone widens,
-  // never the drum's real collision shell.
-  const [ax, ay, bx, by] = capsuleEnds(o, FILL_SPILL_AREA_SCALE);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  // A blown-up copy of the drum's own core (bodyCore's `scale`) — only the flood
+  // zone widens, never the drum's real collision shell.
+  const core = bodyCore(o, FILL_SPILL_AREA_SCALE);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2394,9 +2706,13 @@ function stepCapsule(o: CapsuleBody, ctx: SimContext, ax: number, ay: number, s:
   const enteredLiquid = ms.liquidCells === 0 && entrySpeed >= SPLASH_MIN_SPEED;
   const enteredPowder = ms.powderCells === 0 && entrySpeed >= POWDER_IMPACT_MIN_SPEED;
   // Integrate position AND orientation in tunneling-safe substeps. The substep
-  // budget accounts for the rim's linear speed from spin (|ω|·(halfLength+radius))
-  // so a fast-spinning drum still resolves contacts each fraction of a cell.
-  const reach = o.halfLength + o.radius;
+  // budget accounts for the rim's linear speed from spin (|ω|·reach, reach being
+  // the distance from the centre to the farthest point of the shape) so a
+  // fast-spinning body still resolves contacts each fraction of a cell. Taken from
+  // the CORE and not from halfLength+radius, which is the old capsule's figure and
+  // now falls short of a boxy body's corner — by ~15% for a barrel and ~24% for a
+  // crate, i.e. exactly the part of the rim that would tunnel first.
+  const reach = coreReach(bodyCore(o));
   let remaining = 1;
   let guard = 0;
   let grounded = false;
@@ -2459,8 +2775,14 @@ const OBJECT_FRICTION = 0.5;
 /** Below this closing speed an object-object contact is treated as inelastic, so
  *  a resting stack doesn't jitter on gravity's per-tick nudge (mirrors REST_EPS). */
 const PAIR_REST_EPS = 0.35;
-/** Relaxation passes over all overlapping pairs each tick. A handful is plenty
- *  for the small object counts here and keeps a stack from sinking together. */
+/** Rounds of the whole contact graph — pairs, then everything against the grid —
+ *  run each tick. One round only passes a stack's weight down one link of its
+ *  contact chain; see the phase B comment in stepObjects for why that is not
+ *  enough and what each further round buys. */
+const CONTACT_ROUNDS = 3;
+/** Relaxation passes over all overlapping pairs within one round. A handful is
+ *  plenty for the small object counts here and keeps a stack from sinking
+ *  together. */
 const PAIR_ITERATIONS = 4;
 
 /** Cells beyond a body's own footprint that a blast flash can still reach to
@@ -2569,13 +2891,13 @@ function footprintHazards(
   o: SimBody,
   ctx: SimContext,
 ): { blast: boolean; nuclearRay: boolean; antimatter: boolean; rayHeat: number } {
-  const r = bodyRadius(o);
-  const r2 = r * r;
-  const [ax, ay, bx, by] = bodyEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   let blast = false;
   let nuclearRay = false;
   let antimatter = false;
@@ -2586,7 +2908,7 @@ function footprintHazards(
       const id = ctx.get(cx, cy);
       if (id !== BLAST.id && id !== NUCLEAR_RAY.id && id !== ANTIMATTER.id && id !== HEAT_RAY.id)
         continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -2615,18 +2937,19 @@ function footprintHazards(
  * above) would miss. Read-only.
  */
 function footprintTouchesVoid(o: SimBody, ctx: SimContext): boolean {
-  const r = bodyRadius(o) + 1;
+  const core = bodyCore(o);
+  const r = core.r + 1;
   const r2 = r * r;
-  const [ax, ay, bx, by] = bodyEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX - 1);
+  const x1 = Math.ceil(o.x + spanX + 1);
+  const y0 = Math.floor(o.y - spanY - 1);
+  const y1 = Math.ceil(o.y + spanY + 1);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
       if (ctx.get(cx, cy) !== VOID.id) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy <= r2) return true;
@@ -2662,18 +2985,19 @@ function footprintTouchesVoid(o: SimBody, ctx: SimContext): boolean {
  * itself eating that.
  */
 function footprintTouchesAcid(o: SimBody, ctx: SimContext): boolean {
-  const r = bodyRadius(o) + ACID_CONTACT_MARGIN;
+  const core = bodyCore(o);
+  const r = core.r + ACID_CONTACT_MARGIN;
   const r2 = r * r;
-  const [ax, ay, bx, by] = bodyEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX - ACID_CONTACT_MARGIN);
+  const x1 = Math.ceil(o.x + spanX + ACID_CONTACT_MARGIN);
+  const y0 = Math.floor(o.y - spanY - ACID_CONTACT_MARGIN);
+  const y1 = Math.ceil(o.y + spanY + ACID_CONTACT_MARGIN);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
       if (ctx.get(cx, cy) !== ACID.id || ctx.isFrozen(cx, cy)) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy <= r2) return true;
@@ -2974,94 +3298,178 @@ function applyMagnetPull(o: SimBody, ctx: SimContext): void {
 }
 
 /**
- * Resolve one overlapping pair with a 2D impulse. Both bodies are stadiums
- * (segment + cap radius), so the contact is the closest points between their
- * medial segments; from there it's a standard normal (restitution) + Coulomb
- * friction impulse, each drum's spin fed by the torque r × J (a ball's inverse
- * inertia is 0, so it only translates). A held body has inverse mass/inertia 0,
- * so it acts as an immovable anchor — you can shove others with the one you drag,
- * but it stays glued to the cursor.
+ * Resolve one overlapping pair with a 2D impulse, over a contact MANIFOLD of one
+ * or two points.
+ *
+ * Both bodies are rounded boxes (see bodyCore), so the contact normal is the
+ * direction between the closest points of their two cores, and the penetration is
+ * how far short of the two cap radii that distance falls. From there it is a
+ * standard normal (restitution) + Coulomb friction impulse at each contact point,
+ * each rotating body's spin fed by the torque r × J (a ball's inverse inertia is
+ * 0, so it only translates). A held body has inverse mass/inertia 0, so it acts as
+ * an immovable anchor — you can shove others with the one you drag, but it stays
+ * glued to the cursor.
+ *
+ * The manifold is what makes 쌓기 work. Two flat faces meeting share a whole
+ * overlap span, and resolving that through a single point somewhere along it would
+ * torque the pair apart — the top crate would rock and walk off. So when both
+ * bodies present a face (coreSupport), the impulse is applied at BOTH ends of the
+ * span they share, and the two levers cancel for a squarely-supported body while
+ * still tipping one that overhangs.
+ *
+ * Returns HOW HARD the two met: the largest normal closing speed it resolved
+ * (cells/tick), 0 if they were touching without closing, and −1 if they were not
+ * touching at all (the same three-way report resolveCapsuleCollision makes against
+ * the grid, and read the same way — `>= 0` means "in contact"). The magnitude is
+ * the object↔object twin of the grid's arrival speed and feeds the same smash
+ * thresholds: a crate hurled into another crate breaks on exactly the terms it
+ * breaks on against a wall.
  */
-function resolvePair(a: SimBody, b: SimBody): void {
+function resolvePair(a: SimBody, b: SimBody): number {
   const imA = invMassOf(a);
   const imB = invMassOf(b);
-  if (imA === 0 && imB === 0) return; // both immovable (e.g. two held)
+  if (imA === 0 && imB === 0) return -1; // both immovable (e.g. two held)
   const iIA = invInertiaOf(a);
   const iIB = invInertiaOf(b);
-  const [a1x, a1y, a2x, a2y] = bodyEnds(a);
-  const [b1x, b1y, b2x, b2y] = bodyEnds(b);
-  const [cax, cay, cbx, cby] = closestBetweenSegments(a1x, a1y, a2x, a2y, b1x, b1y, b2x, b2y);
-  let dx = cbx - cax;
-  let dy = cby - cay;
-  let dist = Math.hypot(dx, dy);
-  const sumR = bodyRadius(a) + bodyRadius(b);
-  if (dist >= sumR) return; // not touching
+  const ca = bodyCore(a);
+  const cb = bodyCore(b);
+  const sumR = ca.r + cb.r;
+  // Cheap circle reject before the closest-point walk (object counts are small but
+  // this runs n²·PAIR_ITERATIONS times a tick).
+  const gap = Math.hypot(cb.x - ca.x, cb.y - ca.y) - (coreReach(ca) + coreReach(cb));
+  if (gap >= 0) return -1;
+  const [cax, cay, cbx, cby] = closestBetweenCores(ca, cb);
+  const dx = cbx - cax;
+  const dy = cby - cay;
+  const dist = Math.hypot(dx, dy);
   let nx: number; // contact normal, from A toward B
   let ny: number;
-  if (dist > 1e-6) {
+  let pen: number;
+  if (dist > 1e-4) {
+    if (dist >= sumR) return -1; // not touching
     nx = dx / dist;
     ny = dy / dist;
+    pen = sumR - dist;
   } else {
-    nx = 0; // perfectly concentric — pick an arbitrary separating axis
-    ny = -1;
-    dist = 0;
+    // The cores themselves have interpenetrated, so the closest pair carries no
+    // direction any more — recover along the shallowest separating axis.
+    const sat = coreSat(ca, cb);
+    nx = sat.nx;
+    ny = sat.ny;
+    pen = sat.depth + sumR;
   }
-  const pen = sumR - dist;
   // Split the positional correction by inverse mass (an anchor doesn't move).
   const imSum = imA + imB;
   a.x -= nx * pen * (imA / imSum);
   a.y -= ny * pen * (imA / imSum);
   b.x += nx * pen * (imB / imSum);
   b.y += ny * pen * (imB / imSum);
-  // Contact point: midway between the two surface points along the normal.
-  const px = (cax + nx * bodyRadius(a) + (cbx - nx * bodyRadius(b))) / 2;
-  const py = (cay + ny * bodyRadius(a) + (cby - ny * bodyRadius(b))) / 2;
-  const rax = px - a.x;
-  const ray = py - a.y;
-  const rbx = px - b.x;
-  const rby = py - b.y;
-  // Any capsule body (drum or dynamite) carries spin; a ball's ω is always 0.
-  const wA = a.kind !== 'ball' ? a.angularVelocity : 0;
-  const wB = b.kind !== 'ball' ? b.angularVelocity : 0;
-  // Contact velocities (v + ω×r, ω×r = ω·(−r_y, r_x)), relative B−A.
-  const vrx = b.vx - wB * rby - (a.vx - wA * ray);
-  const vry = b.vy + wB * rbx - (a.vy + wA * rax);
-  const vn = vrx * nx + vry * ny;
-  if (vn >= 0) return; // separating — positional fix already done
-  const raCrossN = rax * ny - ray * nx;
-  const rbCrossN = rbx * ny - rby * nx;
-  const effN = imSum + iIA * raCrossN * raCrossN + iIB * rbCrossN * rbCrossN;
-  // Restitution: the softer of the two bodies, dropped to 0 for a slow contact.
-  const e = -vn < PAIR_REST_EPS ? 0 : Math.min(restitutionOf(a), restitutionOf(b));
-  const jn = (-(1 + e) * vn) / effN;
-  a.vx -= jn * nx * imA;
-  a.vy -= jn * ny * imA;
-  b.vx += jn * nx * imB;
-  b.vy += jn * ny * imB;
-  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jn * ny) - ray * (jn * nx));
-  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jn * ny) - rby * (jn * nx));
-  // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
-  // relative velocity — the torque source that lets one body spin another.
+  // Build the manifold: the face (or corner) each body turns toward the other,
+  // clipped to the span they share along the contact tangent.
+  const fa: number[] = [0, 0, 0, 0];
+  const fb: number[] = [0, 0, 0, 0];
+  const na = coreSupport(ca, nx, ny, fa);
+  const nb = coreSupport(cb, -nx, -ny, fb);
   const tx = -ny;
   const ty = nx;
-  const wA2 = a.kind !== 'ball' ? a.angularVelocity : 0;
-  const wB2 = b.kind !== 'ball' ? b.angularVelocity : 0;
-  const vrx2 = b.vx - wB2 * rby - (a.vx - wA2 * ray);
-  const vry2 = b.vy + wB2 * rbx - (a.vy + wA2 * rax);
-  const vt = vrx2 * tx + vry2 * ty;
-  const raCrossT = rax * ty - ray * tx;
-  const rbCrossT = rbx * ty - rby * tx;
-  const effT = imSum + iIA * raCrossT * raCrossT + iIB * rbCrossT * rbCrossT;
-  let jt = -vt / effT;
-  const maxF = OBJECT_FRICTION * jn;
-  if (jt > maxF) jt = maxF;
-  else if (jt < -maxF) jt = -maxF;
-  a.vx -= jt * tx * imA;
-  a.vy -= jt * ty * imA;
-  b.vx += jt * tx * imB;
-  b.vy += jt * ty * imB;
-  if (a.kind !== 'ball') a.angularVelocity -= iIA * (rax * (jt * ty) - ray * (jt * tx));
-  if (b.kind !== 'ball') b.angularVelocity += iIB * (rbx * (jt * ty) - rby * (jt * tx));
+  // Tangential span of each feature, and the overlap of the two.
+  const a0 = fa[0] * tx + fa[1] * ty;
+  const a1 = na === 2 ? fa[2] * tx + fa[3] * ty : a0;
+  const b0 = fb[0] * tx + fb[1] * ty;
+  const b1 = nb === 2 ? fb[2] * tx + fb[3] * ty : b0;
+  let lo = Math.max(Math.min(a0, a1), Math.min(b0, b1));
+  let hi = Math.min(Math.max(a0, a1), Math.max(b0, b1));
+  if (hi < lo) {
+    // No shared span (a corner just past the end of a face) — fall back to the
+    // closest-point pair, which is always a valid single contact.
+    lo = hi = ((cax + cbx) / 2) * tx + ((cay + cby) / 2) * ty;
+  }
+  // Where the two surfaces meet along the normal: midway between A's outer skin
+  // and B's, which (both features being square to the normal) is one figure for
+  // the whole span.
+  const cn = ((fa[0] * nx + fa[1] * ny + ca.r) + (fb[0] * nx + fb[1] * ny - cb.r)) / 2;
+  const twoPoint = hi - lo > 1e-6;
+  const count = twoPoint ? 2 : 1;
+  // Lever arms and closing speed at each contact point.
+  const rax: number[] = [];
+  const ray: number[] = [];
+  const rbx: number[] = [];
+  const rby: number[] = [];
+  const crossA: number[] = [];
+  const crossB: number[] = [];
+  const vn: number[] = [];
+  // Any rotating body carries spin; a ball's ω is always 0.
+  const wA = a.kind !== 'ball' ? a.angularVelocity : 0;
+  const wB = b.kind !== 'ball' ? b.angularVelocity : 0;
+  for (let k = 0; k < count; k++) {
+    const s = twoPoint ? (k === 0 ? lo : hi) : (lo + hi) / 2;
+    const px = nx * cn + tx * s;
+    const py = ny * cn + ty * s;
+    rax[k] = px - a.x;
+    ray[k] = py - a.y;
+    rbx[k] = px - b.x;
+    rby[k] = py - b.y;
+    crossA[k] = rax[k] * ny - ray[k] * nx;
+    crossB[k] = rbx[k] * ny - rby[k] * nx;
+    // Contact velocities (v + ω×r, ω×r = ω·(−r_y, r_x)), relative B−A.
+    const vrx = b.vx - wB * rby[k] - (a.vx - wA * ray[k]);
+    const vry = b.vy + wB * rbx[k] - (a.vy + wA * rax[k]);
+    vn[k] = vrx * nx + vry * ny;
+  }
+  let impact = 0;
+  for (let k = 0; k < count; k++) if (vn[k] < 0 && -vn[k] > impact) impact = -vn[k];
+  if (impact === 0) return 0; // touching but separating — positional fix is enough
+  // Restitution: the softer of the two bodies, dropped to 0 for a slow contact.
+  const e = impact < PAIR_REST_EPS ? 0 : Math.min(restitutionOf(a), restitutionOf(b));
+  const eff = (i: number, k: number): number =>
+    imSum + iIA * crossA[i] * crossA[k] + iIB * crossB[i] * crossB[k];
+  const jn: number[] = [];
+  if (count === 1) {
+    jn[0] = vn[0] < 0 ? (-(1 + e) * vn[0]) / eff(0, 0) : 0;
+  } else {
+    // Solved together, so a crate set squarely on another crate takes two equal
+    // impulses whose torques cancel and the stack simply holds (see the header).
+    const [j0, j1] = solveNormalPair(
+      eff(0, 0), eff(0, 1), eff(1, 1),
+      vn[0] < 0 ? -(1 + e) * vn[0] : 0,
+      vn[1] < 0 ? -(1 + e) * vn[1] : 0,
+    );
+    jn[0] = j0;
+    jn[1] = j1;
+  }
+  for (let k = 0; k < count; k++) {
+    if (jn[k] <= 0) continue;
+    a.vx -= jn[k] * nx * imA;
+    a.vy -= jn[k] * ny * imA;
+    b.vx += jn[k] * nx * imB;
+    b.vy += jn[k] * ny * imB;
+    if (a.kind !== 'ball') a.angularVelocity -= iIA * crossA[k] * jn[k];
+    if (b.kind !== 'ball') b.angularVelocity += iIB * crossB[k] * jn[k];
+  }
+  // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
+  // relative velocity — the torque source that lets one body spin another.
+  for (let k = 0; k < count; k++) {
+    if (jn[k] <= 0) continue;
+    const wA2 = a.kind !== 'ball' ? a.angularVelocity : 0;
+    const wB2 = b.kind !== 'ball' ? b.angularVelocity : 0;
+    const vrx2 = b.vx - wB2 * rby[k] - (a.vx - wA2 * ray[k]);
+    const vry2 = b.vy + wB2 * rbx[k] - (a.vy + wA2 * rax[k]);
+    const vt = vrx2 * tx + vry2 * ty;
+    const raCrossT = rax[k] * ty - ray[k] * tx;
+    const rbCrossT = rbx[k] * ty - rby[k] * tx;
+    const effT = imSum + iIA * raCrossT * raCrossT + iIB * rbCrossT * rbCrossT;
+    let jt = -vt / effT;
+    const maxF = OBJECT_FRICTION * jn[k];
+    if (jt > maxF) jt = maxF;
+    else if (jt < -maxF) jt = -maxF;
+    a.vx -= jt * tx * imA;
+    a.vy -= jt * ty * imA;
+    b.vx += jt * tx * imB;
+    b.vy += jt * ty * imB;
+    if (a.kind !== 'ball') a.angularVelocity -= iIA * raCrossT * jt;
+    if (b.kind !== 'ball') b.angularVelocity += iIB * rbCrossT * jt;
+  }
+  return impact;
 }
 
 /** Restitution of any body (ball or drum). */
@@ -3069,15 +3477,37 @@ function restitutionOf(o: SimBody): number {
   return o.restitution;
 }
 
-/** Relax every overlapping pair a few passes (O(n²) per pass — object counts are
- *  small). This is the "완전한 물리적 상호작용" between bodies. */
-function resolveObjectPairs(objects: SimBody[]): void {
+/**
+ * Relax every overlapping pair a few passes (O(n²) per pass — object counts are
+ * small). This is the "완전한 물리적 상호작용" between bodies.
+ *
+ * Fills `impacts` with, per body, the hardest normal closing speed it met another
+ * body at this tick — the object↔object counterpart of the arrival speed
+ * stepCapsule reports against the grid, and read by exactly the same smash
+ * thresholds (see stepObjects). Only the FIRST relaxation pass writes it: by the
+ * later passes the bodies are looking at velocities the first pass's impulses
+ * already reflected, so a crash would read as a much softer touch than it was.
+ */
+function resolveObjectPairs(
+  objects: SimBody[],
+  impacts: Map<SimBody, number> | null,
+  touched: Set<SimBody>,
+): void {
   const n = objects.length;
   if (n < 2) return;
   for (let iter = 0; iter < PAIR_ITERATIONS; iter++) {
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
-        resolvePair(objects[i], objects[j]);
+        const hit = resolvePair(objects[i], objects[j]);
+        if (hit < 0) continue; // not touching
+        touched.add(objects[i]);
+        touched.add(objects[j]);
+        if (impacts === null || iter > 0 || hit === 0) continue;
+        // Both halves of a collision feel it: a crate slammed into a parked crate
+        // bursts, and so does the one it hit (둘 다 파괴).
+        for (const o of [objects[i], objects[j]]) {
+          if (hit > (impacts.get(o) ?? 0)) impacts.set(o, hit);
+        }
       }
     }
   }
@@ -3550,23 +3980,23 @@ function randSigned(ctx: SimContext): number {
  * Frozen liquid deliberately does NOT count either: a block of ice isn't wet, and
  * the rest of the engine already treats a frozen cell as structure, not fluid.
  *
- * Written over the capsule footprint rather than a disc so it serves both burning
- * bodies: a wooden box's `halfLength` is 0, which collapses the segment to its
- * centre and gives back exactly the disc this used to scan.
+ * Written over the shared core footprint (bodyCore) rather than a disc so it
+ * serves both burning bodies with one scan — the crate's rounded box and the
+ * molotov's stadium alike.
  */
 function bodyQuenchFrac(o: CapsuleBody, ctx: SimContext, hotLimit: number): number {
-  const r = o.radius;
-  const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   let footprint = 0;
   let quench = 0;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -3939,17 +4369,17 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
 function breakMolotov(o: SimMolotov, ctx: SimContext): void {
   const fuelled = o.fuelTicks > 0;
   const alight = fuelled && o.lit;
-  const r = o.radius;
-  const r2 = r * r;
-  const [ax, ay, bx, by] = capsuleEnds(o);
-  const x0 = Math.floor(Math.min(ax, bx) - r);
-  const x1 = Math.ceil(Math.max(ax, bx) + r);
-  const y0 = Math.floor(Math.min(ay, by) - r);
-  const y1 = Math.ceil(Math.max(ay, by) + r);
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       if (!ctx.inBounds(cx, cy)) continue;
-      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
@@ -4205,11 +4635,14 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       if (impact >= MOLOTOV_SMASH_SPEED) doomed.set(o, 'impact');
       continue;
     }
-    // A drum's SHARD squares up once it has stopped, for the same reason the crate
-    // does below — it collides as a disc, so the contact solve has no orientation to
-    // prefer and a stopped shard would otherwise lie at whatever angle it reached,
-    // corners hanging through the floor. The whole barrel is left alone: that one is
-    // a real capsule, a cylinder that is *meant* to come to rest on its side.
+    // A drum — barrel or shard alike — squares up once it has stopped, for the
+    // same reason the crate does below: it collides as a rounded BOX, so a body
+    // that rolled to a halt part-way onto a corner would sit balanced there with
+    // its own corners hanging through the floor. Easing it onto a face is also
+    // what makes a dropped barrel land lid-up and ready to be stacked on. (The
+    // gates mean this only ever touches a body that has genuinely stopped, so a
+    // barrel knocked over still tips and still comes to rest on its side — it just
+    // rests *flat* on that side rather than at whatever angle it stopped at.)
     //
     // Note what is NOT here: a drum has no smash-on-impact rule. Steel takes a
     // hurl into a wall and dents; only explosives open it (충돌 충격에는 파괴되지
@@ -4217,7 +4650,7 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // with the crate it otherwise now breaks exactly like — and with the molotov
     // just above, which is glass and breaks at a third of the crate's speed.
     if (o.kind === 'drum') {
-      if (o.part !== 'drum') settleBodyUpright(o);
+      settleBodyUpright(o);
       continue;
     }
     if (o.kind !== 'woodbox') continue;
@@ -4229,22 +4662,58 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       doomed.set(o, 'impact'); // the one break that is a blow by definition
       continue;
     }
-    // A settled box squares up: it collides as a disc, so the contact solve has no
-    // orientation to prefer and a stopped crate would otherwise rest at whatever
-    // angle it happened to reach, corners hanging through the floor. Gated on the
+    // A settled box squares up: a crate stopped part-way onto a corner would sit
+    // balanced there with its own corners hanging through the floor. Gated on the
     // body having actually stopped, so tumbling and rolling are untouched.
     settleBodyUpright(o);
   }
-  // Phase B — resolve collisions between bodies (fully interactive layer).
-  resolveObjectPairs(objects);
-  // Phase B.5 — the inter-object shove can push a light body into terrain; pop it
-  // back out so the crush scan sees genuine entombment only, not a transient
-  // collision overlap (a no-op for any body not penetrating the grid).
-  for (let i = 0; i < objects.length; i++) {
-    const o = objects[i];
-    if (o.held) continue;
-    if (o.kind === 'ball') resolveGridCollision(o, ctx);
-    else resolveCapsuleCollision(o, ctx);
+  // Phase B — resolve the contact graph: collisions BETWEEN bodies (the fully
+  // interactive layer) and each body's collisions with the grid, alternated.
+  //
+  // Alternated, and not one pass of each, because a stack is a chain of contacts
+  // and one pass only ever propagates one link of it. Solving the pair first and
+  // the ground second, a crate resting on a crate resting on the floor hands its
+  // weight to the crate below, which hands it to the floor — but the floor's
+  // answer arrives after the pair is already settled, so the top crate keeps a
+  // sliver of fall every tick and rides ~0.2 cells/tick into the one below it
+  // forever. Each extra round passes the ground's answer one link further back up
+  // the stack and quarters what is left, so a few rounds put a tower properly to
+  // sleep. Cheap: object counts are small and a round is only a handful of cell
+  // scans per body.
+  const pairImpacts = new Map<SimBody, number>();
+  const touched = new Set<SimBody>();
+  for (let round = 0; round < CONTACT_ROUNDS; round++) {
+    // Only the first round measures how hard bodies met — by the later rounds they
+    // are looking at velocities the earlier impulses already reflected.
+    touched.clear();
+    resolveObjectPairs(objects, round === 0 ? pairImpacts : null, touched);
+    // Nothing is touching anything: phase A already settled every body against the
+    // grid, so there is no chain left to relax and the remaining rounds are work
+    // for nothing. This is the common case — bodies scattered around a world.
+    if (touched.size === 0) break;
+    // The inter-object shove can also push a light body into terrain; this pops it
+    // back out, so the crush scan below sees genuine entombment only and not a
+    // transient collision overlap. Only the bodies a pair actually moved need it.
+    for (const o of touched) {
+      if (o.held) continue;
+      if (o.kind === 'ball') resolveGridCollision(o, ctx);
+      else resolveCapsuleCollision(o, ctx);
+    }
+  }
+  // A smash threshold is about how hard the body was struck, not about what struck
+  // it: hurling a crate into another crate has to burst it exactly as hurling it
+  // into a wall does (오브젝트끼리 충돌해도 파괴). So the same two tests phase A ran
+  // against the grid's arrival speed run again here against the pair solve's, for
+  // the two bodies that break on impact — the timber crate and the glass bottle.
+  // The drum is deliberately absent from both: steel only opens to explosives.
+  for (const [o, hit] of pairImpacts) {
+    if (o.held || doomed.has(o)) continue;
+    const limit = o.kind === 'woodbox'
+      ? WOOD_BOX_SMASH_SPEED
+      : o.kind === 'molotov'
+        ? MOLOTOV_SMASH_SPEED
+        : Infinity;
+    if (hit >= limit) doomed.set(o, 'impact');
   }
   // Phase C — terminal triggers, then compact out any body destroyed this tick. A
   // held body is never destroyed (dragging shields it); a directly-hit body spawns
