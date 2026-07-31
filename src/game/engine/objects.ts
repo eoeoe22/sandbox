@@ -17,8 +17,12 @@ import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
 import { SMOKE } from '../materials/smoke';
 import { SAWDUST } from '../materials/sawdust';
+import { ALCOHOL } from '../materials/alcohol';
+import { BROKEN_GLASS } from '../materials/brokenglass';
+import { FUEL_BURN_TEMP } from '../materials/combustion';
 import { VOID } from '../materials/void';
 import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
+import { MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from '../render/molotovSprite';
 
 /**
  * A free rigid object — a self-contained body carrying its own position,
@@ -383,9 +387,80 @@ export interface SimWoodBox {
   held?: boolean;
 }
 
+/**
+ * Which bottle a molotov is showing — and, in one field, how much of it is left.
+ * `full` is the thrown firebomb (fuel behind the glass, cloth wick); `empty` is
+ * what's left once the wick has burnt the fuel away (빈 유리병). Derived from
+ * `fuelTicks` rather than stored (see molotovBottle), so the art can never
+ * disagree with the state that decides what shatters out of it.
+ */
+export type MolotovBottle = 'full' | 'empty';
+
+/**
+ * A Molotov cocktail — a capsule body (it shares the drum/dynamite/smoke-bomb
+ * segment+radius physics and 1-axis rotation, so it tumbles and rolls) that is
+ * defined by being FRAGILE and by being ALIGHT. It is the first body meant to be
+ * broken: where a wooden crate needs a genuine hurl to burst (WOOD_BOX_SMASH_SPEED
+ * 9), a glass bottle gives way at a fraction of that (MOLOTOV_SMASH_SPEED), so
+ * dropping one off a ledge is enough — which is the whole point of the object.
+ *
+ * What comes out is decided by two pieces of state and nothing else:
+ *   - `lit` — the wick. It spawns burning, ANY real soaking puts it out (a pond
+ *     will do it, unlike the dynamite's fuse, which water can't touch), and a
+ *     flame touched to a doused-but-fuelled bottle lights it again.
+ *   - `fuelTicks` — how much fuel is left. It only runs down while lit (a doused
+ *     bottle keeps what it has, exactly like the dynamite's paused fuse), and at
+ *     zero the bottle is a spent 빈 유리병: no wick, no fuel, nothing to light.
+ *
+ * Shattered, it drops Broken Glass either way, plus its Alcohol if it still had
+ * any — burning if the wick was lit (see breakMolotov). It carries no blast at
+ * all: everything it does to the world it does through the fuel it spills.
+ */
+export interface SimMolotov {
+  kind: 'molotov';
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation of the long axis in radians (0 = upright, wick pointing up). */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque. */
+  angularVelocity: number;
+  /** Half the straight segment between the two round caps (cells). */
+  halfLength: number;
+  /** Cap radius (cells). */
+  radius: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia (see SimCapsule). */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — glass thuds; it also rarely survives to
+   *  bounce twice. */
+  restitution: number;
+  /** Consecutive ticks the body has sampled at/above MOLOTOV_BURST_TEMP, so a
+   *  stray hot pixel doesn't pop the bottle — only a sustained bath does. */
+  heatTicks: number;
+  /** The bottle's own heat reservoir (°) — see SimObject.temp. The 가열 brush and
+   *  the Laser's heat ray write it, so either can re-light a doused wick or, held
+   *  long enough, burst the bottle in mid-air. */
+  temp: number;
+  /** Whether the wick is burning. True from creation; a soaking puts it out, a
+   *  flame lights it again, and it goes out for good when the fuel runs out. */
+  lit: boolean;
+  /** Ticks of fuel left (only counts down while `lit`, so a doused bottle keeps
+   *  what it has). 0 = a spent 빈 유리병: it can't be lit and spills no Alcohol. */
+  fuelTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its physics
+   *  and its wick alike are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
 /** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
- *  smoke bombs, wooden boxes) share one array on the Grid, discriminated by `kind`. */
-export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox;
+ *  smoke bombs, wooden boxes, molotovs) share one array on the Grid, discriminated
+ *  by `kind`. */
+export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox | SimMolotov;
 
 /**
  * The physics-only fields every capsule body shares — a medial segment of
@@ -865,6 +940,117 @@ function settleWoodBoxUpright(o: SimWoodBox): void {
     return;
   }
   o.angle += tilt * WOOD_BOX_SETTLE_RATE;
+}
+
+/**
+ * Molotov defaults. The body's size comes straight from its art (see
+ * render/molotovSprite.ts) the way the wooden box's does — the 12×28 sprite
+ * scaled by MOLOTOV_CELLS_PER_PX is a 6×14-cell box, and the capsule inscribed in
+ * it (2·radius wide × 2·(halfLength+radius) tall) is what the world collides
+ * with, so the bottle can never be drawn off its own collision shape.
+ */
+export const MOLOTOV_CELLS_PER_PX = 0.5;
+/** A glass bottle brim-full of spirit: lighter than Water (3), so it floats —
+ *  but only just, riding low with most of itself under the surface, which is what
+ *  makes 물에 빠지면 소화 read as an obvious dunking rather than a sinking. Heavier
+ *  than a hollow drum (1.6) or timber (1.4), lighter than a stick of dynamite (3.5). */
+export const MOLOTOV_DENSITY = 2.6;
+/** Glass doesn't bounce. */
+export const MOLOTOV_RESTITUTION = 0.1;
+/** Max magnitude (rad/tick) of the small random spin a freshly-placed bottle
+ *  spawns with, so it topples off its base to one side instead of balancing —
+ *  the same gentle nudge the dynamite and the smoke bomb get. */
+export const MOLOTOV_SPAWN_SPIN = 0.06;
+/**
+ * Normal closing speed (cells/tick) at which meeting a wall or any solid shatters
+ * the bottle. Measured exactly as the wooden box's crash is (the contact solve's
+ * own closing speed — see WOOD_BOX_SMASH_SPEED), so sliding along a wall or
+ * rolling fast over flat ground still isn't a crash.
+ *
+ * Set at a bit over a quarter of the crate's 9 (충돌 시 파괴되지만 나무 상자보다 훨씬
+ * 더 쉽게, 느린 충돌에도): free fall reaches it after ~12 cells of drop at
+ * OBJECT_GRAVITY, so simply dropping a bottle from any real height breaks it,
+ * whereas the crate needs ~160 cells. It still sits above every gentle placement —
+ * a bottle set down a few cells above the floor lands intact — and above a Fan's
+ * wind (3.75 is a *shove*, not a closing speed against a wall, but the ordering is
+ * what matters). Being this low is the object: a molotov you cannot break by
+ * throwing it isn't one.
+ */
+export const MOLOTOV_SMASH_SPEED = 2.5;
+/** Footprint/reservoir temperature (°) at/above which a flame lights (or re-lights)
+ *  the wick. Just above Alcohol's own 250° autoignition, so anything that would set
+ *  the fuel off sets the wick off: ordinary Fire, embers, Lava, the 가열 브러시. A
+ *  merely warm room never does. */
+export const MOLOTOV_IGNITE_TEMP = 300;
+/** How long the wick burns through the bottle's fuel before it is spent and only
+ *  the 빈 유리병 is left (기획: 불붙은 상태 15초 지속 시). Sized in *seconds* at the
+ *  default sim rate like the dynamite's fuse and the crate's burn, so the
+ *  sandbox's speed dial scales it too. Counts down only while lit. */
+export const MOLOTOV_FUEL_TICKS = Math.round(15 * SIM_HZ_AT_1X);
+/** Fraction of the footprint that has to be quenching matter (liquid, CO₂) for the
+ *  wick to go out. Well under the wooden crate's 0.25 — 소화 기준이 다이너마이트보다
+ *  훨씬 쉽다: a splash is enough, and a bottle that has actually fallen in water is
+ *  submerged far past this (it floats at ~87% under). The dynamite's fuse, by
+ *  contrast, water can't touch at all. */
+const MOLOTOV_DOUSE_FRAC = 0.1;
+/** Footprint/reservoir temperature (°) at/above which the bottle itself bursts
+ *  from heat — the fuel boils and the glass lets go. Set at the dynamite's cook-off
+ *  point and for the same reason: it is deliberately *above ordinary Fire's 1000°*,
+ *  so the wick's OWN emitted Fire (which sits right beside the neck) can never burst
+ *  the bottle it belongs to, while a genuinely hotter bath (Lava 1500°, Blue Flame
+ *  1800°), the 가열 brush or a held Heat Ray does. */
+export const MOLOTOV_BURST_TEMP = 1100;
+/** Sustained ticks above MOLOTOV_BURST_TEMP before it bursts, so a single hot
+ *  splash doesn't pop it. */
+const MOLOTOV_BURST_TICKS = 5;
+/** Per-cell chance a shattered bottle throws a Broken Glass shard, and — if it
+ *  still had fuel — leaves Alcohol in the cells the shards didn't take. The
+ *  footprint is only the bottle's own silhouette, so even at these rates a broken
+ *  molotov is a puddle and a scatter of shards, not a drum's flood. */
+const MOLOTOV_GLASS_CHANCE = 0.22;
+const MOLOTOV_ALCOHOL_CHANCE = 0.55;
+/** How hard the shards are thrown (the `out` budget launchDebris scales its speed
+ *  from). Level with the wooden crate's Sawdust scatter — a bursting bottle sprays
+ *  glass the way a bursting shard sprays shavings. */
+const MOLOTOV_GLASS_SCATTER = 1.5;
+
+/** Which bottle to draw and to shatter: it still has fuel, or it's a spent shell. */
+export function molotovBottle(o: SimMolotov): MolotovBottle {
+  return o.fuelTicks > 0 ? 'full' : 'empty';
+}
+
+/**
+ * Build a Molotov cocktail centered at (x,y) — spawned upright with its wick
+ * already lit (불붙은 상태로 스폰) and a full charge of fuel, plus the same weak
+ * random spin the dynamite and the smoke bomb get so it topples to one side
+ * instead of balancing on its base. Mass and moment of inertia follow the shared
+ * capsule formulas; the geometry comes from the sprite (see MOLOTOV_CELLS_PER_PX).
+ */
+export function createMolotov(x: number, y: number): SimMolotov {
+  const radius = (MOLOTOV_SPRITE_W * MOLOTOV_CELLS_PER_PX) / 2;
+  const halfLength = (MOLOTOV_SPRITE_H * MOLOTOV_CELLS_PER_PX) / 2 - radius;
+  const area = 4 * radius * halfLength + Math.PI * radius * radius;
+  const mass = MOLOTOV_DENSITY * area;
+  const w = 2 * radius;
+  const h = 2 * (halfLength + radius);
+  return {
+    kind: 'molotov',
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: (Math.random() * 2 - 1) * MOLOTOV_SPAWN_SPIN,
+    halfLength,
+    radius,
+    mass,
+    momentOfInertia: (mass * (w * w + h * h)) / 12,
+    restitution: MOLOTOV_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    lit: true,
+    fuelTicks: MOLOTOV_FUEL_TICKS,
+  };
 }
 
 /**
@@ -3078,33 +3264,40 @@ function randSigned(ctx: SimContext): number {
 /**
  * How much of the body's footprint is matter that puts a fire out, as a fraction
  * of the footprint (so the test is size-independent — the same soaking douses a
- * shard and the crate it came from). Read-only.
+ * shard, the crate it came from, and a molotov). Read-only.
  *
  * Quenching matter is CO₂ / Liquid N₂ (the engine's named extinguishers, same
  * pair the dynamite's fuse recognizes) or a non-frozen liquid that is genuinely
  * capable of putting a fire out. That last qualifier does real work: a *liquid*
  * is not automatically wet-blanket. A pool of Lava or Molten Iron is a liquid
  * and would otherwise "douse" the crate floating on it — the exact opposite of
- * what should happen — so a liquid only counts when it is cooler than the timber's
- * own ignition point, and Gasoline/Oil/Alcohol are excluded outright for being
- * fuel rather than water.
+ * what should happen — so a liquid only counts when it is cooler than `hotLimit`
+ * (the caller's own ignition point), and Gasoline/Oil/Alcohol are excluded
+ * outright for being fuel rather than water. The last exclusion is what keeps a
+ * molotov's own spilt Alcohol from putting its own wick out.
  *
  * Frozen liquid deliberately does NOT count either: a block of ice isn't wet, and
  * the rest of the engine already treats a frozen cell as structure, not fluid.
+ *
+ * Written over the capsule footprint rather than a disc so it serves both burning
+ * bodies: a wooden box's `halfLength` is 0, which collapses the segment to its
+ * centre and gives back exactly the disc this used to scan.
  */
-function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
+function bodyQuenchFrac(o: CapsuleBody, ctx: SimContext, hotLimit: number): number {
   const r = o.radius;
   const r2 = r * r;
-  const x0 = Math.floor(o.x - r);
-  const x1 = Math.ceil(o.x + r);
-  const y0 = Math.floor(o.y - r);
-  const y1 = Math.ceil(o.y + r);
+  const [ax, ay, bx, by] = capsuleEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
   let footprint = 0;
   let quench = 0;
   for (let cy = y0; cy < y1; cy++) {
-    const dy = cy + 0.5 - o.y;
     for (let cx = x0; cx < x1; cx++) {
-      const dx = cx + 0.5 - o.x;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
       if (dx * dx + dy * dy > r2) continue;
       footprint++;
       if (!ctx.inBounds(cx, cy)) continue;
@@ -3117,7 +3310,7 @@ function woodBoxQuenchFrac(o: SimWoodBox, ctx: SimContext): number {
       const m = getMaterial(id);
       if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) continue;
       if (m.combustible === true || m.explosive === true) continue; // fuel, not water
-      if (ctx.getTemp(cx, cy) >= WOOD_BOX_IGNITE_TEMP) continue; // lava/molten iron: not a dousing
+      if (ctx.getTemp(cx, cy) >= hotLimit) continue; // lava/molten iron: not a dousing
       quench++;
     }
   }
@@ -3304,7 +3497,7 @@ function stepWoodBox(
     }
     if (o.burnTicks <= 0) return true;
   }
-  if (woodBoxQuenchFrac(o, ctx) >= WOOD_BOX_DOUSE_FRAC) {
+  if (bodyQuenchFrac(o, ctx, WOOD_BOX_IGNITE_TEMP) >= WOOD_BOX_DOUSE_FRAC) {
     o.burnTicks = 0; // doused — back to plain, unlit timber (it can catch again)
     return true;
   }
@@ -3312,6 +3505,145 @@ function stepWoodBox(
   if (--o.burnTicks > 0) return true;
   breakWoodBox(o, ctx, spawn, true, 'collapse');
   return false;
+}
+
+// ───────────────────── Molotov: the wick and the shatter ─────────────────────
+//
+// The molotov is the first body whose *destruction is the feature*. Every other
+// one is built to survive: the crate wants a real hurl, the drum wants sustained
+// heat, the ball wants a fire. A bottle wants to be thrown at something, so it
+// breaks at under a third of the crate's speed (MOLOTOV_SMASH_SPEED) and everything
+// interesting happens in what it leaves behind.
+
+/**
+ * Throw a real Fire cell off the lit wick — the flame is genuine CA fire (the
+ * dynamite fuse's approach, and for the same reason: a painted-on flame would be
+ * a lie the world can't act on), so a burning bottle actually lights the oil
+ * slick it is lying in.
+ *
+ * The wick sits just past the top cap along the bottle's long axis, which rotates
+ * as the bottle tumbles, so the flame tracks the neck at any orientation. Only
+ * open air takes it: a bottle lying in water or buried in sand keeps its `lit`
+ * flag (the douse check below is the sole authority on that) but has nowhere to
+ * put a flame, which is exactly what a smothered wick looks like.
+ */
+function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
+  const [ux, uy] = capsuleAxis(o);
+  const reach = o.halfLength + o.radius + 0.5;
+  const cx = Math.floor(o.x - ux * reach);
+  const cy = Math.floor(o.y - uy * reach);
+  if (!ctx.inBounds(cx, cy) || !ctx.isEmpty(cx, cy)) return;
+  ctx.spawn(cx, cy, FIRE.id);
+}
+
+/**
+ * Shatter the bottle across its own footprint. Two byproducts, and they leave in
+ * deliberately different ways:
+ *
+ *   - BROKEN GLASS **flies**. Each shard launches as a blast fragment
+ *     (`launchDebris`, the crate's Sawdust scatter), thrown outward from the
+ *     bottle's centre so the left half sprays left and the right half right, then
+ *     arcs and rains back down (깨진 부위에서 사방으로 튄다). Like a blast's ejecta it
+ *     may take over any non-solid cell.
+ *   - ALCOHOL **stays**. It is spawned in place, and only if the bottle still HAD
+ *     fuel — so a spent 빈 유리병 leaves nothing but shards (알콜 생성 없이). If the
+ *     wick was lit the fuel is born already burning (불붙은 alcohol): pinned to
+ *     FUEL_BURN_TEMP, which is what combustion.ts reads as a cell that is alight,
+ *     so the puddle wreathes itself in flame and spreads on its own next tick.
+ *
+ * The fuel cannot be flung, and that is a hard constraint rather than a taste
+ * call: a Debris grain packs its flight state into the cell's `temp`
+ * (materials/debris.ts) and deposits its cargo at that material's own *initial*
+ * temperature, so a launched fuel grain would always land cold and the burning
+ * molotov would be indistinguishable from the doused one. It also reads better —
+ * a bottle bursting against a wall paints it rather than arcing the fuel away.
+ * Glass carries no state to lose, so it is free to fly.
+ *
+ * Neither writes over solid terrain (the object layer stays read-only over
+ * anything it didn't put there). The two use the drum's established pair of
+ * guards for exactly these two roles: `isSolidCell` for the thrown fragments
+ * (spawnDrumDebris) and the Phase.Solid test for the poured liquid
+ * (spawnFillSpill). Those two disagree in exactly the two narrow cases their
+ * originals already disagree in: over a frozen puddle (which isSolidCell counts as
+ * footing, so shards skitter off the ice while the fuel spreads across it) and
+ * over a live Spark (which isSolidCell deliberately treats as no surface at all
+ * even though its phase is Solid — see its note — so a shard may launch from a
+ * cell the fuel is turned away from).
+ *
+ * However the bottle died, this is what it leaves: there is no impact/collapse
+ * split (contrast WoodBoxBreakCause), because a crate can give way without being
+ * struck whereas glass only ever ends one way.
+ */
+function breakMolotov(o: SimMolotov, ctx: SimContext): void {
+  const fuelled = o.fuelTicks > 0;
+  const alight = fuelled && o.lit;
+  const r = o.radius;
+  const r2 = r * r;
+  const [ax, ay, bx, by] = capsuleEnds(o);
+  const x0 = Math.floor(Math.min(ax, bx) - r);
+  const x1 = Math.ceil(Math.max(ax, bx) + r);
+  const y0 = Math.floor(Math.min(ay, by) - r);
+  const y1 = Math.ceil(Math.max(ay, by) + r);
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = closestOnSegment(ax, ay, bx, by, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      if (ctx.chance(MOLOTOV_GLASS_CHANCE)) {
+        if (isSolidCell(cx, cy, ctx)) continue;
+        launchDebris(ctx, cx, cy, BROKEN_GLASS.id, cx + 0.5 < o.x ? -1 : 1, -1, MOLOTOV_GLASS_SCATTER);
+        continue;
+      }
+      if (!fuelled || !ctx.chance(MOLOTOV_ALCOHOL_CHANCE)) continue;
+      const cell = ctx.get(cx, cy);
+      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
+      ctx.spawn(cx, cy, ALCOHOL.id);
+      // spawn() resets the cell to the material's own initial temperature, so the
+      // burning pin has to go on afterwards.
+      if (alight) ctx.setTemp(cx, cy, FUEL_BURN_TEMP);
+    }
+  }
+}
+
+/**
+ * Per-tick wick logic for a molotov, after this tick's heat conduction (called
+ * from evaluateTriggers with the resolved `heat`). Four steps:
+ *   1. A sustained bath far hotter than its own flame bursts the bottle outright
+ *      (see MOLOTOV_BURST_TEMP) — lava, a Blue Flame jet, a held Heat Ray.
+ *   2. Any real soaking puts the wick out (물에 빠져도 소화). This is checked before
+ *      the re-light, so a bottle sitting in a burning pool of its own fuel *in
+ *      water* stays out rather than flickering on and off.
+ *   3. Otherwise a flame or hot surroundings light a doused-but-fuelled wick
+ *      again, immediately (the dynamite's fuse re-lights the same way).
+ *   4. A lit wick throws a real flame and eats a tick of fuel; when the fuel runs
+ *      out the bottle is a spent 빈 유리병 — still a body, still breakable, but
+ *      with nothing left to spill or to light.
+ * Returns true to keep the bottle, false once it has burst.
+ */
+function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
+  if (heat >= MOLOTOV_BURST_TEMP) {
+    o.heatTicks++;
+    if (o.heatTicks >= MOLOTOV_BURST_TICKS) {
+      breakMolotov(o, ctx);
+      return false;
+    }
+  } else if (o.heatTicks > 0) {
+    o.heatTicks--;
+  }
+  if (bodyQuenchFrac(o, ctx, MOLOTOV_IGNITE_TEMP) >= MOLOTOV_DOUSE_FRAC) {
+    o.lit = false; // doused — it keeps its remaining fuel and can be lit again
+  } else if (!o.lit && o.fuelTicks > 0 && heat >= MOLOTOV_IGNITE_TEMP) {
+    o.lit = true;
+  }
+  if (!o.lit) return true;
+  emitMolotovFlame(o, ctx);
+  if (--o.fuelTicks <= 0) {
+    o.fuelTicks = 0;
+    o.lit = false; // 15초 지속 → 빈 유리병
+  }
+  return true;
 }
 
 /** The byproduct of a body destroyed by blast or crush: a drum shatters into
@@ -3343,6 +3675,10 @@ function destroyByproduct(
     // Blown open rather than burned down: the charge that would have vented over a
     // whole second goes up at once, filling the cloud disc in a single tick.
     ventSmoke(o, ctx, 1);
+  } else if (o.kind === 'molotov') {
+    // Glass shatters the same way whatever broke it, and its contents land where
+    // it stood — hence no `cause` here (see breakMolotov).
+    breakMolotov(o, ctx);
   }
 }
 
@@ -3394,6 +3730,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
   if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);
+  // A molotov neither melts nor burns away: it runs its wick down and waits to be
+  // broken (which is the point of it). See stepMolotov.
+  if (o.kind === 'molotov') return stepMolotov(o, ctx, heat);
   // Sustained heat: drum melts to Molten Iron, ball burns away to nothing.
   const threshold = o.kind === 'drum' ? DRUM_MELT_TEMP : BALL_BURN_TEMP;
   const ticksNeeded = o.kind === 'drum' ? DRUM_MELT_TICKS : BALL_BURN_TICKS;
@@ -3479,6 +3818,13 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
       continue;
     }
     const impact = stepCapsule(o, ctx, ax, ay, s);
+    if (o.kind === 'molotov') {
+      // Glass, and meant to be thrown: the same closing-speed test the crate gets,
+      // at a fraction of its threshold (see MOLOTOV_SMASH_SPEED). Queued as doomed
+      // rather than broken here so it takes the one shared byproduct path in phase C.
+      if (impact >= MOLOTOV_SMASH_SPEED) doomed.set(o, 'impact');
+      continue;
+    }
     if (o.kind !== 'woodbox') continue;
     // Timber that meets a wall hard enough doesn't bounce, it bursts (매우 빠른
     // 속도로 벽/고체에 부딪히면 파괴). Queued as doomed rather than destroyed here so

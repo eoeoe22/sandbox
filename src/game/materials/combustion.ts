@@ -29,7 +29,7 @@ import { AMBIENT_TEMP } from '../config';
 //
 // So a lit fuel now *stays fuel while it burns* instead of flashing to gas. When
 // a cell catches it doesn't vanish: it stays fuel but marked burning (its
-// temperature pinned to BURN_TEMP), and each tick it (1) wreaths itself in a
+// temperature pinned to FUEL_BURN_TEMP), and each tick it (1) wreaths itself in a
 // lick of Fire in the open air around it — the visible flame, and the handle
 // Water uses to put it out — and (2) rolls to light each of its still-unlit fuel
 // neighbors, handing the front one cell further. Only after a while (a
@@ -72,7 +72,7 @@ import { AMBIENT_TEMP } from '../config';
 // autoignition point (the highest, Coal, is 580), so pinning a catching cell
 // here always reads as "burning" on its next turn regardless of which fuel it
 // is. A fuel can run hotter than this via `Combustible.burnTemp` (see Coal).
-const BURN_TEMP = 800;
+export const FUEL_BURN_TEMP = 800;
 
 // Per-tick chance a burning cell is spent and collapses to Fire, expressed as a
 // multiple of that fuel's own `burnChance`. Keeping it *below* the spread
@@ -91,7 +91,7 @@ const CONSUME_RATIO = 0.3;
 const WREATH_CHANCE = 0.25;
 
 // Oxygen forced draught. A burning fuel cell normally pins at its own
-// `burnTemp` (BURN_TEMP, 800°, for most fuels); Oxygen (id 36) blown against
+// `burnTemp` (FUEL_BURN_TEMP, 800°, for most fuels); Oxygen (id 36) blown against
 // it makes the fire run hotter — each adjacent Oxygen cell adds OXY_BOOST to
 // the pinned temperature up to OXY_MAX_PIN, and the drawn-in oxygen is
 // consumed with probability OXY_CONSUME per tick. OXY_MAX_PIN is set to Blue
@@ -116,7 +116,7 @@ export interface Combustible {
   /** Self temperature at/above which it ignites with no flame contact. */
   autoIgniteTemp: number;
   /** Temperature this fuel's burning cells pin at (and collapse-to-Fire at),
-   *  overriding the shared `BURN_TEMP` (800°). Oxygen's forced-draught boost
+   *  overriding the shared `FUEL_BURN_TEMP` (800°). Oxygen's forced-draught boost
    *  still stacks on top, capped at `OXY_MAX_PIN`. Coal uses this to run its
    *  bare, unoxygenated fire hot enough to melt iron (1200°) while staying
    *  under Blue Flame (1800°). */
@@ -148,7 +148,7 @@ export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
 
 /**
  * Run the burn step for a cell that is already burning (temperature pinned at
- * BURN_TEMP): put it out if Water reached it, otherwise re-pin its heat so it
+ * FUEL_BURN_TEMP): put it out if Water reached it, otherwise re-pin its heat so it
  * stays a burning source, fringe it with flame, spread to fuel neighbors, and
  * roll to be consumed. Returns true only if the cell was consumed into Fire this
  * tick (so the caller must not then move it as fuel); false if it is still
@@ -156,9 +156,9 @@ export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
  * falling/flowing.
  */
 function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
-  // This fuel's own running temperature — BURN_TEMP (800°) unless it overrides
+  // This fuel's own running temperature — FUEL_BURN_TEMP (800°) unless it overrides
   // via `burnTemp` (Coal runs hotter; see Combustible.burnTemp).
-  const myBurnTemp = spec.burnTemp ?? BURN_TEMP;
+  const myBurnTemp = spec.burnTemp ?? FUEL_BURN_TEMP;
   // Petroleum fuels (Crude Oil, Gasoline, …) float on water and keep burning as
   // a surface fire: water below them neither douses the flame nor flashes to
   // Steam, so a lit slick on a pool reproduces an oil fire instead of snuffing
@@ -303,7 +303,7 @@ export function tryBurn(x: number, y: number, sim: SimContext, spec: Combustible
       // so it keeps falling/flowing this tick — return false and let the caller
       // move it (its pinned heat rides along on the swap).
       if (sim.chance(spec.burnChance)) {
-        sim.setTemp(x, y, spec.burnTemp ?? BURN_TEMP);
+        sim.setTemp(x, y, spec.burnTemp ?? FUEL_BURN_TEMP);
       }
       return false;
     }
