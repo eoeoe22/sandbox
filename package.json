@@ -28,9 +28,8 @@
     "test:acidmetal": "node test/run-acidmetal.mjs",
     "test:heatrayobjects": "node test/run-heatrayobjects.mjs",
     "test:chlorinesodium": "node test/run-chlorinesodium.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium",
     "test:stacking": "node test/run-stacking.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:stacking",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium && npm run test:stacking",
     "check:hand-icons": "node scripts/build-hand-icons.mjs --check",
     "build:hand-icons": "node scripts/build-hand-icons.mjs"
   },

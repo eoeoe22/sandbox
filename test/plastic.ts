@@ -41,6 +41,15 @@
  *      fail. The sim is unseeded, so the number moves run to run (12-19 of 20
  *      seen over ~80 runs); the bar is a loose "does it run at all" — it passes
  *      at 5 — so the quoted range is colour, not a threshold.
+ *  10. Acid resistance — the resin is what acid is shipped in, so none of the
+ *      three corrosive materials (Acid, Acid Vapor, Acid Slime, all reading the
+ *      one `acidResistant` flag) may take a single cell of it. Each scene runs
+ *      twice over identical geometry, once with resin and once with Sawdust,
+ *      because "nothing dissolved" and "nothing was ever in contact" look the
+ *      same from a survivor count — the control is what tells them apart. The
+ *      liquid-acid scene also pins the other direction: with nothing corrodible
+ *      in the box the acid must not shrink either, since a puddle only ever
+ *      spends itself as a byproduct of eating something.
  *
  * Run: `node test/run-plastic.mjs`.
  */
@@ -51,6 +60,10 @@ import { ETHYLENE } from '../src/game/materials/ethylene';
 import { CATALYST } from '../src/game/materials/catalyst';
 import { POLYETHYLENE, CHAIN_GENERATIONS } from '../src/game/materials/polyethylene';
 import { ASH } from '../src/game/materials/ash';
+import { ACID } from '../src/game/materials/acid';
+import { ACID_VAPOR } from '../src/game/materials/acidvapor';
+import { ACID_SLIME } from '../src/game/materials/acidslime';
+import { SAWDUST } from '../src/game/materials/sawdust';
 import { FIRE } from '../src/game/materials/fire';
 import { WALL } from '../src/game/materials/wall';
 import { IRON } from '../src/game/materials/iron';
@@ -473,6 +486,120 @@ function hottestEthylene(grid: Grid): number {
       `(${count(grid, ETHYLENE.id)} monomer, ${count(grid, POLYETHYLENE.id)} resin, ` +
       `${count(grid, GASOLINE.id)} gasoline left)`,
   );
+}
+
+// --- 10. Acid runs off the resin ---------------------------------------------
+{
+  // Polyethylene is `acidResistant` (see polyethylene.ts) — the plastics line's
+  // payoff, and the reason acid ships in HDPE jerrycans in the first place.
+  //
+  // Every scene here is run TWICE over the same geometry, once with resin and
+  // once with Sawdust, and Sawdust is the control on purpose: it is the other
+  // buoyant powder (density 2 against the resin's 2.75, both under Acid's 3), so
+  // both heaps float up into the corrosive layer the same way and the contact
+  // the resin survives is contact the control demonstrably had. Without that
+  // pairing "resistant" is indistinguishable from "never touched it", which is
+  // the failure mode a survivor count on its own cannot see.
+  const POWDER_ROWS = 3;
+  const W = 10;
+  const H = 12;
+
+  /** Cells of `id` on the main layer PLUS cells carrying it as a liquid overlay.
+   *  Both layers have to be counted or the acid ledger below reads wrong for a
+   *  reason that has nothing to do with corrosion: a buoyant powder that has
+   *  surfaced through a pool holds the liquid it displaced in its own cell's
+   *  overlay slot (behaviors.ts), so a submerged resin raft parks 30 cells of
+   *  acid off the main layer. Counting only `grid.get` would score that as 30
+   *  cells "consumed" — which is exactly the thing under test. */
+  function countAll(grid: Grid, id: number): number {
+    let n = 0;
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        if (grid.get(x, y) === id) n++;
+        if (grid.getOverlay(x, y) === id) n++;
+      }
+    }
+    return n;
+  }
+
+  /** Bottom `POWDER_ROWS` rows of a sealed box are `powder`, the rest `attacker`.
+   *  Returns what is left of each after `ticks`. */
+  function bath(
+    powder: number,
+    attacker: number,
+    ticks: number,
+  ): { powderLeft: number; powderStart: number; attackerLeft: number; attackerStart: number } {
+    const { grid, sim } = box(W, H);
+    for (let y = 1; y <= H; y++) {
+      for (let x = 1; x <= W; x++) grid.set(x, y, y > H - POWDER_ROWS ? powder : attacker);
+    }
+    const powderStart = countAll(grid, powder);
+    const attackerStart = countAll(grid, attacker);
+    for (let t = 0; t < ticks; t++) sim.step();
+    return {
+      powderLeft: countAll(grid, powder),
+      powderStart,
+      attackerLeft: countAll(grid, attacker),
+      attackerStart,
+    };
+  }
+
+  const TICKS = 600;
+
+  // (a) Liquid Acid. The resin count must be EXACT, not merely high: nothing else
+  // in this box can consume it (no flame, ambient temperature, no reaction row),
+  // so a single missing cell means acid took it.
+  const resin = bath(POLYETHYLENE.id, ACID.id, TICKS);
+  const dust = bath(SAWDUST.id, ACID.id, TICKS);
+  check(
+    'acid does not eat Polyethylene',
+    resin.powderLeft === resin.powderStart,
+    `${resin.powderLeft}/${resin.powderStart} resin left`,
+  );
+  check(
+    'control — the same acid bath eats Sawdust',
+    dust.powderLeft < dust.powderStart * 0.5,
+    `${dust.powderLeft}/${dust.powderStart} sawdust left`,
+  );
+  // The other direction, and the reason it belongs next to the check above: acid
+  // only ever spends itself as a byproduct of corroding (acid.ts). A box holding
+  // nothing corrodible must therefore come out with every acid cell it went in
+  // with — so if some future change quietly made the resin corrodible-but-slow,
+  // this fails even in the run where all 30 resin cells happen to survive.
+  check(
+    'acid in a resin-lined box is not consumed either',
+    resin.attackerLeft === resin.attackerStart,
+    `${resin.attackerLeft}/${resin.attackerStart} acid left ` +
+      `(sawdust control burned ${dust.attackerStart - dust.attackerLeft})`,
+  );
+  check(
+    'control — the acid eating sawdust does spend itself',
+    dust.attackerLeft < dust.attackerStart,
+    `${dust.attackerLeft}/${dust.attackerStart} acid left`,
+  );
+
+  // (b) Acid Vapor and (c) Acid Slime. Same flag, separate `isCorrodible` copies
+  // in acidvapor.ts / acidslime.ts — so each one gets its own scene rather than
+  // being assumed to follow from the liquid. (No exact-conservation assertion on
+  // the attacker here: vapour condenses back to Acid on its own schedule and the
+  // slime can be diluted, so only the powder side is a clean count.)
+  for (const [label, attacker, limit] of [
+    ['Acid Vapor', ACID_VAPOR.id, 0.7],
+    ['Acid Slime', ACID_SLIME.id, 0.7],
+  ] as const) {
+    const kept = bath(POLYETHYLENE.id, attacker, TICKS);
+    const control = bath(SAWDUST.id, attacker, TICKS);
+    check(
+      `${label} does not eat Polyethylene`,
+      kept.powderLeft === kept.powderStart,
+      `${kept.powderLeft}/${kept.powderStart} resin left`,
+    );
+    check(
+      `control — the same ${label} eats Sawdust`,
+      control.powderLeft < control.powderStart * limit,
+      `${control.powderLeft}/${control.powderStart} sawdust left`,
+    );
+  }
 }
 
 console.log(failed === 0 ? '\nAll plastics checks passed.' : `\n${failed} check(s) FAILED.`);
