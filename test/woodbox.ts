@@ -791,5 +791,31 @@ function shoveIntoWall(
     !grid.objects.includes(crate as SimBody));
 }
 
+// 12. Rubber ball object-to-object collision: rubber balls bounce off breakable objects
+//     (like wooden crates) without breaking them.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  const ball = createRubberBall(30, 80);
+  ball.vx = 50;
+  const crate = createWoodBox(50, 80);
+  grid.objects.push(ball as SimBody, crate as SimBody);
+  for (let t = 0; t < 20; t++) sim.step();
+  check('rubber ball colliding at high speed does not destroy wooden crate',
+    grid.objects.includes(crate as SimBody) && grid.objects.includes(ball as SimBody));
+
+  // Control: woodbox thrown at another woodbox at high speed DOES break crate
+  const { grid: g2, sim: s2 } = makeWorld();
+  floor(g2, 90);
+  const crate1 = createWoodBox(30, 80);
+  crate1.vx = 50;
+  const crate2 = createWoodBox(50, 80);
+  g2.objects.push(crate1 as SimBody, crate2 as SimBody);
+  for (let t = 0; t < 20; t++) s2.step();
+  check('wooden crate colliding at high speed with another crate breaks (대조군)',
+    !g2.objects.includes(crate1 as SimBody) || !g2.objects.includes(crate2 as SimBody));
+}
+
 console.log(failures === 0 ? '\nAll wooden-box checks passed.' : `\n${failures} check(s) FAILED.`);
 if (failures > 0) process.exit(1);
+
