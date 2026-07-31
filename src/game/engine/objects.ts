@@ -3563,8 +3563,12 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
  * anything it didn't put there). The two use the drum's established pair of
  * guards for exactly these two roles: `isSolidCell` for the thrown fragments
  * (spawnDrumDebris) and the Phase.Solid test for the poured liquid
- * (spawnFillSpill) — which differ only over a frozen puddle, where shards skitter
- * off the ice and the fuel spreads across it.
+ * (spawnFillSpill). Those two disagree in exactly the two narrow cases their
+ * originals already disagree in: over a frozen puddle (which isSolidCell counts as
+ * footing, so shards skitter off the ice while the fuel spreads across it) and
+ * over a live Spark (which isSolidCell deliberately treats as no surface at all
+ * even though its phase is Solid — see its note — so a shard may launch from a
+ * cell the fuel is turned away from).
  *
  * However the bottle died, this is what it leaves: there is no impact/collapse
  * split (contrast WoodBoxBreakCause), because a crate can give way without being

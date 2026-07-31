@@ -146,8 +146,10 @@ const SETTLE_TICKS = 40;
   check('a ~23-cell drop shatters the bottle', broke >= 0, `broke on tick ${broke}`);
   check('it leaves Alcohol', count(grid, ALCOHOL) > 0, `${count(grid, ALCOHOL)} cells`);
   // The shards LAUNCH, so on the break tick they are Debris in flight — no Broken
-  // Glass has landed yet. That gap is the proof they were thrown rather than laid
-  // down in place; it fills in once the arcs finish.
+  // Glass has landed yet, and it fills in once the arcs finish. This pair shows the
+  // DELAY but not the travel (a fake that withheld the glass and then dropped it in
+  // place would pass it too); the spread comparison in scene 5 is what shows the
+  // shards actually went somewhere.
   check('the shards are in flight on the break tick', count(grid, GLASS) === 0,
     `${count(grid, GLASS)} landed`);
   for (let t = 0; t < SETTLE_TICKS; t++) sim.step();
@@ -292,9 +294,13 @@ const SETTLE_TICKS = 40;
 //     boils and the glass lets go. Driven through the body's own heat reservoir,
 //     which is exactly what the 가열 브러시 and the Laser's heat ray write
 //     (PointerPainter.heatObjectsWhere / footprintHazards.rayHeat).
-//     The control is the point: held at 900° — hotter than ordinary Fire, which
-//     is what the lit wick puts out right beside itself — the bottle is fine. That
-//     is what keeps a burning molotov from bursting itself (MOLOTOV_BURST_TEMP).
+//     The control is the point, and its temperature is chosen to make the design
+//     claim testable: 1050° is HOTTER than the Fire the lit wick puts out right
+//     beside itself (fire.ts pins its own cells at 1000°) and still under
+//     MOLOTOV_BURST_TEMP, so surviving it is exactly the guarantee the threshold
+//     is placed to give — a burning molotov can never burst itself. A control set
+//     below 1000° would only have shown "cooler than my own flame is safe", which
+//     is a weaker claim than the surrounding prose makes.
 {
   const hold = (deg: number, ticks: number): { survived: boolean; glass: number } => {
     const { grid, sim } = makeWorld();
@@ -312,8 +318,8 @@ const SETTLE_TICKS = 40;
   const hot = hold(1600, 60);
   check('sustained 1600° bursts the bottle', !hot.survived);
   check('leaving glass behind', hot.glass > 0, `${hot.glass} cells`);
-  const warm = hold(900, 200);
-  check('but 900° — hotter than its own Fire — never does (대조군)', warm.survived);
+  const warm = hold(1050, 200);
+  check('but 1050° — hotter than its own Fire (1000°) — never does (대조군)', warm.survived);
   check('and spills nothing', warm.glass === 0, `${warm.glass} cells`);
 }
 
