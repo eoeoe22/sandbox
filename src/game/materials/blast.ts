@@ -331,11 +331,10 @@ function isBlastInert(id: number): boolean {
  *  This is the one shove-branch path where the host does NOT survive as a flung
  *  fragment, so it can't hand its 겹침 occupant to a carrier the way a shove does.
  *  It doesn't need to: `spawn` applies the ordinary lifecycle rule — a residue
- *  that can hold the fluid keeps it (Termite's Sawdust is a powder, so a soaked
- *  bug leaves soaked sawdust), and one that can't takes it down with the host,
- *  exactly as any transform into a non-host does. Nothing today can even reach
- *  the losing half: every material carrying these two tags is a non-porous solid,
- *  which can't host an overlay in the first place. */
+ *  that can hold the fluid keeps it, one that can't takes it down with the host,
+ *  exactly as any transform into a non-host does. Neither half is reachable today
+ *  in any case: every material carrying these two tags is a non-porous solid, so
+ *  it can't be holding an overlay to begin with. */
 function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);

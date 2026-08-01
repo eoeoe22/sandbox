@@ -138,11 +138,14 @@ function strandedOverlays(grid: Grid): number {
       continue;
     }
     const m = getMaterial(host);
-    if (m.overlapCarrier === true) continue; // carries anything handed to it
+    // Clause order follows the engine's, not convenience: the allowlist is
+    // checked before the carrier exemption there, and a mirror that reorders them
+    // would disagree with it the day a material declares both.
     if (m.overlapFluids !== undefined && !m.overlapFluids.includes(fluid)) {
       n++;
       continue;
     }
+    if (m.overlapCarrier === true) continue; // carries anything handed to it
     const fluidPhase = getMaterial(fluid).phase;
     if (m.porous === true) {
       if (fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas) continue;
