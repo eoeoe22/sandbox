@@ -575,7 +575,15 @@ checkThrows('a rotor is at rest on a fresh cell and turns as its counter runs', 
     for (let v = 0; v <= hi; v++) out.add(rotorFrame(spin(m, v)));
     return out;
   };
-  check('a running Turbine shows both frames', seen(turbine, 11).size === 2);
+  // A Turbine's counter is its beat, in the HIGH byte of aux (its low byte is the
+  // active countdown, which steady steam pins at a constant — animating from that
+  // one would freeze a turbine at full power), so the run to sweep is a whole beat
+  // cycle shifted up into place.
+  check('a running Turbine shows both frames', seen(turbine, 11 << 8).size === 2);
+  // …and the low byte really is invisible to the wheel: a turbine spinning up and
+  // down its countdown at a fixed beat must not flicker.
+  check('…and its active countdown never moves the wheel',
+    seen(turbine, 24).size === 1, 'beat 0, countdown 0-24');
   check('a running Fan shows both frames', seen(fan, 24 << 2).size === 2);
 });
 
@@ -587,12 +595,22 @@ checkThrows('a rotor is at rest on a fresh cell and turns as its counter runs', 
 // out of the loop body for this: a test that re-implements the aggregation passes just
 // as happily when the renderer regresses to per-cell frames.)
 //
-// The case this exists for is the Turbine: it advances the counter only on cells steam
-// is actually passing through and leaves the rest at 0, so a tile mid-operation holds a
-// spread of counters, not one value.
+// A ROTOR_N tile is a *drawing* unit, not a machine: it is positional (`x % ROTOR_N`),
+// so nothing stops one wheel from straddling cells that legitimately hold different
+// counters — two separate turbine blocks running out of phase with each other, a block
+// beside bare air, or cells freshly painted onto a running block, which sit at 0 until
+// the next beat re-phases them. Drawn per cell, any of those tears one wheel into
+// pieces moving at different speeds.
+//
+// (The case this was originally written for was stronger still: the Turbine used to
+// advance its counter only on the cells steam was passing through, so *every* running
+// block held a spread. Its beat is now re-phased body-wide on each pulse, so a single
+// block agrees with itself — the aggregation is what keeps the cases above honest.)
 checkThrows('a wheel animates as one tile, off its leading cell', () => {
   const turbine = byName('Turbine');
   const sh = turbine.rotorSpinShift ?? 0;
+  /** A counter as it is actually stored — in the Turbine's case, in aux's high byte. */
+  const packed = (counter: number): number => counter << sh;
   const TILES_W = 2; // a patch two wheels wide, one wheel tall
   const W = ROTOR_N * TILES_W;
   /** Run the renderer's per-cell aggregation over the patch; one entry per wheel. */
@@ -606,10 +624,11 @@ checkThrows('a wheel animates as one tile, off its leading cell', () => {
     return acc;
   };
 
-  // A cabinet of steam-fed turbine mid-pulse: counters strung out over the cycle on the
-  // left wheel (soaked cells leading, grazed cells lagging, dry cells at 0), and a
-  // second wheel beside it that no steam has ever reached.
-  const spread = (x: number, y: number): number => (x < ROTOR_N ? (x * 7 + y * 3) % 6 : 0);
+  // A wheel drawn across cells that disagree: counters strung out over the cycle on the
+  // left wheel (blocks at different phases, fresh cells at 0), and a second wheel beside
+  // it that has never run at all.
+  const spread = (x: number, y: number): number =>
+    x < ROTOR_N ? packed((x * 7 + y * 3) % 6) : 0;
   const perCell = new Set<number>();
   for (let y = 0; y < ROTOR_N; y++) {
     for (let x = 0; x < ROTOR_N; x++) perCell.add(rotorFrame(rotorSpin(spread(x, y), sh)));
@@ -627,7 +646,7 @@ checkThrows('a wheel animates as one tile, off its leading cell', () => {
     or === 1 && rotorFrame(spun[0]) === 0, `or=${or}, max=${spun[0]} → frame ${rotorFrame(spun[0])}`);
   check('the wheel next to it is untouched by the aggregation', spun[1] === 0, `${spun[1]}`);
   // …and the reverse direction: a single hot cell raises its own wheel and only it.
-  const oneHot = wheels((x, y) => (x === ROTOR_N && y === 0 ? 9 : 0));
+  const oneHot = wheels((x, y) => (x === ROTOR_N && y === 0 ? packed(9) : 0));
   check('a lone spinning cell drives its own wheel and no other',
     oneHot[0] === 0 && oneHot[1] === 9, `${oneHot[0]}, ${oneHot[1]}`);
 
@@ -636,18 +655,22 @@ checkThrows('a wheel animates as one tile, off its leading cell', () => {
   const seq: number[] = [];
   for (let t = 0; t < 12; t++) {
     // leader at t, one cell half as fast, the rest of the wheel dead — worst case.
-    const w = wheels((x, y) => (y === 0 && x === 0 ? t : y === 0 && x === 1 ? t >> 1 : 0));
+    const w = wheels((x, y) =>
+      y === 0 && x === 0 ? packed(t) : y === 0 && x === 1 ? packed(t >> 1) : 0,
+    );
     seq.push(rotorFrame(w[0]));
   }
   check('the wheel flips every two ticks even with laggards on it',
     seq.join('') === '001100110011', seq.join(''));
 
-  // And the counter the Turbine holds across a steam gap is what makes the wheel stop:
-  // a stalled tile keeps its leader's count, so it freezes on the frame it died on
-  // rather than snapping back to rest because most of its cells read 0. Frame 1 is the
-  // discriminating answer here — a per-cell majority, or any aggregate that let the
+  // And the counter the Turbine holds once its steam stops is what makes the wheel
+  // stop: a stalled tile keeps its leader's count, so it freezes on the frame it died
+  // on rather than snapping back to rest because most of its cells read 0. Frame 1 is
+  // the discriminating answer here — a per-cell majority, or any aggregate that let the
   // zeros vote, would read 0, which is also what the all-dead wheel below reads.
-  const stalled = wheels((x, y) => (y === 0 && x === 0 ? 6 : y === 0 && x === 1 ? 3 : 0));
+  const stalled = wheels((x, y) =>
+    y === 0 && x === 0 ? packed(6) : y === 0 && x === 1 ? packed(3) : 0,
+  );
   check('a stalled wheel freezes on its leader\'s frame, not on rest',
     rotorFrame(stalled[0]) === 1, `counter ${stalled[0]} → frame ${rotorFrame(stalled[0])}`);
   check('…while a wheel that never ran is at rest', rotorFrame(wheels(() => 0)[0]) === 0);

@@ -25,6 +25,7 @@ import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import type { Material } from '../src/game/engine/types';
 import { WALL } from '../src/game/materials/wall';
 import { BATTERY, PULSE_PERIOD } from '../src/game/materials/battery';
+import { LFP_BATTERY } from '../src/game/materials/lfpbattery';
 import { FAN } from '../src/game/materials/fan';
 import { LASER } from '../src/game/materials/laser';
 import { PUMP } from '../src/game/materials/pump';
@@ -860,6 +861,144 @@ function sourceBeats(
     'a Solar Panel goes inactive once the beam stops (and stays silent)',
     cut.tailBeats === 0 && cut.beats > 0,
     `${cut.beats} beats total, ${cut.tailBeats} after the countdown ran out`,
+  );
+}
+
+// --- 11. Turbine: the Lithium Battery's frequency ----------------------------
+// The turbine used to advance its beat counter only on the ticks a cell *itself*
+// had steam in it, which is not a cadence but a duty cycle: real steam is patchy,
+// so a turbine in a working boiler beat about four times slower than the Lithium
+// Battery it is documented to be indistinguishable from (배터리와 다른 주파수).
+// Steam now makes the block *active* (an ACTIVE countdown, like the panel's) and
+// an active block beats on the shared PULSE_PERIOD. What that has to buy:
+//   • steady steam → beat-for-beat the Lithium Battery's rate, tick-aligned;
+//   • GUSTING steam → still the battery's rate. This is the regression itself: a
+//     duty cycle sags here and a cadence doesn't, and it's the only check the old
+//     code actually failed, so a "simplification" back to counting steam-ticks
+//     fails on this line and not on the steady one;
+//   • no steam at all → nothing, ever. The countdown is a coast-down, not a
+//     trickle source;
+//   • the Lithium and LFP batteries agree with each other, so "the battery rate"
+//     is one number rather than whichever chemistry the check happened to pick.
+
+/** A source column sealed in Wall with one Iron lead, and the tick numbers on
+ *  which that lead carried a Spark.
+ *
+ *  Sealed, and much more tightly than `sourceFeeds` is: the turbine is porous, so
+ *  steam stamped into its 겹침 slot escapes into any open neighbour, condenses
+ *  wherever it lands, and leaves puddles that carry the lead's own sparks back
+ *  around the outside of the scene on ticks the source never fired. Boxing the
+ *  column in (Wall on three sides of the source, Wall around the lead) keeps the
+ *  steam in the blades and the sparks on the lead, so a counted tick is a beat.
+ *
+ *  `steamOn`/`steamPeriod` stamp the steam on a duty cycle: `steamOn` ticks of
+ *  every `steamPeriod`. Steady steam is the default; a gap is what a real plume
+ *  looks like. `steamTicks` caps how long the steam is supplied at all, so the
+ *  same helper measures the silence after it's cut off.
+ *
+ *  The off ticks *clear* the 겹침 slot rather than just not stamping it. The same
+ *  seal that keeps the scene honest also means steam blown into the blades has
+ *  nowhere to leave from, so a gap that is merely un-stamped isn't a gap at all —
+ *  the turbine stays steamed for the rest of the run and both the gusting check
+ *  and the steam-cut check quietly measure steady steam instead. */
+function beatTicks(
+  sourceId: number,
+  ticks: number,
+  { steamOn = 1, steamPeriod = 1, steamTicks = ticks } = {},
+): number[] {
+  const h = 4;
+  const y0 = 3;
+  const grid = new Grid(16, 9);
+  const sim = new Simulation(grid);
+  for (let y = y0 - 1; y <= y0 + h; y++) {
+    grid.set(9, y, WALL.id); // behind the source
+    grid.set(12, y, WALL.id); // beyond the lead
+  }
+  for (let x = 9; x <= 12; x++) {
+    grid.set(x, y0 - 1, WALL.id); // cap above
+    grid.set(x, y0 + h, WALL.id); // cap below
+  }
+  for (let y = y0; y < y0 + h; y++) {
+    grid.set(10, y, sourceId);
+    grid.set(11, y, IRON.id);
+  }
+
+  const at: number[] = [];
+  for (let t = 0; t < ticks; t++) {
+    if (sourceId === TURBINE.id) {
+      // Stamped before the step, since a cell's own update runs ahead of its 겹침
+      // passenger's — the same order sourceFeeds uses.
+      const on = t < steamTicks && t % steamPeriod < steamOn;
+      for (let y = y0; y < y0 + h; y++) grid.setOverlay(10, y, on ? STEAM.id : 0);
+    }
+    sim.step();
+    for (let y = y0; y < y0 + h; y++) {
+      if (grid.get(11, y) === SPARK.id) {
+        at.push(t);
+        break;
+      }
+    }
+  }
+  return at;
+}
+
+{
+  const TICKS = 240;
+  const lithium = beatTicks(BATTERY.id, TICKS);
+  const lfp = beatTicks(LFP_BATTERY.id, TICKS);
+  const steady = beatTicks(TURBINE.id, TICKS);
+
+  check(
+    'the two battery chemistries beat identically (the reference rate is one number)',
+    lithium.length > 0 && lithium.join(',') === lfp.join(','),
+    `${lithium.length} vs ${lfp.length} beats over ${TICKS} ticks`,
+  );
+  check(
+    'a steamed Turbine beats at the Lithium Battery frequency, tick for tick',
+    steady.join(',') === lithium.join(','),
+    `turbine ${steady.length} beats vs battery ${lithium.length} (PULSE_PERIOD ${PULSE_PERIOD})`,
+  );
+  // Rate, stated as an interval, so a re-phasing bug that shaves a tick off every
+  // beat is legible in the failure message rather than just "a mismatch".
+  const gaps = steady.slice(1).map((v, i) => v - steady[i]);
+  check(
+    '…and that frequency is one beat per PULSE_PERIOD ticks',
+    gaps.length > 0 && gaps.every((g) => g === PULSE_PERIOD),
+    `gaps ${[...new Set(gaps)].join(',')}`,
+  );
+
+  // The regression. One tick of steam in every four: a wheel already spinning
+  // coasts through the gaps, so the beat holds. Counting steam-ticks instead
+  // stretched every beat by the inverse duty cycle (~4× here) — which is exactly
+  // what a working boiler, whose plume is at least this ragged, used to do.
+  const gusty = beatTicks(TURBINE.id, TICKS, { steamOn: 1, steamPeriod: 4 });
+  check(
+    'a Turbine in GUSTING steam still beats at the battery frequency (박자, 듀티 사이클 아님)',
+    gusty.length === lithium.length,
+    `gusty ${gusty.length} beats vs battery ${lithium.length} over ${TICKS} ticks`,
+  );
+  // The control that makes the check above mean something: the gap the turbine
+  // rides over is genuinely longer than a beat, so a duty-cycled counter really
+  // would have fallen behind rather than the scene being steam-fed by accident.
+  check(
+    '  …and it is riding real gaps — steam is absent on most ticks (the check can fail)',
+    gusty.length > 0 && 3 * TICKS / 4 > PULSE_PERIOD,
+    'steam on 1 tick in 4',
+  );
+
+  // No steam at all: inert, not a slow source. And cut the steam a third of the
+  // way in — the turbine coasts through its countdown and then falls silent.
+  const dry = beatTicks(TURBINE.id, TICKS, { steamTicks: 0 });
+  const cut = beatTicks(TURBINE.id, TICKS, { steamTicks: 80 });
+  check(
+    'a Turbine with no steam is inert — no steam, no pulse, ever',
+    dry.length === 0,
+    `${dry.length} beats in ${TICKS} dry ticks`,
+  );
+  check(
+    'a Turbine goes inactive once the steam stops (and stays silent)',
+    cut.length > 0 && cut.every((t) => t < 80 + 24 + PULSE_PERIOD),
+    `${cut.length} beats, last at ${cut[cut.length - 1]} (steam cut at 80)`,
   );
 }
 
