@@ -738,7 +738,7 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   리뷰에서 잡아내 5.75로 고쳤다 — Thermite는 여전히 진흙엔 가라앉고 슬래그부턴 뜬다). 이
   결과 물↔Mercury/Molten Uranium 사이에 놓인 액체
   사다리(Alcohol 1.9 ~ Molten U235/U238 10) 전 구간에서 가루마다 어느 액체엔 뜨고 어느
-  액체엔 가라앉는지가 갈리는 그러데이션이 생겼다(이 라운드 기준 Ash 1.5 ~ Metal
+  액체엔 가라앉는지가 갈리는 그러데이션이 생겼다(이 라운드 기준 Ash 1.5 ~ Iron
   Powder/Iron Ore 7 — 이후 "## 제련 밀도 재서열"에서 Coal Powder가 7.5로 올라가며
   실제 천장이 됐다).
   제련·우라늄 스택에 걸린 값(Iron Ore·Coal Powder·Limestone·Iron Powder·Nuke Waste)과
@@ -1619,7 +1619,7 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   섬광 셀). 후자는 **일반 폭발(진짜 기폭)** 전용 판정이다 — 크레이터 가장자리에서 살아남은
   개체도 옆에 섬광 셀이 있으면 확정사한다. Woofer의 충격파는 섬광 셀을 만들지 않으므로
   (woofer.ts) 이 경로엔 아예 걸리지 않고, 대신 아래 `shockLoose` 경로로 들어온다.
-  흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal
+  흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Iron
   Powder와 같은 녹는점**(Iron 융점→Molten Iron 융해)이며 Blast엔 **Iron Powder**로 부서진다.
 - **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
   개체만 잡는다 — 폭심에서 폭발이 직접 파괴한 셀은 자기 `update`가 돌기 전에 `defaultCell`

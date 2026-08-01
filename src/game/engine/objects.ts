@@ -600,7 +600,7 @@ export const DRUM_CELLS_PER_PX = 0.5;
 
 /** Shard density. NOT the barrel's 1.6: that figure is the *effective* density of
  *  a sealed hollow drum, which is why an empty one floats. Burst it open and there
- *  is no trapped air left — a shard is a torn plate of steel, so it takes Metal
+ *  is no trapped air left — a shard is a torn plate of steel, so it takes Iron
  *  Powder's density (7, materials/ironpowder.ts) and sinks like the scrap it is. */
 export const DRUM_PIECE_DENSITY = 7;
 
@@ -2511,7 +2511,7 @@ function scanBodyExposure(
   return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
-/** Per-cell chance a shattered drum SHARD flings a Iron Powder fragment from that
+/** Per-cell chance a shattered drum SHARD flings an Iron Powder fragment from that
  *  footprint cell. Denser than the hollow barrel's old whole-body scatter (0.2)
  *  because a shard's footprint is much smaller than the whole barrel's:
  *  at 0.35 the three shards together still yield the same clearly visible heap of

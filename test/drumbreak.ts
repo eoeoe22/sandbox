@@ -1,6 +1,6 @@
 // Headless behavioural harness for the drum's destruction chain (engine/objects.ts
 // SimCapsule / breakDrum): 드럼통 3종도 나무 상자처럼 부서진다 — a barrel bursts into
-// its three shards, pours out whatever it held, and a shard shatters into Metal
+// its three shards, pours out whatever it held, and a shard shatters into Iron
 // Powder. Plus the two rules the drum does NOT share with the crate: an impact
 // never breaks it (폭발물에만 파괴), and heat melts it in two stages, barrel →
 // shards → Molten Iron, with the shard's melt point a notch above the barrel's.
