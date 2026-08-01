@@ -245,10 +245,13 @@ export interface Material {
    */
   petroleum?: boolean;
   /**
-   * Truly indestructible — nothing in the world can remove it: a Blast front is
-   * blocked by it, a flying Ember shatters on it, Antimatter skips it, a Void
-   * can't swallow it, and even a critical uranium's Nuclear Ray bounces off it
-   * (the one thing that pierces blast-proof Diamond). Unlike `isWall` it isn't
+   * Truly indestructible — no *ordinary* force in the world can remove it: a
+   * Blast front is blocked by it, a flying Ember shatters on it, a Void can't
+   * swallow it, and even a critical uranium's Nuclear Ray bounces off it
+   * (the one thing that pierces blast-proof Diamond). The single exception is
+   * Antimatter, which annihilates everything but the Wall and the Void — armor
+   * and indestructibility alike are no defense against it (antimatter.ts).
+   * Unlike `isWall` it isn't
    * the container boundary, so it stays an ordinary placeable solid the brush
    * treats normally — it just can't be destroyed by any in-world force (Clone).
    * The only ways to clear it are the eraser brush and a full clear.
@@ -268,9 +271,10 @@ export interface Material {
   isWall?: boolean;
   /**
    * Survives every explosive force: a Blast front is stopped by it (casting a
-   * shadow over what's behind), a flying Ember shatters on contact instead of
-   * smashing it, and Antimatter annihilation skips over it (see
-   * blast.ts/ember.ts/antimatter.ts), exactly like the Wall. Unlike `isWall`
+   * shadow over what's behind) and a flying Ember shatters on contact instead of
+   * smashing it (see blast.ts/ember.ts), exactly like the Wall. Antimatter is
+   * the exception it does *not* survive — annihilation ignores armor entirely
+   * (antimatter.ts). Unlike `isWall`
    * though, it isn't the container boundary — it's an ordinary placeable solid
    * (Diamond) that just happens to be blast-proof. Combined with never declaring
    * a temperature reaction, it makes a material effectively indestructible by

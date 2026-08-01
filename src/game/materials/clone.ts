@@ -16,10 +16,12 @@ import { VOID } from './void';
 // Fire and it's an eternal flame. It's the classic sandbox toy, and the flip
 // side of Void.
 //
-// Clone is `indestructible`: no in-world force can remove it — blasts are blocked
-// by it, embers shatter on it, antimatter and Void skip it, and even a critical
-// uranium's Nuclear Ray bounces off it. So a Clone source keeps running no matter
-// what you throw at it; only the eraser brush (or a full clear) takes it out.
+// Clone is `indestructible`: blasts are blocked by it, embers shatter on it,
+// Void skips it, and even a critical uranium's Nuclear Ray bounces off it. So a
+// Clone source keeps running no matter what you throw at it — with one
+// exception: Antimatter annihilates it like anything else, since only the Wall
+// and the Void survive that (antimatter.ts). Short of antimatter, only the
+// eraser brush (or a full clear) takes it out.
 //
 // The adopted id lives in `aux` (0 = "hasn't latched yet"). It won't latch onto
 // things that aren't meaningful to duplicate: Empty, the Wall, another Clone, a
