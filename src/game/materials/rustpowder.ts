@@ -7,7 +7,7 @@ import { IRON_MELT_TEMP } from './molteniron';
 import { SLAG } from './slag';
 import { MOLTEN_IRON_ORE } from './moltenironore';
 
-// Rust Powder (녹가루) — fine grainy rust formed when metal powder oxidizes in salt water
+// Rust Powder (녹가루) — fine grainy rust formed when iron powder oxidizes in salt water
 // or when iron crumbles into rust powder upon corrosion.
 // When heated past iron's melting point (IRON_MELT_TEMP), it melts into either
 // Slag (50% chance) or Molten Iron Ore (50% chance).

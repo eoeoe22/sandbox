@@ -123,7 +123,7 @@ export interface Material {
    * and nothing else does, so a new attractable material is added by setting this
    * alone.
    *
-   * Only tag matter that is genuinely *loose* — a powder (Metal Powder, Rust
+   * Only tag matter that is genuinely *loose* — a powder (Iron Powder, Rust
    * Powder, Iron Ore) or a `shockLoose` crawler (Nanobot). Structural solids
    * (Iron, Rust) are deliberately NOT tagged even though real iron is magnetic:
    * dragging a fixed structure around would walk a player's wiring, machines and
@@ -360,7 +360,7 @@ export interface Material {
    * What a cell of this material leaves behind when a blast destroys it, instead
    * of the usual shockwave flash that fades to Fire/Empty (see defaultCell in
    * blast.ts). A material that should drop *residue* when caught in a crater —
-   * a Termite crushed to Sawdust, a Nanobot shattered to Metal Powder — sets this
+   * a Termite crushed to Sawdust, a Nanobot shattered to Iron Powder — sets this
    * so the residue appears even at the epicenter, not just for the rim cells its
    * own `update` can catch via an adjacent Blast cell. Omitted ⇒ the ordinary
    * flash. Also the residue a `shockDeathChance` roll leaves when a shockwave too

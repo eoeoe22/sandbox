@@ -36,7 +36,7 @@ import { getMaterial } from '../src/game/materials/registry';
 import { ACID } from '../src/game/materials/acid';
 import { HYDROGEN } from '../src/game/materials/hydrogen';
 import { IRON } from '../src/game/materials/iron';
-import { METAL_POWDER } from '../src/game/materials/metalpowder';
+import { IRON_POWDER } from '../src/game/materials/ironpowder';
 import { ALUMINUM } from '../src/game/materials/aluminum';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
 import { ACTIVATED_ALUMINUM } from '../src/game/materials/activatedaluminum';
@@ -135,7 +135,7 @@ function bath(
 {
   const cases: Array<[string, number]> = [
     ['Iron', IRON.id],
-    ['Metal Powder (iron filings)', METAL_POWDER.id],
+    ['Iron Powder (iron filings)', IRON_POWDER.id],
     ['Uranium (U235)', URANIUM.id],
     ['U238', U238.id],
     ['Gallium', GALLIUM.id],
@@ -224,13 +224,13 @@ function bath(
   );
   check(
     'powder beats bulk in both metals (surface area)',
-    rate(METAL_POWDER.id) > rate(IRON.id) && rate(ALUMINUM_POWDER.id) > rate(ALUMINUM.id),
-    `Fe ${rate(IRON.id)}→${rate(METAL_POWDER.id)}, Al ${rate(ALUMINUM.id)}→${rate(ALUMINUM_POWDER.id)}`,
+    rate(IRON_POWDER.id) > rate(IRON.id) && rate(ALUMINUM_POWDER.id) > rate(ALUMINUM.id),
+    `Fe ${rate(IRON.id)}→${rate(IRON_POWDER.id)}, Al ${rate(ALUMINUM.id)}→${rate(ALUMINUM_POWDER.id)}`,
   );
   check(
     '…and aluminum dust still outpaces iron dust',
-    rate(ALUMINUM_POWDER.id) > rate(METAL_POWDER.id),
-    `Al ${rate(ALUMINUM_POWDER.id)} > Fe ${rate(METAL_POWDER.id)}`,
+    rate(ALUMINUM_POWDER.id) > rate(IRON_POWDER.id),
+    `Al ${rate(ALUMINUM_POWDER.id)} > Fe ${rate(IRON_POWDER.id)}`,
   );
   check(
     'the oxides and the sub-hydrogen metals carry no rate at all',
@@ -277,7 +277,7 @@ function bath(
     'Aluminum Powder 0.12',
     'Gallium 0.015',
     'Iron 0.03',
-    'Metal Powder 0.09',
+    'Iron Powder 0.09',
     'U235 0.05',
     'U238 0.05',
   ];
@@ -304,7 +304,7 @@ function bath(
 //    rate gap wide enough (3×) to read off a run rather than off the table.
 {
   const bar = bath(IRON.id, 200);
-  const dust = bath(METAL_POWDER.id, 200);
+  const dust = bath(IRON_POWDER.id, 200);
   check(
     'iron filings fizz harder than a solid iron bar in the same bath',
     dust.maxH2 > bar.maxH2,

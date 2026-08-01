@@ -5,7 +5,7 @@ import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST, detonate } from '../materials/blast';
 import { MOLTEN_IRON } from '../materials/molteniron';
-import { METAL_POWDER } from '../materials/metalpowder';
+import { IRON_POWDER } from '../materials/ironpowder';
 import { OIL } from '../materials/oil';
 import { ACID } from '../materials/acid';
 import { ANTIMATTER } from '../materials/antimatter';
@@ -160,7 +160,7 @@ export type DrumFill = 'empty' | 'oil' | 'acid';
  * 부서진다). Kept as a field rather than as separate `kind`s for the same reason
  * DrumFill is: every part runs one physics path, is steel to the electromagnet and
  * melts the same way; only its size, its sprite and what it leaves behind vary —
- * the barrel comes apart into the three shards, a shard shatters into Metal Powder.
+ * the barrel comes apart into the three shards, a shard shatters into Iron Powder.
  */
 export type DrumPart = 'drum' | 'piece1' | 'piece2' | 'piece3';
 
@@ -600,8 +600,8 @@ export const DRUM_CELLS_PER_PX = 0.5;
 
 /** Shard density. NOT the barrel's 1.6: that figure is the *effective* density of
  *  a sealed hollow drum, which is why an empty one floats. Burst it open and there
- *  is no trapped air left — a shard is a torn plate of steel, so it takes Metal
- *  Powder's density (7, materials/metalpowder.ts) and sinks like the scrap it is. */
+ *  is no trapped air left — a shard is a torn plate of steel, so it takes Iron
+ *  Powder's density (7, materials/ironpowder.ts) and sinks like the scrap it is. */
 export const DRUM_PIECE_DENSITY = 7;
 
 /** Outward speed (cells/tick) the three shards are thrown at as the barrel comes
@@ -621,7 +621,7 @@ const DRUM_SHATTER_SPIN = 0.09;
  * barrel it just opened are spawned right inside it. Without this window the
  * explosion would pulverize its own wreckage on the very next tick — measured:
  * the three shards lasted exactly one tick at every blast size — and a bombed drum
- * would go straight from barrel to Metal Powder without ever visibly coming apart,
+ * would go straight from barrel to Iron Powder without ever visibly coming apart,
  * which is the whole thing this is for. Long enough to outlast the flash that made
  * them (and for their outward throw to carry them clear of the crater), short
  * enough that a SECOND charge dropped on the wreckage still shatters it.
@@ -2511,7 +2511,7 @@ function scanBodyExposure(
   return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
 }
 
-/** Per-cell chance a shattered drum SHARD flings a Metal Powder fragment from that
+/** Per-cell chance a shattered drum SHARD flings an Iron Powder fragment from that
  *  footprint cell. Denser than the hollow barrel's old whole-body scatter (0.2)
  *  because a shard's footprint is much smaller than the whole barrel's:
  *  at 0.35 the three shards together still yield the same clearly visible heap of
@@ -2520,11 +2520,11 @@ function scanBodyExposure(
 const DRUM_DEBRIS_CHANCE = 0.35;
 
 /**
- * A shard shattered by a blast/crush crumbles to Metal Powder across its footprint
+ * A shard shattered by a blast/crush crumbles to Iron Powder across its footprint
  * — the end of the drum's wreckage chain (barrel → three shards → powder), and the
  * exact counterpart of a wooden shard crumbling to Sawdust. Reuses debris.ts's
  * scatter so the grains arc up and rain back down as a visible heap rather than
- * the shard vanishing. Metal Powder (metalpowder.ts) — NOT solid Iron — is the
+ * the shard vanishing. Iron Powder (ironpowder.ts) — NOT solid Iron — is the
  * destroyed form: an explosion shatters the metal into dust, and the powder still
  * melts back to Molten Iron if it later lands in heat. Only a fraction of the
  * footprint becomes powder (DRUM_DEBRIS_CHANCE); solid cells are skipped (the
@@ -2551,7 +2551,7 @@ function spawnDrumDebris(o: SimCapsule, ctx: SimContext): void {
       if (isSolidCell(cx, cy, ctx)) continue;
       if (!ctx.chance(DRUM_DEBRIS_CHANCE)) continue;
       // Spray outward from the drum's center (left cells fly left, right fly right).
-      launchDebris(ctx, cx, cy, METAL_POWDER.id, cx + 0.5 < o.x ? -1 : 1, -1, 2);
+      launchDebris(ctx, cx, cy, IRON_POWDER.id, cx + 0.5 < o.x ? -1 : 1, -1, 2);
     }
   }
 }
@@ -3520,7 +3520,7 @@ function resolveObjectPairs(
  * Evaluate a body's terminal triggers after all motion this tick has settled.
  * Priority: a direct blast hit or being crushed in solid destroys it outright;
  * otherwise sustained heat destroys it over time. A drum leaves a byproduct
- * (metal powder when shattered by blast/crush, a molten-iron puddle when melted
+ * (iron powder when shattered by blast/crush, a molten-iron puddle when melted
  * by heat); a rubber ball leaves nothing. Returns true to KEEP the body, false to
  * drop it (byproducts, if any, already spawned).
  */
@@ -4055,7 +4055,7 @@ function emitWoodBoxFlames(o: SimWoodBox, ctx: SimContext): void {
  *   - 'impact' (충격): something hit it. A crash into a wall or the ground at
  *     smashing speed, an explosion's direct hit, an Antimatter touch. There is a
  *     real shock to pass on, so the shards are thrown clear and a shard's own
- *     crumbs (Sawdust / Metal Powder) are flung across the scene.
+ *     crumbs (Sawdust / Iron Powder) are flung across the scene.
  *   - 'collapse': nothing struck it — it simply gave way. It burnt through, it
  *     melted open, it was eaten through by Acid, it was crushed/entombed in solid
  *     with nowhere to go, or a Nuclear Ray ate it away. Wreckage from a collapse
@@ -4126,7 +4126,7 @@ function placeShard(
  *     from here on: they sink, they still answer the electromagnet, and they melt
  *     at a slightly higher temperature than the barrel did. The shards exist ONLY
  *     through this path.
- *   - a SHARD has nothing left to break into, so it shatters into Metal Powder.
+ *   - a SHARD has nothing left to break into, so it shatters into Iron Powder.
  *
  * `cause` decides how violently that happens (see BreakCause). What it does NOT
  * decide is whether the contents pour out: that happens the moment the barrel
@@ -4444,7 +4444,7 @@ function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
 /** The byproduct of a body destroyed by blast or crush: a drum bursts into its
  *  three shards and, if it was carrying anything, gushes its contents (원유/산)
  *  across the wreckage — and a shard, having nothing left to break into, shatters
- *  into scattered Metal Powder (see breakDrum); a stick of dynamite detonates (a
+ *  into scattered Iron Powder (see breakDrum); a stick of dynamite detonates (a
  *  knock or a passing blast sets it off — chain reactions); a smoke bomb's canister
  *  ruptures and dumps its whole remaining charge at once; a wooden crate bursts
  *  into its three shards (and a shard into Sawdust — see breakWoodBox), carrying

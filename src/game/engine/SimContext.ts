@@ -345,7 +345,7 @@ export class SimContext {
    * something else into it, or another grain arrives. Storing the material id and
    * requiring it to match means a grip can only ever apply to the same kind of
    * matter it was taken out on; anything else in that cell behaves normally
-   * (a cell that changes from Metal Powder to Water, or to Iron Ore, is not held).
+   * (a cell that changes from Iron Powder to Water, or to Iron Ore, is not held).
    * A grain of the *same* material moving into the cell is indistinguishable from
    * the one that was there, and is left held for that one tick — harmless, since a
    * live magnet grips it on the same tick anyway.

@@ -54,7 +54,7 @@ function getSaltWaterDepth(x: number, y: number, sim: SimContext): number {
 // Fe + 2HCl → FeCl₂ + H₂ is the fizz every school lab does with an iron nail,
 // and iron sits below aluminum in the series, so this is deliberately under cast
 // Aluminum's 0.04: pour acid on both and the aluminum bubbles harder. Its own
-// filings go three times faster (metalpowder.ts, 0.09) for the surface-area
+// filings go three times faster (ironpowder.ts, 0.09) for the surface-area
 // reason the aluminum pair already encodes — dust presents all of itself where a
 // bar presents one face.
 const ACID_HYDROGEN_CHANCE = 0.03;

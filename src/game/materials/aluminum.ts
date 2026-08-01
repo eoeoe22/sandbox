@@ -71,7 +71,7 @@ export const ALUMINUM = register({
   name: 'Aluminum',
   phase: Phase.Solid,
   // A brighter, cooler silver than Iron's rgb(135, 140, 150) — the same
-  // separation its powder keeps from Metal Powder, so cast aluminum and cast
+  // separation its powder keeps from Iron Powder, so cast aluminum and cast
   // iron never read as the same slab.
   color: rgb(186, 192, 200),
   // The structural-solid convention (Iron, Gallium, Heatpipe): a solid never

@@ -42,7 +42,7 @@ import { HYDROGEN } from './hydrogen';
 // becomes the product" crafting step Gunpowder got from Sulfur + Saltpeter +
 // Coal Powder. And the ingredients are the real ones: thermite *is* iron oxide
 // plus aluminum powder, and Rust Powder is already the game's iron oxide dust
-// (it's what Metal Powder corrodes into in salt water) — so the recipe closes a
+// (it's what Iron Powder corrodes into in salt water) — so the recipe closes a
 // loop that was already half-built, 소금물에 삭힌 철가루 → 녹가루 → 테르밋.
 //
 // On its own it's the game's most *stubborn* fuel, and its hottest. Real
@@ -62,7 +62,7 @@ import { HYDROGEN } from './hydrogen';
 //
 // It is deliberately NOT `magnetic` (aluminum isn't ferrous), which is what
 // makes it the first powder an Electromagnet can sort *other metal dust* from:
-// every iron-bearing powder in the palette — Metal Powder, Rust Powder, Iron
+// every iron-bearing powder in the palette — Iron Powder, Rust Powder, Iron
 // Ore — answers the field, so until now sweeping a magnet over a heap only ever
 // separated metal from non-metal. Now the iron grains march off and the aluminum
 // stays put. (It is not the only non-magnetic metal powder — Sodium never
@@ -166,13 +166,13 @@ export const ALUMINUM_POWDER = register({
   id: 128,
   name: 'Aluminum Powder',
   phase: Phase.Powder,
-  // Bright, near-white silver — deliberately lighter than Metal Powder's dusty
+  // Bright, near-white silver — deliberately lighter than Iron Powder's dusty
   // steel rgb(158, 162, 172), so the two metal dusts never read the same in a
   // mixed heap (which is exactly the heap the Electromagnet is meant to sort).
   color: rgb(208, 212, 218),
   // Real aluminum (~2.7 g/cm³) is roughly a third the weight of iron and about
   // half that of iron oxide, and the density scale keeps that ordering:
-  // Aluminum Powder < Rust Powder (5.5) < Metal Powder (7). It also lands below
+  // Aluminum Powder < Rust Powder (5.5) < Iron Powder (7). It also lands below
   // the mineral powders (Sand/Salt 5) and above Saltwater (4)/Water (3), so a
   // poured charge still sinks in a pool. Set 4.6 rather than 4.5 so it isn't
   // exactly tied with Lava and has a definite sink/float answer everywhere.
@@ -188,7 +188,7 @@ export const ALUMINUM_POWDER = register({
   density: 4.6,
   combustible: true,
   // Filed with the plain powders rather than 폭발, so it sits directly beside
-  // Metal Powder and Rust Powder: the partner it reacts with, and the metal-dust
+  // Iron Powder and Rust Powder: the partner it reacts with, and the metal-dust
   // family it belongs to. (Sulfur/Saltpeter went the other way — into 폭발 next
   // to the Gunpowder they make — because *both* of their partners were already
   // there. Here Rust Powder is anchored in 가루 by its corrosion role, and
@@ -198,7 +198,7 @@ export const ALUMINUM_POWDER = register({
   // (0.42), less than angular coal dust (0.48) (마찰).
   friction: 0.45,
   // Aluminum out-conducts iron in reality, and loose grains bridge heat far
-  // worse than a solid bar, so this sits just above Metal Powder's 0.35 — hot
+  // worse than a solid bar, so this sits just above Iron Powder's 0.35 — hot
   // enough to carry a burn front through a pile without a flame between grains.
   thermal: { conductivity: 0.4 },
   // **Acid → Hydrogen.** Pouring acid on aluminum used to do the least

@@ -20,17 +20,23 @@ const INSIDE_RUST_CHANCE = 0.0002; // 안쪽(스며든 부위) 부식 확률 (0.
 // Powder they corrode into just dissolves — an oxide has no hydrogen to give.
 const ACID_HYDROGEN_CHANCE = 0.09;
 
-// Metal Powder — the pourable, shattered form of metal. It's what a blue drum
+// Iron Powder — the pourable, shattered form of iron. It's what a blue drum
 // bursts into when an explosion tears it apart (see objects.ts): the shell is
 // blown to bits rather than cleanly melting, so it rains down as a heap of heavy
 // steel grains instead of a molten puddle. It falls and piles like Sand, and —
 // being metal — it still melts: heated past Iron's melting point it turns to
 // Molten Iron exactly as solid Iron does, so a pile of drum shrapnel dropped in
 // Lava pools back into liquid metal. Denser than the lighter mineral powders
-// (sand ~5) so a metal-dust heap settles beneath them and sinks through
+// (sand ~5) so an iron-dust heap settles beneath them and sinks through
 // water and liquid Slag (5.75) alike — heavy metal grains settling under the
 // light waste slag — yet nowhere near solid Iron's block density.
-function updateMetalPowder(x: number, y: number, sim: SimContext): void {
+//
+// The name says iron, and everything about the material always did: it rusts in
+// salt water, an Electromagnet lifts it, it melts at Iron's melting point, and it
+// fizzes hydrogen in acid at iron's place in the reactivity series. It was
+// registered as "Metal Powder" while the Korean palette already read 철가루; the
+// two now agree. `id` 105 is unchanged, so old saves load as before.
+function updateIronPowder(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten Iron
     // reads as molten instead of instantly re-freezing next tick (mirrors Iron).
@@ -86,16 +92,16 @@ function updateMetalPowder(x: number, y: number, sim: SimContext): void {
   updatePowder(x, y, sim);
 }
 
-export const METAL_POWDER = register({
+export const IRON_POWDER = register({
   id: 105,
-  name: 'Metal Powder',
+  name: 'Iron Powder',
   phase: Phase.Powder,
   // A grainier, slightly lighter steel-grey than solid Iron's rgb(135,140,150),
-  // so a loose pile reads as dusty metal shavings rather than a solid bar.
+  // so a loose pile reads as dusty iron shavings rather than a solid bar.
   color: rgb(158, 162, 172),
   density: 7,
   category: 'powder',
-  // Rounded, tumbling grains slide more freely than angular coal dust, so a metal
+  // Rounded, tumbling grains slide more freely than angular coal dust, so an iron
   // heap spreads to a shallower angle of repose (마찰 lower than Coal Powder).
   friction: 0.32,
   // Iron shavings: the archetypal thing an Electromagnet's field lifts out of a
@@ -107,6 +113,6 @@ export const METAL_POWDER = register({
   // Iron filings in acid fizz hydrogen off, faster than the bar they came from —
   // see the constant above and corrosion.ts.
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
-  update: updateMetalPowder,
+  update: updateIronPowder,
 });
 
