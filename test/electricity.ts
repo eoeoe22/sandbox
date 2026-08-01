@@ -1026,6 +1026,98 @@ function beatTicks(
     `zeroing the beat on going inactive would push this above ${PULSE_PERIOD}`,
   );
 
+  // **Joining two running blocks resynchronizes them — once.** The invariant above is
+  // scoped to a block whose connected shape hasn't changed, and this is the case that
+  // needs the scope: build two boilers at different times, then paint a bridge between
+  // them, and from that tick they are one machine. The next beat of whichever
+  // sub-block is furthest along floods all of it, so a terminal on the lagging side
+  // sees one beat sooner than PULSE_PERIOD after its own previous one. What has to
+  // hold is that this is a lock-in, not a rate: **at most one** such interval, and
+  // everything after it exactly PULSE_PERIOD.
+  //
+  // Beats are read off the beat counter itself (it reads 0 only on the tick its body
+  // fired) rather than off sparks on a lead. A body beat can leave part of a lead
+  // still refractory from that lead's own previous beat, so the one injected Spark
+  // walks the rest of the lead over the next ticks — counting spark-presence would
+  // score that single beat as three and the lock-in as a burst.
+  const mergeBeats = (
+    skew: number,
+    bridgeAt: number,
+    ticks = 300,
+  ): { a: number[]; b: number[] } => {
+    // Sealed solid: every cell that isn't turbine or lead is Wall, so the porous
+    // turbines' 겹침 steam can't escape and condense into stray conductor.
+    //   lead A x=3 │ block A x=4 │ bridge (5..7, y=5) │ block B x=8 │ lead B x=9
+    const grid = new Grid(13, 9);
+    const sim = new Simulation(grid);
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) grid.set(x, y, WALL.id);
+    }
+    for (let y = 4; y < 7; y++) {
+      grid.set(3, y, IRON.id);
+      grid.set(4, y, TURBINE.id);
+      grid.set(8, y, TURBINE.id);
+      grid.set(9, y, IRON.id);
+    }
+    const a: number[] = [];
+    const b: number[] = [];
+    for (let t = 0; t < ticks; t++) {
+      for (let y = 4; y < 7; y++) grid.setOverlay(4, y, STEAM.id);
+      if (t >= skew) for (let y = 4; y < 7; y++) grid.setOverlay(8, y, STEAM.id);
+      if (t === bridgeAt) for (const x of [5, 6, 7]) grid.set(x, 5, TURBINE.id);
+      if (t >= bridgeAt) for (const x of [5, 6, 7]) grid.setOverlay(x, 5, STEAM.id);
+      sim.step();
+      // Skip the spin-up window: a cell that has never run also reads beat 0, and
+      // block B hasn't been steamed at all until `skew`.
+      if (t < skew + PULSE_PERIOD) continue;
+      if (grid.getAux(4, 5) >> 8 === 0) a.push(t);
+      if (grid.getAux(8, 5) >> 8 === 0) b.push(t);
+    }
+    return { a, b };
+  };
+  const shortGaps = (beat: number[]): number[] =>
+    beat.slice(1).map((v, i) => v - beat[i]).filter((g) => g < PULSE_PERIOD);
+
+  // Never bridged: two independent machines, each rigidly on its own PULSE_PERIOD.
+  // This is the control — it proves the detector doesn't manufacture short intervals
+  // on its own, so the counts below come from the join and nothing else.
+  const apart = mergeBeats(5, 10_000);
+  check(
+    'two separate Turbine blocks each hold PULSE_PERIOD exactly (the control)',
+    apart.a.length > 1 &&
+      apart.b.length > 1 &&
+      shortGaps(apart.a).length === 0 &&
+      shortGaps(apart.b).length === 0,
+    `${apart.a.length}/${apart.b.length} beats, 0 sub-period intervals`,
+  );
+
+  // Now join them, across every skew and a full cycle of join times.
+  let mostShort = 0;
+  let settled = true;
+  for (let skew = 0; skew < PULSE_PERIOD; skew++) {
+    for (let bridgeAt = 60; bridgeAt < 60 + 2 * PULSE_PERIOD; bridgeAt++) {
+      const m = mergeBeats(skew, bridgeAt, 200);
+      for (const beat of [m.a, m.b]) {
+        const gaps = beat.slice(1).map((v, i) => v - beat[i]);
+        const short = gaps.filter((g) => g < PULSE_PERIOD);
+        if (short.length > mostShort) mostShort = short.length;
+        // Everything after the last short interval must be a clean PULSE_PERIOD.
+        const last = gaps.lastIndexOf(gaps.filter((g) => g < PULSE_PERIOD).pop() ?? -1);
+        if (gaps.slice(last + 1).some((g) => g !== PULSE_PERIOD)) settled = false;
+      }
+    }
+  }
+  check(
+    'joining two out-of-phase Turbine blocks costs exactly one early beat, not a rate',
+    mostShort <= 1,
+    `worst block saw ${mostShort} sub-period intervals over ${PULSE_PERIOD} skews × ${2 * PULSE_PERIOD} join times`,
+  );
+  check(
+    '  …and the merged block is locked to PULSE_PERIOD from the next beat on',
+    settled,
+    'every interval after the lock-in equals PULSE_PERIOD',
+  );
+
   // No steam at all: inert, not a slow source. And cut the steam a third of the
   // way in — the turbine coasts through its countdown and then falls silent.
   const dry = beatTicks(TURBINE.id, TICKS, { steamTicks: 0 });

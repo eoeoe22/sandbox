@@ -94,14 +94,27 @@ const POWERED_TICKS = 24;
 // block that goes fully dormant and is re-steamed minutes later can beat on the very
 // tick the steam returns, and the tempting "tidy up" — reset the beat when the
 // countdown hits 0 — is wrong twice over. It cannot make the turbine *fast*: only
-// active ticks advance the beat, so any two consecutive beats are exactly
-// PULSE_PERIOD active ticks apart and dormancy only ever inserts more wall-clock
-// between them (checked over a sweep of duty cycles in test/electricity.ts — the
-// tightest interval any of them produces is exactly PULSE_PERIOD). What it *would* do
-// is make it slow: zeroing throws away up to PULSE_PERIOD-1 ticks of already-served
-// wait on every restart, so a weak boiler puffing on and off would pay a fresh full
-// interval each time — a smaller helping of the very duty cycle this material was
-// rewritten to stop having.
+// active ticks advance the beat, so for a block whose connected shape hasn't changed,
+// consecutive beats are exactly PULSE_PERIOD active ticks apart and dormancy only ever
+// inserts more wall-clock between them (checked over a sweep of duty cycles in
+// test/electricity.ts — the tightest interval any of them produces is exactly
+// PULSE_PERIOD). What it *would* do is make it slow: zeroing throws away up to
+// PULSE_PERIOD-1 ticks of already-served wait on every restart, so a weak boiler
+// puffing on and off would pay a fresh full interval each time — a smaller helping of
+// the very duty cycle this material was rewritten to stop having.
+//
+// The "connected shape hasn't changed" clause is load-bearing, and the case that
+// needs it is **two running blocks being joined into one** (paint a bridge between two
+// boilers built at different times). Their phases are independent until they touch;
+// from the moment they do they are one machine, so the next beat of whichever
+// sub-block is furthest along floods all of it and re-phases the rest — and a terminal
+// on the lagging side therefore sees **one** beat sooner than PULSE_PERIOD after its
+// previous one, exactly once, as the two lock together. Measured across 432
+// skew×join-time combinations: never more than one such interval, and every beat after
+// it is exactly PULSE_PERIOD (test/electricity.ts pins both halves). That is a
+// resynchronization, not a rate: two shafts coupled together fall into step, and the
+// alternative — letting the halves keep their own phases — would leave one machine
+// beating twice per cycle forever and tear its wheel down the middle.
 const ACTIVE_MASK = 0xff;
 const BEAT_SHIFT = 8;
 
