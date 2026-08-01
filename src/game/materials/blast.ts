@@ -456,7 +456,7 @@ function defaultCell(
   if (m.blastInert) return;
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume; a material
-    // that drops residue when destroyed (Termite→Sawdust, Nanobot→Metal Powder)
+    // that drops residue when destroyed (Termite→Sawdust, Nanobot→Iron Powder)
     // leaves that instead of a flash, so a bug caught at the epicenter still leaves
     // its remains rather than silently burning away; everything else takes the
     // ordinary crater flash.

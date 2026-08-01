@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { IRON } from './iron';
-import { METAL_POWDER } from './metalpowder';
+import { IRON_POWDER } from './ironpowder';
 import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST } from './rust';
@@ -12,17 +12,17 @@ import { DIR8 } from '../engine/directions';
 
 // Nanobot (나노봇) — a metal-eating machine that crawls along surfaces, the
 // mechanical twin of the Termite (same locomotion — see crawler.ts). It gnaws
-// through iron and metal powder, converting each cell it eats into another
+// through iron and iron powder, converting each cell it eats into another
 // nanobot, so a swarm devours a metal structure and self-replicates as it spreads.
 //
 // Being a machine, it ignores water entirely — it swims straight through a pool
 // and keeps crawling on whatever metal it finds submerged ("액체를 무시하고 돌아다님",
 // via the 'ignore' liquid policy). It has no drowning or low-temperature death;
-// it fails two ways instead, matching its metal-powder body:
-//   • 녹는점 — the same melting point as Metal Powder (Iron's melt temp); heated
+// it fails two ways instead, matching its iron-powder body:
+//   • 녹는점 — the same melting point as Iron Powder (Iron's melt temp); heated
 //     past it, a nanobot melts into Molten Iron just like any other metal.
 //   • 폭발 충격파 — an adjacent Blast flash cell (a real detonation) shatters it
-//     back into loose Metal Powder (see crawler.ts).
+//     back into loose Iron Powder (see crawler.ts).
 // A shockwave too weak to break it (a Woofer's silent thump, a Gunpowder
 // concussion) doesn't destroy it, but it doesn't stand in one either: a machine
 // this small is unanchored, so the wave picks it up and throws it like a grain of
@@ -30,7 +30,7 @@ import { DIR8 } from '../engine/directions';
 // soft body the same wave crushes half the time.
 //   • 소금물 부식 — Exposed to Saltwater, a nanobot slowly corrodes into Rust.
 //     It does NOT consume or interact with Rust series materials (Rust / Rust Powder).
-const FOOD = [IRON.id, METAL_POWDER.id] as const;
+const FOOD = [IRON.id, IRON_POWDER.id] as const;
 const RUST_CHANCE = 0.001; // 소금물 노출 시 부식 확률 (0.1%)
 
 function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
@@ -49,12 +49,12 @@ function touchingSaltWater(x: number, y: number, sim: SimContext): boolean {
 function updateNanobot(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
     // In-place `set` keeps the (now high) temperature so the fresh Molten Iron
-    // reads as molten instead of re-freezing next tick (mirrors Iron/Metal Powder).
+    // reads as molten instead of re-freezing next tick (mirrors Iron/Iron Powder).
     sim.set(x, y, MOLTEN_IRON.id);
     return;
   }
   if (touchingBlast(x, y, sim)) {
-    sim.set(x, y, METAL_POWDER.id); // shattered by the shockwave into loose grains
+    sim.set(x, y, IRON_POWDER.id); // shattered by the shockwave into loose grains
     return;
   }
   if (sim.chance(RUST_CHANCE) && touchingSaltWater(x, y, sim)) {
@@ -76,9 +76,9 @@ export const NANOBOT = register({
   colorVary: 22,
   density: 1000,
   category: 'life',
-  // Shattered to Metal Powder when a blast destroys it at the epicenter, matching
+  // Shattered to Iron Powder when a blast destroys it at the epicenter, matching
   // the death-by-shockwave its update handles for rim survivors.
-  blastDeathId: METAL_POWDER.id,
+  blastDeathId: IRON_POWDER.id,
   // Only nominally a solid (it walks instead of piling), so a shockwave it can't be
   // broken by still throws it around like loose matter instead of being shadowed by
   // it. No shockDeathChance: the machine survives the ride and keeps crawling.
@@ -94,7 +94,7 @@ export const NANOBOT = register({
   // not life: it has no drowning death and no cooking death either, and letting it
   // work in a hot zone gives the fallout the player *can't* clear with anything
   // living a swarm that eats its way through it regardless.
-  // Metallic, so it conducts heat about as well as loose Metal Powder — it warms
+  // Metallic, so it conducts heat about as well as loose Iron Powder — it warms
   // toward its melting point at a metal's pace, not an insulator's.
   thermal: { conductivity: 0.35 },
   update: updateNanobot,

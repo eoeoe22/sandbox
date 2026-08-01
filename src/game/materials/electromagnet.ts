@@ -9,7 +9,7 @@ import type { SimContext } from '../engine/SimContext';
 // sandbox so far pushes: explosions, the Woofer's thump, the Fan's gust, the
 // Conveyor. Nothing gathers. The magnet is the missing sign, and it doesn't just
 // pull — it pulls *selectively*: where wind shoves anything loose, the field only
-// takes ferromagnetic matter (`Material.magnetic` — Metal Powder, Rust Powder,
+// takes ferromagnetic matter (`Material.magnetic` — Iron Powder, Rust Powder,
 // Iron Ore, Nanobot). That selectivity is the whole toy. Hang one over a mixed
 // heap and it lifts the iron filings out of the sand and slag, fishes metal back
 // out of a tank of water, and plucks crawling Nanobots off the floor and holds

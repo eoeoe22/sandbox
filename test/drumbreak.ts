@@ -48,7 +48,7 @@ const ID = (name: string): number => {
 };
 const STONE = ID('Stone');
 const WATER = ID('Water');
-const METAL_POWDER = ID('Metal Powder');
+const IRON_POWDER = ID('Iron Powder');
 const MOLTEN_IRON = ID('Molten Iron');
 const CRUDE_OIL = ID('Crude Oil');
 const ACID = ID('Acid');
@@ -105,8 +105,8 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
     count(grid, CRUDE_OIL) > oilBefore, `${oilBefore} → ${count(grid, CRUDE_OIL)} Crude Oil cells`);
   check('the shards carry the barrel\'s fill for their tint',
     drums(grid).every((d) => d.fill === 'oil'));
-  check('breaking the barrel alone leaves no Metal Powder yet (that is the shards\' job)',
-    count(grid, METAL_POWDER) === 0, `${count(grid, METAL_POWDER)} cells`);
+  check('breaking the barrel alone leaves no Iron Powder yet (that is the shards\' job)',
+    count(grid, IRON_POWDER) === 0, `${count(grid, IRON_POWDER)} cells`);
 }
 {
   // The wreckage has to OUTLIVE the fireball that made it, or the feature is
@@ -142,7 +142,7 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
   check('but a fresh charge on the wreckage shatters it', grid.objects.length === 0,
     `${grid.objects.length} left`);
   for (let t = 0; t < 200; t++) sim.step();
-  check('into Metal Powder', count(grid, METAL_POWDER) > 0, `${count(grid, METAL_POWDER)} cells`);
+  check('into Iron Powder', count(grid, IRON_POWDER) > 0, `${count(grid, IRON_POWDER)} cells`);
 }
 {
   // The acid drum pours acid, and the empty one pours nothing — the control that
@@ -162,7 +162,7 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
 }
 
 // ─────────────────── 2. The shard is the end of the chain ─────────────────────
-// A shard has nothing left to break into, so it shatters into Metal Powder — and
+// A shard has nothing left to break into, so it shatters into Iron Powder — and
 // it does NOT spill a second drum's worth of contents (the barrel already did).
 {
   const { grid, sim } = makeWorld();
@@ -178,8 +178,8 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
   check('blasting the shards leaves no bodies at all', grid.objects.length === 0,
     `${grid.objects.length} left`);
   for (let t = 0; t < 200; t++) sim.step(); // let the flung grains arc and land
-  check('a shattered shard leaves Metal Powder', count(grid, METAL_POWDER) > 0,
-    `${count(grid, METAL_POWDER)} cells`);
+  check('a shattered shard leaves Iron Powder', count(grid, IRON_POWDER) > 0,
+    `${count(grid, IRON_POWDER)} cells`);
   check('and an already-emptied shard spills no more oil',
     count(grid, CRUDE_OIL) === oilBefore, `${oilBefore} → ${count(grid, CRUDE_OIL)}`);
 }

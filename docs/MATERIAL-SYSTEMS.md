@@ -469,7 +469,7 @@ active-tile 결정성 테스트(15 시나리오·2020틱) 전건 통과. 충격�
 
 - **`magnetic` 데이터 태그**: 자기장이 끌어당기는 물질을 표시하는 순수 데이터 태그
   (`Material.magnetic`). 전자석만 읽으므로 **새 자성 물질은 태그 한 줄로 끝난다**. 현재
-  Metal Powder·Rust Powder·Iron Ore(자철석 — 실제 선광 그대로 제련 라인에 물린다)·Nanobot.
+  Iron Powder·Rust Powder·Iron Ore(자철석 — 실제 선광 그대로 제련 라인에 물린다)·Nanobot.
   **Iron·Rust 같은 구조용 고체엔 일부러 달지 않았다** — 고정 구조물을 끌어당기면 유저의
   배선·기계·벽이 마운트에서 뜯겨 날아간다(Fan의 바람이 고체를 안 미는 것과 같은 이유). 전자석
   자체도 느슨한 것(가루·액체·`shockLoose` 기어다니는 것)만 옮기게 이중으로 막아 뒀다.
@@ -741,7 +741,7 @@ Powder·Limestone은 제련액 3종에 한해서만 재질-식별 부력(당시 
   액체엔 가라앉는지가 갈리는 그러데이션이 생겼다(이 라운드 기준 Ash 1.5 ~ Metal
   Powder/Iron Ore 7 — 이후 "## 제련 밀도 재서열"에서 Coal Powder가 7.5로 올라가며
   실제 천장이 됐다).
-  제련·우라늄 스택에 걸린 값(Iron Ore·Coal Powder·Limestone·Metal Powder·Nuke Waste)과
+  제련·우라늄 스택에 걸린 값(Iron Ore·Coal Powder·Limestone·Iron Powder·Nuke Waste)과
   이미 의도적으로 조정돼 있던 값(Sodium 2.5, Ash 1.5, Sawdust 2, Snow 2, Salt 5 — 후자는
   Saltwater(4)보다 반드시 무거워야 하는 용해 메커니즘 제약)은 손대지 않았고, 액체 쪽
   밀도 사다리(석유 분별증류·제련·우라늄 등 여러 시스템이 참조하는 기존 값)도 전혀
@@ -796,11 +796,11 @@ Molten Iron=8)과 비교한 핵심 반전은 **Coal Powder가 더 이상 제련 
 - **부수적으로 갱신한 문서 인용**: Iron Ore(솔리드, 밀도 7 유지 — 이번 요청 대상
   아님)의 "자기 용융물(Molten Iron Ore)과 같은 밀도라 뜨지도 가라앉지도 않는다"는
   주석이 Molten Iron Ore=6.5로 내려가며 거짓이 됨 — 이제 Iron Ore가 자기 용융물보다
-  무거워져 녹기 전에도 웅덩이 속으로 가라앉을 수 있다는 쪽으로 정정. Metal Powder(밀도
+  무거워져 녹기 전에도 웅덩이 속으로 가라앉을 수 있다는 쪽으로 정정. Iron Powder(밀도
   7 유지)의 "물·Slag(6)를 뚫고 가라앉는다" 문구도 숫자만 5.75로 정정(값 자체는 안
-  건드림). `docs/OBJECTS.md`의 드럼통-파편 절이 인용하던 "Metal Powder(7)가
+  건드림). `docs/OBJECTS.md`의 드럼통-파편 절이 인용하던 "Iron Powder(7)가
   Coal Powder(5)·Slag(6)보다 무겁다"는 문구도 갱신 — Coal Powder가 이제 7.5로
-  올라가며 그 비교가 뒤집혔다(Metal Powder가 더 이상 안 무겁고 오히려 더 가벼움).
+  올라가며 그 비교가 뒤집혔다(Iron Powder가 더 이상 안 무겁고 오히려 더 가벼움).
 - **리뷰에서 잡아낸 버그: Slag를 5.5로 내리면서 진흙(Mud)과 밀도가 겹쳐 Thermite
   캘리브레이션이 깨짐**: 최초 구현은 Slag를 Limestone(5)과 0.5 간격을 두고 5.5로
   잡았는데, 이 값이 기존 Mud의 밀도(5.5, 이번 라운드가 건드리지 않는 값)와 정확히
@@ -1613,20 +1613,20 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   기어다닌다("액체를 무시하고 돌아다님", 통과 시 밀도 무시 무조건 swap).
 - **먹이·번식(`eatAndReproduce`)**: 매 틱 5% 확률로 인접 먹이 한 칸을 갉아 **같은 벌레로 변환**
   (`spawn`, moved 마킹이라 한 틱에 먹이 블록 전체를 못 채우고 한 칸씩 번짐). 흰개미 먹이 =
-  Sawdust·Wood, 나노봇 먹이 = Iron·Metal Powder.
+  Sawdust·Wood, 나노봇 먹이 = Iron·Iron Powder.
 - **죽음 판정(공용 헬퍼)**: `isSubmerged`(공기/기체 이웃이 하나도 없고 액체가 하나 이상 —
   수면을 걷는 개체·먹이에 파묻힌 개체·언(frozen) 액체는 제외) / `touchingBlast`(8이웃에 Blast
   섬광 셀). 후자는 **일반 폭발(진짜 기폭)** 전용 판정이다 — 크레이터 가장자리에서 살아남은
   개체도 옆에 섬광 셀이 있으면 확정사한다. Woofer의 충격파는 섬광 셀을 만들지 않으므로
   (woofer.ts) 이 경로엔 아예 걸리지 않고, 대신 아래 `shockLoose` 경로로 들어온다.
   흰개미는 위 둘 + **70°↑ 열**에 죽어 **Sawdust**(= 자기 먹이)로 남고, 나노봇은 Blast + **Metal
-  Powder와 같은 녹는점**(Iron 융점→Molten Iron 융해)이며 Blast엔 **Metal Powder**로 부서진다.
+  Powder와 같은 녹는점**(Iron 융점→Molten Iron 융해)이며 Blast엔 **Iron Powder**로 부서진다.
 - **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
   개체만 잡는다 — 폭심에서 폭발이 직접 파괴한 셀은 자기 `update`가 돌기 전에 `defaultCell`
   (blast.ts)이 곧장 Blast 섬광 셀로 덮어써서 불/빈칸으로 사라져, 명세가 요구한 잔재(Sawdust/
-  Metal Powder)를 못 남긴다. 이를 위해 `Material.blastDeathId`(신규 데이터 태그)를 도입 —
+  Iron Powder)를 못 남긴다. 이를 위해 `Material.blastDeathId`(신규 데이터 태그)를 도입 —
   파괴 경로(power ≥ durability)에서 이 값이 있으면 섬광 대신 그 물질을 `spawn`으로 남긴다.
-  흰개미=Sawdust, 나노봇=Metal Powder. 이 잔재는 아래 `shockDeathChance`(약한 충격파에 의한
+  흰개미=Sawdust, 나노봇=Iron Powder. 이 잔재는 아래 `shockDeathChance`(약한 충격파에 의한
   죽음)가 남기는 물질로도 그대로 재사용된다 — "이 물질이 죽으면 뭐가 남나"를 한 곳에만 적는다.
 - **언 액체 = 고체 취급 일관성**: 얼어붙은(freeze점 이하) 액체는 엔진 전반에서 고체처럼 행동하므로
   (`isFrozen`), 벌레도 이를 (1) 표면으로 붙잡고, (2) 통과하지 않으며(나노봇도 언 웅덩이 위를
@@ -1634,7 +1634,7 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   동일한 `isFrozen` 게이트.
 
 `npm run check`(0 errors)·`npm run build`·`npm run test:active-tiles`(15 시나리오 전건
-bit-identical + deterministic) 통과, 헤드리스로 폭심 잔재(더미에 폭탄→Sawdust/Metal Powder
+bit-identical + deterministic) 통과, 헤드리스로 폭심 잔재(더미에 폭탄→Sawdust/Iron Powder
 생성) 확인. `test:heat`는 이 환경에 Rust 빌드 wasm 바이너리가 없어 원래도 실행 불가(이번
 변경과 무관).
 
@@ -1848,7 +1848,7 @@ Aluminum Powder(알루미늄 가루)를 추가하고, **Aluminum Powder + Rust P
   Thermite(2800°)에는 한참 못 미치므로 "혼자 태우면 토치, 섞으면 절단 장약"이 유지된다.
 - **비자성 = Electromagnet의 첫 선별 대상**: 알루미늄은 철이 아니므로 `magnetic`을 달지
   않았다. 그래서 **전자석으로 다른 금속 가루와 갈라낼 수 있는 첫 가루**가 된다 — 지금까지
-  팔레트의 철 함유 가루(Metal Powder·Rust Powder·Iron Ore)는 **전부** 자석에 딸려왔기 때문에,
+  팔레트의 철 함유 가루(Iron Powder·Rust Powder·Iron Ore)는 **전부** 자석에 딸려왔기 때문에,
   자기 선별기는 "금속과 비금속을 가르는" 용도뿐이었다. 이제 **금속 가루끼리도 갈라진다**:
   섞인 더미에 장을 쓸면 철 계열만 끌려가고 알루미늄만 남는다. (**유일한 비자성 금속 가루라는
   뜻은 아니다** — Sodium도 원래 `magnetic`이 없다. 다만 소듐은 물에 터지는 무른 알칼리
@@ -2259,7 +2259,7 @@ id는 순서가 아니라 **안정 식별자**라(세이브 파일과 `spark.ts`
 
 ### 등급 (확률 = 이온화 경향 × 표면적)
 
-`Activated Aluminum 0.2 > Aluminum Powder 0.12 > Metal Powder 0.09 > U235·U238 0.05 >
+`Activated Aluminum 0.2 > Aluminum Powder 0.12 > Iron Powder 0.09 > U235·U238 0.05 >
 Aluminum 0.04 > Iron 0.03 > Gallium 0.015`. 두 축이 곱해져 있다: **금속 자체의 서열**(U > Al >
 Fe > Ga — 우라늄이 알루미늄보다 위인 건 실제 표준전극전위 −1.80 V vs −1.66 V다)과 **같은
 금속 안의 표면적**(가루가 막대의 3배 — 알루미늄이 이미 쓰던 비율을 철에도 그대로 적용).
@@ -2500,3 +2500,49 @@ Fire(기체)이기 때문이다: 그레인 A가 물질 한 칸을 지우고 섬�
 나가는 장면, 그리고 자기잠식 방지의 못인 **효율 장면** — 밀폐 수직 통로에서 그레인 36개를
 Diamond 바닥에 떨어뜨려 **소모된 그레인 수 ≈ 파괴된 칸 수**(실측 36:36, 기준 0.9배)를 잰다.
 표식이 사라지면 이 비율이 먼저 무너진다.
+
+## Metal Powder → Iron Powder 개명 (신규 0종, id 불변)
+
+id 105 물질의 영어 표시명을 **`Metal Powder` → `Iron Powder`**로, 파일을
+`materials/metalpowder.ts` → `materials/ironpowder.ts`로, export 상수를
+`METAL_POWDER` → `IRON_POWDER`로 바꿨다. **한국어명은 원래부터 `철가루`였다** —
+`src/i18n/materials.ts`의 `105: '철가루'`는 손대지 않았고, 이번 개명은 영어 쪽을
+한국어 쪽에 맞춘 것이다.
+
+이름만 "금속"이었을 뿐, 이 물질은 등록된 첫날부터 전부 철이었다:
+
+- 소금물에 **녹슬어** Rust Powder가 된다(다른 금속은 안 녹슨다).
+- **전자석이 집는다**(`magnetic` — 철 함유 가루 3종 중 하나).
+- **철의 융점** `IRON_MELT_TEMP`에서 **Molten Iron**으로 녹는다.
+- 산에서 **이온화 경향 서열의 철 자리**에 정확히 앉는다(0.09 — 막대 Iron 0.03의
+  세 배, Aluminum Powder 0.12 아래. `acidHydrogen` 명단 참고).
+- 도감 설명 첫 줄이 이미 "산탄형 **철가루**"였고, Nanobot의 먹이 목록도
+  `[Iron, 이 물질]` 둘뿐이다.
+
+그래서 "금속"이라는 넓은 이름은 **알루미늄 계통이 들어온 뒤로 특히 오해를 샀다** —
+팔레트에 Aluminum Powder·Activated Aluminum이라는 진짜 다른 금속 가루가 셋이나
+있는데, 그중 하나만 `Metal Powder`라는 총칭을 쓰고 있었다. 개명 후에는
+`Iron Powder`·`Aluminum Powder`가 나란히 놓여 **무엇의 가루인지가 이름에서
+갈린다**.
+
+### 세이브 호환
+
+**`id: 105`는 그대로 두었다.** 저장된 월드는 셀을 물질 id로 직렬화하므로
+(`docs/PHYSICS.md`의 "물질 id 충돌 버그 수정" 절 참고), 표시명·파일명·상수명이
+바뀌어도 옛 세이브는 한 칸도 어긋나지 않고 그대로 로드된다. id를 건드렸다면
+그 세이브의 철가루가 전부 다른 물질로 둔갑했을 것이다.
+
+### 파급 (표시명을 문자열로 찾는 곳)
+
+`test/drumbreak.ts`는 물질을 `ID('Metal Powder')`처럼 **표시명 문자열로** 잡으므로
+같이 고쳐야 했다. `test/acidmetal.ts`의 `acidHydrogen` **명단 대조 검사**도
+`'Metal Powder 0.09'` 항목을 들고 있어 함께 갱신했다(정렬은 이름순인데
+`'Iron 0.03' < 'Iron Powder 0.09'`라 자리는 그대로다). 개명이 조용히 깨뜨릴 수 있는
+곳이 정확히 이 둘이었고, 둘 다 검사가 먼저 잡아 준다.
+
+### 검증
+
+`npm run check:material-ids`(138종 id 유일) · `npm run check:hand-icons` ·
+`npm run test:drumbreak` · `npm run test:acidmetal`(명단 대조 포함) ·
+`npm run test:antimatter` · `npm run test:radiation` ·
+`npm run test:magnetobjects` · `npm run test:chlorinesodium` 전부 통과.
