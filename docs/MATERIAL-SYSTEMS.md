@@ -133,7 +133,11 @@
      빈 이웃으로 배출된다. 덕분에 활성 알루미늄에 스민 물이 실제로 수소를 낸다.
   2. **`Material.overlapUpdate`** — 표 한 줄로 안 되는 것(확률·소모·기포)을 위한 훅.
      `Simulation.updateCell` → `SimContext.updateSoaked`가 이동 직전에 한 번 부른다.
-     Acid·Acid Slime이 이걸로 `corrosion.ts`의 **`tryCorrodeSoaked`**를 물린다: 스며든
+     **부식성 3종 전부**(Acid·Acid Vapor·Acid Slime)가 이걸로 `corrosion.ts`의
+     **`tryCorrodeSoaked`**를 물린다 — 증기가 빠지면 안 되는 이유가 있다: 기체는 가루엔
+     못 스미지만 **다공성 고체엔 스민다**. 그리고 기체를 받는 다공체 둘(Mesh·Turbine)이
+     하필 둘 다 부식 대상이라, 체 속으로 들어간 산성 연기가 정작 그 체 안에 눌러앉아
+     있었다(Pump만 내산성이라 무사 — 대조군). 스며든
      산이 자기를 삼킨 알갱이를 녹이고, 알갱이가 녹으면 **비워진 칸이 산에게 넘어가**(set의
      기존 릴리스 규칙) 산이 표면으로 먹고 나와 평범한 웅덩이로 이어진다. 수소 발생 금속이면
      알갱이와 산이 **1:1로 함께 소모돼 기포**가 된다(맨 접촉과 같은 거래).

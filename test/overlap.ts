@@ -40,6 +40,13 @@ import { BROKEN_GLASS } from '../src/game/materials/brokenglass';
 import { IRON_POWDER } from '../src/game/materials/ironpowder';
 import { HYDROGEN } from '../src/game/materials/hydrogen';
 import { ACTIVATED_ALUMINUM } from '../src/game/materials/activatedaluminum';
+import { ACID_VAPOR } from '../src/game/materials/acidvapor';
+import { MESH } from '../src/game/materials/mesh';
+import { PUMP } from '../src/game/materials/pump';
+import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
+import { LIQUID_GALLIUM } from '../src/game/materials/liquidgallium';
+import { YEAST } from '../src/game/materials/yeast';
+import { HYDROGEN_PEROXIDE } from '../src/game/materials/hydrogenperoxide';
 import { CEMENT } from '../src/game/materials/cement';
 import { CONCRETE } from '../src/game/materials/concrete';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
@@ -114,20 +121,36 @@ function fluidTotal(grid: Grid, fluid: number): number {
   }
   return n;
 }
-/** The (host, overlay) invariant: an overlap occupant only ever sits on a host
- *  that can actually hold one — a powder, a porous solid, or a carrier. A stranded
- *  overlay is the shape every bug in this file's subject matter takes. */
+/** The (host, overlay) invariant, restated here as data rather than borrowed from
+ *  the engine: an overlap occupant only ever sits on a host that can actually hold
+ *  it. Mirrors `SimContext.canHostOverlap` — the phase rule, the `overlapFluids`
+ *  allowlist a host may narrow it with, and the carrier exemption — because a
+ *  stranded overlay is the shape every bug in this file's subject matter takes,
+ *  and the engine's own predicate is module-private on purpose. */
 function strandedOverlays(grid: Grid): number {
   let n = 0;
   for (let i = 0; i < grid.overlay.length; i++) {
-    if (grid.overlay[i] === 0) continue;
+    const fluid = grid.overlay[i];
+    if (fluid === 0) continue;
     const host = grid.cells[i];
     if (host === EMPTY) {
       n++;
       continue;
     }
     const m = getMaterial(host);
-    if (m.phase !== Phase.Powder && m.porous !== true && m.overlapCarrier !== true) n++;
+    if (m.overlapCarrier === true) continue; // carries anything handed to it
+    if (m.overlapFluids !== undefined && !m.overlapFluids.includes(fluid)) {
+      n++;
+      continue;
+    }
+    const fluidPhase = getMaterial(fluid).phase;
+    if (m.porous === true) {
+      if (fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas) continue;
+      if (m.porousPowder === true && fluidPhase === Phase.Powder) continue;
+      n++;
+      continue;
+    }
+    if (m.phase !== Phase.Powder || fluidPhase !== Phase.Liquid) n++;
   }
   return n;
 }
@@ -245,6 +268,42 @@ function acidPocket(powderId: number, ticks = 400): { left: number; acid: number
   );
 }
 
+// ── 3b. 기체도 스며든다 — 다공성 고체 속 산성 증기 ───────────────────────────
+// A gas can't soak into a powder, but it CAN into a porous solid, and the two
+// that admit it (Mesh, Turbine) are both corrodible — so Acid Vapor drifting into
+// a screen used to park inside the very thing it should be eating. Mesh admits
+// only its light checkerboard cells (`latticeFilter`), so the scene seeds exactly
+// those; the rest of the screen is packed solid, leaving the fumes nowhere to
+// surface. The Pump is the control: same porous hosting, but `acidResistant`.
+function vaporScreen(hostId: number, ticks = 400): { left: number; start: number } {
+  const { grid, sim } = makeWorld(30, 30);
+  for (let y = 0; y < 30; y++)
+    for (let x = 0; x < 30; x++)
+      if (x < 8 || x >= 22 || y < 8 || y >= 22) grid.set(x, y, WALL.id);
+  for (let y = 8; y < 22; y++)
+    for (let x = 8; x < 22; x++) {
+      grid.set(x, y, hostId);
+      if (((x ^ y) & 1) === 0) grid.setOverlay(x, y, ACID_VAPOR.id);
+    }
+  const start = count(grid, hostId);
+  for (let t = 0; t < ticks; t++) sim.step();
+  return { left: count(grid, hostId), start };
+}
+{
+  const mesh = vaporScreen(MESH.id);
+  check(
+    '스며든 산성 증기가 자기가 들어앉은 체를 녹인다',
+    mesh.left < mesh.start,
+    `${mesh.start} → ${mesh.left} mesh`,
+  );
+  const pump = vaporScreen(PUMP.id);
+  check(
+    '…대조군: 내산성 다공체(펌프)는 증기가 지나가도 멀쩡',
+    pump.left === pump.start,
+    `${pump.start} → ${pump.left} pump`,
+  );
+}
+
 // ── 4. 스며든 산 + 금속 = 수소 ──────────────────────────────────────────────
 // The fizz (corrosion.ts's `acidHydrogen` path) reaches through the seam too: the
 // grain dissolves and the acid inside it is spent AS the bubble, 1:1, the same
@@ -302,6 +361,45 @@ function acidPocket(powderId: number, ticks = 400): { left: number; acid: number
     `${startPowder} → ${count(grid, ACTIVATED_ALUMINUM.id)}`,
   );
   check('…호스트 없는 겹침이 생기지 않는다', strandedOverlays(grid) === 0);
+}
+
+// ── 5a. 겹침 반응의 반대 방향 — 표를 든 쪽이 유체다 ──────────────────────────
+// The two directions are separate code paths, so both get a scene. Here the rule
+// is declared by the SOAKED side, and each case pins a different write:
+//   • Liquid Gallium + Aluminum Powder → the host is transformed (`otherBecomes`)
+//     and the fluid is deliberately NOT consumed, so it has to still be in the
+//     slot afterwards (the drop that keeps eating — see MATERIALS.md 갈륨 취화);
+//   • Hydrogen Peroxide + Yeast → the fluid itself is the one transformed
+//     (`produce: WATER`), which is the slot-rewrite path (`setOverlay`).
+function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
+  const { grid, sim } = makeWorld(30, 30);
+  for (let y = 0; y < 30; y++)
+    for (let x = 0; x < 30; x++)
+      if (x < 8 || x >= 22 || y < 8 || y >= 22) grid.set(x, y, WALL.id);
+  bed(grid, 8, 22, 8, 22, hostId, fluidId); // packed solid — see acidPocket
+  for (let t = 0; t < ticks; t++) sim.step();
+  return grid;
+}
+{
+  const g = soakedPair(ALUMINUM_POWDER.id, LIQUID_GALLIUM.id);
+  check(
+    '겹침 반응(유체 쪽 표): 스며든 액체 갈륨이 알루미늄 가루를 활성화한다',
+    count(g, ACTIVATED_ALUMINUM.id) > 0,
+    `${count(g, ACTIVATED_ALUMINUM.id)} activated`,
+  );
+  check(
+    '…갈륨은 소모되지 않는다 (촉매처럼 남는 쪽)',
+    countOverlay(g, LIQUID_GALLIUM.id) + count(g, LIQUID_GALLIUM.id) === 196,
+    `${countOverlay(g, LIQUID_GALLIUM.id)} still soaked`,
+  );
+
+  const h = soakedPair(YEAST.id, HYDROGEN_PEROXIDE.id);
+  check(
+    '겹침 반응: 스며든 과산화수소가 효모에 분해돼 물이 된다',
+    countOverlay(h, WATER.id) > 0 && countOverlay(h, HYDROGEN_PEROXIDE.id) < 196,
+    `${countOverlay(h, HYDROGEN_PEROXIDE.id)} peroxide → ${countOverlay(h, WATER.id)} water in the slots`,
+  );
+  check('…산물은 겹침 슬롯에 그대로 남는다 (효모가 담을 수 있는 액체)', strandedOverlays(h) === 0);
 }
 
 // ── 5b. 호스트 쪽 하드코드 규칙 — 시멘트 ──────────────────────────────────────

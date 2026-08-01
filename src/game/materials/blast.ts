@@ -326,7 +326,16 @@ function isBlastInert(id: number): boolean {
  *  cell — and a cell the first pulse rolled but didn't fling is reached again by
  *  the next, which would compound "50% on exposure" into 75% for a 2-cell cabinet
  *  and worse for a bigger one. The memo is only ever touched by a material that
- *  actually declares the tag, so an ordinary blast pays nothing for it. */
+ *  actually declares the tag, so an ordinary blast pays nothing for it.
+ *
+ *  This is the one shove-branch path where the host does NOT survive as a flung
+ *  fragment, so it can't hand its 겹침 occupant to a carrier the way a shove does.
+ *  It doesn't need to: `spawn` applies the ordinary lifecycle rule — a residue
+ *  that can hold the fluid keeps it (Termite's Sawdust is a powder, so a soaked
+ *  bug leaves soaked sawdust), and one that can't takes it down with the host,
+ *  exactly as any transform into a non-host does. Nothing today can even reach
+ *  the losing half: every material carrying these two tags is a non-porous solid,
+ *  which can't host an overlay in the first place. */
 function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
@@ -523,8 +532,10 @@ function defaultCell(
   // Too tough to destroy. Loose matter (powder/liquid/gas) — and a `shockLoose`
   // solid, which the wave carries rather than breaks against (a crawling bug) —
   // is flung aside as Debris: a mass-conserving shove that carries the material
-  // out and rains it back. A fragile body may not survive the wave at all
-  // (shockDeathChance → its residue). A structural solid it can't crack never
+  // out and rains it back — 겹침 included, since the fragment carries the grain's
+  // soaked fluid along (Material.overlapCarrier). A fragile body may not survive
+  // the wave at all (shockDeathChance → its residue, which resolves its own
+  // occupant by the ordinary lifecycle rule — see shockKill). A structural solid it can't crack never
   // reaches here (blocksBlast keeps the front out of it), so anything else still
   // solid is left untouched, defensively.
   if (m.phase !== Phase.Solid || isShockLoose(prevId)) {

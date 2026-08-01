@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP } from '../config';
-import { tryCorrode, ACID_VAPOR_CORROSION } from './corrosion';
+import { tryCorrode, tryCorrodeSoaked, ACID_VAPOR_CORROSION } from './corrosion';
 import { ACID } from './acid';
 
 // The gaseous half of Acid — corrosive fumes. Boiling Acid flashes to Acid Vapor
@@ -47,4 +47,11 @@ export const ACID_VAPOR = register({
   // Boils off hot; conducts poorly like the other gases (carries heat by rising).
   thermal: { init: 100, conductivity: 0.08 },
   update: updateAcidVapor,
+  // 스며든 증기도 계속 먹는다. A gas can't soak into a powder, but it CAN into a
+  // porous solid — and the two porous hosts that admit it, Mesh and Turbine, are
+  // both corrodible. So fumes drifting into a screen used to park inside the very
+  // thing they should be eating; this is the same `tryCorrodeSoaked` bite the
+  // liquid and the slime take from inside a grain (see acid.ts). The Pump is the
+  // control: it's `acidResistant`, so vapor threads it untouched either way.
+  overlapUpdate: (x, y, sim) => tryCorrodeSoaked(x, y, sim, ACID_VAPOR_CORROSION),
 });
