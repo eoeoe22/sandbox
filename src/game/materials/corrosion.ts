@@ -21,6 +21,10 @@ import { HYDROGEN } from './hydrogen';
 //
 // What differs between the three is data, not code, and it lives in the specs
 // below.
+//
+// Two entry points share those specs: `tryCorrode`, the ordinary neighbour bite a
+// corroder takes on its own turn, and `tryCorrodeSoaked`, the same bite taken from
+// *inside* a grain the liquid has soaked into (겹침 — see the bottom of this file).
 
 /**
  * Everything that distinguishes one corrosive material's bite from another's.
@@ -163,4 +167,50 @@ export function tryCorrode(x: number, y: number, sim: SimContext, spec: Corrosio
     return true;
   }
   return false;
+}
+
+/**
+ * The same bite from *inside* a grain: the corrosion turn a corrosive liquid
+ * takes while it is the 겹침 (overlap) occupant of a host cell — 스며든 산의 부식.
+ * Wired up as the liquid's `Material.overlapUpdate`, so (x,y) is the HOST cell and
+ * the acid has no cell of its own.
+ *
+ * It exists because soaking used to be an escape hatch: pour acid on sand and the
+ * grains that admit it (액체 겹침 계수) swallowed the acid, which then sat inert
+ * inside a perfectly corrodible bed forever. A powder with no acid resistance has
+ * no business surviving the acid *in* it.
+ *
+ * There is one neighbour to bite here — the host — and the two endings are the
+ * ones the surface pass already has, reached through the overlap layer:
+ *   • the grain dissolves ⇒ emptying the host RELEASES the acid into the cell it
+ *     was hiding in (SimContext.set), so the acid eats its way back to the surface
+ *     and carries on as an ordinary puddle;
+ *   • a hydrogen-evolving metal (`acidHydrogen`) fizzes ⇒ the bubble replaces the
+ *     grain and the acid is spent as it, exactly the 1:1 trade tryEvolveHydrogen
+ *     makes when the two are neighbours.
+ * Self-consumption is rolled the same way, and simply takes the acid with the
+ * grain instead of releasing it.
+ */
+export function tryCorrodeSoaked(x: number, y: number, sim: SimContext, spec: CorrosionSpec): void {
+  const hostId = sim.get(x, y);
+  if (!isCorrodible(hostId)) return;
+  if (spec.evolvesHydrogen && tryEvolveHydrogenSoaked(x, y, sim)) return;
+  if (!sim.chance(spec.corrodeChance)) return;
+  // Spent on the bite? Then it goes with the grain; otherwise set() hands it the
+  // cell the grain leaves behind.
+  if (sim.chance(spec.selfConsumeChance)) sim.clearOverlay(x, y);
+  sim.set(x, y, EMPTY);
+}
+
+/** tryEvolveHydrogen for the soaked case: the host metal and the acid inside it
+ *  are consumed together into one bubble, which takes the cell. Writing a
+ *  non-hosting material over the cell destroys the overlap occupant (see
+ *  SimContext.set), which is exactly the acid being spent as the gas. */
+function tryEvolveHydrogenSoaked(x: number, y: number, sim: SimContext): boolean {
+  const spec = getMaterial(sim.get(x, y)).acidHydrogen;
+  if (spec === undefined || !sim.chance(spec.chance)) return false;
+  sim.set(x, y, HYDROGEN.id); // in-place set keeps the cell's temperature…
+  sim.setTemp(x, y, sim.getTemp(x, y) + (spec.heat ?? HYDROGEN_HEAT)); // …for this delta
+  sim.markMoved(x, y); // the bubble has had its turn; it rises from the next tick
+  return true;
 }

@@ -406,6 +406,40 @@ function isWater(id: number): boolean {
   return id === WATER.id || id === SALTWATER.id;
 }
 
+/**
+ * The fate of the fluid soaked into a cell (its 겹침 occupant) whose host the
+ * blast is about to remove — the water in wet sand, the acid in a soaked bed.
+ * It meets the blast on the same axis its host did, as if it were a bare cell of
+ * itself sitting there:
+ *   • too tough for this blast (power < its durability) ⇒ it stays, taking the
+ *     cell its host is vacating — `set(x, y, EMPTY)` on a soaked host releases
+ *     the fluid rather than clearing the cell (SimContext.set);
+ *   • water strong enough to break ⇒ the same flash-boil a bare puddle gets: the
+ *     cell erupts as the hot Steam plume instead of a crater flash, so blowing up
+ *     a soaked bed puffs steam where the wet part was;
+ *   • anything else ⇒ destroyed along with its host, exactly like a bare cell of
+ *     it inside the same crater.
+ * Returns true when it claimed the cell and the host's own fate must be skipped.
+ */
+function resolveSoaked(
+  sim: SimContext,
+  x: number,
+  y: number,
+  soaked: number,
+  power: number,
+): boolean {
+  if (power < durabilityOf(soaked)) {
+    sim.set(x, y, EMPTY); // host gone; the fluid it held surfaces into the cell
+    return true;
+  }
+  if (isWater(soaked)) {
+    sim.spawn(x, y, STEAM.id); // spawn clears the (unhostable) overlap slot
+    sim.setTemp(x, y, UNDERWATER_STEAM_TEMP);
+    return true;
+  }
+  return false;
+}
+
 /** Default fate of a cell the front reaches when no `onCell` claims it, decided by
  *  the blast's destructive `power` against the cell's durability (see the block
  *  comment above blocksBlast). `entryDx/entryDy` is the inward shock direction and
@@ -429,6 +463,35 @@ function defaultCell(
     return;
   }
   const m = getMaterial(prevId);
+  // A Debris fragment already in flight is not matter to resolve — a
+  // submerged liquid fragment jets up into cells this same flood hasn't
+  // processed yet (see debris.ts), and re-shoving it would launch a fragment
+  // whose "carried material" is Debris itself, while flashing it would delete
+  // the mass it carries. Leave it flying — including whatever it soaked up with
+  // the grain it's carrying, which is why this is answered before the 겹침 block
+  // below (a fragment's host isn't being removed; it's in transit).
+  if (prevId === DEBRIS.id) return;
+  // An effect cell (a firework's flower — `Material.blastInert`) is likewise not
+  // matter to resolve: the front passes straight over it and it keeps fading on
+  // its own timer. Deliberately NOT flashed: a flash is a real BLAST cell, which
+  // decays to stray Fire and reads as a detonation trigger to every charge
+  // watching for an adjacent flash — so flashing effect cells would let even a
+  // power-0, strictly non-destructive pulse (a Woofer's) set off a stockpile.
+  if (m.blastInert) return;
+  // 겹침 — a soaked cell holds TWO occupants, and every path below that removes
+  // the host would take the fluid down with it unannounced (스며든 액체 삭제). Give
+  // it its own answer first, on the same power-vs-durability axis a bare cell of
+  // it would meet (resolveSoaked). The shove path deliberately isn't included:
+  // there the host survives as a flung fragment and carries its fluid along
+  // (Material.overlapCarrier).
+  const soaked = sim.getOverlay(x, y);
+  if (
+    soaked !== EMPTY &&
+    (m.explosive || prevId === BLAST.id || power >= durabilityOf(prevId)) &&
+    resolveSoaked(sim, x, y, soaked, power)
+  ) {
+    return;
+  }
   if (m.explosive) {
     flashCell(sim, x, y);
     return;
@@ -441,19 +504,6 @@ function defaultCell(
     flashCell(sim, x, y);
     return;
   }
-  // A Debris fragment already in flight is likewise not matter to resolve — a
-  // submerged liquid fragment jets up into cells this same flood hasn't
-  // processed yet (see debris.ts), and re-shoving it would launch a fragment
-  // whose "carried material" is Debris itself, while flashing it would delete
-  // the mass it carries. Leave it flying.
-  if (prevId === DEBRIS.id) return;
-  // An effect cell (a firework's flower — `Material.blastInert`) is likewise not
-  // matter to resolve: the front passes straight over it and it keeps fading on
-  // its own timer. Deliberately NOT flashed: a flash is a real BLAST cell, which
-  // decays to stray Fire and reads as a detonation trigger to every charge
-  // watching for an adjacent flash — so flashing effect cells would let even a
-  // power-0, strictly non-destructive pulse (a Woofer's) set off a stockpile.
-  if (m.blastInert) return;
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume; a material
     // that drops residue when destroyed (Termite→Sawdust, Nanobot→Iron Powder)

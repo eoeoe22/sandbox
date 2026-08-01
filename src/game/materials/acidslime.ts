@@ -5,7 +5,7 @@ import { DIR4, DIR8 } from '../engine/directions';
 import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
-import { tryCorrode, ACID_SLIME_CORROSION } from './corrosion';
+import { tryCorrode, tryCorrodeSoaked, ACID_SLIME_CORROSION } from './corrosion';
 import { SMOKE } from './smoke';
 import { SLIME, SLIME_FLOW_CHANCE } from './slime';
 import { WATER } from './water';
@@ -160,4 +160,8 @@ export const ACID_SLIME = register({
   // reasons (see slime.ts, and engine/radiation.ts for the pass).
   thermal: { conductivity: 0.2 },
   update: updateAcidSlime,
+  // Goo thin enough to soak into a powder bed keeps its bite there, on the same
+  // terms as the liquid it's made of (see acid.ts / corrosion.ts's
+  // `tryCorrodeSoaked`) — minus the fizz, which is `ACID_SLIME_CORROSION`'s call.
+  overlapUpdate: (x, y, sim) => tryCorrodeSoaked(x, y, sim, ACID_SLIME_CORROSION),
 });

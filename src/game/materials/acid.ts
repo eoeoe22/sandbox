@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryCorrode, ACID_CORROSION } from './corrosion';
+import { tryCorrode, tryCorrodeSoaked, ACID_CORROSION } from './corrosion';
 import { ACID_VAPOR } from './acidvapor';
 import { WATER } from './water';
 
@@ -81,4 +81,11 @@ export const ACID = register({
   // Chilled well below zero it freezes in place (frosted, immobile) until it thaws.
   freeze: { temp: -20 },
   update: updateAcid,
+  // 스며든 산도 계속 먹는다: soaked into a powder bed through the 겹침 layer, it
+  // corrodes the grain holding it (corrosion.ts's `tryCorrodeSoaked`) instead of
+  // sitting inert inside a perfectly corrodible pile — the grain dissolving hands
+  // the acid the cell back, so it eats its way out and goes on as a puddle.
+  // Boiling stays out of the soaked turn on purpose: the Vapor is a gas, which no
+  // powder can hold, so acid buried in a bed simply waits until it resurfaces.
+  overlapUpdate: (x, y, sim) => tryCorrodeSoaked(x, y, sim, ACID_CORROSION),
 });

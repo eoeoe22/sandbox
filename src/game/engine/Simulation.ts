@@ -539,10 +539,16 @@ export class Simulation {
         }
       }
     }
-    // The 겹침 overlap fluid sharing this cell moves on its own schedule, under
-    // its own moved guard (the primary having moved — or not — says nothing
-    // about its passenger). Re-read after the primary update: it may have
-    // carried the overlay away, or newly absorbed one.
-    if (g.overlay[i] !== 0 && !g.overlayMoved[i]) this.ctx.updateOverlay(x, y);
+    // The 겹침 overlap fluid sharing this cell takes its own turn, under its own
+    // moved guard (the primary having moved — or not — says nothing about its
+    // passenger). Re-read after the primary update: it may have carried the
+    // overlay away, or newly absorbed one. Interactions with the grain holding it
+    // come first (updateSoaked — 스며든 액체도 반응한다), then movement; the second
+    // guard re-read matters because a reaction can consume the fluid, release it
+    // into the cell, or pin it for the tick.
+    if (g.overlay[i] !== 0 && !g.overlayMoved[i]) {
+      this.ctx.updateSoaked(x, y);
+      if (g.overlay[i] !== 0 && !g.overlayMoved[i]) this.ctx.updateOverlay(x, y);
+    }
   }
 }

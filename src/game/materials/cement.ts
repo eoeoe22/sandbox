@@ -17,6 +17,17 @@ import { CONCRETE } from './concrete';
 const SET_CHANCE = 0.09;
 
 function updateCement(x: number, y: number, sim: SimContext): void {
+  // 스며든 물로도 굳는다: a grain that swallowed the water through the 겹침 layer
+  // (액체 겹침 계수 — most grains do) sets on it exactly as it would on a puddle
+  // touching its face. Without this, splashing a pile only cured the grains the
+  // water never got inside, and the soaked ones stayed powder forever — the same
+  // blind spot acid had before corrosion.ts learned to bite from inside.
+  const soaked = sim.getOverlay(x, y);
+  if ((soaked === WATER.id || soaked === SALTWATER.id) && sim.chance(SET_CHANCE)) {
+    sim.clearOverlay(x, y); // the water is used up curing this grain
+    sim.set(x, y, CONCRETE.id);
+    return;
+  }
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;

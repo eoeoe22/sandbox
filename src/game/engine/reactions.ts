@@ -100,6 +100,108 @@ function applyReaction(
 }
 
 /**
+ * The same pass across the 겹침 (overlap) seam: a cell's primary occupant and the
+ * fluid soaked *into* it are a contact pair too — they share one cell, which is
+ * as much contact as there is. Without this a soaked fluid is invisible to the
+ * table on both sides (Activated Aluminum never fizzes on the water inside it),
+ * which is why materials that need their liquid to keep reacting had to refuse
+ * overlap outright (Soap's `liquidOverlap: 0`).
+ *
+ * Both directions are checked, host-declared first, and the writes differ from
+ * the neighbor case in one way only: the participant that is the *overlay* is
+ * written through the overlap slot. When its product can't stay there — a powder
+ * can't hold the Hydrogen that Activated Aluminum's rule hands back — the product
+ * SURFACES: into the cell itself if the reaction just emptied the host, else
+ * vented to a free neighbor like any byproduct (and lost only when boxed in, the
+ * same bargain `ventByproduct` already makes).
+ *
+ * Returns true when a rule fired; both participants are marked moved (the cell
+ * and its overlap slot), so neither reacts again this tick.
+ */
+export function tryReactSoaked(x: number, y: number, sim: SimContext): boolean {
+  const hostId = sim.get(x, y);
+  const fluidId = sim.getOverlay(x, y);
+  if (hostId === EMPTY || fluidId === EMPTY) return false;
+  // One temperature for the pair: a soaked fluid shares its host's (see
+  // SimContext.enterOverlay), so both directions gate on the same reading.
+  const temp = sim.getTemp(x, y);
+  const hostRules = getMaterial(hostId).reactions;
+  if (hostRules !== undefined && runSoakedRules(x, y, sim, hostRules, fluidId, temp, true)) {
+    return true;
+  }
+  const fluidRules = getMaterial(fluidId).reactions;
+  return fluidRules !== undefined && runSoakedRules(x, y, sim, fluidRules, hostId, temp, false);
+}
+
+/** Find the first rule in `rules` whose partner is the co-occupant `partnerId`
+ *  and whose gates pass, and apply it. `hostDeclared` says which side of the pair
+ *  owns the table (and therefore which side `produce` refers to). */
+function runSoakedRules(
+  x: number,
+  y: number,
+  sim: SimContext,
+  rules: readonly ReactionRule[],
+  partnerId: number,
+  temp: number,
+  hostDeclared: boolean,
+): boolean {
+  for (const rule of rules) {
+    if (rule.with !== partnerId) continue;
+    if (rule.tempMin !== undefined && temp < rule.tempMin) continue;
+    if (rule.tempMax !== undefined && temp > rule.tempMax) continue;
+    let p = rule.probability ?? 1;
+    // A catalyst is still looked for among the primary cells around the pair —
+    // it works on the reaction, and doesn't care which of the two it can see.
+    if (rule.catalyst !== undefined && neighborHas(x, y, sim, rule.catalyst)) {
+      p *= rule.catalystFactor ?? DEFAULT_CATALYST_FACTOR;
+    }
+    if (p < 1 && !sim.chance(p)) continue;
+    applySoakedReaction(x, y, sim, rule, hostDeclared);
+    return true;
+  }
+  return false;
+}
+
+/** Apply a matched rule between a host cell and the fluid soaked into it (see
+ *  tryReactSoaked). `hostDeclared` picks which side `produce`/`otherBecomes`
+ *  name. */
+function applySoakedReaction(
+  x: number,
+  y: number,
+  sim: SimContext,
+  rule: ReactionRule,
+  hostDeclared: boolean,
+): void {
+  const hostId = sim.get(x, y);
+  const fluidId = sim.getOverlay(x, y);
+  const hostProduct = hostDeclared ? rule.produce : rule.otherBecomes;
+  const soakProduct = hostDeclared ? rule.otherBecomes : rule.produce;
+  const transformsSoak = soakProduct !== undefined && soakProduct !== fluidId;
+
+  // Detach the occupant BEFORE touching the host when the rule replaces it:
+  // set(x, y, EMPTY) on a soaked host releases the old fluid into the vacated
+  // cell (SimContext.set), which would strand it in the very cell the product is
+  // about to claim.
+  if (transformsSoak) sim.clearOverlay(x, y);
+  if (hostProduct !== undefined && hostProduct !== hostId) sim.set(x, y, hostProduct);
+  if (transformsSoak && soakProduct !== undefined && soakProduct !== EMPTY) {
+    // Back into the slot if the (possibly brand-new) host can hold it; otherwise
+    // it surfaces — taking the cell the host just vacated, or venting out.
+    if (!sim.setOverlay(x, y, soakProduct)) {
+      if (sim.isEmpty(x, y)) sim.spawn(x, y, soakProduct);
+      else ventByproduct(x, y, sim, soakProduct);
+    }
+  }
+  // One cell, one temperature: the heat of reaction lands once, on whatever now
+  // occupies it (a reaction that emptied the cell has nothing to warm).
+  const heat = rule.heat ?? 0;
+  if (heat !== 0 && sim.get(x, y) !== EMPTY) sim.setTemp(x, y, sim.getTemp(x, y) + heat);
+  sim.markMoved(x, y);
+  sim.markOverlayMoved(x, y);
+  if (rule.byproduct !== undefined) ventByproduct(x, y, sim, rule.byproduct);
+}
+
+/**
  * Run the declarative contact-reaction pass for the cell at (x,y). Scans its 8
  * neighbors for a partner matching one of its `reactions` rules whose gates
  * (temperature window, probability, catalyst boost) all pass, applies the first
