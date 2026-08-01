@@ -25,6 +25,7 @@ import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import type { Material } from '../src/game/engine/types';
 import { WALL } from '../src/game/materials/wall';
 import { BATTERY, PULSE_PERIOD } from '../src/game/materials/battery';
+import { LFP_BATTERY } from '../src/game/materials/lfpbattery';
 import { FAN } from '../src/game/materials/fan';
 import { LASER } from '../src/game/materials/laser';
 import { PUMP } from '../src/game/materials/pump';
@@ -860,6 +861,319 @@ function sourceBeats(
     'a Solar Panel goes inactive once the beam stops (and stays silent)',
     cut.tailBeats === 0 && cut.beats > 0,
     `${cut.beats} beats total, ${cut.tailBeats} after the countdown ran out`,
+  );
+}
+
+// --- 11. Turbine: the Lithium Battery's frequency ----------------------------
+// The turbine used to advance its beat counter only on the ticks a cell *itself*
+// had steam in it, which is not a cadence but a duty cycle: real steam is patchy,
+// so a turbine in a working boiler beat about four times slower than the Lithium
+// Battery it is documented to be indistinguishable from (배터리와 다른 주파수).
+// Steam now makes the block *active* (an ACTIVE countdown, like the panel's) and
+// an active block beats on the shared PULSE_PERIOD. What that has to buy:
+//   • steady steam → beat-for-beat the Lithium Battery's rate, tick-aligned;
+//   • GUSTING steam → still the battery's rate. This is the regression itself: a
+//     duty cycle sags here and a cadence doesn't, and it's the only check the old
+//     code actually failed, so a "simplification" back to counting steam-ticks
+//     fails on this line and not on the steady one;
+//   • no steam at all → nothing, ever. The countdown is a coast-down, not a
+//     trickle source;
+//   • the Lithium and LFP batteries agree with each other, so "the battery rate"
+//     is one number rather than whichever chemistry the check happened to pick.
+
+/** A source column sealed in Wall with one Iron lead, and the tick numbers on
+ *  which that lead carried a Spark.
+ *
+ *  Sealed, and much more tightly than `sourceFeeds` is: the turbine is porous, so
+ *  steam stamped into its 겹침 slot escapes into any open neighbour, condenses
+ *  wherever it lands, and leaves puddles that carry the lead's own sparks back
+ *  around the outside of the scene on ticks the source never fired. Boxing the
+ *  column in (Wall on three sides of the source, Wall around the lead) keeps the
+ *  steam in the blades and the sparks on the lead, so a counted tick is a beat.
+ *
+ *  `steamOn`/`steamPeriod` stamp the steam on a duty cycle: `steamOn` ticks of
+ *  every `steamPeriod`. Steady steam is the default; a gap is what a real plume
+ *  looks like. `steamTicks` caps how long the steam is supplied at all, so the
+ *  same helper measures the silence after it's cut off.
+ *
+ *  The off ticks *clear* the 겹침 slot rather than just not stamping it. The same
+ *  seal that keeps the scene honest also means steam blown into the blades has
+ *  nowhere to leave from, so a gap that is merely un-stamped isn't a gap at all —
+ *  the turbine stays steamed for the rest of the run and both the gusting check
+ *  and the steam-cut check quietly measure steady steam instead. */
+function beatTicks(
+  sourceId: number,
+  ticks: number,
+  { steamOn = 1, steamPeriod = 1, steamTicks = ticks } = {},
+): number[] {
+  const h = 4;
+  const y0 = 3;
+  const grid = new Grid(16, 9);
+  const sim = new Simulation(grid);
+  for (let y = y0 - 1; y <= y0 + h; y++) {
+    grid.set(9, y, WALL.id); // behind the source
+    grid.set(12, y, WALL.id); // beyond the lead
+  }
+  for (let x = 9; x <= 12; x++) {
+    grid.set(x, y0 - 1, WALL.id); // cap above
+    grid.set(x, y0 + h, WALL.id); // cap below
+  }
+  for (let y = y0; y < y0 + h; y++) {
+    grid.set(10, y, sourceId);
+    grid.set(11, y, IRON.id);
+  }
+
+  const at: number[] = [];
+  for (let t = 0; t < ticks; t++) {
+    if (sourceId === TURBINE.id) {
+      // Stamped before the step, since a cell's own update runs ahead of its 겹침
+      // passenger's — the same order sourceFeeds uses.
+      const on = t < steamTicks && t % steamPeriod < steamOn;
+      for (let y = y0; y < y0 + h; y++) grid.setOverlay(10, y, on ? STEAM.id : 0);
+    }
+    sim.step();
+    for (let y = y0; y < y0 + h; y++) {
+      if (grid.get(11, y) === SPARK.id) {
+        at.push(t);
+        break;
+      }
+    }
+  }
+  return at;
+}
+
+{
+  const TICKS = 240;
+  const lithium = beatTicks(BATTERY.id, TICKS);
+  const lfp = beatTicks(LFP_BATTERY.id, TICKS);
+  const steady = beatTicks(TURBINE.id, TICKS);
+
+  check(
+    'the two battery chemistries beat identically (the reference rate is one number)',
+    lithium.length > 0 && lithium.join(',') === lfp.join(','),
+    `${lithium.length} vs ${lfp.length} beats over ${TICKS} ticks`,
+  );
+  check(
+    'a steamed Turbine beats at the Lithium Battery frequency, tick for tick',
+    steady.join(',') === lithium.join(','),
+    `turbine ${steady.length} beats vs battery ${lithium.length} (PULSE_PERIOD ${PULSE_PERIOD})`,
+  );
+  // Rate, stated as an interval, so a re-phasing bug that shaves a tick off every
+  // beat is legible in the failure message rather than just "a mismatch".
+  const gaps = steady.slice(1).map((v, i) => v - steady[i]);
+  check(
+    '…and that frequency is one beat per PULSE_PERIOD ticks',
+    gaps.length > 0 && gaps.every((g) => g === PULSE_PERIOD),
+    `gaps ${[...new Set(gaps)].join(',')}`,
+  );
+
+  // The regression. One tick of steam in every four: a wheel already spinning
+  // coasts through the gaps, so the beat holds. Counting steam-ticks instead
+  // stretched every beat by the inverse duty cycle (~4× here) — which is exactly
+  // what a working boiler, whose plume is at least this ragged, used to do.
+  const gusty = beatTicks(TURBINE.id, TICKS, { steamOn: 1, steamPeriod: 4 });
+  check(
+    'a Turbine in GUSTING steam still beats at the battery frequency (박자, 듀티 사이클 아님)',
+    gusty.length === lithium.length,
+    `gusty ${gusty.length} beats vs battery ${lithium.length} over ${TICKS} ticks`,
+  );
+  // The control that makes the check above mean something: the gap the turbine
+  // rides over is genuinely longer than a beat, so a duty-cycled counter really
+  // would have fallen behind rather than the scene being steam-fed by accident.
+  check(
+    '  …and it is riding real gaps — steam is absent on most ticks (the check can fail)',
+    gusty.length > 0 && 3 * TICKS / 4 > PULSE_PERIOD,
+    'steam on 1 tick in 4',
+  );
+
+  // **A stop preserves the phase, and that can never run the turbine fast.** An
+  // inactive cell returns before touching either field, so the beat is frozen where
+  // it stood rather than zeroed, and a block re-steamed after a full stop can fire on
+  // the tick the steam returns. That looks alarming and is the correct half of a
+  // trade: only *active* ticks advance the beat, so consecutive beats stay exactly
+  // PULSE_PERIOD active ticks apart and dormancy only inserts extra wall-clock. The
+  // other half is why zeroing it would be a bug — it would discard up to
+  // PULSE_PERIOD-1 ticks of already-served wait on every restart, so a weak boiler
+  // puffing on and off pays a fresh full interval each time. That is the duty cycle
+  // this material was rewritten to stop having, in miniature.
+  //
+  // Swept over duty cycles whose OFF stretch is longer than POWERED_TICKS (24), which
+  // is the only way to reach a full stop, at several phases each, since which beat
+  // value the block freezes on is what varies.
+  let tightest = Infinity;
+  let tightestAt = '';
+  let sawStopAndStart = false;
+  for (const on of [1, 3, 7, 20]) {
+    for (const off of [25, 41, 97]) {
+      const b = beatTicks(TURBINE.id, 600, { steamOn: on, steamPeriod: on + off });
+      if (b.length > 1) sawStopAndStart = true;
+      for (let i = 1; i < b.length; i++) {
+        if (b[i] - b[i - 1] < tightest) {
+          tightest = b[i] - b[i - 1];
+          tightestAt = `on=${on} off=${off}`;
+        }
+      }
+    }
+  }
+  check(
+    'a Turbine re-steamed after a full stop never beats faster than the battery',
+    sawStopAndStart && tightest >= PULSE_PERIOD,
+    `tightest interval ${tightest} (${tightestAt}), PULSE_PERIOD ${PULSE_PERIOD}`,
+  );
+  check(
+    '  …and it is exactly PULSE_PERIOD, so the frozen phase is carried, not discarded',
+    tightest === PULSE_PERIOD,
+    `zeroing the beat on going inactive would push this above ${PULSE_PERIOD}`,
+  );
+
+  // **Joining two running blocks resynchronizes them — once.** The invariant above is
+  // scoped to a block whose connected shape hasn't changed, and this is the case that
+  // needs the scope: build two boilers at different times, then paint a bridge between
+  // them, and from that tick they are one machine. The next beat of whichever
+  // sub-block is furthest along floods all of it, so a terminal on the lagging side
+  // sees one beat sooner than PULSE_PERIOD after its own previous one. What has to
+  // hold is that this is a lock-in, not a rate: **one such interval per join**, and
+  // once the joining stops, PULSE_PERIOD forever after.
+  //
+  // Per *join*, emphatically not per run. Two joins close together cost two early
+  // beats — build three boiler islands and wire in the third a couple of ticks after
+  // the second, and the probe block shows two sub-period intervals back to back. That
+  // is why the second scene below exists: an earlier version of this claim said "at
+  // most one, always", which the single-join sweep happily confirmed while the chained
+  // case quietly broke it.
+  //
+  // Beats are read off the beat counter itself rather than off sparks on a lead. A
+  // body beat can leave part of a lead still refractory from that lead's own previous
+  // beat, so the one injected Spark walks the rest of the lead over the next ticks —
+  // counting spark-presence scores that single beat as three and the lock-in as a
+  // burst, which is exactly how the first measurement of this was misread. The
+  // counter reads 0 only on the tick its body fired, *given the block is running*: a
+  // cell that has never fired also reads 0, which the spin-up skip below excludes, and
+  // so does one frozen mid-dormancy on a beat tick — so don't reuse this detector on a
+  // scene that cuts the steam.
+  /** Sealed row of `islands` turbine blocks, joined by bridges at the given ticks.
+   *  Every cell that isn't a turbine is Wall, so the porous blocks' 겹침 steam can't
+   *  escape and condense into stray conductor. Each island is steamed from its own
+   *  `skews[i]` so they run out of phase. Returns each island's beat ticks. */
+  const islandBeats = (
+    skews: number[],
+    bridgeAts: number[],
+    ticks = 260,
+  ): number[][] => {
+    const n = skews.length;
+    const grid = new Grid(4 * n + 1, 11);
+    const sim = new Simulation(grid);
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) grid.set(x, y, WALL.id);
+    }
+    const islandX = skews.map((_, i) => 4 * i + 3);
+    for (const x of islandX) for (let y = 4; y < 7; y++) grid.set(x, y, TURBINE.id);
+    /** The three cells bridging island i to island i+1. */
+    const bridgeX = (i: number): number[] => [islandX[i] + 1, islandX[i] + 2, islandX[i] + 3];
+    const beats: number[][] = skews.map(() => []);
+    for (let t = 0; t < ticks; t++) {
+      for (let i = 0; i < n; i++) {
+        if (t >= skews[i]) for (let y = 4; y < 7; y++) grid.setOverlay(islandX[i], y, STEAM.id);
+      }
+      for (let i = 0; i < bridgeAts.length; i++) {
+        if (t === bridgeAts[i]) for (const x of bridgeX(i)) grid.set(x, 5, TURBINE.id);
+        if (t >= bridgeAts[i]) for (const x of bridgeX(i)) grid.setOverlay(x, 5, STEAM.id);
+      }
+      sim.step();
+      // Skip the spin-up window: a cell that has never run also reads beat 0.
+      if (t < Math.max(...skews) + PULSE_PERIOD) continue;
+      for (let i = 0; i < n; i++) {
+        if (grid.getAux(islandX[i], 5) >> 8 === 0) beats[i].push(t);
+      }
+    }
+    return beats;
+  };
+  const gapsOf = (beat: number[]): number[] => beat.slice(1).map((v, i) => v - beat[i]);
+  const shortGaps = (beat: number[]): number[] =>
+    gapsOf(beat).filter((g) => g < PULSE_PERIOD);
+
+  // Never bridged: two independent machines, each rigidly on its own PULSE_PERIOD.
+  // This is the control — it proves the detector doesn't manufacture short intervals
+  // on its own, so the counts below come from the join and nothing else.
+  const apart = islandBeats([0, 5], []);
+  check(
+    'two separate Turbine blocks each hold PULSE_PERIOD exactly (the control)',
+    apart.every((b) => b.length > 1 && shortGaps(b).length === 0),
+    `${apart.map((b) => b.length).join('/')} beats, 0 sub-period intervals`,
+  );
+
+  // One join, swept across every skew and three full cycles of join times.
+  const JOIN_TIMES = 3 * PULSE_PERIOD;
+  let mostShort = 0;
+  let settled = true;
+  for (let skew = 0; skew < PULSE_PERIOD; skew++) {
+    for (let bridgeAt = 60; bridgeAt < 60 + JOIN_TIMES; bridgeAt++) {
+      for (const beat of islandBeats([0, skew], [bridgeAt], 200)) {
+        const gaps = gapsOf(beat);
+        const short = gaps.filter((g) => g < PULSE_PERIOD);
+        if (short.length > mostShort) mostShort = short.length;
+        // Everything after the last short interval must be a clean PULSE_PERIOD.
+        // `lastIndexOf` on that gap's *value* lands on the last short gap: any later
+        // index holding the same value would itself be short, and so would be the one
+        // `pop()` returned. With no short gaps at all it yields -1 and the whole run
+        // is checked, which is what the control wants.
+        const last = gaps.lastIndexOf(short.pop() ?? -1);
+        if (gaps.slice(last + 1).some((g) => g !== PULSE_PERIOD)) settled = false;
+      }
+    }
+  }
+  check(
+    'joining two out-of-phase Turbine blocks costs one early beat, not a rate',
+    mostShort <= 1,
+    `worst block saw ${mostShort} sub-period intervals over ${PULSE_PERIOD} skews × ${JOIN_TIMES} join times`,
+  );
+  check(
+    '  …and the merged block is locked to PULSE_PERIOD from the next beat on',
+    settled,
+    'every interval after the lock-in equals PULSE_PERIOD',
+  );
+
+  // Two joins in quick succession — the case that kills "at most one, always". The
+  // cost is one early beat *per* connectivity change, so this must show up to two,
+  // and must still settle. The `>= 2` half is the real pin: it proves the sweep above
+  // is measuring a per-join cost rather than a global cap that would mask this.
+  let chainedMost = 0;
+  let chainedSettled = true;
+  for (let skewB = 0; skewB < PULSE_PERIOD; skewB++) {
+    for (let d = 1; d <= PULSE_PERIOD; d++) {
+      for (const beat of islandBeats([0, skewB, skewB], [70, 70 + d])) {
+        const gaps = gapsOf(beat);
+        const short = gaps.filter((g) => g < PULSE_PERIOD);
+        if (short.length > chainedMost) chainedMost = short.length;
+        const last = gaps.lastIndexOf(short.pop() ?? -1);
+        if (gaps.slice(last + 1).some((g) => g !== PULSE_PERIOD)) chainedSettled = false;
+      }
+    }
+  }
+  check(
+    'chaining a second join costs a second early beat — one per join, no more',
+    chainedMost === 2,
+    `worst block saw ${chainedMost} sub-period intervals across two staggered joins`,
+  );
+  check(
+    '  …and a chained merge still settles to PULSE_PERIOD once the joining stops',
+    chainedSettled,
+    'every interval after the last lock-in equals PULSE_PERIOD',
+  );
+
+  // No steam at all: inert, not a slow source. And cut the steam a third of the
+  // way in — the turbine coasts through its countdown and then falls silent.
+  const dry = beatTicks(TURBINE.id, TICKS, { steamTicks: 0 });
+  const cut = beatTicks(TURBINE.id, TICKS, { steamTicks: 80 });
+  check(
+    'a Turbine with no steam is inert — no steam, no pulse, ever',
+    dry.length === 0,
+    `${dry.length} beats in ${TICKS} dry ticks`,
+  );
+  check(
+    'a Turbine goes inactive once the steam stops (and stays silent)',
+    cut.length > 0 && cut.every((t) => t < 80 + 24 + PULSE_PERIOD),
+    `${cut.length} beats, last at ${cut[cut.length - 1]} (steam cut at 80)`,
   );
 }
 

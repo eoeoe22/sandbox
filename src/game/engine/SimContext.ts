@@ -159,18 +159,32 @@ export class SimContext {
   sugarDebt = 0;
 
   /**
-   * Per-tick memo for the Turbine's body-flood (materials/turbine.ts). When
-   * steam is passing through a solid turbine block, its generated pulse walks
-   * the whole connected turbine body to reach conductors on the outer faces;
-   * without this memo every steam-carrying cell of the block would re-flood the
-   * entire body (O(N²) on a steam-soaked block — its primary use case). The memo
-   * holds the cell indices already covered by a flood this tick, so each
-   * connected body floods at most once per tick (O(N)), and self-resets on the
+   * Per-tick memo for the Turbine's *activation* flood (materials/turbine.ts).
+   * Steam passing through any cell of a solid turbine block spins the whole
+   * connected body up — refreshing its active countdown, from which the block
+   * beats on the battery cadence — so without this memo every steam-carrying cell
+   * would re-flood the entire body (O(N²) on a steam-soaked block, its primary use
+   * case). The memo holds the cell indices already covered by a flood this tick, so
+   * each connected body floods at most once per tick (O(N)), and self-resets on the
    * first touch of a later tick without a per-step allocation (see BodyFlood).
    * Sim-local (each Simulation has its own context), so parallel worlds/tests
    * can't cross-contaminate.
    */
   readonly turbineFlood = new BodyFlood();
+
+  /**
+   * Per-tick memo for the Turbine's *emission* flood — the other half of the
+   * turbine, and a separate memo for exactly the reason `solarBeatFlood` is
+   * separate from `solarFlood` below. `turbineFlood` above covers the flood steam
+   * drives (refreshing the block's active countdown, once per tick however much of
+   * it the steam is filling); this one covers the flood the turbine's own **beat**
+   * drives (emitting a pulse from every face, once every PULSE_PERIOD ticks — see
+   * materials/turbine.ts). They land in the same tick whenever a steamed block
+   * beats, and `BodyFlood` doubles as its walk's visited set, so sharing one would
+   * make the activation flood swallow the beat flood — a running turbine would spin
+   * up forever and never emit anything. Sim-local, same reasoning as `wooferFlood`.
+   */
+  readonly turbineBeatFlood = new BodyFlood();
 
   /**
    * Per-tick memo for the Woofer's body-flood (materials/woofer.ts) — the

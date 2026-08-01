@@ -463,21 +463,26 @@ export class CanvasRenderer implements Renderer {
   /** The spin counter of each ROTOR_N × ROTOR_N *tile* — one entry per drawn wheel,
    *  not per cell — plus the accumulator the current pass is filling.
    *
-   *  **A wheel is one rigid picture, so its phase has to be one value.** Read per
-   *  cell it is not: a Turbine only advances the aux counter of cells that steam is
-   *  actually passing through (materials/turbine.ts returns early on the others, and
-   *  a cell whose steam is intermittent falls behind one that is soaked), so a wheel
-   *  drawn from per-cell aux spun along the steam's path and stood still — or ran
-   *  late — on the rest of itself. A wheel tearing down the middle of itself
-   *  (수증기가 통과하는 부분만 변화하는 게 어색함). Aggregating over the tile makes the
-   *  unit of animation the drawn wheel, which is the thing that physically turns.
+   *  **A wheel is one rigid picture, so its phase has to be one value.** A tile is a
+   *  *drawing* unit, positional (`x % ROTOR_N`), so nothing keeps it from spanning
+   *  cells that legitimately hold different counters: two separate machine bodies
+   *  running out of phase, a body beside bare air, or cells freshly painted onto a
+   *  running body, which sit at 0 until the next pulse re-phases them. Drawn per
+   *  cell, any of those tears one wheel into halves moving at different speeds.
+   *  Aggregating over the tile makes the unit of animation the drawn wheel, which is
+   *  the thing that physically turns. (The case this was written for was stronger:
+   *  the Turbine used to advance only the counters of cells steam was passing
+   *  through, so every running block was strung out across the cycle and the wheel
+   *  spun along the steam's path and stood still on the rest of itself — 수증기가
+   *  통과하는 부분만 변화하는 게 어색함. Its beat is re-phased body-wide on each pulse
+   *  now, so one block agrees with itself and the cases above are what remain.)
    *
    *  The aggregate is the MAX of its cells' counters, not an OR of their frames.
    *  With cells strung out across the cycle an OR is 1 as soon as any single cell
    *  is on the spun frame, which for a scattered tile is nearly always — the wheel
    *  would have stuck on frame 1 instead of tearing. The max is the leading cell's
-   *  count, which advances one per tick for as long as any part of the wheel is in
-   *  the flow, and the laggards simply don't show.
+   *  count, which advances one per tick for as long as any part of the wheel is
+   *  running, and the laggards simply don't show.
    *
    *  It is collected during the pass and used by the *next* one (hence two arrays),
    *  because a wheel's last row is reached long after its first and there is no
@@ -1206,8 +1211,8 @@ export class CanvasRenderer implements Renderer {
         //
         // **And it turns.** The wheel alternates between the tile at rest and the tile
         // half a blade pitch on, driven by the machine's own aux counter — a Fan's
-        // powered countdown, a Turbine's steam-tick count — so it spins exactly while
-        // the machine works and freezes when it stops (see rotorFrame). That is what
+        // powered countdown, a Turbine's beat counter — so it spins exactly while the
+        // machine works and freezes when it stops (see rotorFrame). That is what
         // replaced the Fan's old chevron brightening as the "this one is running" cue;
         // what the chevron also did and this cannot is point, which the wind streaks
         // now carry alone.
@@ -1215,9 +1220,10 @@ export class CanvasRenderer implements Renderer {
         // The frame is read and written *per wheel*, not per cell: this cell's own
         // counter goes into the tile's accumulator for the next pass, and what it
         // draws is the tile's aggregate from the last one (see rotorBlockFrame). A
-        // Turbine only counts on cells steam is passing through, so per-cell frames
-        // made a wheel spin along the steam's path and stand still on the rest of
-        // itself; per-tile, the whole wheel turns together the way a rigid wheel does.
+        // tile is positional, so it can span cells that legitimately disagree — two
+        // bodies out of phase, cells just painted onto a running one — and per-cell
+        // frames tear such a wheel into halves moving at different speeds; per-tile,
+        // the whole wheel turns together the way a rigid wheel does.
         //
         // Positional like the Wall's courses, so a machine dragged out with the brush
         // is one array of wheels rather than a fresh tile per cell — and the wheel and

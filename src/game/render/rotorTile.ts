@@ -53,9 +53,9 @@ export const ROTOR_SPIN_SHIFT = 1;
  *
  *   - a Fan's `aux >> 2` is its powered countdown, which ticks down while energized
  *     and sits at 0 when it isn't (materials/fan.ts POWERED_TICKS);
- *   - a Turbine's whole aux is its steam-tick count, which advances only on ticks
- *     where steam is actually passing through and is deliberately *held* across a
- *     gap rather than reset (materials/turbine.ts).
+ *   - a Turbine's `aux >> 8` is its beat counter, which advances one per tick for as
+ *     long as steam keeps the block active and is deliberately *held* where it
+ *     stands once the block goes inactive rather than reset (materials/turbine.ts).
  *
  * So the wheel turns while the machine runs and freezes the instant it stops, with
  * no extra state and nothing for the renderer to keep in sync. A renderer clock
@@ -64,10 +64,12 @@ export const ROTOR_SPIN_SHIFT = 1;
  * have left a dead turbine spinning forever.
  *
  * `shift` drops the bits of aux that are not the counter — 2 for the Fan, whose low
- * two bits are its blow direction, 0 for the Turbine. Clamped to a byte so the
- * renderer can hold a whole wheel's aggregate in a Uint8Array; both counters are
- * far below that (Fan ≤ POWERED_TICKS, Turbine < PULSE_PERIOD) and a clamp keeps a
- * stray large aux from wrapping into a *small* number and faking a rewind.
+ * two bits are its blow direction, 8 for the Turbine, whose low byte is its own
+ * active countdown (which steady steam pins at POWERED_TICKS, so animating from it
+ * would freeze a turbine at full power). Clamped to a byte so the renderer can hold
+ * a whole wheel's aggregate in a Uint8Array; both counters are far below that (Fan
+ * ≤ POWERED_TICKS, Turbine < PULSE_PERIOD) and a clamp keeps a stray large aux from
+ * wrapping into a *small* number and faking a rewind.
  */
 export function rotorSpin(aux: number, shift: number): number {
   const c = aux >> shift;
@@ -79,10 +81,12 @@ export function rotorSpin(aux: number, shift: number): number {
  *
  * Takes the counter rather than a raw aux because the unit of animation is the
  * *wheel*, not the cell: the renderer aggregates `rotorSpin` across a whole tile
- * first and only then asks for a frame (see CanvasRenderer's rotorBlockFrame). A
- * Turbine advances the counter only on the cells steam is actually passing through,
- * so asking each cell for its own frame drew a wheel spinning along the steam's
- * path and standing still on the rest of itself.
+ * first and only then asks for a frame (see CanvasRenderer's rotorBlockFrame). It
+ * mattered most when a Turbine advanced its counter only on the cells steam was
+ * actually passing through, which drew a wheel spinning along the steam's path and
+ * standing still on the rest of itself; a turbine's beat is re-phased body-wide on
+ * every pulse now, so its cells agree by construction and the aggregate is that
+ * shared beat.
  *
  * A stopped machine freezes on whichever frame it was on, not necessarily frame 0.
  * A freshly painted cell has aux 0 and so does the palette chip, which is why the

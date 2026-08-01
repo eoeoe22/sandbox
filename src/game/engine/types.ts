@@ -798,7 +798,8 @@ export interface Material {
   /**
    * Right-shift applied to a `rotorPattern` cell's `aux` before its low bit is read
    * as the spin phase — 2 for the Fan (whose low two bits are its blow direction),
-   * 0 (the default) for the Turbine, whose whole aux is its steam-tick count.
+   * 8 for the Turbine (whose low byte is its active countdown and whose high byte is
+   * the beat counter that actually advances while it runs). 0 is the default.
    *
    * The wheel alternates between its two frames as that counter advances, so it
    * turns exactly while the machine is working and freezes when it stops. See
