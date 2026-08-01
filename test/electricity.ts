@@ -986,6 +986,46 @@ function beatTicks(
     'steam on 1 tick in 4',
   );
 
+  // **A stop preserves the phase, and that can never run the turbine fast.** An
+  // inactive cell returns before touching either field, so the beat is frozen where
+  // it stood rather than zeroed, and a block re-steamed after a full stop can fire on
+  // the tick the steam returns. That looks alarming and is the correct half of a
+  // trade: only *active* ticks advance the beat, so consecutive beats stay exactly
+  // PULSE_PERIOD active ticks apart and dormancy only inserts extra wall-clock. The
+  // other half is why zeroing it would be a bug — it would discard up to
+  // PULSE_PERIOD-1 ticks of already-served wait on every restart, so a weak boiler
+  // puffing on and off pays a fresh full interval each time. That is the duty cycle
+  // this material was rewritten to stop having, in miniature.
+  //
+  // Swept over duty cycles whose OFF stretch is longer than POWERED_TICKS (24), which
+  // is the only way to reach a full stop, at several phases each, since which beat
+  // value the block freezes on is what varies.
+  let tightest = Infinity;
+  let tightestAt = '';
+  let sawStopAndStart = false;
+  for (const on of [1, 3, 7, 20]) {
+    for (const off of [25, 41, 97]) {
+      const b = beatTicks(TURBINE.id, 600, { steamOn: on, steamPeriod: on + off });
+      if (b.length > 1) sawStopAndStart = true;
+      for (let i = 1; i < b.length; i++) {
+        if (b[i] - b[i - 1] < tightest) {
+          tightest = b[i] - b[i - 1];
+          tightestAt = `on=${on} off=${off}`;
+        }
+      }
+    }
+  }
+  check(
+    'a Turbine re-steamed after a full stop never beats faster than the battery',
+    sawStopAndStart && tightest >= PULSE_PERIOD,
+    `tightest interval ${tightest} (${tightestAt}), PULSE_PERIOD ${PULSE_PERIOD}`,
+  );
+  check(
+    '  …and it is exactly PULSE_PERIOD, so the frozen phase is carried, not discarded',
+    tightest === PULSE_PERIOD,
+    `zeroing the beat on going inactive would push this above ${PULSE_PERIOD}`,
+  );
+
   // No steam at all: inert, not a slow source. And cut the steam a third of the
   // way in — the turbine coasts through its countdown and then falls silent.
   const dry = beatTicks(TURBINE.id, TICKS, { steamTicks: 0 });

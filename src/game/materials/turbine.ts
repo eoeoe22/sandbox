@@ -88,6 +88,20 @@ const POWERED_TICKS = 24;
 // it needs two fields. Steam arrives every tick it arrives at all, so "how long am
 // I still spinning" and "how far into the beat am I" can't be the same number; the
 // single-field version is exactly what made the cadence a duty cycle (see header).
+//
+// **A turbine that stops keeps its phase**, because an inactive cell's update returns
+// before touching either field: the beat is frozen where it stood, not zeroed. So a
+// block that goes fully dormant and is re-steamed minutes later can beat on the very
+// tick the steam returns, and the tempting "tidy up" — reset the beat when the
+// countdown hits 0 — is wrong twice over. It cannot make the turbine *fast*: only
+// active ticks advance the beat, so any two consecutive beats are exactly
+// PULSE_PERIOD active ticks apart and dormancy only ever inserts more wall-clock
+// between them (checked over a sweep of duty cycles in test/electricity.ts — the
+// tightest interval any of them produces is exactly PULSE_PERIOD). What it *would* do
+// is make it slow: zeroing throws away up to PULSE_PERIOD-1 ticks of already-served
+// wait on every restart, so a weak boiler puffing on and off would pay a fresh full
+// interval each time — a smaller helping of the very duty cycle this material was
+// rewritten to stop having.
 const ACTIVE_MASK = 0xff;
 const BEAT_SHIFT = 8;
 
