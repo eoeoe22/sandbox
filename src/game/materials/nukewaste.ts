@@ -16,8 +16,10 @@ import type { SimContext } from '../engine/SimContext';
 // surroundings gently, persistently warm, the "잔열" of a waste cask.
 //
 // Being inert spent fuel it's also 방폭 (explosion-immune) like the rest of the
-// uranium family: a Blast stops at it, an Ember shatters on it, Antimatter skips
-// it. Otherwise it's an ordinary powder that falls and piles — something to
+// uranium family: a Blast stops at it, an Ember shatters on it. Antimatter goes
+// through that immunity like it does every other armor — only the Wall and the
+// Void survive it (antimatter.ts).
+// Otherwise it's an ordinary powder that falls and piles — something to
 // bury, store, or dump.
 const WARM_TEMP = 160; // decay-heat set point the waste keeps topping itself to
 const WARM_RATE = 4; // per-tick nudge back toward WARM_TEMP (a slow, weak source)

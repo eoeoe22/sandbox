@@ -99,10 +99,11 @@ export const URANIUM = register({
   // melt or than the fission products in spent Nuke Waste.
   radiation: 0.04,
   // 방폭: every uranium-series material is immune to explosions — a Blast front
-  // stops at it, a flying Ember shatters on it, Antimatter skips it (see
-  // blast.ts/ember.ts/antimatter.ts). It does NOT stop a critical uranium's
-  // Nuclear Ray though (nuclearray.ts checks isWall/indestructible only), so the ray
-  // still melts a struck deposit exactly as before.
+  // stops at it, a flying Ember shatters on it (see blast.ts/ember.ts). It does
+  // NOT stop Antimatter, which annihilates everything but the Wall and the Void
+  // (antimatter.ts), and it does NOT stop a critical uranium's Nuclear Ray
+  // (nuclearray.ts checks isWall/indestructible only), so the ray still melts a
+  // struck deposit exactly as before.
   explosionProof: true,
   // ...and jetProof: even the Shaped Charge's armor-piercing jet (which defeats
   // Diamond/Obsidian via DetonateOptions.pierceProof) can't breach the uranium
