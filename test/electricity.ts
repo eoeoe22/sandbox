@@ -1032,90 +1032,133 @@ function beatTicks(
   // them, and from that tick they are one machine. The next beat of whichever
   // sub-block is furthest along floods all of it, so a terminal on the lagging side
   // sees one beat sooner than PULSE_PERIOD after its own previous one. What has to
-  // hold is that this is a lock-in, not a rate: **at most one** such interval, and
-  // everything after it exactly PULSE_PERIOD.
+  // hold is that this is a lock-in, not a rate: **one such interval per join**, and
+  // once the joining stops, PULSE_PERIOD forever after.
   //
-  // Beats are read off the beat counter itself (it reads 0 only on the tick its body
-  // fired) rather than off sparks on a lead. A body beat can leave part of a lead
-  // still refractory from that lead's own previous beat, so the one injected Spark
-  // walks the rest of the lead over the next ticks — counting spark-presence would
-  // score that single beat as three and the lock-in as a burst.
-  const mergeBeats = (
-    skew: number,
-    bridgeAt: number,
-    ticks = 300,
-  ): { a: number[]; b: number[] } => {
-    // Sealed solid: every cell that isn't turbine or lead is Wall, so the porous
-    // turbines' 겹침 steam can't escape and condense into stray conductor.
-    //   lead A x=3 │ block A x=4 │ bridge (5..7, y=5) │ block B x=8 │ lead B x=9
-    const grid = new Grid(13, 9);
+  // Per *join*, emphatically not per run. Two joins close together cost two early
+  // beats — build three boiler islands and wire in the third a couple of ticks after
+  // the second, and the probe block shows two sub-period intervals back to back. That
+  // is why the second scene below exists: an earlier version of this claim said "at
+  // most one, always", which the single-join sweep happily confirmed while the chained
+  // case quietly broke it.
+  //
+  // Beats are read off the beat counter itself rather than off sparks on a lead. A
+  // body beat can leave part of a lead still refractory from that lead's own previous
+  // beat, so the one injected Spark walks the rest of the lead over the next ticks —
+  // counting spark-presence scores that single beat as three and the lock-in as a
+  // burst, which is exactly how the first measurement of this was misread. The
+  // counter reads 0 only on the tick its body fired, *given the block is running*: a
+  // cell that has never fired also reads 0, which the spin-up skip below excludes, and
+  // so does one frozen mid-dormancy on a beat tick — so don't reuse this detector on a
+  // scene that cuts the steam.
+  /** Sealed row of `islands` turbine blocks, joined by bridges at the given ticks.
+   *  Every cell that isn't a turbine is Wall, so the porous blocks' 겹침 steam can't
+   *  escape and condense into stray conductor. Each island is steamed from its own
+   *  `skews[i]` so they run out of phase. Returns each island's beat ticks. */
+  const islandBeats = (
+    skews: number[],
+    bridgeAts: number[],
+    ticks = 260,
+  ): number[][] => {
+    const n = skews.length;
+    const grid = new Grid(4 * n + 1, 11);
     const sim = new Simulation(grid);
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) grid.set(x, y, WALL.id);
     }
-    for (let y = 4; y < 7; y++) {
-      grid.set(3, y, IRON.id);
-      grid.set(4, y, TURBINE.id);
-      grid.set(8, y, TURBINE.id);
-      grid.set(9, y, IRON.id);
-    }
-    const a: number[] = [];
-    const b: number[] = [];
+    const islandX = skews.map((_, i) => 4 * i + 3);
+    for (const x of islandX) for (let y = 4; y < 7; y++) grid.set(x, y, TURBINE.id);
+    /** The three cells bridging island i to island i+1. */
+    const bridgeX = (i: number): number[] => [islandX[i] + 1, islandX[i] + 2, islandX[i] + 3];
+    const beats: number[][] = skews.map(() => []);
     for (let t = 0; t < ticks; t++) {
-      for (let y = 4; y < 7; y++) grid.setOverlay(4, y, STEAM.id);
-      if (t >= skew) for (let y = 4; y < 7; y++) grid.setOverlay(8, y, STEAM.id);
-      if (t === bridgeAt) for (const x of [5, 6, 7]) grid.set(x, 5, TURBINE.id);
-      if (t >= bridgeAt) for (const x of [5, 6, 7]) grid.setOverlay(x, 5, STEAM.id);
+      for (let i = 0; i < n; i++) {
+        if (t >= skews[i]) for (let y = 4; y < 7; y++) grid.setOverlay(islandX[i], y, STEAM.id);
+      }
+      for (let i = 0; i < bridgeAts.length; i++) {
+        if (t === bridgeAts[i]) for (const x of bridgeX(i)) grid.set(x, 5, TURBINE.id);
+        if (t >= bridgeAts[i]) for (const x of bridgeX(i)) grid.setOverlay(x, 5, STEAM.id);
+      }
       sim.step();
-      // Skip the spin-up window: a cell that has never run also reads beat 0, and
-      // block B hasn't been steamed at all until `skew`.
-      if (t < skew + PULSE_PERIOD) continue;
-      if (grid.getAux(4, 5) >> 8 === 0) a.push(t);
-      if (grid.getAux(8, 5) >> 8 === 0) b.push(t);
+      // Skip the spin-up window: a cell that has never run also reads beat 0.
+      if (t < Math.max(...skews) + PULSE_PERIOD) continue;
+      for (let i = 0; i < n; i++) {
+        if (grid.getAux(islandX[i], 5) >> 8 === 0) beats[i].push(t);
+      }
     }
-    return { a, b };
+    return beats;
   };
+  const gapsOf = (beat: number[]): number[] => beat.slice(1).map((v, i) => v - beat[i]);
   const shortGaps = (beat: number[]): number[] =>
-    beat.slice(1).map((v, i) => v - beat[i]).filter((g) => g < PULSE_PERIOD);
+    gapsOf(beat).filter((g) => g < PULSE_PERIOD);
 
   // Never bridged: two independent machines, each rigidly on its own PULSE_PERIOD.
   // This is the control — it proves the detector doesn't manufacture short intervals
   // on its own, so the counts below come from the join and nothing else.
-  const apart = mergeBeats(5, 10_000);
+  const apart = islandBeats([0, 5], []);
   check(
     'two separate Turbine blocks each hold PULSE_PERIOD exactly (the control)',
-    apart.a.length > 1 &&
-      apart.b.length > 1 &&
-      shortGaps(apart.a).length === 0 &&
-      shortGaps(apart.b).length === 0,
-    `${apart.a.length}/${apart.b.length} beats, 0 sub-period intervals`,
+    apart.every((b) => b.length > 1 && shortGaps(b).length === 0),
+    `${apart.map((b) => b.length).join('/')} beats, 0 sub-period intervals`,
   );
 
-  // Now join them, across every skew and a full cycle of join times.
+  // One join, swept across every skew and three full cycles of join times.
+  const JOIN_TIMES = 3 * PULSE_PERIOD;
   let mostShort = 0;
   let settled = true;
   for (let skew = 0; skew < PULSE_PERIOD; skew++) {
-    for (let bridgeAt = 60; bridgeAt < 60 + 2 * PULSE_PERIOD; bridgeAt++) {
-      const m = mergeBeats(skew, bridgeAt, 200);
-      for (const beat of [m.a, m.b]) {
-        const gaps = beat.slice(1).map((v, i) => v - beat[i]);
+    for (let bridgeAt = 60; bridgeAt < 60 + JOIN_TIMES; bridgeAt++) {
+      for (const beat of islandBeats([0, skew], [bridgeAt], 200)) {
+        const gaps = gapsOf(beat);
         const short = gaps.filter((g) => g < PULSE_PERIOD);
         if (short.length > mostShort) mostShort = short.length;
         // Everything after the last short interval must be a clean PULSE_PERIOD.
-        const last = gaps.lastIndexOf(gaps.filter((g) => g < PULSE_PERIOD).pop() ?? -1);
+        // `lastIndexOf` on that gap's *value* lands on the last short gap: any later
+        // index holding the same value would itself be short, and so would be the one
+        // `pop()` returned. With no short gaps at all it yields -1 and the whole run
+        // is checked, which is what the control wants.
+        const last = gaps.lastIndexOf(short.pop() ?? -1);
         if (gaps.slice(last + 1).some((g) => g !== PULSE_PERIOD)) settled = false;
       }
     }
   }
   check(
-    'joining two out-of-phase Turbine blocks costs exactly one early beat, not a rate',
+    'joining two out-of-phase Turbine blocks costs one early beat, not a rate',
     mostShort <= 1,
-    `worst block saw ${mostShort} sub-period intervals over ${PULSE_PERIOD} skews × ${2 * PULSE_PERIOD} join times`,
+    `worst block saw ${mostShort} sub-period intervals over ${PULSE_PERIOD} skews × ${JOIN_TIMES} join times`,
   );
   check(
     '  …and the merged block is locked to PULSE_PERIOD from the next beat on',
     settled,
     'every interval after the lock-in equals PULSE_PERIOD',
+  );
+
+  // Two joins in quick succession — the case that kills "at most one, always". The
+  // cost is one early beat *per* connectivity change, so this must show up to two,
+  // and must still settle. The `>= 2` half is the real pin: it proves the sweep above
+  // is measuring a per-join cost rather than a global cap that would mask this.
+  let chainedMost = 0;
+  let chainedSettled = true;
+  for (let skewB = 0; skewB < PULSE_PERIOD; skewB++) {
+    for (let d = 1; d <= PULSE_PERIOD; d++) {
+      for (const beat of islandBeats([0, skewB, skewB], [70, 70 + d])) {
+        const gaps = gapsOf(beat);
+        const short = gaps.filter((g) => g < PULSE_PERIOD);
+        if (short.length > chainedMost) chainedMost = short.length;
+        const last = gaps.lastIndexOf(short.pop() ?? -1);
+        if (gaps.slice(last + 1).some((g) => g !== PULSE_PERIOD)) chainedSettled = false;
+      }
+    }
+  }
+  check(
+    'chaining a second join costs a second early beat — one per join, no more',
+    chainedMost === 2,
+    `worst block saw ${chainedMost} sub-period intervals across two staggered joins`,
+  );
+  check(
+    '  …and a chained merge still settles to PULSE_PERIOD once the joining stops',
+    chainedSettled,
+    'every interval after the last lock-in equals PULSE_PERIOD',
   );
 
   // No steam at all: inert, not a slow source. And cut the steam a third of the

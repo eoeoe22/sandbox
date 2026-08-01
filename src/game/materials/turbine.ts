@@ -108,13 +108,20 @@ const POWERED_TICKS = 24;
 // boilers built at different times). Their phases are independent until they touch;
 // from the moment they do they are one machine, so the next beat of whichever
 // sub-block is furthest along floods all of it and re-phases the rest — and a terminal
-// on the lagging side therefore sees **one** beat sooner than PULSE_PERIOD after its
-// previous one, exactly once, as the two lock together. Measured across 432
-// skew×join-time combinations: never more than one such interval, and every beat after
-// it is exactly PULSE_PERIOD (test/electricity.ts pins both halves). That is a
-// resynchronization, not a rate: two shafts coupled together fall into step, and the
-// alternative — letting the halves keep their own phases — would leave one machine
-// beating twice per cycle forever and tear its wheel down the middle.
+// on the lagging side therefore sees one beat sooner than PULSE_PERIOD after its
+// previous one, as the two lock together. That is a resynchronization, not a rate: two
+// shafts coupled together fall into step, and the alternative — letting the halves keep
+// their own phases — would leave one machine beating twice per cycle forever and tear
+// its wheel down the middle.
+//
+// The cost is **one early beat per join**, and per join is the whole of it: joins that
+// land close together each buy their own. Wire a third island in a couple of ticks
+// after the second and the probe block shows two sub-period intervals back to back.
+// (This paragraph said "at most one, ever" for one commit. A sweep of single joins —
+// every skew × three cycles of join times — confirmed it, and the chained case broke
+// it, so test/electricity.ts now runs both and pins the chained one at exactly two.)
+// What holds unconditionally is the settling: once the joining stops, every interval
+// after the last lock-in is exactly PULSE_PERIOD.
 const ACTIVE_MASK = 0xff;
 const BEAT_SHIFT = 8;
 
