@@ -55,6 +55,7 @@ import { CEMENT } from '../src/game/materials/cement';
 import { CONCRETE } from '../src/game/materials/concrete';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
 import { DIESEL } from '../src/game/materials/diesel';
+import { SAWDUST } from '../src/game/materials/sawdust';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -547,6 +548,100 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
     `${soaked} soaked → ${count(grid, WATER.id)} surfaced, ${countOverlay(grid, WATER.id)} still in the bed`,
   );
   check('…배수 중에도 호스트 없는 겹침이 없다', strandedOverlays(grid) === 0);
+}
+
+// ── 8. 흘수선 — 겹침이 알갱이를 따라가지 *않는* 자리 ────────────────────────
+// The one place the "wet sand carries its water" rule deliberately does NOT
+// apply: a buoyant powder column. There the overlay is the raft's WATERLINE, not
+// a per-grain property — tryFloatLightPowderStack counts overlay-bearing column
+// cells as its submerged depth, and shiftPowderColumnUp/Down keep that count
+// anchored to the liquid SURFACE — not to the grains — precisely because each
+// overlay stays at its own coordinate while the grains step over it. This scene
+// crosses the surface, so here the count does move by one; the scene after it is
+// the counter-example that stops "by one" from being read as a law. Both shifts
+// are driven directly
+// here rather than through a floating raft: the buoyancy loop calls them dozens
+// of times a tick under conditions it picks itself, which is no way to see what
+// one shift did.
+{
+  const { grid, sim } = makeWorld(30, 45);
+  floor(grid, 40);
+  for (let y = 20; y < 40; y++) for (let x = 0; x < 30; x++) grid.set(x, y, WATER.id);
+  // A six-cell Sawdust (density 2) column standing on the pond (density 3), its
+  // lower three cells already soaked — a raft riding at half draught.
+  for (let y = 14; y < 20; y++) grid.set(10, y, SAWDUST.id);
+  for (let y = 17; y < 20; y++) grid.setOverlay(10, y, WATER.id);
+
+  const water0 = fluidTotal(grid, WATER.id);
+  const soaked0 = countOverlay(grid, WATER.id);
+  const rose = sim.context.shiftPowderColumnUp(10, 14, 6);
+  const soakedUp = countOverlay(grid, WATER.id);
+  check('흘수선: 컬럼이 한 칸 떠오른다', rose && grid.get(10, 13) === SAWDUST.id);
+  check(
+    '…수면을 넘었으니 잠긴 칸 수가 하나 줄어든다 (겹침을 업고 가면 그대로다)',
+    soakedUp === soaked0 - 1,
+    `${soaked0} → ${soakedUp}`,
+  );
+  check(
+    '…빠져나온 물은 비워진 칸에 실물로 돌아온다',
+    grid.get(10, 19) === WATER.id,
+    `vacated cell holds id ${grid.get(10, 19)}`,
+  );
+  check(
+    '…물 총량은 한 칸도 늘지 않는다 (업고 가면 밑칸 것이 복제된다)',
+    fluidTotal(grid, WATER.id) === water0,
+    `${fluidTotal(grid, WATER.id)}/${water0}`,
+  );
+  check('…호스트 없는 겹침도 없다', strandedOverlays(grid) === 0);
+
+  // …and the mirror: sinking one cell swallows the liquid at the leading face,
+  // so the count goes back up by exactly one.
+  const sank = sim.context.shiftPowderColumnDown(10, 13, 6);
+  check('흘수선: 같은 컬럼이 다시 한 칸 잠긴다', sank && grid.get(10, 19) === SAWDUST.id);
+  check(
+    '…수면을 넘었으니 잠긴 칸 수가 하나 늘어난다',
+    countOverlay(grid, WATER.id) === soakedUp + 1,
+    `${soakedUp} → ${countOverlay(grid, WATER.id)}`,
+  );
+  check(
+    '…이번에도 물 총량은 그대로다',
+    fluidTotal(grid, WATER.id) === water0,
+    `${fluidTotal(grid, WATER.id)}/${water0}`,
+  );
+  check('…끝까지 호스트 없는 겹침이 없다', strandedOverlays(grid) === 0);
+}
+
+// 완전히 잠긴 채로 하는 시프트는 그 수를 바꾸지 않는다 — 그것도 옳다. 잠긴 칸 수가
+// 따라가는 것은 "시프트 한 번당 하나"가 아니라 **수면**이고, 물속에 잠긴 양 끝은 앞면이
+// 삼킨 만큼 뒷면이 내놓기 때문이다(푹 잠긴 뗏목은 어느 쪽이든 속까지 젖어 있다).
+// 여기서 지키는 것은 그 앵커링과 질량 보존이지 ±1이 아니다. 이 장면은 위 수면 장면과 달리
+// 겹침을 같이 복사하는 개조판에서도 통과한다(잠긴 칸 수가 원래 안 변하고, 물속에서는 뒷면
+// 물방울이 앞면이 삼킨 자리를 메워 복제도 안 드러난다) — 그래서 회귀를 잡는 못이 아니라
+// **위 장면의 "정확히 하나"를 우주 법칙으로 읽지 말라는 반례**로 서 있다.
+{
+  const { grid, sim } = makeWorld(30, 45);
+  floor(grid, 40);
+  for (let y = 5; y < 40; y++) for (let x = 0; x < 30; x++) grid.set(x, y, WATER.id);
+  // 위도 물, 아래도 물 — 컬럼 전체가 수면 한참 아래에 있고 여섯 칸 모두 젖어 있다.
+  for (let y = 14; y < 20; y++) {
+    grid.set(10, y, SAWDUST.id);
+    grid.setOverlay(10, y, WATER.id);
+  }
+  const water0 = fluidTotal(grid, WATER.id);
+  const soaked0 = countOverlay(grid, WATER.id);
+  const rose = sim.context.shiftPowderColumnUp(10, 14, 6);
+  check('물속에서도 컬럼은 한 칸 떠오른다', rose && grid.get(10, 13) === SAWDUST.id);
+  check(
+    '…잠긴 칸 수는 그대로다 (앞면이 삼킨 만큼 뒷면이 내놓는다)',
+    countOverlay(grid, WATER.id) === soaked0,
+    `${soaked0} → ${countOverlay(grid, WATER.id)}`,
+  );
+  check(
+    '…이 경우에도 물 총량은 한 칸도 안 움직인다',
+    fluidTotal(grid, WATER.id) === water0,
+    `${fluidTotal(grid, WATER.id)}/${water0}`,
+  );
+  check('…호스트 없는 겹침도 없다', strandedOverlays(grid) === 0);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

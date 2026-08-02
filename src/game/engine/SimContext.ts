@@ -757,6 +757,35 @@ export class SimContext {
 
   /**
    * Shifts a contiguous column of powder along the anti-gravity vector (UP).
+   *
+   * 겹침 here is deliberately NOT carried the way `swap` carries it ("wet sand
+   * carries its water as it falls"). The interior copy moves cells/temp/aux/tint
+   * one step and leaves every overlay at its own coordinate on purpose, because
+   * in a buoyant raft the overlay is not a per-grain property — it is the
+   * *waterline*. tryFloatLightPowderStack counts overlay-bearing column cells as
+   * `submergedCount` and compares that against the depth the column's density
+   * says it should ride at, so what a shift owes that count is that it stay
+   * anchored to the LIQUID SURFACE while the grains move past it. Each end does
+   * its own half: the leading face swallows whatever liquid it moves into, the
+   * trailing face hands back whatever drop it was holding. A shift that crosses
+   * the surface therefore moves the count by one (going up, the face leaving the
+   * liquid meets air and swallows nothing, so only the release counts), while a
+   * shift that stays fully under water absorbs and releases in the same breath
+   * and leaves the count where it was — also right, since a fully submerged raft
+   * is soaked through either way. The invariant is that anchoring, plus exact
+   * mass conservation; it is NOT a fixed ±1, so don't assert one here.
+   * Copying the overlays along with the grains "for consistency with swap" breaks
+   * both halves at once, and test/overlap.ts pins both: `submergedCount` stops
+   * responding even at the surface (the waterline rides along with the column, so
+   * the raft keeps asking for the shift it just got), and the trailing drop is
+   * duplicated — copied one cell along AND still released into the cell being
+   * vacated, so the pond gains a cell of water per shift. As written every drop
+   * released is one this stops hosting and every cell swallowed becomes one
+   * overlay, so the pond's total never moves. Note
+   * also that a column is a run of ONE material id (see the caller's scan), so
+   * grains stepping over a stationary overlay can never strand it on a host type
+   * that can't hold it.
+   *
    * @param topX The x-coordinate of the top of the column.
    * @param topY The y-coordinate of the top of the column.
    * @param height The number of powder cells in the column.
@@ -839,6 +868,8 @@ export class SimContext {
 
   /**
    * Shifts a contiguous column of powder along the gravity vector (DOWN).
+   * Mirror of shiftPowderColumnUp — see its note on why 겹침 stays put here
+   * instead of riding along with the grains.
    * @param topX The x-coordinate of the top of the column.
    * @param topY The y-coordinate of the top of the column.
    * @param height The number of powder cells in the column.
