@@ -1,6 +1,7 @@
 import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
 import { getMaterial } from '../materials/registry';
+import { tryReactSoaked } from './reactions';
 import { DIR8 } from './directions';
 import { BodyFlood } from './deviceBody';
 import { SMOKE } from '../materials/smoke';
@@ -40,7 +41,10 @@ const FALL_BOOST_CHANCE = 0.5;
  * occupants (see Grid.overlay). A porous solid (Mesh, Turbine, Pump) hosts any
  * liquid or gas — fluids move through it as if it weren't there — and one that is
  * also `porousPowder` (Pump) hosts powders too, so grit travels through it the
- * same way. A powder hosts a liquid (water soaking into a sand bed). Everything
+ * same way. A powder hosts a liquid (water soaking into a sand bed). An
+ * `overlapCarrier` (Debris) hosts whatever it *inherits* — it admits nothing on
+ * its own, but a write over a soaked cell hands it that cell's occupant instead
+ * of deleting it, so a flung wet grain flies wet. Everything
  * else hosts nothing. One
  * overlap slot per cell. Module-private: the only enforcer of the (host,
  * overlay) invariant is this seam — grid tools that relocate cells (brushTools'
@@ -56,6 +60,10 @@ function canHostOverlap(hostId: number, fluidId: number): boolean {
   // below — e.g. Ammonium Nitrate hosts Diesel/Kerosene but not Water, so Water
   // stays a primary neighbor cell for its own reaction/wet checks.
   if (host.overlapFluids !== undefined && !host.overlapFluids.includes(fluidId)) return false;
+  // A carrier keeps any occupant handed to it, whatever its phase — mid-flight
+  // it stands in for the grain that was holding it, and has no pore space of its
+  // own (see Material.overlapCarrier; canOverlapAt refuses to *fill* one).
+  if (host.overlapCarrier === true) return true;
   const fluidPhase = getMaterial(fluidId).phase;
   if (host.porous) {
     if (fluidPhase === Phase.Liquid || fluidPhase === Phase.Gas) return true;
@@ -544,6 +552,79 @@ export class SimContext {
     return this.grid.getOverlay(x, y);
   }
 
+  /**
+   * Write this cell's 겹침 slot — the counterpart to `getOverlay`, for a rule that
+   * transforms the fluid soaked *inside* a host (a reaction between the two
+   * co-occupants, see reactions.ts's `tryReactSoaked`). The product is fresh
+   * material, so its parked aux is cleared, and it's marked moved so it doesn't
+   * also percolate in the tick it formed — the overlap layer's version of what
+   * `spawn` does for a primary cell.
+   *
+   * Returns **false when the current host can't hold `id`** (a powder can't hold a
+   * gas): the slot is left empty and the caller decides where the product goes —
+   * it usually surfaces (see tryReactSoaked). Writing EMPTY always succeeds and
+   * simply empties the slot; note that unlike `set(x, y, EMPTY)` on the *host*,
+   * this destroys the occupant rather than releasing it into the cell.
+   */
+  setOverlay(x: number, y: number, id: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const g = this.grid;
+    const gi = g.idx(x, y);
+    if (id !== EMPTY && !canHostOverlap(g.cells[gi], id)) {
+      g.overlay[gi] = 0;
+      g.overlayAux[gi] = 0;
+      g.markActive(x, y);
+      return false;
+    }
+    g.overlay[gi] = id;
+    g.overlayAux[gi] = 0;
+    if (id !== EMPTY) g.overlayMoved[gi] = 1;
+    g.markActive(x, y);
+    return true;
+  }
+
+  /** Destroy this cell's 겹침 occupant outright (see setOverlay). Use it when the
+   *  fluid is consumed *where it lies* — spent corroding the grain it soaked into
+   *  — as opposed to `set(x, y, EMPTY)` on the host, which releases it into the
+   *  vacated cell. */
+  clearOverlay(x: number, y: number): void {
+    this.setOverlay(x, y, EMPTY);
+  }
+
+  /**
+   * The 겹침 occupant's own turn: 스며든 액체의 상호작용. Run once a tick by
+   * Simulation's scan for every cell holding an overlap fluid, just before that
+   * fluid percolates (updateOverlay), with (x,y) the HOST cell.
+   *
+   * A soaked fluid used to be inert — it moved and nothing else, so acid poured
+   * onto sand vanished into the bed and stopped eating it, and materials that
+   * needed their liquid to keep reacting had to opt *out* of overlap entirely
+   * (Soap's `liquidOverlap: 0`, Ammonium Nitrate's `overlapFluids`). Now the two
+   * co-occupants meet as a contact pair, in two layers:
+   *
+   *   1. the declarative table both sides already have (`Material.reactions`),
+   *      matched across the seam by `tryReactSoaked` — so a soaked fluid reacts
+   *      with the grain holding it exactly as it would with a neighbor;
+   *   2. failing that, the fluid's own `Material.overlapUpdate` hook, for what
+   *      needs code rather than a table row (Acid's corrosion).
+   *
+   * Movement, boiling and freezing deliberately stay out: a soaked fluid has no
+   * cell of its own, and those belong to `updateOverlay`.
+   */
+  updateSoaked(x: number, y: number): void {
+    const fluidId = this.grid.getOverlay(x, y);
+    if (fluidId === EMPTY) return;
+    // A carrier's passenger is cargo, not a co-occupant: it sits the turn out
+    // (see Material.overlapCarrier). Both halves of this pass read the cell's
+    // temperature — the reaction table's gates, and any hook that cares — and a
+    // carrier's `temp` holds packed flight state rather than a reading
+    // (Material.packedTemp), so every one of those judgements would be made
+    // against a five-digit number that means nothing.
+    if (getMaterial(this.grid.get(x, y)).overlapCarrier === true) return;
+    if (tryReactSoaked(x, y, this)) return;
+    getMaterial(fluidId).overlapUpdate?.(x, y, this);
+  }
+
   /** Current temperature at a cell. Material `update` rules read this to drive
    *  temperature-based phase changes (Lava→Stone freeze, Water→Steam boil). */
   getTemp(x: number, y: number): number {
@@ -652,6 +733,10 @@ export class SimContext {
   private canOverlapAt(x: number, y: number, hostId: number, fluidId: number): boolean {
     if (!canHostOverlap(hostId, fluidId)) return false;
     const host = getMaterial(hostId);
+    // A carrier is inherit-only (Material.overlapCarrier): it holds on to an
+    // occupant a write handed it, but no entry path may ever fill one — a
+    // fragment in flight is not a pore for a puddle to soak into.
+    if (host.overlapCarrier === true) return false;
     if (host.phase === Phase.Powder) {
       const fluid = getMaterial(fluidId);
       // 액체보다 가벼운 가루는 겹침 / 겹침불가 파티클시스템과 별개로 액체가 가루를 겹침으로 통과하게 만들기.
@@ -1418,9 +1503,10 @@ export class SimContext {
    * wall of any thickness — or exits into an EMPTY cell, where the fluid
    * surfaces as an ordinary particle again. Exits are EMPTY-only, so a fluid
    * never pops out into another fluid's cell (and can't ping-pong back and
-   * forth across a wall — re-entering its own pool is impossible). Overlapped
-   * fluids get no material update: no boiling, freezing, or reactions while
-   * inside a host. Called by Simulation's scan, guarded by Grid.overlayMoved.
+   * forth across a wall — re-entering its own pool is impossible). This is the
+   * fluid's MOVEMENT only — no boiling or freezing inside a host; its
+   * interactions with the grain holding it are `updateSoaked`'s business, and run
+   * just before this. Called by Simulation's scan, guarded by Grid.overlayMoved.
    *
    * A 겹침 POWDER (only a `porousPowder` host takes one — the Pump) sinks and
    * creeps diagonally like the fluids but never takes the two sideways steps:
@@ -1503,6 +1589,18 @@ export class SimContext {
     const g = this.grid;
     const i = g.idx(x, y);
     const fluidId = g.overlay[i];
+    // Cargo doesn't disembark mid-flight: an occupant riding a carrier
+    // (Material.overlapCarrier — a Debris fragment) can only leave when the
+    // carrier itself is written over, which is what hands it to the grain the
+    // fragment deposits. Letting it percolate out on its own was actively wrong,
+    // not just odd — a carrier packs its flight state into `temp`
+    // (Material.packedTemp), so the "temperature it shared with its host" below
+    // is not a temperature at all, and a drop surfacing out of a fragment came
+    // out at tens of thousands of degrees. That boiled it to Steam and fused the
+    // sand around it to Glass under a Woofer pulse whose destructive power is
+    // literally zero. See also updateSoaked, which sits out a carrier's turn for
+    // the same reason.
+    if (getMaterial(g.cells[i]).overlapCarrier === true) return false;
     if (!this.inBounds(tx, ty)) {
       // Mirrors tryMove's border rule: open void edges drop the fluid out of
       // the world; wall edges block it.

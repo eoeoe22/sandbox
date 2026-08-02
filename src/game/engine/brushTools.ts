@@ -299,8 +299,15 @@ export function inspectCells(grid: Grid, cells: readonly number[]): InspectStats
     if (ov !== EMPTY) {
       overlapped++;
       counts.set(ov, (counts.get(ov) ?? 0) + 1);
-      const ovMat = getMaterial(ov);
-      if (!ovMat.isWall && !ovMat.packedTemp) addTemp(ov, grid.getTemp(x, y));
+      // The reading has to be gated on the HOST, not on the fluid: "shares the
+      // host cell's temperature" cuts both ways, and a `packedTemp` host's temp
+      // is packed flight state, not degrees. Water is never itself packedTemp, so
+      // testing the fluid here excluded nothing — a drop riding a flying Debris
+      // fragment (Material.overlapCarrier) reported the panel a five-digit
+      // average. Wall can't host an overlay, but the check costs nothing and
+      // keeps this branch's rule identical to the host branch above.
+      const host = getMaterial(id);
+      if (!host.isWall && !host.packedTemp) addTemp(ov, grid.getTemp(x, y));
     }
   }
   const entries: InspectEntry[] = [];

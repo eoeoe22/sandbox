@@ -166,7 +166,13 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
   const origId = sim.getAux(x, y);
   if (origId === EMPTY) {
     // Malformed (hand-placed, or a corrupt reload with no carried id): nothing
-    // to deposit, so it simply vanishes.
+    // to deposit, so it simply vanishes — and so does any cargo it somehow got
+    // hold of. Cleared first for the same reason the void-border exit below does
+    // it: a bare set() would RELEASE the fluid into this cell, at what is not a
+    // temperature (see Material.overlapCarrier). No launcher can produce this
+    // state — both stamp `aux` immediately after spawning — so this is belt and
+    // braces for a corrupt reload, not a live path.
+    sim.clearOverlay(x, y);
     sim.set(x, y, EMPTY);
     return;
   }
@@ -205,7 +211,11 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
     if (nx === cx && ny === cy) continue;
     if (!sim.inBounds(nx, ny)) {
       if (sim.borderMode === 'void') {
-        sim.set(cx, cy, EMPTY); // flew out of an open border — the grain leaves the world
+        // Flew out of an open border — the grain leaves the world, and so does
+        // anything soaked into it (cleared first, or set() would release the
+        // carried fluid back into the cell at the edge).
+        sim.clearOverlay(cx, cy);
+        sim.set(cx, cy, EMPTY);
         return;
       }
       if (nx !== cx) vxQ = bounceV(vxQ, restitution); // solid container edge: ricochet back in
@@ -237,6 +247,14 @@ export const DEBRIS = register({
   // A fragment draws as the material it's carrying (its origin id, in aux) —
   // shoved water flies blue, sand flies tan — not as a uniform grey grain.
   renderAsAux: true,
+  // …and it carries the grain's 겹침 occupant too: a shove writes a fragment over
+  // the cell it's throwing, and without this tag that write silently deleted the
+  // water/acid soaked into the grain (스며든 액체 삭제) — a concussion that is
+  // supposed to REARRANGE matter would quietly destroy some of it every time it
+  // hit a wet bed. The fluid rides along and is still in the slot when the
+  // fragment deposits its grain again, so wet sand lands wet. Inherit-only: no
+  // entry path fills a fragment in flight (see Material.overlapCarrier).
+  overlapCarrier: true,
   // conductivity 0 keeps the heat pass off `temp`, which holds the packed
   // life+velocity; init 0 → life 0 so a hand-placed fragment dies immediately.
   thermal: { init: 0, conductivity: 0 },

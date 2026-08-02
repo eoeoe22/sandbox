@@ -605,6 +605,47 @@ export interface Material {
    */
   overlapFluids?: readonly number[];
   /**
+   * A 겹침 (overlap) *carrier*: this material never admits an occupant of its own,
+   * but it KEEPS one it inherits — a cell written over a soaked host holds on to
+   * the soaked fluid instead of destroying it, and carries it along as it moves.
+   *
+   * Exactly one material needs it: Debris, the fragment a shockwave flings (see
+   * materials/debris.ts). A shove writes a fragment over the grain it is throwing,
+   * and without this the water/acid soaked into that grain was silently deleted by
+   * the very write that launched it (스며든 액체 삭제) — the concussion is supposed
+   * to *rearrange* matter, not erase it. With the tag the fragment flies wet and
+   * the fluid is still there when it deposits its grain again.
+   *
+   * What it carries is CARGO, not a co-occupant, and the three SimContext reads
+   * say exactly that: `canHostOverlap` yes (so set/spawn/swap keep the occupant),
+   * `canOverlapAt` no (nothing may soak *into* a fragment in flight), and both
+   * `updateSoaked` and `tryOverlayMove` sit the passenger's turn out — it neither
+   * reacts nor percolates away, and only rejoins the world when the carrier is
+   * written over. That last one is load-bearing rather than tidy: a carrier is
+   * normally `packedTemp` too, so the cell's `temp` is flight state, not a
+   * reading. A drop allowed to surface out of a fragment on its own came out at
+   * tens of thousands of degrees — it flashed to Steam and fused the sand it
+   * landed in to Glass under a Woofer pulse of destructive power 0.
+   */
+  overlapCarrier?: boolean;
+  /**
+   * The turn this material takes while it is the 겹침 (overlap) occupant of some
+   * host cell — 스며든 액체의 상호작용. The engine runs it once a tick for the fluid
+   * in a cell's overlap slot, right before that fluid percolates (see
+   * Simulation.updateCell), with `(x,y)` the HOST cell the fluid is soaked into.
+   * The declarative contact pass between the two co-occupants runs first
+   * (engine/reactions.ts `tryReactSoaked`); this hook is for interactions that
+   * need real code — Acid corroding the grain it soaked into (corrosion.ts's
+   * `tryCorrodeSoaked`).
+   *
+   * It is NOT the material's ordinary `update`: a soaked fluid has no cell of its
+   * own, so movement, boiling and freezing stay the business of `updateOverlay`.
+   * Write to the overlap slot through `SimContext.setOverlay`/`clearOverlay`, and
+   * remember that emptying the host (`set(x, y, EMPTY)`) *releases* the fluid into
+   * the cell it was hiding in. Omit for a fluid with nothing to do while soaked.
+   */
+  overlapUpdate?: (x: number, y: number, sim: SimContext) => void;
+  /**
    * A second packed color woven through the base `color` as a positional
    * checkerboard, so the material reads as a grid/lattice screen rather than a
    * flat slab (Mesh). Cells where `(x ^ y)` is odd draw this color, the rest draw

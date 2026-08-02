@@ -326,7 +326,15 @@ function isBlastInert(id: number): boolean {
  *  cell — and a cell the first pulse rolled but didn't fling is reached again by
  *  the next, which would compound "50% on exposure" into 75% for a 2-cell cabinet
  *  and worse for a bigger one. The memo is only ever touched by a material that
- *  actually declares the tag, so an ordinary blast pays nothing for it. */
+ *  actually declares the tag, so an ordinary blast pays nothing for it.
+ *
+ *  This is the one shove-branch path where the host does NOT survive as a flung
+ *  fragment, so it can't hand its 겹침 occupant to a carrier the way a shove does.
+ *  It doesn't need to: `spawn` applies the ordinary lifecycle rule — a residue
+ *  that can hold the fluid keeps it, one that can't takes it down with the host,
+ *  exactly as any transform into a non-host does. Neither half is reachable today
+ *  in any case: every material carrying these two tags is a non-porous solid, so
+ *  it can't be holding an overlay to begin with. */
 function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
@@ -406,6 +414,40 @@ function isWater(id: number): boolean {
   return id === WATER.id || id === SALTWATER.id;
 }
 
+/**
+ * The fate of the fluid soaked into a cell (its 겹침 occupant) whose host the
+ * blast is about to remove — the water in wet sand, the acid in a soaked bed.
+ * It meets the blast on the same axis its host did, as if it were a bare cell of
+ * itself sitting there:
+ *   • too tough for this blast (power < its durability) ⇒ it stays, taking the
+ *     cell its host is vacating — `set(x, y, EMPTY)` on a soaked host releases
+ *     the fluid rather than clearing the cell (SimContext.set);
+ *   • water strong enough to break ⇒ the same flash-boil a bare puddle gets: the
+ *     cell erupts as the hot Steam plume instead of a crater flash, so blowing up
+ *     a soaked bed puffs steam where the wet part was;
+ *   • anything else ⇒ destroyed along with its host, exactly like a bare cell of
+ *     it inside the same crater.
+ * Returns true when it claimed the cell and the host's own fate must be skipped.
+ */
+function resolveSoaked(
+  sim: SimContext,
+  x: number,
+  y: number,
+  soaked: number,
+  power: number,
+): boolean {
+  if (power < durabilityOf(soaked)) {
+    sim.set(x, y, EMPTY); // host gone; the fluid it held surfaces into the cell
+    return true;
+  }
+  if (isWater(soaked)) {
+    sim.spawn(x, y, STEAM.id); // spawn clears the (unhostable) overlap slot
+    sim.setTemp(x, y, UNDERWATER_STEAM_TEMP);
+    return true;
+  }
+  return false;
+}
+
 /** Default fate of a cell the front reaches when no `onCell` claims it, decided by
  *  the blast's destructive `power` against the cell's durability (see the block
  *  comment above blocksBlast). `entryDx/entryDy` is the inward shock direction and
@@ -429,6 +471,35 @@ function defaultCell(
     return;
   }
   const m = getMaterial(prevId);
+  // A Debris fragment already in flight is not matter to resolve — a
+  // submerged liquid fragment jets up into cells this same flood hasn't
+  // processed yet (see debris.ts), and re-shoving it would launch a fragment
+  // whose "carried material" is Debris itself, while flashing it would delete
+  // the mass it carries. Leave it flying — including whatever it soaked up with
+  // the grain it's carrying, which is why this is answered before the 겹침 block
+  // below (a fragment's host isn't being removed; it's in transit).
+  if (prevId === DEBRIS.id) return;
+  // An effect cell (a firework's flower — `Material.blastInert`) is likewise not
+  // matter to resolve: the front passes straight over it and it keeps fading on
+  // its own timer. Deliberately NOT flashed: a flash is a real BLAST cell, which
+  // decays to stray Fire and reads as a detonation trigger to every charge
+  // watching for an adjacent flash — so flashing effect cells would let even a
+  // power-0, strictly non-destructive pulse (a Woofer's) set off a stockpile.
+  if (m.blastInert) return;
+  // 겹침 — a soaked cell holds TWO occupants, and every path below that removes
+  // the host would take the fluid down with it unannounced (스며든 액체 삭제). Give
+  // it its own answer first, on the same power-vs-durability axis a bare cell of
+  // it would meet (resolveSoaked). The shove path deliberately isn't included:
+  // there the host survives as a flung fragment and carries its fluid along
+  // (Material.overlapCarrier).
+  const soaked = sim.getOverlay(x, y);
+  if (
+    soaked !== EMPTY &&
+    (m.explosive || prevId === BLAST.id || power >= durabilityOf(prevId)) &&
+    resolveSoaked(sim, x, y, soaked, power)
+  ) {
+    return;
+  }
   if (m.explosive) {
     flashCell(sim, x, y);
     return;
@@ -441,19 +512,6 @@ function defaultCell(
     flashCell(sim, x, y);
     return;
   }
-  // A Debris fragment already in flight is likewise not matter to resolve — a
-  // submerged liquid fragment jets up into cells this same flood hasn't
-  // processed yet (see debris.ts), and re-shoving it would launch a fragment
-  // whose "carried material" is Debris itself, while flashing it would delete
-  // the mass it carries. Leave it flying.
-  if (prevId === DEBRIS.id) return;
-  // An effect cell (a firework's flower — `Material.blastInert`) is likewise not
-  // matter to resolve: the front passes straight over it and it keeps fading on
-  // its own timer. Deliberately NOT flashed: a flash is a real BLAST cell, which
-  // decays to stray Fire and reads as a detonation trigger to every charge
-  // watching for an adjacent flash — so flashing effect cells would let even a
-  // power-0, strictly non-destructive pulse (a Woofer's) set off a stockpile.
-  if (m.blastInert) return;
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume; a material
     // that drops residue when destroyed (Termite→Sawdust, Nanobot→Iron Powder)
@@ -473,8 +531,10 @@ function defaultCell(
   // Too tough to destroy. Loose matter (powder/liquid/gas) — and a `shockLoose`
   // solid, which the wave carries rather than breaks against (a crawling bug) —
   // is flung aside as Debris: a mass-conserving shove that carries the material
-  // out and rains it back. A fragile body may not survive the wave at all
-  // (shockDeathChance → its residue). A structural solid it can't crack never
+  // out and rains it back — 겹침 included, since the fragment carries the grain's
+  // soaked fluid along (Material.overlapCarrier). A fragile body may not survive
+  // the wave at all (shockDeathChance → its residue, which resolves its own
+  // occupant by the ordinary lifecycle rule — see shockKill). A structural solid it can't crack never
   // reaches here (blocksBlast keeps the front out of it), so anything else still
   // solid is left untouched, defensively.
   if (m.phase !== Phase.Solid || isShockLoose(prevId)) {
