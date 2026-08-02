@@ -757,6 +757,28 @@ export class SimContext {
 
   /**
    * Shifts a contiguous column of powder along the anti-gravity vector (UP).
+   *
+   * 겹침 here is deliberately NOT carried the way `swap` carries it ("wet sand
+   * carries its water as it falls"). The interior copy moves cells/temp/aux/tint
+   * one step and leaves every overlay at its own coordinate on purpose, because
+   * in a buoyant raft the overlay is not a per-grain property — it is the
+   * *waterline*. tryFloatLightPowderStack counts overlay-bearing column cells as
+   * `submergedCount` and compares that against the depth the column's density
+   * says it should ride at, so a shift has to change the count by exactly one:
+   * shifting UP releases the vacated far-end cell's drop back into the world
+   * (one cell less submerged), shifting DOWN absorbs the liquid at the leading
+   * face (one cell more). Copying the overlays along with the grains "for
+   * consistency with swap" breaks that in two ways at once, both pinned by
+   * test/overlap.ts: `submergedCount` stops responding to the shift (the
+   * waterline moves with the column, so the raft keeps asking for the shift it
+   * just got), and the far-end drop is duplicated — copied one cell along AND
+   * still released into the cell being vacated, so the pond gains a cell of water
+   * per shift. As written, mass is exactly conserved: every drop this releases is
+   * one it stops hosting, and every cell it swallows becomes one overlay. Note
+   * also that a column is a run of ONE material id (see the caller's scan), so
+   * grains stepping over a stationary overlay can never strand it on a host type
+   * that can't hold it.
+   *
    * @param topX The x-coordinate of the top of the column.
    * @param topY The y-coordinate of the top of the column.
    * @param height The number of powder cells in the column.
@@ -839,6 +861,8 @@ export class SimContext {
 
   /**
    * Shifts a contiguous column of powder along the gravity vector (DOWN).
+   * Mirror of shiftPowderColumnUp — see its note on why 겹침 stays put here
+   * instead of riding along with the grains.
    * @param topX The x-coordinate of the top of the column.
    * @param topY The y-coordinate of the top of the column.
    * @param height The number of powder cells in the column.

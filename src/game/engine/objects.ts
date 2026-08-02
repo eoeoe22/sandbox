@@ -3610,11 +3610,23 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
   const tcy = Math.floor(o.y - uy * reach);
   if (ctx.inBounds(tcx, tcy)) {
     const tipId = ctx.get(tcx, tcy);
-    // A cosmetic reading is not a flame: a Firework Burst flower drifting across
-    // the fuse must neither re-light a dud nor otherwise count as heat, so it
-    // reads as plain ambient air here (see Material.decorTemp).
+    // Two kinds of cell hold a number in `temp` that is not a flame the fuse can
+    // read, and both must land on the tip as plain ambient air — the same pair
+    // footprintHazards skips for the same reason (see its comment):
+    //   - `decorTemp` (a Firework Burst flower): the reading is real but purely
+    //     cosmetic, so a volley drifting across the fuse must not re-light a dud.
+    //   - `packedTemp` (a flying Debris/Ember fragment, a Blast flash): the field
+    //     is packed flight/life state, not degrees at all. Its smallest value is
+    //     already in the thousands, so ANY fragment that happens to pass over the
+    //     tip — the spray of a nearby blast, a splash — used to read as a
+    //     several-thousand-degree flame and re-light a doused stick. A real blast
+    //     reaching the stick still sets it off through the footprint hazard scan
+    //     (`hz.blast`), which is where that belongs.
+    const tipMat = tipId !== EMPTY ? getMaterial(tipId) : null;
     const tipTemp =
-      tipId !== EMPTY && getMaterial(tipId).decorTemp ? AMBIENT_TEMP : ctx.getTemp(tcx, tcy);
+      tipMat !== null && (tipMat.packedTemp || tipMat.decorTemp)
+        ? AMBIENT_TEMP
+        : ctx.getTemp(tcx, tcy);
     if (fuseSnuffed(tipId, tipTemp)) {
       o.lit = false; // a dud — countdown PAUSED (fuseTicks kept); heat can still cook it off
     } else if (!o.lit && tipTemp >= FUSE_RELIGHT_TEMP) {

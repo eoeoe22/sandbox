@@ -2,7 +2,9 @@
 // → materials/fireworkburst.ts): a star opens into a flower of Firework Burst
 // cells, those cells read as the ~1200° flame they look like, and that reading
 // stays purely cosmetic — it never conducts into the grid and never counts as
-// heat against a free object. Run: `node test/run-fireworks.mjs`.
+// heat against a free object. The last scene covers the other kind of unreadable
+// `temp` at the same dynamite fuse tip: a `packedTemp` cell, whose field is
+// packed flight state rather than degrees. Run: `node test/run-fireworks.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { inspectCells } from '../src/game/engine/brushTools';
@@ -12,6 +14,9 @@ import { getMaterial } from '../src/game/materials/registry';
 import { AMBIENT_TEMP } from '../src/game/config';
 import { FIREWORK_BURST, BURST_COLORS } from '../src/game/materials/fireworkburst';
 import { FIREWORK_STAR } from '../src/game/materials/fireworkstar';
+import { DEBRIS } from '../src/game/materials/debris';
+import { SAND } from '../src/game/materials/sand';
+import { encodeFlight } from '../src/game/materials/ballistic';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -181,6 +186,50 @@ function cellsIn(x0: number, y0: number, x1: number, y1: number): number[] {
     if (stick.lit) relit = true;
   }
   check('a flower does not re-light a snuffed fuse', !relit);
+  check('…so the countdown stays paused', stick.fuseTicks === fuseAt,
+    `${stick.fuseTicks}/${fuseAt}`);
+  check('and the stick never goes off', grid.objects.includes(stick));
+}
+
+// 6. The other half of that same rule at the fuse tip, and the one that bites
+//    harder: a `packedTemp` cell. A flying Debris fragment keeps its flight state
+//    (life + velocity) in `temp`, so its SMALLEST legal value is already ~2400 —
+//    twelve times FUSE_RELIGHT_TEMP. Any fragment drifting over the tip (the
+//    spray of a blast next door, a splash) therefore used to read as a
+//    several-thousand-degree flame and re-light a doused stick. The stamped
+//    fragments here are legitimate in-flight cells (encodeFlight + the carried
+//    material in aux), not hand-placed duds.
+{
+  const { grid, sim } = makeWorld(100, 100);
+  floor(grid, 70);
+  const stick = createDynamite(50, 63) as SimDynamite;
+  grid.objects.push(stick);
+  for (let t = 0; t < 40; t++) sim.step();
+  stick.lit = false; // a dud: snuffed fuse, countdown paused
+  const fuseAt = stick.fuseTicks;
+
+  // Sanity first: the number these fragments carry really is far past the
+  // re-light threshold, so the scene below is testing what it claims to.
+  const flight = encodeFlight(12, 0, -4);
+  check('a fragment in flight packs a number well past FUSE_RELIGHT_TEMP',
+    flight > 200 * 10, `${flight}`);
+
+  let relit = false;
+  for (let t = 0; t < 200; t++) {
+    // The whole box above the floor is re-stamped as fresh fragments every tick,
+    // rather than only its empty cells: the settling stick spat real Fire out of
+    // its own fuse before it was snuffed, and leaving that lying around would let
+    // a genuine flame re-light it and pass this scene for the wrong reason.
+    for (let y = 45; y < 70; y++)
+      for (let x = 40; x <= 60; x++) {
+        grid.set(x, y, DEBRIS.id);
+        grid.setTemp(x, y, flight);
+        grid.setAux(x, y, SAND.id); // the grain it will rain back down
+      }
+    sim.step();
+    if (stick.lit) relit = true;
+  }
+  check('a flying fragment does not re-light a snuffed fuse', !relit);
   check('…so the countdown stays paused', stick.fuseTicks === fuseAt,
     `${stick.fuseTicks}/${fuseAt}`);
   check('and the stick never goes off', grid.objects.includes(stick));
