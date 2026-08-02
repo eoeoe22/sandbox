@@ -88,7 +88,7 @@ export const materialNamesEn: Record<number, string> = {};
 export const materialNamesKo: Record<number, string> = {
   // 0 Eraser — palette-invisible, but shown in some fallback paths.
   0: '지우개',
-  1: 'Wall',
+  1: '벽',
   2: '모래',
   3: '물',
   4: '돌',
