@@ -23,11 +23,15 @@
 
 ```
 src/
-├─ pages/index.astro          # 전체 화면 캔버스 + 컨트롤 패널 마운트
-├─ components/                # Svelte 아일랜드 (컨트롤 UI)
+├─ pages/
+│  ├─ index.astro             # 시작 페이지 (Homepage/Landing Page, 동적 배경 히어로, 프리셋 갤러리)
+│  ├─ sandbox.astro           # 메인 시뮬레이션 캔버스 페이지 (?preset=, ?slot= 로드 지원)
+│  └─ guide.astro             # 물질 & 물리학 도감 페이지
+├─ components/                # Svelte 아일랜드 (컨트롤 UI, 히어로 백그라운드, 프리셋 갤러리 등)
 ├─ state/store.ts             # nanostores — UI ⇄ 엔진 브리지
 └─ game/                      # 프레임워크 독립 순수 TS 엔진
-   ├─ Game.ts                 # 조립 + rAF 루프 (메인 스레드)
+   ├─ Game.ts                 # 조립 + rAF 루프 (메인 스레드, URL 파라미터 로딩)
+   ├─ presets/                # 5종 샌드박스 템플릿 맵 (volcano, blast_furnace, circuit, refinery, ecosystem)
    ├─ layout.ts               # 동적 화면비 → 그리드 해상도 계산
    ├─ engine/                 # Grid, Simulation, SimContext, behaviors
    ├─ materials/              # 물질 정의 (물질 추가 = 파일 하나)

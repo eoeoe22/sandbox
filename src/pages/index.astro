@@ -1,18 +1,363 @@
 ---
 import Base from '../layouts/Base.astro';
-import ControlPanel from '../components/ControlPanel.svelte';
+import HeroSandbox from '../components/HeroSandbox.svelte';
+import PresetGallery from '../components/PresetGallery.svelte';
+import SnapshotManagerModal from '../components/SnapshotManagerModal.svelte';
 ---
 
-<Base title="Particle Sandbox">
-  <canvas id="game"></canvas>
-  <ControlPanel client:load />
+<Base title="Particle Sandbox - Dynamic Web Physics & Chemical Sandbox">
+  <div class="landing-container">
+    <!-- Dynamic Hero Particle Background -->
+    <HeroSandbox client:load />
+
+    <!-- Navigation Bar -->
+    <nav class="top-nav">
+      <div class="nav-brand">
+        <span class="pixel-logo">PARTICLE</span>
+        <span class="neon-badge">SANDBOX</span>
+      </div>
+      <div class="nav-links">
+        <a href="/guide" class="nav-item">
+          <i class="bi bi-book-half"></i>
+          <span>도감 & 가이드</span>
+        </a>
+        <a href="/sandbox" class="nav-item primary">
+          <i class="bi bi-play-fill"></i>
+          <span>게임 시작</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- Main Hero Section -->
+    <main class="hero-content">
+      <div class="hero-text-block">
+        <div class="title-badge">
+          <span class="pulse-dot"></span>
+          <span>Web Particle Physics & Chemistry Engine</span>
+        </div>
+        <h1 class="main-title">
+          <span class="glow-text">PARTICLE</span>
+          <span class="accent-text">SANDBOX</span>
+        </h1>
+        <p class="hero-description">
+          60여 종 이상의 파티클, 고로 철 제련, 분별 증류, 전기 회로 및 폭발 연쇄 반응을
+          웹 브라우저에서 실시간 60FPS로 자유롭게 창작하고 실험하세요.
+        </p>
+
+        <!-- Main CTA Group -->
+        <div class="cta-group">
+          <div class="primary-cta-wrapper">
+            <a href="/sandbox" class="btn-hero-primary">
+              <i class="bi bi-play-circle-fill"></i>
+              <span>게임 시작하기</span>
+            </a>
+          </div>
+
+          <button id="open-snapshot-btn" class="btn-hero-secondary">
+            <i class="bi bi-folder-symlink-fill"></i>
+            <span>불러오기 / 스냅샷 관리</span>
+          </button>
+
+          <a href="/guide" class="btn-hero-tertiary">
+            <i class="bi bi-journal-bookmark-fill"></i>
+            <span>물질 & 물리학 도감</span>
+          </a>
+        </div>
+      </div>
+    </main>
+
+    <!-- Preset Scenarios Section -->
+    <section class="presets-section">
+      <PresetGallery client:load currentLocale="ko" />
+    </section>
+
+    <!-- Footer -->
+    <footer class="landing-footer">
+      <p>© 2026 Particle Sandbox Project. Built with Astro & Svelte.</p>
+    </footer>
+
+    <!-- Interactive Snapshot Manager Modal container -->
+    <div id="snapshot-modal-root"></div>
+  </div>
 </Base>
 
 <script>
-  // Processed & bundled by Vite (deferred module script), so the canvas exists
-  // by the time this runs. The engine is plain TypeScript — no framework.
-  import { startGame } from '../game/Game';
+  // Mount interactive modal handler for snapshot button
+  import { mount } from 'svelte';
+  import SnapshotManagerModal from '../components/SnapshotManagerModal.svelte';
 
-  const canvas = document.getElementById('game');
-  if (canvas instanceof HTMLCanvasElement) startGame(canvas);
+  const btn = document.getElementById('open-snapshot-btn');
+  const root = document.getElementById('snapshot-modal-root');
+
+  if (btn && root) {
+    let isOpen = false;
+
+    function renderModal() {
+      if (!root) return;
+      root.innerHTML = '';
+      mount(SnapshotManagerModal, {
+        target: root,
+        props: {
+          isOpen,
+          onClose: () => {
+            isOpen = false;
+            renderModal();
+          },
+        },
+      });
+    }
+
+    btn.addEventListener('click', () => {
+      isOpen = true;
+      renderModal();
+    });
+  }
 </script>
+
+<style>
+  .landing-container {
+    position: relative;
+    min-height: 100vh;
+    background: #0a0a0e;
+    color: #f1f5f9;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* Navigation Bar */
+  .top-nav {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 2rem;
+    max-width: 1280px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 900;
+    font-size: 1.2rem;
+    letter-spacing: 0.05em;
+  }
+
+  .pixel-logo {
+    color: #f8fafc;
+  }
+
+  .neon-badge {
+    background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+    color: #fff;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.3rem;
+    letter-spacing: 0.1em;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+  }
+
+  .nav-item:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-item.primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+  }
+
+  .nav-item.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.6);
+  }
+
+  /* Main Hero */
+  .hero-content {
+    position: relative;
+    z-index: 5;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1.5rem 3rem 1.5rem;
+    text-align: center;
+  }
+
+  .hero-text-block {
+    max-width: 780px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .title-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 9999px;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.85rem;
+    color: #a5b4fc;
+    margin-bottom: 1.5rem;
+    backdrop-filter: blur(8px);
+  }
+
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 10px #10b981;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .main-title {
+    font-size: clamp(2.8rem, 6vw, 4.5rem);
+    font-weight: 900;
+    line-height: 1.1;
+    margin: 0 0 1.2rem 0;
+    letter-spacing: -0.02em;
+  }
+
+  .glow-text {
+    color: #f8fafc;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+  }
+
+  .accent-text {
+    background: linear-gradient(135deg, #818cf8 0%, #38bdf8 50%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-description {
+    font-size: 1.15rem;
+    color: #cbd5e1;
+    line-height: 1.6;
+    margin: 0 0 2.5rem 0;
+    max-width: 660px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+
+  /* CTA Buttons */
+  .cta-group {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .btn-hero-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 2rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 0.75rem;
+    background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+    box-shadow: 0 8px 24px -4px rgba(79, 70, 229, 0.5);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-hero-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px -4px rgba(79, 70, 229, 0.7);
+  }
+
+  .btn-hero-secondary, .btn-hero-tertiary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    text-decoration: none;
+    backdrop-filter: blur(8px);
+    transition: all 0.25s ease;
+  }
+
+  .btn-hero-secondary {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e2e8f0;
+  }
+
+  .btn-hero-secondary:hover {
+    background: rgba(30, 41, 59, 0.95);
+    color: #fff;
+    border-color: rgba(99, 102, 241, 0.5);
+    transform: translateY(-2px);
+  }
+
+  .btn-hero-tertiary {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+  }
+
+  .btn-hero-tertiary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+    transform: translateY(-2px);
+  }
+
+  /* Presets Section */
+  .presets-section {
+    position: relative;
+    z-index: 5;
+    background: rgba(10, 10, 14, 0.85);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 2rem 1rem 4rem 1rem;
+    backdrop-filter: blur(16px);
+  }
+
+  /* Footer */
+  .landing-footer {
+    position: relative;
+    z-index: 5;
+    text-align: center;
+    padding: 2rem;
+    font-size: 0.85rem;
+    color: #64748b;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+  }
+</style>

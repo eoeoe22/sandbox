@@ -1,0 +1,168 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Particle Sandbox - Guidebook">
+  <div class="guide-page">
+    <header class="guide-header">
+      <div class="brand">
+        <a href="/" class="home-link">
+          <i class="bi bi-arrow-left"></i>
+          <span>Particle Sandbox</span>
+        </a>
+      </div>
+      <h1>📖 물질 & 물리학 도감</h1>
+      <p class="subtitle">Particle & Physics Interactive Guidebook</p>
+    </header>
+
+    <main class="guide-container">
+      <div class="coming-soon-card">
+        <div class="icon">🧪</div>
+        <h2>상세 백과사전 & 미니 샌드박스 툴팁 준비 중</h2>
+        <p>
+          60여 종 이상의 파티클 반응 공식, 물리 수치 카드, 인터랙티브 미니 플레이그라운드 기능이
+          다음 업데이트에서 제공될 예정입니다.
+        </p>
+        <div class="actions">
+          <a href="/sandbox" class="btn-primary">
+            <i class="bi bi-play-circle-fill"></i>
+            <span>메인 샌드박스로 가기</span>
+          </a>
+          <a href="/" class="btn-secondary">
+            <i class="bi bi-house-door"></i>
+            <span>시작 페이지로 돌아가기</span>
+          </a>
+        </div>
+      </div>
+    </main>
+  </div>
+</Base>
+
+<style>
+  .guide-page {
+    min-height: 100vh;
+    background: #0b0c10;
+    color: #e0e6ed;
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 1.5rem;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .guide-header {
+    max-width: 900px;
+    margin: 0 auto 2.5rem auto;
+    width: 100%;
+  }
+
+  .home-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #4f46e5;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    transition: color 0.15s ease;
+  }
+
+  .home-link:hover {
+    color: #818cf8;
+  }
+
+  .guide-header h1 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin: 0 0 0.4rem 0;
+    background: linear-gradient(135deg, #a5b4fc 0%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: #94a3b8;
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .guide-container {
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .coming-soon-card {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    padding: 3rem 2rem;
+    text-align: center;
+    backdrop-filter: blur(12px);
+    max-width: 540px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  }
+
+  .coming-soon-card .icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+  }
+
+  .coming-soon-card h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #f1f5f9;
+  }
+
+  .coming-soon-card p {
+    color: #94a3b8;
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+
+  .actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary, .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.6);
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+</style>

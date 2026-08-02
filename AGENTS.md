@@ -15,10 +15,11 @@
   `MATERIAL-SYSTEMS.md`, `OBJECTS.md`). 새 분야가 생기면 새 파일을 만들고 `docs/README.md` 인덱스에
   링크를 추가한다.
 
+
 # 워크플로우
 
 1. 새 브랜치에서 작업 수행
-2. 작업 후 1차 Push 및 gh CLI 또는 Github MCP로 Pull Request 생성
+2. 작업 후 1차 Push 및 gh CLI 를 통해 Pull Request 생성
 3. 서브에이전트 호출을 통해 코드리뷰
 4. 리뷰에서 지적사항이 있다면 조치후 리뷰 재시도 (no issues 확정 까지 반복)
 5. 사용자의 승인 대기 (Merge는 사용자가 진행)
