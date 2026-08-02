@@ -764,17 +764,24 @@ export class SimContext {
    * in a buoyant raft the overlay is not a per-grain property — it is the
    * *waterline*. tryFloatLightPowderStack counts overlay-bearing column cells as
    * `submergedCount` and compares that against the depth the column's density
-   * says it should ride at, so a shift has to change the count by exactly one:
-   * shifting UP releases the vacated far-end cell's drop back into the world
-   * (one cell less submerged), shifting DOWN absorbs the liquid at the leading
-   * face (one cell more). Copying the overlays along with the grains "for
-   * consistency with swap" breaks that in two ways at once, both pinned by
-   * test/overlap.ts: `submergedCount` stops responding to the shift (the
-   * waterline moves with the column, so the raft keeps asking for the shift it
-   * just got), and the far-end drop is duplicated — copied one cell along AND
-   * still released into the cell being vacated, so the pond gains a cell of water
-   * per shift. As written, mass is exactly conserved: every drop this releases is
-   * one it stops hosting, and every cell it swallows becomes one overlay. Note
+   * says it should ride at, so what a shift owes that count is that it stay
+   * anchored to the LIQUID SURFACE while the grains move past it. Each end does
+   * its own half: the leading face swallows whatever liquid it moves into, the
+   * trailing face hands back whatever drop it was holding. A shift that crosses
+   * the surface therefore moves the count by one (going up, the face leaving the
+   * liquid meets air and swallows nothing, so only the release counts), while a
+   * shift that stays fully under water absorbs and releases in the same breath
+   * and leaves the count where it was — also right, since a fully submerged raft
+   * is soaked through either way. The invariant is that anchoring, plus exact
+   * mass conservation; it is NOT a fixed ±1, so don't assert one here.
+   * Copying the overlays along with the grains "for consistency with swap" breaks
+   * both halves at once, and test/overlap.ts pins both: `submergedCount` stops
+   * responding even at the surface (the waterline rides along with the column, so
+   * the raft keeps asking for the shift it just got), and the trailing drop is
+   * duplicated — copied one cell along AND still released into the cell being
+   * vacated, so the pond gains a cell of water per shift. As written every drop
+   * released is one this stops hosting and every cell swallowed becomes one
+   * overlay, so the pond's total never moves. Note
    * also that a column is a run of ONE material id (see the caller's scan), so
    * grains stepping over a stationary overlay can never strand it on a host type
    * that can't hold it.
