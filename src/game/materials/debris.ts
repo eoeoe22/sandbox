@@ -166,7 +166,13 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
   const origId = sim.getAux(x, y);
   if (origId === EMPTY) {
     // Malformed (hand-placed, or a corrupt reload with no carried id): nothing
-    // to deposit, so it simply vanishes.
+    // to deposit, so it simply vanishes — and so does any cargo it somehow got
+    // hold of. Cleared first for the same reason the void-border exit below does
+    // it: a bare set() would RELEASE the fluid into this cell, at what is not a
+    // temperature (see Material.overlapCarrier). No launcher can produce this
+    // state — both stamp `aux` immediately after spawning — so this is belt and
+    // braces for a corrupt reload, not a live path.
+    sim.clearOverlay(x, y);
     sim.set(x, y, EMPTY);
     return;
   }

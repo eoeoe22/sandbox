@@ -27,6 +27,7 @@
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
+import { inspectCells } from '../src/game/engine/brushTools';
 import { EMPTY, Phase } from '../src/game/engine/types';
 import { detonate } from '../src/game/materials/blast';
 import { fireShockwave } from '../src/game/materials/woofer';
@@ -191,6 +192,21 @@ function strandedOverlays(grid: Grid): number {
     `${wetFragments} wet fragments in flight`,
   );
   check('…호스트 없는 겹침이 생기지 않는다', strandedOverlays(grid) === 0);
+
+  // 돋보기(InspectPanel)도 화물의 온도를 사람에게 그대로 보여준다 — 그리드가 아니라
+  // UI로 새는 같은 누출이다. inspectCells는 SimContext를 거치지 않고 grid를 직접
+  // 읽으므로 엔진 쪽 가드 둘이 닿지 않는 자리이고, 캐리어 이전엔 파편이 겹침을 가질
+  // 수 없어 이 분기가 죽은 코드였다. 지금 비행 중인 젖은 파편들을 그대로 훑는다.
+  {
+    const fp: number[] = [];
+    for (let y = 30; y < 50; y++) for (let x = 15; x < 45; x++) fp.push(x, y);
+    const water = inspectCells(grid, fp).entries.find((e) => e.id === WATER.id);
+    check(
+      '…돋보기가 읽는 물 온도도 실온이다 (파편의 비행 상태가 UI로 새지 않음)',
+      water !== undefined && (water.avgTemp === null || water.avgTemp <= 25),
+      `avgTemp ${water?.avgTemp?.toFixed(0) ?? 'null'}°`,
+    );
+  }
 
   // And it is still there when the fragments come back down: run the flight out
   // and count again. Steam is counted as water here — the blast leaves stray Fire
