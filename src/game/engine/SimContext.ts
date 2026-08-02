@@ -614,6 +614,13 @@ export class SimContext {
   updateSoaked(x: number, y: number): void {
     const fluidId = this.grid.getOverlay(x, y);
     if (fluidId === EMPTY) return;
+    // A carrier's passenger is cargo, not a co-occupant: it sits the turn out
+    // (see Material.overlapCarrier). Both halves of this pass read the cell's
+    // temperature — the reaction table's gates, and any hook that cares — and a
+    // carrier's `temp` holds packed flight state rather than a reading
+    // (Material.packedTemp), so every one of those judgements would be made
+    // against a five-digit number that means nothing.
+    if (getMaterial(this.grid.get(x, y)).overlapCarrier === true) return;
     if (tryReactSoaked(x, y, this)) return;
     getMaterial(fluidId).overlapUpdate?.(x, y, this);
   }
@@ -1582,6 +1589,18 @@ export class SimContext {
     const g = this.grid;
     const i = g.idx(x, y);
     const fluidId = g.overlay[i];
+    // Cargo doesn't disembark mid-flight: an occupant riding a carrier
+    // (Material.overlapCarrier — a Debris fragment) can only leave when the
+    // carrier itself is written over, which is what hands it to the grain the
+    // fragment deposits. Letting it percolate out on its own was actively wrong,
+    // not just odd — a carrier packs its flight state into `temp`
+    // (Material.packedTemp), so the "temperature it shared with its host" below
+    // is not a temperature at all, and a drop surfacing out of a fragment came
+    // out at tens of thousands of degrees. That boiled it to Steam and fused the
+    // sand around it to Glass under a Woofer pulse whose destructive power is
+    // literally zero. See also updateSoaked, which sits out a carrier's turn for
+    // the same reason.
+    if (getMaterial(g.cells[i]).overlapCarrier === true) return false;
     if (!this.inBounds(tx, ty)) {
       // Mirrors tryMove's border rule: open void edges drop the fluid out of
       // the world; wall edges block it.

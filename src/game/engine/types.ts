@@ -616,11 +616,16 @@ export interface Material {
    * to *rearrange* matter, not erase it. With the tag the fragment flies wet and
    * the fluid is still there when it deposits its grain again.
    *
-   * Read by SimContext: `canHostOverlap` says yes (so set/spawn/swap keep the
-   * occupant), `canOverlapAt` says no (so no soak/percolation/entry path ever
-   * fills a carrier that isn't already carrying something). Inherit-only, in other
-   * words — which is what keeps the (host, overlay) invariant honest for a
-   * transient particle that has no pore space of its own.
+   * What it carries is CARGO, not a co-occupant, and the three SimContext reads
+   * say exactly that: `canHostOverlap` yes (so set/spawn/swap keep the occupant),
+   * `canOverlapAt` no (nothing may soak *into* a fragment in flight), and both
+   * `updateSoaked` and `tryOverlayMove` sit the passenger's turn out — it neither
+   * reacts nor percolates away, and only rejoins the world when the carrier is
+   * written over. That last one is load-bearing rather than tidy: a carrier is
+   * normally `packedTemp` too, so the cell's `temp` is flight state, not a
+   * reading. A drop allowed to surface out of a fragment on its own came out at
+   * tens of thousands of degrees — it flashed to Steam and fused the sand it
+   * landed in to Glass under a Woofer pulse of destructive power 0.
    */
   overlapCarrier?: boolean;
   /**

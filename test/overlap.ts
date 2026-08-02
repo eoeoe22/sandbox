@@ -29,6 +29,9 @@ import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
 import { EMPTY, Phase } from '../src/game/engine/types';
 import { detonate } from '../src/game/materials/blast';
+import { fireShockwave } from '../src/game/materials/woofer';
+import { GLASS } from '../src/game/materials/glass';
+import { MOLTEN_GLASS } from '../src/game/materials/moltenglass';
 import { DEBRIS } from '../src/game/materials/debris';
 import { STEAM } from '../src/game/materials/steam';
 import { WATER } from '../src/game/materials/water';
@@ -202,6 +205,72 @@ function strandedOverlays(grid: Grid): number {
   check('…착지한 모래는 젖은 채로 남는다', countOverlay(grid, WATER.id) > 0,
     `${countOverlay(grid, WATER.id)} soaked cells`);
   check('…착지 후에도 호스트 없는 겹침이 없다', strandedOverlays(grid) === 0);
+}
+
+// ── 1b. 우퍼 충격파 — 파괴력 0은 아무것도 만들어선 안 된다 ────────────────────
+// The bug this scene exists for, reported from play: 단순 모래 + 물에 우퍼 충격파를
+//가했더니 수증기와 깨진 유리가 나왔다. A Woofer's pulse has destructive power 0 —
+// it cannot break anything, so a wet sand bed may only be REARRANGED by it.
+//
+// The mechanism was the carrier's own bookkeeping leaking into its passenger: a
+// Debris fragment packs flight state into `temp` (Material.packedTemp), and a
+// carried drop that percolated out of the fragment on its own surfaced "at the
+// temperature it shared with its host" — a five-digit number. It flashed to
+// Steam, fused the sand it landed in to Glass, and the next pulse crazed that to
+// Broken Glass. So the pins here are the *absence* of matter that a power-0 wave
+// has no business creating, plus the temperature reading that explains it.
+//
+// The bed is soaked by the engine itself (pour water on sand and let it settle),
+// not by hand-writing overlay slots, so the scene also proves the ordinary soak
+// path feeds this one.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 50);
+  bed(grid, 15, 45, 42, 50, SAND.id);
+  bed(grid, 15, 45, 34, 42, WATER.id);
+  for (let t = 0; t < 200; t++) sim.step();
+  const soakedBefore = countOverlay(grid, WATER.id);
+  const waterBefore = fluidTotal(grid, WATER.id);
+  check('전제: 부은 물이 실제로 모래에 스몄다', soakedBefore > 0, `${soakedBefore} soaked cells`);
+
+  // The 충격파 브러시 fires the real Woofer pulse over the wet bed, on its own
+  // cadence, exactly as PointerPainter does while the brush is held.
+  const footprint: number[] = [];
+  for (let y = 40; y < 48; y++) for (let x = 22; x < 38; x++) footprint.push(x, y);
+  let hottest = -Infinity;
+  for (let t = 0; t < 300; t++) {
+    if (t < 60 && t % 12 === 0) fireShockwave(sim.context, footprint);
+    sim.step();
+    for (let i = 0; i < grid.cells.length; i++) {
+      // A packedTemp cell's `temp` is flight state, not a reading — skip those and
+      // measure what the world actually thinks its temperature is.
+      const id = grid.cells[i];
+      if (id !== EMPTY && !getMaterial(id).packedTemp && grid.temp[i] > hottest) {
+        hottest = grid.temp[i];
+      }
+    }
+  }
+  const junk =
+    count(grid, STEAM.id) +
+    count(grid, GLASS.id) +
+    count(grid, BROKEN_GLASS.id) +
+    count(grid, MOLTEN_GLASS.id);
+  check(
+    '우퍼 충격파(파괴력 0)는 젖은 모래에서 수증기도 유리도 만들지 않는다',
+    junk === 0,
+    `steam ${count(grid, STEAM.id)}, glass ${count(grid, GLASS.id)}, broken ${count(grid, BROKEN_GLASS.id)}, molten ${count(grid, MOLTEN_GLASS.id)}`,
+  );
+  check(
+    '…그 원인이던 온도도 실온을 넘지 않는다 (파편의 비행 상태가 새어 나오지 않음)',
+    hottest <= 25,
+    `hottest real cell ${hottest.toFixed(0)}°`,
+  );
+  check(
+    '…물 총량도 정확히 보존된다 (밀어냈을 뿐 부수지 않았다)',
+    fluidTotal(grid, WATER.id) === waterBefore,
+    `${waterBefore} → ${fluidTotal(grid, WATER.id)}`,
+  );
+  check('…호스트 없는 겹침도 없다', strandedOverlays(grid) === 0);
 }
 
 // ── 2. 크레이터 — a soaked bed that IS destroyed puffs steam ─────────────────
