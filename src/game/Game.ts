@@ -8,7 +8,8 @@ import { initHeatWasm } from './engine/heatWasm';
 import { profiler } from './engine/profiler';
 import { seedBenchScenario, isBenchScenario } from './engine/benchScenarios';
 import { initSettingsPersistence, loadWorld, saveWorld, sanitizeObject } from '../state/persistence';
-import { registerGridForSnapshots, captureThumbnail } from '../state/snapshots';
+import { registerGridForSnapshots, captureThumbnail, loadSnapshot } from '../state/snapshots';
+import { applyPreset } from './presets';
 import { fitWorld, autoPlacement } from '../state/snapshotFit';
 import {
   $running,
@@ -61,6 +62,8 @@ export function startGame(canvas: HTMLCanvasElement): void {
   profiler.enabled = params.has('perf');
   const benchParam = params.get('bench');
   const benchScenario = isBenchScenario(benchParam) ? benchParam : null;
+  const presetParam = params.get('preset');
+  const slotParam = params.get('slot');
   // `?fullscan` forces the full CA scan (active tiles off) for on-vs-off A/B
   // measurement of the active-tile optimization on the same machine.
   const forceFullScan = params.has('fullscan');
@@ -81,19 +84,24 @@ export function startGame(canvas: HTMLCanvasElement): void {
   layout.setCellScale($cellScale.get());
   layout.setViewport(canvas.clientWidth, canvas.clientHeight);
 
-  // Restore the previous session's world. The saved cells are copied into the
-  // current sandbox (whatever size this device's canvas derives) with the same
-  // bottom-left-anchored rule a live resize uses, so a saved world survives
-  // being reopened on a different screen size.
-  const savedWorld = benchScenario ? null : loadWorld();
+  // Restore the previous session's world or specified slot/preset.
+  const initialWorld = benchScenario
+    ? null
+    : presetParam
+      ? null
+      : slotParam
+        ? loadSnapshot(slotParam)
+        : loadWorld();
 
   const grid = new Grid(layout.gw, layout.gh);
   if (forceFullScan) grid.dirty.enabled = false; // A/B: measure with the full scan
 
-  if (savedWorld) {
-    const fitted = (savedWorld.w === layout.gw && savedWorld.h === layout.gh)
-      ? savedWorld
-      : fitWorld(savedWorld, layout.gw, layout.gh, autoPlacement(savedWorld.w, savedWorld.h, layout.gw, layout.gh, $snapshotFit.get()));
+  if (presetParam) {
+    applyPreset(grid, presetParam);
+  } else if (initialWorld) {
+    const fitted = (initialWorld.w === layout.gw && initialWorld.h === layout.gh)
+      ? initialWorld
+      : fitWorld(initialWorld, layout.gw, layout.gh, autoPlacement(initialWorld.w, initialWorld.h, layout.gw, layout.gh, $snapshotFit.get()));
 
     grid.resizeFrom(
       layout.gw,

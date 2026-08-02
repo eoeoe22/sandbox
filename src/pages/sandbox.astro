@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/Base.astro';
+import ControlPanel from '../components/ControlPanel.svelte';
+---
+
+<Base title="Particle Sandbox - Simulation">
+  <canvas id="game"></canvas>
+  <ControlPanel client:load />
+</Base>
+
+<script>
+  import { startGame } from '../game/Game';
+
+  const canvas = document.getElementById('game');
+  if (canvas instanceof HTMLCanvasElement) startGame(canvas);
+</script>
