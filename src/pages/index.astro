@@ -10,22 +10,18 @@ import StartScreenSandbox from '../components/StartScreenSandbox.svelte';
 import StartMenu from '../components/StartMenu.svelte';
 ---
 
-<Base title="Particle Sandbox — 웹 파티클 물리·화학 샌드박스">
+<Base title="Particle Sandbox">
   <div class="screen">
     <StartScreenSandbox client:load />
 
     <div class="foreground">
-      <header class="brand">
-        <span class="mark">PARTICLE</span>
-        <span class="tag">SANDBOX</span>
-      </header>
+
 
       <main class="center">
         <h1 class="title">
           <span class="line-1">PARTICLE</span>
           <span class="line-2">SANDBOX</span>
         </h1>
-        <p class="tagline">브라우저에서 도는 파티클 물리·화학 샌드박스</p>
         <StartMenu client:load />
       </main>
 
