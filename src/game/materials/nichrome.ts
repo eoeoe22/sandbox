@@ -23,13 +23,13 @@ import { FIRE } from './fire';
 // hotter than that (Lava, Blue Flame, Thermite) can push it past
 // NICHROME_MELT_TEMP, where it fails like any metal into Molten Iron.
 //
-// Acid eats it like any other wiring material (Iron dissolves too). It used to
-// be `acidResistant` — "the corrosion-resistant alloy, the one wire acid can't
-// get through" — but 산 내성 is now the Solar Panel's alone among the 전기
-// category, so an acid bath is a hazard every circuit has to be routed around
-// rather than a puzzle one material solves outright. Being a metal below
-// hydrogen in this game's reactivity ranking, it dissolves without fizzing
-// (no `acidHydrogen`).
+// As befits the corrosion-resistant alloy, it's `acidResistant` — the one
+// wiring material acid can't eat through (Iron dissolves), so a wire run
+// through an acid bath keeps conducting. That is a 고증 call, and it is why
+// Nichrome is the one exception to the 전기 category otherwise having lost its
+// acid resistance: the *machines* (Fan/Laser/Pump/Electromagnet/Conveyor) are
+// ordinary hardware acid eats, but a nichrome-chromium alloy genuinely does
+// passivate. Solar Panel is the other holdout (see solarpanel.ts).
 
 /** Heat one spark deposits into a nichrome cell as it passes (see spark.ts). */
 const NICHROME_JOULE_HEAT = 60;
@@ -145,6 +145,7 @@ export const NICHROME = register({
   // 배선재: a metal, so a generator gated to "wiring only" (the Turbine — see
   // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
   wiring: true,
+  acidResistant: true,
   category: 'electric',
   // Real nichrome conducts heat poorly for a metal (~11 W/mK vs Iron's ~80) —
   // that's half of why it makes a good element: the Joule heat stays in the

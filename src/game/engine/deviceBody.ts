@@ -1,4 +1,4 @@
-import { DIR4 } from './directions';
+import { DIR4, DIR8 } from './directions';
 import type { SimContext } from './SimContext';
 
 // 전기 장치의 몸체 전도 — the one body-flood every electric device shares.
@@ -19,8 +19,10 @@ import type { SimContext } from './SimContext';
 //      a battery terminal flush against the housing, a spark that crawled the
 //      last cell of a long brine channel with 1 point of strength left — powers
 //      the machine to exactly the same degree.
-//   2. 연결 부위 전역 즉시 활성화 — one flood covers the *whole* 4-connected body
-//      in a single pass, in the tick the pulse arrives. There is no per-flood cell
+//   2. 연결 부위 전역 즉시 활성화 — one flood covers the *whole* connected body
+//      (4-connected; 8 for the Conveyor, whose staircase touches only at corners —
+//      see the `diagonal` parameter) in a single pass, in the tick the pulse
+//      arrives. There is no per-flood cell
 //      cap. Each of these devices used to stop its walk after 256 cells "so a
 //      giant body can't make one pulse unbounded", which quietly meant a big build
 //      only half worked: the walk restarted from the same entry cell every pulse,
@@ -127,12 +129,23 @@ export class BodyFlood {
  * other material, since the walk reads `sim.get` as it goes.
  *
  * `canWalk`, when given, narrows the walk to the cells it accepts — the body is
- * still "everything 4-connected", but only through cells that pass. The seed cell
+ * still "everything connected", but only through cells that pass. The seed cell
  * is the caller's own and is never tested. This is for a pass that acts on part of
  * a body rather than powering it: the Electromagnet's per-tick field sweep walks
  * only *powered* cells, so a freshly painted extension that no pulse has reached
  * yet doesn't seed a pull the magnet isn't making. Activation itself never passes
  * one — powering a device is always the whole connected body.
+ *
+ * `diagonal` widens "connected" from 4 to 8 neighbours. Every device but one is a
+ * *block* — a fan wall, a magnet, an emitter array — and a filled rectangle is
+ * 4-connected anyway, so the default is DIR4 and nothing changes for them. The
+ * Conveyor is the exception because a belt is a *run*, not a block, and its
+ * headline shape is the **ascending staircase**: steps offset by one cell in both
+ * axes, which touch only at their corners. Flooded 4-connected, such a belt is a
+ * pile of one-step bodies, so a battery at the bottom powers the first step and
+ * the rest of the climb stands dead — the grain rides up one step and stops
+ * (measured; see materials/conveyor.ts). 8-connected, the whole staircase is one
+ * machine, which is what it looks like and what it was before belts needed power.
  */
 export function floodDeviceBody(
   sim: SimContext,
@@ -142,6 +155,7 @@ export function floodDeviceBody(
   memo: BodyFlood,
   visit: (x: number, y: number) => void,
   canWalk?: (x: number, y: number) => boolean,
+  diagonal = false,
 ): boolean {
   memo.begin(sim);
   const w = sim.width;
@@ -153,12 +167,13 @@ export function floodDeviceBody(
   // walk" are the same question, and marking at push time keeps a cell from
   // being stacked twice by two neighbors.
   memo.setMarked(start);
+  const dirs = diagonal ? DIR8 : DIR4;
   const stack: number[] = [sx, sy];
   while (stack.length > 0) {
     const y = stack.pop()!;
     const x = stack.pop()!;
     visit(x, y);
-    for (const [dx, dy] of DIR4) {
+    for (const [dx, dy] of dirs) {
       const nx = x + dx;
       const ny = y + dy;
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== bodyId) continue;

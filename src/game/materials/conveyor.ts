@@ -12,9 +12,11 @@ import { floodDeviceBody } from '../engine/deviceBody';
 // itself moves.
 //
 // Two things beyond the basic "push one grain sideways":
-//   • It carries a stack up to LIFT_HEIGHT cells tall off its surface (위쪽 10픽셀),
-//     not just the single grain directly on top — so it grabs a whole slab of
-//     poured material and slides it along.
+//   • It carries a whole *body* of material, not just the single grain directly on
+//     top: every cell of the loose column standing on a belt cell shifts forward
+//     each tick wherever there is room, up to LIFT_HEIGHT cells above the surface.
+//     So a silo emptied onto a belt comes out as a slab tens of cells deep rather
+//     than as a thin sheet skimmed off the top of the pile.
 //   • It climbs: when the straight-ahead cell is blocked but the cell one step
 //     up-and-forward is open, the load steps up. A belt laid as a shallow
 //     staircase therefore carries material UP a gentle (~30°) slope, stably,
@@ -50,7 +52,15 @@ const DIR_MASK = 0b11;
  *  (aux >> 2, ≤ 63). */
 const POWERED_TICKS = 24;
 
-const LIFT_HEIGHT = 10; // how many cells above the surface are carried (위쪽 10픽셀)
+/** How many cells above the belt's surface are carried in one shift. The loop
+ *  below stops at the top of the contiguous loose column anyway, so this is a
+ *  backstop against a pathological full-height column rather than the limit a
+ *  build normally meets — but it used to BE the limit: at 10 it capped the moving
+ *  layer at ~9 cells no matter how deep the load was (실측), which is what made a
+ *  belt under a pile skim a thin sheet off it. At 60 the cap stops binding for any
+ *  silo anyone builds (a 40칸 silo delivers a ~35칸 slab, geometry-limited, the
+ *  same as with no cap at all). */
+const LIFT_HEIGHT = 60;
 
 /** True if `id` is loose matter the belt carries (powder or liquid). */
 function isLoose(id: number): boolean {
@@ -85,24 +95,22 @@ function updateConveyor(x: number, y: number, sim: SimContext): void {
   const dir = (aux & DIR_MASK) === CONVEYOR_LEFT ? -1 : 1; // 0/unset ⇒ right
 
   // The load rests on the belt's top surface (the cell against gravity). Nothing
-  // to carry if it's empty or not loose, or if it already moved this tick (so a
-  // run of belts relays a cell one step per tick, never teleporting it across).
+  // to carry if that cell isn't loose matter.
   const sy1 = y - 1;
   if (!sim.inBounds(x, sy1)) return;
-  const bottom = sim.get(x, sy1);
-  if (!isLoose(bottom) || sim.hasMoved(x, sy1)) return;
+  if (!isLoose(sim.get(x, sy1))) return;
 
-  // Decide the step for the whole stack from the bottom cell: straight along the
-  // belt if that's open; else, if a SOLID step blocks the way (the next belt
-  // segment of an ascending staircase, or a wall) and there's headroom above it,
-  // climb one cell up-and-along; else blocked. Only solids are climbed — a grain
-  // piled ahead makes the belt wait, never lifts the load over it into a floating
-  // spot off the belt.
+  // Decide the step for the whole stack from what's directly ahead at belt level:
+  // straight along the belt if that's open or is more loose matter; else, if a
+  // SOLID step blocks the way (the next belt segment of an ascending staircase, or
+  // a wall) and there's headroom above it, climb one cell up-and-along; else
+  // blocked. Only solids are ever *climbed* — the belt never lifts its load over a
+  // grain piled ahead into a floating spot off the belt.
   if (!sim.inBounds(x + dir, sy1)) return;
   const fwd = sim.get(x + dir, sy1);
   let stepDy: number;
-  if (fwd === EMPTY) {
-    stepDy = 0; // flat carry
+  if (fwd === EMPTY || isLoose(fwd)) {
+    stepDy = 0; // flat carry — into open air, or shearing into the pile ahead
   } else if (
     isSolidStep(fwd) &&
     sim.inBounds(x + dir, sy1 - 1) &&
@@ -110,22 +118,39 @@ function updateConveyor(x: number, y: number, sim: SimContext): void {
   ) {
     stepDy = -1; // climb the solid step
   } else {
-    return; // blocked by loose matter piled ahead (wait) or no headroom to climb
+    return; // a solid dead ahead with no headroom to climb
   }
 
-  // Move the contiguous loose stack (up to LIFT_HEIGHT tall) by (dir, stepDy).
+  // Shift the contiguous loose stack (up to LIFT_HEIGHT tall) by (dir, stepDy).
   // Source column x and target column x+dir are disjoint, so the cells can't
-  // collide as they shift; stop at the first cell that isn't loose / already
-  // moved / can't fit, so a solid on the belt or a full landing keeps the stack
-  // together rather than tearing it apart.
+  // collide as they shift.
+  //
+  // Only the top of the stack ends the loop. A cell that *can't* move right now —
+  // its landing is occupied, or it already resolved this tick — is **skipped, not
+  // a stopping point**, and that is what lets a belt move a body of material
+  // instead of skimming it (아래 더미를 얇게가 아니라 통째로 수송).
+  //
+  // 왜 그게 필요했나: 벨트가 예전엔 (a) 앞 칸에 가루가 있으면 **아무것도 안 하고**
+  // 기다렸고, (b) 스택 안에서 못 가는 칸을 만나면 **거기서 멈췄다.** 더미 하나를 놓으면
+  // 안식각 비탈이 지므로 앞 칸에 가루가 없는 벨트 셀은 **비탈 끝의 한 칸뿐**이고, 그
+  // 자리는 더미에서 가장 얇은 곳이다 — 그래서 20칸 높이 더미도 **1~3칸짜리 얇은 층**으로만
+  // 흘러 나갔다(실측 sheet 두께 평균 1.2~3.1). 지금은 이웃 기둥보다 높이 솟은 부분이 매
+  // 틱 앞으로 밀리므로, 더미가 층으로 벗겨지는 게 아니라 **덩어리째 전진**한다.
+  //
+  // 겹쳐 쌓인 것을 찢지는 않는다: 목적지가 반드시 비어 있어야 하므로, 앞 기둥이 자기와
+  // 같은 높이로 꽉 찬 균일한 슬래브는 갈 데가 없어 그대로 있고(비압축), 벽에 막힌 벨트도
+  // 예전처럼 선다.
   for (let h = 1; h <= LIFT_HEIGHT; h++) {
     const sy = y - h;
     if (!sim.inBounds(x, sy)) break;
     const load = sim.get(x, sy);
-    if (!isLoose(load) || sim.hasMoved(x, sy)) break;
+    if (!isLoose(load)) break; // top of the contiguous stack (air, or a solid on it)
+    // Already resolved this tick — a belt relays a grain one step per tick and
+    // never teleports it across a run. Skip it and keep looking up the stack.
+    if (sim.hasMoved(x, sy)) continue;
     const tx = x + dir;
     const ty = sy + stepDy;
-    if (!sim.inBounds(tx, ty) || sim.get(tx, ty) !== EMPTY) break;
+    if (!sim.inBounds(tx, ty) || sim.get(tx, ty) !== EMPTY) continue; // no room; skip
     // swap carries the load's temp/aux/tint and marks both cells moved.
     sim.swap(x, sy, tx, ty);
   }
@@ -133,19 +158,38 @@ function updateConveyor(x: number, y: number, sim: SimContext): void {
 
 /**
  * Deliver a power pulse to the connected belt containing (sx,sy): flood the whole
- * thing through conveyor cells (4-connected, `floodDeviceBody`) and refresh every
- * cell's powered countdown to POWERED_TICKS, keeping each cell's own direction
- * bits — so a belt run wired at one end starts moving along its entire length in
- * the tick the pulse lands, at full speed whatever strength that pulse had left.
+ * thing through conveyor cells and refresh every cell's powered countdown to
+ * POWERED_TICKS, keeping each cell's own direction bits — so a belt run wired at
+ * one end starts moving along its entire length in the tick the pulse lands, at
+ * full speed whatever strength that pulse had left.
+ *
+ * The flood is **8-connected** (`floodDeviceBody`'s `diagonal`), unlike every
+ * other device's. A belt is a run rather than a block, and the shape this material
+ * is *for* — the ascending staircase — steps by one cell in both axes at once, so
+ * consecutive steps touch only at their corners. 4-connected, that belt is a heap
+ * of separate one-step machines: a battery at the foot powers the first step and
+ * the rest of the climb stands dead, so a grain rides up exactly one step and
+ * stops (measured — the whole staircase delivers when every cell is forced on).
+ * Two belts that merely touch at a corner therefore power together, which is the
+ * right reading: they are one machine on screen.
  * The one-way "outside → inside" sink every electric appliance shares (see the
  * header note and fan.ts): a pulse only ever *arrives* here, never leaves.
  * Memoized per tick via SimContext.conveyorFlood so a belt touched from several
  * faces or sources in one tick still floods exactly once.
  */
 export function energizeConveyorBody(sim: SimContext, sx: number, sy: number): void {
-  floodDeviceBody(sim, sx, sy, CONVEYOR.id, sim.conveyorFlood, (x, y) => {
-    sim.setAux(x, y, (POWERED_TICKS << 2) | (sim.getAux(x, y) & DIR_MASK));
-  });
+  floodDeviceBody(
+    sim,
+    sx,
+    sy,
+    CONVEYOR.id,
+    sim.conveyorFlood,
+    (x, y) => {
+      sim.setAux(x, y, (POWERED_TICKS << 2) | (sim.getAux(x, y) & DIR_MASK));
+    },
+    undefined,
+    true, // 8-connected: a staircase belt's steps touch only at their corners
+  );
 }
 
 export const CONVEYOR = register({
