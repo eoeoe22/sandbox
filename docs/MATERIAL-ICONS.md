@@ -116,6 +116,10 @@ Diamond는 `lattice` **이면서** `checker2x2`, Solar Panel은 `lattice` **이�
 `POWDER_VARY 18`보다 진폭이 큰데도 그렇다. 아이콘은 해시 3개를 더해 정규분포를 근사한
 뒤 이 σ에 맞춘다(`BG_SIGMA_SCALE`). 검사가 이 역전(`water < sand`)을 핀으로 박아 둔다.
 
+이 합성은 `render/tintNoise.ts`에 따로 산다 — 월드 없이 틴트 결을 그려야 하는 곳이 팔레트
+말고 하나 더 생겼기 때문이다(시작 화면 타이틀, `docs/FEATURES.md`). 두 곳이 같은 `grain()`을
+부르므로, 물이 모래보다 덜 일렁이는 위의 성질이 타이틀에서도 그대로 나온다.
+
 **플레이 중에만 있는 셀 상태.** 장치의 전원 카운트다운, glow 물질의 실시간 온도,
 Seed의 발아 진행도. 아이콘은 **칠했을 때 나오는 상태**를 보여준다 — 전원 꺼짐,
 `PointerPainter`가 찍는 기본 방향(컨베이어 오른쪽, Fan/Laser/성형작약 `FAN_RIGHT`).
