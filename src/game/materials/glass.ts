@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_GLASS, GLASS_MELT_TEMP } from './moltenglass';
 import { BROKEN_GLASS } from './brokenglass';
+import { tryPhaseChange } from './phasechange';
 
 // Solid: a clear, rigid pane — what Molten Glass sets into once it cools (see
 // moltenglass.ts). Like Stone it just sits there, but it's `acidResistant`
@@ -21,11 +22,7 @@ import { BROKEN_GLASS } from './brokenglass';
 // obliterates the pane outright (the ordinary crater flash), the same as any
 // other solid — only the weaker shocks it survives leave a heap of shards.
 function updateGlass(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= GLASS_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten Glass
-    // reads as molten instead of instantly re-setting next tick.
-    sim.set(x, y, MOLTEN_GLASS.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const GLASS = register({
@@ -41,5 +38,7 @@ export const GLASS = register({
   shatterId: BROKEN_GLASS.id,
   category: 'solid',
   thermal: { conductivity: 0.4 },
+  // 녹는점 — lower than loose Sand's, because a fused pane only has to soften.
+  phaseChange: { at: () => GLASS_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_GLASS.id },
   update: updateGlass,
 });

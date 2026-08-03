@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { PULSE_PERIOD, injectPulses } from './battery';
 import { MOLTEN_IRON } from './molteniron';
+import { tryPhaseChange } from './phasechange';
 
 // LFP Battery — the safe chemistry. Pulses exactly like the Lithium Battery
 // (same cadence, same full-strength injection — see battery.ts), but with no
@@ -22,12 +23,7 @@ import { MOLTEN_IRON } from './molteniron';
 const MELT_TEMP = 1400;
 
 function updateLfpBattery(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten
-    // Iron reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, MOLTEN_IRON.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   const aux = sim.getAux(x, y);
   if (aux < PULSE_PERIOD - 1) {
@@ -47,5 +43,7 @@ export const LFP_BATTERY = register({
   density: 1000,
   category: 'electric',
   thermal: { conductivity: 0.3 },
+  // 녹는점 — the cell's casing goes the way its iron does.
+  phaseChange: { at: () => MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON.id },
   update: updateLfpBattery,
 });

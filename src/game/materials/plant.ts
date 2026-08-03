@@ -9,7 +9,7 @@ import { DIRT } from './dirt';
 import { SEED } from './seed';
 import { ASH } from './ash';
 import { findMoisture, moistDrinkable, ROOT_REACH } from './soil';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 
 // Plant — a living green growth that drinks water and *climbs*. It grows the way
 // a real one does: roots at the waterline drink, that moisture wicks up the stem
@@ -73,7 +73,6 @@ import { tryBurn, type Combustible } from './combustion';
 // Dry vegetation is eager fuel: it burns on the self-sustaining combustion model
 // (see combustion.ts) with its own `burnChance`, and water smothers a burning
 // cell — so only growth that has dried away from its water actually catches.
-const BURN_SPEC: Combustible = { burnChance: 0.1, autoIgniteTemp: 400 };
 
 // --- aux layout (16 bits, see Grid.aux) -------------------------------------
 //   bits 0-6   moisture 0..127
@@ -466,11 +465,15 @@ function lateralShoot(x: number, y: number, sim: SimContext, a: number): number 
   return pack(moistOf(a), true, sim.randInt(3), randSeg(sim), gen - 1);
 }
 
+// 발화점 — named because growth is halted by it as well as ignition driven by it:
+// a plant already hot enough to catch must not spend the tick sprouting.
+const AUTO_IGNITE_TEMP = 400;
+
 function updatePlant(x: number, y: number, sim: SimContext): void {
   // Combustion first: a burning plant (once consumed → Fire) stops here, and it
   // doesn't grow while alight.
-  if (tryBurn(x, y, sim, BURN_SPEC)) return;
-  if (sim.getTemp(x, y) >= BURN_SPEC.autoIgniteTemp) return;
+  if (tryBurn(x, y, sim)) return;
+  if (sim.getTemp(x, y) >= AUTO_IGNITE_TEMP) return;
 
   let a = sim.getAux(x, y);
   if ((a & INIT_BIT) === 0) a = initCell(x, y, sim, moistOf(a));
@@ -500,9 +503,9 @@ export const PLANT = register({
   colorVary: 16,
   density: 1000,
   // Burns via the shared combustion model (see updatePlant / combustion.ts), so
-  // it's tagged `combustible`, not `flammable` — the two ignition paths are
+  // it's tagged `combustion`, not `flammable` — the two ignition paths are
   // mutually exclusive by design (combustion.ts) to keep the per-fuel burn rate.
-  combustible: true,
+  combustion: { burnChance: 0.1, autoIgniteTemp: AUTO_IGNITE_TEMP },
   category: 'life',
   // 피폭사 — radiation from anything in the 방사능 tab kills a cell outright and it
   // crumbles to Ash (see engine/radiation.ts). Ash rather than nothing because a

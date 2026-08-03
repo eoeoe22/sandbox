@@ -6,6 +6,7 @@ import { updatePowder } from '../engine/behaviors';
 import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST_POWDER } from './rustpowder';
+import { tryPhaseChange } from './phasechange';
 
 const SURFACE_RUST_CHANCE = 0.001;  // 표면 부식 확률 (0.1%)
 const INSIDE_RUST_CHANCE = 0.0002; // 안쪽(스며든 부위) 부식 확률 (0.02%)
@@ -37,12 +38,7 @@ const ACID_HYDROGEN_CHANCE = 0.09;
 // registered as "Metal Powder" while the Korean palette already read 철가루; the
 // two now agree. `id` 105 is unchanged, so old saves load as before.
 function updateIronPowder(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten Iron
-    // reads as molten instead of instantly re-freezing next tick (mirrors Iron).
-    sim.set(x, y, MOLTEN_IRON.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   // Salt water corrosion: oxidizes to Rust Powder (100% chance).
   // Inside soaked cells corrode at 1/5th speed (0.02% vs surface 0.1%).
@@ -113,6 +109,8 @@ export const IRON_POWDER = register({
   // Iron filings in acid fizz hydrogen off, faster than the bar they came from —
   // see the constant above and corrosion.ts.
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
+  // 녹는점 — filings go the same way the bar does.
+  phaseChange: { at: () => IRON_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON.id },
   update: updateIronPowder,
 });
 

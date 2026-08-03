@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { LAVA } from './lava';
+import { tryPhaseChange } from './phasechange';
 
 // Solid: static barrier like Wall, but destructible (see blast.ts — only Wall
 // is exempt from the blast wave) and re-meltable. Conducts heat well enough
@@ -16,11 +17,7 @@ import { LAVA } from './lava';
 export const STONE_MELT_TEMP = 1100;
 
 function updateStone(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= STONE_MELT_TEMP) {
-    // In-place `set` keeps the cell's (now high) temperature, so the fresh
-    // Lava reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, LAVA.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const STONE = register({
@@ -46,5 +43,7 @@ export const STONE = register({
   colorVary: 7,
   density: 1000,
   thermal: { conductivity: 0.5 },
+  // 녹는점
+  phaseChange: { at: () => STONE_MELT_TEMP, when: 'atOrAbove', into: () => LAVA.id },
   update: updateStone,
 });

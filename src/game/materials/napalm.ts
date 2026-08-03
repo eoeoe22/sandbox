@@ -50,7 +50,7 @@ function napalmCell(sim: SimContext, x: number, y: number, prevId: number): bool
   const m = getMaterial(prevId);
   // Fuel — and the napalm charge itself — is set alight. Consuming the charge
   // into Fire also stops the source cell from re-triggering next tick.
-  if (prevId === NAPALM.id || m.combustible || m.flammable) {
+  if (prevId === NAPALM.id || m.combustion !== undefined || m.flammable) {
     sim.spawn(x, y, FIRE.id);
     return true;
   }

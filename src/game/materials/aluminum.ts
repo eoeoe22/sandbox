@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
+import { tryPhaseChange } from './phasechange';
 
 // Aluminum — cast solid metal, the product end of the aluminum line:
 // **Aluminum Powder → (heat past 660°) → Molten Aluminum → (cool) → Aluminum**.
@@ -58,12 +59,7 @@ function updateAluminum(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= ALUMINUM_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten
-    // Aluminum reads as molten instead of instantly re-freezing next tick
-    // (mirrors Iron → Molten Iron).
-    sim.set(x, y, MOLTEN_ALUMINUM.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const ALUMINUM = register({
@@ -91,5 +87,7 @@ export const ALUMINUM = register({
   // standing in acid fizzes, the acid cell becoming the rising hydrogen bubble.
   // Same tag and same reasoning as the powder's (aluminumpowder.ts), just slower.
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
+  // 녹는점 — mirrors Iron → Molten Iron.
+  phaseChange: { at: () => ALUMINUM_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_ALUMINUM.id },
   update: updateAluminum,
 });

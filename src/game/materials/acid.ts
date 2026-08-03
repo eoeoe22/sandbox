@@ -6,6 +6,7 @@ import type { SimContext } from '../engine/SimContext';
 import { tryCorrode, tryCorrodeSoaked, ACID_CORROSION } from './corrosion';
 import { ACID_VAPOR } from './acidvapor';
 import { WATER } from './water';
+import { tryPhaseChange } from './phasechange';
 
 // Liquid: flows like water, but each tick has a chance to corrode any
 // non-resistant Solid/Powder neighbor (dissolving it to Empty). If it
@@ -51,12 +52,7 @@ function updateAcid(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= ACID_BOIL_TEMP) {
-    // Boil in place: the resulting Vapor keeps the (hot) temperature, then
-    // rises and corrodes/condenses on its own (see acidvapor.ts).
-    sim.set(x, y, ACID_VAPOR.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   // Corrode (and fizz): the shared pass in corrosion.ts. True means this cell is
   // gone — spent on the bite, or turned into a hydrogen bubble — so stop here.
@@ -77,9 +73,15 @@ export const ACID = register({
   // a passing pulse can also electrolyse the cell into Hydrogen + Oxygen, leaving
   // no residue (see spark.ts).
   conductive: true,
+  // On a par with brine and better than fresh water — 1 per cell out of a pulse's
+  // 63, so ~63 cells of reach (see Material.sparkLoss).
+  sparkLoss: 1,
   thermal: { conductivity: 0.5 },
   // Chilled well below zero it freezes in place (frosted, immobile) until it thaws.
   freeze: { temp: -20 },
+  // 끓는점 — the Vapor is born with the hot temperature, then rises and
+  // corrodes/condenses on its own (see acidvapor.ts).
+  phaseChange: { at: () => ACID_BOIL_TEMP, when: 'atOrAbove', into: () => ACID_VAPOR.id },
   update: updateAcid,
   // 스며든 산도 계속 먹는다: soaked into a powder bed through the 겹침 layer, it
   // corrodes the grain holding it (corrosion.ts's `tryCorrodeSoaked`) instead of

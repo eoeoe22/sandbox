@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 
 // Powder fuel: falls and piles like ordinary Sand, but light (density < water)
 // so a scatter of it floats on water rather than sinking — and "가벼운 가루":
@@ -17,10 +17,9 @@ import { tryBurn, type Combustible } from './combustion';
 // consumed cell has a chance to leave a fleck of Ash behind (see
 // combustion.ts) instead of just puffing into Fire. Just burns; never
 // detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.08, autoIgniteTemp: 450, ashChance: 0.15 };
 
 function updateSawdust(x: number, y: number, sim: SimContext): void {
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -30,7 +29,7 @@ export const SAWDUST = register({
   phase: Phase.Powder,
   color: rgb(184, 146, 92),
   density: 2,
-  combustible: true,
+  combustion: { burnChance: 0.08, autoIgniteTemp: 450, ashChance: 0.15 },
   category: 'fire',
   thermal: { conductivity: 0.2 },
   update: updateSawdust,

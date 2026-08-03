@@ -129,34 +129,24 @@ const CONDUCTOR_IDS = [
   ALUMINUM.id,
 ];
 // Strength lost entering a cell of each class — the engine's per-medium
-// resistance, and the lever for "how far does current reach". At FULL_STRENGTH 63:
-// metal and nichrome keep it in full (0 → runs the whole wire — nichrome's
-// resistance is now down at the engine's floor, same as Iron/Mercury); Acid Slime
-// also sits at 0 (전기전도성 최대치 — it conducts as far as any metal, unlike its
-// plain cousin); brine and acid barely bleed (1 → ~63 cells, well past a big tank);
-// and fresh water and Slime bleed at the same middling rate (2 → ~31 cells) — Slime
-// is still the poorest conductor in spirit (a thick, non-ionic goo has no business
-// carrying current well) but no longer dies within a cell or two, so sustained
-// current has room to actually punch into a blob before a pulse gives out. These
-// reaches used to be a hostage of the class field: every widening of it halved
-// FULL_STRENGTH and so halved this whole column. The 16-bit aux ended that, and
-// FULL_STRENGTH 15→63 restored (and then some) what the 4-bit class field had
-// taken. Nichrome's resistance still shows up as heat: each passing pulse deposits
-// a fixed dose of Joule heat into the wire on revert (see nichromeJouleHeat),
-// independent of this per-cell strength loss.
-// (…, GALLIUM 0, LIQUID GALLIUM 0) — both are metals (solid & molten Gallium),
-// so they conduct at the engine's floor exactly like Iron/Mercury: a pulse runs
-// full strength end to end through a Gallium wire or puddle.
-// (…, WIRE 0) — an insulated cable with a metal core, so it runs a pulse the
-// whole length of a cable at the engine's floor exactly like Iron. Its jacket
-// costs reach nothing; what it changes is *sideways* leakage, not distance (see
-// Material.insulated and the hand-off in updateSpark).
-// (…, ALUMINUM 0) — cast metal, so the engine's floor like every other metal
-// here: a pulse runs the full length of an aluminum bar. Real transmission
-// lines are aluminum rather than copper, so a lossless run is the honest
-// reading; what makes it different from Iron isn't reach but that you can pour
-// it out of a fire (see aluminum.ts) instead of smelting ore for it.
-const CONDUCTOR_LOSS = [0, 0, 2, 1, 0, 1, 2, 0, 0, 0, 0, 0];
+// resistance, and the lever for "how far does current reach". Each conductor
+// declares its own as `Material.sparkLoss` (omitted ⇒ 0, the engine's floor), so
+// this is only the packed-index view of it: the same roster as CONDUCTOR_IDS,
+// read off the materials rather than restated as a second hand-kept column that
+// could line up wrong. At FULL_STRENGTH 63 the roster comes out as metals,
+// Nichrome and Acid Slime at 0 (runs the whole wire — Acid Slime's 전기전도성
+// 최대치 puts it level with any metal, unlike its plain cousin), brine and acid at
+// 1 (~63 cells, well past a big tank), and fresh Water and Slime at 2 (~31
+// cells) — Slime is still the poorest conductor in spirit, a thick non-ionic goo
+// with no business carrying current well, but no longer dies within a cell or
+// two, so sustained current has room to punch into a blob before a pulse gives
+// out.
+//
+// These reaches used to be a hostage of the class field: every widening of it
+// halved FULL_STRENGTH and so halved this whole column. The 16-bit aux ended
+// that, and FULL_STRENGTH 15→63 restored (and then some) what the 4-bit class
+// field had taken.
+const CONDUCTOR_LOSS = CONDUCTOR_IDS.map((id) => getMaterial(id).sparkLoss ?? 0);
 
 // The conductor CLASS is packed into the low CLASS_BITS bits of the spark's aux
 // word, with class 0 reserved for "no conductor" (classes 1..CLASS_MASK = 1..255).
@@ -170,20 +160,24 @@ if (CONDUCTOR_IDS.length > CLASS_MASK) {
     `Too many spark conductors (${CONDUCTOR_IDS.length}) for a ${CLASS_BITS}-bit class field (max ${CLASS_MASK}).`,
   );
 }
-// The two tables are indexed by the same (class − 1), so a conductor appended to
-// one and not the other reads `undefined` as its loss — `strength - undefined` is
-// NaN, `NaN > 0` is false, and the new conductor silently refuses to pass a pulse
-// at all. Fail at load instead of shipping a wire that quietly doesn't conduct.
-if (CONDUCTOR_LOSS.length !== CONDUCTOR_IDS.length) {
-  throw new Error(
-    `CONDUCTOR_LOSS has ${CONDUCTOR_LOSS.length} entries for ${CONDUCTOR_IDS.length} conductors — they must line up.`,
-  );
-}
+// Losses are read off the materials now, so the old "the two columns must line
+// up" check has nothing left to catch — a conductor cannot be appended to one
+// table and forgotten in the other. What can still drift is the roster against
+// the tag the propagation gate actually reads: a material listed here but not
+// `conductive` is a dead class slot no spark will ever enter, so it means either
+// the tag was dropped or the wrong material was listed.
+CONDUCTOR_IDS.forEach((id) => {
+  if (getMaterial(id).conductive !== true) {
+    throw new Error(
+      `${getMaterial(id).name} is listed as a spark conductor but is not tagged Material.conductive — a spark would never reach it.`,
+    );
+  }
+});
 // `Material.wiring` (배선재 — read by the `'wiring'` emission gate below) is a
-// declared tag, so it *can* drift from this table. Half of it is still derivable
-// and is checked here: wiring is a cable or a metal, and every one of those
-// conducts at the engine's floor, so a `wiring` conductor with a non-zero loss is
-// a mistake — either the tag is on the wrong material or its loss was retuned
+// declared tag, so it *can* drift from the losses. Half of it is derivable and is
+// checked here: wiring is a cable or a metal, and every one of those conducts at
+// the engine's floor, so a `wiring` conductor with a non-zero `sparkLoss` is a
+// mistake — either the tag is on the wrong material or its loss was retuned
 // without anyone noticing that a generator feeds it. The converse is NOT asserted:
 // a zero-loss conductor that isn't wiring is exactly the Acid Slime case, and the
 // whole point of the tag is to be able to say that.

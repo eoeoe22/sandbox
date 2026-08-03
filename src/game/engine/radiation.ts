@@ -9,7 +9,7 @@ import { DIR8 } from './directions';
 // declares `Material.radiationDeath` (the remains it leaves) or
 // `Material.radiationHit` (its own damage model). Neither side names the other,
 // so the roster on each can grow without the other being edited — the same tag
-// discipline `flammable`/`combustible` use.
+// discipline `flammable`/`combustion` use.
 //
 // Simulation drives `irradiate` from its per-cell scan off a flattened per-id
 // dose table (mirroring how `Material.life` decay is driven), so a radioactive

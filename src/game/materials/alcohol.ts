@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { VIRUS } from './virus';
 
 // Alcohol — a thin, volatile spirit and the most eager liquid fuel there is: it
@@ -17,7 +17,6 @@ import { VIRUS } from './virus';
 // oxidised away outright. Unlike H₂O₂ (which seeds a colony-wide spreading cure),
 // alcohol only cleans what it directly touches — no wave — so wiping out a plague
 // with it takes actually soaking the whole thing.
-const SPEC: Combustible = { burnChance: 0.15, autoIgniteTemp: 250 };
 const STERILIZE_CHANCE = 0.4; // per-tick chance to kill a touched Virus cell
 
 function updateAlcohol(x: number, y: number, sim: SimContext): void {
@@ -30,7 +29,7 @@ function updateAlcohol(x: number, y: number, sim: SimContext): void {
       sim.set(nx, ny, EMPTY);
     }
   }
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   updateLiquid(x, y, sim);
 }
 
@@ -40,7 +39,7 @@ export const ALCOHOL = register({
   phase: Phase.Liquid,
   color: rgb(222, 228, 238),
   density: 1.9,
-  combustible: true,
+  combustion: { burnChance: 0.15, autoIgniteTemp: 250 },
   category: 'liquid',
   thermal: { conductivity: 0.2 },
   // Freezes only at a brutal chill (real ethanol sets near -114°); needs a strong

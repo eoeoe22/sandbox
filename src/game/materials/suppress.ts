@@ -130,7 +130,7 @@ export function fireClassOf(id: number): FireClass {
 export function suppressible(id: number, spec: ChillSpec): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);
-  if (m.combustible !== true) return false;
+  if (m.combustion === undefined) return false;
   return spec.classes.includes(fireClassOf(id));
 }
 

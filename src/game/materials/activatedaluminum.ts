@@ -3,7 +3,7 @@ import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { tryMeltAluminumDust, tryDustExplosion } from './aluminumdust';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
@@ -81,20 +81,15 @@ const ACID_HYDROGEN_CHANCE = 0.2;
 // nothing and the dust could never melt at all. Keeping it just above 660° is
 // what preserves the parent powder's rule — 불을 대면 타고, 그냥 데우면 녹는다 —
 // and with it the recycling path (melt the leftovers, cast them, start over).
-const SPEC: Combustible = {
-  burnChance: 0.09,
-  autoIgniteTemp: 700,
-  burnTemp: 1700,
-};
 
 function updateActivatedAluminum(x: number, y: number, sim: SimContext): void {
   // Airborne and lit → the whole grain goes at once (분진 폭발). Checked first,
   // exactly as in aluminumpowder.ts, and gated on suspension so a heap is
   // untouched by it.
   if (tryDustExplosion(x, y, sim)) return;
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   // Melting is the un-activation: what pours out is ordinary Molten Aluminum.
-  if (tryMeltAluminumDust(x, y, sim, SPEC.autoIgniteTemp)) return;
+  if (tryMeltAluminumDust(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -119,7 +114,11 @@ export const ACTIVATED_ALUMINUM = register({
   // Water (3) and Saltwater (4), so a pinch poured into a pool sinks to the
   // bottom and works from there instead of skating on the surface.
   density: 4.8,
-  combustible: true,
+  combustion: {
+    burnChance: 0.09,
+    autoIgniteTemp: 700,
+    burnTemp: 1700,
+  },
   // 금속화재(D급) — water is not the answer, and this world already models why:
   // burning aluminum cracks Water and Steam into Hydrogen (see the reactions
   // below). Declaring the class keeps the shared suppression pass (suppress.ts)

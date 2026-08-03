@@ -69,6 +69,9 @@ export const SALTWATER = register({
   // A weak electrolyte: a Spark travels through it but loses strength slowly, so
   // a pulse carries a fair distance through brine before fading (see spark.ts).
   conductive: true,
+  // Half fresh water's bleed — 1 per cell out of 63, so a pulse crosses ~63 cells
+  // of brine: the dissolved salt is what carries it (see Material.sparkLoss).
+  sparkLoss: 1,
   // 소화제, same as fresh water — brine douses just as well (suppress.ts).
   douses: 'evaporate',
   thermal: { conductivity: 0.55 },

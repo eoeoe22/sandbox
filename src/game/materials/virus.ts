@@ -47,7 +47,7 @@ function isInfectable(id: number): boolean {
     return true;
   }
   const m = getMaterial(id);
-  return !!(m.flammable || m.combustible);
+  return !!(m.flammable || m.combustion);
 }
 
 function updateVirus(x: number, y: number, sim: SimContext): void {

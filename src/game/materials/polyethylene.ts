@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 
 // Polyethylene (폴리에틸렌) — the product of the plastics line: the milky resin
 // powder an ethylene reactor drops out of its catalyst bed (see ethylene.ts).
@@ -43,7 +43,6 @@ import { tryBurn, type Combustible } from './combustion';
 // *floats* on it. A scoop poured onto a pool spreads into an acid-proof lid
 // rather than sinking out of sight, and a heaped dam holds a spill back. (Broken
 // Glass is the other acid-proof powder and goes straight to the bottom.)
-const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 380, ashChance: 0.2 };
 
 /**
  * How many further cells a chain started at the catalyst face can propagate
@@ -59,7 +58,7 @@ const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 380, ashChance: 0.
 export const CHAIN_GENERATIONS = 4;
 
 function updatePolyethylene(x: number, y: number, sim: SimContext): void {
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -69,7 +68,7 @@ export const POLYETHYLENE = register({
   phase: Phase.Powder,
   color: rgb(232, 234, 228),
   density: 2.75,
-  combustible: true,
+  combustion: { burnChance: 0.05, autoIgniteTemp: 380, ashChance: 0.2 },
   // 내산성 — see the header. Acid, Acid Vapor and Acid Slime all read this.
   acidResistant: true,
   category: 'polymer',

@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { RESIN } from './resin';
 
 // Amber (호박) — fossilised resin: the hard, translucent gold solid that a pool
@@ -21,7 +21,6 @@ import { RESIN } from './resin';
 // that fresh Resin is already glowing and oozes/burns on. Left cold, molten Resin
 // re-cures to Amber, so the pair still loops — this just makes the melt an
 // occasional flourish of a fire rather than the whole block flashing to liquid.
-const SPEC: Combustible = { burnChance: 0.03, autoIgniteTemp: 400, easyDouse: true };
 
 // Only *burning* amber melts, and only sometimes:
 //   • MELT_TEMP sits well above Resin's cure/autoignition threshold (400°, see
@@ -41,7 +40,7 @@ function updateAmber(x: number, y: number, sim: SimContext): void {
   // Burn like Wood: catch from adjacent flame, self-ignite when hot enough,
   // wreath in fire, spread to amber neighbors, and eventually char to Fire. If
   // this consumed the cell to Fire, stop — it's no longer amber.
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   // Still burning amber: a small chance it un-cures to a Resin droplet instead of
   // charring on. Only fires while genuinely alight (temp past MELT_TEMP), and only
   // occasionally, so a burning block mostly chars and just weeps a little molten
@@ -58,7 +57,7 @@ export const AMBER = register({
   phase: Phase.Solid,
   color: rgb(210, 148, 40),
   density: 1000,
-  combustible: true,
+  combustion: { burnChance: 0.03, autoIgniteTemp: 400, easyDouse: true },
   category: 'solid',
   thermal: { conductivity: 0.2 },
   update: updateAmber,

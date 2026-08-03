@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { refluxBoil, REFLUX_KEROSENE } from './petroleumdistill';
 
 // A middle distillate of crude oil (see oil.ts): the cut that condenses out of
@@ -15,11 +15,10 @@ import { refluxBoil, REFLUX_KEROSENE } from './petroleumdistill';
 // re-boils (refluxes) at its own mid boiling point — its boil point (260) plus
 // the reflux superheat cap (60) sits below autoignition, so a flameless still
 // refluxes it away rather than igniting it (see petroleumdistill.ts / oil.ts).
-const SPEC: Combustible = { burnChance: 0.15, autoIgniteTemp: 420 };
 const BOIL_TEMP = 260;
 
 function updateKerosene(x: number, y: number, sim: SimContext): void {
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   if (refluxBoil(x, y, sim, BOIL_TEMP, REFLUX_KEROSENE)) return;
   updateLiquid(x, y, sim);
 }
@@ -30,7 +29,7 @@ export const KEROSENE = register({
   phase: Phase.Liquid,
   color: rgb(232, 222, 150),
   density: 2.35,
-  combustible: true,
+  combustion: { burnChance: 0.15, autoIgniteTemp: 420 },
   petroleum: true, // flat single-colour render; burns on water without steaming it
   category: 'oil',
   thermal: { conductivity: 0.2 },

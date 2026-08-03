@@ -7,6 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { WATER } from './water';
 import { SMOKE } from './smoke';
+import { tryPhaseChange } from './phasechange';
 
 // Slime (슬라임) — a thick, gooey green semi-fluid. It oozes rather than flows,
 // slumping only on a fraction of ticks (like Honey/Mud), so a dropped blob holds
@@ -111,10 +112,7 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
   }
 
   // Melt away in heat: past the melt point, or beside an open flame.
-  if (sim.getTemp(x, y) >= MELT_TEMP) {
-    sim.set(x, y, SMOKE.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -167,6 +165,10 @@ export const SLIME = register({
   // actually passes through it is what seeds the blob's own electric-dissolve
   // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
   conductive: true,
+  // The worst conductor on the roster in spirit — a thick, non-ionic goo — but only
+  // as lossy as fresh water (2 of 63, ~31 cells), so current has room to punch
+  // into a blob rather than dying at its face (see Material.sparkLoss).
+  sparkLoss: 2,
   // No `radiationDeath`, deliberately — the goo is 방사선 내성, one of only three
   // things in the 생명 tab a 방사능 source can't touch (see engine/radiation.ts).
   // There's a real organism behind it: the radiation-tolerant extremophiles that
@@ -177,5 +179,7 @@ export const SLIME = register({
   // Together with Nanobot (a machine) it's what still lives in a hot zone: the
   // fallout gets a resident, not just a caretaker.
   thermal: { conductivity: 0.2 },
+  // 분해점 — the goo cooks off rather than melting into anything.
+  phaseChange: { at: () => MELT_TEMP, when: 'atOrAbove', into: () => SMOKE.id },
   update: updateSlime,
 });

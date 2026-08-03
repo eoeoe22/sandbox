@@ -6,6 +6,7 @@ import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
 import { SALTWATER } from './saltwater';
 import { RUST } from './rust';
 import { RUST_POWDER } from './rustpowder';
+import { tryPhaseChange } from './phasechange';
 
 const SURFACE_RUST_CHANCE = 0.001;  // 표면 (깊이 1칸) 부식 확률 (0.1%)
 const INSIDE_RUST_CHANCE = 0.0002; // 안쪽 (깊이 2칸) 부식 확률 (0.02%)
@@ -64,12 +65,7 @@ function updateIron(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature, so the fresh Molten Iron
-    // reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, MOLTEN_IRON.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   // Salt water corrosion: surface (depth 1) 0.1%, inside (depth 2) 0.02%.
   // 20% Rust Powder, 80% Rust. Exothermic reaction heat (+100°C fixed).
@@ -107,6 +103,8 @@ export const IRON = register({
   // 이온화 경향이 수소보다 크다 — acid doesn't just erase an iron bar, it fizzes
   // hydrogen off the wetted face (see the constant above and corrosion.ts).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
+  // 녹는점
+  phaseChange: { at: () => IRON_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON.id },
   update: updateIron,
 });
 
