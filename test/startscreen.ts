@@ -216,7 +216,8 @@ const H = 202;
   check('같은 것이 연달아 두 번 나오지 않는다', repeated === '', repeated || `${drawn.length}회 연속 교대`);
 }
 
-// 7. 1초에 한 번 — the whole interaction model, now that there is no click. Not
+// 7. 1초에 한 번 — the screen's baseline, the half of it that runs whether or
+//    not anyone touches anything (the other half is the click, section 12). Not
 //    every tick (that would be a wall of fire) and not once at load: exactly one
 //    event per second, counted in the same ticks the component's frame loop
 //    steps. The position is redrawn each time, so consecutive events do not
@@ -339,12 +340,73 @@ const H = 202;
 
 // 11. 움직임 최소화 — `motion: false` stops everything the world does on its
 //     own. Both halves are unprompted motion (nothing here is a response to the
-//     user), so the streams and the auto events have to go quiet together.
+//     user), so the streams and the auto events have to go quiet together. The
+//     click is deliberately *not* part of that (section 12): it is the one thing
+//     on this screen the user asks for.
 {
   const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(23) });
   for (let i = 0; i < AUTO_EVENT_TICKS * 4; i++) world.tick();
   check('줄이 안 흐른다', occupied(world.grid) === 0, `${occupied(world.grid)}칸`);
   check('자동 이벤트도 안 터진다', world.eventCount === 0, `${world.eventCount}회`);
+}
+
+// 12. 클릭 충격파 — the screen's one handle. A press lands a real Woofer wave on
+//     the cell that was pressed (not near it, not a fresh random spot like the
+//     auto events), it shoves what is there without creating or destroying
+//     matter, and it is bookkept apart from the 1-second beat: neither counted
+//     with it nor able to shift it.
+{
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(41) });
+  const sand = LITE_MATERIALS[0];
+  const top = H - 8; // the same shallow bed section 10 thumps
+  for (let y = top; y < H; y++) for (let x = 0; x < W; x++) world.grid.set(x, y, sand.id);
+  world.grid.dirty.rebuild(world.grid.cells, world.grid.overlay, world.grid.width, world.grid.height);
+  const before = count(world.grid, sand.id);
+  const shape = world.grid.cells.slice();
+
+  const cx = (W / 2) | 0;
+  const ev = world.burstAt(cx, top);
+  check('누른 칸에서 터진다', ev !== null && ev.x === cx && ev.y === top, `(${ev?.x}, ${ev?.y}) 요청 (${cx}, ${top})`);
+  check('충격파다 (물질을 놓지 않는다)', ev !== null && ev.kind === null, kindName(ev!.kind));
+  check('클릭도 진짜 파면을 만든다', world.grid.shockwaves.length > 0, `${world.grid.shockwaves.length} wave(s)`);
+
+  for (let i = 0; i < 6; i++) world.tick();
+  let moved = 0;
+  for (let i = 0; i < shape.length; i++) if (shape[i] !== world.grid.cells[i]) moved++;
+  check('누른 자리의 가루가 밀린다', moved > 0, `${moved}칸 이동`);
+  // Same as section 10: grains fly as Debris and only read as Sand again once
+  // they land, so conservation is measured after everything has settled.
+  for (let i = 0; i < 240; i++) world.tick();
+  check('클릭 충격파도 물질을 지우지 않는다', count(world.grid, sand.id) === before, `${before} → ${count(world.grid, sand.id)}`);
+
+  // The bookkeeping split: clicks have their own counter, and the 1-second beat
+  // never sees them. `motion: false` here also pins the other half of section
+  // 11 — the user's own press still works on a screen that has stopped moving
+  // by itself, which is exactly the case prefers-reduced-motion creates.
+  check('클릭은 클릭대로 센다', world.burstCount === 1, `${world.burstCount}회`);
+  check('움직임 최소화에서도 클릭은 터진다', world.eventCount === 0 && world.burstCount === 1, `자동 ${world.eventCount}회 / 클릭 ${world.burstCount}회`);
+
+  // Out of bounds: the component maps raw screen coordinates, and the sandbox
+  // rect is centered in the canvas, so a press in the letterboxed margin maps
+  // outside the grid. It has to be a no-op rather than a thrown error or a wave
+  // wrapped around to the far edge.
+  const waves = world.grid.shockwaves.length;
+  const outside = [world.burstAt(-1, 10), world.burstAt(W, 10), world.burstAt(10, -1), world.burstAt(10, H)];
+  check('화면 밖 클릭은 아무 일도 안 한다', outside.every((e) => e === null) && world.grid.shockwaves.length === waves && world.burstCount === 1, outside.map((e) => (e === null ? '무시' : '터짐')).join(', '));
+}
+
+// 13. 클릭이 배경 박자를 흔들지 않는다 — the auto event is a 1-second metronome
+//     the click layer sits on top of, not something a press resets or hurries.
+//     Pressed every single tick for a second, exactly one auto event still goes
+//     off — and the clicks are all still there in their own counter.
+{
+  const world = new StartScreenWorld(W, H, { rand: mulberry32(43) });
+  for (let i = 0; i < AUTO_EVENT_TICKS; i++) {
+    world.burstAt((W / 2) | 0, (H / 2) | 0);
+    world.tick();
+  }
+  check('클릭을 퍼부어도 자동 이벤트는 1초에 한 번', world.eventCount === 1, `${world.eventCount}회`);
+  check('그동안의 클릭이 다 셌다', world.burstCount === AUTO_EVENT_TICKS, `${world.burstCount}/${AUTO_EVENT_TICKS}회`);
 }
 
 console.log(failures === 0 ? '\nAll start-screen checks passed.' : `\n${failures} check(s) FAILED.`);
