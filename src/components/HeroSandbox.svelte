@@ -29,59 +29,17 @@
   function seedHeroWorld() {
     grid.cells.fill(0);
     grid.temp.fill(20);
-
-    const lavaId = safeId('lava');
-    const waterId = safeId('water');
-    const sandId = safeId('sand');
-    const fireId = safeId('fire');
-    const stoneId = safeId('stone');
-    const plantId = safeId('plant');
-
-    // Create bottom stone basin
-    for (let x = 0; x < HERO_W; x++) {
-      grid.cells[x] = stoneId;
-    }
-
-    // Add lava pool on left bottom
-    for (let y = 1; y < 15; y++) {
-      for (let x = 10; x < 50; x++) {
-        const idx = y * HERO_W + x;
-        grid.cells[idx] = lavaId;
-        grid.temp[idx] = 950;
-      }
-    }
-
-    // Add water reservoir on right top
-    for (let y = 60; y < 85; y++) {
-      for (let x = 100; x < 140; x++) {
-        const idx = y * HERO_W + x;
-        grid.cells[idx] = waterId;
-      }
-    }
-
-    // Add sand dune in middle
-    for (let y = 1; y < 35; y++) {
-      for (let x = 60; x < 95; x++) {
-        if (Math.random() > 0.15) {
-          const idx = y * HERO_W + x;
-          grid.cells[idx] = sandId;
-        }
-      }
-    }
-
-    // Add plants on sand
-    for (let y = 35; y < 45; y++) {
-      for (let x = 70; x < 85; x++) {
-        const idx = y * HERO_W + x;
-        grid.cells[idx] = plantId;
-      }
-    }
-
     grid.randomizeTints();
   }
 
-  function handlePointerMove(e: MouseEvent | TouchEvent) {
-    if (!canvasEl || !grid) return;
+
+  let lastTime = 0;
+  const fpsInterval = 1000 / 30; // 30fps throttle
+
+  import { fireShockwave } from '../game/materials/woofer';
+
+  function handlePointerInteraction(e: MouseEvent | TouchEvent) {
+    if (!canvasEl || !grid || !sim) return;
     const rect = canvasEl.getBoundingClientRect();
     let clientX = 0;
     let clientY = 0;
@@ -97,37 +55,51 @@
     }
 
     const relX = (clientX - rect.left) / rect.width;
-    const relY = 1 - (clientY - rect.top) / rect.height; // inverted Y in SandboxLayout
+    const relY = 1 - (clientY - rect.top) / rect.height;
 
     const gx = Math.floor(relX * HERO_W);
     const gy = Math.floor(relY * HERO_H);
 
-    const sparkId = safeId('spark');
-    const fireId = safeId('fire');
-    const sandId = safeId('sand');
+    if (gx < 0 || gx >= HERO_W || gy < 0 || gy >= HERO_H) return;
 
-    // Spawn a gentle particle aura/burst around cursor
-    const radius = 4;
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        if (dx * dx + dy * dy <= radius * radius) {
-          const cx = gx + dx;
-          const cy = gy + dy;
-          if (cx >= 0 && cx < HERO_W && cy >= 0 && cy < HERO_H) {
-            const idx = cy * HERO_W + cx;
-            if (Math.random() < 0.3) {
-              grid.cells[idx] = Math.random() > 0.5 ? fireId : sandId;
-              grid.temp[idx] = 400;
-              grid.markActive(cx, cy);
+    if (Math.random() > 0.5) {
+      // Spawn fire
+      const fireId = safeId('fire');
+      const radius = 5;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (dx * dx + dy * dy <= radius * radius) {
+            const cx = gx + dx;
+            const cy = gy + dy;
+            if (cx >= 0 && cx < HERO_W && cy >= 0 && cy < HERO_H) {
+              const idx = cy * HERO_W + cx;
+              if (Math.random() < 0.6) {
+                grid.cells[idx] = fireId;
+                grid.temp[idx] = 600;
+                grid.markActive(cx, cy);
+              }
             }
           }
         }
       }
+    } else {
+      // Spawn shockwave
+      const radius = 6;
+      const cells = [];
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (dx * dx + dy * dy <= radius * radius) {
+            const cx = gx + dx;
+            const cy = gy + dy;
+            if (cx >= 0 && cx < HERO_W && cy >= 0 && cy < HERO_H) {
+              cells.push(cy * HERO_W + cx);
+            }
+          }
+        }
+      }
+      fireShockwave(sim.context, cells);
     }
   }
-
-  let lastTime = 0;
-  const fpsInterval = 1000 / 30; // 30fps throttle
 
   function tick(timestamp: number) {
     if (!isVisible || !isTabActive) {
@@ -141,15 +113,23 @@
     if (elapsed < fpsInterval) return;
     lastTime = timestamp - (elapsed % fpsInterval);
 
-    // Continuous subtle spawner on top
-    if (Math.random() < 0.4) {
-      const rx = Math.floor(20 + Math.random() * (HERO_W - 40));
-      const ry = HERO_H - 2;
-      const idx = ry * HERO_W + rx;
-      const waterId = safeId('water');
-      const sandId = safeId('sand');
-      grid.cells[idx] = Math.random() > 0.5 ? waterId : sandId;
-      grid.markActive(rx, ry);
+    // 5 streams spawner
+    const streamMaterials = ['sand', 'water', 'gasoline', 'sawdust', 'salt'];
+    const streamCount = streamMaterials.length;
+    const spacing = Math.floor(HERO_W / (streamCount + 1));
+    const startX = spacing;
+
+    for (let i = 0; i < streamCount; i++) {
+      if (Math.random() < 0.2) {
+        const matId = safeId(streamMaterials[i]);
+        const rx = startX + i * spacing + Math.floor(Math.random() * 3) - 1; // Slight jitter
+        const ry = HERO_H - 2;
+        if (rx >= 0 && rx < HERO_W && ry >= 0 && ry < HERO_H) {
+          const idx = ry * HERO_W + rx;
+          grid.cells[idx] = matId;
+          grid.markActive(rx, ry);
+        }
+      }
     }
 
     sim.step();
@@ -232,8 +212,8 @@
 
 <div
   class="hero-canvas-container"
-  on:mousemove={handlePointerMove}
-  on:touchmove={handlePointerMove}
+  on:mousedown={handlePointerInteraction}
+  on:touchstart={handlePointerInteraction}
   role="presentation"
 >
   <canvas bind:this={canvasEl} class="hero-canvas"></canvas>
