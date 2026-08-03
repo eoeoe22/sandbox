@@ -211,8 +211,13 @@ const H = 202;
 //    swap happens on release, not on the next stamp.
 {
   const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(13) });
-  // Force a material (not the shockwave) so the count below means something.
-  while (world.currentKind === null) {
+  // Draw until the roulette lands on something whose cell count holds still for
+  // a tick, so the per-tick deltas below mean what they say. That rules out two
+  // kinds: the shockwave (places nothing) and Fire (BURNOUT_CHANCE decays some
+  // of the cells just placed during the very tick being measured, which would
+  // read as the press/tick guard failing when it hasn't). Drawing rather than
+  // assigning keeps `release()` below on the real bag path.
+  while (world.currentKind === null || world.currentKind === LITE_FIRE) {
     world.press(20, 20);
     world.release();
   }
