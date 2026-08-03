@@ -404,6 +404,28 @@ export class SimContext {
    */
   windStamped = false;
 
+  /**
+   * Was anything actually on fire anywhere in the world last tick — a Fire/Blue
+   * Flame cell, or a fuel cell in its burning band? Set by those materials'
+   * updates as `fireSeen` during a tick; Simulation rolls it into `fireActive`
+   * at the start of the next one, exactly like `windStamped` above.
+   *
+   * It exists purely as an O(1) early-out for `fightingFire` (materials/
+   * suppress.ts), which otherwise sweeps a 7×7 box for *every* water cell at or
+   * above boiling. That is free in an ordinary scene — only a thin surface layer
+   * boils at once — but a steam plant deliberately holds a whole reservoir over
+   * the boil point every tick, and there the sweep measured ~37% of tick time
+   * while being guaranteed to find nothing. A boiler with no fire in the world
+   * now pays one boolean instead.
+   *
+   * The one-tick lag is deliberate and harmless: a fire in its very first tick
+   * doesn't shield the water beside it, which costs at most one cell of one
+   * boiling column before the flag catches up.
+   */
+  fireActive = false;
+  /** This tick's accumulator for `fireActive` — see there. */
+  fireSeen = false;
+
   constructor(private grid: Grid) {}
 
   /** Grid dimensions, exposed so area-effect rules (e.g. a blast that floods a

@@ -12,6 +12,23 @@ export type MatId = number;
  */
 export type BorderMode = 'wall' | 'void';
 
+/**
+ * 화재 등급 — which extinguisher a fuel answers to. See `Material.fireClass` for
+ * what each letter means and materials/suppress.ts for the pass that reads it.
+ * 'C' (전기화재) has no entry because nothing here burns *as* electricity; a live
+ * conductor in a puddle is already its own hazard (see spark.ts).
+ */
+export type FireClass = 'A' | 'B' | 'D';
+
+/**
+ * What one cell of an extinguishing agent does when it is spent putting a fire
+ * out. `'evaporate'` flashes it off as Steam (the liquids); `'melt'` turns it to
+ * Water (Snow/Ice), so a snowball leaves the puddle that carries on fighting.
+ * Named rather than given as a material id because Snow/Ice and Water import each
+ * other — a raw id would have to be read while those modules are still loading.
+ */
+export type DouseForm = 'evaporate' | 'melt';
+
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */
 export enum Phase {
   Empty,
@@ -144,6 +161,40 @@ export interface Material {
    * `flammable`, which hands ignition to Fire's own global-rate pass instead.
    */
   combustible?: boolean;
+  /**
+   * 화재 등급 — which extinguishing agents actually work on this fuel, read by
+   * the shared suppression pass (materials/suppress.ts). Only declared where it
+   * is *not* the default:
+   *
+   *  • `'A'` 일반가연물 (the default for every `combustible`) — Wood, Coal,
+   *    Sawdust, Sugar, plastics, Alcohol. Water is the right tool: it snuffs the
+   *    flame and its chill sinks into the mass.
+   *  • `'B'` 유류 — never declared by hand; it is derived from `petroleum`, which
+   *    already carries the burning-slick-floats-on-water machinery (see water.ts
+   *    / combustion.ts). Water runs off it and does nothing.
+   *  • `'D'` 금속 — the aluminum line. Water is worse than useless on a metal
+   *    fire, and in this world it is *literally* worse: burning aluminum cracks
+   *    water and steam into Hydrogen (see aluminumpowder.ts). Declaring the class
+   *    keeps water's suppression out of the way so that reaction is what a player
+   *    who reaches for the hose actually gets.
+   *
+   * CO₂/Dry Ice/Soda are 전 등급 — their chill ignores this field, which is the
+   * whole reason to keep one in the palette.
+   */
+  fireClass?: FireClass;
+  /**
+   * 소화제 — this material puts fire out on contact, and the value is what becomes
+   * of *one* cell of it once spent doing so (see DouseForm: the liquids evaporate,
+   * Snow/Ice only melt, so a snowball leaves the puddle that carries on fighting).
+   * Declaring the tag is the whole of joining the water family: the
+   * shared pass in materials/suppress.ts reads it, and Fire/Blue Flame and the
+   * combustion douse read that. Snow and Ice used to carry no fire logic at all,
+   * which is why a snowball thrown on a bonfire did nothing at all.
+   *
+   * A tag rather than a hard-coded id list so the flame side never has to import
+   * the liquids (which import Steam/Ice/Snow right back).
+   */
+  douses?: DouseForm;
   /** No corroder ever eats this — Acid, Acid Vapor and Acid Slime all read this
    *  one flag through the shared pass in materials/corrosion.ts. */
   acidResistant?: boolean;
@@ -368,6 +419,19 @@ export interface Material {
    * "what's left of it" on both paths.
    */
   blastDeathId?: MatId;
+  /**
+   * Per-cell override for `blastDeathId`, for a material whose remains depend on
+   * that particular cell's state rather than on the material as a whole — a
+   * Nanobot shatters into the powder of the metal *that bot* is built out of (its
+   * 금속 기억: Iron Powder or Aluminum Powder, see nanobot.ts), which one static id
+   * can't express. Consulted on both residue paths (the crater's epicenter and a
+   * `shockDeathChance` roll) wherever `blastDeathId` would be.
+   *
+   * `blastDeathId` must still be set alongside it: it is the material-wide answer
+   * and the fallback, and it is what the *gate* on the residue paths reads (a
+   * material with neither leaves the ordinary flash).
+   */
+  blastDeathIdFor?: (sim: SimContext, x: number, y: number) => MatId;
   /**
    * 충격파에 휩쓸리는 고체 — a Solid that a shockwave treats as LOOSE matter rather
    * than as structure. Normally a solid a blast can't break shadows the wave and

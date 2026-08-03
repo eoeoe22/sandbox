@@ -4,12 +4,14 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { SAWDUST } from './sawdust';
 import { WOOD } from './wood';
-import { crawl, eatAndReproduce, isSubmerged, touchingBlast, EAT_CHANCE } from './crawler';
+import { crawl, eatAndReproduce, isSubmerged, touchingBlast, EAT_CHANCE, type FeedOptions } from './crawler';
 
 // Termite (흰개미) — a wood-eating bug that crawls along surfaces (see crawler.ts
-// for the shared locomotion). It gnaws its way through wood and sawdust, turning
-// each cell it eats into another termite, so a colony visibly chews through a
-// timber structure and multiplies as it goes.
+// for the shared locomotion). It gnaws its way through wood and sawdust; half of
+// what it eats simply *disappears* down the colony and the other half turns into
+// another termite, so a swarm visibly chews a timber structure away and multiplies
+// while it does — but it no longer converts a wall into its own mass cell for cell
+// (see VANISH_CHANCE).
 //
 // It's a fragile organic thing, so it dies three ways — every death leaves a
 // fleck of Sawdust (the frass a termite leaves behind), which conveniently is
@@ -27,6 +29,14 @@ const DEATH_TEMP = 70;
  *  is crushed to Sawdust; the rest is merely flung. */
 const SHOCK_DEATH_CHANCE = 0.5;
 const FOOD = [SAWDUST.id, WOOD.id] as const;
+/** 갉아먹은 나무가 그대로 사라질 확률 — a coin flip per meal between "eaten away"
+ *  (the cell goes back to air) and "번식" (it becomes another termite). Feeding
+ *  used to reproduce every time, which meant a colony's mass exactly replaced the
+ *  timber it ate: a beam turned into a beam-shaped swarm and nothing was ever
+ *  really *gone*. Half and half keeps the spread — a nest still grows on a big
+ *  enough meal — while letting a structure actually be eaten down to nothing. */
+const VANISH_CHANCE = 0.5;
+const FEED: FeedOptions = { vanishChance: VANISH_CHANCE };
 
 function updateTermite(x: number, y: number, sim: SimContext): void {
   if (
@@ -37,7 +47,7 @@ function updateTermite(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, SAWDUST.id); // dies, leaving frass (also food for the colony)
     return;
   }
-  eatAndReproduce(x, y, sim, TERMITE.id, FOOD, EAT_CHANCE);
+  eatAndReproduce(x, y, sim, TERMITE.id, FOOD, EAT_CHANCE, FEED);
   crawl(x, y, sim, TERMITE.id, 'avoid'); // skirts liquid rather than entering it
 }
 

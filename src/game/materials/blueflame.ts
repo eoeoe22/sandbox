@@ -5,10 +5,8 @@ import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP, SMOKE_MEDIUM_KEEP, FIRE_SMOKE_CHANCE } from '../config';
-import { WATER } from './water';
-import { SALTWATER } from './saltwater';
-import { STEAM } from './steam';
 import { SMOKE } from './smoke';
+import { coolNeighbourWater, isDousingAgent, spendDousingAgent } from './suppress';
 import { FIRE } from './fire';
 import { STONE } from './stone';
 import { LAVA } from './lava';
@@ -37,22 +35,21 @@ const HIGH_SMOKE_CHANCE = FIRE_SMOKE_CHANCE * SMOKE_MEDIUM_KEEP; // = Fire's
 // so writing at this chance yields exactly that rate on screen.
 
 function updateBlueFlame(x: number, y: number, sim: SimContext): void {
-  // Water/Saltwater neighbor snuffs it instantly (self → Empty, that cell →
-  // Steam), exactly like Fire — even the hottest flame is put out by water.
-  let extinguished = false;
+  sim.fireSeen = true; // see SimContext.fireActive
+  // A water-family neighbour snuffs it instantly (self → Empty, that *one* cell
+  // spent), exactly like Fire — even the hottest flame is put out by water. One
+  // flame, one cell: see spendDousingAgent for why steaming the whole neighbourhood
+  // was what made water useless.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (nid === WATER.id || nid === SALTWATER.id) {
-      sim.spawn(nx, ny, STEAM.id);
-      extinguished = true;
+    if (isDousingAgent(sim.get(nx, ny))) {
+      spendDousingAgent(nx, ny, sim);
+      sim.set(x, y, EMPTY);
+      coolNeighbourWater(x, y, sim); // see fire.ts — the 1:1 exchange needs this
+      return;
     }
-  }
-  if (extinguished) {
-    sim.set(x, y, EMPTY);
-    return;
   }
 
   // Melt adjacent rock and ignite flammables. `spawn` marks the neighbor moved,

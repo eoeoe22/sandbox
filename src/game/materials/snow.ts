@@ -41,6 +41,10 @@ export const SNOW = register({
   color: rgb(228, 241, 255),
   density: 2,
   category: 'cooling',
+  // 소화제: a flake spent on a fire only *melts*, leaving Water that carries on
+  // fighting — a snowball that vanished into steam on contact would be a worse
+  // extinguisher than the puddle it should have left (suppress.ts).
+  douses: 'melt',
   thermal: { init: SNOW_INIT_TEMP, conductivity: 0.12 },
   update: updateSnow,
 });

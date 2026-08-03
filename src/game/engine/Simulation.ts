@@ -150,6 +150,11 @@ export class Simulation {
       g.wind.fill(0);
       this.ctx.windStamped = false;
     }
+    // Roll last tick's "was anything burning" accumulator forward, same shape as
+    // the wind flag above. Read by materials/suppress.ts's fightingFire as an
+    // O(1) early-out so a fire-free world never pays for its 7x7 sweep.
+    this.ctx.fireActive = this.ctx.fireSeen;
+    this.ctx.fireSeen = false;
     // Likewise drop last tick's live Electromagnet fields before powered magnets
     // re-stamp them in the scan below (ctx.emitMagnetField) — so the renderer's
     // field rings track exactly the current tick's powered bodies and vanish the
