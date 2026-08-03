@@ -396,6 +396,96 @@ function verifyMeltPinnedMixMoved(initial: Snapshot, frames: Snapshot[]): string
   return 'meltPinnedMix shelf interior never changed at any tick — swapOntoPinnedPowder appears to be a no-op';
 }
 
+/** Geometry of the powered-belt scene, shared by its builder and its verifier so
+ *  the check can name the far arm rather than guess at it. Derived from w/h only,
+ *  like every other targeted builder here. */
+const BELT_RIM = 8; // belt height at both rims
+const BELT_STEP = 3; // belt cells per one-cell step — a gentle slope
+const BELT_DEPTH = 8; // steps down and back up
+const BELT_FLAT = 10; // cells along the bottom
+const BELT_FILL = 6; // depth of sand poured into the dip (stays inside it)
+const beltFlatFrom = 3 + BELT_DEPTH * BELT_STEP;
+const beltBottomY = BELT_RIM + BELT_DEPTH;
+const beltClimbFrom = beltFlatFrom + BELT_FLAT;
+
+/** A U-shaped conveyor run — descend, flat bottom, ascend — powered by a single
+ *  Battery on the near rim, with sand poured into the dip.
+ *
+ *  This is the only scene here in which a belt actually RUNS, and that is the
+ *  point. Every random-fill scene already sprinkles Conveyor cells in (IDS covers
+ *  every registered id), but none of them contains a power source, so the belt's
+ *  update returns on its first line and none of its logic is ever reached. The
+ *  Conveyor is also the one material whose update deliberately does not resolve in
+ *  grid-scan order — a run walks itself downstream-first, carrying cells the outer
+ *  scan has not reached yet and stamping ones it already has (conveyor.ts's
+ *  `nextBeltDownstream` + SimContext.conveyorRun) — so it writes to cells far from
+ *  the one the scan entered from, which is exactly the shape of thing that strands
+ *  work in a tile the tile scan then skips.
+ *
+ *  The U spans several tile rows and the air above it rebuilds asleep, so the carry
+ *  repeatedly lifts grains into tiles the tile scan would skip unless they are
+ *  marked. Deterministic (no RNG) like the other targeted builders. */
+function makePoweredBelt(w: number, h: number): Snapshot {
+  const CONVEYOR = 100;
+  const BATTERY = 39;
+  const SAND = 2;
+  const WALL = 1;
+  const n = w * h;
+  const cells = new Uint8Array(n);
+  const temp = new Float32Array(n).fill(20);
+  const aux = new Uint8Array(n);
+  const tint = new Uint8Array(n);
+  const at = (x: number, y: number): number => y * w + x;
+
+  const belt: Array<[number, number]> = [];
+  let by = BELT_RIM;
+  let bx = 3;
+  for (let s = 0; s < BELT_DEPTH; s++)
+    for (let i = 0; i < BELT_STEP; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === BELT_STEP - 1) by++;
+    }
+  for (let i = 0; i < BELT_FLAT; i++, bx++) belt.push([bx, by]);
+  for (let s = 0; s < BELT_DEPTH && bx < w - 2; s++)
+    for (let i = 0; i < BELT_STEP && bx < w - 2; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === BELT_STEP - 1) by--;
+    }
+  for (const [cx, cy] of belt) {
+    cells[at(cx, cy)] = CONVEYOR;
+    aux[at(cx, cy)] = 1; // CONVEYOR_RIGHT
+    for (let yy = cy + 1; yy < h; yy++) cells[at(cx, yy)] = WALL;
+  }
+  // Sand filling part of the dip — shallow enough that it stays below the rim, so
+  // "sand ended up on the far climb" can only mean the belt carried it there.
+  for (let dy = 0; dy < BELT_FILL; dy++)
+    for (let dx = 0; dx < BELT_FLAT; dx++) cells[at(beltFlatFrom + dx, beltBottomY - 1 - dy)] = SAND;
+  cells[at(2, BELT_RIM)] = BATTERY; // one terminal, on the near rim
+  return { w, h, cells, temp, aux, overlay: new Uint8Array(n), overlayAux: new Uint8Array(n), tint };
+}
+
+/** The powered-belt scene has to actually carry its load UP the far arm, or the
+ *  equivalence it proves is the equivalence of two scans of a settling sand pile.
+ *
+ *  "Any cell changed" is not enough and was the first thing tried: the poured sand
+ *  slumps under gravity whether or not the belt runs, so that version passed with
+ *  the Battery deleted. This asks for sand somewhere it cannot reach without being
+ *  carried — high up the ascending arm, above the level it was poured at — which
+ *  is false on every tick of an unpowered run (verified by deleting the Battery). */
+function verifyBeltCarried(initial: Snapshot, frames: Snapshot[]): string | null {
+  const SAND = 2;
+  const { w } = initial;
+  const topOfFill = beltBottomY - BELT_FILL; // the highest row any sand starts on
+  for (const frame of frames) {
+    for (let x = beltClimbFrom + BELT_STEP * 3; x < w; x++) {
+      for (let y = 0; y < topOfFill; y++) {
+        if (frame.cells[y * w + x] === SAND) return null;
+      }
+    }
+  }
+  return 'poweredBelt: no sand ever reached the far climb above its poured level — the belt is not carrying';
+}
+
 function loadInto(grid: Grid, s: Snapshot): void {
   grid.cells.set(s.cells);
   grid.temp.set(s.temp);
@@ -495,6 +585,7 @@ interface Case {
   verifyMove?: (initial: Snapshot, frames: Snapshot[]) => string | null; // extra check beyond equivalence: did the scene actually change?
   mixedFloat?: boolean; // if set, use an alternating Coal Powder/Limestone shelf over a Molten Iron slab
   loadedMixedRaft?: boolean; // if set, use a mixed Ash/Sawdust raft loaded by Sand on Water (jitter repro)
+  poweredBelt?: boolean; // if set, use a Battery-powered U-shaped Conveyor run carrying sand
   mixAt?: [number, number]; // fixed stir center (for the slab surface case)
 }
 
@@ -565,6 +656,24 @@ const CASES: Case[] = [
     loadedMixedRaft: true,
     verifyMove: verifyNoVerticalJitter,
   },
+  // Targeted: a Battery-powered U-shaped Conveyor carrying sand — the only
+  // scene here in which a belt actually runs. The Conveyor is the one material
+  // whose update deliberately does not resolve in grid-scan order (a run walks
+  // itself downstream-first), so it is the one most able to make the two scans
+  // disagree; the random-fill scenes contain Conveyor cells but never a power
+  // source, so the belt's update returns on its first line and none of that
+  // logic is reached.
+  {
+    seed: 0xb7,
+    w: 64,
+    h: 48,
+    fill: 0,
+    gravity: 'down',
+    ticks: 200,
+    mixEvery: 0,
+    poweredBelt: true,
+    verifyMove: verifyBeltCarried,
+  },
 ];
 
 const SIM_SEED = 0xc0ffee;
@@ -584,7 +693,9 @@ for (const c of CASES) {
             ? makeMixedFloat(c.w, c.h)
             : c.loadedMixedRaft
               ? makeLoadedMixedRaft(c.w, c.h)
-              : makeScene(c.seed, c.w, c.h, c.fill);
+              : c.poweredBelt
+                ? makePoweredBelt(c.w, c.h)
+                : makeScene(c.seed, c.w, c.h, c.fill);
   const full = run(scene, false, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt);
   const tile2 = run(scene, true, SIM_SEED, c.gravity, c.ticks, c.mixEvery, c.mixAt); // determinism
