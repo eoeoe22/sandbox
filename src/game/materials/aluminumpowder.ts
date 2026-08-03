@@ -314,12 +314,22 @@ export const ALUMINUM_POWDER = register({
     // **+ Chlorine → 불꽃 + 흰 연기.** No gate at all, unlike every other row
     // here: chlorine is an oxidiser in its own right, so the burn needs no
     // flame, no air and no heat to start — a cloud let into a sealed box with a
-    // heap of this in it lights the heap. Listed last only because it is the
-    // one rule whose partner is a *gas*: the rows above all want a powder
-    // neighbour, and a grain can be touching several at once, so keeping the
-    // crafting recipes ahead of it means a heap being ground into Thermite in a
-    // chlorine atmosphere still becomes Thermite rather than being burned out
-    // from under the recipe.
+    // heap of this in it lights the heap.
+    //
+    // Listed last because it is the one rule whose partner is a *gas* (the rows
+    // above all want a powder neighbour), and for no stronger reason than that.
+    // In particular it does NOT mean the crafting recipes beat it: `tryReact`
+    // applies the first rule that finds a partner and passes its roll, so being
+    // earlier only wins the tick it fires, and over many ticks the bigger number
+    // wins. Measured over 300 seeded trials of one grain touching Rust Powder
+    // inside a chlorine atmosphere, **the recipe lands 39% of the time and the
+    // chlorine burns the grain out from under it 61%.**
+    //
+    // That is deliberate rather than tolerated: you should not be able to calmly
+    // grind a charge together inside a cloud that is busy oxidising the metal.
+    // `test/chlorinealuminum.ts` pins both outcomes so a retune cannot quietly
+    // starve either one — if you *do* want the recipe to win, the fix is the
+    // probability, not the row order.
     chlorineMetalBurn(CHLORINE_REACT_CHANCE),
   ],
   update: updateAluminumPowder,

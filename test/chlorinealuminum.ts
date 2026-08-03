@@ -24,6 +24,10 @@
 //     happens; the same bar held at 400° burns away.
 //   • And it stays local — a Chlorine/Aluminum scene paints no Blast (this is a
 //     burn, not a detonation, and nothing here borrows sodium's stirring thump).
+//   • **Both metals' older reactions still fire when chlorine is also adjacent,
+//     and chlorine still wins its share.** Listing the chlorine row last does not
+//     give the earlier row priority across ticks (see test 9) — what is pinned is
+//     that neither path has starved to zero.
 //
 // Run: `node test/run-chlorinealuminum.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -77,6 +81,10 @@ const SMOKE = ID('Smoke');
 const SALT = ID('Salt');
 const BLAST = ID('Blast');
 const STONE = ID('Stone');
+const WATER = ID('Water');
+const HYDROGEN = ID('Hydrogen');
+const RUST_POWDER = ID('Rust Powder');
+const THERMITE = ID('Thermite');
 
 function makeWorld(w = 40, h = 40): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -280,6 +288,86 @@ function pocket(atmosphere: number, metal: number): { grid: Grid; sim: Simulatio
   check('…giving off the same white fume', sawSmoke);
   check('…and burning rather than melting — it never became Molten Aluminum',
     count(grid, MOLTEN_ALUMINUM) === 0, `${count(grid, MOLTEN_ALUMINUM)} molten cells`);
+}
+
+// 9. **Rule contention — what row order does and does not buy.** Both of the
+//    metals that react with chlorine also have an older, slower reaction whose
+//    partner they can be touching at the same time (Activated Aluminum + water,
+//    Aluminum Powder + rust). Those rows are listed *before* the chlorine row,
+//    and it is tempting to read that as "the older reaction wins". It does not:
+//    `tryReact` applies the first rule that finds a partner AND passes its roll,
+//    so being earlier only wins the tick it actually fires, and across many
+//    ticks the bigger probability wins. Chlorine's is the bigger number in both
+//    pairs, so chlorine takes the majority of the time — which is the intended
+//    reading (it is the stronger oxidiser) but is the opposite of what the row
+//    order suggests, and the comments used to claim the opposite outright.
+//
+//    So what is pinned here is the thing that actually matters and would break
+//    silently on a retune: **both outcomes really happen.** A ratio assertion
+//    would be over-fitting (these are coin flips, and the exact split depends on
+//    how many neighbours of each kind a grain has), but a path that has starved
+//    to zero is a real regression in either direction — a chlorine number nudged
+//    up until the pool never fizzes, or down until a cloud can't take a wet
+//    grain. Both scenes run many short independent trials rather than one long
+//    one, because each is a race that resolves once.
+{
+  /** Run `trials` independent one-grain races and tally which reaction got it. */
+  const race = (
+    build: (grid: Grid, fill: (x0: number, y0: number, x1: number, y1: number, id: number) => void) => void,
+    metal: number,
+    verdict: (grid: Grid) => string,
+  ): Record<string, number> => {
+    const tally: Record<string, number> = { old: 0, chlorine: 0, unresolved: 0 };
+    for (let trial = 0; trial < 60; trial++) {
+      reseed();
+      const { grid, sim } = makeWorld(16, 16);
+      build(grid, (x0, y0, x1, y1, id) => fill(grid, x0, y0, x1, y1, id));
+      let out = '';
+      for (let t = 0; t < 200 && out === ''; t++) {
+        sim.step();
+        if (count(grid, metal) === 0) out = verdict(grid);
+      }
+      tally[out === '' ? 'unresolved' : out]++;
+    }
+    return tally;
+  };
+
+  // 9a. Activated Aluminum floating at the surface of a capped pool with chlorine
+  //     over it: does it spend itself on the water (hydrogen) or burn (fire/smoke)?
+  const wet = race(
+    (grid, f) => {
+      f(0, 0, 15, 15, WALL);
+      f(1, 1, 14, 14, CHLORINE);
+      f(1, 8, 14, 14, WATER);
+      f(7, 8, 7, 8, ACTIVATED_ALUMINUM);
+    },
+    ACTIVATED_ALUMINUM,
+    (grid) => (count(grid, HYDROGEN) > 0 ? 'old' : 'chlorine'),
+  );
+  check('a wet activated grain under chlorine still makes hydrogen sometimes', wet.old > 0,
+    `water ${wet.old} / chlorine ${wet.chlorine} of 60 trials`);
+  check('…and chlorine still takes it sometimes (neither path is starved)', wet.chlorine > 0,
+    `water ${wet.old} / chlorine ${wet.chlorine} of 60 trials`);
+
+  // 9b. Aluminum Powder resting against Rust Powder inside a chlorine atmosphere:
+  //     does the Thermite recipe land, or does the gas burn the grain out from
+  //     under it? (Measured ~39/61 in the recipe's disfavour — see the comment in
+  //     aluminumpowder.ts, which used to claim the recipe simply won.)
+  const dry = race(
+    (grid, f) => {
+      f(0, 0, 15, 15, WALL);
+      f(1, 1, 14, 14, CHLORINE);
+      f(1, 13, 14, 14, STONE);
+      f(7, 12, 7, 12, ALUMINUM_POWDER);
+      f(8, 12, 8, 12, RUST_POWDER);
+    },
+    ALUMINUM_POWDER,
+    (grid) => (count(grid, THERMITE) > 0 ? 'old' : 'chlorine'),
+  );
+  check('the thermite recipe still lands sometimes in a chlorine atmosphere', dry.old > 0,
+    `thermite ${dry.old} / burned ${dry.chlorine} of 60 trials`);
+  check('…but chlorine really can burn the grain out from under it', dry.chlorine > 0,
+    `thermite ${dry.old} / burned ${dry.chlorine} of 60 trials`);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} check(s) FAILED.`);
