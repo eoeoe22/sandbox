@@ -5,16 +5,14 @@ import { DIR8 } from '../engine/directions';
 import { updateGas } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { AMBIENT_TEMP, FIRE_SMOKE_CHANCE } from '../config';
-import { WATER, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
-import { SALTWATER } from './saltwater';
-import { SUGAR_WATER } from './sugarwater';
-import { STEAM } from './steam';
+import { WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 import { SMOKE } from './smoke';
+import { coolNeighbourWater, isDousingAgent, spendDousingAgent } from './suppress';
 
-// Gas: rises/flickers like the default gas behavior. Each tick: any
-// Water/Saltwater/Sugar Water neighbor extinguishes it (self -> Empty, that
-// neighbor -> Steam, deterministic — "물 인접 시 즉시 소화"; the water-based
-// solutions all douse); otherwise any `flammable`
+// Gas: rises/flickers like the default gas behavior. Each tick: the first
+// water-family neighbour (Water/Saltwater/Sugar Water/Snow/Ice) extinguishes it —
+// self -> Empty and that *one* neighbour is spent, deterministically ("물 인접 시
+// 즉시 소화"); otherwise any `flammable`
 // neighbor has a low per-tick chance to ignite (spread is deliberately slow —
 // see comment on IGNITE_CHANCE); otherwise a small chance to burn out to
 // Smoke each tick.
@@ -25,13 +23,13 @@ const BURNOUT_CHANCE = 0.1; // flames snuff quickly (was 0.02) — ~10-tick life
 // (~0.17s@60Hz) so a fire front flares and vanishes almost as fast as it appears.
 
 function updateFire(x: number, y: number, sim: SimContext): void {
-  let extinguished = false;
+  sim.fireSeen = true; // see SimContext.fireActive
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
+    if (isDousingAgent(nid)) {
       // A wisp of flame wreathing off a burning oil slick (burnStep's
       // WREATH_CHANCE, combustion.ts) sits right at the oil/water interface;
       // without this it would douse itself and flash-steam the very water the
@@ -48,13 +46,26 @@ function updateFire(x: number, y: number, sim: SimContext): void {
         sim.setTemp(nx, ny, Math.min(sim.getTemp(nx, ny), WATER_SURFACE_CAP));
         continue;
       }
-      sim.spawn(nx, ny, STEAM.id);
-      extinguished = true;
+      // One flame costs exactly *one* cell of water, and the flame dies with it.
+      // This loop used to run to completion, steaming every water neighbour it
+      // had — up to eight cells spent on a single lick of flame. Since a burning
+      // body re-wreaths flame for free every tick (combustion.ts WREATH_CHANCE)
+      // while the water poured on it is finite, that 8:1 exchange was the single
+      // largest reason water never put anything out: measured on a burning wood
+      // bed, 79 of 80 poured water cells died to flame gas and only 21 contacts
+      // ever reached the fuel. Spending 1:1 and stopping is what lets a poured
+      // column survive its way down to the fuel.
+      spendDousingAgent(nx, ny, sim);
+      sim.set(x, y, EMPTY);
+      // The flame's heat went into the cell it just flashed off, so the rest of
+      // the water it was touching must not boil on it too. Without this the
+      // exchange is only nominally 1:1 — a 1000° flame heats every water cell
+      // around it past boiling in the same tick's diffusion pass, and the two or
+      // three sitting where the scan reaches them *after* the flame is already
+      // gone see no flame to shield them and evaporate anyway.
+      coolNeighbourWater(x, y, sim);
+      return;
     }
-  }
-  if (extinguished) {
-    sim.set(x, y, EMPTY);
-    return;
   }
 
   for (const [dx, dy] of DIR8) {

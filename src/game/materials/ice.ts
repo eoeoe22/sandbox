@@ -33,6 +33,9 @@ export const ICE = register({
   color: rgb(165, 215, 240),
   density: 1000,
   category: 'cooling',
+  // 소화제: like Snow, a spent cell melts to Water rather than flashing off, so a
+  // block thrown on a fire leaves meltwater behind that keeps working (suppress.ts).
+  douses: 'melt',
   thermal: { init: ICE_INIT_TEMP, conductivity: 0.45 },
   update: updateIce,
 });

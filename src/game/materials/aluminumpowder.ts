@@ -187,6 +187,12 @@ export const ALUMINUM_POWDER = register({
   // (measured: 90% of an interleaved pile inside ~60 ticks).
   density: 4.6,
   combustible: true,
+  // 금속화재(D급) — water is not the answer, and this world already models why:
+  // burning aluminum cracks Water and Steam into Hydrogen (see the reactions
+  // below). Declaring the class keeps the shared suppression pass (suppress.ts)
+  // from quietly dousing the fire first, so a player who reaches for the hose
+  // gets the hydrogen instead of a tidy extinguish. CO₂/Soda still work on it.
+  fireClass: 'D',
   // Filed with the plain powders rather than 폭발, so it sits directly beside
   // Iron Powder and Rust Powder: the partner it reacts with, and the metal-dust
   // family it belongs to. (Sulfur/Saltpeter went the other way — into 폭발 next
