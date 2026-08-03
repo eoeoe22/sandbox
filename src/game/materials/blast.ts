@@ -316,6 +316,17 @@ function isBlastInert(id: number): boolean {
   return id !== EMPTY && getMaterial(id).blastInert === true;
 }
 
+/** What a cell of `id` at (x,y) leaves behind when a blast destroys it — the
+ *  material's `blastDeathId`, unless it declares the per-cell `blastDeathIdFor`
+ *  override (a Nanobot's remains follow the metal *that* bot is built out of).
+ *  Only called once the caller has established there is residue at all, and always
+ *  *before* the cell is written, so the override still reads the dying cell's own
+ *  state. */
+function blastResidueId(id: number, sim: SimContext, x: number, y: number): number {
+  const m = getMaterial(id);
+  return m.blastDeathIdFor ? m.blastDeathIdFor(sim, x, y) : (m.blastDeathId as number);
+}
+
 /** A shockwave that can't *break* a material may still kill it outright — the
  *  `shockDeathChance` roll (a Termite crushed by the passing pressure wave), which
  *  leaves its `blastDeathId` residue instead of the cell being shoved. Returns
@@ -335,15 +346,6 @@ function isBlastInert(id: number): boolean {
  *  exactly as any transform into a non-host does. Neither half is reachable today
  *  in any case: every material carrying these two tags is a non-porous solid, so
  *  it can't be holding an overlay to begin with. */
-/** What a cell of `id` at (x,y) leaves behind when a blast destroys it — the
- *  material's `blastDeathId`, unless it declares the per-cell `blastDeathIdFor`
- *  override (a Nanobot's remains follow the metal *that* bot is built out of).
- *  Only called once the caller has established there is residue at all. */
-function blastResidueId(id: number, sim: SimContext, x: number, y: number): number {
-  const m = getMaterial(id);
-  return m.blastDeathIdFor ? m.blastDeathIdFor(sim, x, y) : (m.blastDeathId as number);
-}
-
 function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (id === EMPTY) return false;
   const m = getMaterial(id);

@@ -118,10 +118,14 @@ const FEED: FeedOptions = {
 };
 
 /** Transform this cell into `id`, clearing the 금속 기억 on the way out — `set`
- *  keeps `aux` for a non-empty write, and the successor material (Aluminum
- *  Powder's burn state, say) reads that word as its own. The temperature is
- *  deliberately kept, so fresh Molten Iron/Aluminum reads as molten instead of
- *  re-freezing next tick (mirrors Iron/Aluminum's own melt). */
+ *  keeps `aux` for a non-empty write, and every material reads that word as its
+ *  own private state. None of the three materials this hands off to reads `aux`
+ *  today, but the *melt* path reaches one two steps on: the pour freezes back into
+ *  solid Iron/Aluminum (again via `set`, which again keeps the word), and there
+ *  `aux` is the post-spark refractory countdown — so an uncleared memory would
+ *  land as a cast bar that refuses to be energized for its first few ticks. The
+ *  temperature is deliberately kept, so fresh Molten Iron/Aluminum reads as molten
+ *  instead of re-freezing next tick (mirrors Iron/Aluminum's own melt). */
 function becomes(x: number, y: number, sim: SimContext, id: number): void {
   sim.set(x, y, id);
   sim.setAux(x, y, 0);

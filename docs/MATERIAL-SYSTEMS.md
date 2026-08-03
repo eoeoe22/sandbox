@@ -1729,7 +1729,10 @@ bit-identical + deterministic) 재통과 확인. `test:heat`는 이 환경에 Ru
   알루미늄 무리에도 통한다(무리를 잡는 유일한 수단을, 먹이를 바꿔서 무력화할 수 있으면 안 된다).
   기억이 구분하는 건 이 두 금속뿐이고(철/알루미늄 한정) 그 밖의 먹이는 전부 철 몸이 된다.
   `becomes()`로 다른 물질이 될 때는 **aux를 0으로 지운다** — `set`은 비어 있지 않은 쓰기에서 aux를
-  보존하므로, 안 지우면 후속 물질(예: Aluminum Powder의 연소 상태)이 그 워드를 제 것으로 읽는다.
+  보존하고 물질마다 그 워드를 제 사유 상태로 읽기 때문이다. 바로 받는 세 물질(Molten Iron·Molten
+  Aluminum·Rust)은 aux를 안 읽지만 **융해 경로는 두 걸음 뒤에 닿는다** — 쇳물이 다시 `set`으로
+  고체 Iron/Aluminum으로 굳고, 거기서 aux는 **스파크 후 불응(refractory) 카운터**라 안 지운 기억이
+  "처음 몇 틱 동안 전기가 안 걸리는 주물"로 착지한다.
 - **크레이터 잔재(`Material.blastDeathId`)**: `touchingBlast`는 크레이터 **가장자리** 생존
   개체만 잡는다 — 폭심에서 폭발이 직접 파괴한 셀은 자기 `update`가 돌기 전에 `defaultCell`
   (blast.ts)이 곧장 Blast 섬광 셀로 덮어써서 불/빈칸으로 사라져, 명세가 요구한 잔재(Sawdust/
