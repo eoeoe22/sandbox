@@ -119,10 +119,11 @@ npm run check                # astro/TS 타입체크
 npm run test:<subsystem>     # 건드린 계통의 하네스
 ```
 
-CLAUDE.md `# 검증 스크립트` 절이 "무엇을 건드리면 무엇을 돌릴지"의 목록이다.
+`docs/TESTING.md`가 "무엇을 건드리면 무엇을 돌릴지"의 목록이다(CLAUDE.md에는
+진입점만 있다).
 **새 물질군을 도입했다면** 자체 하네스를 만든다:
 `test/<name>.ts` + `test/run-<name>.mjs` + `package.json`의 `test:<name>` +
-`npm test` 체인 추가 + **CLAUDE.md에 그 스크립트 설명 bullet 추가**.
+`npm test` 체인 추가 + **`docs/TESTING.md`에 절 추가**(아래 A-9.3).
 
 ## A-9. 저장소 문서
 
