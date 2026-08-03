@@ -111,11 +111,25 @@ solid powder liquid gas fire smelt oil polymer explosive cooling electric life r
   않는다**(`materialNamesEn`은 의도적으로 비어 있다).
 - **빠뜨려도 빌드가 실패하지 않는다** — 조용히 영어로 폴백한다. 빌드에 기대지 말 것.
 
+## A-7b. `/guide` 도감 설명문
+
+`src/i18n/codex.ko.ts` → `materialCodexKo`에 설명 한 줄, `codex.en.ts` → `materialCodexEn`에
+영어 한 줄. 둘 다 숫자 id 키다. 한국어가 원본이고 문체는 정중한 격식체(`~입니다.`).
+
+`Material`에 **새 태그**를 만들었다면 그 태그도 도감에 자리가 필요하다 —
+`codex/stats.ts`(수치 표) · `codex/traits.ts`(특성 카드) · `codex/fields.ts`(안 보여 주는
+이유) 중 한 곳에 넣고, 앞의 둘이면 `src/i18n/codexTerms.ts`에 이름과 설명을 적는다
+(한 항목에 한국어·영어를 같이 — 한쪽만 적으면 컴파일이 막힌다).
+
+여기까진 `npm run test:codex`가 빠진 이름을 출력하며 실패하므로 조용히 새지는 않는다.
+자세한 규칙은 `docs/CODEX.md`.
+
 ## A-8. 검증
 
 ```bash
 npm run check:material-ids   # id 중복 — build/deploy의 첫 단계이기도 하다
 npm run check                # astro/TS 타입체크
+npm run test:codex           # 도감 커버리지 — 설명문·용어·태그 자리 누락
 npm run test:<subsystem>     # 건드린 계통의 하네스
 ```
 

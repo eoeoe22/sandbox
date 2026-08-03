@@ -7,7 +7,7 @@
 // sweep rather than a hand-picked scene, for the same reason the acid+metal and
 // 소화 계통 harnesses are: a codex's failure mode is not a crash, it is a hole —
 // a material added last week with no description, a tag added to the engine that
-// no card explains, a term that exists in Korean and not in English. None of
+// no card explains, a tag named on the page that nothing here explains. None of
 // those break anything at runtime. They just quietly leave the page wrong.
 //
 // So: the field ledger has to be exhaustive, both locales have to be complete,
@@ -23,8 +23,10 @@ import { EXCLUDED_FIELDS } from '../src/game/codex/fields';
 import { buildCodexEntries } from '../src/game/codex/entries';
 import { buildObjectEntries } from '../src/game/codex/objects';
 import { buildIconSprite, materialSymbolId, objectSymbolId } from '../src/game/codex/icons';
-import { materialCodexKo, objectCodexKo, codexTermsKo } from '../src/i18n/codex.ko';
-import { materialCodexEn, objectCodexEn, codexTermsEn } from '../src/i18n/codex.en';
+import { materialCodexKo, objectCodexKo } from '../src/i18n/codex.ko';
+import { materialCodexEn, objectCodexEn } from '../src/i18n/codex.en';
+import { codexTerms } from '../src/i18n/codexTerms';
+import { LOCALES } from '../src/i18n/locale';
 import '../src/game/materials';
 
 let failures = 0;
@@ -241,11 +243,17 @@ function check(name: string, ok: boolean, detail = ''): void {
   );
 }
 
-// ── 7. Both locales name every stat row and trait card ─────────────────────
+// ── 7. Every stat row and trait card is named, in every locale ─────────────
 // Same failure in the other half of the page: a term with no entry renders as
 // its own key ('shockDeathChance'), which is worse than useless in a codex.
 // Swept off what the entries actually use — including each `variant` — rather
 // than off the spec lists, so a trait form nothing declares isn't demanded.
+//
+// One of the two ways this used to break is gone: the tag vocabulary is a single
+// table keyed by tag, each entry carrying every locale, so a term can no longer
+// exist in Korean and not in English — `Record<Locale, CodexTerm>` refuses to
+// compile. What is left for a sweep is a term nobody wrote and a term nobody
+// reads, plus the blank string, which types can't see.
 {
   const used = new Set<string>();
   for (const e of buildCodexEntries()) {
@@ -256,13 +264,11 @@ function check(name: string, ok: boolean, detail = ''): void {
     for (const s of o.stats) used.add(s.key);
     for (const t of o.traits) used.add(t.variant === undefined ? t.key : `${t.key}.${t.variant}`);
   }
-  for (const [loc, terms] of [
-    ['ko', codexTermsKo],
-    ['en', codexTermsEn],
-  ] as const) {
-    const missing = [...used].filter(
-      (k) => (terms[k]?.label ?? '').trim() === '' || (terms[k]?.desc ?? '').trim() === '',
-    );
+  for (const loc of LOCALES) {
+    const missing = [...used].filter((k) => {
+      const term = codexTerms[k]?.[loc];
+      return (term?.label ?? '').trim() === '' || (term?.desc ?? '').trim() === '';
+    });
     check(
       `every stat and trait in use has a ${loc} term`,
       missing.length === 0,
@@ -271,7 +277,7 @@ function check(name: string, ok: boolean, detail = ''): void {
   }
   // A term nobody asks for is dead weight that reads as coverage — it makes the
   // sweep above look thorough while describing nothing on the page.
-  const unused = Object.keys(codexTermsKo).filter((k) => !used.has(k));
+  const unused = Object.keys(codexTerms).filter((k) => !used.has(k));
   check(
     '…and no term is defined for something the codex never shows',
     unused.length === 0,

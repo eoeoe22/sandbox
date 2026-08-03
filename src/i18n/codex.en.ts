@@ -1,4 +1,6 @@
-// English codex text — material/object descriptions and the trait vocabulary.
+// English codex text — the description paragraph for each material and object.
+// The shared tag vocabulary (stat and trait names) is not here: it lives with
+// its Korean twin in codexTerms.ts, one entry per tag.
 //
 // The Korean table (codex.ko.ts) is the original here, not the other way round:
 // its descriptions come from the Cloudwiki 물질 guide, and this file is their
@@ -10,7 +12,6 @@
 // Keyed by `Material.id` and `ObjectKind` exactly as the Korean table is.
 
 import type { ObjectKind } from '../state/store';
-import type { CodexTerm } from '../game/codex/types';
 
 // --- Material descriptions --------------------------------------------------
 
@@ -181,114 +182,4 @@ export const objectCodexEn: Record<ObjectKind, string> = {
   smokebomb: 'A visual-effect object that pours out a great deal of smoke.',
   crate: 'A wooden crate, broken by a hard impact or by fire.',
   molotov: 'A bottle that smashes and sets off an alcohol fire.',
-};
-
-// --- Trait vocabulary -------------------------------------------------------
-
-export const codexTermsEn: Record<string, CodexTerm> = {
-  // Stats — matter
-  density: { label: 'Density', desc: 'Heavier matter pushes lighter fluid aside and sinks through it.' },
-  conductivity: { label: 'Heat conductivity', desc: 'Near 0 is an insulator; near 1 lets heat pass straight through.' },
-  initTemp: { label: 'Spawn temperature', desc: 'The temperature a freshly placed cell starts at.' },
-
-  // Stats — motion
-  viscosity: { label: 'Viscosity', desc: 'Higher means it clings together instead of levelling out flat.' },
-  friction: { label: 'Friction (angle of repose)', desc: 'Higher piles steeper without collapsing.' },
-  elasticity: { label: 'Elasticity', desc: 'How much speed survives an impact. Higher bounces more.' },
-  surfaceTension: { label: 'Surface tension', desc: 'Higher rounds droplets up and pinches thin films off into beads.' },
-  liquidOverlap: { label: 'Liquid overlap', desc: 'The fraction of grains that will let a liquid soak into them.' },
-
-  // Stats — temperature
-  meltPoint: { label: 'Transition (heating)', desc: 'Heated past this, it becomes another material.' },
-  setPoint: { label: 'Transition (cooling)', desc: 'Cooled past this, it becomes another material.' },
-  freezeTemp: { label: 'Freezing point', desc: 'Below this it stops flowing and acts solid in place. Warming frees it again.' },
-
-  // Stats — combustion
-  autoIgniteTemp: { label: 'Autoignition point', desc: 'At this temperature it catches by itself, with no flame needed.' },
-  burnChance: { label: 'Burn rate', desc: 'The per-tick chance the fire spreads. Higher burns away faster.' },
-  burnTemp: { label: 'Flame temperature', desc: 'The heat it puts out while burning.' },
-  ashChance: { label: 'Ash chance', desc: 'The chance ash is left where it finished burning.' },
-
-  // Stats — blast
-  blastRadius: { label: 'Blast radius', desc: 'How far a single charge reaches on its own.' },
-  blastYield: { label: 'Blast yield', desc: 'What one cell adds to the total when the charge is packed together.' },
-  destructivePower: { label: 'Destructive power', desc: 'Anything tougher than this is shoved aside rather than broken.' },
-  shockDeathChance: { label: 'Shock lethality', desc: 'The chance a shockwave too weak to break it kills it anyway.' },
-
-  // Stats — other
-  sparkLoss: { label: 'Electrical resistance', desc: 'Strength lost per cell travelled. At 0 the pulse arrives at full strength however far it runs.' },
-  radiation: { label: 'Radiation dose', desc: 'The dose delivered one cell away. It falls off with distance.' },
-  acidHydrogenChance: { label: 'Hydrogen chance', desc: 'The chance an acid cell touching it becomes a hydrogen bubble.' },
-  lifetime: { label: 'Lifetime', desc: 'It disappears after about this many ticks.' },
-
-  // Stats — objects only
-  shellMeltPoint: { label: 'Shell melting point', desc: 'Held here long enough, the barrel gives way and collapses into three shards.' },
-  shellMeltTicks: { label: 'Shell melt time', desc: 'How long it must sit past the shell melting point before it opens.' },
-  pieceMeltPoint: { label: 'Shard melting point', desc: 'A shard only runs as molten iron at this higher temperature. In between, the wreckage just lies there.' },
-  pieceMeltTicks: { label: 'Shard melt time', desc: 'A torn scrap gives way far faster than a sealed drum does.' },
-  fuseTicks: { label: 'Fuse time', desc: 'How long from lighting to going off.' },
-  ventTicks: { label: 'Vent time', desc: 'How long it pours out smoke.' },
-  fuelTicks: { label: 'Fuel time', desc: 'How long until the wick burns out and leaves an empty bottle.' },
-  smashSpeed: { label: 'Smash speed', desc: 'An impact faster than this breaks it.' },
-  burnTicks: { label: 'Burn time', desc: 'How long it survives held in fire before it is gone.' },
-  burstTemp: { label: 'Cook-off temperature', desc: 'Exposed to this, it goes off where it stands.' },
-
-  // Traits — electricity
-  conductive: { label: 'Conductive', desc: 'A spark travels through it from cell to cell.' },
-  insulated: { label: 'Insulated', desc: 'Current never leaks out. A cable run through a puddle or across a steel wall electrifies neither.' },
-  wiring: { label: 'Wiring', desc: 'Counts as proper wiring — what a source that only feeds cable (the turbine) picks out.' },
-  appliance: { label: 'Electric appliance', desc: 'Runs when current reaches it. It consumes the pulse rather than passing it along.' },
-  photoelectric: { label: 'Photoelectric', desc: 'Absorbs laser light and converts it instead of soaking it up as heat, so it never cooks in a beam.' },
-  magnetic: { label: 'Magnetic', desc: 'A powered electromagnet drags it in.' },
-
-  // Traits — light
-  laserReflective: { label: 'Laser mirror', desc: 'Reflects a heat ray cleanly instead of absorbing it.' },
-
-  // Traits — fire
-  flammable: { label: 'Flammable', desc: 'Fire or lava in contact turns it straight into fire.' },
-  fuel: { label: 'Fuel', desc: 'Burns as a front creeping in from the surface, so the fire walks through the whole body.' },
-  'fireClass.A': { label: 'Class A fire', desc: 'Ordinary combustibles. Water is the right tool.' },
-  'fireClass.B': { label: 'Class B fire', desc: 'A fuel fire. Water runs off it and does nothing.' },
-  'fireClass.D': { label: 'Class D fire', desc: 'A metal fire. Water makes it worse — it cracks into hydrogen.' },
-  'douses.evaporate': { label: 'Extinguisher (evaporates)', desc: 'Puts fire out on contact, and that cell evaporates doing it.' },
-  'douses.melt': { label: 'Extinguisher (melts)', desc: 'Puts fire out on contact and melts to water, which carries on fighting.' },
-  easyDouse: { label: 'Doused easily', desc: 'A little water is enough to put it out.' },
-  petroleum: { label: 'Petroleum', desc: 'Part of the crude-oil family. It burns floating on water, and the water below never boils.' },
-
-  // Traits — acid
-  acidResistant: { label: 'Acid-proof', desc: 'No corrosive touches it.' },
-  acidHydrogen: { label: 'Hydrogen on acid', desc: 'A metal above hydrogen in the reactivity series — it fizzes hydrogen as acid dissolves it.' },
-
-  // Traits — radiation
-  radiationDeath: { label: 'Dies of radiation', desc: 'Radiation kills it.' },
-  radiationHit: { label: 'Radiation damage', desc: 'Takes radiation as its own kind of damage rather than dying outright.' },
-
-  // Traits — blast
-  explosive: { label: 'Explosive', desc: 'Detonates rather than burning. A whole connected mass goes off at once.' },
-  electricDetonate: { label: 'Electrically fired', desc: 'A current reaching it sets it off on the spot.' },
-  explosionProof: { label: 'Blast-proof', desc: 'Stops a blast front and casts a shadow over what is behind it.' },
-  jetProof: { label: 'Jet-proof', desc: 'Survives even a shaped charge’s armor-piercing jet.' },
-  indestructible: { label: 'Indestructible', desc: 'No force in the world can remove it. Only the eraser and a full clear will.' },
-  isWall: { label: 'Boundary wall', desc: 'The wall that forms the edge of the world.' },
-  shockLoose: { label: 'Blown by shockwaves', desc: 'A solid, but treated as loose matter — a shockwave flings it rather than being blocked.' },
-  blastDeath: { label: 'Blast residue', desc: 'What it leaves behind when a blast destroys it.' },
-  shatter: { label: 'Shatters', desc: 'Crazes into another material under a shockwave too weak to break it.' },
-
-  // Traits — overlap
-  porous: { label: 'Porous', desc: 'Liquids and gases pass straight through. Powders and solids rest on top.' },
-  porousPowder: { label: 'Passes powder', desc: 'Powder gets through it too.' },
-  latticeFilter: { label: 'Lattice filter', desc: 'Only the light cells of its woven pattern admit fluid.' },
-  soakedUpdate: { label: 'Acts while soaked', desc: 'Goes on doing its job while soaked into another material.' },
-  overlapFluids: { label: 'Soaks up only', desc: 'Only these fluids may soak in; the rest stay outside as ordinary cells.' },
-
-  // Traits — objects only
-  floats: { label: 'Floats', desc: 'Lighter than water, so it floats on it.' },
-  bouncy: { label: 'Highly elastic', desc: 'Bounces hard off walls and solids.' },
-  blastOnly: { label: 'Breaks only to blasts', desc: 'No impact however hard opens it — only an explosion does.' },
-  spills: { label: 'Spills its contents', desc: 'Breaking it pours out everything inside at once.' },
-  'fuse.waterproof': { label: 'Lit fuse', desc: 'Throws real fire while the wick burns down. It keeps burning underwater — dunking it does nothing.' },
-  'fuse.quenchable': { label: 'Lit fuse (douseable)', desc: 'Throws real fire while the wick burns down. Submerging it puts it out, and the fuel keeps, so it can be lit again.' },
-  smashable: { label: 'Smashes on impact', desc: 'A fast enough impact breaks it into pieces.' },
-  acidSoluble: { label: 'Dissolves in acid', desc: 'Contact with an acid pool eats it away.' },
-  fragile: { label: 'Fragile', desc: 'Weak enough that an ordinary fall will break it.' },
 };
