@@ -5,6 +5,7 @@ import { DIR4, DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { STEAM } from './steam';
+import { fightingFire } from './suppress';
 import { SUGAR, SUGAR_WATER_RATIO } from './sugar';
 import { WATER_BOIL_TEMP, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 import { YEAST } from './yeast';
@@ -76,7 +77,7 @@ function updateSugarWater(x: number, y: number, sim: SimContext): void {
   }
 
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
-    if (burningPetroleumAdjacent(x, y, sim)) {
+    if (burningPetroleumAdjacent(x, y, sim) || fightingFire(x, y, sim)) {
       // A burning oil layer floats on top: hold below boiling instead of
       // flashing to Steam (see burningPetroleumAdjacent in water.ts).
       sim.setTemp(x, y, WATER_SURFACE_CAP);
@@ -115,6 +116,8 @@ export const SUGAR_WATER = register({
   // than a Sugar grain (5) so undissolved sugar sinks through it to the bottom.
   density: 3.6,
   category: 'liquid',
+  // 소화제, same as fresh water — the dissolved sugar changes nothing (suppress.ts).
+  douses: 'evaporate',
   thermal: { conductivity: 0.5 },
   // A mild freezing-point depression (less than brine's −18): sets a little below
   // fresh water. Freezes in place (frosted) rather than crystallizing to a solid.

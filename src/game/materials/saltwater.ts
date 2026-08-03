@@ -6,6 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { EMPTY } from '../engine/types';
 import { STEAM } from './steam';
+import { fightingFire } from './suppress';
 import { SALT, SALT_WATER_RATIO } from './salt';
 import { WATER_BOIL_TEMP, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 
@@ -32,7 +33,7 @@ function updateSaltwater(x: number, y: number, sim: SimContext): void {
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
   if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
-    if (burningPetroleumAdjacent(x, y, sim)) {
+    if (burningPetroleumAdjacent(x, y, sim) || fightingFire(x, y, sim)) {
       // A burning oil layer floats on top: hold below boiling instead of
       // flashing to Steam (see burningPetroleumAdjacent in water.ts).
       sim.setTemp(x, y, WATER_SURFACE_CAP);
@@ -68,6 +69,8 @@ export const SALTWATER = register({
   // A weak electrolyte: a Spark travels through it but loses strength slowly, so
   // a pulse carries a fair distance through brine before fading (see spark.ts).
   conductive: true,
+  // 소화제, same as fresh water — brine douses just as well (suppress.ts).
+  douses: 'evaporate',
   thermal: { conductivity: 0.55 },
   // Freezing-point depression: brine sets a good deal colder than fresh water.
   // Freezes in place (frosted) rather than crystallizing to a separate solid.

@@ -10,6 +10,7 @@ import { ACID } from './acid';
 import { ACID_VAPOR } from './acidvapor';
 import { SALTWATER } from './saltwater';
 import { STEAM } from './steam';
+import { chillThroughFuel, SODA_CHILL } from './suppress';
 
 // Soda (베이킹소다, NaHCO₃) — the world's powder fire extinguisher and acid
 // neutralizer. Falls and piles like salt, but instead of dissolving it *reacts*:
@@ -44,11 +45,13 @@ const NEUTRALIZE_CHANCE = 0.15;
 // soda is cooled back to this per-tick chance — high, so a coating of soda
 // reliably beats the fuel's re-ignition rolls and the fire actually dies.
 const SMOTHER_CHANCE = 0.5;
-// Any neighbor this hot is treated as "on fire" for smothering purposes: above
-// every fuel's autoignition point (highest is Coal at 580) but safely below
-// the burning pin (800), so it catches burning cells without touching merely
-// warm material.
-const SMOTHER_TEMP = 600;
+// A fuel neighbour merely this warm triggers the flood — the same "trigger on
+// warm, cool the burning" split CO₂ uses (co2.ts TRIGGER_TEMP). Once the surface
+// layer is chilled the grain is no longer touching a *burning* cell, but the
+// buried core keeps that surface warm by conduction, so triggering on warm is
+// what keeps the grain reaching in until the whole mass is cold. Which cells
+// actually get cooled is still the flood's own SMOTHER_TEMP (suppress.ts).
+const TRIGGER_TEMP = 150;
 // Per tick in which the grain did any firefighting, the chance it is spent.
 // Low: an extinguisher grain kills dozens of flame licks before it's used up —
 // wreathing fire respawns every tick from each burning fuel cell (see
@@ -105,10 +108,17 @@ function updateSoda(x: number, y: number, sim: SimContext): void {
     } else if (
       nid !== EMPTY &&
       getMaterial(nid).combustible &&
-      sim.getTemp(nx, ny) >= SMOTHER_TEMP &&
+      sim.getTemp(nx, ny) >= TRIGGER_TEMP &&
       sim.chance(SMOTHER_CHANCE)
     ) {
-      sim.setTemp(nx, ny, AMBIENT_TEMP);
+      // Sink the chill *into* the mass rather than cooling only the grain's own
+      // contact face. Surface-only cooling was why a soda pile beat a wood bed
+      // but lost to coal outright: conduction from the burning core reheats a
+      // chilled face past autoignition inside four ticks, so the grain has to win
+      // the same cell forever. SODA_CHILL reaches every 화재 등급 like CO₂ — a dry
+      // chemical is an ABC extinguisher — but only half as deep, and unlike CO₂
+      // the grain is spent doing it.
+      chillThroughFuel(nx, ny, sim, SODA_CHILL);
       fought = true;
     }
   }

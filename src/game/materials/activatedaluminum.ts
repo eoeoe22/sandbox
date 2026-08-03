@@ -120,6 +120,12 @@ export const ACTIVATED_ALUMINUM = register({
   // bottom and works from there instead of skating on the surface.
   density: 4.8,
   combustible: true,
+  // 금속화재(D급) — water is not the answer, and this world already models why:
+  // burning aluminum cracks Water and Steam into Hydrogen (see the reactions
+  // below). Declaring the class keeps the shared suppression pass (suppress.ts)
+  // from quietly dousing the fire first, so a player who reaches for the hose
+  // gets the hydrogen instead of a tidy extinguish. CO₂/Soda still work on it.
+  fireClass: 'D',
   // Filed with the plain powders beside the Aluminum Powder it comes from,
   // rather than in 폭발 — it is not a charge, it is a gas generator.
   category: 'powder',

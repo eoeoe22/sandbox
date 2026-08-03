@@ -5,11 +5,9 @@ import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { WATER, WATER_SURFACE_CAP } from './water';
-import { SALTWATER } from './saltwater';
-import { SUGAR_WATER } from './sugarwater';
-import { STEAM } from './steam';
+import { WATER_SURFACE_CAP } from './water';
 import { OXYGEN } from './oxygen';
+import { chillThroughFuel, fireClassOf, isDousingAgent, spendDousingAgent, WATER_CHILL } from './suppress';
 import { ASH } from './ash';
 import { AMBIENT_TEMP } from '../config';
 
@@ -90,6 +88,18 @@ const CONSUME_RATIO = 0.3;
 // it (which would also choke the sim with Fire/Smoke).
 const WREATH_CHANCE = 0.25;
 
+// Per-tick chance that the water cell which just doused a burning fuel cell is
+// spent (flashed to Steam, or melted if it was Snow/Ice). Deliberately *not* 1 —
+// a bucket thrown on embers hisses off some of itself, not all of it, and the
+// difference decides whether water works at all. A burning bed presents a face
+// dozens of cells wide, so at 1.0 a poured column pays one cell per contact per
+// tick and is gone in about four ticks — long before it can walk the mass cold —
+// while the Fire already loose in the air above re-lights everything it chilled.
+// At 0.25 the same column survives long enough both to finish the chill and to
+// snuff that leftover flame, which is what "물을 부으면 꺼진다" actually requires.
+// `easyDouse` fuels (Amber, Resin) still spend nothing at all.
+const DOUSE_STEAM_CHANCE = 0.25;
+
 // Oxygen forced draught. A burning fuel cell normally pins at its own
 // `burnTemp` (FUEL_BURN_TEMP, 800°, for most fuels); Oxygen (id 36) blown against
 // it makes the fire run hotter — each adjacent Oxygen cell adds OXY_BOOST to
@@ -164,19 +174,23 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
   // Steam, so a lit slick on a pool reproduces an oil fire instead of snuffing
   // itself out on the water it's floating on (see Material.petroleum / water.ts).
   const isPetroleum = getMaterial(sim.get(x, y)).petroleum === true;
+  // 화재 등급 of the fuel under the water — what class of extinguisher answers it.
+  // B (유류, derived from `petroleum`) floats and keeps burning; D (금속, the
+  // aluminum line) ignores water here so its own violent water/steam chemistry is
+  // what the player gets; A is everything else and is what water is *for*.
+  const cls = fireClassOf(sim.get(x, y));
   let onWater = false;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    // Water/Saltwater/Sugar Water smothers it: the fuel survives (unlit, back to
-    // ambient) and the water it touched flashes to Steam (unless easyDouse) —
-    // mirroring Fire's own "물 인접 시 즉시 소화, 닿은 물은 수증기로" rule.
-    // All the water-based liquids douse (a burning petroleum slick still floats
-    // and keeps burning, below).
-    if (nid === WATER.id || nid === SALTWATER.id || nid === SUGAR_WATER.id) {
-      if (isPetroleum) {
+    // A water-family neighbour (Water/Saltwater/Sugar Water/Snow/Ice) smothers a
+    // class-A fuel: the fuel survives (unlit, back to ambient) and the one cell it
+    // touched is spent — mirroring Fire's own "물 인접 시 즉시 소화, 닿은 물은
+    // 수증기로" rule.
+    if (isDousingAgent(nid)) {
+      if (cls === 'B') {
         onWater = true; // oil fire on water: not doused, water not steamed
         // Second line of defense against the water below cooking off: Water/
         // Saltwater/Sugar Water already refuse to boil next to a burning
@@ -188,12 +202,24 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
         sim.setTemp(nx, ny, Math.min(sim.getTemp(nx, ny), WATER_SURFACE_CAP));
         continue;
       }
-      // Cell stays fuel (its id is untouched); just cool it back out of the
-      // burning band and flash the water it touched to Steam. Not consumed, so
-      // the caller still lets the now-unlit fuel fall/flow.
+      // 금속화재: water is not the answer, and this world already models *why* —
+      // burning aluminum cracks water and steam into Hydrogen (aluminumpowder.ts).
+      // Bailing out here leaves that reaction as the thing that happens, instead
+      // of quietly putting the fire out first.
+      if (cls === 'D') continue;
+      // Cell stays fuel (its id is untouched); cool it back out of the burning
+      // band and spend the one cell that did it. Not consumed, so the caller
+      // still lets the now-unlit fuel fall/flow.
       sim.setTemp(x, y, AMBIENT_TEMP);
-      if (!spec.easyDouse) {
-        sim.spawn(nx, ny, STEAM.id);
+      // …and sink the chill a little way *into* the body. Cooling only the
+      // wetted face loses: conduction from the still-burning cells behind it
+      // puts a coal surface back over its 580° autoignition within four ticks,
+      // so a surface-only douse has to win the same cell over and over. The
+      // flood is deliberately shallow (WATER_CHILL) — a thin bed goes out at
+      // once, a deep pile has to be worked face by face, and CO₂ keeps its edge.
+      chillThroughFuel(x, y, sim, WATER_CHILL);
+      if (!spec.easyDouse && sim.chance(DOUSE_STEAM_CHANCE)) {
+        spendDousingAgent(nx, ny, sim);
       }
       return false;
     }

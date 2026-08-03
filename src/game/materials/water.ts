@@ -8,6 +8,7 @@ import { STEAM } from './steam';
 import { ICE } from './ice';
 import { SNOW } from './snow';
 import { lavaTouching } from './lava';
+import { fightingFire, steamHasRoom } from './suppress';
 
 // Liquid: falls and spreads sideways to find its level (updateLiquid). Lighter
 // than sand, so sand displaces it. Water also flashes to Steam once the
@@ -119,14 +120,21 @@ function updateWater(x: number, y: number, sim: SimContext): void {
       // this boils exactly as it always has.
       return;
     }
-    if (burningPetroleumAdjacent(x, y, sim)) {
+    if (burningPetroleumAdjacent(x, y, sim) || fightingFire(x, y, sim)) {
+      // Either a burning oil slick floats above (the older petroleum shield), or
+      // this cell is in the middle of putting a fire out. Both hold just below
+      // boiling instead of flashing off — see fightingFire for why water that
+      // evaporates on the temperature system's schedule can never extinguish
+      // anything.
       sim.setTemp(x, y, WATER_SURFACE_CAP);
-    } else {
+    } else if (steamHasRoom(x, y, sim)) {
       // Boil in place: the resulting Steam keeps the (hot) temperature, then
       // rises and cools/condenses on its own (see steam.ts).
       sim.set(x, y, STEAM.id);
       return;
     }
+    // Hot enough to boil but hemmed in with nowhere for the Steam to go: stay
+    // Water and try again next tick (see steamHasRoom).
   }
   if (t <= WATER_DEEP_FREEZE_TEMP) {
     // Deeply chilled → solid Ice. In-place `set` keeps the (very cold)
@@ -153,6 +161,8 @@ export const WATER = register({
   // cold-side change (Snow/Ice) is richer than the generic `freeze`, so it keeps
   // that instead of declaring one.
   conductive: true,
+  // 소화제: one cell spent putting a fire out flashes off as Steam (suppress.ts).
+  douses: 'evaporate',
   // A little surface tension (표면장력): stray droplets round up and thin trickles
   // bead rather than smearing into a one-cell film, without holding a full pool
   // back from finding its level (only poorly-connected edge cells cohere).
