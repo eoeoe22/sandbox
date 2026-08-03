@@ -8,6 +8,7 @@ import { tryMeltAluminumDust, tryDustExplosion } from './aluminumdust';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { HYDROGEN } from './hydrogen';
+import { chlorineMetalBurn } from './chlorine';
 
 // Activated Aluminum (활성 알루미늄) — aluminum dust with its oxide skin taken
 // off, and the palette's water-fuelled hydrogen generator.
@@ -68,6 +69,10 @@ const FIZZ_HEAT = 6;
 // own `acidHydrogen` tag) — activated dust just gets there faster, having
 // nothing left to strip. The fastest rate on the roster.
 const ACID_HYDROGEN_CHANCE = 0.2;
+// …and chlorine, which needs no acid and no flame at all (see the rule row
+// below). Twice the plain powder's 0.2 — the bare grain is what chlorine wants,
+// and a heap of this in a cloud lights nearly on contact.
+const CHLORINE_REACT_CHANCE = 0.4;
 
 // Burning. Same metal, same 1700° flame as Aluminum Powder, but it lights far
 // more readily — the oxide skin is precisely what made the plain powder the
@@ -156,6 +161,19 @@ export const ACTIVATED_ALUMINUM = register({
     },
     { with: WATER.id, probability: FIZZ_HEAT_CHANCE, heat: FIZZ_HEAT },
     { with: SALTWATER.id, probability: FIZZ_HEAT_CHANCE, heat: FIZZ_HEAT },
+    // **+ Chlorine → 불꽃 + 흰 연기** (2Al + 3Cl₂ → 2AlCl₃; see chlorine.ts's
+    // `chlorineMetalBurn`). The fastest of the three aluminum forms by a wide
+    // margin, and for the same one reason everything else about this dust is
+    // faster: there is no oxide film in the way any more. It is the same
+    // ordering the acid tag already states — ordinary powder 0.12, this 0.2 —
+    // pushed further because chlorine attacks the bare metal directly rather
+    // than having to dissolve through anything.
+    //
+    // Last in the table, after both water rows, so the material's signature
+    // reaction keeps priority: a grain sitting in a capped pool with chlorine
+    // above it still spends itself making hydrogen rather than being burned off
+    // the top of the water.
+    chlorineMetalBurn(CHLORINE_REACT_CHANCE),
   ],
   // Acid does the same thing faster, and the same way — it just isn't a rule row:
   // acid's own corrosion pass drives every metal's fizz through this tag so the
