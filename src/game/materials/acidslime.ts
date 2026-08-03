@@ -151,12 +151,19 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
     if (!sim.inBounds(nx, ny)) continue;
     if (sim.get(nx, ny) !== WATER.id || sim.getAux(nx, ny) !== 0) continue;
     // Rinsed: the water is spent washing the acid out of this cell, which is
-    // left as plain Slime. Writes of EMPTY are safe without a moved mark (see
-    // SimContext.spawn's note); the self-write lands on a cell the scan has
-    // already passed, exactly like the dissolve front above.
+    // left as plain Slime. The write of EMPTY needs no moved mark (see
+    // SimContext.spawn's note), but the fresh Slime *does*, and for a reason that
+    // did not exist before the acid recipe did: Slime is now a reaction-table
+    // partner (acid.ts). Left unmarked, an Acid cell scanned later this same tick
+    // — the scan runs bottom-up, so any acid above this row still has its turn —
+    // would pick the rinsed cell up as a `with: SLIME.id` partner and convert it
+    // straight back, spending a water cell and an acid cell for no visible change.
+    // `tryReact`'s hasMoved guard is exactly what stops that; this is how a cell
+    // opts into it (spawn() does the same for every other product).
     if (sim.chance(DILUTE_CHANCE)) {
       sim.set(nx, ny, EMPTY);
       sim.set(x, y, SLIME.id);
+      sim.markMoved(x, y);
       return;
     }
     // Feed: absorb the water cell, growing the blob by one cell — half the time

@@ -188,5 +188,38 @@ const TICKS = 600;
     `${count(grid, SLIME)} vs ${goo0} to start`);
 }
 
+// 5. The two halves meeting in one tick — the regression this file exists to
+//    catch as much as anything. A rinsed cell becomes plain Slime, and Slime is
+//    now a reaction-table partner, so an Acid cell that has not had its turn yet
+//    can pick the fresh Slime up and convert it straight back inside the same
+//    tick: a water cell and an acid cell spent for no visible change, with the
+//    "water undoes the recipe" mechanic quietly cancelled wherever all three
+//    happen to touch. `tryReact`'s hasMoved partner guard is what stops it, and
+//    the rinsed cell has to opt in by marking itself moved.
+//
+//    Forced rolls (every `chance` succeeds) and three hand-placed cells resting
+//    on the floor, because this is about scan order rather than probability: the
+//    scan runs bottom-up, so the Acid a row higher is guaranteed to take its turn
+//    *after* the goo, and it is diagonally adjacent so the rinsed cell is inside
+//    its reaction scan. Without the moved mark this ends as Acid Slime with both
+//    the water and the acid consumed — verified by removing it.
+{
+  const grid = new Grid(12, 12);
+  const sim = new Simulation(grid);
+  for (let y = 0; y < 12; y++)
+    for (let x = 0; x < 12; x++)
+      grid.cells[grid.idx(x, y)] = x === 0 || y === 0 || x === 11 || y === 11 ? WALL : 0;
+  grid.cells[grid.idx(5, 10)] = ACID_SLIME; // on the floor
+  grid.cells[grid.idx(5, 9)] = WATER; // …the water it rinses itself with, above it
+  grid.cells[grid.idx(4, 9)] = ACID; // …and an acid cell that acts later this tick
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const rolled = Math.random;
+  Math.random = () => 0; // every chance() fires: dilution is certain, so is the recipe
+  sim.step();
+  Math.random = rolled;
+  check('a cell rinsed clean is not re-acidified by acid in the same tick',
+    grid.get(5, 10) === SLIME, `cell is ${getMaterial(grid.get(5, 10)).name}`);
+}
+
 console.log(failures === 0 ? '\nAll acid slime checks passed.' : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);
