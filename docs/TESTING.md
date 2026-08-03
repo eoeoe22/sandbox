@@ -2,17 +2,22 @@
 
 이 문서는 저장소의 검증 스크립트 전문을 담는다. 각 절은 **무엇을 지키는가**와
 **어떤 코드를 건드리면 이걸 돌려야 하는가**를 함께 적는다. 새 검증 스크립트를
-추가하면 여기에 절을 하나 만들고, `package.json`의 스크립트 이름을 그대로 제목에
-쓴다.
+추가하면 여기에 절을 하나 만들고, 제목은 **무엇을 지키는지 알 수 있는 설명적 이름**
+(예: "소화 계통", "겹침(스며든 액체)")으로 쓴 뒤 절 본문 첫 줄에 `npm run ...`
+스크립트 이름과 테스트 파일 경로를 적는다 — 목차 표가 그 둘을 이어 준다.
 
-`npm test`는 아래 검사들과 스냅샷 파일·열 커널 골든 테스트를 함께 돌린다(열 커널은
-`wasm/` Rust 빌드 산출물이 있어야 하므로, 그게 없는 환경에선 개별 스크립트로 돌릴 것).
+- `npm test` — 아래 목차의 `test:*` 전부 + 스냅샷 파일 + 열 커널 골든 테스트(열
+  커널은 `wasm/` Rust 빌드 산출물이 있어야 하므로, 그게 없는 환경에선 개별
+  스크립트로 돌릴 것).
+- `npm run build` (따라서 `deploy`) — `check:material-ids` → `check:hand-icons` →
+  `astro build` 순. **이 둘은 `npm test`에 안 들어 있고 빌드에 묶여 있어서**, 실패하면
+  테스트가 아니라 배포가 멈춘다.
 
 ## 목차
 
 | 스크립트 | 대상 |
 | --- | --- |
-| [`npm run check:material-ids`](#물질-id-중복-검사) | 물질 id 정적 스캔 (빌드에 묶임) |
+| [`npm run check:material-ids`](#물질-id-중복-검사) | 물질 id 정적 스캔 (`npm test` 아님 — `build`에 묶임) |
 | [`npm run test:electricity`](#전기스파크-패킹-검사) | 스파크 `aux` 패킹·전원 3종 박자 |
 | [`npm run test:woodbox`](#나무-상자-오브젝트) | 나무 상자 회전·가연성·파괴 연쇄 |
 | [`npm run test:drumbreak`](#드럼통-파괴-연쇄) | 드럼통 3종 조각 파괴·2단 용융 |
@@ -34,15 +39,15 @@
 | [`npm run test:extinguish`](#소화-계통) | 소화 1:1화·화재 등급·`fireActive` |
 | [`npm run test:active-tiles`](#활성-타일-스캔-동등성) | 활성 타일 스캔 = 전면 스캔 |
 
-`npm test`가 함께 돌리지만 설명이 다른 분야 문서에 있는 것들:
+설명이 이 문서가 아니라 다른 분야 문서에 있는 것들:
 
-| 스크립트 | 대상 | 문서 |
-| --- | --- | --- |
-| `npm run test:heat` | 열 커널 골든/통합 (Rust/WASM) | [WASM-ENGINE-PORTING.md](./WASM-ENGINE-PORTING.md) · [`wasm/README.md`](../wasm/README.md) |
-| `npm run test:snapshot-file` | `.psbx.json` 내보내기/가져오기 포맷 | [SNAPSHOTS.md](./SNAPSHOTS.md) |
-| `npm run test:plantcoral` | Plant 성장·Coral 백화 | [LIFE.md](./LIFE.md) |
-| `npm run test:materialicons` | 물질 아이콘 생성기 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
-| `npm run check:hand-icons` | 손그림 아이콘 빌드 산출물 최신 여부 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
+| 스크립트 | 언제 도는가 | 대상 | 문서 |
+| --- | --- | --- | --- |
+| `npm run test:heat` | `npm test` | 열 커널 골든/통합 (Rust/WASM) | [`wasm/README.md`](../wasm/README.md) |
+| `npm run test:snapshot-file` | `npm test` | `.psbx.json` 내보내기/가져오기 포맷 | [SNAPSHOTS.md](./SNAPSHOTS.md) |
+| `npm run test:plantcoral` | `npm test` | Plant 성장·Coral 백화 | [LIFE.md](./LIFE.md) |
+| `npm run test:materialicons` | `npm test` | 물질 아이콘 생성기 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
+| `npm run check:hand-icons` | **`npm run build`** | 손그림 아이콘 빌드 산출물 최신 여부 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
 
 ---
 
