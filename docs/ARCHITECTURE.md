@@ -31,7 +31,7 @@ src/
 ├─ state/store.ts             # nanostores — UI ⇄ 엔진 브리지
 └─ game/                      # 프레임워크 독립 순수 TS 엔진
    ├─ Game.ts                 # 조립 + rAF 루프 (메인 스레드, URL 파라미터 로딩)
-   ├─ startScreen.ts          # 시작 화면(`/`) 배경 세계 (경량 물질 + 낙하 줄 + 자동 이벤트)
+   ├─ startScreen.ts          # 시작 화면(`/`) 배경 세계 (경량 물질 + 낙하 줄 + 자동 이벤트 + 클릭 충격파)
    ├─ layout.ts               # 동적 화면비 → 그리드 해상도 계산
    ├─ engine/                 # Grid, Simulation, SimContext, behaviors
    ├─ materials/              # 물질 정의 (물질 추가 = 파일 하나)

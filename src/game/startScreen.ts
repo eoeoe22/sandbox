@@ -2,12 +2,16 @@
 // Grid/Simulation을 그대로 쓰되, 물질만 경량 배럴(`materials/lite`)로 줄여
 // 로드한다 — 그래서 첫 화면은 전체 물질 레지스트리를 받지 않는다.
 //
-// 배경은 눌러서 노는 곳이 아니라 **혼자 굴러가는 장면**이다: 네 줄이 계속
-// 떨어지고, 1초에 한 번 아무 데서나 불이나 충격파가 터진다.
+// 배경은 기본적으로 **혼자 굴러가는 장면**이다: 네 줄이 계속 떨어지고, 1초에
+// 한 번 아무 데서나 불이나 충격파가 터진다. 여기에 손잡이가 딱 하나 있다 —
+// **배경을 누르면 그 자리에서 충격파가 터진다**(`burstAt`). 물질을 칠하는
+// 브러시가 아니라 한 번 치고 마는 두드림이라, 시작 화면은 여전히 "보는 장면"
+// 이면서도 눌러 보면 반응은 한다.
 //
 // 렌더러·캔버스·RAF는 여기 없다(components/StartScreenSandbox.svelte가 맡는다).
 // 여기 있는 것은 **브라우저 없이 검증할 수 있는 부분** 전부다: 줄 낙하, 배수,
-// 자동 이벤트와 그 자리 고르기, 그리고 종류를 뽑는 룰렛.
+// 자동 이벤트와 그 자리 고르기, 종류를 뽑는 룰렛, 그리고 클릭 충격파.
+// 컴포넌트에 남는 것은 화면 좌표 → 칸 좌표 변환뿐이다.
 // 검증은 `npm run test:startscreen`.
 
 import { Grid } from './engine/Grid';
@@ -79,6 +83,17 @@ const EVENT_FIRE_FILL = 0.7;
 const EVENT_EMPTY_Y_MIN = 0.45;
 const EVENT_EMPTY_Y_MAX = 0.85;
 
+// --- 클릭 충격파 ---------------------------------------------------------------
+
+/**
+ * 배경을 눌렀을 때 터지는 원의 반지름(칸). 자동 이벤트(`EVENT_R`)보다 굵다 —
+ * 자동 이벤트는 1초마다 알아서 터지는 배경음이라 눈에 덜 띄어야 하지만, 클릭은
+ * **내가 눌러서 일어난 일**이라 누른 티가 나야 한다. 충격파가 실제로 미는
+ * 거리(`woofer.ts`의 SHOCK_VIS_REACH ≈ 8칸)와 비슷한 값이라, 원이 커진 만큼
+ * 파면도 한 덩어리로 퍼진다.
+ */
+const BURST_R = 7;
+
 /**
  * 이벤트 한 번이 만드는 것. `null`은 충격파 — 물질이 아니라 도구다.
  * 나머지는 경량 배럴이 등록한 불이다.
@@ -108,11 +123,16 @@ export class StartScreenWorld {
   /** 다음 이벤트에서 터질 것. 터질 때마다 룰렛에서 새로 뽑는다. */
   currentKind: SpawnKind;
 
-  /** 마지막으로 터진 이벤트. 아직 하나도 안 터졌으면 null. */
+  /** 마지막으로 터진 것. 자동 이벤트든 클릭 충격파든 나중 것이 들어간다.
+   *  아직 아무것도 안 터졌으면 null. */
   lastEvent: StartEvent | null = null;
 
-  /** 지금까지 터진 이벤트 수. */
+  /** 지금까지 터진 **자동** 이벤트 수. 클릭은 여기 안 센다(`burstCount`) —
+   *  1초 박자를 재는 값이라 사용자가 끼어들면 뜻이 흐려진다. */
   eventCount = 0;
+
+  /** 지금까지 사용자가 눌러서 터뜨린 충격파 수. */
+  burstCount = 0;
 
   /**
    * 스스로 움직일지. 줄 낙하와 자동 이벤트를 **함께** 여닫는다 — 둘 다 사용자가
@@ -174,12 +194,13 @@ export class StartScreenWorld {
 
   // --- 자동 이벤트 -------------------------------------------------------------
 
-  /** 원에 걸리는 칸들을 [x,y,x,y,…] 평면 배열로. `fireShockwave`가 이 꼴을 받는다. */
-  private eventCells(cx: number, cy: number): number[] {
+  /** 반지름 `r`의 원에 걸리는 칸들을 [x,y,x,y,…] 평면 배열로. `fireShockwave`가
+   *  이 꼴을 받는다. 자동 이벤트(EVENT_R)와 클릭(BURST_R)이 같이 쓴다. */
+  private eventCells(cx: number, cy: number, r: number): number[] {
     const out: number[] = [];
-    for (let dy = -EVENT_R; dy <= EVENT_R; dy++) {
-      for (let dx = -EVENT_R; dx <= EVENT_R; dx++) {
-        if (dx * dx + dy * dy > EVENT_R * EVENT_R) continue;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r * r) continue;
         const x = cx + dx;
         const y = cy + dy;
         if (this.grid.inBounds(x, y)) out.push(x, y);
@@ -223,7 +244,7 @@ export class StartScreenWorld {
     const { x, y } = this.pickEventCell();
     const kind = this.currentKind;
     const ctx = this.sim.context;
-    const cells = this.eventCells(x, y);
+    const cells = this.eventCells(x, y, EVENT_R);
     if (kind === null) {
       fireShockwave(ctx, cells);
     } else {
@@ -238,6 +259,35 @@ export class StartScreenWorld {
     // 다음 것은 지금 뽑아 둔다 — `drawKind`가 "방금 쓴 것" 을 보고 연속 등장을
     // 피하므로, `currentKind`가 아직 이번 종류일 때 불러야 한다.
     this.currentKind = this.drawKind();
+    return ev;
+  }
+
+  // --- 클릭 -------------------------------------------------------------------
+
+  /**
+   * 누른 자리(칸 좌표)에서 충격파를 한 번 터뜨린다. 화면 밖이면 아무 일도 하지
+   * 않고 `null`. 한 번 누를 때 한 번 — 누른 채 끌어도 더 터지지 않는다(그
+   * 판단은 포인터를 쥔 컴포넌트 쪽에 있다).
+   *
+   * 종류를 뽑지 않고 **언제나 충격파**다. 룰렛에는 불도 있지만 클릭으로 불을
+   * 놓으면 그건 브러시고, 그러면 시작 화면이 다시 "노는 곳"이 된다 — 여기서
+   * 원하는 것은 세계를 바꾸지 않고 **누른 티만 내는** 반응이라, 물질을 만들지도
+   * 없애지도 않는 충격파가 정확히 그 일을 한다.
+   *
+   * `motion`(움직임 최소화)에 걸리지 않는다. 그 스위치가 끄는 것은 줄 낙하와
+   * 자동 이벤트, 즉 **사용자가 일으키지 않은 움직임**이고, 클릭은 사용자가
+   * 스스로 일으킨 움직임이라 그 반대다 — 눌렀는데 아무 일도 안 나는 쪽이
+   * 오히려 고장으로 읽힌다.
+   *
+   * 자동 이벤트의 박자(`sinceEvent`)는 건드리지 않는다. 클릭은 1초짜리 배경
+   * 박자와 별개의 층이고, 눌렀다고 배경이 조용해지면 그것대로 어색하다.
+   */
+  burstAt(x: number, y: number): StartEvent | null {
+    if (!this.grid.inBounds(x, y)) return null;
+    fireShockwave(this.sim.context, this.eventCells(x, y, BURST_R));
+    const ev: StartEvent = { x, y, kind: null };
+    this.lastEvent = ev;
+    this.burstCount++;
     return ev;
   }
 

@@ -1,6 +1,6 @@
 import type { Grid } from './Grid';
 import { EMPTY, Phase, type BorderMode } from './types';
-import { getMaterial } from '../materials/registry';
+import { areMiscible, getMaterial } from '../materials/registry';
 import { tryReactSoaked } from './reactions';
 import { DIR8 } from './directions';
 import { BodyFlood } from './deviceBody';
@@ -1159,6 +1159,16 @@ export class SimContext {
       return true;
     }
     if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
+      // 가용성 (Material.miscible): two liquids that form a *solution* are never
+      // sorted against each other — neither sinks through nor floats past the
+      // other, whichever way round they happen to be. Refusing the move here (a
+      // plain `false`, so the caller's fallback still fires and the liquid flows
+      // around) is what lets the slow interdiffusion in updateLiquid actually
+      // accumulate: without it every diffusive swap that put the lighter partner
+      // underneath would be undone by the density sort on the very next tick, and
+      // alcohol poured into water would sit in a layer forever. Mixing them is
+      // then diffusion's job alone, which is exactly how a real solution forms.
+      if (areMiscible(srcId, targetId)) return false;
       const tgt = getMaterial(targetId);
       // Displacement is sorted along gravity, not the screen: the move's
       // component along the down vector decides which cell should end up lower.

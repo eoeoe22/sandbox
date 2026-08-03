@@ -64,6 +64,12 @@
     text-align: left;
     text-decoration: none;
     cursor: pointer;
+    /* 시작 화면의 앞면 전체는 포인터를 배경으로 흘려보낸다(index.astro의
+       `.foreground`) — 배경을 누르면 충격파가 터지기 때문이다. 그 예외가
+       이 세 줄이다. `.menu`가 아니라 항목마다 켜는 이유: 나브를 통째로 켜면
+       줄 사이 간격(gap)까지 클릭을 삼켜, 버튼 사이 빈 틈을 눌렀을 때만 아무
+       일도 안 일어나는 죽은 띠가 생긴다. */
+    pointer-events: auto;
     transition:
       background 0.18s ease,
       border-color 0.18s ease,

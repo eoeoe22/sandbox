@@ -1,7 +1,7 @@
 import type { SimContext } from './SimContext';
 import { EMPTY, Phase } from './types';
 import { DIR4, DIR8 } from './directions';
-import { getMaterial } from '../materials/registry';
+import { getMaterial, misciblePartnersOf } from '../materials/registry';
 
 // Default per-cell update rules keyed by Phase. A material without its own
 // `update` inherits one of these, so most materials are pure data (one file,
@@ -36,6 +36,73 @@ export function diffuseWith(
     }
   }
   return false;
+}
+
+/**
+ * Per-tick chance a cell of a `miscible` liquid trades places with one of its
+ * partners (see Material.miscible / diffuseMiscible). Brisker than the boundary
+ * blur `diffuseWith` uses (0.02), because this is the *only* thing mixing the
+ * pair — the density sort that would otherwise stir them is switched off for
+ * exactly these two — and a stirred solution should look stirred within a few
+ * seconds of pouring, not over a minute of it. Still well short of 1: the random
+ * walk has to be visible as a spreading front, not an instant homogenization.
+ */
+const MISCIBLE_DIFFUSE_CHANCE = 0.09;
+
+/** Scratch for diffuseMiscible's eligible-neighbour indices — a module-level
+ *  buffer because that runs for every cell of every miscible liquid each tick
+ *  and must not allocate. Never escapes the call. */
+const miscibleFound = new Uint8Array(4);
+
+/**
+ * 가용성 확산 — the mixing half of `Material.miscible`: a chance to swap with an
+ * adjacent cell of any liquid this one dissolves into. Run for every declaring
+ * liquid from `updateLiquid`, so a material joins in by listing its partners and
+ * writing no code.
+ *
+ * Differs from `diffuseWith` (which each of Acid/Honey calls by hand for one
+ * fixed partner) in three ways, all forced by this being the *only* transport
+ * between the pair rather than a garnish on top of the density sort: it takes
+ * the whole partner list, it picks uniformly among the eligible neighbours
+ * instead of always taking the first in DIR4 order, and it does not touch the
+ * RNG at all unless there is a partner adjacent. Returns true if a swap
+ * happened.
+ */
+export function diffuseMiscible(
+  x: number,
+  y: number,
+  sim: SimContext,
+  partners: readonly number[],
+): boolean {
+  if (partners.length === 0) return false;
+  // A liquid chilled below its freezing point acts solid — same reasoning (and
+  // same guard) as diffuseWith: a frost-rendered cell must not wander.
+  if (sim.isFrozen(x, y)) return false;
+  // Collect the eligible neighbours FIRST, and touch the RNG only if there are
+  // any. The obvious order — roll the dice, then look — would have every cell of
+  // a miscible liquid draw a random number on every tick of its life, whether or
+  // not there is anything to mix with, which quietly re-phases the shared stream
+  // for every other material in the world (a pool of plain Water is `miscible`
+  // now, and a coal fire it is being poured on is not supposed to notice).
+  let n = 0;
+  for (let i = 0; i < 4; i++) {
+    const [dx, dy] = DIR4[i];
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    // The partner has to be liquid *now*: a frozen one is a solid block of ice
+    // in all but name, and swapping into it would drag the frost around.
+    if (partners.includes(sim.get(nx, ny)) && !sim.isFrozen(nx, ny)) miscibleFound[n++] = i;
+  }
+  if (n === 0) return false;
+  if (!sim.chance(MISCIBLE_DIFFUSE_CHANCE)) return false;
+  // Pick uniformly among them rather than taking the first: the fixed DIR4 order
+  // is harmless for a boundary blur, but here the swap is the only transport
+  // there is, and always preferring the same direction would give the mixture a
+  // steady drift.
+  const [dx, dy] = DIR4[miscibleFound[n === 1 ? 0 : sim.randInt(n)]];
+  sim.swap(x, y, x + dx, y + dy);
+  return true;
 }
 
 /** True if the cell directly against gravity ("above" x,y) holds a liquid
@@ -691,6 +758,15 @@ function surfaceTensionMove(x: number, y: number, sim: SimContext, st: number): 
 export function updateLiquid(x: number, y: number, sim: SimContext): void {
   if (sim.isFrozen(x, y)) return;
   const m = getMaterial(sim.get(x, y));
+  // 가용성 (Material.miscible): mix into a partner liquid before doing anything
+  // else. First because it is the counterweight to the density sort this same
+  // pair refuses in tryMove — a solution that never got its swap in would simply
+  // flow and level as two separate liquids that pass through each other's turf
+  // without ever blending. Read through `misciblePartnersOf` rather than off the
+  // material, so BOTH halves of a pair stir: the field only exists on whichever
+  // one declared it, and a boundary mixed from one side only takes twice as long
+  // to go anywhere.
+  if (diffuseMiscible(x, y, sim, misciblePartnersOf(m.id))) return;
   if (m.surfaceTension !== undefined && surfaceTensionMove(x, y, sim, m.surfaceTension)) return;
   // Slow thermal diffusion, scaled by how weak gravity is — a fraction of the
   // gas rate so liquids creep rather than billow. 0 at full gravity (default

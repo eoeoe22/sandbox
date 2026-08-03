@@ -1,5 +1,5 @@
 import { register, getMaterial } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { EMPTY, Phase, type ReactionRule } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updateHeavyGas } from '../engine/behaviors';
@@ -14,6 +14,7 @@ import { CORAL } from './coral';
 import { SODIUM } from './sodium';
 import { SALT } from './salt';
 import { FIRE } from './fire';
+import { SMOKE } from './smoke';
 import { detonate } from './blast';
 import { launchDebris } from './debris';
 
@@ -28,7 +29,13 @@ import { launchDebris } from './debris';
 // game yet, so for now it's a directly-placed hazard. When Bleach lands it will
 // spawn Chlorine on contact with Acid — see the wiki's 신규 물질 doc.)
 //
-// The one thing it isn't inert against is **Sodium**: 2Na + Cl₂ → 2NaCl, the
+// What it isn't inert against is **metal**. Two of them, and they end very
+// differently: Aluminum *burns* in it and leaves nothing but white fume (see
+// `chlorineMetalBurn` below — the rule is declared from the metal's side, in
+// aluminum.ts / aluminumpowder.ts / activatedaluminum.ts), while Sodium hands
+// back something you can keep:
+//
+// **Sodium**: 2Na + Cl₂ → 2NaCl, the
 // textbook "make table salt out of two poisons" reaction. The touched grain
 // flashes to Fire and this gas cell — the chlorine it consumed — becomes the
 // grain of Salt. Chlorine is the oxidiser here, so the reaction needs no fuel, no
@@ -65,6 +72,57 @@ const STIR_REACH = 4; // × the global 2/3 blast-scale ⇒ ~3 cells: it churns t
 // fires once per reacting grain instead of once per electric pulse, so it has to
 // be local or a burning stockpile would hose the whole scene.)
 const STIR_POWER = 0; // identical to the Woofer: too weak to break anything at all
+
+// ── 염소 + 알루미늄 (2Al + 3Cl₂ → 2AlCl₃) ────────────────────────────────────
+// The second metal chlorine burns, and the one that shows what kind of oxidiser
+// it really is: chlorine doesn't need oxygen to run a metal fire, it *is* the
+// oxidiser. Aluminum foil dropped into a jar of chlorine catches on its own and
+// burns with white fume, and that fume is aluminum chloride — which sublimes
+// straight from solid to vapour at 180°, so what you actually see leaving the
+// reaction is smoke, not a product you can pick up. That's why this makes none:
+// the metal cell flashes to Fire and the gas cell it consumed becomes Smoke,
+// which drifts off and thins out like every other smoke here. (2순위 편의성 also
+// gets a say: an AlCl₃ powder would be a whole material — id, icon, 도감 —
+// existing only to sit in a pile and do nothing.)
+//
+// Unlike the Sodium branch below, this needs no code of its own — it's exactly
+// the 2-body substitution engine/reactions.ts exists for. What it does need is
+// to be declared from the *metal's* side, in each aluminum file, for one
+// concrete reason: `tempMin` gates on the cell that declares the rule, and the
+// bulk-metal rule is "the bar has to be hot" (aluminum.ts). Chlorine is a poor
+// heat conductor (0.06), so a gas cell lounging against a red-hot bar can easily
+// still read ambient — gating on the gas would make the ingot rule misfire. The
+// rest of the family follows it for consistency, and this factory keeps the one
+// reaction from drifting into three slightly different numbers.
+//
+// Heat of reaction: the same figure the sodium branch flashes at (REACT_TEMP),
+// for the same reason it was picked — hot enough to read as a burn and to warm
+// its neighbours toward joining in, but not a detonation. Applied here as a
+// *delta* (that's what ReactionRule.heat is), so an ambient grain lands at
+// roughly the same 720° the sodium reaction sets outright.
+const AL_REACT_HEAT = REACT_TEMP - 20;
+
+/**
+ * The **metal + Cl₂ → 불꽃 + 흰 연기** rule, ready to drop into an aluminum
+ * material's `reactions` table. `probability` is the per-tick, per-contact rate,
+ * which is where the three forms of the metal differ (surface area and oxide
+ * film — see each file), and `tempMin` is the activation heat the bulk bar needs
+ * and the powders don't.
+ *
+ * One cell of gas consumes exactly one cell of metal, so a cloud is a finite
+ * reagent here as well: the burn stops when the chlorine runs out, not when the
+ * aluminum does.
+ */
+export function chlorineMetalBurn(probability: number, tempMin?: number): ReactionRule {
+  return {
+    with: CHLORINE.id,
+    produce: FIRE.id, // the metal cell — 금속이 타 들어간다
+    otherBecomes: SMOKE.id, // the gas cell — the AlCl₃ fume, which is all it ever is
+    probability,
+    heat: AL_REACT_HEAT,
+    ...(tempMin !== undefined ? { tempMin } : {}),
+  };
+}
 
 function isLiving(id: number): boolean {
   return (
