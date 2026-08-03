@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, flameAdjacent, type Combustible } from './combustion';
+import { tryBurn, flameAdjacent } from './combustion';
 import { LPG } from './lpg';
 import { PETROLEUM_VAPOR } from './petroleumvapor';
 import { ASPHALT } from './asphalt';
@@ -20,7 +20,6 @@ import { ASPHALT } from './asphalt';
 // lets a sealed still (crude in a Stone/Iron vessel heated from outside) be
 // driven through the distillation range by conduction without catching fire:
 // dump Fire *on* the crude and it burns; heat it *through a wall* and it distils.
-const SPEC: Combustible = { burnChance: 0.20, autoIgniteTemp: 420 };
 
 // --- Fractional distillation --------------------------------------------------
 // Gently heated (not set alight), crude oil boils apart into its cuts the way a
@@ -93,7 +92,7 @@ function boilOff(x: number, y: number, sim: SimContext, t: number): void {
 function updateOil(x: number, y: number, sim: SimContext): void {
   // Flame contact (or an already-burning cell) burns — handled first so a lit
   // slick is consumed exactly as before, never distilling.
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   const t = sim.getTemp(x, y);
   // Direct flame contact wins over distillation: an adjacent flame is left to
   // ignite the crude (burn), so crude only distils under *indirect* heat.
@@ -129,7 +128,7 @@ export const OIL = register({
   phase: Phase.Liquid,
   color: rgb(48, 40, 34),
   density: 2.6,
-  combustible: true,
+  combustion: { burnChance: 0.20, autoIgniteTemp: 420 },
   petroleum: true, // flat single-colour render; burns on water without steaming it
   category: 'oil',
   thermal: { conductivity: 0.2 },

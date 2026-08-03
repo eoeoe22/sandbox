@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { CO2 } from './co2';
+import { tryPhaseChange } from './phasechange';
 
 // Dry Ice — frozen CO₂ as a rigid, static solid block. Placed very cold (-78°)
 // it acts as a solid cold sink, frosting and freezing whatever it rests against
@@ -16,10 +17,7 @@ const SUBLIMATE_TEMP = -40; // warmed past this → sublimates away promptly
 const SLOW_SUBLIMATE_CHANCE = 0.0025; // …and even kept cold it slowly evaporates
 
 function updateDryIce(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= SUBLIMATE_TEMP) {
-    sim.set(x, y, CO2.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   if (sim.chance(SLOW_SUBLIMATE_CHANCE)) {
     sim.set(x, y, CO2.id);
     return;
@@ -35,5 +33,8 @@ export const DRY_ICE = register({
   density: 1000,
   category: 'cooling',
   thermal: { init: -78, conductivity: 0.4 },
+  // 승화점 — warmed past this it fumes away promptly (and even below it there
+  // is the slow leak rolled in the update).
+  phaseChange: { at: () => SUBLIMATE_TEMP, when: 'atOrAbove', into: () => CO2.id },
   update: updateDryIce,
 });

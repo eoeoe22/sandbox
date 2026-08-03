@@ -1,6 +1,6 @@
 import { DIR8 } from '../engine/directions';
 import { getMaterial } from './registry';
-import { EMPTY } from '../engine/types';
+import { EMPTY, type Combustible } from '../engine/types';
 import type { SimContext } from '../engine/SimContext';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
@@ -60,6 +60,14 @@ import { AMBIENT_TEMP } from '../config';
 // detecting the flame itself — the same id-based, scan-order-independent
 // approach the explosives use.
 //
+// Each fuel's own numbers live on its material as `Material.combustion` (see
+// Combustible in engine/types.ts), so `tryBurn` reads them off the cell it was
+// handed and a fuel's `update` just says `tryBurn(x, y, sim)`. They used to be a
+// `const SPEC` inside each fuel's module, passed back in as an argument — which
+// meant the one place that knew Coal smoulders at 0.035 and lights itself at
+// 580° was invisible to everything that wasn't Coal: the palette, a codex page,
+// a test sweeping the registry for every fuel's 발화점.
+//
 // "Ordinary Fire" above is the unoxygenated case. Once Oxygen is blown against
 // a burning cell (forced draught, below), the flame it wreaths itself in and
 // finally collapses into is Blue Flame instead of Fire — an oxygen torch
@@ -118,27 +126,6 @@ const DOUSE_STEAM_CHANCE = 0.25;
 const OXY_BOOST = 250;
 const OXY_MAX_PIN = 1800;
 const OXY_CONSUME = 0.5;
-
-export interface Combustible {
-  /** Per-tick chance to catch from an adjacent flame, and — once burning — to
-   *  light each adjacent fuel cell. Also sets the fuel's relative burn speed. */
-  burnChance: number;
-  /** Self temperature at/above which it ignites with no flame contact. */
-  autoIgniteTemp: number;
-  /** Temperature this fuel's burning cells pin at (and collapse-to-Fire at),
-   *  overriding the shared `FUEL_BURN_TEMP` (800°). Oxygen's forced-draught boost
-   *  still stacks on top, capped at `OXY_MAX_PIN`. Coal uses this to run its
-   *  bare, unoxygenated fire hot enough to melt iron (1200°) while staying
-   *  under Blue Flame (1800°). */
-  burnTemp?: number;
-  /** If true, water smothers this fuel without being consumed into steam.
-   *  Used for fuels that are easily doused, like Amber and Resin. */
-  easyDouse?: boolean;
-  /** Chance that a consumed cell leaves a fleck of Ash behind instead of the
-   *  usual rising Fire puff — a solid fuel's spent remains (Wood, Sawdust). A
-   *  liquid fuel that burns clean away (oil, alcohol, …) omits this. */
-  ashChance?: number;
-}
 
 export function isFlame(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id;
@@ -263,7 +250,7 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
     if (nid === EMPTY) {
       // A lick of visible flame in the open air around the body.
       if (sim.chance(WREATH_CHANCE)) sim.spawn(nx, ny, oxygenated ? BLUE_FLAME.id : FIRE.id);
-    } else if (getMaterial(nid).combustible && sim.getTemp(nx, ny) < myBurnTemp) {
+    } else if (getMaterial(nid).combustion !== undefined && sim.getTemp(nx, ny) < myBurnTemp) {
       // Light the neighbor: pin it to this fuel's burn temp so its own turn
       // sees it as burning (its own next burnStep re-pins to its own spec
       // regardless). Gated by burnChance per neighbor, so a just-lit unscanned
@@ -312,7 +299,12 @@ function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boo
  * all) it returns false and the caller runs its normal fall/flow: a burning fuel
  * keeps moving exactly like its unlit self.
  */
-export function tryBurn(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
+export function tryBurn(x: number, y: number, sim: SimContext): boolean {
+  // The fuel's own numbers, read off the cell rather than passed in — a fuel
+  // cannot call this with someone else's pace by accident, and a material that
+  // isn't a fuel at all simply does nothing here.
+  const spec = getMaterial(sim.get(x, y)).combustion;
+  if (spec === undefined) return false;
   // Already burning (pinned hot), or hot enough to self-ignite from radiant
   // heat: run its burn step, which reports whether it was consumed.
   if (sim.getTemp(x, y) >= spec.autoIgniteTemp) {

@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updatePowderMix } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { IRON_ORE } from './ironore';
 import { LIMESTONE } from './limestone';
 import { MOLTEN_IRON_ORE, tryHoldInActiveMelt } from './moltenironore';
@@ -20,7 +20,6 @@ import { tryMixGunpowder } from './gunpowdermix';
 // — so the general fuel economy is unchanged: this is just Coal you can pour.
 // Just burns; never detonates. See combustion.ts for the shared surface-front
 // model.
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 };
 
 // Carbon in contact with the smelting hearth — iron ore (solid or molten) or the
 // molten iron just reduced out of it — sits in a reducing pocket, so it acts as
@@ -101,7 +100,7 @@ function updateCoalPowder(x: number, y: number, sim: SimContext): void {
   // heated instead of flashing off, and dusted coal reduces the melt instead of
   // burning away. Coal a cell or more from the hearth still burns, so a charcoal
   // bed heaped around a crucible still smoulders and heats it.
-  if (!touchingMelt(x, y, sim) && tryBurn(x, y, sim, SPEC)) return;
+  if (!touchingMelt(x, y, sim) && tryBurn(x, y, sim)) return;
   // Dusted onto a molten pool, stir down into it so the whole depth reduces
   // quickly and predictably, not just the crust-prone surface (mixIntoMelt wins
   // the tie so stirring isn't fought every time it rolls — see its doc comment
@@ -146,7 +145,7 @@ export const COAL_POWDER = register({
   // surface, and only floats clear once the pool below it has finished into
   // Molten Iron.
   density: 7.5,
-  combustible: true,
+  combustion: { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 },
   category: 'smelt',
   // Angular, dusty grains grip hard — a coal-dust heap piles steeply (마찰).
   friction: 0.48,

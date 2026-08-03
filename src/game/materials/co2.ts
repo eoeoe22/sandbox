@@ -50,7 +50,7 @@ const SMOTHER_CHANCE = 0.5; // per qualifying CO₂ cell per tick — a blanket 
 const DISSIPATE_CHANCE = 0.002; // slowly thins back into air (no permanent fog)
 
 function isCombustible(id: number): boolean {
-  return id !== EMPTY && getMaterial(id).combustible === true;
+  return id !== EMPTY && getMaterial(id).combustion !== undefined;
 }
 
 function updateCO2(x: number, y: number, sim: SimContext): void {

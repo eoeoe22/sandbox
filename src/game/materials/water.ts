@@ -161,6 +161,9 @@ export const WATER = register({
   // cold-side change (Snow/Ice) is richer than the generic `freeze`, so it keeps
   // that instead of declaring one.
   conductive: true,
+  // …which is what this number *is*: 2 strength per cell out of a pulse's 63, so
+  // roughly 31 cells of reach through a pool (see Material.sparkLoss).
+  sparkLoss: 2,
   // 소화제: one cell spent putting a fire out flashes off as Steam (suppress.ts).
   douses: 'evaporate',
   // A little surface tension (표면장력): stray droplets round up and thin trickles

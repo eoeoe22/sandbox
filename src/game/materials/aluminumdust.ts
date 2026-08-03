@@ -41,12 +41,13 @@ import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 // flame happens to be beside it, an unbounded melt check would yank a mid-burn
 // grain out of the fire and turn it into a puddle. Melting strictly below the
 // autoignition point leaves every burning cell to `tryBurn`.
-export function tryMeltAluminumDust(
-  x: number,
-  y: number,
-  sim: SimContext,
-  autoIgniteTemp: number,
-): boolean {
+export function tryMeltAluminumDust(x: number, y: number, sim: SimContext): boolean {
+  // The dust's own autoignition point, read off the cell (Material.combustion) the
+  // same way `tryBurn` reads it — the two dusts differ here (1000° vs 700°) and
+  // the upper bound below has to be each one's own, not a number handed in from
+  // the call site and liable to drift from the spec it is supposed to mirror.
+  const autoIgniteTemp = getMaterial(sim.get(x, y)).combustion?.autoIgniteTemp;
+  if (autoIgniteTemp === undefined) return false;
   const t = sim.getTemp(x, y);
   if (t < ALUMINUM_MELT_TEMP || t >= autoIgniteTemp) return false;
   if (flameAdjacent(x, y, sim)) return false;

@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { WATER, FROST_MELT_TEMP } from './water';
+import { tryPhaseChange } from './phasechange';
 
 // Solid: a static, rigid block of frozen water (like Stone, it just sits — no
 // phase-default update for Solids). It's the deep-frozen end of the water phase
@@ -19,11 +20,7 @@ import { WATER, FROST_MELT_TEMP } from './water';
 const ICE_INIT_TEMP = -20;
 
 function updateIce(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= FROST_MELT_TEMP) {
-    // In-place `set` keeps the (now warm) temperature so the fresh Water doesn't
-    // read as still-frozen and immediately re-freeze next tick.
-    sim.set(x, y, WATER.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const ICE = register({
@@ -37,5 +34,7 @@ export const ICE = register({
   // block thrown on a fire leaves meltwater behind that keeps working (suppress.ts).
   douses: 'melt',
   thermal: { init: ICE_INIT_TEMP, conductivity: 0.45 },
+  // 녹는점
+  phaseChange: { at: () => FROST_MELT_TEMP, when: 'atOrAbove', into: () => WATER.id },
   update: updateIce,
 });

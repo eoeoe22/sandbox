@@ -475,35 +475,64 @@ function pourOn(
   check('a world with no fire in it never sets the flag', s2.context.fireActive === false);
 }
 
-// ── 11. The 화재 등급 roster, swept from the registry ───────────────────────
-// Same idea as the acid/metal tag sweep: the class of every combustible is listed
-// here by hand, so tagging a new metal or oil fuel — or forgetting to — breaks
-// this check first and prints the new roster. Water works on class A and only
-// class A, so a fuel landing in the wrong column silently changes whether the
-// hose does anything to it.
+// ── 11. The fuel roster, swept from the registry ────────────────────────────
+// Same idea as the acid/metal tag sweep: every fuel's 화재 등급 and its two
+// defining numbers are listed here by hand, so tagging a new metal or oil fuel —
+// or forgetting to — breaks this check first and prints the new roster.
+//
+// The class half matters because water works on class A and only class A, so a
+// fuel landing in the wrong column silently changes whether the hose does
+// anything to it. The 발화점/속도 half is checkable at all only because
+// `Material.combustion` carries it (it used to be a `const SPEC` sealed inside
+// each fuel's module, reachable by nothing but that fuel): a retune of the burn
+// economy — or a fat-fingered digit while moving one — now has to come past this
+// line, which is the same discipline the acid reactivity series already gets.
 {
-  const expected: Record<string, string> = {
-    // B — 유류. Derived from `petroleum`, never declared by hand.
-    'Crude Oil': 'B',
-    Gasoline: 'B',
-    Kerosene: 'B',
-    Diesel: 'B',
-    // D — 금속. The aluminum line, which answers water with hydrogen instead.
-    'Aluminum Powder': 'D',
-    'Activated Aluminum': 'D',
+  // name → [화재 등급, burnChance, 발화점]. Class defaults to 'A' when omitted in
+  // the material (B is derived from `petroleum`; D is the aluminum line, which
+  // answers water with hydrogen instead of going out).
+  const expected: Record<string, [string, number, number]> = {
+    'Crude Oil': ['B', 0.2, 420],
+    Gasoline: ['B', 0.25, 400],
+    Kerosene: ['B', 0.15, 420],
+    Diesel: ['B', 0.017, 450],
+    'Aluminum Powder': ['D', 0.05, 1000],
+    'Activated Aluminum': ['D', 0.09, 700],
+    Wood: ['A', 0.06, 500],
+    Sawdust: ['A', 0.08, 450],
+    Coal: ['A', 0.035, 580],
+    'Coal Powder': ['A', 0.035, 580],
+    Alcohol: ['A', 0.15, 250],
+    Honey: ['A', 0.05, 360],
+    Sugar: ['A', 0.09, 300],
+    Sulfur: ['A', 0.08, 250],
+    Resin: ['A', 0.017, 400],
+    Amber: ['A', 0.03, 400],
+    Fuse: ['A', 0.06, 260],
+    C4: ['A', 0.05, 320],
+    Plant: ['A', 0.1, 400],
+    Polyethylene: ['A', 0.05, 380],
   };
   const wrong: string[] = [];
   const roster: string[] = [];
   for (const m of allMaterials()) {
-    if (m.combustible !== true) continue;
+    const spec = m.combustion;
+    if (spec === undefined) continue;
     const cls = fireClassOf(m.id);
-    roster.push(`${m.name}=${cls}`);
-    if ((expected[m.name] ?? 'A') !== cls) wrong.push(`${m.name} is ${cls}, expected ${expected[m.name] ?? 'A'}`);
+    roster.push(`${m.name}=${cls}/${spec.burnChance}/${spec.autoIgniteTemp}`);
+    const want = expected[m.name];
+    if (want === undefined) {
+      wrong.push(`${m.name} is a new fuel this file does not record`);
+    } else if (want[0] !== cls || want[1] !== spec.burnChance || want[2] !== spec.autoIgniteTemp) {
+      wrong.push(
+        `${m.name} is ${cls}/${spec.burnChance}/${spec.autoIgniteTemp}, expected ${want.join('/')}`,
+      );
+    }
   }
   for (const name of Object.keys(expected)) {
-    if (!roster.some((r) => r.startsWith(name + '='))) wrong.push(`${name} is no longer combustible`);
+    if (!roster.some((r) => r.startsWith(name + '='))) wrong.push(`${name} is no longer a fuel`);
   }
-  check('every combustible sits in the 화재 등급 this file records', wrong.length === 0, wrong.join('; '));
+  check('every fuel keeps the 화재 등급 and burn spec this file records', wrong.length === 0, wrong.join('; '));
   if (wrong.length) console.log('    current roster: ' + roster.join(', '));
 }
 

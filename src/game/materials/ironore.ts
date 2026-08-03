@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_IRON_ORE } from './moltenironore';
+import { tryPhaseChange } from './phasechange';
 
 // Iron Ore — a red-brown powder smelted in two steps: first MELT it with heat,
 // then feed carbon to the molten pool it becomes (see moltenironore.ts). The
@@ -23,12 +24,7 @@ import { MOLTEN_IRON_ORE } from './moltenironore';
 const ORE_MELT_TEMP = 850;
 
 function updateIronOre(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= ORE_MELT_TEMP) {
-    // In-place set keeps the (now high) temperature so the fresh melt reads as
-    // molten instead of instantly re-solidifying next tick.
-    sim.set(x, y, MOLTEN_IRON_ORE.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   // Below the melt point: fall and pile like an ordinary powder.
   updatePowder(x, y, sim);
 }
@@ -54,5 +50,7 @@ export const IRON_ORE = register({
   // High conductivity so heat drives deep into a pile quickly and it melts
   // briskly rather than crawling in from the surface.
   thermal: { conductivity: 0.85 },
+  // 녹는점
+  phaseChange: { at: () => ORE_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON_ORE.id },
   update: updateIronOre,
 });

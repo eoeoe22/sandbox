@@ -9,6 +9,7 @@ import { tryCorrode, tryCorrodeSoaked, ACID_SLIME_CORROSION } from './corrosion'
 import { SMOKE } from './smoke';
 import { SLIME, SLIME_FLOW_CHANCE } from './slime';
 import { WATER } from './water';
+import { tryPhaseChange } from './phasechange';
 
 // Acid Slime (산성 슬라임) — Slime's corrosive cousin. It behaves almost exactly
 // like ordinary Slime (slime.ts): a thick, gooey semi-fluid that oozes rather
@@ -94,10 +95,7 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
   }
 
   // Melt away in heat: past the melt point, or beside an open flame.
-  if (sim.getTemp(x, y) >= MELT_TEMP) {
-    sim.set(x, y, SMOKE.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -159,6 +157,8 @@ export const ACID_SLIME = register({
   // 방사선 내성 — no `radiationDeath`, exactly like plain Slime and for the same
   // reasons (see slime.ts, and engine/radiation.ts for the pass).
   thermal: { conductivity: 0.2 },
+  // 분해점 — the goo cooks off rather than melting into anything.
+  phaseChange: { at: () => MELT_TEMP, when: 'atOrAbove', into: () => SMOKE.id },
   update: updateAcidSlime,
   // Goo thin enough to soak into a powder bed keeps its bite there, on the same
   // terms as the liquid it's made of (see acid.ts / corrosion.ts's

@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { SALT } from './salt';
+import { tryPhaseChange } from './phasechange';
 
 // Molten Salt (용융염) — what Salt becomes when heated past its melting point
 // (see salt.ts). A hot, glowing liquid that flows and, once conduction cools it
@@ -16,12 +17,7 @@ const MOLTEN_SALT_FREEZE_TEMP = 700;
 const FLOW_CHANCE = 0.25;
 
 function updateMoltenSalt(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) <= MOLTEN_SALT_FREEZE_TEMP) {
-    // In-place `set` keeps the (now low) temperature so the fresh Salt reads as
-    // solid rather than instantly re-melting next tick.
-    sim.set(x, y, SALT.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
 
@@ -34,5 +30,7 @@ export const MOLTEN_SALT = register({
   category: 'fire',
   thermal: { init: MOLTEN_SALT_TEMP, conductivity: 0.5 },
   glow: { min: MOLTEN_SALT_FREEZE_TEMP, max: MOLTEN_SALT_TEMP, cool: rgb(150, 110, 80) },
+  // 어는점
+  phaseChange: { at: () => MOLTEN_SALT_FREEZE_TEMP, when: 'atOrBelow', into: () => SALT.id },
   update: updateMoltenSalt,
 });

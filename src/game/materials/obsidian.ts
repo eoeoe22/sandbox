@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { LAVA } from './lava';
 import { STONE_MELT_TEMP } from './stone';
+import { tryPhaseChange } from './phasechange';
 
 // Obsidian (흑요석) — what Lava turns into where it *directly touches Water*
 // (see lava.ts's quench branch, which is the only thing that produces it): the
@@ -34,12 +35,7 @@ import { STONE_MELT_TEMP } from './stone';
 // every module has finished loading — is always safe. (Same reason lava.ts and
 // stone.ts only ever touch each other's `.id` from inside a function.)
 function updateObsidian(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= STONE_MELT_TEMP) {
-    // In-place `set` keeps the cell's (now high) temperature, so the fresh Lava
-    // reads as molten instead of instantly re-setting next tick — the same
-    // hand-off Stone↔Lava uses.
-    sim.set(x, y, LAVA.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const OBSIDIAN = register({
@@ -113,5 +109,7 @@ export const OBSIDIAN = register({
   // (0.5): a shell insulates the lava behind it slightly better than a stone
   // crust would, which is what lets a quenched shell survive.
   thermal: { conductivity: 0.4 },
+  // 녹는점 — quenched lava goes back to lava at the same heat plain rock does.
+  phaseChange: { at: () => STONE_MELT_TEMP, when: 'atOrAbove', into: () => LAVA.id },
   update: updateObsidian,
 });

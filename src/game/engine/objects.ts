@@ -3562,7 +3562,7 @@ function fuseSnuffed(id: number, temp: number): boolean {
   if (temp <= FUSE_SNUFF_TEMP) return true;
   if (id !== EMPTY) {
     const m = getMaterial(id);
-    if (m.phase === Phase.Powder && m.combustible !== true && m.explosive !== true) return true;
+    if (m.phase === Phase.Powder && m.combustion === undefined && m.explosive !== true) return true;
   }
   return false;
 }
@@ -4025,7 +4025,7 @@ function bodyQuenchFrac(o: CapsuleBody, ctx: SimContext, hotLimit: number): numb
       }
       const m = getMaterial(id);
       if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) continue;
-      if (m.combustible === true || m.explosive === true) continue; // fuel, not water
+      if (m.combustion !== undefined || m.explosive === true) continue; // fuel, not water
       if (ctx.getTemp(cx, cy) >= hotLimit) continue; // lava/molten iron: not a dousing
       quench++;
     }

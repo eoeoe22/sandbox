@@ -3,7 +3,7 @@ import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { tryMeltAluminumDust, tryDustExplosion } from './aluminumdust';
 import { RUST_POWDER } from './rustpowder';
 import { THERMITE } from './thermite';
@@ -68,23 +68,19 @@ import { HYDROGEN } from './hydrogen';
 // stays put. (It is not the only non-magnetic metal powder — Sodium never
 // carried the tag either — but Sodium is a soft alkali metal nobody was going to
 // mistake for iron filings in the first place.)
-const SPEC: Combustible = {
-  // Between Coal Powder (0.035) and Wood (0.06): a metal dust front creeps
-  // rather than races — it took real heat to start and it doesn't hurry.
-  burnChance: 0.05,
-  // The highest autoignition in the game. In practice it is now reached only by
-  // a grain sitting *in* a flame: `tryMeltAluminum` vetoes melting while any
-  // flame is adjacent, so a grain against Fire/Lava/Blue Flame/a lit Thermite
-  // wreath climbs right past 660° to here and catches, while one heated with no
-  // flame on it melts at 660° and never arrives. (Flame in direct contact also
-  // lights it outright at `burnChance`, as it does every fuel — see tryBurn.)
-  autoIgniteTemp: 1000,
-  // The hottest ordinary fuel here — past Iron (1200°), Glass (1150°) and
-  // Stone (1100°), so burning aluminum genuinely melts what it rests on. Kept
-  // just under Blue Flame / `OXY_MAX_PIN` (1800°) so the oxygen forced-draught
-  // boost in combustion.ts still *raises* the pin instead of clamping it down.
-  burnTemp: 1700,
-};
+
+// The highest autoignition in the game. In practice it is reached only by a
+// grain sitting *in* a flame: `tryMeltAluminumDust` vetoes melting while any
+// flame is adjacent, so a grain against Fire/Lava/Blue Flame/a lit Thermite
+// wreath climbs right past 660° to here and catches, while one heated with no
+// flame on it melts at 660° and never arrives. (Flame in direct contact also
+// lights it outright at `burnChance`, as it does every fuel — see tryBurn.)
+//
+// Named rather than written straight into `combustion` because the steam
+// reaction below has to start at exactly this temperature — only a burning grain
+// cracks steam — and both sit inside the same register literal, where the
+// material itself is not yet there to be read back.
+const AUTO_IGNITE_TEMP = 1000;
 
 // The melt-vs-burn split ("불을 대면 타고, 그냥 데우면 녹는다") and the
 // dust-explosion path both live in aluminumdust.ts now, because the activated
@@ -98,8 +94,8 @@ function updateAluminumPowder(x: number, y: number, sim: SimContext): void {
   // same grains hanging in the air are a bomb. It is gated strictly on
   // suspension, so a pile behaves exactly as it always did.
   if (tryDustExplosion(x, y, sim)) return;
-  if (tryBurn(x, y, sim, SPEC)) return;
-  if (tryMeltAluminumDust(x, y, sim, SPEC.autoIgniteTemp)) return;
+  if (tryBurn(x, y, sim)) return;
+  if (tryMeltAluminumDust(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -186,7 +182,17 @@ export const ALUMINUM_POWDER = register({
   // the 섞기 브러시, or lay the two down interleaved, and the bulk goes over
   // (measured: 90% of an interleaved pile inside ~60 ticks).
   density: 4.6,
-  combustible: true,
+  combustion: {
+    // Between Coal Powder (0.035) and Wood (0.06): a metal dust front creeps
+    // rather than races — it took real heat to start and it doesn't hurry.
+    burnChance: 0.05,
+    autoIgniteTemp: AUTO_IGNITE_TEMP,
+    // The hottest ordinary fuel here — past Iron (1200°), Glass (1150°) and
+    // Stone (1100°), so burning aluminum genuinely melts what it rests on. Kept
+    // just under Blue Flame / `OXY_MAX_PIN` (1800°) so the oxygen forced-draught
+    // boost in combustion.ts still *raises* the pin instead of clamping it down.
+    burnTemp: 1700,
+  },
   // 금속화재(D급) — water is not the answer, and this world already models why:
   // burning aluminum cracks Water and Steam into Hydrogen (see the reactions
   // below). Declaring the class keeps the shared suppression pass (suppress.ts)
@@ -290,7 +296,7 @@ export const ALUMINUM_POWDER = register({
       otherBecomes: HYDROGEN.id,
       probability: STEAM_REACT_CHANCE,
       heat: STEAM_REACT_HEAT,
-      tempMin: SPEC.autoIgniteTemp,
+      tempMin: AUTO_IGNITE_TEMP,
     },
   ],
   update: updateAluminumPowder,

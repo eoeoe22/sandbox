@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 
 // Solid fuel: a static, rigid timber (like Wall/Stone it just sits — Solid has
 // no phase-default movement) that you build structures from and watch burn
@@ -12,12 +12,11 @@ import { tryBurn, type Combustible } from './combustion';
 // cell has a chance to leave a fleck of Ash behind (see combustion.ts) instead
 // of just puffing into Fire, so a burnt-down beam leaves real ash residue. Just
 // burns; never detonates. See combustion.ts for the shared model.
-const SPEC: Combustible = { burnChance: 0.06, autoIgniteTemp: 500, ashChance: 0.15 };
 
 function updateWood(x: number, y: number, sim: SimContext): void {
   // Solid: no fall/flow, so combustion is the only behavior — if it doesn't
   // ignite this tick the cell simply stays put.
-  tryBurn(x, y, sim, SPEC);
+  tryBurn(x, y, sim);
 }
 
 export const WOOD = register({
@@ -35,7 +34,7 @@ export const WOOD = register({
   // no longer needs a drawing to have a surface.
   colorVary: 16,
   density: 1000,
-  combustible: true,
+  combustion: { burnChance: 0.06, autoIgniteTemp: 500, ashChance: 0.15 },
   category: 'fire',
   thermal: { conductivity: 0.2 },
   update: updateWood,

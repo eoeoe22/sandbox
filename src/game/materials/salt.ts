@@ -7,6 +7,7 @@ import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { MOLTEN_SALT, SALT_MELT_TEMP } from './moltensalt';
+import { tryPhaseChange } from './phasechange';
 
 // Powder: falls and piles like sand (inherits updatePowder), but a Water
 // neighbor has a chance to dissolve it each tick — self vanishes, the water
@@ -28,12 +29,7 @@ const DISSOLVE_CHANCE = 0.04;
 export const SALT_WATER_RATIO = 8;
 
 function updateSalt(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= SALT_MELT_TEMP) {
-    // Heated past its melting point → Molten Salt (용융염). In-place `set` keeps
-    // the (now high) temperature so it reads as molten instead of re-freezing.
-    sim.set(x, y, MOLTEN_SALT.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;
@@ -92,5 +88,7 @@ export const SALT = register({
   // Interlocking crystals grip, so a salt pile holds a fairly steep cone (마찰).
   friction: 0.38,
   thermal: { conductivity: 0.35 },
+  // 녹는점 → 용융염.
+  phaseChange: { at: () => SALT_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_SALT.id },
   update: updateSalt,
 });
