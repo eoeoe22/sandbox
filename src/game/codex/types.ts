@@ -32,7 +32,7 @@ export type StatUnit =
 
 /** One row of a material's numeric table. */
 export interface CodexStat {
-  /** i18n term key (see i18n/codex.ko.ts). */
+  /** i18n term key (see i18n/codexTerms.ts). */
   key: string;
   value: number;
   unit: StatUnit;
@@ -42,7 +42,7 @@ export interface CodexStat {
 
 /** One of a material's non-numeric traits, rendered as a badge and a card. */
 export interface CodexTrait {
-  /** i18n term key (see i18n/codex.ko.ts). */
+  /** i18n term key (see i18n/codexTerms.ts). */
   key: string;
   /** For a trait with several forms (화재 등급 A/B/D), which one this is. The
    *  term key for the text is `${key}.${variant}`. */
@@ -89,7 +89,7 @@ export interface ObjectCodexEntry {
 
 /** The words for one codex term — a stat row's heading or a trait card. Keyed by
  *  the spec's `key` (a trait with a `variant` looks up `${key}.${variant}`) in
- *  i18n/codex.ko.ts / codex.en.ts. */
+ *  i18n/codexTerms.ts, where both locales sit under that one key. */
 export interface CodexTerm {
   /** Short heading: the table's row label, the badge's text, the card's title. */
   label: string;

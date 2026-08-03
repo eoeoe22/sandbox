@@ -375,8 +375,8 @@ export const en = {
   },
 
   // --- Material codex (/guide) ---
-  // The prose (descriptions, trait vocabulary) lives in codex.en.ts; this is
-  // only the page's own furniture.
+  // The prose lives elsewhere — descriptions in codex.en.ts, tag names and
+  // explanations in codexTerms.ts. This is only the page's own furniture.
   codex: {
     title: 'Material Codex',
     subtitle: 'Everything in this world',

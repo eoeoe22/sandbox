@@ -39,6 +39,37 @@ const runeStub = {
   },
 };
 
+// ── The bundle boundary the sandbox's weight depends on ────────────────────
+// `src/i18n/index.ts` is the barrel every island imports `t()` and
+// `materialName()` from, so anything it reaches is in the chunk the bundler
+// shares between them — and the codex's prose is ~48 KB of source that only the
+// guide page ever renders. It was moved out to `src/i18n/codex.ts` after a build
+// showed the sandbox and the start screen both downloading it; the comment that
+// claimed the boundary had been false for as long as it existed, because nothing
+// checked. This checks: walk the barrel's import graph and fail if a text table
+// is in it. (Reaching it from an island directly would slip past — this pins the
+// mistake that actually happened, which is the barrel quietly growing.)
+const barrel = await build({
+  entryPoints: [join(__dirname, '..', 'src', 'i18n', 'index.ts')],
+  bundle: true,
+  write: false,
+  metafile: true,
+  format: 'esm',
+  plugins: [runeStub],
+  logLevel: 'warning',
+});
+const leaked = Object.keys(barrel.metafile.inputs).filter((p) =>
+  /src[\\/]i18n[\\/](codex\.(ko|en)|codexTerms)\.ts$/.test(p),
+);
+if (leaked.length > 0) {
+  console.log(
+    `FAIL  the shared i18n barrel must not reach the codex text tables — ${leaked.join(', ')}`,
+  );
+  console.log('\nImport them from src/i18n/codex.ts at the one place that renders them.');
+  process.exit(1);
+}
+console.log('PASS  the shared i18n barrel does not reach the codex text tables');
+
 await build({
   entryPoints: [join(__dirname, 'codex.ts')],
   bundle: true,

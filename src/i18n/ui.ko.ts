@@ -372,7 +372,8 @@ export const ko = {
   },
 
   // --- 물질 도감 (/guide) ---
-  // 본문(물질 설명·특성 용어)은 codex.ko.ts 에 있다. 여기는 페이지 골격 문구만.
+  // 본문은 여기가 아니다 — 물질 설명은 codex.ko.ts, 태그 이름·설명은 codexTerms.ts.
+  // 여기는 페이지 골격 문구만.
   codex: {
     title: '물질 도감',
     subtitle: '이 세계에 있는 모든 것',

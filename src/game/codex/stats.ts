@@ -143,12 +143,6 @@ export const STAT_SPECS: readonly StatSpec[] = [
     read: (m) => (m.destructivePower === undefined ? undefined : { value: m.destructivePower }),
   },
   {
-    key: 'durability',
-    unit: 'number',
-    fields: ['durability'],
-    read: (m) => (m.durability === undefined ? undefined : { value: m.durability }),
-  },
-  {
     key: 'shockDeathChance',
     unit: 'chance',
     fields: ['shockDeathChance'],

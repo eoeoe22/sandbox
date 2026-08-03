@@ -19,10 +19,10 @@
     materialName,
     objectLabel,
     categoryLabel,
-    materialDescription,
-    objectDescription,
-    codexTerm,
   } from '../i18n';
+  // Not from '../i18n': the codex prose is imported here and only here, so it
+  // stays out of the chunk the sandbox's islands share. See i18n/codex.ts.
+  import { materialDescription, objectDescription, codexTerm } from '../i18n/codex';
   import type { ObjectKind } from '../state/store';
   import Modal from './Modal.svelte';
 
