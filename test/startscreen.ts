@@ -14,6 +14,8 @@
 //   · the drain that keeps a walled world from filling up solid and freezing;
 //   · the click roulette: hold keeps one kind, release advances, and no kind
 //     repeats until every kind has been used once (the shuffle-bag rule);
+//   · the press/tick seam: press() stamps off-clock, so the tick landing right
+//     after it must skip or the first instant of every press is double density;
 //   · what a held click actually makes — real material, real Fire (hot), and a
 //     real Woofer shockwave that shoves loose powder without creating matter.
 //
@@ -215,7 +217,22 @@ const H = 202;
     world.release();
   }
   const held = world.currentKind!;
+
+  // press() stamps immediately (so a tap shorter than a tick still does
+  // something), and tick() stamps once per tick while held. Those two must not
+  // both fire for the same instant: the first tick after a press has to skip,
+  // or the opening ~33ms of every press comes out at double density. Counted
+  // per tick rather than in aggregate — an aggregate check passes either way.
   world.press(W >> 1, 30);
+  const atPress = count(world.grid, held.id);
+  world.tick();
+  const afterTick1 = count(world.grid, held.id);
+  world.tick();
+  const afterTick2 = count(world.grid, held.id);
+  check('누름 즉시 한 번 찍힌다', atPress > 10, `${atPress}칸`);
+  check('그 직후 첫 틱은 두 번 찍지 않는다', afterTick1 === atPress, `${atPress} → ${afterTick1} (+${afterTick1 - atPress})`);
+  check('그 다음 틱부터 다시 찍는다', afterTick2 > afterTick1, `${afterTick1} → ${afterTick2}`);
+
   for (let i = 0; i < 12; i++) world.tick();
   check('누르고 있으면 계속 나온다', count(world.grid, held.id) > 20, `${held.name} ${count(world.grid, held.id)}칸`);
   check('누르는 동안에는 종류가 안 바뀐다', world.currentKind === held, kindName(world.currentKind));

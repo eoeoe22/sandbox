@@ -9,7 +9,8 @@
   import { onMount } from 'svelte';
   import { CanvasRenderer } from '../game/render/CanvasRenderer';
   import { SandboxLayout } from '../game/layout';
-  import { MAX_STEPS_PER_FRAME } from '../game/config';
+  import { MAX_STEPS_PER_FRAME, USE_WASM_HEAT } from '../game/config';
+  import { initHeatWasm } from '../game/engine/heatWasm';
   import {
     StartScreenWorld,
     START_BORDER_MODE,
@@ -28,6 +29,12 @@
     k === null ? t('tool.shock') : materialName(k.id, k.name);
 
   onMount(() => {
+    // Rust/WASM 열확산 커널을 배경에서 받아 둔다(본 게임의 Game.ts와 같은 호출).
+    // 열확산 패스는 dirty tile을 안 타는 전면 이중 루프라 이 배경 틱에서 가장
+    // 비싼 자리인데, 시작 화면만 이 호출이 없어서 JS 폴백에 묶여 있었다.
+    // 커널은 JS 경로와 비트 동일이고 못 받아 오면 조용히 JS로 되돌아간다.
+    if (USE_WASM_HEAT) void initHeatWasm();
+
     const layout = new SandboxLayout();
     layout.setCellScale(START_CELL_SCALE);
     layout.setViewport(canvasEl.clientWidth, canvasEl.clientHeight);

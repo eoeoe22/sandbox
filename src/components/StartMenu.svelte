@@ -5,6 +5,7 @@
   // 배경의 샌드박스(StartScreenSandbox)는 이 컴포넌트 아래에 깔려 있으므로,
   // 버튼이 아닌 여백은 pointer-events를 흘려보내 그대로 눌러 그릴 수 있게 한다.
 
+  import Modal from './Modal.svelte';
   import PresetGallery from './PresetGallery.svelte';
 
   let presetsOpen = $state(false);
@@ -21,16 +22,7 @@
     if (!SnapshotModal) SnapshotModal = (await import('./SnapshotManagerModal.svelte')).default;
     snapshotsOpen = true;
   }
-
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && presetsOpen) {
-      e.preventDefault();
-      presetsOpen = false;
-    }
-  }
 </script>
-
-<svelte:window onkeydown={onKeydown} />
 
 <nav class="menu" aria-label="시작 메뉴">
   <a class="item primary" href="/sandbox">
@@ -54,23 +46,20 @@
   </a>
 </nav>
 
-{#if presetsOpen}
-  <!-- 프리셋 카드 갤러리. 시작 화면 자체는 한 화면에 담고, 목록은 여기로 뺀다. -->
-  <div
-    class="scrim"
-    role="presentation"
-    onpointerdown={(e) => {
-      if (e.target === e.currentTarget) presetsOpen = false;
-    }}
-  >
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="프리셋 맵">
-      <button class="close" type="button" onclick={() => (presetsOpen = false)} aria-label="닫기">
-        <i class="bi bi-x-lg" aria-hidden="true"></i>
-      </button>
-      <PresetGallery currentLocale="ko" />
-    </div>
-  </div>
-{/if}
+<!-- 프리셋 카드 갤러리. 시작 화면 자체는 한 화면에 담고, 목록은 여기로 뺀다.
+     스크림을 직접 만들지 않고 공용 Modal을 쓰는 이유는 포커스 때문이다 — 열 때
+     안으로 옮기고, Tab을 안에 가두고, 닫을 때 연 버튼으로 되돌리는 것까지
+     Modal이 이미 한다(`aria-modal`을 주장하려면 그게 있어야 한다). Escape 스택과
+     <body> 포탈도 같이 딸려 온다. 카드 격자라 기본 340px보다 넓게 잡는다. -->
+<Modal
+  open={presetsOpen}
+  title="프리셋 맵"
+  icon="bi-grid-1x2-fill"
+  width={1040}
+  onclose={() => (presetsOpen = false)}
+>
+  <PresetGallery currentLocale="ko" />
+</Modal>
 
 {#if SnapshotModal}
   <SnapshotModal isOpen={snapshotsOpen} onClose={() => (snapshotsOpen = false)} />
@@ -143,55 +132,6 @@
   .item.primary:focus-visible {
     filter: brightness(1.1);
     transform: translateX(3px);
-  }
-
-  /* --- 프리셋 시트 --- */
-
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-    background: rgba(4, 4, 8, 0.72);
-    backdrop-filter: blur(6px);
-    pointer-events: auto;
-  }
-
-  .sheet {
-    position: relative;
-    width: min(1100px, 100%);
-    max-height: min(88vh, 88dvh);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 1rem;
-    background: rgba(12, 12, 18, 0.96);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-    color: #f1f5f9;
-  }
-
-  .close {
-    position: absolute;
-    top: 0.9rem;
-    right: 0.9rem;
-    z-index: 1;
-    width: 32px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 0.5rem;
-    background: rgba(24, 24, 32, 0.9);
-    color: #e2e8f0;
-    cursor: pointer;
-  }
-
-  .close:hover {
-    border-color: rgba(129, 140, 248, 0.6);
   }
 
   @media (max-width: 480px) {

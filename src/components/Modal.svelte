@@ -22,11 +22,18 @@
     icon?: string;
     /** Called when the user dismisses the modal (backdrop / × / Escape). */
     onclose: () => void;
+    /**
+     * Dialog width in CSS px. Defaults to the compact 340 the toolbar dialogs
+     * use; a content-heavy dialog (the start screen's preset gallery) asks for
+     * more. `max-width: 100%` still applies, so a wide value degrades to the
+     * viewport on a phone rather than overflowing it.
+     */
+    width?: number;
     /** Body content. */
     children: Snippet;
   }
 
-  let { open, title, icon, onclose, children }: Props = $props();
+  let { open, title, icon, onclose, width = 340, children }: Props = $props();
 
 
   let dialogEl = $state<HTMLDivElement | null>(null);
@@ -131,7 +138,15 @@
       if (e.target === e.currentTarget) onclose();
     }}
   >
-    <div class="modal" role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={dialogEl}>
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabindex="-1"
+      style:width="{width}px"
+      bind:this={dialogEl}
+    >
       <div class="modal-head">
         {#if icon}<i class={`bi ${icon}`} aria-hidden="true"></i>{/if}
         <span class="modal-title">{title}</span>
@@ -162,6 +177,7 @@
   .modal {
     display: flex;
     flex-direction: column;
+    /* Overridden per instance by the `width` prop's inline style. */
     width: 340px;
     max-width: 100%;
     max-height: min(86vh, 86dvh);

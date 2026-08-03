@@ -105,6 +105,13 @@ export class StartScreenWorld {
   private brushY = 0;
   /** 충격파가 마지막으로 터진 틱. -1이면 박자와 무관하게 즉시 한 번 터진다. */
   private lastShockTick = -1;
+  /**
+   * `press()`가 이미 한 번 찍었다는 표시. 누름은 포인터 이벤트라 틱과 무관한
+   * 시점에 오는데, 그 직후 도착한 첫 틱이 또 찍으면 **같은 33ms 안에 두 번**
+   * 찍혀 누르는 첫 순간만 유독 진하게 나온다. 그 첫 틱은 이 표시를 보고 건너뛴다
+   * (PointerPainter의 `paintedThisFrame`과 같은 규칙).
+   */
+  private stampedBeforeTick = false;
 
   private drainPerTick = 0;
   private sinceSample = DRAIN_SAMPLE_TICKS;
@@ -195,6 +202,7 @@ export class StartScreenWorld {
     this.pressed = true;
     this.lastShockTick = -1;
     this.stamp();
+    this.stampedBeforeTick = true;
   }
 
   /** 누른 채로 끌기. 격자 밖으로 나가면 마지막 칸을 유지한다. */
@@ -232,7 +240,11 @@ export class StartScreenWorld {
       }
     }
 
-    if (this.pressed) this.stamp();
+    if (this.pressed) {
+      // 누름 직후의 첫 틱은 `press()`가 이미 찍은 몫이라 건너뛴다.
+      if (this.stampedBeforeTick) this.stampedBeforeTick = false;
+      else this.stamp();
+    }
 
     if (++this.sinceSample >= DRAIN_SAMPLE_TICKS) {
       this.sinceSample = 0;
