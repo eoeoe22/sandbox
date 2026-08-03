@@ -31,11 +31,13 @@ import { LASER } from '../src/game/materials/laser';
 import { PUMP } from '../src/game/materials/pump';
 import { ELECTROMAGNET } from '../src/game/materials/electromagnet';
 import { WOOFER } from '../src/game/materials/woofer';
+import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../src/game/materials/conveyor';
 import { WATER } from '../src/game/materials/water';
 import { SALTWATER } from '../src/game/materials/saltwater';
 import { ACID } from '../src/game/materials/acid';
 import { IRON } from '../src/game/materials/iron';
 import { STONE } from '../src/game/materials/stone';
+import { SAND } from '../src/game/materials/sand';
 import { WIRE } from '../src/game/materials/wire';
 import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
 import { TURBINE } from '../src/game/materials/turbine';
@@ -216,8 +218,8 @@ check('iron runs the whole wire (zero loss)', ironReach > 150, `${ironReach} cel
 // regression to any per-flood cell limit shows up as "powered < total".
 
 /** One device kind's probe: how to tell an activated cell of it apart from an
- *  idle one. Fan/Laser pack a direction into the low 2 bits and count down in the
- *  rest; Pump/Electromagnet use the whole aux as the countdown; the Woofer stamps
+ *  idle one. Fan/Laser/Conveyor pack a direction into the low 2 bits and count down
+ *  in the rest; Pump/Electromagnet use the whole aux as the countdown; the Woofer stamps
  *  no cell state at all (it fires a shockwave and is done), so its activation is
  *  read from the body-flood memo the pulse filled. Unpacked with literals rather
  *  than by importing each material's constants, same reasoning as the class-field
@@ -233,6 +235,7 @@ const wholeAux = (grid: Grid, x: number, y: number): number => grid.getAux(x, y)
 const DEVICE_PROBES: DeviceProbe[] = [
   { mat: FAN, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
   { mat: LASER, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
+  { mat: CONVEYOR, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
   { mat: PUMP, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
   { mat: ELECTROMAGNET, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
   {
@@ -368,6 +371,365 @@ function pulseCorner(
     'a battery on one corner spins up a 900-cell fan wall entirely',
     powered === side * side,
     `${powered}/${side * side} cells`,
+  );
+}
+
+// --- 4c. Conveyor: 전원 공급시에만 작동 ----------------------------------------
+// The belt is an appliance, not a slope: an unpowered one is an inert floor and
+// carries nothing at all. The activation contract itself is covered by the probe
+// above (a corner contact runs the whole run, at any strength); what's checked
+// here is the *consequence* — that the cargo moves if and only if the belt has
+// power, in the direction its aux says, and that pulling the power actually stops
+// it rather than leaving the load coasting forever.
+//
+// The controls are the point: the unpowered run is the same scene minus the
+// battery, so "the sand did not move" can't be a scene that never worked. And the
+// coast is measured against POWERED_TICKS rather than merely asserted to end,
+// because a belt that quietly re-armed itself would still eventually stop when the
+// grain ran off the end of a short belt.
+
+/** A long belt with one sand grain resting on it, optionally with a Battery
+ *  clipped to the left end. Returns the grain's column after `ticks`. */
+function beltRun(
+  dir: number,
+  powered: boolean,
+  ticks: number,
+): { grid: Grid; sim: Simulation; sand: () => number } {
+  const grid = new Grid(200, 12);
+  const sim = new Simulation(grid);
+  for (let x = 2; x < 190; x++) {
+    grid.set(x, 8, CONVEYOR.id);
+    grid.setAux(x, 8, dir);
+  }
+  grid.set(95, 7, SAND.id); // mid-run, far from either end
+  if (powered) grid.set(2, 7, BATTERY.id);
+  const sand = (): number => {
+    for (let y = 0; y < grid.height; y++)
+      for (let x = 0; x < grid.width; x++) if (grid.get(x, y) === SAND.id) return x;
+    return -1;
+  };
+  for (let t = 0; t < ticks; t++) sim.step();
+  return { grid, sim, sand };
+}
+{
+  const dead = beltRun(CONVEYOR_RIGHT, false, 60);
+  check(
+    'an unpowered Conveyor carries nothing — it is an inert floor',
+    dead.sand() === 95,
+    `sand at ${dead.sand()}, placed at 95`,
+  );
+  const live = beltRun(CONVEYOR_RIGHT, true, 60);
+  check(
+    '…while the same belt on a battery carries it (the check can fail)',
+    live.sand() > 95,
+    `sand at ${live.sand()}, placed at 95`,
+  );
+  const left = beltRun(CONVEYOR_LEFT, true, 60);
+  check(
+    'a powered belt drawn leftward carries the other way',
+    left.sand() < 95,
+    `sand at ${left.sand()}, placed at 95`,
+  );
+
+  // Cutting power stops it: the countdown each pulse refreshes runs out, and no
+  // cell is left running. 24 is the belt's POWERED_TICKS, read here as a bound on
+  // how far one last pulse may carry the load, not restated as a constant.
+  const cut = beltRun(CONVEYOR_RIGHT, true, 30);
+  const atCut = cut.sand();
+  cut.grid.set(2, 7, 0); // pull the battery
+  for (let t = 0; t < 200; t++) cut.sim.step();
+  let stillRunning = 0;
+  for (let x = 2; x < 190; x++) if (cut.grid.getAux(x, 8) >> 2 > 0) stillRunning++;
+  check(
+    'pulling the power stops the belt within one countdown',
+    cut.sand() - atCut <= 24 && stillRunning === 0,
+    `coasted ${cut.sand() - atCut} cells (≤24), ${stillRunning} cells still running after 200 ticks`,
+  );
+  /** The distinct values of `read` across every cell of a 188-cell belt run. */
+  const alongBelt = (grid: Grid, read: (aux: number) => number): Set<number> => {
+    const seen = new Set<number>();
+    for (let x = 2; x < 190; x++) seen.add(read(grid.getAux(x, 8)));
+    return seen;
+  };
+  const countdowns = alongBelt(live.grid, (aux) => aux >> 2);
+  check(
+    '…and the run holds one countdown across the whole body, not a gradient',
+    countdowns.size === 1,
+    `${countdowns.size} distinct countdowns along a 188-cell belt`,
+  );
+  const dirs = alongBelt(left.grid, (aux) => aux & 0b11);
+  check(
+    '…while every cell keeps its own direction bits through it',
+    dirs.size === 1 && dirs.has(CONVEYOR_LEFT),
+    `dir bits along the belt: [${[...dirs].join(', ')}] (CONVEYOR_LEFT ${CONVEYOR_LEFT})`,
+  );
+}
+
+// --- 4d. Conveyor: the staircase is ONE machine (8-connected flood) ------------
+// A belt's headline shape is the ascending staircase — steps offset by one cell in
+// BOTH axes, so consecutive steps touch only at their corners. Every other device
+// is a filled block, which is 4-connected anyway; this one is not, and flooding it
+// 4-connected quietly turns a staircase into a heap of one-step machines: a
+// battery at the foot powers the first step, the rest of the climb stands dead,
+// and a grain rides up exactly one step and stops. That is what `diagonal` in
+// floodDeviceBody exists for.
+//
+// The control is the same scene with every belt cell force-powered by hand,
+// bypassing the flood entirely. Measuring against it rather than against a
+// hard-coded coordinate is the point: it says "one battery does what powering
+// every cell by hand does", which is exactly the property that broke, and it can't
+// be satisfied by a staircase that simply doesn't carry.
+{
+  const W = 34;
+  const H = 18;
+  const RUN = 3; // belt cells per step
+
+  /** A staircase belt rising to the right, one grain of sand set on its foot.
+   *  `force` powers every belt cell by hand each tick instead of using a battery. */
+  const staircase = (force: boolean): { x: number; y: number } => {
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    let by = H - 2;
+    const belts: Array<[number, number]> = [];
+    for (let x = 1; x < W - 1; x++) {
+      grid.set(x, by, CONVEYOR.id);
+      grid.setAux(x, by, CONVEYOR_RIGHT);
+      belts.push([x, by]);
+      for (let y = by + 1; y < H; y++) grid.set(x, y, WALL.id);
+      if ((x - 1) % RUN === RUN - 1 && by > 2) by--;
+    }
+    for (let y = 0; y < H; y++) {
+      grid.set(0, y, WALL.id);
+      grid.set(W - 1, y, WALL.id);
+    }
+    if (!force) grid.set(1, H - 3, BATTERY.id); // one terminal, at the foot
+    grid.set(3, H - 3, SAND.id);
+    for (let t = 0; t < 300; t++) {
+      if (force) for (const [bx, by2] of belts) grid.setAux(bx, by2, (24 << 2) | CONVEYOR_RIGHT);
+      sim.step();
+    }
+    let fx = -1;
+    let fy = H;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        if (grid.get(x, y) === SAND.id) {
+          if (x > fx) fx = x;
+          if (y < fy) fy = y;
+        }
+    return { x: fx, y: fy };
+  };
+
+  const wired = staircase(false);
+  const forced = staircase(true);
+  check(
+    'one battery at the foot powers the whole staircase belt, not just its first step',
+    wired.x === forced.x && wired.y === forced.y,
+    `battery carried the grain to (${wired.x},${wired.y}) vs (${forced.x},${forced.y}) with every cell forced on`,
+  );
+  check(
+    '…and that staircase really does climb (the check can fail)',
+    forced.x > 25 && forced.y < H - 6,
+    `forced-power grain ended at (${forced.x},${forced.y}) from (3,${H - 3})`,
+  );
+}
+
+// --- 4e. Conveyor: carries a BODY of material, not a skimmed sheet -------------
+// 모래 더미 아래의 컨베이어가 모래를 아주 얇게 수송하던 문제. Two things caused it:
+// the belt refused to move anything at all while loose matter sat directly ahead
+// (so under a pile only the single cell at the toe of the repose slope ever ran),
+// and the stack loop stopped at the first cell that couldn't move. Now every cell
+// of the column that has room shifts forward, up to LIFT_HEIGHT.
+//
+// Measured as the steady-state thickness of the moving layer well downstream of a
+// silo that is re-stamped full every tick — a drained-pile scene can't show this,
+// because given enough ticks a thin sheet delivers the same total.
+{
+  const W = 200;
+  const H = 60;
+  const BELT_Y = 50;
+  const SILO_X = 6;
+  const SILO_W = 6;
+
+  /** Steady-state depth of the load moving along the open belt, fed by a silo
+   *  `silo` cells tall whose outlet is `gate` cells high. */
+  const movingLayer = (silo: number, gate: number): number => {
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    for (let x = 1; x < W - 1; x++) {
+      grid.set(x, BELT_Y, CONVEYOR.id);
+      grid.setAux(x, BELT_Y, CONVEYOR_RIGHT);
+    }
+    for (let y = 0; y < H; y++) {
+      grid.set(0, y, WALL.id);
+      grid.set(W - 1, y, WALL.id);
+    }
+    for (let y = BELT_Y + 1; y < H; y++) for (let x = 0; x < W; x++) grid.set(x, y, WALL.id);
+    for (let dy = 0; dy < silo + 8; dy++) {
+      grid.set(SILO_X - 1, BELT_Y - 1 - dy, WALL.id);
+      if (dy >= gate) grid.set(SILO_X + SILO_W, BELT_Y - 1 - dy, WALL.id);
+    }
+    grid.set(1, BELT_Y - 1, BATTERY.id);
+    const refill = (): void => {
+      for (let dy = 0; dy < silo; dy++)
+        for (let dx = 0; dx < SILO_W; dx++) {
+          const cx = SILO_X + dx;
+          const cy = BELT_Y - 1 - dy;
+          if (grid.get(cx, cy) === 0) grid.set(cx, cy, SAND.id);
+        }
+    };
+    for (let t = 0; t < 300; t++) {
+      refill();
+      sim.step();
+    }
+    let sum = 0;
+    let n = 0;
+    for (let t = 0; t < 300; t++) {
+      refill();
+      sim.step();
+      if (t % 10 === 0) {
+        for (let x = 100; x < 160; x++) {
+          let c = 0;
+          for (let y = 0; y < BELT_Y; y++) if (grid.get(x, y) === SAND.id) c++;
+          sum += c;
+          n++;
+        }
+      }
+    }
+    return sum / n;
+  };
+
+  // A deep silo with a matching outlet delivers a deep slab. Before the fix this
+  // sat at ~9 no matter how deep the load was — LIFT_HEIGHT 10 was the ceiling —
+  // and before *that* the belt only nibbled the toe of an open pile at 1–3 cells.
+  const deep = movingLayer(40, 40);
+  check(
+    'a belt under a deep silo moves a deep slab, not a thin sheet',
+    deep > 25,
+    `moving layer ${deep.toFixed(2)} cells thick (was ~9 with the old LIFT_HEIGHT cap)`,
+  );
+  // …and the depth genuinely tracks the load rather than being a new fixed number:
+  // a narrow outlet still meters the flow, which is what makes a gate a gate.
+  const metered = movingLayer(40, 6);
+  check(
+    '…while a narrow outlet still meters it (the check can fail)',
+    metered < deep / 3,
+    `gate 6 → ${metered.toFixed(2)} cells vs gate 40 → ${deep.toFixed(2)}`,
+  );
+}
+
+// --- 4e2. Conveyor: a U-shaped belt ferries its load out instead of trapping it
+// The shape a player builds without thinking: descend into a dip, run flat along
+// the bottom, climb out the far side. Sand poured into the dip used to ride down
+// the near arm fine and then STAY there, with a one-cell layer trickling up the far
+// arm — 432 cells poured, 148 out, 108 permanently stuck in the bottom.
+//
+// The cause is ordering, not the carry rule. A bedded cell can only step forward
+// into a landing the cell ahead has already vacated, so a run has to resolve
+// downstream-first. The grid scan visits rows bottom-to-top, which is accidentally
+// right on a descending belt and exactly backwards on an ascending one — hence a U
+// draining in and not out. The belt now walks its own run (see conveyor.ts).
+//
+// This is the check that shape regressions land on: it is deliberately phrased as
+// "the dip ends up EMPTY", which no amount of trickle satisfies inside the budget.
+{
+  const W = 110;
+  const H = 44;
+  const TOP = 6;
+  const DEPTH = 14; // steps down and back up
+  const STEP_RUN = 3; // belt cells per one-cell step — a gentle slope
+  const FLAT = 18; // cells along the bottom
+  const FILL = 24; // depth of sand poured into the dip
+
+  const grid = new Grid(W, H);
+  const sim = new Simulation(grid);
+  const belt: Array<[number, number]> = [];
+  let by = TOP;
+  let bx = 3;
+  for (let s = 0; s < DEPTH; s++)
+    for (let i = 0; i < STEP_RUN; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === STEP_RUN - 1) by++;
+    }
+  const flatFrom = bx;
+  for (let i = 0; i < FLAT; i++, bx++) belt.push([bx, by]);
+  const bottomY = by;
+  for (let s = 0; s < DEPTH; s++)
+    for (let i = 0; i < STEP_RUN; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === STEP_RUN - 1) by--;
+    }
+  for (const [cx, cy] of belt) {
+    grid.set(cx, cy, CONVEYOR.id);
+    grid.setAux(cx, cy, CONVEYOR_RIGHT);
+    for (let yy = cy + 1; yy < H; yy++) grid.set(cx, yy, WALL.id);
+  }
+  for (let y = 0; y < H; y++) {
+    grid.set(0, y, WALL.id);
+    grid.set(W - 1, y, WALL.id);
+  }
+  grid.set(2, TOP, BATTERY.id); // one terminal, on the near rim
+  for (let dy = 0; dy < FILL; dy++)
+    for (let dx = 0; dx < FLAT; dx++) grid.set(flatFrom + dx, bottomY - 1 - dy, SAND.id);
+
+  const inDip = (): number => {
+    let n = 0;
+    for (let y = 0; y < H; y++)
+      for (let x = flatFrom; x < flatFrom + FLAT; x++) if (grid.get(x, y) === SAND.id) n++;
+    return n;
+  };
+  const poured = inDip();
+  for (let t = 0; t < 800; t++) sim.step();
+  check(
+    'a U-shaped belt carries its load up and out instead of trapping it in the dip',
+    inDip() === 0,
+    `${inDip()} of ${poured} cells still in the bottom after 800 ticks`,
+  );
+  // The load has to have gone UP and over the far rim, not merely spread along the
+  // bottom of the dip — otherwise "the dip is empty" could be satisfied by sand
+  // slumping sideways past the sampled columns.
+  let beyond = 0;
+  for (let y = 0; y < H; y++) for (let x = bx - 2; x < W; x++) if (grid.get(x, y) === SAND.id) beyond++;
+  check(
+    '…and it really climbed out the far side (the check can fail)',
+    beyond > poured / 3,
+    `${beyond} of ${poured} cells made it past the far rim`,
+  );
+}
+
+// --- 4f. Conveyor: an incompressible load still can't be pushed ---------------
+// The looser stack rule must not turn into "matter can be squeezed". A belt buried
+// under a load that fills its channel wall to wall has nowhere to put anything, so
+// every landing is occupied and nothing may move — the guard is that a target cell
+// must be EMPTY, and this is the scene that would catch it being dropped.
+{
+  const grid = new Grid(30, 30);
+  const sim = new Simulation(grid);
+  for (let x = 0; x < 30; x++) {
+    grid.set(x, 20, CONVEYOR.id);
+    grid.setAux(x, 20, CONVEYOR_RIGHT);
+    for (let y = 21; y < 30; y++) grid.set(x, y, WALL.id);
+  }
+  for (let y = 0; y < 30; y++) {
+    grid.set(0, y, WALL.id);
+    grid.set(29, y, WALL.id);
+  }
+  for (let y = 5; y < 20; y++) for (let x = 1; x < 29; x++) grid.set(x, y, SAND.id);
+  grid.set(1, 4, BATTERY.id);
+  const profile = (): string => {
+    let s = '';
+    for (let x = 1; x < 29; x++) {
+      let c = 0;
+      for (let y = 0; y < 20; y++) if (grid.get(x, y) === SAND.id) c++;
+      s += `${c},`;
+    }
+    return s;
+  };
+  const before = profile();
+  for (let t = 0; t < 100; t++) sim.step();
+  check(
+    'a sealed, wall-to-wall load is not compressed or shifted by the belt under it',
+    profile() === before,
+    `profile changed: ${before} → ${profile()}`,
   );
 }
 

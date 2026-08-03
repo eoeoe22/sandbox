@@ -32,7 +32,7 @@
 // Run: `node test/run-acidmetal.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
-import { getMaterial } from '../src/game/materials/registry';
+import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import { ACID } from '../src/game/materials/acid';
 import { HYDROGEN } from '../src/game/materials/hydrogen';
 import { IRON } from '../src/game/materials/iron';
@@ -173,11 +173,37 @@ function bath(
     check(`${name} dissolves in acid without any hydrogen`, r.maxH2 === 0, `${r.maxH2} cells`);
   }
   // Nichrome is the other kind of "no": acidResistant, so acid can't even eat it.
+  // It is one of exactly two electric materials that keep that flag (see the
+  // roster check below) — a 고증 call, since the chromium alloy really does
+  // passivate, and it is what makes a wire run through an acid bath possible.
   const nichrome = bath(NICHROME.id);
   check(
     'acid-resistant Nichrome neither dissolves nor fizzes',
     nichrome.maxH2 === 0 && nichrome.left === 40,
     `${nichrome.left}/40 cells left`,
+  );
+}
+
+// 3b. The 전기 카테고리 roster: exactly two materials resist acid, and both do it
+//     for a reason in the material itself rather than because they are electric.
+//     **Nichrome** is a chromium alloy that genuinely passivates — that is why a
+//     wire run through an acid bath is a legal build. **Solar Panel** likewise
+//     keeps it. Everything else in the category — the machines (Fan/Laser/Pump/
+//     Electromagnet/Conveyor/Woofer), the other wiring (Wire), the sources (both
+//     batteries, Turbine) — is ordinary hardware an acid pool eats through, so a
+//     circuit near acid has to be shielded or routed, not merely built out of
+//     machines. Scanned off the registry rather than restated by hand, so adding
+//     an electric material with `acidResistant: true` fails here instead of
+//     quietly widening the exemption back out.
+{
+  const resistant = allMaterials()
+    .filter((m) => m.category === 'electric' && m.acidResistant)
+    .map((m) => m.name)
+    .sort();
+  check(
+    'only Nichrome and Solar Panel resist acid among the electric materials',
+    resistant.join() === 'Nichrome,Solar Panel',
+    `[${resistant.join(', ')}]`,
   );
 }
 

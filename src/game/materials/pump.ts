@@ -313,8 +313,11 @@ export const PUMP = register({
   // than a Mesh-style half-density filter weave.
   porous: true,
   porousPowder: true,
-  // Doesn't burn or corrode away underfoot, like the other electric machines.
-  acidResistant: true,
+  // 산에 녹는다: the electric *machines* carry no acid resistance — they are
+  // ordinary hardware an acid pool eats through, so a run through acid has to be
+  // shielded or routed around. The two holdouts in the category earn it from the
+  // material rather than from being electric (Nichrome's chromium alloy really
+  // does passivate; Solar Panel likewise) — see test/acidmetal.ts's roster check.
   thermal: { conductivity: 0.3 },
   // One-way "outside → inside" electric sink (see the header): any pulse source
   // touching a face — Battery/LFP Battery/Turbine direct, or a relayed Spark —

@@ -220,9 +220,13 @@ Petroleum Vapor의 전도도는 **0.08**로 매우 낮다. 생성 온도 110°�
   Acid Slime 셋이 각자 복사해 둔 `isCorrodible`에서 다 같이 읽으므로** 액체·증기·
   슬라임 어느 쪽도 수지를 못 먹는다.
 
-  **재미 쪽 결론은 밀도가 정한다.** 게임 안 내산 물질 14종 중 나머지 13종은 전부
-  밀도 1000이다(Wall·Glass·Broken Glass·Diamond·Clone·Void·Nichrome·Conveyor,
-  그리고 전기 가전 5종). 2.75인 이 수지만이 **산(3)보다 가벼운 유일한 내산 재료**라,
+  **재미 쪽 결론은 밀도가 정한다.** 게임 안 내산 물질 9종 중 나머지 8종은 전부
+  밀도 1000이다(Wall·Glass·Broken Glass·Diamond·Clone·Void·Nichrome·Solar Panel).
+  로스터가 14종에서 줄어든 것은 **전기 *기계*의 내산성을 걷어냈기** 때문이다
+  (Conveyor·Fan·Laser·Pump·Electromagnet) — 산 웅덩이는 이제 회로가 피해 가거나
+  막아야 하는 위험이지, 기계를 그냥 담가 두면 되는 것이 아니다. 배선재 Nichrome과
+  Solar Panel은 **재료 자체의 고증**으로 남았다.
+  2.75인 이 수지만이 **산(3)보다 가벼운 유일한 내산 재료**라,
   웅덩이에 부으면 가라앉지 않고 **떠서 뚜껑이 되고**, 가루라서 쌓으면 산을 막는 둑이
   된다. Broken Glass도 내산 가루지만 밀도 1000이라 바닥으로 간다.
 

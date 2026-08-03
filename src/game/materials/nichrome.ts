@@ -25,7 +25,11 @@ import { FIRE } from './fire';
 //
 // As befits the corrosion-resistant alloy, it's `acidResistant` — the one
 // wiring material acid can't eat through (Iron dissolves), so a wire run
-// through an acid bath keeps conducting.
+// through an acid bath keeps conducting. That is a 고증 call, and it is why
+// Nichrome is the one exception to the 전기 category otherwise having lost its
+// acid resistance: the *machines* (Fan/Laser/Pump/Electromagnet/Conveyor) are
+// ordinary hardware acid eats, but a nichrome-chromium alloy genuinely does
+// passivate. Solar Panel is the other holdout (see solarpanel.ts).
 
 /** Heat one spark deposits into a nichrome cell as it passes (see spark.ts). */
 const NICHROME_JOULE_HEAT = 60;

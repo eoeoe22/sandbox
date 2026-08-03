@@ -826,6 +826,13 @@ export class CanvasRenderer implements Renderer {
     const chk2x2 = this.checker2x2;
     const batPat = this.batteryPattern;
     const arrow = this.arrow;
+    // Scroll offset for a powered Conveyor's tread, in cells (see the `arrow`
+    // branch below). Driven by the sim tick rather than by rendered frames — the
+    // belt carries its load exactly one cell per tick, so this makes the pattern
+    // and the cargo move at the same speed instead of at whatever rate the display
+    // happens to refresh at (unlike the purely decorative wind streaks, which take
+    // `windPhase`).
+    const beltPhase = grid.tick;
     const windArrow = this.windArrow;
     const triArrow = this.triArrow;
     const coilPattern = this.coilPattern;
@@ -1030,11 +1037,32 @@ export class CanvasRenderer implements Renderer {
         // its aux byte says it runs, so the belt's travel direction is visible. The
         // chevron is a period-4 tent: over four rows the lit column steps 0,1,1,0
         // (a '>' whose tip is the middle rows) — mirrored for a left-running belt.
+        // The direction lives in the low 2 bits; the rest is the powered countdown
+        // (see conveyor.ts), which is why the aux is masked rather than compared.
+        //
+        // **The tread scrolls while the belt is powered** (단순히 무늬가 방향으로
+        // 한칸씩 전진): the sampled column is offset by the sim tick, so the whole
+        // pattern steps exactly one cell per tick along the travel direction — the
+        // same speed the belt actually carries its load, which is what makes the
+        // animation read as the surface moving rather than as a blinking texture.
+        // An unpowered belt draws the static tent it always did.
+        //
+        // The clock is `beltPhase` (the sim tick), not each cell's own countdown,
+        // because the countdown is NOT uniform across a body: cells the scan
+        // reached before the pulse landed are a tick behind the ones it reached
+        // after, which would tear a visible seam across a long belt run at whatever
+        // cell the scan happened to be at. One clock for every belt in the world
+        // has no seam to tear, and two belts still scroll opposite ways because the
+        // offset is applied along each cell's own direction.
         const x = i % w;
         const y = (i / w) | 0;
+        const a = auxArr[i];
         const fold = y & 2 ? 3 - (y & 3) : y & 3; // y%4 → 0,1,1,0
-        const phase = x & 3; // x % 4
-        const on = auxArr[i] === 2 ? phase === 3 - fold : phase === fold;
+        const run = a >> 2 ? beltPhase : 0; // frozen unless powered
+        const on =
+          (a & 0b11) === 2
+            ? ((x + run) & 3) === 3 - fold // left-running: pattern steps -x
+            : ((x - run) & 3) === fold; //  right-running: pattern steps +x
         c = on ? latCol[id] : pal[id];
       } else if (windArrow[id]) {
         // A Laser draws a 4-directional chevron pointing the way it fires: the low
