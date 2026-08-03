@@ -3,11 +3,25 @@
 // 스크롤이 없고, 타이틀과 메뉴 한 줄기만 있다. 배경에서는 진짜 엔진이 혼자
 // 돌아간다(StartScreenSandbox) — 물질이 떨어지고 1초마다 불이나 충격파가 터진다.
 //
-// 타이틀/태그라인은 정적 HTML로 두고(첫 페인트·검색엔진), 상호작용이 필요한
-// 두 조각만 섬으로 띄운다.
+// 타이틀은 정적 HTML로 두고(첫 페인트·검색엔진), 상호작용이 필요한 조각만
+// 섬으로 띄운다.
 import Base from '../layouts/Base.astro';
 import StartScreenSandbox from '../components/StartScreenSandbox.svelte';
 import StartMenu from '../components/StartMenu.svelte';
+import { WATER } from '../game/materials/water';
+import { SAND } from '../game/materials/sand';
+import { titleTileUrl } from '../game/render/titleTile';
+
+// 타이틀 두 줄을 칠할 픽셀 틴트 타일. 빌드 타임에 한 번 만들어져 문자열로 박히므로
+// 런타임 비용은 0이고, 색과 결은 물·모래의 `Material` 정의에서 직접 나온다 — 물질
+// 색이나 틴트 진폭을 손보면 타이틀이 따라온다.
+//
+// 스타일시트가 아니라 `style` 속성으로 넣는 이유: Astro의 `<style>` 블록은 정적
+// 텍스트라 표현식을 받지 못한다. `define:vars`가 그 우회로지만, 이 페이지의 루트는
+// 컴포넌트(`<Base>`)라 변수가 어디에 얹히는지가 레이아웃 구조에 딸려 가므로 쓰지
+// 않는다. 나머지 배경 속성은 전부 아래 스타일 블록에 있다.
+const waterTile = titleTileUrl(WATER);
+const sandTile = titleTileUrl(SAND);
 ---
 
 <Base title="Particle Sandbox">
@@ -15,12 +29,10 @@ import StartMenu from '../components/StartMenu.svelte';
     <StartScreenSandbox client:load />
 
     <div class="foreground">
-
-
       <main class="center">
         <h1 class="title">
-          <span class="line-1">PARTICLE</span>
-          <span class="line-2">SANDBOX</span>
+          <span class="line" style={`background-image: ${waterTile}`}>PARTICLE</span>
+          <span class="line" style={`background-image: ${sandTile}`}>SANDBOX</span>
         </h1>
         <StartMenu client:load />
       </main>
@@ -52,30 +64,6 @@ import StartMenu from '../components/StartMenu.svelte';
     flex-direction: column;
   }
 
-  .brand {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 1.1rem 1.4rem;
-    font-size: 0.82rem;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-  }
-
-  .mark {
-    color: #e2e8f0;
-  }
-
-  .tag {
-    padding: 0.15rem 0.4rem;
-    border-radius: 0.3rem;
-    background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
-    color: #fff;
-    font-size: 0.7rem;
-    letter-spacing: 0.14em;
-  }
-
   .center {
     flex: 1 1 auto;
     min-height: 0;
@@ -83,7 +71,9 @@ import StartMenu from '../components/StartMenu.svelte';
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    /* 타이틀과 메뉴 사이의 숨. 예전엔 타이틀 밑 태그라인의 아래 여백이 하던
+       몫이라, 그 줄을 걷어내면서 여기로 옮겨 왔다. */
+    gap: 1.4rem;
     padding: 0 1.2rem;
     text-align: center;
   }
@@ -101,35 +91,28 @@ import StartMenu from '../components/StartMenu.svelte';
     filter: drop-shadow(0 2px 16px rgba(0, 0, 0, 0.85));
   }
 
-  /* 타이틀 두 줄은 게임 안의 색을 그대로 쓴다: 위는 물, 아래는 모래.
-     PARTICLE 밑동에서 물이 떨어져 SANDBOX 윗머리에 반쯤 스민 모양새다.
-     · 물 = Water의 `rgb(60, 130, 210)`(#3c82d2). 위쪽은 수면 반사만큼 밝게 띄운다.
-     · 모래 = Sand의 `rgb(232, 201, 107)`(#e8c96b).
-     · 젖은 모래 = 눈대중이 아니라 렌더러의 겹침 공식 그대로다
-       (`CanvasRenderer.wetted` = host 5/8 + fluid 3/8): #a7ae91. 맨 윗줄은
-       물이 더 많이 밴 3/8 + 5/8쪽(#7d9dab)이라, 위에서 아래로 갈수록 물기가
-       빠져 88%에서 마른 모래가 된다. */
-  .line-1 {
-    background: linear-gradient(to bottom, #9ccbf5 0%, #5a9ae2 45%, #3c82d2 100%);
+  /* 타이틀 두 줄은 자기가 이름 붙인 물질로 칠한다: 위는 Water, 아래는 Sand.
+     색만이 아니라 **칠하는 방식까지** 캔버스와 같다 — 평면 기본색 위에 셀별
+     밝기 틴트를 얹은 픽셀 패턴이고, 타일은 렌더러와 같은 산술로 빌드 타임에
+     만들어진다(`game/render/titleTile.ts`, 물질별 결이 왜 다른지도 거기 있다).
+     세로 그라디언트로 칠하던 예전 판은 이 게임이 그리지 않는 그림이었다.
+
+     두 줄의 규칙이 완전히 같아서 클래스도 하나다 — 어느 물질을 쓰는지는
+     마크업의 `background-image` 한 줄이 말한다(프런트매터 주석 참고).
+     셀 한 칸은 0.1em이라 글자 크기를 따라 같이 커진다 — 화면이 좁아져도
+     "몇 칸짜리 글자"라는 인상이 그대로다. */
+  .line {
+    /* 16셀 × 0.1em. 앞의 16은 `TITLE_TILE_CELLS`와 짝이다. */
+    background-size: 1.6em 1.6em;
+    background-repeat: repeat;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     color: transparent;
-  }
-
-  .line-2 {
-    background: linear-gradient(to bottom, #7d9dab 0%, #a7ae91 24%, #c7bb7e 58%, #e8c96b 88%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-  }
-
-  .tagline {
-    margin: 0.35rem 0 1.6rem 0;
-    font-size: 0.95rem;
-    color: #94a3b8;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+    /* 타일을 원본 해상도로 래스터화한 뒤 늘리는 브라우저에서도 셀이 뭉개지지
+       않게 하는 보험. 벡터로 그리는 쪽은 SVG의 `shape-rendering="crispEdges"`가
+       같은 일을 이미 한다. */
+    image-rendering: pixelated;
   }
 
   .foot {
@@ -140,12 +123,8 @@ import StartMenu from '../components/StartMenu.svelte';
   }
 
   @media (max-width: 480px) {
-    .brand {
-      padding: 0.9rem 1rem;
-    }
-    .tagline {
-      font-size: 0.85rem;
-      margin-bottom: 1.2rem;
+    .center {
+      gap: 1rem;
     }
     .foot {
       padding: 0.9rem 1rem;
