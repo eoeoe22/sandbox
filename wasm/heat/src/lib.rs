@@ -1,5 +1,5 @@
 //! Heat-diffusion kernel — the first WASM port of a "region A" pure numeric
-//! kernel (see docs/WASM-ENGINE-PORTING.md, Phase 2). This is a straight,
+//! kernel (see wasm/README.md). This is a straight,
 //! self-contained rewrite of `Simulation.diffuseHeat` in TypeScript: one
 //! explicit finite-difference conduction step per substep, exchanging heat with
 //! the 4 orthogonal neighbors, the exchanged fraction gated by the lower of the

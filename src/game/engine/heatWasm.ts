@@ -2,7 +2,7 @@ import wasmUrl from './heat.wasm?url';
 
 /**
  * Host-side plumbing for the Rust/WASM heat-diffusion kernel (see
- * `wasm/README.md` and docs/WASM-ENGINE-PORTING.md Phase 2). The kernel is the
+ * `wasm/README.md`). The kernel is the
  * first "region A" pure numeric loop moved off JS: it takes the grid's flat
  * buffers in, runs `HEAT_DIFFUSION_SUBSTEPS` conduction substeps, and hands the
  * temperature field back — bit-identical to `Simulation.diffuseHeat` (proven by

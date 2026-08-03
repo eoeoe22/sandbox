@@ -51,7 +51,7 @@ import './materials'; // register all materials (side effect)
  * touching material definitions or the UI.
  */
 export function startGame(canvas: HTMLCanvasElement): void {
-  // Phase 0 dev flags (docs/WASM-ENGINE-PORTING.md §Phase 0), read once from the
+  // Phase 0 dev flags (docs/PERFORMANCE.md §1 도구), read once from the
   // URL: `?perf` turns on the per-pass profiler + HUD breakdown, and
   // `?bench=<empty|static|active>` loads a fixed measurement scene. Both are
   // dev-only and off on a normal load. A bench load is treated as ephemeral —

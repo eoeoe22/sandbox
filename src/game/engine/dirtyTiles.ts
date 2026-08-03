@@ -1,5 +1,5 @@
-// Active-tile tracking for the CA scan (docs/WASM-ENGINE-PORTING.md §3 "값싼
-// 순수-JS 승리", docs/PERFORMANCE.md). Phase 0 measured the material scan at 80%+
+// Active-tile tracking for the CA scan (docs/PERFORMANCE.md §3 해석 — the cheap
+// pure-JS win, ahead of any WASM work — and §4). Phase 0 measured the scan at 80%+
 // of a populated tick, most of it wasted walking empty air — `updateCell` does
 // literally nothing for an empty, un-overlapped cell. This splits the grid into
 // coarse tiles and lets the scan skip tiles that hold only such inert cells.
