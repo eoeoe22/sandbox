@@ -1,363 +1,158 @@
 ---
+// 루트(`/`)는 소개 페이지가 아니라 **게임 시작 화면**이다: 한 화면에 담기고,
+// 스크롤이 없고, 타이틀과 메뉴 한 줄기만 있다. 배경에서는 진짜 엔진이 혼자
+// 돌아간다(StartScreenSandbox) — 물질이 떨어지고 1초마다 불이나 충격파가 터진다.
+//
+// 타이틀/태그라인은 정적 HTML로 두고(첫 페인트·검색엔진), 상호작용이 필요한
+// 두 조각만 섬으로 띄운다.
 import Base from '../layouts/Base.astro';
-import HeroSandbox from '../components/HeroSandbox.svelte';
-import PresetGallery from '../components/PresetGallery.svelte';
-import SnapshotManagerModal from '../components/SnapshotManagerModal.svelte';
+import StartScreenSandbox from '../components/StartScreenSandbox.svelte';
+import StartMenu from '../components/StartMenu.svelte';
 ---
 
-<Base title="Particle Sandbox - Dynamic Web Physics & Chemical Sandbox">
-  <div class="landing-container">
-    <!-- Dynamic Hero Particle Background -->
-    <HeroSandbox client:load />
+<Base title="Particle Sandbox — 웹 파티클 물리·화학 샌드박스">
+  <div class="screen">
+    <StartScreenSandbox client:load />
 
-    <!-- Navigation Bar -->
-    <nav class="top-nav">
-      <div class="nav-brand">
-        <span class="pixel-logo">PARTICLE</span>
-        <span class="neon-badge">SANDBOX</span>
-      </div>
-      <div class="nav-links">
-        <a href="/guide" class="nav-item">
-          <i class="bi bi-book-half"></i>
-          <span>도감 & 가이드</span>
-        </a>
-        <a href="/sandbox" class="nav-item primary">
-          <i class="bi bi-play-fill"></i>
-          <span>게임 시작</span>
-        </a>
-      </div>
-    </nav>
+    <div class="foreground">
+      <header class="brand">
+        <span class="mark">PARTICLE</span>
+        <span class="tag">SANDBOX</span>
+      </header>
 
-    <!-- Main Hero Section -->
-    <main class="hero-content">
-      <div class="hero-text-block">
-        <div class="title-badge">
-          <span class="pulse-dot"></span>
-          <span>Web Particle Physics & Chemistry Engine</span>
-        </div>
-        <h1 class="main-title">
-          <span class="glow-text">PARTICLE</span>
-          <span class="accent-text">SANDBOX</span>
+      <main class="center">
+        <h1 class="title">
+          <span class="line-1">PARTICLE</span>
+          <span class="line-2">SANDBOX</span>
         </h1>
-        <p class="hero-description">
-          60여 종 이상의 파티클, 고로 철 제련, 분별 증류, 전기 회로 및 폭발 연쇄 반응을
-          웹 브라우저에서 실시간 60FPS로 자유롭게 창작하고 실험하세요.
-        </p>
+        <p class="tagline">브라우저에서 도는 파티클 물리·화학 샌드박스</p>
+        <StartMenu client:load />
+      </main>
 
-        <!-- Main CTA Group -->
-        <div class="cta-group">
-          <div class="primary-cta-wrapper">
-            <a href="/sandbox" class="btn-hero-primary">
-              <i class="bi bi-play-circle-fill"></i>
-              <span>게임 시작하기</span>
-            </a>
-          </div>
-
-          <button id="open-snapshot-btn" class="btn-hero-secondary">
-            <i class="bi bi-folder-symlink-fill"></i>
-            <span>불러오기 / 스냅샷 관리</span>
-          </button>
-
-          <a href="/guide" class="btn-hero-tertiary">
-            <i class="bi bi-journal-bookmark-fill"></i>
-            <span>물질 & 물리학 도감</span>
-          </a>
-        </div>
-      </div>
-    </main>
-
-    <!-- Preset Scenarios Section -->
-    <section class="presets-section">
-      <PresetGallery client:load currentLocale="ko" />
-    </section>
-
-    <!-- Footer -->
-    <footer class="landing-footer">
-      <p>© 2026 Particle Sandbox Project. Built with Astro & Svelte.</p>
-    </footer>
-
-    <!-- Interactive Snapshot Manager Modal container -->
-    <div id="snapshot-modal-root"></div>
+      <footer class="foot">
+        <span>© 2026 Particle Sandbox</span>
+      </footer>
+    </div>
   </div>
 </Base>
 
-<script>
-  // Mount interactive modal handler for snapshot button
-  import { mount } from 'svelte';
-  import SnapshotManagerModal from '../components/SnapshotManagerModal.svelte';
-
-  const btn = document.getElementById('open-snapshot-btn');
-  const root = document.getElementById('snapshot-modal-root');
-
-  if (btn && root) {
-    let isOpen = false;
-
-    function renderModal() {
-      if (!root) return;
-      root.innerHTML = '';
-      mount(SnapshotManagerModal, {
-        target: root,
-        props: {
-          isOpen,
-          onClose: () => {
-            isOpen = false;
-            renderModal();
-          },
-        },
-      });
-    }
-
-    btn.addEventListener('click', () => {
-      isOpen = true;
-      renderModal();
-    });
-  }
-</script>
-
 <style>
-  .landing-container {
+  .screen {
     position: relative;
-    min-height: 100vh;
-    background: #0a0a0e;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: #08080c;
     color: #f1f5f9;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden;
   }
 
-  /* Navigation Bar */
-  .top-nav {
-    position: relative;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.25rem 2rem;
-    max-width: 1280px;
-    margin: 0 auto;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .nav-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 900;
-    font-size: 1.2rem;
-    letter-spacing: 0.05em;
-  }
-
-  .pixel-logo {
-    color: #f8fafc;
-  }
-
-  .neon-badge {
-    background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
-    color: #fff;
-    font-size: 0.7rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.3rem;
-    letter-spacing: 0.1em;
-  }
-
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .nav-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: #cbd5e1;
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    transition: all 0.2s ease;
-  }
-
-  .nav-item:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .nav-item.primary {
-    background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
-  }
-
-  .nav-item.primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.6);
-  }
-
-  /* Main Hero */
-  .hero-content {
+  .foreground {
     position: relative;
     z-index: 5;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 1.5rem 3rem 1.5rem;
-    text-align: center;
-  }
-
-  .hero-text-block {
-    max-width: 780px;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    align-items: center;
   }
 
-  .title-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.9rem;
-    border-radius: 9999px;
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    font-size: 0.85rem;
-    color: #a5b4fc;
-    margin-bottom: 1.5rem;
-    backdrop-filter: blur(8px);
-  }
-
-  .pulse-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 10px #10b981;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
-  .main-title {
-    font-size: clamp(2.8rem, 6vw, 4.5rem);
-    font-weight: 900;
-    line-height: 1.1;
-    margin: 0 0 1.2rem 0;
-    letter-spacing: -0.02em;
-  }
-
-  .glow-text {
-    color: #f8fafc;
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-  }
-
-  .accent-text {
-    background: linear-gradient(135deg, #818cf8 0%, #38bdf8 50%, #34d399 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .hero-description {
-    font-size: 1.15rem;
-    color: #cbd5e1;
-    line-height: 1.6;
-    margin: 0 0 2.5rem 0;
-    max-width: 660px;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-  }
-
-  /* CTA Buttons */
-  .cta-group {
+  .brand {
+    flex: none;
     display: flex;
-    gap: 1rem;
-    justify-content: center;
-    flex-wrap: wrap;
     align-items: center;
+    gap: 0.4rem;
+    padding: 1.1rem 1.4rem;
+    font-size: 0.82rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
   }
 
-  .btn-hero-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.9rem 2rem;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #fff;
-    text-decoration: none;
-    border-radius: 0.75rem;
-    background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
-    box-shadow: 0 8px 24px -4px rgba(79, 70, 229, 0.5);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .btn-hero-primary:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 32px -4px rgba(79, 70, 229, 0.7);
-  }
-
-  .btn-hero-secondary, .btn-hero-tertiary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.9rem 1.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    border-radius: 0.75rem;
-    cursor: pointer;
-    text-decoration: none;
-    backdrop-filter: blur(8px);
-    transition: all 0.25s ease;
-  }
-
-  .btn-hero-secondary {
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+  .mark {
     color: #e2e8f0;
   }
 
-  .btn-hero-secondary:hover {
-    background: rgba(30, 41, 59, 0.95);
+  .tag {
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.3rem;
+    background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
     color: #fff;
-    border-color: rgba(99, 102, 241, 0.5);
-    transform: translateY(-2px);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
   }
 
-  .btn-hero-tertiary {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #94a3b8;
-  }
-
-  .btn-hero-tertiary:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #f1f5f9;
-    transform: translateY(-2px);
-  }
-
-  /* Presets Section */
-  .presets-section {
-    position: relative;
-    z-index: 5;
-    background: rgba(10, 10, 14, 0.85);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding: 2rem 1rem 4rem 1rem;
-    backdrop-filter: blur(16px);
-  }
-
-  /* Footer */
-  .landing-footer {
-    position: relative;
-    z-index: 5;
+  .center {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0 1.2rem;
     text-align: center;
-    padding: 2rem;
-    font-size: 0.85rem;
-    color: #64748b;
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .title {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 0.95;
+    font-size: clamp(2.6rem, 9vw, 4.6rem);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    /* 글자 자체가 반투명(background-clip: text)이라 text-shadow를 쓰면 그림자가
+       글자 **속으로** 비쳐 색이 탁해진다. 합성 결과에 걸리는 drop-shadow로 뺀다. */
+    filter: drop-shadow(0 2px 16px rgba(0, 0, 0, 0.85));
+  }
+
+  /* 타이틀 두 줄은 게임 안의 색을 그대로 쓴다: 위는 물, 아래는 모래.
+     PARTICLE 밑동에서 물이 떨어져 SANDBOX 윗머리에 반쯤 스민 모양새다.
+     · 물 = Water의 `rgb(60, 130, 210)`(#3c82d2). 위쪽은 수면 반사만큼 밝게 띄운다.
+     · 모래 = Sand의 `rgb(232, 201, 107)`(#e8c96b).
+     · 젖은 모래 = 눈대중이 아니라 렌더러의 겹침 공식 그대로다
+       (`CanvasRenderer.wetted` = host 5/8 + fluid 3/8): #a7ae91. 맨 윗줄은
+       물이 더 많이 밴 3/8 + 5/8쪽(#7d9dab)이라, 위에서 아래로 갈수록 물기가
+       빠져 88%에서 마른 모래가 된다. */
+  .line-1 {
+    background: linear-gradient(to bottom, #9ccbf5 0%, #5a9ae2 45%, #3c82d2 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .line-2 {
+    background: linear-gradient(to bottom, #7d9dab 0%, #a7ae91 24%, #c7bb7e 58%, #e8c96b 88%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .tagline {
+    margin: 0.35rem 0 1.6rem 0;
+    font-size: 0.95rem;
+    color: #94a3b8;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  }
+
+  .foot {
+    flex: none;
+    padding: 1.1rem 1.4rem;
+    font-size: 0.72rem;
+    color: #475569;
+  }
+
+  @media (max-width: 480px) {
+    .brand {
+      padding: 0.9rem 1rem;
+    }
+    .tagline {
+      font-size: 0.85rem;
+      margin-bottom: 1.2rem;
+    }
+    .foot {
+      padding: 0.9rem 1rem;
+    }
   }
 </style>

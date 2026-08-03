@@ -85,11 +85,14 @@
 </script>
 
 {#if isOpen}
-  <Modal title="📂 저장 슬롯 & 스냅샷 관리자" onClose={onClose}>
+  <!-- Modal's props are `open` / `onclose` (lowercase). This used to pass
+       `onClose` and omit `open` entirely, so `{#if open}` inside Modal saw
+       `undefined` and the dialog never rendered — the button opened nothing. -->
+  <Modal open title="📂 저장 슬롯 & 스냅샷 관리자" icon="bi-folder2-open" width={720} onclose={onClose}>
     <div
       class="snapshot-modal-content"
       class:dragover={dragOver}
-      onondragover={(e) => {
+      ondragover={(e) => {
         e.preventDefault();
         dragOver = true;
       }}
