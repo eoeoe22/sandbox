@@ -1,4 +1,4 @@
-// Phase 0 measurement harness (docs/WASM-ENGINE-PORTING.md §Phase 0).
+// Phase 0 measurement harness (docs/PERFORMANCE.md §1 도구).
 //
 // A tiny per-pass profiler: the frame loop and Simulation.step accumulate the
 // wall-clock time each pass spends, and the HUD reads a rolling average a couple

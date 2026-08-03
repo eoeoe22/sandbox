@@ -1,4 +1,4 @@
-// Phase 0 fixed benchmark scenes (docs/WASM-ENGINE-PORTING.md §Phase 0).
+// Phase 0 fixed benchmark scenes (docs/PERFORMANCE.md §1b).
 //
 // Three reproducible scenarios the profiler measures against, so the "where does
 // the tick go?" breakdown is comparable run to run and machine to machine:

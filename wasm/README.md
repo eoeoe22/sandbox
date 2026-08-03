@@ -1,13 +1,16 @@
 # WASM 커널 (Rust) — 핵심 엔진 포팅
 
-`docs/WASM-ENGINE-PORTING.md`의 **Phase 2 (구역 A: 순수 수치 커널)** 실착수분.
+엔진 포팅 로드맵의 **Phase 2 (구역 A: 순수 수치 커널)** 실착수분 — 물질 콜백이
+전혀 없는 순수 수치 루프만 골라 JS 밖으로 옮긴다. 그 판단의 근거가 된 실측은
+[`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md)에 있다.
 언어는 **Rust**, 툴체인은 `cargo` 단독(외부 크레이트·`wasm-bindgen` 없음).
 
 ## 왜 이런 구조인가
 
 - **커널만 WASM, 물질 코드는 불변.** 여기 있는 건 물질 콜백이 전혀 없는
   자족적 수치 루프뿐이다(현재: 열확산 `diffuse_heat`). 물질 `update` 89개는
-  포팅 대상이 아니다(문서 §1.5).
+  포팅 대상이 아니다 — 물질 코드는 계속 손대는 곳이라 이식 부채를 지면 그때부터
+  모든 변경이 비싸진다.
 - **산출물 `.wasm`을 커밋한다.** Cloudflare 정적 배포는 `astro build`만
   돌리고 Rust 툴체인이 없다. 그래서 빌드된 `heat.wasm`을
   `src/game/engine/heat.wasm`에 **커밋**해 두고, Vite가 `?url`로 번들한다.

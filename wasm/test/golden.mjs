@@ -6,8 +6,8 @@
 // assert exactly that; a nonzero tolerance is available via TOL env only as a
 // diagnostic. Run: `node wasm/test/golden.mjs`.
 //
-// This is the correctness gate for docs/WASM-ENGINE-PORTING.md Phase 2: turning
-// USE_WASM_HEAT on must not change simulation behavior.
+// This is the correctness gate for the WASM kernel (wasm/README.md "정확성"):
+// turning USE_WASM_HEAT on must not change simulation behavior.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

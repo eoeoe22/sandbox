@@ -119,10 +119,11 @@ npm run check                # astro/TS 타입체크
 npm run test:<subsystem>     # 건드린 계통의 하네스
 ```
 
-CLAUDE.md `# 검증 스크립트` 절이 "무엇을 건드리면 무엇을 돌릴지"의 목록이다.
+`docs/TESTING.md`가 "무엇을 건드리면 무엇을 돌릴지"의 목록이다(CLAUDE.md에는
+진입점만 있다).
 **새 물질군을 도입했다면** 자체 하네스를 만든다:
 `test/<name>.ts` + `test/run-<name>.mjs` + `package.json`의 `test:<name>` +
-`npm test` 체인 추가 + **CLAUDE.md에 그 스크립트 설명 bullet 추가**.
+`npm test` 체인 추가 + **`docs/TESTING.md`에 절 추가**(아래 A-9.3).
 
 ## A-9. 저장소 문서
 
@@ -138,9 +139,9 @@ CLAUDE.md `# 검증 스크립트` 절이 "무엇을 건드리면 무엇을 돌�
    (bullet마다 볼드로 교훈 형태의 주장 + 백틱으로 소스 파일; **마지막 bullet은
    항상 `**검증(npm run test:X)**:`**). 그리고 머리의
    **`## 물질 총량 · 시스템 파티클` 개수 문장을 갱신**한다.
-3. **`docs/MATERIAL-IDEAS.md`** — 백로그에서 온 제안이면 해당 항목을 **삭제하거나
-   구현됨으로 주석** 처리(문서 상단 정책).
-4. **`docs/README.md`** — 새 분야 문서나 새 테스트 스크립트를 만들었을 때만 bullet 갱신.
+3. **`docs/TESTING.md`** — 새 검증 스크립트를 만들었으면 절을 하나 추가하고 목차 표에도
+   행을 넣는다. 기존 검사에 장면을 더했으면 해당 절을 갱신한다.
+4. **`docs/README.md`** — 새 분야 문서를 만들었을 때만 bullet 갱신.
 
 ## A-10. Cloudwiki
 
@@ -193,7 +194,7 @@ CLAUDE.md `# 검증 스크립트` 절이 "무엇을 건드리면 무엇을 돌�
 9. **`objects.ts`의 디스패치 지점** — `evaluateTriggers`(가열/스텝),
    `destroyByproduct`, 전자석에 끌려야 하면 `isMagneticBody`(현재는 강철 바디만).
 10. **테스트** — `test/foo.ts` + `test/run-foo.mjs` + `test:foo` + `npm test` 체인
-    + CLAUDE.md 검증 bullet. 기존 하네스가 회전/안착, 부유, 점화, 파괴 원인 분기,
+    + `docs/TESTING.md` 절. 기존 하네스가 회전/안착, 부유, 점화, 파괴 원인 분기,
     자석 인력, 수중 연기를 이미 커버하니 형태를 그대로 빌려 쓴다.
 11. **`docs/OBJECTS.md`** — 새 `##` 섹션. 표를 쓰지 않는 문서다:
     도입 산문(백틱으로 코드 진입점 명시) → 볼드 선두 bullet들 → **실측 숫자가
