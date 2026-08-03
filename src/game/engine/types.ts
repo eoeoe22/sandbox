@@ -313,8 +313,9 @@ export interface Material {
    * tag to it would not be a fix.
    *
    * This is the generalization of what the aluminum line used to do with three
-   * copies of the same `reactions` row (see docs/MATERIAL-IDEAS.md's
-   * `Material.acidReaction` note): a tag rather than a rule row, so it can't
+   * copies of the same `reactions` row (the `Material.acidReaction` note that
+   * predicted it — see docs/MATERIAL-SYSTEMS.md "왜 태그로 갔나"): a tag rather
+   * than a rule row, so it can't
    * lose the race against acid's own corrosion — the corrosion pass rolls this
    * first, per contact, and only falls through to a silent bite when it misses.
    */

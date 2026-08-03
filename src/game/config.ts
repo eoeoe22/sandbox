@@ -219,7 +219,7 @@ export const RADIANT_HEAT_RATE = 0.05;
  * bit-identical to the JS reference (golden test), loads asynchronously, and
  * auto-falls back to JS if it never loads or isn't supported — so flipping this
  * off, or the module failing to load, only changes speed, never behavior. First
- * "region A" numeric kernel moved off JS (docs/WASM-ENGINE-PORTING.md Phase 2).
+ * "region A" numeric kernel moved off JS.
  */
 export const USE_WASM_HEAT = true;
 

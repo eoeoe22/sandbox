@@ -1,6 +1,8 @@
 # WASM 커널 (Rust) — 핵심 엔진 포팅
 
-`docs/WASM-ENGINE-PORTING.md`의 **Phase 2 (구역 A: 순수 수치 커널)** 실착수분.
+엔진 포팅 로드맵의 **Phase 2 (구역 A: 순수 수치 커널)** 실착수분 — 물질 콜백이
+전혀 없는 순수 수치 루프만 골라 JS 밖으로 옮긴다. 그 판단의 근거가 된 실측은
+[`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md)에 있다.
 언어는 **Rust**, 툴체인은 `cargo` 단독(외부 크레이트·`wasm-bindgen` 없음).
 
 ## 왜 이런 구조인가
