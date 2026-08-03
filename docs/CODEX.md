@@ -28,10 +28,11 @@ src/game/codex/                    수치 표 · 특성 카드로 환원
         ▼
 src/components/Codex.svelte        검색 · 카테고리 필터 · 그리드 · 상세 모달
         │
-        │  런타임 조회
+        │  런타임 조회 — 여기서만
         ▼
-src/i18n/codex.ko.ts · codex.en.ts  설명문 (언어당 한 파일)
-src/i18n/codexTerms.ts              태그 이름·설명 (두 언어가 한 파일)
+src/i18n/codex.ts                   접근자 셋 (배럴이 아니다 — 아래)
+   ├─ codex.ko.ts · codex.en.ts     설명문 (언어당 한 파일)
+   └─ codexTerms.ts                 태그 이름·설명 (두 언어가 한 파일)
 ```
 
 ### 왜 빌드 타임인가
@@ -49,6 +50,26 @@ frontmatter 는 Node 에서 한 번 돌고, 브라우저로 건너가는 건 그
 특성은 **키**로 건너간다(`{ key: 'conductive' }`, 「전기 전도」가 아니라). 단어는
 브라우저에서 i18n 이 붙인다. 그래서 **언어 전환에 재빌드가 필요 없다** — 기존
 `materialName`/`categoryLabel` 과 같은 규칙이다.
+
+### 도감 산문은 `i18n/index.ts` 에 들어가면 안 된다
+
+접근자 셋(`materialDescription`·`objectDescription`·`codexTerm`)이 `src/i18n/codex.ts`
+라는 **별도 모듈**에 있고, `Codex.svelte` 한 곳만 import 한다. 편의로 배럴에 다시
+export 하는 것도 안 된다.
+
+처음엔 `i18n/index.ts` 에 있었다. 그건 모든 아일랜드가 `t()` 와 `materialName()` 을
+가져가는 배럴이라, 거기 닿은 것은 번들러가 아일랜드들 사이에 공유하는 청크로 들어간다 —
+**샌드박스와 시작 화면이 한 번도 그리지 않는 이중 언어 백과사전(원본 48KB)을 내려받아
+파싱하고 있었다.** 공유 청크 71.5KB → 31.4KB 가 그 차이다.
+
+그 자리에는 마침 "only the guide page imports these, so the sandbox never pays for
+them" 이라고 적혀 있었다. 아무도 빌드 산출물을 열어 보지 않아 **처음부터 거짓**이었다.
+그래서 `test/run-codex.mjs` 가 esbuild `metafile` 로 배럴의 import 그래프를 훑어 텍스트
+표가 보이면 실패한다.
+
+그 핀의 **사각도 알고 두는 편이 낫다**: 아일랜드가 `i18n/codex` 를 직접 import 하면
+핀은 통과하고 청크는 그대로 새어 나간다(리뷰에서 실제로 재현했다). 핀은 배럴이 조용히
+자라는 **실제로 났던 사고**를 못 박는 것이지 모든 경로를 막지는 않는다.
 
 ---
 

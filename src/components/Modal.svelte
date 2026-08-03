@@ -65,10 +65,11 @@
     if (!open) return;
     openModals.push(token);
     // Hold the document still underneath. On the sandbox pages this is already
-    // true (global.css locks `html, body`), but a document page opts out of that
-    // lock to scroll (Base.astro's `scroll` prop) — and there a drag anywhere
-    // outside the dialog card scrolls the page behind the backdrop, which on a
-    // phone is most of the screen. Reference-counted off the same stack the
+    // true (global.css locks `html, body`), but that lock belongs to the app
+    // alone (Base.astro's `app` prop) and every other page scrolls like an
+    // ordinary document — and there a drag anywhere outside the dialog card
+    // scrolls the page behind the backdrop, which on a phone is most of the
+    // screen. Reference-counted off the same stack the
     // Escape handling uses, so a modal opened over another doesn't release the
     // lock when only the top one closes. An inline style beats the stylesheet's
     // `overflow: visible`, and restoring the saved value (rather than clearing
@@ -92,6 +93,18 @@
     return () => {
       const i = openModals.indexOf(token);
       if (i !== -1) openModals.splice(i, 1);
+      // Forget any press in flight. The overlay's own handlers clear this, but
+      // they only run if the press is allowed to finish: close on Escape (or any
+      // other `onclose()`) mid-press and the element they live on is gone before
+      // the release, with a `pointercancel` that isn't guaranteed. That matters
+      // because a Modal instance outlives its dialog — ControlPanel mounts the
+      // settings, blend, heat/cool and save-slot modals once each and only
+      // toggles `open` — so a leftover `true` would sit here until the next time
+      // that dialog opened, and then a mouse release over the backdrop with no
+      // press of its own (a drag that began elsewhere; the mouse has no implicit
+      // capture to make one) would measure travel against a stale point and
+      // close a dialog nobody pressed on.
+      pressedBackdrop = false;
       if (openModals.length === 0 && overflowBeforeLock !== null) {
         root.style.overflow = overflowBeforeLock;
         overflowBeforeLock = null;
