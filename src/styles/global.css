@@ -34,6 +34,23 @@ body {
   overflow: hidden;
 }
 
+/* Every page that is not the app itself scrolls (Base.astro's `app` prop stamps
+   this class on everything else). The lock above exists for the sandbox — a
+   touch drag has to paint rather than scroll, and the address bar must not
+   collapse under a dvh-sized canvas — but it is set on `html, body`, so every
+   page inherited it. A page taller than the viewport therefore could not be
+   scrolled at all: the codex's content below the fold was simply unreachable.
+
+   `height: auto` is as load-bearing as the overflow here. `height: 100%` caps the
+   element at the viewport, so restoring the overflow alone would leave the
+   document the height of one screen with the rest hanging outside it. */
+html.scrollable,
+html.scrollable body {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
 /* Simulation canvas. It fills the play area *beside* the control bar — the
    sidebar's width on desktop (see the media query below for the mobile bar) —
    so the sandbox grid, derived from the canvas size, never sits under the UI.

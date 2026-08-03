@@ -12,10 +12,17 @@ export const LOCALES: readonly Locale[] = ['ko', 'en'];
 /**
  * Detect the initial locale: a persisted choice wins, otherwise the browser's
  * language (anything starting with `ko` → Korean, everything else → English).
- * Safe under SSR / no-`navigator` (returns Korean, the project's default).
+ * Under SSR / prerender this returns Korean, the project's default.
+ *
+ * The `window` guard is what makes that true, and it is load-bearing rather than
+ * belt-and-braces: `navigator` alone is NOT proof of a browser. Node has exposed
+ * a lookalike since v21 whose `language` is the *build machine's* locale
+ * ('en-US' on CI), so gating on it prerendered every page in English — a
+ * Korean-first project shipping an English static shell to crawlers and to
+ * anyone reading before hydration, under a hardcoded `<html lang="ko">`.
  */
 function detectLocale(): Locale {
-  if (typeof navigator !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
     const langs = navigator.languages?.length ? navigator.languages : [navigator.language];
     for (const l of langs) {
       if (!l) continue;

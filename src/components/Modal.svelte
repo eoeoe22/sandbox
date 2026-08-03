@@ -2,6 +2,12 @@
   // Shared across every Modal instance (see the per-instance registration
   // below): the currently open dialogs, oldest first.
   const openModals: object[] = [];
+
+  // The document's own inline `overflow` from before ANY modal locked it, held
+  // here for the same reason the stack above is shared: the value belongs to the
+  // document, not to a dialog. Read the note on the lock in the effect below for
+  // what goes wrong when each instance keeps its own copy.
+  let overflowBeforeLock: string | null = null;
 </script>
 
 <script lang="ts">
@@ -38,6 +44,15 @@
 
   let dialogEl = $state<HTMLDivElement | null>(null);
 
+  // Backdrop press bookkeeping — see the overlay's handlers below. Plain `let`,
+  // not `$state`: nothing renders off these.
+  let pressedBackdrop = false;
+  let pressX = 0;
+  let pressY = 0;
+  /** How far the pointer may travel between press and release and still count as
+   *  a dismissing tap rather than a swipe. */
+  const BACKDROP_SLOP = 10;
+
   // Every open Modal listens on `window` for Escape and Tab, so with one modal
   // stacked over another (the snapshot load options over the save/load list)
   // both would fire on a single Escape and close the pair. This module-level
@@ -49,9 +64,51 @@
   $effect(() => {
     if (!open) return;
     openModals.push(token);
+    // Hold the document still underneath. On the sandbox pages this is already
+    // true (global.css locks `html, body`), but that lock belongs to the app
+    // alone (Base.astro's `app` prop) and every other page scrolls like an
+    // ordinary document — and there a drag anywhere outside the dialog card
+    // scrolls the page behind the backdrop, which on a phone is most of the
+    // screen. Reference-counted off the same stack the
+    // Escape handling uses, so a modal opened over another doesn't release the
+    // lock when only the top one closes. An inline style beats the stylesheet's
+    // `overflow: visible`, and restoring the saved value (rather than clearing
+    // to '') leaves a page that set its own overflow as it was.
+    //
+    // Both the saved value and the "am I the one who locked it" test are module
+    // state, NOT per-instance, and that is the whole correctness argument. The
+    // first version kept `previousOverflow` on each instance and restored
+    // whichever instance happened to empty the stack — right only if dialogs
+    // close in reverse of the order they opened. Stack A, then B: B captures
+    // 'hidden', because A had already locked. Close A first and B's cleanup runs
+    // last, restoring *its* capture — so the document is left inline-locked with
+    // nothing remaining to unlock it, which on a scrolling page is a permanently
+    // dead scrollbar. Saving once, at the moment the lock is actually applied,
+    // has no ordering assumption to violate.
+    const root = document.documentElement;
+    if (openModals.length === 1) {
+      overflowBeforeLock = root.style.overflow;
+      root.style.overflow = 'hidden';
+    }
     return () => {
       const i = openModals.indexOf(token);
       if (i !== -1) openModals.splice(i, 1);
+      // Forget any press in flight. The overlay's own handlers clear this, but
+      // they only run if the press is allowed to finish: close on Escape (or any
+      // other `onclose()`) mid-press and the element they live on is gone before
+      // the release, with a `pointercancel` that isn't guaranteed. That matters
+      // because a Modal instance outlives its dialog — ControlPanel mounts the
+      // settings, blend, heat/cool and save-slot modals once each and only
+      // toggles `open` — so a leftover `true` would sit here until the next time
+      // that dialog opened, and then a mouse release over the backdrop with no
+      // press of its own (a drag that began elsewhere; the mouse has no implicit
+      // capture to make one) would measure travel against a stale point and
+      // close a dialog nobody pressed on.
+      pressedBackdrop = false;
+      if (openModals.length === 0 && overflowBeforeLock !== null) {
+        root.style.overflow = overflowBeforeLock;
+        overflowBeforeLock = null;
+      }
     };
   });
   const isTopmost = (): boolean => openModals[openModals.length - 1] === token;
@@ -129,13 +186,30 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <!-- The backdrop closes the dialog on a direct press (target === backdrop),
-       but not when the press bubbles up from inside the dialog card. -->
+  <!-- The backdrop closes the dialog when the press *and* the release are on it,
+       not when either comes from inside the dialog card. Dismissing on the press
+       alone meant a finger that landed beside the card and started to drag —
+       reaching for the content, or a stray flick — closed the dialog before it
+       had moved a pixel. The travel test is what makes the release safe to trust
+       on touch: the UA gives the pointerdown target implicit capture, so a
+       pointerup is retargeted to the overlay even when the finger ended up over
+       the card, and a position test is the only thing that still tells a tap
+       from a swipe. -->
   <div
     class="overlay"
     use:portal
     onpointerdown={(e) => {
-      if (e.target === e.currentTarget) onclose();
+      pressedBackdrop = e.target === e.currentTarget;
+      pressX = e.clientX;
+      pressY = e.clientY;
+    }}
+    onpointercancel={() => (pressedBackdrop = false)}
+    onpointerup={(e) => {
+      if (!pressedBackdrop) return;
+      pressedBackdrop = false;
+      if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > BACKDROP_SLOP) return;
+      if (e.target !== e.currentTarget) return;
+      onclose();
     }}
   >
     <div
@@ -180,6 +254,12 @@
     /* Overridden per instance by the `width` prop's inline style. */
     width: 340px;
     max-width: 100%;
+    /* The pair, not just the second line: a browser that doesn't know `dvh`
+       drops the whole declaration as invalid, and the dialog loses its cap
+       entirely — a long codex entry then runs off the bottom of the screen with
+       nothing to scroll, since `.modal-body` only scrolls once the modal is
+       capped. */
+    max-height: 86vh;
     max-height: min(86vh, 86dvh);
     background: rgba(24, 24, 30, 0.98);
     border: 1px solid #2a2a33;
@@ -205,8 +285,15 @@
   }
   .modal-title {
     flex: 1 1 auto;
+    /* The dialog suppresses selection so a drag on it doesn't smear text (it
+       sits over a canvas the app drags for a living). The title is the
+       exception: on the codex it names the material, which is the thing someone
+       wants to copy. Scoped to the element, so it beats the value inherited from
+       `.modal` while the rest of the chrome stays unselectable. */
+    user-select: text;
   }
   .close {
+    position: relative;
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -221,6 +308,21 @@
     cursor: pointer;
     font-size: 13px;
   }
+  /* On a phone this 28px button is the dialog's only visible way out (Escape
+     needs a keyboard, and the backdrop is not an affordance anyone is told
+     about). Grow the hit area, not the button: a pseudo-element counts as part
+     of its originating element for hit-testing, so the target reaches 44px with
+     the paint and the 52px header height both untouched. */
+  .close::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+  }
+
   .close:hover {
     border-color: #3a3a46;
   }

@@ -11,6 +11,11 @@
 // Material / category / object names live in `materials.ko` / `materials.en`
 // (keyed by stable ids / keys, not by English strings) and are exposed via the
 // `materialName` / `objectLabel` / `categoryLabel` helpers below.
+//
+// The 물질 도감's bulk prose is deliberately NOT here and must not be re-exported
+// from here: this barrel is what every island imports, so anything it reaches
+// rides along into the sandbox's bundle. It lives in `./codex` — see that file's
+// header, and `test/run-codex.mjs`, which fails if it creeps back in.
 
 import type { ObjectKind } from '../state/store';
 import { en as uiEn } from './ui.en';
