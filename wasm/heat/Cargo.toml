@@ -2,7 +2,7 @@
 name = "heat"
 version = "0.1.0"
 edition = "2021"
-description = "WASM heat-diffusion kernel for the sandbox simulator (docs/WASM-ENGINE-PORTING.md Phase 2, region A)."
+description = "WASM heat-diffusion kernel for the sandbox simulator (region A pure numeric kernel — see wasm/README.md)."
 publish = false
 
 [lib]

@@ -194,7 +194,7 @@ npm run test:<subsystem>     # 건드린 계통의 하네스
 9. **`objects.ts`의 디스패치 지점** — `evaluateTriggers`(가열/스텝),
    `destroyByproduct`, 전자석에 끌려야 하면 `isMagneticBody`(현재는 강철 바디만).
 10. **테스트** — `test/foo.ts` + `test/run-foo.mjs` + `test:foo` + `npm test` 체인
-    + CLAUDE.md 검증 bullet. 기존 하네스가 회전/안착, 부유, 점화, 파괴 원인 분기,
+    + `docs/TESTING.md` 절. 기존 하네스가 회전/안착, 부유, 점화, 파괴 원인 분기,
     자석 인력, 수중 연기를 이미 커버하니 형태를 그대로 빌려 쓴다.
 11. **`docs/OBJECTS.md`** — 새 `##` 섹션. 표를 쓰지 않는 문서다:
     도입 산문(백틱으로 코드 진입점 명시) → 볼드 선두 bullet들 → **실측 숫자가
