@@ -128,7 +128,7 @@ function updateBurning(x: number, y: number, sim: SimContext, timer: number): vo
       if (sim.chance(GEL_WREATH_CHANCE)) sim.spawn(nx, ny, FIRE.id);
     } else {
       const m = getMaterial(nid);
-      if ((m.combustible || m.flammable) && sim.chance(GEL_IGNITE_CHANCE)) {
+      if ((m.combustion !== undefined || m.flammable) && sim.chance(GEL_IGNITE_CHANCE)) {
         // Pin the fuel hot so its own turn catches — lights what it clings to
         // even with no air gap between them.
         sim.setTemp(nx, ny, GEL_IGNITE_TEMP);

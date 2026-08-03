@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import { DIR4 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { ASH } from './ash';
 import { WATER } from './water';
 import { SUGAR_WATER } from './sugarwater';
@@ -24,11 +24,13 @@ import { SUGAR_WATER } from './sugarwater';
 // Water turns the pair into Alcohol + CO₂ (see yeast.ts) — but now the usual path
 // is that the sugar dissolves first and the Yeast ferments the resulting Sugar
 // Water directly (sugarwater.ts handles that fermentation in its update).
-const SPEC: Combustible = { burnChance: 0.09, autoIgniteTemp: 300 };
 // Below the ignition point: heat alone caramelises then carbonises the grain into
 // char (Ash) instead of open flame.
 const CARBONIZE_TEMP = 200;
 const CARBONIZE_CHANCE = 0.08;
+// Its own 발화점, named because the carbonise window above is capped by it — a
+// grain hot enough to burn must burn, not short-circuit to inert Ash.
+const AUTO_IGNITE_TEMP = 300;
 
 // Dissolving (mirrors salt.ts). A Water neighbour dissolves the grain each tick;
 // the grain vanishes and its water pocket turns to Sugar Water. Sugar is more
@@ -46,14 +48,14 @@ export const SUGAR_WATER_RATIO = 12;
 
 function updateSugar(x: number, y: number, sim: SimContext): void {
   // Direct flame (or self-ignition past 300°) → burns as a fuel.
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   // Heated but not yet burning → caramelise/carbonise to Ash. Gated *below* the
   // ignition point: an actually-burning grain is pinned at combustion's 800°, so
   // without this upper bound it would keep short-circuiting to inert Ash instead
   // of burning as a fuel (Ash isn't combustible, so the flame front would die).
   // Keeps the cell's temperature so the fresh char reads as hot.
   const t = sim.getTemp(x, y);
-  if (t >= CARBONIZE_TEMP && t < SPEC.autoIgniteTemp && sim.chance(CARBONIZE_CHANCE)) {
+  if (t >= CARBONIZE_TEMP && t < AUTO_IGNITE_TEMP && sim.chance(CARBONIZE_CHANCE)) {
     sim.set(x, y, ASH.id);
     return;
   }
@@ -118,7 +120,7 @@ export const SUGAR = register({
   // through fresh Water (so it dissolves from within a pool, mirroring Salt),
   // but floats clear of denser liquids salt sinks straight through.
   density: 3.65,
-  combustible: true,
+  combustion: { burnChance: 0.09, autoIgniteTemp: AUTO_IGNITE_TEMP },
   category: 'powder',
   thermal: { conductivity: 0.3 },
   update: updateSugar,

@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { WATER } from './water';
 
 // Honey — a thick, sticky, amber liquid. It's much more viscous than water: like
@@ -17,7 +17,6 @@ import { WATER } from './water';
 // Honey is water-soluble, so it slowly interdiffuses with adjacent Water into a
 // mixed "honey water" instead of sitting in a hard layer — the same gradual
 // boundary swap Acid shares with Water (see diffuseWith / acid.ts).
-const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 360 };
 const DIFFUSE_CHANCE = 0.03;
 
 // True viscosity, the way Lava does it (and most of the molten liquids with it —
@@ -38,7 +37,7 @@ const DIFFUSE_CHANCE = 0.03;
 const FLOW_CHANCE = 0.18;
 
 function updateHoney(x: number, y: number, sim: SimContext): void {
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   if (diffuseWith(x, y, sim, WATER.id, DIFFUSE_CHANCE)) return;
   // Reactions above run every tick; only the movement is throttled, so a stalled
   // honey cell still burns and still mixes with the water it's sitting in.
@@ -51,7 +50,7 @@ export const HONEY = register({
   phase: Phase.Liquid,
   color: rgb(214, 150, 34),
   density: 3.5,
-  combustible: true,
+  combustion: { burnChance: 0.05, autoIgniteTemp: 360 },
   category: 'liquid',
   // Very viscous — holds a mound instead of racing flat like water. Stacks on
   // top of FLOW_CHANCE above (which is what slows the *fall*): this is the extra

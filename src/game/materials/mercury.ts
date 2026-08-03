@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { MERCURY_VAPOR } from './mercuryvapor';
+import { tryPhaseChange } from './phasechange';
 
 // Real mercury boils at ~357°: heated past this, a puddle flashes to Mercury
 // Vapor, which drifts up and condenses back to liquid Mercury when it cools
@@ -23,12 +24,7 @@ function updateMercury(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= MERCURY_BOIL_TEMP) {
-    // In-place `set` keeps the (now scorching) temperature so the fresh Mercury
-    // Vapor reads as hot instead of instantly condensing back next tick.
-    sim.set(x, y, MERCURY_VAPOR.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   updateLiquid(x, y, sim);
 }
@@ -57,5 +53,7 @@ export const MERCURY = register({
   // Freezes solid deep below zero (real mercury sets at ~-39°): a chilled puddle
   // hardens in place (still conducts electricity — solid metal) until it warms.
   freeze: { temp: -38 },
+  // 끓는점
+  phaseChange: { at: () => MERCURY_BOIL_TEMP, when: 'atOrAbove', into: () => MERCURY_VAPOR.id },
   update: updateMercury,
 });

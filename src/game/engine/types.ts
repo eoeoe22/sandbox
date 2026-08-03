@@ -29,6 +29,83 @@ export type FireClass = 'A' | 'B' | 'D';
  */
 export type DouseForm = 'evaporate' | 'melt';
 
+/**
+ * 연소 제원 — everything that distinguishes one fuel's burn from another's, read
+ * by the shared surface-front model in materials/combustion.ts. Declaring it is
+ * the whole of being a fuel: `tryBurn` looks it up off the burning cell's own
+ * material, so there is no spec to pass and none to forget.
+ *
+ * It lives on `Material` rather than beside each fuel's `update` because these
+ * five numbers *are* the fuel — 발화점 and 연소 속도 are as much a material property
+ * as density is, and a reader (the palette, a codex page, a test sweeping the
+ * registry) has no way to reach a `const` locked inside a module.
+ */
+export interface Combustible {
+  /** Per-tick chance to catch from an adjacent flame, and — once burning — to
+   *  light each adjacent fuel cell. Also sets the fuel's relative burn speed. */
+  burnChance: number;
+  /** 발화점 — self temperature at/above which it ignites with no flame contact. */
+  autoIgniteTemp: number;
+  /** Temperature this fuel's burning cells pin at (and collapse-to-Fire at),
+   *  overriding the shared `FUEL_BURN_TEMP` (800°). Oxygen's forced-draught boost
+   *  still stacks on top, capped at `OXY_MAX_PIN`. Coal uses this to run its
+   *  bare, unoxygenated fire hot enough to melt iron (1200°) while staying
+   *  under Blue Flame (1800°). */
+  burnTemp?: number;
+  /** If true, water smothers this fuel without being consumed into steam.
+   *  Used for fuels that are easily doused, like Amber and Resin. */
+  easyDouse?: boolean;
+  /** Chance that a consumed cell leaves a fleck of Ash behind instead of the
+   *  usual rising Fire puff — a solid fuel's spent remains (Wood, Sawdust). A
+   *  liquid fuel that burns clean away (oil, alcohol, …) omits this. */
+  ashChance?: number;
+}
+
+/**
+ * 열에 의한 상전이 — a single temperature threshold at which a cell stops being
+ * this material and becomes another one: 녹는점, 어는점, 끓는점, 승화점. Read by the
+ * shared pass in materials/phasechange.ts (`tryPhaseChange`).
+ *
+ * Distinct from `Material.freeze`, which is about a liquid stiffening *in place*
+ * while staying the same material. This one changes what the cell is.
+ *
+ * The pass is called from the material's own `update` rather than driven by the
+ * engine, because a few materials must get a word in first — Lava quenched by
+ * water has to become Obsidian before its cool-to-Stone threshold is even
+ * consulted (see lava.ts). Calling it explicitly keeps each material's existing
+ * ordering exactly, while the numbers themselves stop being locked inside a
+ * function body.
+ */
+export interface PhaseChange {
+  /** 임계 온도 (°C). A thunk — see `into` for why both fields are deferred. */
+  at: () => number;
+  /** Which side of `at` triggers it: heating past it (녹음·끓음·승화) or cooling
+   *  down to it (응고). Both are inclusive of `at` itself. */
+  when: 'atOrAbove' | 'atOrBelow';
+  /**
+   * What the cell becomes.
+   *
+   * Both this and `at` are thunks rather than plain values because a melt/freeze
+   * pair imports *each other* — glass.ts ↔ moltenglass.ts, iron.ts ↔
+   * molteniron.ts, ice.ts ↔ water.ts — and a register literal is built during
+   * module load, right in the middle of that cycle. Whichever side loses the
+   * race reads its partner's exports before they exist. `MOLTEN_IRON.id` is the
+   * obvious casualty, but the *threshold* is the dangerous one: `IRON_MELT_TEMP`
+   * comes across the same edge and lands as `undefined`, and `t < undefined` is
+   * false, so the guard inverts and every iron cell in the world melts on its
+   * first tick at room temperature. That is a silent failure, and it was a real
+   * one — Iron, Glass, Broken Glass and Ice all did it before these were
+   * deferred.
+   *
+   * Deferring to first use sidesteps the cycle entirely (the simulation runs long
+   * after every module has settled), and typing both as functions means the eager
+   * form cannot be written by accident. `DouseForm` dodges the same cycle by
+   * naming its target instead of identifying it; this is the general answer, and
+   * test/phasechange.ts checks every declaration actually resolves.
+   */
+  into: () => MatId;
+}
+
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */
 export enum Phase {
   Empty,
@@ -65,11 +142,30 @@ export interface Material {
   /**
    * Carries an electric charge: a Spark propagates from cell to cell only
    * through `conductive` materials (Metal, Mercury), the same tag-based,
-   * scan-order-independent approach `flammable`/`combustible` use. A conductor
+   * scan-order-independent approach `flammable`/`combustion` use. A conductor
    * also uses its per-cell `aux` byte as a post-spark refractory countdown so a
    * pulse travels one way down a wire instead of bouncing back (see spark.ts).
    */
   conductive?: boolean;
+  /**
+   * 저항 — strength a travelling pulse loses per cell of this conductor, and so
+   * the lever for how far current reaches through it. A pulse starts at
+   * `FULL_STRENGTH` (63) and dies when it runs out, making the reach in cells
+   * roughly `FULL_STRENGTH / sparkLoss`.
+   *
+   * Omitted ⇒ 0, the engine's floor: the pulse runs the whole length at full
+   * strength. That is the right default because it is what every metal does, and
+   * the metals are most of the roster — only the ionic and gooey media declare
+   * anything here (fresh Water and Slime at 2 ≈ 31 cells, brine and Acid at 1 ≈
+   * 63 cells). A `wiring` material must be lossless by definition, and spark.ts
+   * asserts exactly that at load.
+   *
+   * Nichrome's resistance is deliberately *not* modelled here — it sits at the
+   * floor like any other metal, and shows up instead as the Joule heat each
+   * passing pulse deposits in it (see nichromeJouleHeat in spark.ts). Losing
+   * reach and giving off heat are two different claims about a wire.
+   */
+  sparkLoss?: number;
   /**
    * 피복 전선 — a `conductive` material whose insulation keeps the current *in*.
    * A Spark travelling on this conductor only ever hands the pulse on to another
@@ -95,10 +191,10 @@ export interface Material {
    * stops electrifying the condensate around it.
    *
    * Wiring is by definition zero-loss (spark.ts asserts that at load: a `wiring`
-   * conductor whose CONDUCTOR_LOSS isn't 0 throws), but the converse is
+   * conductor with a non-zero `sparkLoss` throws), but the converse is
    * deliberately NOT true — Acid Slime conducts at zero loss and is still not
    * wiring, because "무손실"과 "배선" 은 다른 질문이다. That's exactly why this is
-   * a declared tag instead of a `loss === 0` test.
+   * a declared tag instead of a `sparkLoss === 0` test.
    */
   wiring?: boolean;
   /**
@@ -155,18 +251,20 @@ export interface Material {
   flammable?: boolean;
   /**
    * Marks a fuel that burns via the shared surface-front model (see
-   * combustion.ts): Crude Oil, Gasoline, Coal, Wood, Sawdust. A cell already
-   * burning uses this tag to tell which of its neighbors are fuel it can light,
-   * so the burn creeps from cell to cell through the whole body. Distinct from
-   * `flammable`, which hands ignition to Fire's own global-rate pass instead.
+   * combustion.ts): Crude Oil, Gasoline, Coal, Wood, Sawdust. Its presence is the
+   * tag — a cell already burning reads it to tell which of its neighbors are fuel
+   * it can light, so the burn creeps from cell to cell through the whole body —
+   * and its contents are that fuel's own pace and 발화점 (see Combustible).
+   * Distinct from `flammable`, which hands ignition to Fire's own global-rate
+   * pass instead and so has no per-fuel character to carry.
    */
-  combustible?: boolean;
+  combustion?: Combustible;
   /**
    * 화재 등급 — which extinguishing agents actually work on this fuel, read by
    * the shared suppression pass (materials/suppress.ts). Only declared where it
    * is *not* the default:
    *
-   *  • `'A'` 일반가연물 (the default for every `combustible`) — Wood, Coal,
+   *  • `'A'` 일반가연물 (the default for every `combustion` fuel) — Wood, Coal,
    *    Sawdust, Sugar, plastics, Alcohol. Water is the right tool: it snuffs the
    *    flame and its chill sinks into the mass.
    *  • `'B'` 유류 — never declared by hand; it is derived from `petroleum`, which
@@ -315,9 +413,22 @@ export interface Material {
    * without swapping to a separate material. Warmed back above `temp` it flows
    * again. Read by SimContext.isFrozen (movement/displacement) and the renderer
    * (frost tint). Water keeps its own richer Snow/Ice freeze instead; the molten
-   * liquids have their own high-temperature set points, so neither declares this.
+   * liquids set into a *different* material and so declare `phaseChange`, not
+   * this.
    */
   freeze?: { temp: number };
+  /**
+   * 상전이점 — the one temperature at which this material becomes another one
+   * outright (Sand → Molten Glass at 1250°, Molten Iron → Iron at 1150°, Dry Ice
+   * → CO₂ at -40°). See PhaseChange; applied by materials/phasechange.ts.
+   *
+   * Only the materials whose transition really is that simple declare it. The
+   * ones with a genuine branch at the threshold — Rust's coin-flip between metal
+   * and slag, Saltwater's boil that has to check for a burning slick overhead —
+   * keep their logic in `update` and declare nothing here, so this field is never
+   * a second, drifting copy of a rule that lives somewhere else.
+   */
+  phaseChange?: PhaseChange;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
   /**

@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { LIQUID_GALLIUM, GALLIUM_MELT_TEMP } from './liquidgallium';
+import { tryPhaseChange } from './phasechange';
 
 // Gallium — a solid silvery-blue metal with one famous quirk: it melts with the
 // faintest warmth. Its melt point sits barely above room temperature
@@ -34,11 +35,7 @@ function updateGallium(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= GALLIUM_MELT_TEMP) {
-    // In-place `set` keeps the (now warm) temperature so the fresh Liquid
-    // Gallium reads as molten instead of instantly re-freezing next tick.
-    sim.set(x, y, LIQUID_GALLIUM.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const GALLIUM = register({
@@ -60,5 +57,7 @@ export const GALLIUM = register({
   thermal: { conductivity: 0.7 },
   // The slowest fizz on the roster (see the constant above and corrosion.ts).
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
+  // 녹는점
+  phaseChange: { at: () => GALLIUM_MELT_TEMP, when: 'atOrAbove', into: () => LIQUID_GALLIUM.id },
   update: updateGallium,
 });

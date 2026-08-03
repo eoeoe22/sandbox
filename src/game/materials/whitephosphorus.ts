@@ -60,7 +60,7 @@ function updateWhitePhosphorus(x: number, y: number, sim: SimContext): void {
         if (sim.chance(FIRE_CHANCE)) sim.spawn(nx, ny, FIRE.id);
         else if (sim.chance(SMOKE_CHANCE)) sim.spawn(nx, ny, SMOKE.id);
       } else if (
-        getMaterial(nid).combustible &&
+        getMaterial(nid).combustion !== undefined &&
         sim.getTemp(nx, ny) < BURN_TEMP &&
         sim.chance(SPREAD_CHANCE)
       ) {

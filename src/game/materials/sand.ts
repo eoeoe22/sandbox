@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_GLASS, SAND_MELT_TEMP } from './moltenglass';
+import { tryPhaseChange } from './phasechange';
 
 // Powder: falls and piles (inherits updatePowder). Denser than water, so it
 // sinks through it. Heated past its melting point (by Lava, Blue Flame, or a
@@ -11,12 +12,7 @@ import { MOLTEN_GLASS, SAND_MELT_TEMP } from './moltenglass';
 // into a clear pane of solid Glass — a whole sand→glass pipeline that mirrors
 // the Stone↔Lava and Iron↔Molten-Iron phase pairs.
 function updateSand(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= SAND_MELT_TEMP) {
-    // In-place `set` keeps the (now high) temperature so the fresh Molten Glass
-    // reads as molten instead of instantly re-freezing to Glass next tick.
-    sim.set(x, y, MOLTEN_GLASS.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -30,5 +26,7 @@ export const SAND = register({
   // as a rounded cone instead of instantly flattening.
   friction: 0.3,
   thermal: { conductivity: 0.35 },
+  // 녹는점 — loose grains have to fuse, so this sits above solid Glass's.
+  phaseChange: { at: () => SAND_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_GLASS.id },
   update: updateSand,
 });

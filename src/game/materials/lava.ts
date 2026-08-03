@@ -9,6 +9,7 @@ import { FIRE } from './fire';
 import { WATER } from './water';
 import { STEAM } from './steam';
 import { OBSIDIAN } from './obsidian';
+import { tryPhaseChange } from './phasechange';
 
 // Liquid: flows like water but gated behind a per-tick probability so it
 // visibly moves slower/thicker (density > water, so water floats and sand
@@ -168,13 +169,7 @@ function updateLava(x: number, y: number, sim: SimContext): void {
   // sets as glass, not rock.
   if (tryQuenchToObsidian(x, y, sim)) return;
 
-  if (sim.getTemp(x, y) <= LAVA_FREEZE_TEMP) {
-    // Cooled enough to set. In-place `set` keeps the cell's (now low)
-    // temperature, so the fresh Stone reads as cold rock and keeps conducting
-    // heat out of whatever molten lava is still beneath it.
-    sim.set(x, y, STONE.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -208,5 +203,8 @@ export const LAVA = register({
   // the freeze point it darkens to a dull ember, so the crust and the cooling
   // front beneath it are visible before they turn to grey Stone.
   glow: { min: LAVA_FREEZE_TEMP, max: LAVA_TEMP, cool: rgb(120, 28, 12) },
+  // 어는점 — but water contact wins over it (see updateLava's quench, which
+  // runs first and sets to Obsidian instead).
+  phaseChange: { at: () => LAVA_FREEZE_TEMP, when: 'atOrBelow', into: () => STONE.id },
   update: updateLava,
 });

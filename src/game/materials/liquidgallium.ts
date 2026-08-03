@@ -7,6 +7,7 @@ import { GALLIUM } from './gallium';
 import { ALUMINUM } from './aluminum';
 import { ALUMINUM_POWDER } from './aluminumpowder';
 import { ACTIVATED_ALUMINUM } from './activatedaluminum';
+import { tryPhaseChange } from './phasechange';
 
 // Liquid Gallium — the molten counterpart to solid Gallium, but at a
 // theatrically low temperature: Gallium's whole party trick is that it melts
@@ -80,12 +81,7 @@ function updateLiquidGallium(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) <= GALLIUM_FREEZE_TEMP) {
-    // Cooled enough to set. In-place `set` keeps the (now low) temperature so
-    // the fresh solid Gallium reads as cold and doesn't instantly re-melt.
-    sim.set(x, y, GALLIUM.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   updateLiquid(x, y, sim);
 }
 
@@ -131,5 +127,7 @@ export const LIQUID_GALLIUM = register({
       probability: ALUMINUM_ACTIVATE_CHANCE,
     },
   ],
+  // 어는점
+  phaseChange: { at: () => GALLIUM_FREEZE_TEMP, when: 'atOrBelow', into: () => GALLIUM.id },
   update: updateLiquidGallium,
 });

@@ -6,6 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { IRON } from './iron';
 import { FIRE } from './fire';
+import { tryPhaseChange } from './phasechange';
 
 // Molten Iron — the liquid, glowing counterpart to Iron, exactly mirroring the
 // Lava↔Stone pair one notch hotter. It's placed white-hot and dense enough (8)
@@ -61,13 +62,7 @@ const IGNITE_CHANCE = 0.12;
 const FLOW_CHANCE = 0.2;
 
 function updateMoltenIron(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) <= MOLTEN_IRON_FREEZE_TEMP) {
-    // Cooled enough to set. In-place `set` keeps the (now low) temperature so
-    // the fresh Iron reads as cold and keeps conducting heat out of any molten
-    // metal still beneath it.
-    sim.set(x, y, IRON.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -95,5 +90,7 @@ export const MOLTEN_IRON = register({
   // conduction cools it toward setting, so the cooling front is visible before
   // it turns to grey Iron.
   glow: { min: MOLTEN_IRON_FREEZE_TEMP, max: MOLTEN_IRON_TEMP, cool: rgb(95, 45, 30) },
+  // 어는점
+  phaseChange: { at: () => MOLTEN_IRON_FREEZE_TEMP, when: 'atOrBelow', into: () => IRON.id },
   update: updateMoltenIron,
 });

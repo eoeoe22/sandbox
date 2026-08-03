@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 
 // Solid fuel: a static, rigid lump of coal (like Wall/Stone/Wood it just sits —
 // Solid has no phase-default movement, so a heap holds its shape and burns down
@@ -21,12 +21,11 @@ import { tryBurn, type Combustible } from './combustion';
 // Fire running hot (see combustion.ts's `oxygenated` branch), reaching full
 // 1800° parity at OXY_MAX_PIN. Coal's high 1300° base means it only takes 2
 // Oxygen cells to get there (a default 800°-base fuel needs 4).
-const SPEC: Combustible = { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 };
 
 function updateCoal(x: number, y: number, sim: SimContext): void {
   // Solid: no fall/flow, so combustion is the only behavior — if it doesn't
   // ignite this tick the cell simply stays put (mirrors Wood).
-  tryBurn(x, y, sim, SPEC);
+  tryBurn(x, y, sim);
 }
 
 export const COAL = register({
@@ -57,7 +56,7 @@ export const COAL = register({
   // Density is inert for a Solid (solids never move or get displaced); kept for
   // completeness alongside the other materials.
   density: 5,
-  combustible: true,
+  combustion: { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 },
   category: 'fire',
   thermal: { conductivity: 0.2 },
   update: updateCoal,

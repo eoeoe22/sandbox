@@ -3,6 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_IRON, IRON_MELT_TEMP } from './molteniron';
+import { tryPhaseChange } from './phasechange';
 
 // Wire (전선) — insulated cable: a conductor that carries a pulse the full length
 // of a run at no loss (a metal core), but whose jacket keeps the current *inside*.
@@ -41,13 +42,7 @@ function updateWire(x: number, y: number, sim: SimContext): void {
   const refractory = sim.getAux(x, y);
   if (refractory > 0) sim.setAux(x, y, refractory - 1);
 
-  if (sim.getTemp(x, y) >= IRON_MELT_TEMP) {
-    // The jacket is no protection against a forge: at the core metal's melting
-    // point the cable goes the way Iron does, running away as Molten Iron (and
-    // taking the circuit with it). In-place `set` keeps the (now high)
-    // temperature so the fresh melt doesn't instantly re-freeze.
-    sim.set(x, y, MOLTEN_IRON.id);
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 }
 
 export const WIRE = register({
@@ -73,5 +68,8 @@ export const WIRE = register({
   thermal: { conductivity: 0.12 },
   // Rubber-jacketed, so brine doesn't rust it the way it eats bare Iron; acid
   // still takes it (it isn't acidResistant), same as every other wiring material.
+  // 녹는점 — the jacket is no protection against a forge: at the core metal's
+  // melting point the cable runs away as Molten Iron, taking the circuit with it.
+  phaseChange: { at: () => IRON_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON.id },
   update: updateWire,
 });

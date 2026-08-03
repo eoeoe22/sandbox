@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { SPARK } from './spark';
 import { BLAST, detonate } from './blast';
 
@@ -26,7 +26,6 @@ const BLAST_RADIUS = 14;
 // Deflagration when lit by fire/lava: slow and cool, it just burns away rather
 // than exploding. A high autoignition means only genuine heat cooks it off, and
 // even then it burns instead of detonating.
-const SPEC: Combustible = { burnChance: 0.05, autoIgniteTemp: 320 };
 
 function updateC4(x: number, y: number, sim: SimContext): void {
   // Detonate ONLY on a deliberate trigger: an adjacent electric arc (Spark) or a
@@ -45,7 +44,7 @@ function updateC4(x: number, y: number, sim: SimContext): void {
   // Not shocked: if fire/lava is licking it (or it's been cooked past its
   // autoignition point) it quietly burns via the shared surface-front model —
   // deflagration, no boom. A Solid, so if it doesn't burn it simply stays put.
-  tryBurn(x, y, sim, SPEC);
+  tryBurn(x, y, sim);
 }
 
 export const C4 = register({
@@ -55,7 +54,7 @@ export const C4 = register({
   color: rgb(210, 200, 176), // off-white plastic explosive
   density: 1000,
   explosive: true,
-  combustible: true,
+  combustion: { burnChance: 0.05, autoIgniteTemp: 320 },
   electricDetonate: true, // a Spark detonates it directly (see spark.ts) — no fire hand-off
   blastRadius: BLAST_RADIUS,
   category: 'explosive',

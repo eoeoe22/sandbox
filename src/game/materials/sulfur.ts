@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { tryMixGunpowder } from './gunpowdermix';
 
 // Sulfur (황) — the bright yellow brimstone powder, and one of the three
@@ -21,20 +21,13 @@ import { tryMixGunpowder } from './gunpowdermix';
 // — it won't reach Iron's 1200°, or even Stone's 1100°. It's a fuse-lighter and
 // a fire-starter, not a cutting torch. (Real sulfur behaves the same way: it
 // ignites around 250°C with a low, pale flame.)
-const SPEC: Combustible = {
-  // Between Wood (0.06) and Sawdust (0.08): a loose mineral powder that carries
-  // a front briskly once lit, without the volatile-liquid race.
-  burnChance: 0.08,
-  autoIgniteTemp: 250, // the lowest in the game — radiant heat alone lights it
-  burnTemp: 600, // cool flame: spreads well, melts nothing
-};
 
 function updateSulfur(x: number, y: number, sim: SimContext): void {
   // The recipe first: cold sulfur sitting against saltpeter and coal dust grinds
   // into Gunpowder (the mix is temperature-gated, so a burning pile burns instead
   // — see gunpowdermix.ts).
   if (tryMixGunpowder(x, y, sim)) return;
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   updatePowder(x, y, sim);
 }
 
@@ -50,7 +43,13 @@ export const SULFUR = register({
   // Saltwater (4): a poured heap sinks in fresh water (so a wet mix is possible)
   // but floats up out of brine.
   density: 3.9,
-  combustible: true,
+  combustion: {
+    // Between Wood (0.06) and Sawdust (0.08): a loose mineral powder that carries
+    // a front briskly once lit, without the volatile-liquid race.
+    burnChance: 0.08,
+    autoIgniteTemp: 250, // the lowest in the game — radiant heat alone lights it
+    burnTemp: 600, // cool flame: spreads well, melts nothing
+  },
   // Grouped with the explosives rather than the plain powders so both new
   // black-powder ingredients sit right beside the Gunpowder they make.
   category: 'explosive',

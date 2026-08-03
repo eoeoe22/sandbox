@@ -6,6 +6,7 @@ import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { GLASS } from './glass';
 import { FIRE } from './fire';
+import { tryPhaseChange } from './phasechange';
 
 // Molten Glass — what Sand becomes when it's heated past its melting point (see
 // sand.ts and glass.ts). A hot, sluggish, glowing liquid that flows to fill a
@@ -25,12 +26,7 @@ const IGNITE_CHANCE = 0.1;
 const FLOW_CHANCE = 0.18;
 
 function updateMoltenGlass(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) <= MOLTEN_GLASS_FREEZE_TEMP) {
-    // In-place `set` keeps the (now low) temperature so the fresh Glass reads as
-    // set rather than instantly re-melting next tick.
-    sim.set(x, y, GLASS.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
 
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -54,5 +50,7 @@ export const MOLTEN_GLASS = register({
   category: 'fire',
   thermal: { init: MOLTEN_GLASS_TEMP, conductivity: 0.5 },
   glow: { min: MOLTEN_GLASS_FREEZE_TEMP, max: MOLTEN_GLASS_TEMP, cool: rgb(130, 95, 70) },
+  // 어는점 — set well under both melt points, so the pair keeps its hysteresis.
+  phaseChange: { at: () => MOLTEN_GLASS_FREEZE_TEMP, when: 'atOrBelow', into: () => GLASS.id },
   update: updateMoltenGlass,
 });

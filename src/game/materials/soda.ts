@@ -107,7 +107,7 @@ function updateSoda(x: number, y: number, sim: SimContext): void {
       fought = true;
     } else if (
       nid !== EMPTY &&
-      getMaterial(nid).combustible &&
+      getMaterial(nid).combustion !== undefined &&
       sim.getTemp(nx, ny) >= TRIGGER_TEMP &&
       sim.chance(SMOTHER_CHANCE)
     ) {

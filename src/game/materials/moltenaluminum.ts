@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ALUMINUM } from './aluminum';
+import { tryPhaseChange } from './phasechange';
 
 // Molten Aluminum — the liquid half of the aluminum pair, mirroring
 // Molten Iron↔Iron and Molten Glass↔Glass, but at a *far* lower temperature
@@ -40,13 +41,7 @@ const MOLTEN_ALUMINUM_TEMP = 800;
 const MOLTEN_ALUMINUM_FREEZE_TEMP = 560;
 
 function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) <= MOLTEN_ALUMINUM_FREEZE_TEMP) {
-    // Cooled enough to set. In-place `set` keeps the (now low) temperature so
-    // the fresh Aluminum reads as cold and keeps drawing heat out of any melt
-    // still under it, exactly as Molten Iron → Iron does.
-    sim.set(x, y, ALUMINUM.id);
-    return;
-  }
+  if (tryPhaseChange(x, y, sim)) return;
   // No flammable-ignition pass of its own (unlike Molten Iron's, which runs at
   // 1550°): at 660–800° this pool is barely above wood's own ignition point, so
   // whether it lights what it touches is left to ordinary conduction rather
@@ -102,5 +97,7 @@ export const MOLTEN_ALUMINUM = register({
     max: MOLTEN_ALUMINUM_TEMP,
     cool: rgb(168, 168, 172),
   },
+  // 어는점 — the cast metal keeps drawing heat out of any melt still under it.
+  phaseChange: { at: () => MOLTEN_ALUMINUM_FREEZE_TEMP, when: 'atOrBelow', into: () => ALUMINUM.id },
   update: updateMoltenAluminum,
 });

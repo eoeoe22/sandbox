@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, type Combustible } from './combustion';
+import { tryBurn } from './combustion';
 import { refluxBoil, REFLUX_DIESEL } from './petroleumdistill';
 
 // The heaviest of the liquid fuel cuts distilled from crude oil (see oil.ts):
@@ -17,11 +17,10 @@ import { refluxBoil, REFLUX_DIESEL } from './petroleumdistill';
 // and re-boils (refluxes) at the highest cut boiling point — its boil point
 // (320) plus the reflux superheat cap (60) sits below autoignition, so a
 // flameless still refluxes it away rather than igniting it (petroleumdistill.ts).
-const SPEC: Combustible = { burnChance: 0.017, autoIgniteTemp: 450 };
 const BOIL_TEMP = 320;
 
 function updateDiesel(x: number, y: number, sim: SimContext): void {
-  if (tryBurn(x, y, sim, SPEC)) return;
+  if (tryBurn(x, y, sim)) return;
   if (refluxBoil(x, y, sim, BOIL_TEMP, REFLUX_DIESEL)) return;
   updateLiquid(x, y, sim);
 }
@@ -32,7 +31,7 @@ export const DIESEL = register({
   phase: Phase.Liquid,
   color: rgb(150, 120, 70),
   density: 2.45,
-  combustible: true,
+  combustion: { burnChance: 0.017, autoIgniteTemp: 450 },
   petroleum: true, // flat single-colour render; burns on water without steaming it
   category: 'oil',
   thermal: { conductivity: 0.2 },
