@@ -34,12 +34,12 @@ body {
   overflow: hidden;
 }
 
-/* Document pages opt out of the app's scroll lock (Base.astro's `scroll` prop).
-   The lock above exists for the sandbox — a touch drag has to paint rather than
-   scroll, and the address bar must not collapse under a dvh-sized canvas — but
-   it is set on `html, body`, so every page inherited it. A page taller than the
-   viewport therefore could not be scrolled at all: the codex's content below the
-   fold was simply unreachable.
+/* Every page that is not the app itself scrolls (Base.astro's `app` prop stamps
+   this class on everything else). The lock above exists for the sandbox — a
+   touch drag has to paint rather than scroll, and the address bar must not
+   collapse under a dvh-sized canvas — but it is set on `html, body`, so every
+   page inherited it. A page taller than the viewport therefore could not be
+   scrolled at all: the codex's content below the fold was simply unreachable.
 
    `height: auto` is as load-bearing as the overflow here. `height: 100%` caps the
    element at the viewport, so restoring the overflow alone would leave the

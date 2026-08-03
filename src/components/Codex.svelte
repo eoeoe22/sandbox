@@ -310,7 +310,10 @@
               <tbody>
                 {#each openCard.stats as s (s.key)}
                   <tr>
-                    <th scope="row" title={codexTerm(s.key).desc}>{codexTerm(s.key).label}</th>
+                    <th scope="row">
+                      {codexTerm(s.key).label}
+                      <span class="stat-desc">{codexTerm(s.key).desc}</span>
+                    </th>
                     <td>
                       <span class="num">{statValue(s)}</span>
                       {#if s.refId !== undefined}
@@ -396,7 +399,13 @@
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 600;
-    margin-bottom: 1rem;
+    /* 14.4px x 1.2 = 17.28px of text, padded out to ~44px and pulled back with
+       a matching negative margin so the tap target grows but the layout doesn't
+       move. The line-height is pinned rather than left at `normal` so the sum
+       doesn't drift with the platform font's metrics. */
+    line-height: 1.2;
+    padding: 0.85rem 0.75rem;
+    margin: -0.85rem -0.75rem calc(1rem - 0.85rem);
   }
 
   .home:hover {
@@ -488,7 +497,10 @@
     border: 1px solid #262a33;
     background: #14161c;
     color: #e0e6ed;
-    font-size: 0.95rem;
+    /* 16px exactly. Anything smaller and iOS Safari zooms the page when this is
+       focused — it used to be masked by the viewport's `maximum-scale=1`, which
+       a reading page can't keep (see Base.astro's `app` prop). */
+    font-size: 1rem;
     font-family: inherit;
   }
 
@@ -517,6 +529,21 @@
     color: #9aa4b2;
     cursor: pointer;
     font-size: 0.7rem;
+  }
+
+  /* The visible pill is 27.2px; a thumb needs ~44. Grow the *hit* area with a
+     pseudo-element rather than the box, so the button lands in exactly the same
+     place it does today — widening the element instead would slide the circle
+     several px left of where the design puts it. A miss here is worse than a
+     miss usually is: it lands on the input behind and re-opens the keyboard. */
+  .search .clear::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
   }
 
   .search .clear:hover {
@@ -570,6 +597,15 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 0.7rem;
+  }
+
+  /* 134 cards, each with an SVG of a few dozen shapes, and a phone shows four.
+     `content-visibility` lets the browser skip layout and paint for the ones
+     off screen; `contain-intrinsic-size` keeps the scrollbar honest in the
+     meantime by standing in at roughly a card's real height. */
+  .grid > li {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 150px;
   }
 
   .card {
@@ -758,6 +794,26 @@
     white-space: nowrap;
   }
 
+  /* What a row *means*, on the page rather than in a `title=` tooltip. A tooltip
+     needs a hover, and a touch device has none — on a phone the explanation of
+     every number here simply did not exist. The trait cards below already say
+     their sentence out loud; this makes the table agree with them.
+
+     `white-space: normal` is load-bearing: it undoes the `nowrap` it inherits
+     from the `th` (there to keep the row label on one line), which a sentence
+     would otherwise obey — stretching the table until `.table-wrap` turned into
+     a horizontal scroller on a narrow phone. */
+  .stat-desc {
+    display: block;
+    white-space: normal;
+    max-width: 22rem;
+    margin-top: 0.15rem;
+    color: #6b7684;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.45;
+  }
+
   td {
     padding: 0.45rem 0;
     text-align: right;
@@ -876,9 +932,30 @@
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     }
 
+    /* Two columns, and the badge row wraps — the cards are taller here. */
+    .grid > li {
+      contain-intrinsic-size: auto 175px;
+    }
+
     .hero {
       width: 56px;
       height: 56px;
+    }
+  }
+
+  /* Touch targets. Keyed off the pointer, not the viewport width, because what
+     makes 31px too small is the finger, not the screen — a tablet at 800px has
+     the same problem. The category pills are the page's primary filter and
+     there are 16 of them wrapping into rows; at 31px tall with a 6.4px gap, a
+     thumb aimed at one regularly lands on the row above. Only the height grows:
+     wider pills would buy another wrapped row and make the aim worse. */
+  @media (pointer: coarse) {
+    .tabs {
+      gap: 0.5rem;
+    }
+
+    .tab {
+      min-height: 44px;
     }
   }
 </style>

@@ -21,12 +21,19 @@ const objects = buildObjectEntries();
 const sprite = buildIconSprite();
 ---
 
-<Base title="Particle Sandbox - 물질 도감" scroll>
+<Base title="Particle Sandbox - 물질 도감">
   <div class="guide-page">
-    <!-- The icon definitions, once per document. Every `<use href="#codex-…">`
-         in the grid and the detail view points in here. -->
-    <Fragment set:html={sprite} />
     <Codex client:load materials={materials} objects={objects} />
+    <!-- The icon definitions, once per document. Every `<use href="#codex-…">`
+         in the grid and the detail view points in here.
+
+         Last, not first: this is ~220 KB of inert `<path>` data, and in front of
+         the island it was 220 KB the parser had to get through before it reached
+         a single visible element — the page stayed blank for all of it. `<use>`
+         resolves a forward reference when the target is inserted, and `.icon` /
+         `.hero` are fixed-size boxes, so the drawings fill in a moment later
+         with no reflow. -->
+    <Fragment set:html={sprite} />
   </div>
 </Base>
 

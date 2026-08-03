@@ -5,25 +5,35 @@ import faviconUrl from '../assets/favicon.svg?url';
 interface Props {
   title?: string;
   /**
-   * Let the document scroll. Off by default because the sandbox pages are a
-   * fixed-viewport app: `global.css` locks `html, body` to `overflow: hidden`
-   * so a touch drag paints instead of scrolling, and so the address bar never
-   * collapses out from under a `dvh`-sized canvas (see the `#game` note there).
+   * This page *is* the sandbox app — it paints a canvas the user drags and
+   * pinches on. Both of the gestures a browser normally spends on the document
+   * get taken away from it:
    *
-   * A *document* page has the opposite need. The codex is many screens tall,
-   * and with the lock inherited it simply could not be scrolled at all — the
-   * content below the fold was unreachable, most obviously on a phone. Pages
-   * like that pass `scroll` and get the ordinary document scroller back:
-   * momentum, address-bar auto-hide and find-in-page along with it, which a
-   * nested `overflow: auto` box would have given up.
+   * - the document scroller (`global.css` locks `html, body` to
+   *   `overflow: hidden`), so a touch drag paints instead of scrolling and the
+   *   address bar never collapses out from under a `dvh`-sized canvas (see the
+   *   `#game` note there);
+   * - pinch zoom (`maximum-scale=1, user-scalable=no`), so a two-finger gesture
+   *   over the play area doesn't zoom the page instead of doing whatever the
+   *   canvas wants. `touch-action: none` covers `#game` itself, but the sidebar
+   *   and the bottom bar around it are outside the canvas.
+   *
+   * **Off by default**, so a page that is only text — the codex, the 404 —
+   * scrolls and zooms like any other web page. The default is this way round
+   * because the opposite one has now gone wrong twice: `/guide` shipped unable
+   * to scroll at all (the content below the fold was simply unreachable on a
+   * phone), and then shipped again refusing to pinch-zoom 11px badge text,
+   * which is a WCAG 1.4.4 failure that only Android shows — iOS Safari has
+   * ignored `user-scalable=no` since iOS 10, so testing on an iPhone hides it.
+   * A page that forgets to opt in now merely looks like a document.
    */
-  scroll?: boolean;
+  app?: boolean;
 }
-const { title = 'Particle Sandbox', scroll = false } = Astro.props;
+const { title = 'Particle Sandbox', app = false } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="ko" class={scroll ? 'scrollable' : undefined}>
+<html lang="ko" class={app ? undefined : 'scrollable'}>
   <head>
     <meta charset="utf-8" />
     <!-- Detect the UI locale before first paint so <html lang> and any
@@ -53,9 +63,14 @@ const { title = 'Particle Sandbox', scroll = false } = Astro.props;
         } catch (e) {}
       })();
     </script>
+    <!-- The zoom clamp is the app's, not every page's — see the `app` prop.
+         Both halves have to go for a document page: either one alone still
+         clamps Chrome. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+      content={app
+        ? 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+        : 'width=device-width, initial-scale=1'}
     />
     <link rel="icon" href={faviconUrl} type="image/svg+xml" />
     <!-- manifest.webmanifest, /icons/*, /sw.js는 public/에서 해시 없이 그대로
@@ -69,7 +84,16 @@ const { title = 'Particle Sandbox', scroll = false } = Astro.props;
     <meta name="apple-mobile-web-app-title" content="Sandbox" />
     <!-- Only the Bootstrap Icons webfont is used (bi-* glyphs in the control
          panel). The full Bootstrap CSS isn't loaded — the app uses no Bootstrap
-         component classes and global.css owns the reset/base styles. -->
+         component classes and global.css owns the reset/base styles.
+
+         The stylesheet is render-blocking and the font inside it is only
+         discovered once it parses, so on a cold mobile connection that is two
+         serial round trips before any glyph exists (`font-display: block` in a
+         third-party stylesheet we can't change means they stay invisible, not
+         fallback-rendered, until then). The preconnect gets the DNS + TLS
+         handshake out of the way in parallel with the HTML; `crossorigin` is
+         required for it to be reused by the font fetch. -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
       rel="stylesheet"

@@ -44,6 +44,15 @@
 
   let dialogEl = $state<HTMLDivElement | null>(null);
 
+  // Backdrop press bookkeeping — see the overlay's handlers below. Plain `let`,
+  // not `$state`: nothing renders off these.
+  let pressedBackdrop = false;
+  let pressX = 0;
+  let pressY = 0;
+  /** How far the pointer may travel between press and release and still count as
+   *  a dismissing tap rather than a swipe. */
+  const BACKDROP_SLOP = 10;
+
   // Every open Modal listens on `window` for Escape and Tab, so with one modal
   // stacked over another (the snapshot load options over the save/load list)
   // both would fire on a single Escape and close the pair. This module-level
@@ -164,13 +173,30 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <!-- The backdrop closes the dialog on a direct press (target === backdrop),
-       but not when the press bubbles up from inside the dialog card. -->
+  <!-- The backdrop closes the dialog when the press *and* the release are on it,
+       not when either comes from inside the dialog card. Dismissing on the press
+       alone meant a finger that landed beside the card and started to drag —
+       reaching for the content, or a stray flick — closed the dialog before it
+       had moved a pixel. The travel test is what makes the release safe to trust
+       on touch: the UA gives the pointerdown target implicit capture, so a
+       pointerup is retargeted to the overlay even when the finger ended up over
+       the card, and a position test is the only thing that still tells a tap
+       from a swipe. -->
   <div
     class="overlay"
     use:portal
     onpointerdown={(e) => {
-      if (e.target === e.currentTarget) onclose();
+      pressedBackdrop = e.target === e.currentTarget;
+      pressX = e.clientX;
+      pressY = e.clientY;
+    }}
+    onpointercancel={() => (pressedBackdrop = false)}
+    onpointerup={(e) => {
+      if (!pressedBackdrop) return;
+      pressedBackdrop = false;
+      if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > BACKDROP_SLOP) return;
+      if (e.target !== e.currentTarget) return;
+      onclose();
     }}
   >
     <div
@@ -215,6 +241,12 @@
     /* Overridden per instance by the `width` prop's inline style. */
     width: 340px;
     max-width: 100%;
+    /* The pair, not just the second line: a browser that doesn't know `dvh`
+       drops the whole declaration as invalid, and the dialog loses its cap
+       entirely — a long codex entry then runs off the bottom of the screen with
+       nothing to scroll, since `.modal-body` only scrolls once the modal is
+       capped. */
+    max-height: 86vh;
     max-height: min(86vh, 86dvh);
     background: rgba(24, 24, 30, 0.98);
     border: 1px solid #2a2a33;
@@ -240,8 +272,15 @@
   }
   .modal-title {
     flex: 1 1 auto;
+    /* The dialog suppresses selection so a drag on it doesn't smear text (it
+       sits over a canvas the app drags for a living). The title is the
+       exception: on the codex it names the material, which is the thing someone
+       wants to copy. Scoped to the element, so it beats the value inherited from
+       `.modal` while the rest of the chrome stays unselectable. */
+    user-select: text;
   }
   .close {
+    position: relative;
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -256,6 +295,21 @@
     cursor: pointer;
     font-size: 13px;
   }
+  /* On a phone this 28px button is the dialog's only visible way out (Escape
+     needs a keyboard, and the backdrop is not an affordance anyone is told
+     about). Grow the hit area, not the button: a pseudo-element counts as part
+     of its originating element for hit-testing, so the target reaches 44px with
+     the paint and the 52px header height both untouched. */
+  .close::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+  }
+
   .close:hover {
     border-color: #3a3a46;
   }
