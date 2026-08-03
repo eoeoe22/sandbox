@@ -684,8 +684,12 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
 //     heap check below red, with the scene's own mechanism measured identical.
 //     A local reseed is the cheap version of the real fix (per-block streams
 //     everywhere, as test/miscible.ts does); it costs nothing here and takes this
-//     scene out of the blast radius.
+//     scene out of the blast radius. The shared stream is *restored* at the end of
+//     the block rather than left replaced — the closure carries its own position,
+//     so the blocks after this one resume the file's stream exactly where block 13
+//     left it, and are insulated from this block's draw count too.
 {
+  const shared = Math.random;
   Math.random = mulberry32(0xd057);
   const { grid, sim } = makeWorld(80, 80);
   floor(grid, 76);
@@ -785,6 +789,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   const actLeft = count(g4, ACTIVATED_ALUMINUM.id);
   check('…and an activated cloud flashes off the same way',
     actLeft < actCloud * 0.5, `${actLeft}/${actCloud} grains left`);
+  Math.random = shared; // hand the file's own stream back, at the position it was left
 }
 
 // 15. Ammonal: the fourth recipe off the same grain, on the same gates as the

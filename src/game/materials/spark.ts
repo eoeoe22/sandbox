@@ -472,6 +472,15 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     // pulse can spread through a blob.
     sim.set(x, y, SLIME.id);
     sim.setAux(x, y, sim.chance(SLIME_SHOCK_CHANCE) ? SLIME_DISSOLVE_BUDGET : 0);
+    // …and mark it, because Slime is a reaction-table partner (acid.ts's
+    // 산 + 슬라임 → 산성 슬라임). Left unmarked, an Acid cell that has not been
+    // scanned yet this tick would pick this freshly-reverted cell up as a
+    // `with: SLIME.id` partner, chaining Spark → Slime → Acid Slime inside a
+    // single tick — the same-tick cascade engine/reactions.ts exists to prevent.
+    // The mark costs nothing here: spark propagation never consults the moved
+    // flag (nothing else in this file does), and the cell has already taken its
+    // turn as a Spark, so this only closes it to *other* cells' passes.
+    sim.markMoved(x, y);
     return;
   }
   if (conductorId === ACID_SLIME.id) {
@@ -485,6 +494,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     // needing a sustained pulse train, not by the medium's strength loss.
     sim.set(x, y, ACID_SLIME.id);
     sim.setAux(x, y, sim.chance(SLIME_SHOCK_CHANCE) ? SLIME_DISSOLVE_BUDGET : 0);
+    sim.markMoved(x, y); // twin of the Slime branch above — same reason, kept in step
     return;
   }
   sim.set(x, y, conductorId);

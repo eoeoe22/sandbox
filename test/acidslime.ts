@@ -30,6 +30,7 @@
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
+import { SPARK, packSpark, conductorClass } from '../src/game/materials/spark';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -218,6 +219,35 @@ const TICKS = 600;
   sim.step();
   Math.random = rolled;
   check('a cell rinsed clean is not re-acidified by acid in the same tick',
+    grid.get(5, 10) === SLIME, `cell is ${getMaterial(grid.get(5, 10)).name}`);
+}
+
+// 6. The same hazard from the other direction, and the reason it is worth a
+//    second check: a Spark travelling through a Slime blob reverts its cell to
+//    Slime at the end of its turn (spark.ts), which is another bare write of a
+//    material that only became a reaction partner when the recipe landed. Left
+//    unmarked it chains Spark → Slime → Acid Slime inside one tick — a same-tick
+//    cascade, which engine/reactions.ts's design note rules out outright.
+//
+//    Built with the packing helpers rather than a battery so it is exact: one
+//    energized cell at strength 1 (so it dies here instead of handing the pulse
+//    to the acid, which would give that cell a turn as a Spark and hide the
+//    thing being measured), and every roll forced to succeed.
+{
+  const grid = new Grid(12, 12);
+  const sim = new Simulation(grid);
+  for (let y = 0; y < 12; y++)
+    for (let x = 0; x < 12; x++)
+      grid.cells[grid.idx(x, y)] = x === 0 || y === 0 || x === 11 || y === 11 ? WALL : 0;
+  grid.cells[grid.idx(5, 10)] = SPARK.id; // a slime cell carrying a pulse…
+  grid.aux[grid.idx(5, 10)] = packSpark(1, conductorClass(SLIME));
+  grid.cells[grid.idx(4, 9)] = ACID; // …with acid diagonally above it, acting later
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const rolled = Math.random;
+  Math.random = () => 0;
+  sim.step();
+  Math.random = rolled;
+  check('a spark collapsing back to slime is not acidified in the same tick',
     grid.get(5, 10) === SLIME, `cell is ${getMaterial(grid.get(5, 10)).name}`);
 }
 
