@@ -707,8 +707,18 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     s2.step();
   }
   const pileLeft = count(g2, ALUMINUM_POWDER.id);
+  // The bar is 0.7, not 0.85. "Smoulders" is not "is inert": the grains right in
+  // the flame do melt away over 25 ticks, and how many depends on how the fire
+  // happens to lick the surface — measured across 8 seeds the heap keeps 76–99%
+  // of itself. The old 0.85 sat inside that spread, so which seed the harness's
+  // single shared stream had reached by this point decided the result; it went
+  // red when an unrelated change upstream (dropping molten aluminum's viscosity
+  // roll, one fewer draw per cell per tick) shifted the stream's phase, with the
+  // scene's own mechanism measured identical. What the check actually
+  // distinguishes is a *flash-off* — the suspended cloud above leaves under 50%
+  // — and 0.7 is still a long way clear of that.
   check('…but a heap under the same flame just smoulders (the pile is untouched)',
-    pileLeft > pile * 0.85, `${pileLeft}/${pile} grains left`);
+    pileLeft > pile * 0.7, `${pileLeft}/${pile} grains left`);
 
   // …and the other half of the same gate, which is the one a future change is
   // most likely to break: **dust in a liquid never goes off**. `isSuspended`

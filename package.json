@@ -38,7 +38,9 @@
     "test:crawler": "node test/run-crawler.mjs",
     "test:phasechange": "node test/run-phasechange.mjs",
     "test:codex": "node test/run-codex.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium && npm run test:chlorinealuminum && npm run test:miscible && npm run test:stacking && npm run test:antimatter && npm run test:overlap && npm run test:extinguish && npm run test:crawler && npm run test:phasechange && npm run test:codex && npm run test:startscreen",
+    "test:acidslime": "node test/run-acidslime.mjs",
+    "test:liquidmetalflow": "node test/run-liquidmetalflow.mjs",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium && npm run test:chlorinealuminum && npm run test:miscible && npm run test:stacking && npm run test:antimatter && npm run test:overlap && npm run test:extinguish && npm run test:crawler && npm run test:phasechange && npm run test:codex && npm run test:acidslime && npm run test:liquidmetalflow && npm run test:startscreen",
     "check:hand-icons": "node scripts/build-hand-icons.mjs --check",
     "build:hand-icons": "node scripts/build-hand-icons.mjs"
   },

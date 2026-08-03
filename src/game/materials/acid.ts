@@ -1,11 +1,13 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { updateLiquid, diffuseWith } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryCorrode, tryCorrodeSoaked, ACID_CORROSION } from './corrosion';
 import { ACID_VAPOR } from './acidvapor';
 import { WATER } from './water';
+import { SLIME } from './slime';
+import { ACID_SLIME } from './acidslime';
 import { tryPhaseChange } from './phasechange';
 
 // Liquid: flows like water, but each tick has a chance to corrode any
@@ -46,6 +48,26 @@ import { tryPhaseChange } from './phasechange';
 const ACID_BOIL_TEMP = 100;
 const DIFFUSE_CHANCE = 0.02;
 
+// Slime is the one *liquid* acid does something to. It can't corrode it (that
+// pass only eats Solids and Powders), and the two goos are chemically the same
+// stuff, so contact soaks the acid into the goo instead: 산 + 슬라임 → 산성 슬라임.
+// One acid cell is spent per slime cell converted (`produce: EMPTY`), so a
+// splash acidifies exactly as much slime as there was acid — a drop stains the
+// face of a blob, a poured pool converts the whole thing. That 1:1 consumption
+// is the whole balance of the recipe: leaving the acid cell alive would make one
+// drop a catalyst that turns every slime in the world (compare Liquid Gallium's
+// deliberately one-sided aluminum rules, liquidgallium.ts).
+//
+// Declared here rather than on Slime's side for the usual import-graph reason:
+// Acid Slime already imports Slime, so a rule on Slime naming Acid Slime would
+// close a module-scope cycle, while this direction (acid → acid slime → slime)
+// has no edge coming back.
+//
+// The reverse — water washing the acid back out of the goo — lives on Acid
+// Slime's own update (acidslime.ts), because it is a dilution rather than a
+// contact reaction: it happens as the blob *drinks*, which is Slime's mechanic.
+const SLIME_ACIDIFY_CHANCE = 0.2;
+
 function updateAcid(x: number, y: number, sim: SimContext): void {
   // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
   // so this cell can carry current again (mirrors Water/Saltwater — see spark.ts).
@@ -82,6 +104,15 @@ export const ACID = register({
   // 끓는점 — the Vapor is born with the hot temperature, then rises and
   // corrodes/condenses on its own (see acidvapor.ts).
   phaseChange: { at: () => ACID_BOIL_TEMP, when: 'atOrAbove', into: () => ACID_VAPOR.id },
+  // 산 + 슬라임 → 산성 슬라임, one acid cell spent per slime cell (see above).
+  reactions: [
+    {
+      with: SLIME.id,
+      produce: EMPTY,
+      otherBecomes: ACID_SLIME.id,
+      probability: SLIME_ACIDIFY_CHANCE,
+    },
+  ],
   update: updateAcid,
   // 스며든 산도 계속 먹는다: soaked into a powder bed through the 겹침 layer, it
   // corrodes the grain holding it (corrosion.ts's `tryCorrodeSoaked`) instead of

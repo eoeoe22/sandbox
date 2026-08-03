@@ -59,7 +59,6 @@ const MOLTEN_IRON_TEMP = 1550;
 // above its own solidify point.
 const MOLTEN_IRON_FREEZE_TEMP = 650;
 const IGNITE_CHANCE = 0.12;
-const FLOW_CHANCE = 0.2;
 
 function updateMoltenIron(x: number, y: number, sim: SimContext): void {
   if (tryPhaseChange(x, y, sim)) return;
@@ -74,8 +73,14 @@ function updateMoltenIron(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // Thick and slow: only flows on a fraction of ticks (see Lava's identical gate).
-  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+  // Runs freely, every tick. A metal melt is a *thin* liquid — a tapped heat is a
+  // stream, not the creeping tongue lava makes — so none of the liquid metals
+  // (this, Molten Aluminum, Molten Iron Ore, Molten U238) carry a flow gate or a
+  // `viscosity` any more; a ladle of iron pours and levels at water's pace, and
+  // finds every corner of a mold instead of mounding in the middle of it. The
+  // sluggish melts that keep their drag are the non-metals: Lava, Molten Glass,
+  // Molten Salt, and the Slag this cools past on its way to solid iron.
+  updateLiquid(x, y, sim);
 }
 
 export const MOLTEN_IRON = register({

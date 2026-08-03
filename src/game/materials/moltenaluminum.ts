@@ -48,11 +48,11 @@ function updateMoltenAluminum(x: number, y: number, sim: SimContext): void {
   // than a scripted roll. It sets fire to a wooden floor it is poured on; it
   // does not flash-ignite a room the way a crucible of iron does.
 
-  // …and then it flows, like the liquid it is. Molten Iron and Lava gate this
-  // behind a FLOW_CHANCE roll because they are thick, sluggish melts; molten
-  // aluminum is a thin one (real aluminum pours about as freely as water), so
-  // it runs every tick and its `viscosity` field alone supplies the small drag
-  // that keeps a pour reading as metal rather than a splash.
+  // …and then it flows, like the liquid it is — freely, every tick and with no
+  // `viscosity` drag at all. Real aluminum pours about as freely as water, and
+  // that is now the rule for every liquid metal rather than this one's exception
+  // (see molteniron.ts): the melts that stay sluggish are the non-metals — Lava,
+  // Molten Glass, Molten Salt, Slag.
   updateLiquid(x, y, sim);
 }
 
@@ -82,10 +82,9 @@ export const MOLTEN_ALUMINUM = register({
   // Water (3), so it sinks in a quench instead of skating on it.
   density: 4.4,
   category: 'fire',
-  // Runs nearly as freely as water (real molten aluminum is a thin, fluid melt,
-  // not a sluggish one like lava or slag) — just enough drag to read as a metal
-  // pour rather than a splash, so it still fills a mold cleanly.
-  viscosity: 0.2,
+  // No `viscosity`: runs as freely as water (real molten aluminum is a thin,
+  // fluid melt, not a sluggish one like lava or slag), so a pour fills a mold
+  // right out to its corners — see the note in the update above.
   // Same conductivity as the iron pool: a metal melt shuttles heat readily,
   // which is what lets a mold or a quench actually set it.
   thermal: { init: MOLTEN_ALUMINUM_TEMP, conductivity: 0.85 },
