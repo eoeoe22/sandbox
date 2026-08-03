@@ -48,37 +48,48 @@ function check(name: string, ok: boolean, detail = ''): void {
   // that way — so a new `thermal.capacity` is an orphan just as a new top-level
   // tag would be. Claiming the parts is also claiming the whole: `thermal` needs
   // no entry of its own once `thermal.conductivity` and `thermal.init` have one.
-  const descend = new Set(
-    [...claimed].filter((f) => f.includes('.')).map((f) => f.slice(0, f.indexOf('.'))),
-  );
+  //
+  // Every *proper prefix* of a claimed path counts, and the sweep below recurses,
+  // because otherwise the rule only reaches one level down and the hole simply
+  // moves: claim `thermal.exotic` whole and its own contents go unaudited at a
+  // depth nothing looks at. Depth is not the invariant — "no struct is claimed
+  // whole" is.
+  const descend = new Set<string>();
+  for (const path of claimed) {
+    const parts = path.split('.');
+    for (let i = 1; i < parts.length; i++) descend.add(parts.slice(0, i).join('.'));
+  }
 
   const orphans = new Set<string>();
   // Structs the codex shows but claims only as a whole. Not orphans — they ARE
   // covered — but the claim is the shape that would let a new part slip in
   // unnoticed, which is the hole this whole check exists to close.
   const unopened = new Set<string>();
-  for (const m of allMaterials()) {
-    for (const [key, value] of Object.entries(m)) {
+
+  const sweep = (obj: object, prefix: string): void => {
+    for (const [key, value] of Object.entries(obj)) {
       if (value === undefined) continue;
-      if (!claimed.has(key) && !descend.has(key)) {
-        orphans.add(key);
+      const path = prefix === '' ? key : `${prefix}.${key}`;
+      if (!claimed.has(path) && !descend.has(path)) {
+        orphans.add(path);
         continue;
       }
       // Arrays are homogeneous lists of ids, not structs with named parts, so
-      // there is nothing to descend into. An excluded field is exempt too: we
-      // have decided not to show it at all, so its parts don't matter either.
+      // there is nothing to descend into (`overlapFluids`; `reactions` is an
+      // excluded field the page renders as its own section). An excluded path is
+      // exempt too: we have decided not to show it at all, so its parts don't
+      // matter either — and since this is a plain string lookup, a nested
+      // exclusion can be written as `'glow.min'` if one is ever wanted.
       const isStruct = typeof value === 'object' && value !== null && !Array.isArray(value);
-      if (!isStruct || key in EXCLUDED_FIELDS) continue;
-      if (!descend.has(key)) {
-        unopened.add(key);
+      if (!isStruct || path in EXCLUDED_FIELDS) continue;
+      if (!descend.has(path)) {
+        unopened.add(path);
         continue;
       }
-      for (const [sub, subValue] of Object.entries(value)) {
-        if (subValue === undefined) continue;
-        if (!claimed.has(`${key}.${sub}`)) orphans.add(`${key}.${sub}`);
-      }
+      sweep(value, path);
     }
-  }
+  };
+  for (const m of allMaterials()) sweep(m, '');
   check(
     'every Material field in use is a stat, a trait, or a documented exclusion',
     orphans.size === 0,

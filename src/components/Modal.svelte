@@ -2,6 +2,12 @@
   // Shared across every Modal instance (see the per-instance registration
   // below): the currently open dialogs, oldest first.
   const openModals: object[] = [];
+
+  // The document's own inline `overflow` from before ANY modal locked it, held
+  // here for the same reason the stack above is shared: the value belongs to the
+  // document, not to a dialog. Read the note on the lock in the effect below for
+  // what goes wrong when each instance keeps its own copy.
+  let overflowBeforeLock: string | null = null;
 </script>
 
 <script lang="ts">
@@ -56,15 +62,31 @@
     // phone is most of the screen. Reference-counted off the same stack the
     // Escape handling uses, so a modal opened over another doesn't release the
     // lock when only the top one closes. An inline style beats the stylesheet's
-    // `overflow: visible`, and restoring the previous value (rather than
-    // clearing to '') leaves a page that set its own overflow as it was.
+    // `overflow: visible`, and restoring the saved value (rather than clearing
+    // to '') leaves a page that set its own overflow as it was.
+    //
+    // Both the saved value and the "am I the one who locked it" test are module
+    // state, NOT per-instance, and that is the whole correctness argument. The
+    // first version kept `previousOverflow` on each instance and restored
+    // whichever instance happened to empty the stack — right only if dialogs
+    // close in reverse of the order they opened. Stack A, then B: B captures
+    // 'hidden', because A had already locked. Close A first and B's cleanup runs
+    // last, restoring *its* capture — so the document is left inline-locked with
+    // nothing remaining to unlock it, which on a scrolling page is a permanently
+    // dead scrollbar. Saving once, at the moment the lock is actually applied,
+    // has no ordering assumption to violate.
     const root = document.documentElement;
-    const previousOverflow = root.style.overflow;
-    if (openModals.length === 1) root.style.overflow = 'hidden';
+    if (openModals.length === 1) {
+      overflowBeforeLock = root.style.overflow;
+      root.style.overflow = 'hidden';
+    }
     return () => {
       const i = openModals.indexOf(token);
       if (i !== -1) openModals.splice(i, 1);
-      if (openModals.length === 0) root.style.overflow = previousOverflow;
+      if (openModals.length === 0 && overflowBeforeLock !== null) {
+        root.style.overflow = overflowBeforeLock;
+        overflowBeforeLock = null;
+      }
     };
   });
   const isTopmost = (): boolean => openModals[openModals.length - 1] === token;
