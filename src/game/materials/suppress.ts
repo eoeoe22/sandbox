@@ -205,42 +205,6 @@ export function spendDousingAgent(x: number, y: number, sim: SimContext): void {
 }
 
 /**
- * True if the water sitting in this cell is *in the middle of putting a fire
- * out* — within radiant reach (FIGHT_RANGE) of burning class-A fuel, or of the
- * Fire/Blue Flame that fuel throws off.
- *
- * The trigger is *burning*, not merely warm, so the shield lifts the moment the
- * fire is actually out and the leftover water then boils away on the scene's
- * residual heat exactly as it always did. What it costs is that a pot of water
- * standing within three cells of a live wood fire will not come to the boil —
- * use Lava, a hot metal plate or a Heat Ray for steam, which is what every steam
- * rig in the box already does.
- *
- * Water/Saltwater/Sugar Water call this to hold themselves just below boiling
- * instead of flashing to Steam, exactly the way they already refuse to boil under
- * a burning oil slick (burningPetroleumAdjacent in water.ts). The reason is that
- * without it the same evaporation is counted twice, and water can never win.
- * Firefighting water is already consumed by two explicit rolls — one cell per
- * flame snuffed (fire.ts) and DOUSE_STEAM_CHANCE per fuel cell doused
- * (combustion.ts). Letting the temperature system *also* delete it is what made
- * pouring water read as pure evaporation: heat diffusion runs for the whole grid
- * before any material update, so a water cell laid against a burning fuel is
- * already at 110° by the time anything gets a turn — measured, one tick against
- * burning Coal is enough — and it boiled off no matter how those rolls went.
- * Measured on a burning wood bed: 59 cells of a poured column lost to self-boil
- * versus 34 to actual firefighting, while Saltwater (which happens to need
- * somewhere to *put* the Steam, so a packed column can't boil) lost 13 and put
- * the fire out twice as fast. With the cap, how fast the water goes is governed
- * by the douse rolls alone, which is where it belongs.
- *
- * Deliberately narrow on both sides. Class B (유류) is already handled by the
- * older petroleum shield, and class D (금속) *must* keep boiling here — burning
- * aluminum turning water and steam into Hydrogen is the whole point of a metal
- * fire, and capping it would quietly delete that. Lava is not in the flame list
- * either: water hitting lava is supposed to flash off (that is what quenches it
- * to Obsidian and drives every steam rig in the box).
- */
-/**
  * True if a boiling cell has somewhere to put the Steam — an adjacent cell that
  * is empty or already gas.
  *
@@ -288,6 +252,42 @@ export function coolNeighbourWater(x: number, y: number, sim: SimContext): void 
   }
 }
 
+/**
+ * True if the water sitting in this cell is *in the middle of putting a fire
+ * out* — within radiant reach (FIGHT_RANGE) of burning class-A fuel, or of the
+ * Fire/Blue Flame that fuel throws off.
+ *
+ * The trigger is *burning*, not merely warm, so the shield lifts the moment the
+ * fire is actually out and the leftover water then boils away on the scene's
+ * residual heat exactly as it always did. What it costs is that a pot of water
+ * standing within three cells of a live wood fire will not come to the boil —
+ * use Lava, a hot metal plate or a Heat Ray for steam, which is what every steam
+ * rig in the box already does.
+ *
+ * Water/Saltwater/Sugar Water call this to hold themselves just below boiling
+ * instead of flashing to Steam, exactly the way they already refuse to boil under
+ * a burning oil slick (burningPetroleumAdjacent in water.ts). The reason is that
+ * without it the same evaporation is counted twice, and water can never win.
+ * Firefighting water is already consumed by two explicit rolls — one cell per
+ * flame snuffed (fire.ts) and DOUSE_STEAM_CHANCE per fuel cell doused
+ * (combustion.ts). Letting the temperature system *also* delete it is what made
+ * pouring water read as pure evaporation: heat diffusion runs for the whole grid
+ * before any material update, so a water cell laid against a burning fuel is
+ * already at 110° by the time anything gets a turn — measured, one tick against
+ * burning Coal is enough — and it boiled off no matter how those rolls went.
+ * Measured on a burning wood bed: 59 cells of a poured column lost to self-boil
+ * versus 34 to actual firefighting, while Saltwater (which happens to need
+ * somewhere to *put* the Steam, so a packed column can't boil) lost 13 and put
+ * the fire out twice as fast. With the cap, how fast the water goes is governed
+ * by the douse rolls alone, which is where it belongs.
+ *
+ * Deliberately narrow on both sides. Class B (유류) is already handled by the
+ * older petroleum shield, and class D (금속) *must* keep boiling here — burning
+ * aluminum turning water and steam into Hydrogen is the whole point of a metal
+ * fire, and capping it would quietly delete that. Lava is not in the flame list
+ * either: water hitting lava is supposed to flash off (that is what quenches it
+ * to Obsidian and drives every steam rig in the box).
+ */
 export function fightingFire(x: number, y: number, sim: SimContext): boolean {
   for (let dy = -FIGHT_RANGE; dy <= FIGHT_RANGE; dy++) {
     for (let dx = -FIGHT_RANGE; dx <= FIGHT_RANGE; dx++) {
