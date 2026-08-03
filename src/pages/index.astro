@@ -1,7 +1,7 @@
 ---
 // 루트(`/`)는 소개 페이지가 아니라 **게임 시작 화면**이다: 한 화면에 담기고,
-// 스크롤이 없고, 타이틀과 메뉴 한 줄기만 있다. 배경에서는 진짜 엔진이
-// 돌아가므로(StartScreenSandbox) 여백 아무 데나 눌러 그릴 수 있다.
+// 스크롤이 없고, 타이틀과 메뉴 한 줄기만 있다. 배경에서는 진짜 엔진이 혼자
+// 돌아간다(StartScreenSandbox) — 물질이 떨어지고 1초마다 불이나 충격파가 터진다.
 //
 // 타이틀/태그라인은 정적 HTML로 두고(첫 페인트·검색엔진), 상호작용이 필요한
 // 두 조각만 섬으로 띄운다.
@@ -48,15 +48,12 @@ import StartMenu from '../components/StartMenu.svelte';
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  /* 배경 샌드박스를 그대로 누를 수 있도록, 앞면은 기본적으로 클릭을 흘려보낸다.
-     실제로 눌러야 하는 것(메뉴·워드마크)만 아래에서 다시 켠다. */
   .foreground {
     position: relative;
     z-index: 5;
     height: 100%;
     display: flex;
     flex-direction: column;
-    pointer-events: none;
   }
 
   .brand {
@@ -127,8 +124,7 @@ import StartMenu from '../components/StartMenu.svelte';
 
   .foot {
     flex: none;
-    /* 하단 가운데는 배경 샌드박스의 힌트 칩 자리라, 저작권 줄은 왼쪽으로 비킨다. */
-    padding: 1.1rem 1.4rem 3.4rem 1.4rem;
+    padding: 1.1rem 1.4rem;
     font-size: 0.72rem;
     color: #475569;
   }
@@ -142,7 +138,7 @@ import StartMenu from '../components/StartMenu.svelte';
       margin-bottom: 1.2rem;
     }
     .foot {
-      padding: 0.9rem 1rem 3rem 1rem;
+      padding: 0.9rem 1rem;
     }
   }
 </style>

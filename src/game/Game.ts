@@ -9,7 +9,6 @@ import { profiler } from './engine/profiler';
 import { seedBenchScenario, isBenchScenario } from './engine/benchScenarios';
 import { initSettingsPersistence, loadWorld, saveWorld, sanitizeObject } from '../state/persistence';
 import { registerGridForSnapshots, captureThumbnail, loadSnapshot } from '../state/snapshots';
-import { applyPreset } from './presets';
 import { fitWorld, autoPlacement } from '../state/snapshotFit';
 import {
   $running,
@@ -62,7 +61,6 @@ export function startGame(canvas: HTMLCanvasElement): void {
   profiler.enabled = params.has('perf');
   const benchParam = params.get('bench');
   const benchScenario = isBenchScenario(benchParam) ? benchParam : null;
-  const presetParam = params.get('preset');
   const slotParam = params.get('slot');
   // `?fullscan` forces the full CA scan (active tiles off) for on-vs-off A/B
   // measurement of the active-tile optimization on the same machine.
@@ -84,21 +82,17 @@ export function startGame(canvas: HTMLCanvasElement): void {
   layout.setCellScale($cellScale.get());
   layout.setViewport(canvas.clientWidth, canvas.clientHeight);
 
-  // Restore the previous session's world or specified slot/preset.
+  // Restore the previous session's world or the specified slot.
   const initialWorld = benchScenario
     ? null
-    : presetParam
-      ? null
-      : slotParam
-        ? loadSnapshot(slotParam)
-        : loadWorld();
+    : slotParam
+      ? loadSnapshot(slotParam)
+      : loadWorld();
 
   const grid = new Grid(layout.gw, layout.gh);
   if (forceFullScan) grid.dirty.enabled = false; // A/B: measure with the full scan
 
-  if (presetParam) {
-    applyPreset(grid, presetParam);
-  } else if (initialWorld) {
+  if (initialWorld) {
     const fitted = (initialWorld.w === layout.gw && initialWorld.h === layout.gh)
       ? initialWorld
       : fitWorld(initialWorld, layout.gw, layout.gh, autoPlacement(initialWorld.w, initialWorld.h, layout.gw, layout.gh, $snapshotFit.get()));

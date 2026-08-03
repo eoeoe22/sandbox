@@ -2,15 +2,18 @@
 // Grid/Simulation을 그대로 쓰되, 물질만 경량 배럴(`materials/lite`)로 줄여
 // 로드한다 — 그래서 첫 화면은 전체 물질 레지스트리를 받지 않는다.
 //
-// 렌더러·캔버스·RAF·포인터 좌표 변환은 여기 없다(components/StartScreenSandbox
-// .svelte가 맡는다). 여기 있는 것은 **브라우저 없이 검증할 수 있는 부분** 전부다:
-// 줄 낙하, 배수, 클릭 브러시, 그리고 종류를 뽑는 룰렛.
+// 배경은 눌러서 노는 곳이 아니라 **혼자 굴러가는 장면**이다: 네 줄이 계속
+// 떨어지고, 1초에 한 번 아무 데서나 불이나 충격파가 터진다.
+//
+// 렌더러·캔버스·RAF는 여기 없다(components/StartScreenSandbox.svelte가 맡는다).
+// 여기 있는 것은 **브라우저 없이 검증할 수 있는 부분** 전부다: 줄 낙하, 배수,
+// 자동 이벤트와 그 자리 고르기, 그리고 종류를 뽑는 룰렛.
 // 검증은 `npm run test:startscreen`.
 
 import { Grid } from './engine/Grid';
 import { Simulation } from './engine/Simulation';
 import { EMPTY, type Material } from './engine/types';
-import { TICK_HZ, SHOCK_BRUSH_PERIOD } from './config';
+import { TICK_HZ } from './config';
 import { fireShockwave } from './materials/woofer';
 import { LITE_MATERIALS, LITE_FIRE } from './materials/lite';
 
@@ -62,25 +65,37 @@ const DRAIN_HARD_PER_WIDTH = 8 / 240;
 /** 좁은 화면에서도 유입(≈1.8칸/틱)을 못 따라잡는 일이 없게 하는 하한. */
 const DRAIN_MIN_CELLS = 3;
 
-// --- 클릭 브러시 ---------------------------------------------------------------
-
-/** 클릭 브러시 반지름(칸). */
-const BRUSH_R = 4;
-/** 브러시 원 안에서 실제로 채워지는 비율(가루 브러시처럼 흩뿌린다). */
-const BRUSH_FILL = 0.4;
-/** 불은 금방 꺼지므로 조금 더 촘촘하게 뿌린다. */
-const BRUSH_FILL_FIRE = 0.7;
+// --- 자동 이벤트 ---------------------------------------------------------------
 
 /**
- * 클릭 한 번이 만드는 것. `null`은 충격파 — 물질이 아니라 도구다.
- * 나머지는 경량 배럴이 실제로 등록한 물질(불 + 떨어지는 네 종)이다.
+ * 이벤트 간격(틱). 스텝 간격이 `START_STEP_MS`이므로 정확히 1초에 한 번이다.
+ */
+export const AUTO_EVENT_TICKS = Math.round(1000 / START_STEP_MS);
+/** 이벤트가 덮는 원의 반지름(칸). */
+const EVENT_R = 4;
+/** 불 이벤트가 그 원을 채우는 비율. 불은 금방 꺼지므로 촘촘하게 뿌린다. */
+const EVENT_FIRE_FILL = 0.7;
+/** 아직 아무것도 안 쌓인 열에서 터질 때 고르는 높이 구간(위에서부터의 비율). */
+const EVENT_EMPTY_Y_MIN = 0.45;
+const EVENT_EMPTY_Y_MAX = 0.85;
+
+/**
+ * 이벤트 한 번이 만드는 것. `null`은 충격파 — 물질이 아니라 도구다.
+ * 나머지는 경량 배럴이 등록한 불이다.
  */
 export type SpawnKind = Material | null;
 
 /**
  * 룰렛에 들어가는 전체 목록. 순서는 무의미하다(어차피 섞는다).
  */
-export const START_KINDS: readonly SpawnKind[] = [null, LITE_FIRE, ...LITE_MATERIALS];
+export const START_KINDS: readonly SpawnKind[] = [null, LITE_FIRE];
+
+/** 이벤트가 터진 자리와 종류. 검사와 디버깅에서 "무엇이 어디서" 를 읽는 창구다. */
+export interface StartEvent {
+  x: number;
+  y: number;
+  kind: SpawnKind;
+}
 
 /**
  * 시작 화면의 세계 하나. 캔버스도 렌더러도 모르고, `tick()`을 불러 주는 쪽이
@@ -90,37 +105,36 @@ export class StartScreenWorld {
   readonly grid: Grid;
   readonly sim: Simulation;
 
-  /** 지금 누르면 나올 것. 손을 뗄 때마다 바뀐다(`release`). */
+  /** 다음 이벤트에서 터질 것. 터질 때마다 룰렛에서 새로 뽑는다. */
   currentKind: SpawnKind;
 
-  /** 물질 줄을 흘릴지. 움직임 최소화(prefers-reduced-motion)에서 끈다. */
-  streams: boolean;
+  /** 마지막으로 터진 이벤트. 아직 하나도 안 터졌으면 null. */
+  lastEvent: StartEvent | null = null;
+
+  /** 지금까지 터진 이벤트 수. */
+  eventCount = 0;
+
+  /**
+   * 스스로 움직일지. 줄 낙하와 자동 이벤트를 **함께** 여닫는다 — 둘 다 사용자가
+   * 일으킨 움직임이 아니므로, 움직임 최소화(prefers-reduced-motion)에서는 같이
+   * 꺼져야 한다.
+   */
+  motion: boolean;
 
   /** 아직 안 뽑힌 종류들. 비면 다시 섞어 채운다 — 그래서 한 바퀴 안에서는
    *  같은 종류가 두 번 나오지 않는다. `pop()`으로 꺼내므로 맨 뒤가 "다음"이다. */
   private bag: SpawnKind[] = [];
 
-  private pressed = false;
-  private brushX = 0;
-  private brushY = 0;
-  /** 충격파가 마지막으로 터진 틱. -1이면 박자와 무관하게 즉시 한 번 터진다. */
-  private lastShockTick = -1;
-  /**
-   * `press()`가 이미 한 번 찍었다는 표시. 누름은 포인터 이벤트라 틱과 무관한
-   * 시점에 오는데, 그 직후 도착한 첫 틱이 또 찍으면 **같은 33ms 안에 두 번**
-   * 찍혀 누르는 첫 순간만 유독 진하게 나온다. 그 첫 틱은 이 표시를 보고 건너뛴다
-   * (PointerPainter의 `paintedThisFrame`과 같은 규칙).
-   */
-  private stampedBeforeTick = false;
+  private sinceEvent = 0;
 
   private drainPerTick = 0;
   private sinceSample = DRAIN_SAMPLE_TICKS;
 
   private readonly rand: () => number;
 
-  constructor(width: number, height: number, opts: { streams?: boolean; rand?: () => number } = {}) {
+  constructor(width: number, height: number, opts: { motion?: boolean; rand?: () => number } = {}) {
     this.rand = opts.rand ?? Math.random;
-    this.streams = opts.streams ?? true;
+    this.motion = opts.motion ?? true;
     this.grid = new Grid(width, height);
     this.sim = new Simulation(this.grid);
     this.sim.setBorderMode(START_BORDER_MODE);
@@ -158,14 +172,14 @@ export class StartScreenWorld {
     return this.bag.pop() as SpawnKind;
   }
 
-  // --- 브러시 -----------------------------------------------------------------
+  // --- 자동 이벤트 -------------------------------------------------------------
 
-  /** 브러시 원에 걸리는 칸들을 [x,y,x,y,…] 평면 배열로. `fireShockwave`가 이 꼴을 받는다. */
-  private brushCells(cx: number, cy: number): number[] {
+  /** 원에 걸리는 칸들을 [x,y,x,y,…] 평면 배열로. `fireShockwave`가 이 꼴을 받는다. */
+  private eventCells(cx: number, cy: number): number[] {
     const out: number[] = [];
-    for (let dy = -BRUSH_R; dy <= BRUSH_R; dy++) {
-      for (let dx = -BRUSH_R; dx <= BRUSH_R; dx++) {
-        if (dx * dx + dy * dy > BRUSH_R * BRUSH_R) continue;
+    for (let dy = -EVENT_R; dy <= EVENT_R; dy++) {
+      for (let dx = -EVENT_R; dx <= EVENT_R; dx++) {
+        if (dx * dx + dy * dy > EVENT_R * EVENT_R) continue;
         const x = cx + dx;
         const y = cy + dy;
         if (this.grid.inBounds(x, y)) out.push(x, y);
@@ -174,55 +188,57 @@ export class StartScreenWorld {
     return out;
   }
 
-  /** 누르고 있는 동안 매 틱. 물질은 흩뿌리고, 충격파는 정해진 박자로만 터진다. */
-  private stamp(): void {
+  /**
+   * 이벤트가 터질 자리. 아무 칸이나 고르면 대개 허공이라 아무 일도 안 일어나므로,
+   * 고른 열의 **더미 표면**을 잡는다. 원의 중심을 표면 칸에 두어 절반은 공중,
+   * 절반은 더미 속이 되게 하는데, 이건 취향이 아니라 **불이 안 붙어서** 그렇다:
+   * 표면 바로 위에 얹기만 하면 불은 기체라 옮겨붙기 전에 떠올라 버려서, 휘발유
+   * 웅덩이 위에 37칸을 뿌려도 60틱 동안 한 칸도 안 타고 꺼진다(실측). 걸터앉히면
+   * 같은 장면이 웅덩이의 1/3을 태운다. 대신 더미 몇 칸이 불로 덮여 사라지는데,
+   * 어차피 바닥으로 배수되는 배경이라 아깝지 않다.
+   *
+   * 표면은 바닥에서 위로 올라가며 찾는다 — 위에서 내려오면 마침 그 열을 지나던
+   * **떨어지는 중인 알갱이**를 표면으로 착각한다.
+   */
+  private pickEventCell(): { x: number; y: number } {
+    const g = this.grid;
+    const x = Math.floor(this.rand() * g.width);
+    const floor = g.height - 1;
+    if (g.get(x, floor) !== EMPTY) {
+      let y = floor;
+      while (y > 0 && g.get(x, y) !== EMPTY) y--;
+      return { x, y: Math.min(floor, y + 1) };
+    }
+    // 아직 그 열에 쌓인 게 없다(시작 직후). 화면 아래쪽 허공에서 터진다.
+    const lo = g.height * EVENT_EMPTY_Y_MIN;
+    const hi = g.height * EVENT_EMPTY_Y_MAX;
+    return { x, y: Math.min(floor, Math.floor(lo + this.rand() * (hi - lo))) };
+  }
+
+  /**
+   * 지금 이벤트를 하나 터뜨리고 다음 종류를 뽑는다. 평소에는 `tick()`이 1초마다
+   * 알아서 부르지만, 박자와 무관하게 한 번 터뜨리고 싶을 때 직접 불러도 된다.
+   */
+  fireEvent(): StartEvent {
+    const { x, y } = this.pickEventCell();
     const kind = this.currentKind;
     const ctx = this.sim.context;
+    const cells = this.eventCells(x, y);
     if (kind === null) {
-      // 충격파는 쌓이는 값이 아니라 사건이라 본 게임의 브러시와 같은 박자로 묶는다
-      // (PointerPainter.shockGate와 같은 규칙 — 새로 누르면 즉시 한 번은 터진다).
-      if (this.lastShockTick >= 0 && ctx.tick - this.lastShockTick < SHOCK_BRUSH_PERIOD) return;
-      this.lastShockTick = ctx.tick;
-      fireShockwave(ctx, this.brushCells(this.brushX, this.brushY));
-      return;
+      fireShockwave(ctx, cells);
+    } else {
+      for (let k = 0; k < cells.length; k += 2) {
+        if (this.rand() > EVENT_FIRE_FILL) continue;
+        ctx.spawn(cells[k], cells[k + 1], kind.id);
+      }
     }
-    const fill = kind === LITE_FIRE ? BRUSH_FILL_FIRE : BRUSH_FILL;
-    const cells = this.brushCells(this.brushX, this.brushY);
-    for (let k = 0; k < cells.length; k += 2) {
-      if (this.rand() > fill) continue;
-      ctx.spawn(cells[k], cells[k + 1], kind.id);
-    }
-  }
-
-  /** 누름 시작. 그 자리에서 즉시 한 번 찍는다(짧은 탭도 반응하도록). */
-  press(x: number, y: number): void {
-    if (!this.grid.inBounds(x, y)) return;
-    this.brushX = x;
-    this.brushY = y;
-    this.pressed = true;
-    this.lastShockTick = -1;
-    this.stamp();
-    this.stampedBeforeTick = true;
-  }
-
-  /** 누른 채로 끌기. 격자 밖으로 나가면 마지막 칸을 유지한다. */
-  moveTo(x: number, y: number): void {
-    if (!this.pressed || !this.grid.inBounds(x, y)) return;
-    this.brushX = x;
-    this.brushY = y;
-  }
-
-  /** 손을 떼는 순간이 종류가 바뀌는 시점이다(누르는 동안에는 한 종류로 고정). */
-  release(): SpawnKind {
-    if (this.pressed) {
-      this.pressed = false;
-      this.currentKind = this.drawKind();
-    }
-    return this.currentKind;
-  }
-
-  get isPressed(): boolean {
-    return this.pressed;
+    const ev: StartEvent = { x, y, kind };
+    this.lastEvent = ev;
+    this.eventCount++;
+    // 다음 것은 지금 뽑아 둔다 — `drawKind`가 "방금 쓴 것" 을 보고 연속 등장을
+    // 피하므로, `currentKind`가 아직 이번 종류일 때 불러야 한다.
+    this.currentKind = this.drawKind();
+    return ev;
   }
 
   // --- 한 틱 -------------------------------------------------------------------
@@ -231,19 +247,18 @@ export class StartScreenWorld {
     const g = this.grid;
     const ctx = this.sim.context;
 
-    if (this.streams) {
+    if (this.motion) {
       for (let i = 0; i < LITE_MATERIALS.length; i++) {
         if (this.rand() > STREAM_CHANCE) continue;
         const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
         const x = Math.min(g.width - 1, Math.max(0, this.streamX(i) + jitter));
         ctx.spawn(x, STREAM_Y, LITE_MATERIALS[i].id);
       }
-    }
 
-    if (this.pressed) {
-      // 누름 직후의 첫 틱은 `press()`가 이미 찍은 몫이라 건너뛴다.
-      if (this.stampedBeforeTick) this.stampedBeforeTick = false;
-      else this.stamp();
+      if (++this.sinceEvent >= AUTO_EVENT_TICKS) {
+        this.sinceEvent = 0;
+        this.fireEvent();
+      }
     }
 
     if (++this.sinceSample >= DRAIN_SAMPLE_TICKS) {

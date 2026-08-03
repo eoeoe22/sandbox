@@ -12,12 +12,15 @@
 //     screen begins bare — nothing is pre-piled on the floor);
 //   · the floor: material lands and stays, and nothing leaks out the walls;
 //   · the drain that keeps a walled world from filling up solid and freezing;
-//   · the click roulette: hold keeps one kind, release advances, and no kind
-//     repeats until every kind has been used once (the shuffle-bag rule);
-//   · the press/tick seam: press() stamps off-clock, so the tick landing right
-//     after it must skip or the first instant of every press is double density;
-//   · what a held click actually makes — real material, real Fire (hot), and a
-//     real Woofer shockwave that shoves loose powder without creating matter.
+//   · the auto events: one goes off every second — not every tick, not once —
+//     and the roulette behind them never repeats a kind until every kind has
+//     been used (the shuffle-bag rule);
+//   · where an event lands: on the surface of whatever has piled up in that
+//     column, so it has something to burn or shove, and *above* it rather than
+//     on top of it (an event must not erase the pile it fires at);
+//   · what an event actually makes — real Fire (hot, and it spreads to the
+//     gasoline it lands on) and a real Woofer shockwave that shoves loose
+//     powder without creating or destroying matter.
 //
 // Run: `node test/run-startscreen.mjs`.
 
@@ -33,6 +36,7 @@ import {
   START_BORDER_MODE,
   START_SMOKE_LEVEL,
   START_SIM_SPEED,
+  AUTO_EVENT_TICKS,
   type SpawnKind,
 } from '../src/game/startScreen';
 
@@ -116,9 +120,12 @@ const H = 202;
   const world = new StartScreenWorld(W, H, { rand: mulberry32(7) });
   check('시작할 때 화면이 비어 있다 (바닥에 쌓아 두지 않는다)', occupied(world.grid) === 0, `${occupied(world.grid)}칸`);
 
-  // 30 ticks: long enough for every stream to have fired, short enough that
-  // nothing has reached the floor yet (fall speed ≈ 1 cell/tick over H rows).
-  for (let i = 0; i < 30; i++) world.tick();
+  // Long enough for every stream to have fired, short enough that nothing has
+  // reached the floor yet (fall speed ≈ 1 cell/tick over H rows). Stopping one
+  // tick short of AUTO_EVENT_TICKS also keeps the first auto event out of this
+  // scene, so what is on the board came from the streams and nothing else.
+  for (let i = 0; i < AUTO_EVENT_TICKS - 1; i++) world.tick();
+  check('그동안 자동 이벤트는 아직 안 터졌다', world.eventCount === 0, `${world.eventCount}회`);
 
   const missing = LITE_MATERIALS.filter((m) => count(world.grid, m.id) === 0);
   check('물질이 모두 떨어지고 있다', missing.length === 0, missing.map((m) => m.name).join(', ') || `all ${LITE_MATERIALS.length} present`);
@@ -147,9 +154,9 @@ const H = 202;
 }
 
 // 4. 벽/바닥 — a walled sandbox: what pours in piles up on the floor, and the
-//    side walls hold. Streams off so the count is a closed system.
+//    side walls hold. Motion off so the count is a closed system.
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(11) });
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(11) });
   const sand = LITE_MATERIALS[0];
   // A bar spanning the full width, one row down: with open edges the spreading
   // pile would walk off both sides; with walls every grain is still here.
@@ -181,15 +188,18 @@ const H = 202;
 // 6. 룰렛 — the ordering rule from the brief: random order, and a kind that has
 //    been used does not come back until every kind has been used. That is the
 //    shuffle-bag invariant: consecutive blocks of START_KINDS.length draws are
-//    each a permutation of the full set.
+//    each a permutation of the full set. With the roulette down to two entries
+//    (불·충격파) the rule bites hardest — the bag plus its anti-repeat swap at
+//    the block boundary leaves exactly one legal sequence, a strict alternation,
+//    so the only thing chance decides is which of the two opens. That is on
+//    purpose: on a screen that fires once a second, neither kind can go missing
+//    for long.
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(5) });
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(5) });
   const n = START_KINDS.length;
-  const drawn: SpawnKind[] = [world.currentKind];
-  for (let i = 0; i < n * 6; i++) {
-    world.press(20, 20);
-    drawn.push(world.release());
-  }
+  const drawn: SpawnKind[] = [];
+  for (let i = 0; i < n * 8; i++) drawn.push(world.fireEvent().kind);
+
   let bad = '';
   for (let b = 0; b + n <= drawn.length; b += n) {
     const block = drawn.slice(b, b + n);
@@ -197,60 +207,97 @@ const H = 202;
   }
   check('한 바퀴 안에서 같은 종류가 두 번 안 나온다', bad === '', bad || `${drawn.length} draws, ${n}종`);
   check(
-    '충격파·불·경량 물질이 모두 후보다',
-    new Set(START_KINDS).size === LITE_MATERIALS.length + 2 &&
-      START_KINDS.includes(null) &&
-      START_KINDS.includes(LITE_FIRE) &&
-      LITE_MATERIALS.every((m) => START_KINDS.includes(m)),
+    '후보는 불과 충격파 둘뿐이다',
+    new Set(START_KINDS).size === 2 && START_KINDS.includes(null) && START_KINDS.includes(LITE_FIRE),
     START_KINDS.map(kindName).join(', '),
   );
-  check('순서가 고정돼 있지 않다', new Set(drawn.slice(0, n).map(kindName)).size === n && drawn.slice(0, n).map(kindName).join() !== START_KINDS.map(kindName).join(), drawn.slice(0, n).map(kindName).join(', '));
+  let repeated = '';
+  for (let i = 1; i < drawn.length; i++) if (drawn[i] === drawn[i - 1]) repeated += `${i}:${kindName(drawn[i])} `;
+  check('같은 것이 연달아 두 번 나오지 않는다', repeated === '', repeated || `${drawn.length}회 연속 교대`);
 }
 
-// 7. 클릭-홀드 — one kind for the whole press however long it is held, and the
-//    swap happens on release, not on the next stamp.
+// 7. 1초에 한 번 — the whole interaction model, now that there is no click. Not
+//    every tick (that would be a wall of fire) and not once at load: exactly one
+//    event per second, counted in the same ticks the component's frame loop
+//    steps. The position is redrawn each time, so consecutive events do not
+//    stack in one spot.
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(13) });
-  // Draw until the roulette lands on something whose cell count holds still for
-  // a tick, so the per-tick deltas below mean what they say. That rules out two
-  // kinds: the shockwave (places nothing) and Fire (BURNOUT_CHANCE decays some
-  // of the cells just placed during the very tick being measured, which would
-  // read as the press/tick guard failing when it hasn't). Drawing rather than
-  // assigning keeps `release()` below on the real bag path.
-  while (world.currentKind === null || world.currentKind === LITE_FIRE) {
-    world.press(20, 20);
-    world.release();
+  check(
+    '이벤트 간격이 정확히 1초',
+    Math.abs(AUTO_EVENT_TICKS * START_STEP_MS - 1000) < 1e-6,
+    `${AUTO_EVENT_TICKS}틱 × ${START_STEP_MS.toFixed(2)}ms`,
+  );
+
+  const world = new StartScreenWorld(W, H, { rand: mulberry32(13) });
+  const perSecond: number[] = [];
+  const xs: number[] = [];
+  for (let s = 0; s < 6; s++) {
+    for (let i = 0; i < AUTO_EVENT_TICKS; i++) world.tick();
+    perSecond.push(world.eventCount);
+    xs.push(world.lastEvent!.x);
   }
-  const held = world.currentKind!;
-
-  // press() stamps immediately (so a tap shorter than a tick still does
-  // something), and tick() stamps once per tick while held. Those two must not
-  // both fire for the same instant: the first tick after a press has to skip,
-  // or the opening ~33ms of every press comes out at double density. Counted
-  // per tick rather than in aggregate — an aggregate check passes either way.
-  world.press(W >> 1, 30);
-  const atPress = count(world.grid, held.id);
-  world.tick();
-  const afterTick1 = count(world.grid, held.id);
-  world.tick();
-  const afterTick2 = count(world.grid, held.id);
-  check('누름 즉시 한 번 찍힌다', atPress > 10, `${atPress}칸`);
-  check('그 직후 첫 틱은 두 번 찍지 않는다', afterTick1 === atPress, `${atPress} → ${afterTick1} (+${afterTick1 - atPress})`);
-  check('그 다음 틱부터 다시 찍는다', afterTick2 > afterTick1, `${afterTick1} → ${afterTick2}`);
-
-  for (let i = 0; i < 12; i++) world.tick();
-  check('누르고 있으면 계속 나온다', count(world.grid, held.id) > 20, `${held.name} ${count(world.grid, held.id)}칸`);
-  check('누르는 동안에는 종류가 안 바뀐다', world.currentKind === held, kindName(world.currentKind));
-  const next = world.release();
-  check('손을 떼면 그때 바뀐다', next !== held, `${held.name} → ${kindName(next)}`);
+  check('1초마다 한 번씩만 터진다', perSecond.join() === '1,2,3,4,5,6', perSecond.join(' → '));
+  check('자리가 매번 새로 뽑힌다', new Set(xs).size >= 5, `x = ${xs.join(', ')}`);
+  const last = world.lastEvent!;
+  check('터진 자리가 화면 안이다', world.grid.inBounds(last.x, last.y), `(${last.x}, ${last.y})`);
 }
 
-// 8. 불 — the roulette's Fire entry places real, burning Fire (its own
-//    initial temperature), not a cold decorative cell.
+// 8. 터지는 자리 — a uniformly random cell would be empty air nearly every time
+//    and the event would be invisible. It goes to the *surface* of whatever has
+//    piled up in the column it picked, straddling it: half the circle in the air
+//    above, half inside the pile. Resting it neatly on top instead looks tidier
+//    and does nothing — Fire is a gas and floats off before it can catch (see
+//    section 9's measurement).
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(17) });
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(31) });
+  const sand = LITE_MATERIALS[0];
+  const top = H - 40; // flat pile, 40 rows deep, in every column
+  for (let y = top; y < H; y++) for (let x = 0; x < W; x++) world.grid.set(x, y, sand.id);
+  world.grid.dirty.rebuild(world.grid.cells, world.grid.overlay, world.grid.width, world.grid.height);
+  const before = count(world.grid, sand.id);
+
   world.currentKind = LITE_FIRE;
-  world.press(W >> 1, 40);
+  const ev = world.fireEvent();
+  check('더미 표면에서 터진다', ev.y === top, `표면 y=${top}, 이벤트 중심 y=${ev.y}`);
+  let above = 0;
+  let inside = 0;
+  for (let i = 0; i < world.grid.cells.length; i++) {
+    if (world.grid.cells[i] !== LITE_FIRE.id) continue;
+    if (((i / W) | 0) < top) above++;
+    else inside++;
+  }
+  check('원이 표면에 걸터앉는다', above > 0 && inside > 0, `공중 ${above}칸 / 더미 속 ${inside}칸`);
+  check('덮인 만큼만 줄어든다', count(world.grid, sand.id) === before - inside, `모래 ${before} → ${count(world.grid, sand.id)} (불 ${inside}칸이 덮음)`);
+
+  // The other half of the rule: a column with nothing in it yet (the first
+  // seconds after load) has no surface to aim at, so the event goes off in the
+  // lower air rather than at the ceiling, where it would be lost behind the
+  // title.
+  const bare = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(37) });
+  let outside = '';
+  for (let i = 0; i < 20; i++) {
+    const e = bare.fireEvent();
+    if (e.y < H * 0.4 || e.y > H * 0.9) outside += `y=${e.y} `;
+  }
+  check('아직 안 쌓인 열이면 아래쪽 허공에서 터진다', outside === '', outside || '20회 모두 아래쪽');
+}
+
+// 9. 불 — the roulette's Fire entry places real, burning Fire (its own initial
+//    temperature), not a cold decorative cell, and it actually takes: the pool
+//    it straddles burns down. This is the check that decided section 8's
+//    geometry — with the circle sitting one row higher, on top of the surface
+//    instead of astride it, this same scene ends with the gasoline count
+//    untouched at 10800 and every flame burnt out by tick 35.
+{
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(17) });
+  const gasoline = LITE_MATERIALS.find((m) => m.name === 'Gasoline')!;
+  const top = H - 30;
+  for (let y = top; y < H; y++) for (let x = 0; x < W; x++) world.grid.set(x, y, gasoline.id);
+  world.grid.dirty.rebuild(world.grid.cells, world.grid.overlay, world.grid.width, world.grid.height);
+  const before = count(world.grid, gasoline.id);
+
+  world.currentKind = LITE_FIRE;
+  world.fireEvent();
   const n = count(world.grid, LITE_FIRE.id);
   let hottest = -Infinity;
   for (let i = 0; i < world.grid.cells.length; i++) {
@@ -258,22 +305,25 @@ const H = 202;
   }
   check('불이 실제로 놓인다', n > 20, `${n}칸`);
   check('그 불이 뜨겁다', hottest >= 500, `최고 ${hottest}°`);
+
+  for (let i = 0; i < 60; i++) world.tick();
+  const after = count(world.grid, gasoline.id);
+  check('밑에 깔린 휘발유에 옮겨붙는다', after < before, `휘발유 ${before} → ${after}칸`);
 }
 
-// 9. 충격파 — the roulette's non-material entry. It queues a real Woofer wave
-//    and shoves loose powder around *without* adding or destroying matter.
+// 10. 충격파 — the roulette's non-material entry. It queues a real Woofer wave
+//     and shoves loose powder around *without* adding or destroying matter.
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(19) });
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(19) });
   const sand = LITE_MATERIALS[0];
-  const cx = W >> 1;
-  const cy = H >> 1;
-  for (let y = cy - 3; y <= cy + 3; y++) for (let x = cx - 3; x <= cx + 3; x++) world.grid.set(x, y, sand.id);
+  const top = H - 8; // a shallow bed across the floor, so wherever the event
+  for (let y = top; y < H; y++) for (let x = 0; x < W; x++) world.grid.set(x, y, sand.id); // lands it lands on sand
   world.grid.dirty.rebuild(world.grid.cells, world.grid.overlay, world.grid.width, world.grid.height);
   const before = count(world.grid, sand.id);
   const shape = world.grid.cells.slice();
 
   world.currentKind = null; // 충격파
-  world.press(cx, cy);
+  world.fireEvent();
   check('충격파가 실제로 발사된다', world.grid.shockwaves.length > 0, `${world.grid.shockwaves.length} wave(s)`);
   for (let i = 0; i < 6; i++) world.tick();
   let moved = 0;
@@ -283,20 +333,18 @@ const H = 202;
   // while airborne — see docs/PHYSICS.md), so the conservation check has to wait
   // for them to land. Long enough here for every fragment to come down and
   // settle back into Sand. Nothing is destroyed: a Woofer wave only shoves.
-  world.release();
   for (let i = 0; i < 240; i++) world.tick();
   check('충격파는 물질을 지우지 않는다', count(world.grid, sand.id) === before, `${before} → ${count(world.grid, sand.id)}`);
 }
 
-// 10. 움직임 최소화 — with `streams: false` the world does not pour by itself,
-//     but a click still works (the user's own motion is not suppressed).
+// 11. 움직임 최소화 — `motion: false` stops everything the world does on its
+//     own. Both halves are unprompted motion (nothing here is a response to the
+//     user), so the streams and the auto events have to go quiet together.
 {
-  const world = new StartScreenWorld(W, H, { streams: false, rand: mulberry32(23) });
-  for (let i = 0; i < 40; i++) world.tick();
-  check('움직임 최소화에서는 줄이 안 흐른다', occupied(world.grid) === 0, `${occupied(world.grid)}칸`);
-  world.currentKind = LITE_MATERIALS[0];
-  world.press(W >> 1, 40);
-  check('그래도 클릭은 받는다', occupied(world.grid) > 0, `${occupied(world.grid)}칸`);
+  const world = new StartScreenWorld(W, H, { motion: false, rand: mulberry32(23) });
+  for (let i = 0; i < AUTO_EVENT_TICKS * 4; i++) world.tick();
+  check('줄이 안 흐른다', occupied(world.grid) === 0, `${occupied(world.grid)}칸`);
+  check('자동 이벤트도 안 터진다', world.eventCount === 0, `${world.eventCount}회`);
 }
 
 console.log(failures === 0 ? '\nAll start-screen checks passed.' : `\n${failures} check(s) FAILED.`);

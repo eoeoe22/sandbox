@@ -1,14 +1,7 @@
 <script lang="ts">
-  // 시작 화면의 메뉴. 게임 시작 화면답게 세로로 쌓은 네 줄이 전부이고, 그중 두
-  // 줄(프리셋 맵·불러오기)만 오버레이를 연다. 나머지는 평범한 링크다.
-  //
-  // 배경의 샌드박스(StartScreenSandbox)는 이 컴포넌트 아래에 깔려 있으므로,
-  // 버튼이 아닌 여백은 pointer-events를 흘려보내 그대로 눌러 그릴 수 있게 한다.
+  // 시작 화면의 메뉴. 게임 시작 화면답게 세로로 쌓은 세 줄이 전부이고, 그중 한
+  // 줄(불러오기)만 오버레이를 연다. 나머지는 평범한 링크다.
 
-  import Modal from './Modal.svelte';
-  import PresetGallery from './PresetGallery.svelte';
-
-  let presetsOpen = $state(false);
   let snapshotsOpen = $state(false);
 
   // 스냅샷 관리자는 **눌렀을 때 처음 받아온다.** 이 모달만이 세이브를 복원하려고
@@ -30,11 +23,6 @@
     <span>게임 시작</span>
   </a>
 
-  <button class="item" type="button" onclick={() => (presetsOpen = true)}>
-    <i class="bi bi-grid-1x2-fill" aria-hidden="true"></i>
-    <span>프리셋 맵</span>
-  </button>
-
   <button class="item" type="button" onclick={openSnapshots}>
     <i class="bi bi-folder2-open" aria-hidden="true"></i>
     <span>불러오기</span>
@@ -45,21 +33,6 @@
     <span>도감</span>
   </a>
 </nav>
-
-<!-- 프리셋 카드 갤러리. 시작 화면 자체는 한 화면에 담고, 목록은 여기로 뺀다.
-     스크림을 직접 만들지 않고 공용 Modal을 쓰는 이유는 포커스 때문이다 — 열 때
-     안으로 옮기고, Tab을 안에 가두고, 닫을 때 연 버튼으로 되돌리는 것까지
-     Modal이 이미 한다(`aria-modal`을 주장하려면 그게 있어야 한다). Escape 스택과
-     <body> 포탈도 같이 딸려 온다. 카드 격자라 기본 340px보다 넓게 잡는다. -->
-<Modal
-  open={presetsOpen}
-  title="프리셋 맵"
-  icon="bi-grid-1x2-fill"
-  width={1040}
-  onclose={() => (presetsOpen = false)}
->
-  <PresetGallery currentLocale="ko" />
-</Modal>
 
 {#if SnapshotModal}
   <SnapshotModal isOpen={snapshotsOpen} onClose={() => (snapshotsOpen = false)} />
@@ -72,9 +45,6 @@
     align-items: stretch;
     gap: 0.55rem;
     width: min(300px, 78vw);
-    /* 시작 화면의 앞면은 클릭을 배경 샌드박스로 흘려보낸다(pages/index.astro).
-       실제로 눌러야 하는 이 두 덩어리에서만 다시 켠다. */
-    pointer-events: auto;
   }
 
   .item {

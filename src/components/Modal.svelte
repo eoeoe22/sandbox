@@ -24,7 +24,7 @@
     onclose: () => void;
     /**
      * Dialog width in CSS px. Defaults to the compact 340 the toolbar dialogs
-     * use; a content-heavy dialog (the start screen's preset gallery) asks for
+     * use; a content-heavy dialog (the snapshot manager's slot grid) asks for
      * more. `max-width: 100%` still applies, so a wide value degrades to the
      * viewport on a phone rather than overflowing it.
      */
