@@ -289,6 +289,13 @@ export function coolNeighbourWater(x: number, y: number, sim: SimContext): void 
  * to Obsidian and drives every steam rig in the box).
  */
 export function fightingFire(x: number, y: number, sim: SimContext): boolean {
+  // Nothing anywhere in the world was alight last tick, so the sweep below can
+  // only come back false — skip it. This matters because the sweep runs for every
+  // water cell at or above boiling, and a steam plant holds a whole reservoir
+  // there permanently: measured on a ~40k-cell forced-boiling pool, the sweep was
+  // ~37% of tick time and found nothing every single time. See
+  // SimContext.fireActive for how the flag is kept.
+  if (!sim.fireActive) return false;
   for (let dy = -FIGHT_RANGE; dy <= FIGHT_RANGE; dy++) {
     for (let dx = -FIGHT_RANGE; dx <= FIGHT_RANGE; dx++) {
       const nx = x + dx;

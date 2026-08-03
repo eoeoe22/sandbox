@@ -35,6 +35,7 @@ const HIGH_SMOKE_CHANCE = FIRE_SMOKE_CHANCE * SMOKE_MEDIUM_KEEP; // = Fire's
 // so writing at this chance yields exactly that rate on screen.
 
 function updateBlueFlame(x: number, y: number, sim: SimContext): void {
+  sim.fireSeen = true; // see SimContext.fireActive
   // A water-family neighbour snuffs it instantly (self → Empty, that *one* cell
   // spent), exactly like Fire — even the hottest flame is put out by water. One
   // flame, one cell: see spendDousingAgent for why steaming the whole neighbourhood

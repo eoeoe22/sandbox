@@ -29,6 +29,7 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import { fireClassOf } from '../src/game/materials/suppress';
+import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -70,6 +71,7 @@ const COAL = ID('Coal');
 const CRUDE_OIL = ID('Crude Oil');
 const ALUMINUM_POWDER = ID('Aluminum Powder');
 const HYDROGEN = ID('Hydrogen');
+const AMBIENT = AMBIENT_TEMP;
 
 function makeWorld(w = 60, h = 60): { grid: Grid; sim: Simulation } {
   const grid = new Grid(w, h);
@@ -107,7 +109,7 @@ function pourOn(
   fuel: number,
   agent: number | null,
   opts: { ticks?: number; settle?: number } = {},
-): { outAt: number; saved: number; fuel0: number; grid: Grid } {
+): { outAt: number; saved: number; fuel0: number; agentAt60: number; grid: Grid } {
   const ticks = opts.ticks ?? 300;
   const { grid, sim } = makeWorld();
   fill(grid, 0, 50, 59, 59, STONE);
@@ -122,8 +124,13 @@ function pourOn(
   }
   let quiet = 0;
   let outAt = -1;
+  let agentAt60 = 0;
   for (let t = 1; t <= ticks; t++) {
     sim.step();
+    // Snapshot the agent early, while the job is being done. Reading it at the end
+    // of a 300-tick run would fold in CO₂'s own slow thinning into air, which has
+    // nothing to do with what firefighting costs.
+    if (t === 60 && agent !== null) agentAt60 = count(grid, agent);
     if (litCount(grid, fuel) === 0) {
       quiet++;
       // "Out" means out and *staying* out — a burning bed flickers below the
@@ -132,7 +139,7 @@ function pourOn(
       if (quiet >= 40 && outAt < 0) outAt = t - 39;
     } else quiet = 0;
   }
-  return { outAt, saved: count(grid, fuel), fuel0, grid };
+  return { outAt, saved: count(grid, fuel), fuel0, agentAt60, grid };
 }
 
 // ── 1. One flame costs one cell of water, not eight ─────────────────────────
@@ -147,6 +154,12 @@ function pourOn(
   grid.cells[grid.idx(15, 15)] = FIRE;
   grid.setTemp(15, 15, 1000);
   rebuild(grid);
+  // Latch the world's "something is burning" flag as a real scene would have it:
+  // it rolls over at the *start* of each step (fireSeen -> fireActive), so priming
+  // `fireSeen` is what makes this tick see it set. Only a flame in its very first
+  // tick ever sees it unset, and by then any real fire has burned for hundreds of
+  // ticks. Scene 12 pins the flag's own behaviour separately.
+  sim.context.fireSeen = true;
   sim.step();
   const lost = before - count(grid, WATER);
   // One cell is the douse itself; anything past that is water the 1000° flame had
@@ -260,13 +273,20 @@ function pourOn(
     grid.cells[grid.idx(15, 15)] = fuel;
     rebuild(grid);
     grid.setTemp(15, 15, 1500);
+    sim.context.fireSeen = true; // as scene 1 — a real fire is never in its first tick
     sim.step();
     return grid.getTemp(15, 15);
   }
   const alu = oneCellDouse(ALUMINUM_POWDER);
   const coal = oneCellDouse(COAL);
-  check('water does not douse a burning aluminum grain (class D)', alu >= 400, `${alu.toFixed(0)}°C after one tick`);
-  check('…control: the same water douses a burning coal grain (class A)', coal < 400, `${coal.toFixed(0)}°C after one tick`);
+  // The douse writes exactly AMBIENT_TEMP, so the reading that separates the two
+  // classes is "was it slammed to ambient", not any absolute burn threshold — a
+  // grain the douse skipped still loses heat by ordinary conduction into the cold
+  // water around it, just nowhere near ambient.
+  check('water does not douse a burning aluminum grain (class D)',
+    alu > AMBIENT + 100, `${alu.toFixed(0)}°C after one tick, ambient is ${AMBIENT}`);
+  check('…control: the same water douses a burning coal grain (class A)',
+    coal <= AMBIENT + 5, `${coal.toFixed(0)}°C after one tick`);
 
   // …and the hydrogen the metal fire answers water with is still produced.
   const { grid, sim } = makeWorld();
@@ -404,11 +424,55 @@ function pourOn(
   check('water now does too — the point of the whole pass',
     wet.outAt > 0 && wet.saved >= wet.fuel0 * 0.5, `out@${wet.outAt}, ${wet.saved}/${wet.fuel0}`);
 
-  // …and the cost of doing it is what separates them. 80 cells of each went in.
-  const leftCO2 = count(gas.grid, CO2);
-  const leftWater = count(wet.grid, WATER);
-  check('…but CO₂ is not consumed doing it, and the water is',
-    leftCO2 > leftWater, `CO₂ ${leftCO2}/80 left, water ${leftWater}/80`);
+  // …and the cost of doing it is what separates them. 80 cells of each went in;
+  // read 60 ticks later, while the work is still being done.
+  check('…but CO₂ is barely consumed doing it, and the water is spent',
+    gas.agentAt60 >= 64 && wet.agentAt60 <= 48,
+    `CO₂ ${gas.agentAt60}/80 left at t+60, water ${wet.agentAt60}/80`);
+}
+
+// ── 12. The world's "something is burning" flag ────────────────────────────
+// fightingFire sweeps a 7x7 box for every water cell at or above boiling. That is
+// free in an ordinary scene (only a thin surface layer boils at once) but a steam
+// plant holds a whole reservoir over the boil point permanently, where the sweep
+// measured ~37% of tick time while being guaranteed to find nothing. So it is
+// gated on an O(1) flag. The risk of a gate like that is it silently latches the
+// wrong way: stuck on, the shield never lifts and water stops boiling near old
+// ashes; stuck off, the shield never engages and the whole pass is undone.
+{
+  const { grid, sim } = makeWorld(30, 30);
+  fill(grid, 9, 9, 21, 21, WALL);
+  fill(grid, 10, 16, 20, 16, COAL);
+  fill(grid, 10, 14, 20, 15, WATER);
+  fill(grid, 10, 10, 20, 13, 0); // headroom, so a boil is never blocked for want of room
+  rebuild(grid);
+  fill(grid, 10, 16, 20, 16, COAL, 1300);
+  // Two steps, not one: the flag is accumulated during a tick and rolled over at
+  // the start of the next, which is the documented one-tick lag.
+  sim.step();
+  sim.step();
+  check('the burning flag is set while a fuel bed is alight', sim.context.fireActive === true);
+
+  // Hold the water hot but put the fire out cold: the flag must fall, and the
+  // water must go back to boiling on the leftover heat exactly as it always did.
+  for (let t = 0; t < 4; t++) {
+    fill(grid, 10, 16, 20, 16, COAL, 20);
+    for (let y = 14; y <= 15; y++)
+      for (let x = 10; x <= 20; x++) if (grid.get(x, y) === WATER) grid.setTemp(x, y, 300);
+    sim.step();
+  }
+  check('…and falls again once nothing is alight', sim.context.fireActive === false);
+  check('…so the leftover water boils normally again', count(grid, STEAM) > 0, `${count(grid, STEAM)} steam`);
+
+  // A world that never had a fire in it never sets the flag at all — this is the
+  // case the gate exists for, and the one where the sweep would be pure waste.
+  const { grid: g2, sim: s2 } = makeWorld(30, 30);
+  fill(g2, 9, 9, 21, 21, WALL);
+  fill(g2, 10, 14, 20, 15, WATER, 300);
+  fill(g2, 10, 10, 20, 13, 0);
+  rebuild(g2);
+  for (let t = 0; t < 4; t++) s2.step();
+  check('a world with no fire in it never sets the flag', s2.context.fireActive === false);
 }
 
 // ── 11. The 화재 등급 roster, swept from the registry ───────────────────────

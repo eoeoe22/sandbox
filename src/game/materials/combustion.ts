@@ -166,6 +166,7 @@ export function flameAdjacent(x: number, y: number, sim: SimContext): boolean {
  * falling/flowing.
  */
 function burnStep(x: number, y: number, sim: SimContext, spec: Combustible): boolean {
+  sim.fireSeen = true; // this cell is alight — see SimContext.fireActive
   // This fuel's own running temperature — FUEL_BURN_TEMP (800°) unless it overrides
   // via `burnTemp` (Coal runs hotter; see Combustible.burnTemp).
   const myBurnTemp = spec.burnTemp ?? FUEL_BURN_TEMP;

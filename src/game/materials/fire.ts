@@ -23,6 +23,7 @@ const BURNOUT_CHANCE = 0.1; // flames snuff quickly (was 0.02) — ~10-tick life
 // (~0.17s@60Hz) so a fire front flares and vanishes almost as fast as it appears.
 
 function updateFire(x: number, y: number, sim: SimContext): void {
+  sim.fireSeen = true; // see SimContext.fireActive
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
