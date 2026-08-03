@@ -4,7 +4,7 @@
 //
 // 렌더러·캔버스·RAF·포인터 좌표 변환은 여기 없다(components/StartScreenSandbox
 // .svelte가 맡는다). 여기 있는 것은 **브라우저 없이 검증할 수 있는 부분** 전부다:
-// 다섯 줄 낙하, 배수, 클릭 브러시, 그리고 종류를 뽑는 룰렛.
+// 줄 낙하, 배수, 클릭 브러시, 그리고 종류를 뽑는 룰렛.
 // 검증은 `npm run test:startscreen`.
 
 import { Grid } from './engine/Grid';
@@ -28,15 +28,15 @@ export const START_BORDER_MODE = 'wall' as const;
 export const START_SMOKE_LEVEL = 'medium' as const;
 
 /**
- * 셀 크기 배율(config의 CELL_SCALES와 같은 축 — 클수록 굵고 가볍다). 본 게임은
- * 1이지만 시작 화면은 배경이라 3으로 굵게 잡는다: 1080p에서 약 240×135칸으로,
- * 본 게임의 1/9 규모다.
+ * 셀 크기 배율(config의 CELL_SCALES의 가장 굵은 단계와 같은 값 — 클수록 굵고
+ * 가볍다). 본 게임은 1이지만 시작 화면은 배경이라 2로 잡는다: 1080p에서 약
+ * 360×202칸으로, 본 게임의 1/4 규모다.
  */
-export const START_CELL_SCALE = 3;
+export const START_CELL_SCALE = 2;
 
-// --- 다섯 줄 -----------------------------------------------------------------
+// --- 떨어지는 줄 ---------------------------------------------------------------
 
-/** 스트림 하나가 한 틱에 한 알갱이를 떨어뜨릴 확률. 5줄 × 0.45 ≈ 2.3칸/틱. */
+/** 스트림 하나가 한 틱에 한 알갱이를 떨어뜨릴 확률. 4줄 × 0.45 ≈ 1.8칸/틱. */
 const STREAM_CHANCE = 0.45;
 /** 스트림이 좌우로 흔들리는 폭(칸). 0이면 자로 잰 듯한 한 줄이 된다. */
 const STREAM_JITTER = 1;
@@ -44,16 +44,23 @@ const STREAM_JITTER = 1;
 const STREAM_Y = 1;
 
 // --- 배수 ---------------------------------------------------------------------
-// 벽과 바닥이 있으므로 다섯 줄을 그냥 두면 언젠가 화면이 꽉 차서 굳는다. 바닥
-// 줄에서 조금씩 새어 나가게 해 유입과 균형을 맞춘다(모래시계처럼 보인다).
+// 벽과 바닥이 있으므로 줄을 그냥 두면 언젠가 화면이 꽉 차서 굳는다. 바닥 줄에서
+// 조금씩 새어 나가게 해 유입과 균형을 맞춘다(모래시계처럼 보인다).
 // 점유율 계산은 선형 스캔이라 매 틱이 아니라 이 주기마다 잰다.
 
 const DRAIN_SAMPLE_TICKS = 30;
 const DRAIN_SOFT_FILL = 0.35;
 const DRAIN_HARD_FILL = 0.5;
-/** 물렁한 단계의 배수량(칸/틱). 유입 ≈2.3칸/틱보다 커야 균형이 잡힌다. */
-const DRAIN_SOFT_CELLS = 3;
-const DRAIN_HARD_CELLS = 8;
+/**
+ * 배수량(칸/틱)을 **화면 너비에 비례**시킨다. 유입은 줄 수로 정해져 해상도와
+ * 무관한데, 같은 점유율을 되돌리는 데 필요한 칸 수는 넓이를 따라 늘기 때문이다.
+ * 고정값으로 두면 해상도를 올릴 때마다 배수가 상대적으로 약해진다. 아래 계수는
+ * 240칸 폭에서 3칸·8칸이 되도록 맞춘 값이다.
+ */
+const DRAIN_SOFT_PER_WIDTH = 3 / 240;
+const DRAIN_HARD_PER_WIDTH = 8 / 240;
+/** 좁은 화면에서도 유입(≈1.8칸/틱)을 못 따라잡는 일이 없게 하는 하한. */
+const DRAIN_MIN_CELLS = 3;
 
 // --- 클릭 브러시 ---------------------------------------------------------------
 
@@ -66,7 +73,7 @@ const BRUSH_FILL_FIRE = 0.7;
 
 /**
  * 클릭 한 번이 만드는 것. `null`은 충격파 — 물질이 아니라 도구다.
- * 나머지는 경량 배럴이 실제로 등록한 물질(불 + 떨어지는 다섯 종)이다.
+ * 나머지는 경량 배럴이 실제로 등록한 물질(불 + 떨어지는 네 종)이다.
  */
 export type SpawnKind = Material | null;
 
@@ -86,7 +93,7 @@ export class StartScreenWorld {
   /** 지금 누르면 나올 것. 손을 뗄 때마다 바뀐다(`release`). */
   currentKind: SpawnKind;
 
-  /** 다섯 줄을 흘릴지. 움직임 최소화(prefers-reduced-motion)에서 끈다. */
+  /** 물질 줄을 흘릴지. 움직임 최소화(prefers-reduced-motion)에서 끈다. */
   streams: boolean;
 
   /** 아직 안 뽑힌 종류들. 비면 다시 섞어 채운다 — 그래서 한 바퀴 안에서는
@@ -112,28 +119,12 @@ export class StartScreenWorld {
     this.sim.setBorderMode(START_BORDER_MODE);
     this.sim.setSmokeLevel(START_SMOKE_LEVEL);
     this.currentKind = this.drawKind();
-    this.seed();
   }
 
   /** 스트림 `i`의 x좌표(칸). 화면을 (줄 수 + 1)로 나눈 경계들. */
   streamX(i: number): number {
     const x = Math.round((this.grid.width * (i + 1)) / (LITE_MATERIALS.length + 1));
     return Math.min(this.grid.width - 1, Math.max(0, x));
-  }
-
-  /** 첫 프레임부터 다섯 물질이 다 보이도록 바닥에 얕은 띠를 깐다. */
-  private seed(): void {
-    const g = this.grid;
-    const bed = Math.min(6, Math.max(1, Math.floor(g.height / 8)));
-    const n = LITE_MATERIALS.length;
-    for (let y = g.height - bed; y < g.height; y++) {
-      for (let x = 0; x < g.width; x++) {
-        if (this.rand() > 0.85) continue;
-        const band = Math.min(n - 1, Math.floor((x / g.width) * n));
-        g.set(x, y, LITE_MATERIALS[band].id);
-      }
-    }
-    g.randomizeTints();
   }
 
   /** 화면 크기가 바뀌었을 때. 격자는 내용을 물고 리사이즈된다(바닥 기준 정렬). */
@@ -248,8 +239,9 @@ export class StartScreenWorld {
       let filled = 0;
       for (let i = 0; i < g.cells.length; i++) if (g.cells[i] !== EMPTY) filled++;
       const ratio = filled / g.cells.length;
-      this.drainPerTick =
-        ratio > DRAIN_HARD_FILL ? DRAIN_HARD_CELLS : ratio > DRAIN_SOFT_FILL ? DRAIN_SOFT_CELLS : 0;
+      const perWidth =
+        ratio > DRAIN_HARD_FILL ? DRAIN_HARD_PER_WIDTH : ratio > DRAIN_SOFT_FILL ? DRAIN_SOFT_PER_WIDTH : 0;
+      this.drainPerTick = perWidth === 0 ? 0 : Math.max(DRAIN_MIN_CELLS, Math.ceil(g.width * perWidth));
     }
     const floor = g.height - 1;
     for (let k = 0; k < this.drainPerTick; k++) {

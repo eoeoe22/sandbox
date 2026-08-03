@@ -1,6 +1,6 @@
 <script lang="ts">
-  // 시작 화면(`/`) 배경에서 도는 **진짜 엔진**의 캔버스 쪽 절반. 세계 자체(다섯
-  // 줄 낙하·배수·클릭 브러시·종류 룰렛)는 `game/startScreen.ts`에 있고, 여기서는
+  // 시작 화면(`/`) 배경에서 도는 **진짜 엔진**의 캔버스 쪽 절반. 세계 자체(줄
+  // 낙하·배수·클릭 브러시·종류 룰렛)는 `game/startScreen.ts`에 있고, 여기서는
   // 그 세계를 캔버스·RAF·포인터에 잇기만 한다.
   //
   // 고정 설정(시작 화면에는 설정 UI가 없다): 속도 ×1, 테두리 = 벽/바닥, 연기 =
@@ -32,7 +32,7 @@
     layout.setCellScale(START_CELL_SCALE);
     layout.setViewport(canvasEl.clientWidth, canvasEl.clientHeight);
 
-    // 움직임 최소화를 켠 사용자에게는 다섯 줄을 흘리지 않는다. 클릭은 그대로
+    // 움직임 최소화를 켠 사용자에게는 물질 줄을 흘리지 않는다. 클릭은 그대로
     // 받으므로(사용자가 스스로 일으킨 움직임) 화면이 죽지는 않는다.
     const calm =
       typeof window.matchMedia === 'function' &&

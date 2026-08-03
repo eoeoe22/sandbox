@@ -1,10 +1,15 @@
 // 경량 물질 배럴 — 시작 화면(`/`)의 배경 시뮬레이션이 로드하는 최소 물질 집합.
 //
 // 전체 배럴(`./index`)은 150종 가까운 물질을 한꺼번에 등록한다. 시작 화면은 그중
-// 다섯 줄로 떨어지는 물질과 불만 있으면 되므로, 여기서 그 씨앗들만 import한다.
-// ES 모듈 그래프가 각자의 반응 상대(모래→용융 유리, 물→얼음/수증기, 소금→소금물
-// 등)를 알아서 끌어오므로, **여기 적힌 것보다 조금 더 많은 물질이 등록된다** —
-// 다만 그 확장은 "이 다섯이 실제로 변할 수 있는 것들"로 닫혀 있다.
+// 떨어지는 네 줄과 불만 있으면 되므로, 여기서 그 씨앗들만 import한다.
+// ES 모듈 그래프가 각자의 반응 상대(모래→용융 유리, 물→얼음/수증기 등)를 알아서
+// 끌어오므로, **여기 적힌 것보다 조금 더 많은 물질이 등록된다** — 다만 그 확장은
+// "이 넷이 실제로 변할 수 있는 것들"로 닫혀 있다.
+//
+// 한 줄을 고를 때는 그 물질이 데리고 오는 것까지 값으로 친다. 소금이 후보에서
+// 빠진 이유가 그것이다 — 물과 만나 소금물이 되고 녹으면 Molten Salt가 되므로,
+// 배럴이 커지는 데다 매 틱 이웃을 훑는 반응 로직까지 따라온다. 배경 화면이
+// 치르기엔 비싼 값이었다.
 //
 // 등록은 `register()`의 부수효과이고 모듈은 한 번만 평가되므로, 같은 페이지가
 // 전체 배럴까지 import하더라도 id 중복 예외는 나지 않는다(같은 모듈 인스턴스).
@@ -22,7 +27,6 @@ import { SAND } from './sand';
 import { WATER } from './water';
 import { GASOLINE } from './gasoline';
 import { SAWDUST } from './sawdust';
-import { SALT } from './salt';
 import { FIRE } from './fire';
 
 // EMPTY_MAT은 값으로 쓰이지 않고 등록 부수효과만 필요하다. import 자체는 tree
@@ -30,10 +34,10 @@ import { FIRE } from './fire';
 void EMPTY_MAT;
 
 /**
- * 시작 화면이 다섯 줄로 떨어뜨리고, 클릭 룰렛에서 뽑는 물질들. 순서가 곧 화면
+ * 시작 화면이 줄지어 떨어뜨리고, 클릭 룰렛에서 뽑는 물질들. 순서가 곧 화면
  * 왼쪽→오른쪽 스트림 순서다.
  */
-export const LITE_MATERIALS: readonly Material[] = [SAND, WATER, GASOLINE, SAWDUST, SALT];
+export const LITE_MATERIALS: readonly Material[] = [SAND, WATER, GASOLINE, SAWDUST];
 
 /** 클릭 룰렛의 불 항목 (스트림으로는 떨어지지 않는다). */
 export const LITE_FIRE: Material = FIRE;
