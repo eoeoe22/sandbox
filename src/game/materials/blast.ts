@@ -316,6 +316,17 @@ function isBlastInert(id: number): boolean {
   return id !== EMPTY && getMaterial(id).blastInert === true;
 }
 
+/** What a cell of `id` at (x,y) leaves behind when a blast destroys it — the
+ *  material's `blastDeathId`, unless it declares the per-cell `blastDeathIdFor`
+ *  override (a Nanobot's remains follow the metal *that* bot is built out of).
+ *  Only called once the caller has established there is residue at all, and always
+ *  *before* the cell is written, so the override still reads the dying cell's own
+ *  state. */
+function blastResidueId(id: number, sim: SimContext, x: number, y: number): number {
+  const m = getMaterial(id);
+  return m.blastDeathIdFor ? m.blastDeathIdFor(sim, x, y) : (m.blastDeathId as number);
+}
+
 /** A shockwave that can't *break* a material may still kill it outright — the
  *  `shockDeathChance` roll (a Termite crushed by the passing pressure wave), which
  *  leaves its `blastDeathId` residue instead of the cell being shoved. Returns
@@ -347,7 +358,7 @@ function shockKill(sim: SimContext, x: number, y: number, id: number): boolean {
   if (sim.shockRolled.has(k)) return false; // already exposed this tick — one roll only
   sim.shockRolled.add(k);
   if (!sim.chance(m.shockDeathChance)) return false;
-  sim.spawn(x, y, m.blastDeathId); // spawn marks it moved this tick
+  sim.spawn(x, y, blastResidueId(id, sim, x, y)); // spawn marks it moved this tick
   return true;
 }
 
@@ -514,7 +525,7 @@ function defaultCell(
   }
   if (power >= durabilityOf(prevId)) {
     // Strong enough to destroy it: water flash-boils to a steam plume; a material
-    // that drops residue when destroyed (Termite→Sawdust, Nanobot→Iron Powder)
+    // that drops residue when destroyed (Termite→Sawdust, Nanobot→its metal's powder)
     // leaves that instead of a flash, so a bug caught at the epicenter still leaves
     // its remains rather than silently burning away; everything else takes the
     // ordinary crater flash.
@@ -522,7 +533,8 @@ function defaultCell(
       sim.spawn(x, y, STEAM.id); // marks moved; won't be re-processed this tick
       sim.setTemp(x, y, UNDERWATER_STEAM_TEMP); // a hot, buoyant bubble that rises
     } else if (m.blastDeathId !== undefined) {
-      sim.spawn(x, y, m.blastDeathId); // residue; spawn marks it moved this tick
+      // residue (per-cell where the material asks for it); spawn marks it moved
+      sim.spawn(x, y, blastResidueId(prevId, sim, x, y));
     } else {
       flashCell(sim, x, y);
     }

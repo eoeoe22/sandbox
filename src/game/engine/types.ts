@@ -420,6 +420,19 @@ export interface Material {
    */
   blastDeathId?: MatId;
   /**
+   * Per-cell override for `blastDeathId`, for a material whose remains depend on
+   * that particular cell's state rather than on the material as a whole — a
+   * Nanobot shatters into the powder of the metal *that bot* is built out of (its
+   * 금속 기억: Iron Powder or Aluminum Powder, see nanobot.ts), which one static id
+   * can't express. Consulted on both residue paths (the crater's epicenter and a
+   * `shockDeathChance` roll) wherever `blastDeathId` would be.
+   *
+   * `blastDeathId` must still be set alongside it: it is the material-wide answer
+   * and the fallback, and it is what the *gate* on the residue paths reads (a
+   * material with neither leaves the ordinary flash).
+   */
+  blastDeathIdFor?: (sim: SimContext, x: number, y: number) => MatId;
+  /**
    * 충격파에 휩쓸리는 고체 — a Solid that a shockwave treats as LOOSE matter rather
    * than as structure. Normally a solid a blast can't break shadows the wave and
    * is left untouched (see blocksBlast/shadowsPressure in blast.ts), which is

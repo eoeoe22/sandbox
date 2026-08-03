@@ -15,11 +15,20 @@ import { BLAST } from './blast';
 // walks the top, turns down the far face, and continues along the underside.
 //
 // The heading (which of the 4 cardinal directions it's currently walking) is
-// stored in the cell's `aux` byte as `heading + 1` (so 0 = "not yet chosen",
+// stored in the cell's `aux` word as `heading + 1` (so 0 = "not yet chosen",
 // matching the engine's convention that a freshly placed/spawned cell reads 0).
 // Storing it makes the walk *persistent* — "이동 방향을 어느정도 유지" — instead of
 // re-randomizing every tick, and `aux` travels with the cell on every swap (see
 // SimContext.swap) so the heading follows the bug as it moves.
+//
+// The heading only needs 3 bits, so it lives in the LOW 3 bits of `aux` and the
+// rest of the 16-bit word is left free for the individual bug's own per-cell
+// state — read and written with `crawlerState`/`setCrawlerState` below. The
+// Nanobot parks its 금속 기억 (which metal that cell's body is built from) there,
+// and because the two fields share one word the memory rides along on every swap
+// exactly as the heading does. Old saves stored the bare `heading + 1` in the
+// whole word, which is this same layout with an empty state field, so they load
+// unchanged.
 //
 // The two bugs differ only in how they treat liquid, passed as `liquidPolicy`:
 //   • 'avoid'  (Termite): liquid is an obstacle it *walks along the edge of* — it
@@ -44,6 +53,33 @@ const CARD: ReadonlyArray<readonly [number, number]> = [
 // into perfectly deterministic loops around a block — it keeps a lively wander on
 // top of the otherwise consistent march.
 const TURN_RANDOM_CHANCE = 0.08;
+
+// ── aux layout: [ per-bug state | heading+1 ] ────────────────────────────────
+const HEADING_BITS = 3;
+const HEADING_MASK = (1 << HEADING_BITS) - 1;
+
+/** The bug's current heading (0..3), or -1 when it hasn't picked one yet. */
+function readHeading(sim: SimContext, x: number, y: number): number {
+  return (sim.getAux(x, y) & HEADING_MASK) - 1;
+}
+
+/** Write the heading back *without disturbing the bug's own state field* — the
+ *  locomotion layer owns the low 3 bits of `aux` and nothing else. */
+function stampHeading(sim: SimContext, x: number, y: number, heading: number): void {
+  sim.setAux(x, y, (sim.getAux(x, y) & ~HEADING_MASK) | ((heading + 1) & HEADING_MASK));
+}
+
+/** The bug's private per-cell state (see the aux layout note at the top of this
+ *  file). 0 for a freshly placed/spawned cell, which every crawler treats as its
+ *  default. */
+export function crawlerState(sim: SimContext, x: number, y: number): number {
+  return sim.getAux(x, y) >>> HEADING_BITS;
+}
+
+/** Write that state, leaving the heading the locomotion layer owns alone. */
+export function setCrawlerState(sim: SimContext, x: number, y: number, state: number): void {
+  sim.setAux(x, y, (state << HEADING_BITS) | (sim.getAux(x, y) & HEADING_MASK));
+}
 
 /** True if (x,y) is something a bug can cling to. Solids and powders always are;
  *  liquid is a surface only for the liquid-avoiding Termite (it walks the
@@ -86,7 +122,7 @@ function canStepInto(sim: SimContext, x: number, y: number, selfId: number, ente
  *  canStepInto) is an unconditional swap so the bug roams through liquid freely
  *  regardless of density/direction — it truly "ignores" the water. */
 function moveTo(sim: SimContext, x: number, y: number, tx: number, ty: number, heading: number): void {
-  sim.setAux(x, y, heading + 1);
+  stampHeading(sim, x, y, heading);
   if (!sim.inBounds(tx, ty) || sim.get(tx, ty) === EMPTY) sim.tryMove(x, y, tx, ty);
   else sim.swap(x, y, tx, ty);
 }
@@ -162,7 +198,7 @@ export function crawl(x: number, y: number, sim: SimContext, selfId: number, pol
   const enterLiquid = policy === 'ignore';
   const liquidIsSurface = policy === 'avoid';
 
-  let h = sim.getAux(x, y) - 1;
+  let h = readHeading(sim, x, y);
   if (h < 0 || h > 3) h = sim.randInt(4);
 
   // Relieve crowding first: a bug buried in a heap of its own kind squeezes out
@@ -188,7 +224,7 @@ export function crawl(x: number, y: number, sim: SimContext, selfId: number, pol
         return;
       }
     }
-    sim.setAux(x, y, h + 1);
+    stampHeading(sim, x, y, h);
     return;
   }
 
@@ -207,13 +243,34 @@ export function crawl(x: number, y: number, sim: SimContext, selfId: number, pol
     }
   }
   // Boxed in on all four sides — turn around in place and try again next tick.
-  sim.setAux(x, y, ((h + 2) & 3) + 1);
+  stampHeading(sim, x, y, (h + 2) & 3);
 }
 
-/** Per-tick feeding: with `chance`, gnaw one random adjacent `foods` cell and
- *  convert it into another bug of the same kind (`selfId`) — "갉아먹고 동일한
- *  파티클로 변환". `spawn` marks the new bug moved, so a colony can't fill a whole
- *  food block in a single tick; it spreads one cell per fed tick. */
+/** How a bug's feeding differs from the plain "eat one cell, become two" default.
+ *  Declare one of these once at module scope (never build it per call — this runs
+ *  for every bug every tick). */
+export interface FeedOptions {
+  /** 0..1 chance that the gnawed cell is simply *eaten away* — it goes back to
+   *  empty air instead of turning into another bug. The Termite's 50%: half of
+   *  what a colony chews through is digested, half becomes more colony, so a
+   *  swarm still spreads but no longer converts a timber wall into its own mass
+   *  cell for cell. Omitted ⇒ every meal reproduces (the Nanobot). */
+  vanishChance?: number;
+  /** Called on the newborn bug's cell the instant it spawns, told what it was
+   *  made from, so a bug can carry state over from its food (the Nanobot stamps
+   *  its 금속 기억 — see nanobot.ts). Not called when the meal vanished. */
+  onBorn?: (sim: SimContext, x: number, y: number, eatenId: number) => void;
+}
+
+/** Per-tick feeding: with `chance`, gnaw one random adjacent `foods` cell — which
+ *  either vanishes or becomes another bug of the same kind (`selfId`), per
+ *  `opts.vanishChance` — "갉아먹고 동일한 파티클로 변환". `spawn` marks the new bug
+ *  moved, so a colony can't fill a whole food block in a single tick; it spreads
+ *  one cell per fed tick.
+ *
+ *  Returns the id of what it gnawed this tick, or EMPTY if it didn't feed — the
+ *  eater's own hook into its meal (the Nanobot rebuilds its body out of the metal
+ *  it just ate). */
 export function eatAndReproduce(
   x: number,
   y: number,
@@ -221,8 +278,9 @@ export function eatAndReproduce(
   selfId: number,
   foods: readonly number[],
   chance: number,
-): void {
-  if (!sim.chance(chance)) return;
+  opts?: FeedOptions,
+): number {
+  if (!sim.chance(chance)) return EMPTY;
   const fx: number[] = [];
   const fy: number[] = [];
   for (const [dx, dy] of DIR8) {
@@ -234,9 +292,18 @@ export function eatAndReproduce(
       fy.push(ny);
     }
   }
-  if (fx.length === 0) return;
+  if (fx.length === 0) return EMPTY;
   const k = sim.randInt(fx.length);
-  sim.spawn(fx[k], fy[k], selfId);
+  const ex = fx[k];
+  const ey = fy[k];
+  const eaten = sim.get(ex, ey);
+  if (opts?.vanishChance !== undefined && sim.chance(opts.vanishChance)) {
+    sim.set(ex, ey, EMPTY); // eaten clean away — no new bug from this one
+    return eaten;
+  }
+  sim.spawn(ex, ey, selfId);
+  opts?.onBorn?.(sim, ex, ey, eaten);
+  return eaten;
 }
 
 /** True if the cell is fully immersed with no air to reach ("액체에 완전히 잠김"):
