@@ -31,11 +31,13 @@ import { LASER } from '../src/game/materials/laser';
 import { PUMP } from '../src/game/materials/pump';
 import { ELECTROMAGNET } from '../src/game/materials/electromagnet';
 import { WOOFER } from '../src/game/materials/woofer';
+import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../src/game/materials/conveyor';
 import { WATER } from '../src/game/materials/water';
 import { SALTWATER } from '../src/game/materials/saltwater';
 import { ACID } from '../src/game/materials/acid';
 import { IRON } from '../src/game/materials/iron';
 import { STONE } from '../src/game/materials/stone';
+import { SAND } from '../src/game/materials/sand';
 import { WIRE } from '../src/game/materials/wire';
 import { SOLAR_PANEL } from '../src/game/materials/solarpanel';
 import { TURBINE } from '../src/game/materials/turbine';
@@ -216,8 +218,8 @@ check('iron runs the whole wire (zero loss)', ironReach > 150, `${ironReach} cel
 // regression to any per-flood cell limit shows up as "powered < total".
 
 /** One device kind's probe: how to tell an activated cell of it apart from an
- *  idle one. Fan/Laser pack a direction into the low 2 bits and count down in the
- *  rest; Pump/Electromagnet use the whole aux as the countdown; the Woofer stamps
+ *  idle one. Fan/Laser/Conveyor pack a direction into the low 2 bits and count down
+ *  in the rest; Pump/Electromagnet use the whole aux as the countdown; the Woofer stamps
  *  no cell state at all (it fires a shockwave and is done), so its activation is
  *  read from the body-flood memo the pulse filled. Unpacked with literals rather
  *  than by importing each material's constants, same reasoning as the class-field
@@ -233,6 +235,7 @@ const wholeAux = (grid: Grid, x: number, y: number): number => grid.getAux(x, y)
 const DEVICE_PROBES: DeviceProbe[] = [
   { mat: FAN, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
   { mat: LASER, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
+  { mat: CONVEYOR, activated: (_s, g, x, y) => timerAboveDir(g, x, y) > 0, level: timerAboveDir },
   { mat: PUMP, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
   { mat: ELECTROMAGNET, activated: (_s, g, x, y) => wholeAux(g, x, y) > 0, level: wholeAux },
   {
@@ -368,6 +371,97 @@ function pulseCorner(
     'a battery on one corner spins up a 900-cell fan wall entirely',
     powered === side * side,
     `${powered}/${side * side} cells`,
+  );
+}
+
+// --- 4c. Conveyor: 전원 공급시에만 작동 ----------------------------------------
+// The belt is an appliance, not a slope: an unpowered one is an inert floor and
+// carries nothing at all. The activation contract itself is covered by the probe
+// above (a corner contact runs the whole run, at any strength); what's checked
+// here is the *consequence* — that the cargo moves if and only if the belt has
+// power, in the direction its aux says, and that pulling the power actually stops
+// it rather than leaving the load coasting forever.
+//
+// The controls are the point: the unpowered run is the same scene minus the
+// battery, so "the sand did not move" can't be a scene that never worked. And the
+// coast is measured against POWERED_TICKS rather than merely asserted to end,
+// because a belt that quietly re-armed itself would still eventually stop when the
+// grain ran off the end of a short belt.
+
+/** A long belt with one sand grain resting on it, optionally with a Battery
+ *  clipped to the left end. Returns the grain's column after `ticks`. */
+function beltRun(
+  dir: number,
+  powered: boolean,
+  ticks: number,
+): { grid: Grid; sim: Simulation; sand: () => number } {
+  const grid = new Grid(200, 12);
+  const sim = new Simulation(grid);
+  for (let x = 2; x < 190; x++) {
+    grid.set(x, 8, CONVEYOR.id);
+    grid.setAux(x, 8, dir);
+  }
+  grid.set(95, 7, SAND.id); // mid-run, far from either end
+  if (powered) grid.set(2, 7, BATTERY.id);
+  const sand = (): number => {
+    for (let y = 0; y < grid.height; y++)
+      for (let x = 0; x < grid.width; x++) if (grid.get(x, y) === SAND.id) return x;
+    return -1;
+  };
+  for (let t = 0; t < ticks; t++) sim.step();
+  return { grid, sim, sand };
+}
+{
+  const dead = beltRun(CONVEYOR_RIGHT, false, 60);
+  check(
+    'an unpowered Conveyor carries nothing — it is an inert floor',
+    dead.sand() === 95,
+    `sand at ${dead.sand()}, placed at 95`,
+  );
+  const live = beltRun(CONVEYOR_RIGHT, true, 60);
+  check(
+    '…while the same belt on a battery carries it (the check can fail)',
+    live.sand() > 95,
+    `sand at ${live.sand()}, placed at 95`,
+  );
+  const left = beltRun(CONVEYOR_LEFT, true, 60);
+  check(
+    'a powered belt drawn leftward carries the other way',
+    left.sand() < 95,
+    `sand at ${left.sand()}, placed at 95`,
+  );
+
+  // Cutting power stops it: the countdown each pulse refreshes runs out, and no
+  // cell is left running. 24 is the belt's POWERED_TICKS, read here as a bound on
+  // how far one last pulse may carry the load, not restated as a constant.
+  const cut = beltRun(CONVEYOR_RIGHT, true, 30);
+  const atCut = cut.sand();
+  cut.grid.set(2, 7, 0); // pull the battery
+  for (let t = 0; t < 200; t++) cut.sim.step();
+  let stillRunning = 0;
+  for (let x = 2; x < 190; x++) if (cut.grid.getAux(x, 8) >> 2 > 0) stillRunning++;
+  check(
+    'pulling the power stops the belt within one countdown',
+    cut.sand() - atCut <= 24 && stillRunning === 0,
+    `coasted ${cut.sand() - atCut} cells (≤24), ${stillRunning} cells still running after 200 ticks`,
+  );
+  /** The distinct values of `read` across every cell of a 188-cell belt run. */
+  const alongBelt = (grid: Grid, read: (aux: number) => number): Set<number> => {
+    const seen = new Set<number>();
+    for (let x = 2; x < 190; x++) seen.add(read(grid.getAux(x, 8)));
+    return seen;
+  };
+  const countdowns = alongBelt(live.grid, (aux) => aux >> 2);
+  check(
+    '…and the run holds one countdown across the whole body, not a gradient',
+    countdowns.size === 1,
+    `${countdowns.size} distinct countdowns along a 188-cell belt`,
+  );
+  const dirs = alongBelt(left.grid, (aux) => aux & 0b11);
+  check(
+    '…while every cell keeps its own direction bits through it',
+    dirs.size === 1 && dirs.has(CONVEYOR_LEFT),
+    `dir bits along the belt: [${[...dirs].join(', ')}] (CONVEYOR_LEFT ${CONVEYOR_LEFT})`,
   );
 }
 

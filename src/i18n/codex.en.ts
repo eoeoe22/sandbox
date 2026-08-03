@@ -168,7 +168,7 @@ export const materialCodexEn: Record<number, string> = {
   49: 'Endlessly copies the first material it touches.',
   50: 'Instantly annihilates every particle that touches it.',
   51: 'Annihilates 1:1 with the material beside it.',
-  100: 'A belt that carries particles along the direction it was dragged.',
+  100: 'A belt that runs only while it has power, carrying whatever rests on it along the direction it was dragged. Cut the current and it soon stops.',
 };
 
 // --- Object descriptions ----------------------------------------------------

@@ -545,8 +545,9 @@ export const ELECTROMAGNET = register({
   coilPattern: true,
   density: 1000,
   category: 'electric',
-  // Doesn't burn or corrode away underfoot, like the other electric machines.
-  acidResistant: true,
+  // 산에 녹는다: only the Solar Panel keeps acid resistance among the electric
+  // materials — every machine here is ordinary hardware an acid pool eats through,
+  // so a belt/coil run through acid has to be shielded like anything else.
   thermal: { conductivity: 0.3 },
   // One-way "outside → inside" electric sink (see the header): any pulse source
   // touching a face — Battery/LFP Battery/Turbine direct, or a relayed Spark —

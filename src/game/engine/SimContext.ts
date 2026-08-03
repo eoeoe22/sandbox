@@ -281,6 +281,16 @@ export class SimContext {
   readonly pumpFlood = new BodyFlood();
 
   /**
+   * Per-tick memo for the Conveyor's body-flood (materials/conveyor.ts) —
+   * identical in shape and purpose to `fanFlood`/`laserFlood`/`pumpFlood` above:
+   * a powered belt is a one-way "outside → inside" electric sink whose whole
+   * connected run starts moving from any powered face, and this keeps a belt
+   * touched from several faces/sources in the same tick from re-flooding once per
+   * entry point. Sim-local.
+   */
+  readonly conveyorFlood = new BodyFlood();
+
+  /**
    * Per-tick memo for the Solar Panel's body-flood (materials/solarpanel.ts) —
    * the same shape as the sinks above, pointed the other way. A panel is a
    * *source*: light landing anywhere on an array conducts through the whole

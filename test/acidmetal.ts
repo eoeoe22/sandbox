@@ -32,7 +32,7 @@
 // Run: `node test/run-acidmetal.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
-import { getMaterial } from '../src/game/materials/registry';
+import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import { ACID } from '../src/game/materials/acid';
 import { HYDROGEN } from '../src/game/materials/hydrogen';
 import { IRON } from '../src/game/materials/iron';
@@ -167,17 +167,41 @@ function bath(
     ['Rust Powder', RUST_POWDER.id],
     ['Iron Ore', IRON_ORE.id],
     ['Limestone', LIMESTONE.id],
+    // Nichrome used to be the other kind of "no" — `acidResistant`, so acid
+    // couldn't even eat it. 산 내성 is now the Solar Panel's alone among the 전기
+    // category (see the roster check below), so the alloy joins this list: it
+    // dissolves like any wiring material, and still has no hydrogen to give.
+    ['Nichrome', NICHROME.id],
   ];
   for (const [name, id] of cases) {
     const r = bath(id);
     check(`${name} dissolves in acid without any hydrogen`, r.maxH2 === 0, `${r.maxH2} cells`);
   }
-  // Nichrome is the other kind of "no": acidResistant, so acid can't even eat it.
   const nichrome = bath(NICHROME.id);
   check(
-    'acid-resistant Nichrome neither dissolves nor fizzes',
-    nichrome.maxH2 === 0 && nichrome.left === 40,
+    '…and Nichrome is genuinely eaten away, not merely quiet',
+    nichrome.left < 40,
     `${nichrome.left}/40 cells left`,
+  );
+}
+
+// 3b. The 전기 카테고리 roster: the Solar Panel is the *only* acid-resistant one.
+//     Every other electric material — the machines (Fan/Laser/Pump/Electromagnet/
+//     Conveyor/Woofer), the wiring (Wire/Nichrome), the sources (both batteries,
+//     Turbine) — is ordinary hardware an acid pool eats through, so a circuit run
+//     near acid has to be shielded rather than made of the one immune material.
+//     Scanned off the registry rather than restated by hand, so adding an electric
+//     material with `acidResistant: true` fails here instead of quietly reopening
+//     the exemption.
+{
+  const resistant = allMaterials()
+    .filter((m) => m.category === 'electric' && m.acidResistant)
+    .map((m) => m.name)
+    .sort();
+  check(
+    'Solar Panel is the only acid-resistant electric material',
+    resistant.length === 1 && resistant[0] === 'Solar Panel',
+    `[${resistant.join(', ')}]`,
   );
 }
 

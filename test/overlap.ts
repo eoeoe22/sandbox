@@ -358,13 +358,26 @@ function acidPocket(powderId: number, ticks = 400): { left: number; acid: number
 }
 
 // ── 3b. 기체도 스며든다 — 다공성 고체 속 산성 증기 ───────────────────────────
-// A gas can't soak into a powder, but it CAN into a porous solid, and the two
-// that admit it (Mesh, Turbine) are both corrodible — so Acid Vapor drifting into
-// a screen used to park inside the very thing it should be eating. Mesh admits
-// only its light checkerboard cells (`latticeFilter`), so the scene seeds exactly
-// those; the rest of the screen is packed solid, leaving the fumes nowhere to
-// surface. The Pump is the control: same porous hosting, but `acidResistant`.
-function vaporScreen(hostId: number, ticks = 400): { left: number; start: number } {
+// A gas can't soak into a powder, but it CAN into a porous solid — so Acid Vapor
+// drifting into a screen used to park inside the very thing it should be eating.
+// Mesh admits only its light checkerboard cells (`latticeFilter`), so the scene
+// seeds exactly those; the rest of the screen is packed solid, leaving the fumes
+// nowhere to surface.
+//
+// The control is the same porous screen holding a HARMLESS gas (Steam), which
+// must come out untouched — that is what proves the scene reports "eaten" because
+// the vapor is acid, not merely because a gas is sitting inside a solid.
+//
+// It used to be the Pump instead: same porous hosting, but `acidResistant`. 산 내성
+// is now the Solar Panel's alone among the 전기 category, and the panel is not
+// porous, so no acid-proof host exists to play that part. The Pump keeps its line
+// here as a positive: every porous solid in the game (Mesh, Turbine, Pump) is
+// corrodible now, and vapor parked in any of them eats it.
+function vaporScreen(
+  hostId: number,
+  gasId: number = ACID_VAPOR.id,
+  ticks = 400,
+): { left: number; start: number } {
   const { grid, sim } = makeWorld(30, 30);
   for (let y = 0; y < 30; y++)
     for (let x = 0; x < 30; x++)
@@ -372,7 +385,7 @@ function vaporScreen(hostId: number, ticks = 400): { left: number; start: number
   for (let y = 8; y < 22; y++)
     for (let x = 8; x < 22; x++) {
       grid.set(x, y, hostId);
-      if (((x ^ y) & 1) === 0) grid.setOverlay(x, y, ACID_VAPOR.id);
+      if (((x ^ y) & 1) === 0) grid.setOverlay(x, y, gasId);
     }
   const start = count(grid, hostId);
   for (let t = 0; t < ticks; t++) sim.step();
@@ -387,9 +400,15 @@ function vaporScreen(hostId: number, ticks = 400): { left: number; start: number
   );
   const pump = vaporScreen(PUMP.id);
   check(
-    '…대조군: 내산성 다공체(펌프)는 증기가 지나가도 멀쩡',
-    pump.left === pump.start,
+    '…펌프도 마찬가지 — 전기 기계의 산 내성이 사라졌다',
+    pump.left < pump.start,
     `${pump.start} → ${pump.left} pump`,
+  );
+  const steamed = vaporScreen(MESH.id, STEAM.id);
+  check(
+    '…대조군: 무해한 기체(증기)가 든 같은 체는 멀쩡 (검사가 실패할 수 있다)',
+    steamed.left === steamed.start,
+    `${steamed.start} → ${steamed.left} mesh`,
   );
 }
 

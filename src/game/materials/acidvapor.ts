@@ -48,10 +48,12 @@ export const ACID_VAPOR = register({
   thermal: { init: 100, conductivity: 0.08 },
   update: updateAcidVapor,
   // 스며든 증기도 계속 먹는다. A gas can't soak into a powder, but it CAN into a
-  // porous solid — and the two porous hosts that admit it, Mesh and Turbine, are
-  // both corrodible. So fumes drifting into a screen used to park inside the very
+  // porous solid — and every porous host that admits it (Mesh, Turbine, Pump) is
+  // corrodible. So fumes drifting into a screen used to park inside the very
   // thing they should be eating; this is the same `tryCorrodeSoaked` bite the
-  // liquid and the slime take from inside a grain (see acid.ts). The Pump is the
-  // control: it's `acidResistant`, so vapor threads it untouched either way.
+  // liquid and the slime take from inside a grain (see acid.ts). The Pump used to
+  // be the control here — porous but `acidResistant` — until 산 내성 became the
+  // Solar Panel's alone among the 전기 category; the harness's control is now the
+  // same screen holding a harmless gas (see test/overlap.ts).
   overlapUpdate: (x, y, sim) => tryCorrodeSoaked(x, y, sim, ACID_VAPOR_CORROSION),
 });
