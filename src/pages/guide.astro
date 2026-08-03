@@ -21,7 +21,7 @@ const objects = buildObjectEntries();
 const sprite = buildIconSprite();
 ---
 
-<Base title="Particle Sandbox - 물질 도감">
+<Base title="Particle Sandbox - 물질 도감" scroll>
   <div class="guide-page">
     <!-- The icon definitions, once per document. Every `<use href="#codex-…">`
          in the grid and the detail view points in here. -->
@@ -32,7 +32,12 @@ const sprite = buildIconSprite();
 
 <style>
   .guide-page {
+    /* Enough to paint the whole screen when the grid is short (a search that
+       matched nothing). dvh over vh for the usual mobile reason — vh is the
+       large viewport, so it would reserve a screenful *plus* the address bar's
+       height and leave a stripe of scroll under a page that fits. */
     min-height: 100vh;
+    min-height: 100dvh;
     background: #0b0c10;
     color: #e0e6ed;
     padding: 2rem 1.5rem 3rem;

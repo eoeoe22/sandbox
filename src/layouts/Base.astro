@@ -4,12 +4,26 @@ import faviconUrl from '../assets/favicon.svg?url';
 
 interface Props {
   title?: string;
+  /**
+   * Let the document scroll. Off by default because the sandbox pages are a
+   * fixed-viewport app: `global.css` locks `html, body` to `overflow: hidden`
+   * so a touch drag paints instead of scrolling, and so the address bar never
+   * collapses out from under a `dvh`-sized canvas (see the `#game` note there).
+   *
+   * A *document* page has the opposite need. The codex is many screens tall,
+   * and with the lock inherited it simply could not be scrolled at all — the
+   * content below the fold was unreachable, most obviously on a phone. Pages
+   * like that pass `scroll` and get the ordinary document scroller back:
+   * momentum, address-bar auto-hide and find-in-page along with it, which a
+   * nested `overflow: auto` box would have given up.
+   */
+  scroll?: boolean;
 }
-const { title = 'Particle Sandbox' } = Astro.props;
+const { title = 'Particle Sandbox', scroll = false } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class={scroll ? 'scrollable' : undefined}>
   <head>
     <meta charset="utf-8" />
     <!-- Detect the UI locale before first paint so <html lang> and any

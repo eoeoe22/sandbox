@@ -49,9 +49,22 @@
   $effect(() => {
     if (!open) return;
     openModals.push(token);
+    // Hold the document still underneath. On the sandbox pages this is already
+    // true (global.css locks `html, body`), but a document page opts out of that
+    // lock to scroll (Base.astro's `scroll` prop) — and there a drag anywhere
+    // outside the dialog card scrolls the page behind the backdrop, which on a
+    // phone is most of the screen. Reference-counted off the same stack the
+    // Escape handling uses, so a modal opened over another doesn't release the
+    // lock when only the top one closes. An inline style beats the stylesheet's
+    // `overflow: visible`, and restoring the previous value (rather than
+    // clearing to '') leaves a page that set its own overflow as it was.
+    const root = document.documentElement;
+    const previousOverflow = root.style.overflow;
+    if (openModals.length === 1) root.style.overflow = 'hidden';
     return () => {
       const i = openModals.indexOf(token);
       if (i !== -1) openModals.splice(i, 1);
+      if (openModals.length === 0) root.style.overflow = previousOverflow;
     };
   });
   const isTopmost = (): boolean => openModals[openModals.length - 1] === token;
