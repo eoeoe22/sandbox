@@ -22,3 +22,12 @@ npm-debug.log*
 # directory itself, or git would never descend far enough to see the negation.
 .claude/*
 !.claude/skills/
+
+# Throwaway probe harnesses. The review step in CLAUDE.md's workflow spawns
+# subagents that write one-shot scenes to measure a claim ("does rule A really
+# beat rule B?") and then discard them — twice now they have been left behind as
+# untracked files. Real harnesses are `test/<name>.ts` + `test/run-<name>.mjs`
+# and are wired into `npm test`; anything prefixed with `_` is scratch by
+# convention and must never be committed.
+test/_*
+test/run-_*

@@ -13,6 +13,7 @@ import { AMMONIUM_NITRATE } from './ammoniumnitrate';
 import { AMMONAL } from './ammonal';
 import { STEAM } from './steam';
 import { HYDROGEN } from './hydrogen';
+import { chlorineMetalBurn } from './chlorine';
 
 // Aluminum Powder (알루미늄 가루) — the bright silver metal dust, and the hub the
 // whole aluminum line runs through. Everything it does starts here:
@@ -154,6 +155,18 @@ const STEAM_REACT_CHANCE = 0.25;
 // likely. The exotherm is honest too: this reaction is what blew the roofs off
 // at Fukushima.
 const STEAM_REACT_HEAT = 200;
+
+// Per-tick, per-contact chance a grain touching Chlorine burns (2Al + 3Cl₂ →
+// 2AlCl₃ — see chlorine.ts's `chlorineMetalBurn` for the reaction and why the
+// rule lives on this side). Between the two extremes of the family: faster than
+// the cast bar (0.06, which also has to be hot first) because a loose grain
+// presents all of itself to the gas instead of one face, and slower than the
+// activated dust (0.4) because the oxide film every ordinary grain still wears
+// is precisely what that dust has had stripped off. The same film is why this
+// powder is the hardest fuel in the game to light — chlorine just gets through
+// it far more easily than a flame does, which is the point of the reaction: the
+// metal you can barely light with a match burns on contact in the gas.
+const CHLORINE_REACT_CHANCE = 0.2;
 
 export const ALUMINUM_POWDER = register({
   // 127 is deliberately skipped — it's claimed by a material being added on a
@@ -298,6 +311,26 @@ export const ALUMINUM_POWDER = register({
       heat: STEAM_REACT_HEAT,
       tempMin: AUTO_IGNITE_TEMP,
     },
+    // **+ Chlorine → 불꽃 + 흰 연기.** No gate at all, unlike every other row
+    // here: chlorine is an oxidiser in its own right, so the burn needs no
+    // flame, no air and no heat to start — a cloud let into a sealed box with a
+    // heap of this in it lights the heap.
+    //
+    // Listed last because it is the one rule whose partner is a *gas* (the rows
+    // above all want a powder neighbour), and for no stronger reason than that.
+    // In particular it does NOT mean the crafting recipes beat it: `tryReact`
+    // applies the first rule that finds a partner and passes its roll, so being
+    // earlier only wins the tick it fires, and over many ticks the bigger number
+    // wins. Measured over 300 seeded trials of one grain touching Rust Powder
+    // inside a chlorine atmosphere, **the recipe lands 39% of the time and the
+    // chlorine burns the grain out from under it 61%.**
+    //
+    // That is deliberate rather than tolerated: you should not be able to calmly
+    // grind a charge together inside a cloud that is busy oxidising the metal.
+    // `test/chlorinealuminum.ts` pins both outcomes so a retune cannot quietly
+    // starve either one — if you *do* want the recipe to win, the fix is the
+    // probability, not the row order.
+    chlorineMetalBurn(CHLORINE_REACT_CHANCE),
   ],
   update: updateAluminumPowder,
 });

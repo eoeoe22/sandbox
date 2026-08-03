@@ -314,6 +314,16 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     ko: { label: '스며든 상태 반응', desc: '다른 물질에 스며든 채로도 제 할 일을 합니다.' },
     en: { label: 'Acts while soaked', desc: 'Goes on doing its job while soaked into another material.' },
   },
+  miscible: {
+    ko: {
+      label: '섞이는 액체',
+      desc: '이 액체들과는 층으로 갈리지 않고 골고루 섞여 한 용액이 됩니다.',
+    },
+    en: {
+      label: 'Mixes with',
+      desc: 'Never separates into layers with these — the two stir together into one solution.',
+    },
+  },
   overlapFluids: {
     ko: { label: '겹침 허용 유체', desc: '이 유체만 안으로 스며들 수 있고, 나머지는 바깥에 그대로 남습니다.' },
     en: { label: 'Soaks up only', desc: 'Only these fluids may soak in; the rest stay outside as ordinary cells.' },

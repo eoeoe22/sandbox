@@ -15,6 +15,7 @@
 // See stats.ts's header for what `fields` is doing here.
 
 import { fireClassOf } from '../materials/suppress';
+import { misciblePartnersOf } from '../materials/registry';
 import type { TraitSpec } from './types';
 
 const flag =
@@ -100,6 +101,21 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
     key: 'shatter',
     fields: ['shatterId'],
     read: (m) => (m.shatterId === undefined ? undefined : { refId: m.shatterId }),
+  },
+
+  // --- 가용성(섞임) -------------------------------------------------------
+  {
+    key: 'miscible',
+    fields: ['miscible'],
+    // Resolved through the registry's symmetric pair table, not read off the
+    // field — the same reason `fireClass` goes through `fireClassOf`. A pair is
+    // declared on one of its two materials (Alcohol lists Water, not the other
+    // way round), so reading the field directly would tell a player that alcohol
+    // mixes with water while water's own card said nothing at all.
+    read: (m) => {
+      const partners = misciblePartnersOf(m.id);
+      return partners.length === 0 ? undefined : { refIds: [...partners] };
+    },
   },
 
   // --- 겹침(스며듦) -------------------------------------------------------

@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 import { tryPhaseChange } from './phasechange';
+import { chlorineMetalBurn } from './chlorine';
 
 // Aluminum — cast solid metal, the product end of the aluminum line:
 // **Aluminum Powder → (heat past 660°) → Molten Aluminum → (cool) → Aluminum**.
@@ -52,6 +53,29 @@ import { tryPhaseChange } from './phasechange';
 // a while, a pinch of powder is gone in a flurry.
 const ACID_HYDROGEN_CHANCE = 0.04;
 
+// ── 염소 속에서 타는 알루미늄 ────────────────────────────────────────────────
+// **Aluminum + Chlorine → 불꽃 + 흰 연기** (2Al + 3Cl₂ → 2AlCl₃; the rule itself
+// and why it makes no solid product are in chlorine.ts's `chlorineMetalBurn`).
+//
+// The bar is the one form of the metal that has to be *hot* first, and that gate
+// is the whole reason this row is declared here on the metal's side rather than
+// in chlorine.ts: `tempMin` reads the declaring cell, and only the bar knows how
+// hot the bar is (chlorine barely conducts heat — 0.06 — so a gas cell against a
+// glowing bar can still read ambient).
+//
+// 250° is picked to sit in the gap the metal already has: it is well clear of
+// anything a room reaches on its own, and comfortably under the 660° melt point,
+// so the honest sequence is "heat the bar, watch it burn" and not "heat the bar,
+// watch it turn into Molten Aluminum first". Real bulk aluminum is protected by
+// its oxide skin and needs warming (or a trace of moisture) before chlorine will
+// take it, which is the same fact that makes the powders react cold here: dust
+// is mostly surface, and the activated dust has no skin left at all.
+const CHLORINE_REACT_TEMP = 250;
+// …and slowly even then — a sixth of the activated dust's 0.4 and a third of the
+// plain powder's 0.2. One flat face against the gas, the same reasoning the acid
+// rate above uses.
+const CHLORINE_REACT_CHANCE = 0.06;
+
 function updateAluminum(x: number, y: number, sim: SimContext): void {
   // Tick down the post-spark refractory so the cell becomes energizable again
   // (the same one-way "recently energized" memory Iron and Wire keep — see
@@ -87,6 +111,9 @@ export const ALUMINUM = register({
   // standing in acid fizzes, the acid cell becoming the rising hydrogen bubble.
   // Same tag and same reasoning as the powder's (aluminumpowder.ts), just slower.
   acidHydrogen: { chance: ACID_HYDROGEN_CHANCE },
+  // 달군 뒤 염소를 쐬면 탄다 — the bar's only reaction row (see the constants
+  // above for the gate and chlorine.ts for the reaction).
+  reactions: [chlorineMetalBurn(CHLORINE_REACT_CHANCE, CHLORINE_REACT_TEMP)],
   // 녹는점 — mirrors Iron → Molten Iron.
   phaseChange: { at: () => ALUMINUM_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_ALUMINUM.id },
   update: updateAluminum,

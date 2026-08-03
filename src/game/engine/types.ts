@@ -1078,6 +1078,35 @@ export interface Material {
    */
   surfaceTension?: number;
   /**
+   * 가용성 (miscibility) — the liquids this one forms a single *solution* with,
+   * rather than a layered pair. Declaring it does two things, and it needs both
+   * to read as "섞인다":
+   *
+   *  • **No density separation.** `SimContext.tryMove` refuses the density-sorted
+   *    displacement between a miscible pair, so neither one sinks through or
+   *    floats up past the other. Without this the second half below is pointless:
+   *    a diffusive swap that puts Alcohol (1.9) under Water (3) is undone by the
+   *    very next density sort, and the two settle back into flat layers.
+   *  • **Interdiffusion.** `updateLiquid` gives a declaring cell a per-tick chance
+   *    to trade places with an adjacent partner cell (behaviors.ts's
+   *    `diffuseMiscible`), which is the random walk that actually carries one
+   *    through the other until the mixture is uniform — and, with the sort off,
+   *    it *stays* uniform.
+   *
+   * The pair is symmetric: the engine registers both directions (registry.ts's
+   * `areMiscible`), so only one of the two files needs the list. The diffusion
+   * half runs from the declaring side only, which is enough — a swap moves both
+   * cells — and keeps the "one material owns the relationship" convention the
+   * reaction tables already use.
+   *
+   * The narrower `diffuseWith` (behaviors.ts) is the other, weaker tool: it blurs
+   * a boundary but leaves the density sort switched on, which is all Acid/Water
+   * and Honey/Water need (Acid is water's exact density, and Honey is *supposed*
+   * to keep sinking through a pool). Reach for `miscible` only when the two really
+   * are one liquid once stirred.
+   */
+  miscible?: MatId[];
+  /**
    * 파티클 수명 (generalized lifetime): the cell has a finite life and, each tick,
    * decays with probability ≈ 1/`ticks` into `into` (default Empty) — the
    * memoryless model Smoke always used, lifted to a tag so any ephemeral particle
