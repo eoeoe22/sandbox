@@ -100,15 +100,29 @@ import StartMenu from '../components/StartMenu.svelte';
     font-size: clamp(2.6rem, 9vw, 4.6rem);
     font-weight: 900;
     letter-spacing: -0.02em;
+    /* 글자 자체가 반투명(background-clip: text)이라 text-shadow를 쓰면 그림자가
+       글자 **속으로** 비쳐 색이 탁해진다. 합성 결과에 걸리는 drop-shadow로 뺀다. */
+    filter: drop-shadow(0 2px 16px rgba(0, 0, 0, 0.85));
   }
 
+  /* 타이틀 두 줄은 게임 안의 색을 그대로 쓴다: 위는 물, 아래는 모래.
+     PARTICLE 밑동에서 물이 떨어져 SANDBOX 윗머리에 반쯤 스민 모양새다.
+     · 물 = Water의 `rgb(60, 130, 210)`(#3c82d2). 위쪽은 수면 반사만큼 밝게 띄운다.
+     · 모래 = Sand의 `rgb(232, 201, 107)`(#e8c96b).
+     · 젖은 모래 = 눈대중이 아니라 렌더러의 겹침 공식 그대로다
+       (`CanvasRenderer.wetted` = host 5/8 + fluid 3/8): #a7ae91. 맨 윗줄은
+       물이 더 많이 밴 3/8 + 5/8쪽(#7d9dab)이라, 위에서 아래로 갈수록 물기가
+       빠져 88%에서 마른 모래가 된다. */
   .line-1 {
-    color: #f8fafc;
-    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.75);
+    background: linear-gradient(to bottom, #9ccbf5 0%, #5a9ae2 45%, #3c82d2 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
   }
 
   .line-2 {
-    background: linear-gradient(135deg, #818cf8 0%, #38bdf8 55%, #34d399 100%);
+    background: linear-gradient(to bottom, #7d9dab 0%, #a7ae91 24%, #c7bb7e 58%, #e8c96b 88%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
