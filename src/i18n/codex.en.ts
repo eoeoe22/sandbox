@@ -222,7 +222,10 @@ export const codexTermsEn: Record<string, CodexTerm> = {
   lifetime: { label: 'Lifetime', desc: 'It disappears after about this many ticks.' },
 
   // Stats — objects only
-  meltTicks: { label: 'Melt time', desc: 'How long it must sit past its melting point before it runs.' },
+  shellMeltPoint: { label: 'Shell melting point', desc: 'Held here long enough, the barrel gives way and collapses into three shards.' },
+  shellMeltTicks: { label: 'Shell melt time', desc: 'How long it must sit past the shell melting point before it opens.' },
+  pieceMeltPoint: { label: 'Shard melting point', desc: 'A shard only runs as molten iron at this higher temperature. In between, the wreckage just lies there.' },
+  pieceMeltTicks: { label: 'Shard melt time', desc: 'A torn scrap gives way far faster than a sealed drum does.' },
   fuseTicks: { label: 'Fuse time', desc: 'How long from lighting to going off.' },
   ventTicks: { label: 'Vent time', desc: 'How long it pours out smoke.' },
   fuelTicks: { label: 'Fuel time', desc: 'How long until the wick burns out and leaves an empty bottle.' },
@@ -283,7 +286,8 @@ export const codexTermsEn: Record<string, CodexTerm> = {
   bouncy: { label: 'Highly elastic', desc: 'Bounces hard off walls and solids.' },
   blastOnly: { label: 'Breaks only to blasts', desc: 'No impact however hard opens it — only an explosion does.' },
   spills: { label: 'Spills its contents', desc: 'Breaking it pours out everything inside at once.' },
-  fuse: { label: 'Lit fuse', desc: 'Throws real fire while the wick burns down. Dunking it puts it out.' },
+  'fuse.waterproof': { label: 'Lit fuse', desc: 'Throws real fire while the wick burns down. It keeps burning underwater — dunking it does nothing.' },
+  'fuse.quenchable': { label: 'Lit fuse (douseable)', desc: 'Throws real fire while the wick burns down. Submerging it puts it out, and the fuel keeps, so it can be lit again.' },
   smashable: { label: 'Smashes on impact', desc: 'A fast enough impact breaks it into pieces.' },
   acidSoluble: { label: 'Dissolves in acid', desc: 'Contact with an acid pool eats it away.' },
   fragile: { label: 'Fragile', desc: 'Weak enough that an ordinary fall will break it.' },

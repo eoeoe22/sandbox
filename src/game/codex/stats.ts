@@ -75,7 +75,7 @@ export const STAT_SPECS: readonly StatSpec[] = [
   {
     key: 'meltPoint',
     unit: 'temp',
-    fields: ['phaseChange'],
+    fields: ['phaseChange.at', 'phaseChange.when', 'phaseChange.into'],
     read: (m) =>
       m.phaseChange === undefined || m.phaseChange.when !== 'atOrAbove'
         ? undefined
@@ -84,7 +84,7 @@ export const STAT_SPECS: readonly StatSpec[] = [
   {
     key: 'setPoint',
     unit: 'temp',
-    fields: ['phaseChange'],
+    fields: ['phaseChange.at', 'phaseChange.when', 'phaseChange.into'],
     read: (m) =>
       m.phaseChange === undefined || m.phaseChange.when !== 'atOrBelow'
         ? undefined
@@ -93,7 +93,7 @@ export const STAT_SPECS: readonly StatSpec[] = [
   {
     key: 'freezeTemp',
     unit: 'temp',
-    fields: ['freeze'],
+    fields: ['freeze.temp'],
     read: (m) => (m.freeze === undefined ? undefined : { value: m.freeze.temp }),
   },
 
@@ -175,15 +175,9 @@ export const STAT_SPECS: readonly StatSpec[] = [
     read: (m) => (m.acidHydrogen === undefined ? undefined : { value: m.acidHydrogen.chance }),
   },
   {
-    key: 'acidHydrogenHeat',
-    unit: 'temp',
-    fields: ['acidHydrogen.heat'],
-    read: (m) => (m.acidHydrogen?.heat === undefined ? undefined : { value: m.acidHydrogen.heat }),
-  },
-  {
     key: 'lifetime',
     unit: 'ticks',
-    fields: ['life'],
+    fields: ['life.ticks', 'life.into'],
     read: (m) => (m.life === undefined ? undefined : { value: m.life.ticks, refId: m.life.into }),
   },
 ];

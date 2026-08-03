@@ -227,7 +227,10 @@ export const codexTermsKo: Record<string, CodexTerm> = {
   lifetime: { label: '수명', desc: '평균 이만큼의 틱이 지나면 사라집니다.' },
 
   // 수치 — 오브젝트 전용
-  meltTicks: { label: '용융 시간', desc: '융점 이상에 이만큼 머물러야 녹아내립니다.' },
+  shellMeltPoint: { label: '통 융점', desc: '이 온도에 오래 두면 통이 열려 조각 3개로 무너집니다.' },
+  shellMeltTicks: { label: '통 용융 시간', desc: '통 융점 이상에 이만큼 머물러야 열립니다.' },
+  pieceMeltPoint: { label: '조각 융점', desc: '조각은 통보다 높은 이 온도에서야 쇳물이 됩니다. 그 사이 온도에서는 조각으로 남습니다.' },
+  pieceMeltTicks: { label: '조각 용융 시간', desc: '찢긴 조각은 밀폐된 통보다 훨씬 빨리 녹습니다.' },
   fuseTicks: { label: '도화선 시간', desc: '불이 붙고 나서 터지기까지 걸리는 시간입니다.' },
   ventTicks: { label: '분출 시간', desc: '연기를 뿜어내는 시간입니다.' },
   fuelTicks: { label: '연료 지속 시간', desc: '심지가 다 타서 빈 병이 될 때까지의 시간입니다.' },
@@ -288,7 +291,8 @@ export const codexTermsKo: Record<string, CodexTerm> = {
   bouncy: { label: '높은 반발력', desc: '벽과 고체에 세게 튕깁니다.' },
   blastOnly: { label: '폭발에만 파괴', desc: '아무리 세게 부딪혀도 멀쩡하고, 폭발에만 열립니다.' },
   spills: { label: '내용물 유출', desc: '부서지면 안에 든 것이 한 번에 쏟아집니다.' },
-  fuse: { label: '도화선', desc: '심지가 타들어 가는 동안 진짜 불을 뿌립니다. 물에 담그면 꺼집니다.' },
+  'fuse.waterproof': { label: '도화선', desc: '심지가 타들어 가는 동안 진짜 불을 뿌립니다. 물속에서도 꺼지지 않고 계속 탑니다.' },
+  'fuse.quenchable': { label: '도화선(소화 가능)', desc: '심지가 타들어 가는 동안 진짜 불을 뿌립니다. 물에 잠기면 꺼지고, 연료는 남아 있어 다시 붙일 수 있습니다.' },
   smashable: { label: '충돌 파괴', desc: '빠르게 부딪히면 조각으로 부서집니다.' },
   acidSoluble: { label: '산에 용해', desc: '산 웅덩이에 닿으면 녹아 무너집니다.' },
   fragile: { label: '약한 내구', desc: '웬만한 낙하에도 깨질 만큼 약합니다.' },

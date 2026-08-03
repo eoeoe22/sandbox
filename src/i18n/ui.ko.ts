@@ -386,6 +386,7 @@ export const ko = {
     statsHeading: '수치',
     traitsHeading: '특성',
     reactionsHeading: '반응',
+    nothing: '없음',
     detail: '자세히 보기',
     close: '닫기',
     toSandbox: '샌드박스로 가기',

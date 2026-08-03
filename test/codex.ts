@@ -44,25 +44,38 @@ function check(name: string, ok: boolean, detail = ''): void {
   for (const t of TRAIT_SPECS) for (const f of t.fields) claimed.add(f);
   for (const f of Object.keys(EXCLUDED_FIELDS)) claimed.add(f);
 
-  // A structured field whose *parts* are claimed by dotted path gets swept part
-  // by part, so a new `thermal.capacity` is an orphan too. A field claimed whole
-  // (`freeze`, `life`) is rendered as one thing and is not descended into.
+  // A structured field is claimed part by part, by dotted path, and gets swept
+  // that way — so a new `thermal.capacity` is an orphan just as a new top-level
+  // tag would be. Claiming the parts is also claiming the whole: `thermal` needs
+  // no entry of its own once `thermal.conductivity` and `thermal.init` have one.
   const descend = new Set(
     [...claimed].filter((f) => f.includes('.')).map((f) => f.slice(0, f.indexOf('.'))),
   );
 
   const orphans = new Set<string>();
+  // Structs the codex shows but claims only as a whole. Not orphans — they ARE
+  // covered — but the claim is the shape that would let a new part slip in
+  // unnoticed, which is the hole this whole check exists to close.
+  const unopened = new Set<string>();
   for (const m of allMaterials()) {
     for (const [key, value] of Object.entries(m)) {
       if (value === undefined) continue;
-      // Claiming the parts is claiming the whole — `thermal` needs no entry of
-      // its own once `thermal.conductivity` and `thermal.init` have one.
-      if (!claimed.has(key) && !descend.has(key)) orphans.add(key);
-      if (descend.has(key) && typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        for (const [sub, subValue] of Object.entries(value)) {
-          if (subValue === undefined) continue;
-          if (!claimed.has(`${key}.${sub}`)) orphans.add(`${key}.${sub}`);
-        }
+      if (!claimed.has(key) && !descend.has(key)) {
+        orphans.add(key);
+        continue;
+      }
+      // Arrays are homogeneous lists of ids, not structs with named parts, so
+      // there is nothing to descend into. An excluded field is exempt too: we
+      // have decided not to show it at all, so its parts don't matter either.
+      const isStruct = typeof value === 'object' && value !== null && !Array.isArray(value);
+      if (!isStruct || key in EXCLUDED_FIELDS) continue;
+      if (!descend.has(key)) {
+        unopened.add(key);
+        continue;
+      }
+      for (const [sub, subValue] of Object.entries(value)) {
+        if (subValue === undefined) continue;
+        if (!claimed.has(`${key}.${sub}`)) orphans.add(`${key}.${sub}`);
       }
     }
   }
@@ -72,6 +85,13 @@ function check(name: string, ok: boolean, detail = ''): void {
     orphans.size
       ? `orphaned: ${[...orphans].join(', ')}`
       : `${claimed.size} claims cover ${allMaterials().length} materials`,
+  );
+  check(
+    '…and every struct the codex shows is claimed part by part, not whole',
+    unopened.size === 0,
+    unopened.size
+      ? `claimed whole (list their parts by dotted path instead): ${[...unopened].join(', ')}`
+      : `${[...descend].length} structs opened up`,
   );
 }
 

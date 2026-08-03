@@ -3,8 +3,9 @@
 //
 // A caveat worth stating plainly, because it is the one place this page is not
 // self-maintaining: a body has no `Material`, and the object layer keys every
-// judgement off its `kind` in imperative code (a drum melts to Molten Iron, a
-// crate burns, a ball scorches — see the note above `isMagneticBody`). There is
+// judgement off its `kind` in imperative code (a drum splits and then runs as
+// Molten Iron, a crate burns, a ball scorches — see the note above
+// `isMagneticBody`). There is
 // no tag registry up there to sweep, so the trait list below is hand-written
 // against that code, and it can drift from it in a way the material side cannot.
 //
@@ -23,6 +24,8 @@ import {
   DRUM_FRICTION,
   DRUM_MELT_TEMP,
   DRUM_MELT_TICKS,
+  DRUM_PIECE_MELT_TEMP,
+  DRUM_PIECE_MELT_TICKS,
   DYNAMITE_DENSITY,
   DYNAMITE_RESTITUTION,
   DYNAMITE_AUTOIGNITE_TEMP,
@@ -61,6 +64,28 @@ interface ObjectSpec {
   traits: CodexTrait[];
 }
 
+/**
+ * The three drums are one steel shell with different contents, and the physics
+ * treats them that way (one `kind`, one set of constants) — so they get one stat
+ * table too, rather than three copies that could drift apart.
+ *
+ * The melt is TWO rows because it is two stages: at `DRUM_MELT_TEMP` the barrel
+ * only splits into its three shards, and only a shard held at the higher
+ * `DRUM_PIECE_MELT_TEMP` runs as Molten Iron (see `drumMeltTemp` in
+ * engine/objects.ts). A single row naming Molten Iron at 1200° would promise a
+ * puddle that a fire sitting in the 1200–1300° band never actually produces —
+ * there it opens the barrel and leaves the wreckage lying.
+ */
+const drumStats = (): CodexStat[] => [
+  { key: 'density', unit: 'number', value: DRUM_DENSITY },
+  { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
+  { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
+  { key: 'shellMeltPoint', unit: 'temp', value: DRUM_MELT_TEMP },
+  { key: 'shellMeltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
+  { key: 'pieceMeltPoint', unit: 'temp', value: DRUM_PIECE_MELT_TEMP, refId: MOLTEN_IRON.id },
+  { key: 'pieceMeltTicks', unit: 'ticks', value: DRUM_PIECE_MELT_TICKS },
+];
+
 const SPECS: Record<ObjectKind, ObjectSpec> = {
   ball: {
     stats: [
@@ -72,33 +97,15 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
     traits: [{ key: 'bouncy' }, { key: 'flammable' }],
   },
   drum: {
-    stats: [
-      { key: 'density', unit: 'number', value: DRUM_DENSITY },
-      { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
-      { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
-      { key: 'meltPoint', unit: 'temp', value: DRUM_MELT_TEMP, refId: MOLTEN_IRON.id },
-      { key: 'meltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
-    ],
+    stats: drumStats(),
     traits: [{ key: 'magnetic' }, { key: 'blastOnly' }],
   },
   oildrum: {
-    stats: [
-      { key: 'density', unit: 'number', value: DRUM_DENSITY },
-      { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
-      { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
-      { key: 'meltPoint', unit: 'temp', value: DRUM_MELT_TEMP, refId: MOLTEN_IRON.id },
-      { key: 'meltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
-    ],
+    stats: drumStats(),
     traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: OIL.id }],
   },
   aciddrum: {
-    stats: [
-      { key: 'density', unit: 'number', value: DRUM_DENSITY },
-      { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
-      { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
-      { key: 'meltPoint', unit: 'temp', value: DRUM_MELT_TEMP, refId: MOLTEN_IRON.id },
-      { key: 'meltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
-    ],
+    stats: drumStats(),
     traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: ACID.id }],
   },
   dynamite: {
@@ -108,7 +115,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: DYNAMITE_AUTOIGNITE_TEMP },
       { key: 'fuseTicks', unit: 'ticks', value: DYNAMITE_FUSE_MIN_TICKS },
     ],
-    traits: [{ key: 'explosive' }, { key: 'fuse' }],
+    traits: [{ key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
   },
   smokebomb: {
     stats: [
@@ -118,7 +125,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'fuseTicks', unit: 'ticks', value: SMOKE_BOMB_FUSE_TICKS },
       { key: 'ventTicks', unit: 'ticks', value: SMOKE_BOMB_VENT_TICKS },
     ],
-    traits: [{ key: 'magnetic' }, { key: 'fuse' }],
+    traits: [{ key: 'magnetic' }, { key: 'fuse', variant: 'waterproof' }],
   },
   crate: {
     stats: [
@@ -138,7 +145,11 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'fuelTicks', unit: 'ticks', value: MOLOTOV_FUEL_TICKS },
       { key: 'burstTemp', unit: 'temp', value: MOLOTOV_BURST_TEMP },
     ],
-    traits: [{ key: 'fuse' }, { key: 'smashable', refId: ALCOHOL.id }, { key: 'fragile' }],
+    traits: [
+      { key: 'fuse', variant: 'quenchable' },
+      { key: 'smashable', refId: ALCOHOL.id },
+      { key: 'fragile' },
+    ],
   },
 };
 

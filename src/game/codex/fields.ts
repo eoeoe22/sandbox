@@ -6,12 +6,13 @@
 // so adding a tag to the engine and forgetting the codex fails loudly with the
 // orphan's name rather than quietly leaving a hole in the page.
 //
-// The sweep also descends into a structured field (`thermal`, `combustion`, …)
-// whenever some spec claims one of its *parts* by dotted path — so claiming
-// `thermal.conductivity` and `thermal.init` puts `thermal` under part-by-part
-// scrutiny, and a later `thermal.capacity` would come up as an orphan too.
-// Claiming a whole object (`freeze`, `life`) opts it out of that descent, which
-// is the right reading for a field the codex renders as one thing.
+// A structured field (`thermal`, `combustion`, `phaseChange`, …) is claimed part
+// by part, by dotted path, and the sweep descends into it — so a later
+// `thermal.capacity` comes up as an orphan just as a new top-level tag would.
+// That is enforced, not conventional: a struct the codex *shows* while claiming
+// only the whole object is itself reported, because claiming the whole is what
+// would let a new part slip in unnoticed. A struct listed here is exempt — we
+// have decided not to show it at all, so its parts don't matter either.
 
 /** Field → why the codex leaves it out. Keys are `Material` field names. */
 export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {

@@ -11,6 +11,7 @@
   // grid and the detail view both point `<use>` at the same `<symbol>`, so the
   // 24×24 drawing is in the document once no matter how many places show it.
   import type { CodexEntry, CodexReaction, CodexStat, CodexTrait, ObjectCodexEntry } from '../game/codex/types';
+  import { EMPTY } from '../game/engine/types';
   import { CATEGORY_META } from '../game/materials/categories';
   import {
     $locale as locale,
@@ -155,10 +156,17 @@
   /** A material named by a stat or trait, in the current locale. */
   function refName(id: number): string {
     void $locale;
+    // Empty needs saying in words. It is a real answer — Yeast and Virus die of
+    // radiation leaving nothing, and Activated Aluminum consumes the water it
+    // cracks — but it is a material like any other to `materialName`, which
+    // answers with the *brush* that writes it: the reaction row came out reading
+    // "활성 알루미늄 + 물 → 지우개" (or a bare "0" in English, since the eraser has
+    // no English entry). Neither is what happened.
+    if (id === EMPTY) return t('codex.nothing');
     const entry = materials.find((e) => e.id === id);
-    // A `refId` can point at a material the palette doesn't list (a blast leaves
-    // Debris behind, Yeast dies to nothing). Those have no codex entry to name,
-    // so fall back to the id's own translation, which every material has.
+    // A `refId` can also point at a material the palette doesn't list (a blast
+    // leaves Debris behind). Those have no codex entry to name, so fall back to
+    // the id's own translation, which every material has.
     return materialName(id, entry?.name ?? String(id));
   }
 

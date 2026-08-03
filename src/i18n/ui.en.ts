@@ -390,6 +390,7 @@ export const en = {
     statsHeading: 'Numbers',
     traitsHeading: 'Traits',
     reactionsHeading: 'Reactions',
+    nothing: 'nothing',
     detail: 'View details',
     close: 'Close',
     toSandbox: 'Open the sandbox',
