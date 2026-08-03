@@ -67,7 +67,9 @@ export const WIRE = register({
   // doesn't turn into a heat bridge across a build the way a metal bar does.
   thermal: { conductivity: 0.12 },
   // Rubber-jacketed, so brine doesn't rust it the way it eats bare Iron; acid
-  // still takes it (it isn't acidResistant), same as every other wiring material.
+  // still takes it (it isn't acidResistant) — the jacket is not chemical armour.
+  // Nichrome is the one wiring material that survives an acid bath, and it does so
+  // on the alloy's own account, not because it is wire.
   // 녹는점 — the jacket is no protection against a forge: at the core metal's
   // melting point the cable runs away as Molten Iron, taking the circuit with it.
   phaseChange: { at: () => IRON_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_IRON.id },

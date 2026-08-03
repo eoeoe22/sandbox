@@ -291,6 +291,20 @@ export class SimContext {
   readonly conveyorFlood = new BodyFlood();
 
   /**
+   * Per-tick "this belt cell already carried" stamp (materials/conveyor.ts). Not
+   * a power flood like the memos around it — it orders the *carry*. A belt run has
+   * to resolve downstream-first (a cell can only step forward into a landing the
+   * cell ahead has already vacated), and the grid scan can't do that: visiting
+   * rows bottom-to-top gets it right on a descending belt and exactly backwards on
+   * an ascending one, which is what used to trap a load in the bottom of a U. So
+   * the first cell of a run the scan reaches walks the whole run, stamps it here,
+   * and carries it in reverse; the rest find themselves stamped and return. Reuses
+   * `BodyFlood` purely for its stamp buffer (one Int32Array, per-tick reset by
+   * counter bump). Sim-local, same reasoning as `wooferFlood`.
+   */
+  readonly conveyorRun = new BodyFlood();
+
+  /**
    * Per-tick memo for the Solar Panel's body-flood (materials/solarpanel.ts) —
    * the same shape as the sinks above, pointed the other way. A panel is a
    * *source*: light landing anywhere on an array conducts through the whole

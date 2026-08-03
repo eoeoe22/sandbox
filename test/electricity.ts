@@ -617,6 +617,85 @@ function beltRun(
   );
 }
 
+// --- 4e2. Conveyor: a U-shaped belt ferries its load out instead of trapping it
+// The shape a player builds without thinking: descend into a dip, run flat along
+// the bottom, climb out the far side. Sand poured into the dip used to ride down
+// the near arm fine and then STAY there, with a one-cell layer trickling up the far
+// arm — 432 cells poured, 148 out, 108 permanently stuck in the bottom.
+//
+// The cause is ordering, not the carry rule. A bedded cell can only step forward
+// into a landing the cell ahead has already vacated, so a run has to resolve
+// downstream-first. The grid scan visits rows bottom-to-top, which is accidentally
+// right on a descending belt and exactly backwards on an ascending one — hence a U
+// draining in and not out. The belt now walks its own run (see conveyor.ts).
+//
+// This is the check that shape regressions land on: it is deliberately phrased as
+// "the dip ends up EMPTY", which no amount of trickle satisfies inside the budget.
+{
+  const W = 110;
+  const H = 44;
+  const TOP = 6;
+  const DEPTH = 14; // steps down and back up
+  const STEP_RUN = 3; // belt cells per one-cell step — a gentle slope
+  const FLAT = 18; // cells along the bottom
+  const FILL = 24; // depth of sand poured into the dip
+
+  const grid = new Grid(W, H);
+  const sim = new Simulation(grid);
+  const belt: Array<[number, number]> = [];
+  let by = TOP;
+  let bx = 3;
+  for (let s = 0; s < DEPTH; s++)
+    for (let i = 0; i < STEP_RUN; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === STEP_RUN - 1) by++;
+    }
+  const flatFrom = bx;
+  for (let i = 0; i < FLAT; i++, bx++) belt.push([bx, by]);
+  const bottomY = by;
+  for (let s = 0; s < DEPTH; s++)
+    for (let i = 0; i < STEP_RUN; i++, bx++) {
+      belt.push([bx, by]);
+      if (i === STEP_RUN - 1) by--;
+    }
+  for (const [cx, cy] of belt) {
+    grid.set(cx, cy, CONVEYOR.id);
+    grid.setAux(cx, cy, CONVEYOR_RIGHT);
+    for (let yy = cy + 1; yy < H; yy++) grid.set(cx, yy, WALL.id);
+  }
+  for (let y = 0; y < H; y++) {
+    grid.set(0, y, WALL.id);
+    grid.set(W - 1, y, WALL.id);
+  }
+  grid.set(2, TOP, BATTERY.id); // one terminal, on the near rim
+  for (let dy = 0; dy < FILL; dy++)
+    for (let dx = 0; dx < FLAT; dx++) grid.set(flatFrom + dx, bottomY - 1 - dy, SAND.id);
+
+  const inDip = (): number => {
+    let n = 0;
+    for (let y = 0; y < H; y++)
+      for (let x = flatFrom; x < flatFrom + FLAT; x++) if (grid.get(x, y) === SAND.id) n++;
+    return n;
+  };
+  const poured = inDip();
+  for (let t = 0; t < 800; t++) sim.step();
+  check(
+    'a U-shaped belt carries its load up and out instead of trapping it in the dip',
+    inDip() === 0,
+    `${inDip()} of ${poured} cells still in the bottom after 800 ticks`,
+  );
+  // The load has to have gone UP and over the far rim, not merely spread along the
+  // bottom of the dip — otherwise "the dip is empty" could be satisfied by sand
+  // slumping sideways past the sampled columns.
+  let beyond = 0;
+  for (let y = 0; y < H; y++) for (let x = bx - 2; x < W; x++) if (grid.get(x, y) === SAND.id) beyond++;
+  check(
+    '…and it really climbed out the far side (the check can fail)',
+    beyond > poured / 3,
+    `${beyond} of ${poured} cells made it past the far rim`,
+  );
+}
+
 // --- 4f. Conveyor: an incompressible load still can't be pushed ---------------
 // The looser stack rule must not turn into "matter can be squeezed". A belt buried
 // under a load that fills its channel wall to wall has nowhere to put anything, so

@@ -17,10 +17,12 @@ import { floodDeviceBody } from '../engine/deviceBody';
 //     each tick wherever there is room, up to LIFT_HEIGHT cells above the surface.
 //     So a silo emptied onto a belt comes out as a slab tens of cells deep rather
 //     than as a thin sheet skimmed off the top of the pile.
-//   • It climbs: when the straight-ahead cell is blocked but the cell one step
-//     up-and-forward is open, the load steps up. A belt laid as a shallow
-//     staircase therefore carries material UP a gentle (~30°) slope, stably,
-//     instead of only moving it along the flat.
+//   • It climbs: when the straight-ahead cell is a solid step, the load moves
+//     up-and-forward instead. A belt laid as a shallow staircase therefore carries
+//     material UP a gentle (~30°) slope, stably, instead of only moving it along
+//     the flat — and because a run resolves downstream-first (see below), it does
+//     that with a whole bed of material on it, so a belt dug into a U ferries its
+//     load through the dip and out the far side rather than collecting it.
 //
 // **It only runs on power** (전원 공급시에만 작동). A belt is a machine, not a
 // slope, so it belongs in the 전기 category with the Fan/Laser/Pump/Electromagnet
@@ -76,20 +78,101 @@ function isSolidStep(id: number): boolean {
   return id !== EMPTY && getMaterial(id).phase === Phase.Solid;
 }
 
+/** The belt cell one step downstream of (x,y) for a run heading `dir`, as a flat
+ *  index, or -1 if the run ends here. A run continues straight along, or one cell
+ *  up (an ascending staircase) or down (a descending one) — the three shapes a
+ *  belt is actually drawn in — and only through a cell that runs the *same*
+ *  direction, so two belts pointed at each other are two runs, not one. */
+function nextBeltDownstream(x: number, y: number, dir: number, sim: SimContext): number {
+  const nx = x + dir;
+  // Flat first, then the ascending step, then the descending one. Checked with
+  // three explicit probes rather than a loop over an offset array: this runs for
+  // every belt cell every tick, and the array literal would be a per-cell
+  // allocation.
+  let ny = y;
+  if (sameRunBelt(nx, ny, dir, sim)) return ny * sim.width + nx;
+  ny = y - 1;
+  if (sameRunBelt(nx, ny, dir, sim)) return ny * sim.width + nx;
+  ny = y + 1;
+  if (sameRunBelt(nx, ny, dir, sim)) return ny * sim.width + nx;
+  return -1;
+}
+
+/** True if (x,y) holds a belt cell running the same direction as `dir`. */
+function sameRunBelt(x: number, y: number, dir: number, sim: SimContext): boolean {
+  if (!sim.inBounds(x, y) || sim.get(x, y) !== CONVEYOR.id) return false;
+  return ((sim.getAux(x, y) & DIR_MASK) === CONVEYOR_LEFT ? -1 : 1) === dir;
+}
+
+/** Scratch buffer for the downstream walk, reused across calls so a belt costs no
+ *  per-tick allocation. Holds flat cell indices. */
+const runChain: number[] = [];
+
 // The belt advances its load one cell EVERY tick (deterministically, not on a
 // probability). The scan runs a belt cell before the load resting on it (bottom-
 // to-top), so the belt carries a surface grain — and marks it moved — before that
 // grain's own gravity update can tumble it off. That's what makes uphill carry
 // stable: a grain riding an ascending staircase is stepped up each tick instead
 // of getting a chance to roll off the front of a step into the gap below it.
+//
+// **A run resolves downstream-first**, which the grid scan cannot do for it. A
+// cell of a bedded load can only step forward if its landing has been vacated, so
+// the order the belt's cells run in decides whether a deep load ratchets along as
+// a body or only its surface layer creeps: process the far end first and every
+// column steps into the hole the column ahead just left; process the near end
+// first and every landing is still occupied, so only the one grain standing above
+// the load's surface has anywhere to go.
+//
+// The grid scan visits rows bottom-to-top, so it gets this right by accident on a
+// DESCENDING belt (downstream is lower, so it goes first) and exactly backwards on
+// an ASCENDING one. That is why a U-shaped belt used to trap its load: sand poured
+// into the dip rode down the near arm fine and then sat in the bottom while a
+// single-cell layer trickled up the far arm (실측: 432칸을 부으면 148칸만 넘어가고
+// 108칸이 골짜기에 영구히 남았다). So the belt walks its own run: the first cell the
+// scan reaches collects the chain downstream of itself, stamps every cell of it,
+// and then carries them in reverse. Cells the scan reaches later find themselves
+// stamped and return at once, so the whole run still costs O(run) per tick — the
+// same discipline the Pump uses to make a full column advance as one.
 function updateConveyor(x: number, y: number, sim: SimContext): void {
   const aux = sim.getAux(x, y);
+  if (aux >> 2 <= 0) return; // unpowered: an inert floor, carrying nothing
+
+  const ran = sim.conveyorRun;
+  ran.begin(sim);
+  if (ran.has(sim, x, y)) return; // already carried as part of a run this tick
+
+  // Collect this cell and everything downstream of it, stamping as we go. The
+  // stamp doubles as the walk's visited set, so a ring of belt can't loop forever
+  // and a run entered from the middle only ever walks the part ahead of it.
+  const w = sim.width;
+  runChain.length = 0;
+  let cx = x;
+  let cy = y;
+  for (;;) {
+    ran.setMarked(cy * w + cx);
+    runChain.push(cy * w + cx);
+    const cdir = (sim.getAux(cx, cy) & DIR_MASK) === CONVEYOR_LEFT ? -1 : 1;
+    const next = nextBeltDownstream(cx, cy, cdir, sim);
+    if (next < 0 || ran.marked(next)) break;
+    cx = next % w;
+    cy = (next / w) | 0;
+  }
+
+  for (let i = runChain.length - 1; i >= 0; i--) {
+    const idx = runChain[i];
+    carryLoad(idx % w, (idx / w) | 0, sim);
+  }
+}
+
+/** Advance one belt cell's load by one step, and age its powered countdown. */
+function carryLoad(x: number, y: number, sim: SimContext): void {
+  const aux = sim.getAux(x, y);
   const timer = aux >> 2;
-  if (timer <= 0) return; // unpowered: an inert floor, carrying nothing
-  // Spin the countdown down one tick before doing any carrying, keeping the
-  // direction bits. Done up front so it happens on every powered tick — the
-  // carry below has several "nothing to move" early exits, and a belt that only
-  // aged while it had a load would keep running forever once it emptied.
+  if (timer <= 0) return; // an unpowered cell partway along the run
+  // Spin the countdown down one tick, keeping the direction bits. Done up front so
+  // it happens on every powered tick — the carry below has several "nothing to
+  // move" early exits, and a belt that only aged while it had a load would keep
+  // running forever once it emptied.
   sim.setAux(x, y, ((timer - 1) << 2) | (aux & DIR_MASK));
 
   const dir = (aux & DIR_MASK) === CONVEYOR_LEFT ? -1 : 1; // 0/unset ⇒ right
@@ -108,18 +191,12 @@ function updateConveyor(x: number, y: number, sim: SimContext): void {
   // grain piled ahead into a floating spot off the belt.
   if (!sim.inBounds(x + dir, sy1)) return;
   const fwd = sim.get(x + dir, sy1);
-  let stepDy: number;
-  if (fwd === EMPTY || isLoose(fwd)) {
-    stepDy = 0; // flat carry — into open air, or shearing into the pile ahead
-  } else if (
-    isSolidStep(fwd) &&
-    sim.inBounds(x + dir, sy1 - 1) &&
-    sim.get(x + dir, sy1 - 1) === EMPTY
-  ) {
-    stepDy = -1; // climb the solid step
-  } else {
-    return; // a solid dead ahead with no headroom to climb
-  }
+  // A solid dead ahead is a step to climb (the next belt segment of an ascending
+  // staircase, or a wall); anything else — open air, loose matter piled ahead — is
+  // a flat carry. Whether any particular cell of the stack actually *fits* where
+  // it is headed is decided per cell in the loop below, never here: deciding it
+  // once from the bottom cell is what used to freeze a whole column (see below).
+  const stepDy = isSolidStep(fwd) ? -1 : 0;
 
   // Shift the contiguous loose stack (up to LIFT_HEIGHT tall) by (dir, stepDy).
   // Source column x and target column x+dir are disjoint, so the cells can't
