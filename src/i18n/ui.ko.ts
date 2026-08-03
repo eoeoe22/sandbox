@@ -370,4 +370,37 @@ export const ko = {
     message: '페이지를 찾을 수 없습니다.',
     link: '샌드박스로 돌아가기',
   },
+
+  // --- 물질 도감 (/guide) ---
+  // 본문(물질 설명·특성 용어)은 codex.ko.ts 에 있다. 여기는 페이지 골격 문구만.
+  codex: {
+    title: '물질 도감',
+    subtitle: '이 세계에 있는 모든 것',
+    search: '물질 검색',
+    searchClear: '검색어 지우기',
+    all: '전체',
+    objects: '오브젝트',
+    empty: '검색 결과가 없습니다.',
+    emptyHint: '다른 이름이나 카테고리로 찾아보세요.',
+    count: '{n}종',
+    statsHeading: '수치',
+    traitsHeading: '특성',
+    reactionsHeading: '반응',
+    detail: '자세히 보기',
+    close: '닫기',
+    toSandbox: '샌드박스로 가기',
+    toHome: '시작 페이지로',
+    objectNote: '오브젝트는 격자 위가 아니라 그 위를 굴러다니는 강체입니다.',
+    unit: { temp: '℃', cells: '칸', ticks: '틱' },
+    reaction: {
+      unchanged: '그대로',
+      byproduct: '부산물',
+      catalyst: '촉매',
+      chance: '확률 {v}',
+      tempMin: '{v}℃ 이상',
+      tempMax: '{v}℃ 이하',
+      exo: '발열 +{v}℃',
+      endo: '흡열 {v}℃',
+    },
+  },
 } as const;

@@ -16,6 +16,9 @@ import type { ObjectKind } from '../state/store';
 import { en as uiEn } from './ui.en';
 import { ko as uiKo } from './ui.ko';
 import { materialNamesEn, materialNamesKo, objectLabelsEn, objectLabelsKo, categoryLabelsEn, categoryLabelsKo } from './materials';
+import { materialCodexEn, objectCodexEn, codexTermsEn } from './codex.en';
+import { materialCodexKo, objectCodexKo, codexTermsKo } from './codex.ko';
+import type { CodexTerm } from '../game/codex/types';
 import { $locale, LOCALES, type Locale } from './locale';
 import { trackLocale } from './reactive.svelte';
 
@@ -94,6 +97,42 @@ export function categoryLabel(key: string): string {
   const loc = $locale.get();
   const table = loc === 'ko' ? categoryLabelsKo : categoryLabelsEn;
   return table[key] ?? key;
+}
+
+// --- 물질 도감 text ----------------------------------------------------------
+// The codex's own vocabulary: a paragraph per material/object and a label plus
+// an explanation per trait. Kept apart from the tables above because it is bulk
+// prose — only the guide page imports these, so the sandbox never pays for them.
+//
+// These fall back to Korean rather than to English, the opposite of `t()`. The
+// Korean descriptions are the originals (they come from the Cloudwiki 물질 guide),
+// so a material whose English line hasn't been written yet should show the
+// sentence that does exist rather than nothing at all.
+
+/** Codex description of material `id` in the current locale. */
+export function materialDescription(id: number): string {
+  trackLocale();
+  const table = $locale.get() === 'ko' ? materialCodexKo : materialCodexEn;
+  return table[id] ?? materialCodexKo[id] ?? '';
+}
+
+/** Codex description of object `kind` in the current locale. */
+export function objectDescription(kind: ObjectKind): string {
+  trackLocale();
+  const table = $locale.get() === 'ko' ? objectCodexKo : objectCodexEn;
+  return table[kind] ?? objectCodexKo[kind] ?? '';
+}
+
+/**
+ * Label and explanation for a codex stat row or trait card. `key` is the spec's
+ * key from game/codex/stats.ts / traits.ts; a trait with a variant asks for
+ * `${key}.${variant}`. An unknown key comes back as its own name so a missing
+ * translation shows up as a visible key rather than a blank card.
+ */
+export function codexTerm(key: string): CodexTerm {
+  trackLocale();
+  const table = $locale.get() === 'ko' ? codexTermsKo : codexTermsEn;
+  return table[key] ?? codexTermsKo[key] ?? { label: key, desc: '' };
 }
 
 // --- <html lang> sync -------------------------------------------------------

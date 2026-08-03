@@ -373,4 +373,38 @@ export const en = {
     message: 'Page not found.',
     link: 'Back to the sandbox',
   },
+
+  // --- Material codex (/guide) ---
+  // The prose (descriptions, trait vocabulary) lives in codex.en.ts; this is
+  // only the page's own furniture.
+  codex: {
+    title: 'Material Codex',
+    subtitle: 'Everything in this world',
+    search: 'Search materials',
+    searchClear: 'Clear search',
+    all: 'All',
+    objects: 'Objects',
+    empty: 'Nothing matched.',
+    emptyHint: 'Try another name or category.',
+    count: '{n}',
+    statsHeading: 'Numbers',
+    traitsHeading: 'Traits',
+    reactionsHeading: 'Reactions',
+    detail: 'View details',
+    close: 'Close',
+    toSandbox: 'Open the sandbox',
+    toHome: 'Back to the start page',
+    objectNote: 'Objects are rigid bodies that roll around above the grid rather than living in it.',
+    unit: { temp: '°C', cells: ' cells', ticks: ' ticks' },
+    reaction: {
+      unchanged: 'unchanged',
+      byproduct: 'by-product',
+      catalyst: 'catalyst',
+      chance: '{v} chance',
+      tempMin: '{v}°C and up',
+      tempMax: '{v}°C and below',
+      exo: 'exothermic +{v}°C',
+      endo: 'endothermic {v}°C',
+    },
+  },
 } as const;
