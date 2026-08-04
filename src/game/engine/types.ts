@@ -883,6 +883,11 @@ export interface Material {
    * fish is swimming past, and it is skipped in the thermal camera (it has no
    * temperature — it isn't there).
    *
+   * Dead Fish declares it too, in a washed-out shade of its own colour: a corpse
+   * that lost its tail stopped reading as a fish at all. It doesn't maintain the
+   * facing bit, it inherits it — fish.ts's `die` carries the living fish's across
+   * (materials/deadfish.ts).
+   *
    * Value is a packed 0xAABBGGRR colour, like `color`. Purely a rendering hint;
    * omit for an ordinary material.
    */

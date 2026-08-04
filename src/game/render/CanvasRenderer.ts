@@ -387,8 +387,8 @@ export class CanvasRenderer implements Renderer {
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
   /** id → the packed colour of the display-only pixel this material trails behind
-   *  itself (Fish — see Material.tailPixel), or 0 for the materials that trail
-   *  nothing, which is all but one of them. */
+   *  itself (Fish and its corpse — see Material.tailPixel), or 0 for the materials
+   *  that trail nothing, which is all but those two. */
   private tailPixel: Uint32Array;
   /** Indices of this frame's `tailPixel` cells, collected by the cell loop and
    *  drained by drawTailPixels once the pass is done — the tail lands on a
@@ -1464,7 +1464,8 @@ export class CanvasRenderer implements Renderer {
     this.windMaxX = bxMax;
     this.windMinY = byMin;
     this.windMaxY = byMax;
-    // 물고기 꼬리: one grey pixel behind each fish, drawn over the finished cells
+    // 물고기 꼬리: one grey pixel behind each fish (and each corpse), drawn over
+    // the finished cells
     // (see drawTailPixels). Nothing is collected in the thermal camera, so this
     // costs a single empty-array check there.
     this.drawTailPixels(grid);
