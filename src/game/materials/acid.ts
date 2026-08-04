@@ -75,14 +75,15 @@ const DIFFUSE_CHANCE = 0.02;
 // It started at a strict 1:1 (`produce: EMPTY` unconditionally, 0.2 per contact)
 // and that was too weak to read as an effect at all: measured on a 144-cell blob
 // with a pool of acid poured over it, 1:1 converted 73 cells over 300 ticks while
-// the reverse direction (water) converted all 144 in 200 — 산이 물보다 한참 굼떠
-// 보였다. Raising the *probability* barely moved it (76 → 74 at p=1), because the
-// limit was never the roll: acid is a thin liquid, so most of the pool drains off
-// the blob before it ever touches it, and 1:1 meant every cell that did touch was
-// worth exactly one conversion. Spending the acid only occasionally is what fixed
-// it (104 cells at 0.08), and letting the two goos interdiffuse a little faster
-// carried it the rest of the way to water's pace (118 — acidslime.ts's
-// DIFFUSE_CHANCE, which is what surfaces the buried core for either direction).
+// the reverse direction (water) was visibly quicker — 산이 물보다 한참 굼떠 보였다.
+// Raising the *probability* barely moved it (76 → 74 at p=1), because the limit
+// was never the roll, and spending the acid only occasionally rather than every
+// time (104 cells at 0.08) plus a brisker interdiffusion (118 — acidslime.ts's
+// DIFFUSE_CHANCE, which is what surfaces the buried core for either direction)
+// only narrowed the gap. What actually closed it was none of these: it was the
+// contact area, which none of them touch — see SLIME_ABSORB_CHANCE below. These
+// rows survive because they are what makes the liquid *corrosive* rather than
+// merely edible, but the pace is not theirs.
 //
 // Declared here rather than on Slime's side for the usual import-graph reason:
 // Acid Slime already imports Slime, so a rule on Slime naming Acid Slime would
@@ -94,6 +95,46 @@ const DIFFUSE_CHANCE = 0.02;
 // contact reaction: it happens as the blob *drinks*, which is Slime's mechanic.
 const SLIME_ACIDIFY_CHANCE = 1;
 const SLIME_ACIDIFY_SELF_CONSUME = 0.08;
+
+// …and the piece that actually sets the *pace*: 슬라임은 산도 마신다. Either goo
+// absorbs an adjacent Acid cell and grows by it, the drunk cell coming back as
+// Acid Slime — Slime's own feeding mechanic (slime.ts's ABSORB_CHANCE), pointed
+// at the other liquid it can touch. This is the row that makes the recipe run at
+// the undo's speed, and it took a second pass to find, because the obvious knob
+// was the wrong one.
+//
+// Both directions only ever act on the goo's *wet face*, so what decides how fast
+// a blob turns over is not the roll at that face but whether the face
+// **advances**. Water's does: the goo drinks the pool, so the boundary sweeps up
+// through it and every cell born there is fresh. Acidification alone doesn't — it
+// rewrites the face and then stares at a wall of goo it has already converted,
+// leaving only the two goos' interdiffusion (acidslime.ts DIFFUSE_CHANCE) to
+// reach the core. A sealed-box A/B (24×12 of each) showed exactly that shape: at
+// p=1 per contact — the roll already maxed out — the acid still needed 600 ticks
+// to reach 46% converted, having spent 7 of its 288 cells doing it, while water
+// was done at 51% with its pool drunk dry by tick 150. 굼뜬 건 확률이 아니라
+// 접촉면이었다, which is why raising the probability had barely moved it.
+//
+// Drinking the acid is what advances the face, and it costs nothing in balance
+// terms: the cell is consumed by definition (it *became* goo), so this is the
+// least catalytic row in the table, not a new way for one drop to eat the world.
+// Both goos drink it, for the same reason water is drunk by both — otherwise the
+// blob's newly-acidified face would stop the growth dead the moment it forms.
+//
+// The number is a fifth of Slime's water feed and is not comparable to it: this
+// rule is rolled from the *acid's* turn across all 8 neighbours, where the pool
+// is the numerous side, while Slime's feed is rolled from the goo's turn across
+// 4 — and the acidify rows below pile on top of it. So it was tuned by measuring
+// the thing that was actually asked for. On open ground (144-cell blob, 240-cell
+// pool poured over it, 3 seeds) the two directions now convert in step:
+//
+//   tick        50   100   200   300   600
+//   산 → 산성    89–109  119–144  163–196  218–243  298–310
+//   물 → 일반    63–80   93–118   166–197  227–237  227–237
+//
+// Neck and neck through the visible stretch, with the acid pulling ahead only at
+// the tail — which is the right way round for the corrosive one.
+const SLIME_ABSORB_CHANCE = 0.01;
 
 function updateAcid(x: number, y: number, sim: SimContext): void {
   // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
@@ -137,6 +178,11 @@ export const ACID = register({
   // spent (joint probability: it fires, AND it was the cell's last bite) and the
   // second is the ordinary one where the acid survives to keep working.
   reactions: [
+    // Drunk by the goo: this cell *is* the new Acid Slime, the goo cell it fed is
+    // untouched. Tried first so a contact is a feed before it is a bite — the
+    // growth is what carries the recipe through a blob (SLIME_ABSORB_CHANCE).
+    { with: SLIME.id, produce: ACID_SLIME.id, probability: SLIME_ABSORB_CHANCE },
+    { with: ACID_SLIME.id, produce: ACID_SLIME.id, probability: SLIME_ABSORB_CHANCE },
     {
       with: SLIME.id,
       produce: EMPTY,

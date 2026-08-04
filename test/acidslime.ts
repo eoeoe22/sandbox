@@ -110,12 +110,13 @@ const TICKS = 600;
 // 1. The recipe. Acid over Slime: the seam turns to Acid Slime, and it keeps
 //    turning as fresh acid works into the goo it hasn't reached.
 //
-//    The accounting here is what pins the *shape* of the reaction, and that shape
-//    is Acid's own corrosion (acid.ts): it converts on contact and spends the acid
-//    cell only occasionally, so the acid outlasts a single bite but still runs
-//    down. Both halves get a check, because each failure is silent in its own way
-//    — never spending the acid makes one drop a world-eating catalyst, and always
-//    spending it is where this started and was far too weak to read as an effect.
+//    The accounting here is what pins the *shape* of the reaction, and it is the
+//    same shape the undo (#3) has, because the goo drinks both liquids: some of
+//    the pool is absorbed and comes back as goo (the blob grows), and the rest is
+//    spent acidifying the goo already there. So the two halves that get checked
+//    are the two silent failure modes — a pool that is never spent turns one drop
+//    into a world-eating catalyst, and goo appearing out of nowhere would mean
+//    the growth is not paid for by the pool.
 {
   reseed();
   const { grid, sim } = layered(ACID, SLIME);
@@ -125,21 +126,26 @@ const TICKS = 600;
   const acidSlime = count(grid, ACID_SLIME);
   const slime = count(grid, SLIME);
   const acidSpent = acid0 - count(grid, ACID);
-  // 40%, and the ceiling is geometry rather than the rule: this box is sealed and
-  // full, so the acid meets the goo along one flat seam and can never get under or
-  // around it — the far side of the slime is only ever reached by the two goos
-  // interdiffusing. (Poured over a blob on open ground, where the acid can run
-  // down its flanks, the same rule takes ~82% of a 144-cell blob.) What the bar
-  // is really separating is "works through the blob" from the old strict-1:1
-  // behaviour, which managed a quarter of this scene.
+  // 40% of the *starting* goo, and the ceiling on the acidified-in-place part is
+  // geometry rather than the rule: this box is sealed and full, so the acid meets
+  // the goo along one flat seam and can never get under or around it — the far
+  // side of the slime is only ever reached by the two goos interdiffusing. What
+  // clears the bar comfortably is that the pool itself becomes acidic goo as the
+  // blob drinks it (acid.ts's SLIME_ABSORB_CHANCE), which is also what advances
+  // the seam. The old strict-1:1 behaviour managed a quarter of this scene.
   check('acid poured on slime works well into the blob', acidSlime > goo0 * 0.4,
     `${acidSlime} acid slime out of ${goo0} goo`);
-  check('…outlasting a single bite, so a splash works rather than stains',
-    acidSpent < acidSlime, `${acidSpent} acid spent for ${acidSlime} cells converted`);
   check('…while still being spent by the work (no free catalyst)', acidSpent > 0,
     `${acidSpent} acid spent`);
-  check('…and converting, not creating or destroying, the goo',
-    slime + acidSlime === goo0, `${slime} slime + ${acidSlime} acid slime vs ${goo0}`);
+  // The goo grows because the acid is drunk — the same feeding that makes #3's
+  // blob swell in water, pointed at the other liquid (슬라임은 산도 마신다).
+  check('…and the goo grows, because the acid is drunk into it',
+    slime + acidSlime > goo0, `${slime + acidSlime} goo vs ${goo0} to start`);
+  // …but every cell of that growth came out of the pool. Acid spent on the
+  // acidify-in-place row leaves nothing behind, so the gain can only be smaller.
+  check('…paying for every new cell out of the pool',
+    slime + acidSlime - goo0 <= acidSpent,
+    `${slime + acidSlime - goo0} goo gained for ${acidSpent} acid spent`);
 }
 
 // 2. The control for #1: the same box with Water underneath instead of Slime.
@@ -203,6 +209,57 @@ const TICKS = 600;
   check('plain slime in water stays plain slime', count(grid, ACID_SLIME) === 0);
   check('…and still feeds', count(grid, SLIME) > goo0,
     `${count(grid, SLIME)} vs ${goo0} to start`);
+}
+
+// 5. The pace, which is the whole point of the acid side's absorb row: 산이
+//    슬라임을 침식하는 속도가 물이 산성 슬라임을 씻어 내는 속도와 같아야 한다.
+//
+//    Scored as the *ratio* of the two directions run on the mirror-image scene —
+//    a goo blob on open ground with a pool of the other liquid poured over it,
+//    which is the scene a player actually makes and (unlike the sealed boxes
+//    above) lets the pool run down the blob's flanks and drain, the thing the
+//    first attempt at this blamed. Same geometry, same seed, same tick count, so
+//    the only difference is which recipe is running.
+//
+//    The bar is deliberately two-sided. A floor is the regression this exists for
+//    (the acid direction was ~0.3× water and read as broken), but a ceiling
+//    matters just as much, because the fix is a growth rule: overshoot it and a
+//    splash of acid turns into a goo explosion instead of an erosion. Measured
+//    over 10 seeds the ratio sits at 0.82–1.16, so [0.6, 1.8] is comfortably
+//    outside the noise while still catching either failure.
+{
+  const W = 60;
+  const H = 40;
+  /** A `size`-square goo blob resting on the floor with a wider pool of `liquid`
+   *  suspended above it, so the pool falls onto the mound and runs off its sides. */
+  function poured(gooId: number, liquidId: number): { grid: Grid; sim: Simulation } {
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    for (let x = 0; x < W; x++) grid.cells[grid.idx(x, H - 1)] = WALL;
+    for (let y = 0; y < H; y++) {
+      grid.cells[grid.idx(0, y)] = WALL;
+      grid.cells[grid.idx(W - 1, y)] = WALL;
+    }
+    fill(grid, 24, H - 13, 35, H - 2, gooId); // 12×12 = 144 goo
+    fill(grid, 20, H - 25, 39, H - 14, liquidId); // 20×12 = 240 of the other liquid
+    return { grid, sim };
+  }
+  const PACE_TICKS = 200; // before either direction saturates (water levels off ~300)
+  reseed();
+  const seed = Math.random();
+  const run = (gooId: number, liquidId: number, productId: number): number => {
+    Math.random = mulberry32((seed * 0xffffffff) >>> 0);
+    const { grid, sim } = poured(gooId, liquidId);
+    for (let t = 0; t < PACE_TICKS; t++) sim.step();
+    return count(grid, productId);
+  };
+  const acidified = run(SLIME, ACID, ACID_SLIME);
+  const rinsed = run(ACID_SLIME, WATER, SLIME);
+  const ratio = acidified / rinsed;
+  check('acid erodes slime at water\'s pace, not slower', ratio > 0.6,
+    `${acidified} acidified vs ${rinsed} rinsed in ${PACE_TICKS} ticks (${ratio.toFixed(2)}×)`);
+  check('…and not by exploding into goo either', ratio < 1.8,
+    `${ratio.toFixed(2)}×`);
 }
 
 // 5. The two halves meeting in one tick — the regression this file exists to
