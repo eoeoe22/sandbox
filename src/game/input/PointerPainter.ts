@@ -646,6 +646,7 @@ export class PointerPainter {
    *  separately (see `eraseObjectsWhere`). */
   private paintCells(cells: readonly number[], erase: boolean): void {
     const id = erase ? 0 : $selectedMaterial.get();
+    const mat = getMaterial(id);
     // Resolve the "자동" overwrite rule into a concrete level for this material.
     const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
     // The overwrite gate is about new material displacing existing particles;
@@ -661,11 +662,11 @@ export class PointerPainter {
     const particle =
       !erase &&
       $brushMode.get() === 'particle' &&
-      getMaterial(id).phase !== Phase.Solid &&
-      getMaterial(id).placementDensity === undefined;
+      mat.phase !== Phase.Solid &&
+      mat.placementDensity === undefined;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
-    const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
+    const initTemp = mat.thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
     // (좌우 정렬); a Clone painted via the palette's 더블클릭 shortcut records the
     // pre-latched target material's id so it starts emitting immediately instead
@@ -695,7 +696,7 @@ export class PointerPainter {
     // One skipped-but-paintable cell is reservoir-kept so a press always sows
     // at least one grain — a click that visibly does nothing reads as a bug,
     // not as sparseness. The eraser ignores it: clearing must stay gap-free.
-    const scatter = isEraser ? undefined : getMaterial(id).placementDensity;
+    const scatter = isEraser ? undefined : mat.placementDensity;
     let sown = false;
     let keepX = -1;
     let keepY = -1;
