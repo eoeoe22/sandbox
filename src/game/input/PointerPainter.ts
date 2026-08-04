@@ -653,8 +653,16 @@ export class PointerPainter {
     const isEraser = id === 0;
     // Solid materials always paint Full — a sparse pile of solid grains reads
     // as a bug, not a feature, so Particle mode only applies to non-solid
-    // materials (sand, water, gases, ...).
-    const particle = !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // materials (sand, water, gases, ...). A material that scatters by its own
+    // nature (placementDensity, below) is exempt too: its sparseness is already
+    // the material's, not the user toggle's, and stacking the Particle gate on
+    // top would drop cells before they reach the scatter reservoir — breaking
+    // the "always at least one grain" guarantee that reservoir exists to keep.
+    const particle =
+      !erase &&
+      $brushMode.get() === 'particle' &&
+      getMaterial(id).phase !== Phase.Solid &&
+      getMaterial(id).placementDensity === undefined;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
     const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
