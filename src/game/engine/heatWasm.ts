@@ -1,4 +1,5 @@
 import wasmUrl from './heat.wasm?url';
+import { TILE_BITS } from './dirtyTiles';
 
 /**
  * Host-side plumbing for the Rust/WASM heat-diffusion kernel (see
@@ -31,6 +32,7 @@ interface HeatExports {
     tiles: number,
     tilesX: number,
     tilesY: number,
+    tileBits: number,
   ) => void;
 }
 
@@ -142,6 +144,9 @@ function ensureTiles(m: HeatExports, n: number): boolean {
  * `TILE`×`TILE` tile: the kernel skips the 0s, which is bit-identical because
  * such a tile holds only zero-conductivity cells. Pass it as `null` — or let
  * its allocation fail — and the kernel simply walks the whole grid instead.
+ * The tile size travels with the mask (`TILE_BITS`, below) rather than being
+ * duplicated inside the kernel, so `dirtyTiles.ts` stays the only place that
+ * decides it.
  */
 export function diffuseHeatWasm(
   cells: Uint8Array,
@@ -185,6 +190,10 @@ export function diffuseHeatWasm(
     useTiles ? tilesPtr : 0,
     useTiles ? tilesX : 0,
     useTiles ? tilesY : 0,
+    // The kernel holds no tile-size constant of its own — it uses whatever the
+    // host hands it, so this import is the single source of truth for the mask
+    // geometry on both sides of the boundary.
+    TILE_BITS,
   );
 
   temp.set(new Float32Array(buf, tempPtr, n));

@@ -16,7 +16,18 @@ const WASM_PATH = join(__dirname, '..', 'heat', 'target', 'wasm32-unknown-unknow
 
 const RATE = 0.2;
 const SUBSTEPS = 9; // HEAT_DIFFUSION_SUBSTEPS
-const TILE_BITS = 4; // engine/dirtyTiles.ts TILE_BITS, mirrored in the kernel
+// The kernel takes the tile size as an argument, so the production value read
+// out of engine/dirtyTiles.ts is what this harness drives it with — no second
+// copy of the number to drift. (Regex, not an import: bare Node, TS source.)
+const DIRTY_TILES_SRC = join(__dirname, '..', '..', 'src', 'game', 'engine', 'dirtyTiles.ts');
+const TILE_BITS = (() => {
+  const m = readFileSync(DIRTY_TILES_SRC, 'utf8').match(/export const TILE_BITS\s*=\s*(\d+)/);
+  if (!m) {
+    console.error(`could not read TILE_BITS out of ${DIRTY_TILES_SRC} — did the declaration move?`);
+    process.exit(1);
+  }
+  return Number(m[1]);
+})();
 const TILE = 1 << TILE_BITS;
 
 // --- JS reference (matches Simulation.diffuseHeat + step's substep loop),
@@ -101,7 +112,7 @@ function diffuseHeatWasm(cells, cond, temp, w, h) {
   new Uint8Array(buf, tilesPtr, mask.tiles.length).set(mask.tiles);
   ex.diffuse_heat(
     cellsPtr, condPtr, tempPtr, scratchPtr, w, h, RATE, SUBSTEPS,
-    tilesPtr, mask.tilesX, mask.tilesY,
+    tilesPtr, mask.tilesX, mask.tilesY, TILE_BITS,
   );
   temp.set(new Float32Array(buf, tempPtr, n));
 }
@@ -190,5 +201,6 @@ if (skippedTiles === 0) {
 }
 
 console.log(
-  `OK — ${TICKS} ticks with 2 resizes, WASM ≡ JS, ${skippedTiles} inert tile-skips, max |diff| = ${maxDiff}`,
+  `OK — ${TICKS} ticks with 2 resizes, WASM ≡ JS, ${skippedTiles} inert tile-skips ` +
+    `at tileBits ${TILE_BITS}, max |diff| = ${maxDiff}`,
 );

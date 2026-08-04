@@ -58,13 +58,20 @@ WASM 타일 스킵 / 엔진이 실제로 도는 JS 타일 루프. 즉 "타일을
 **sparse 장면**(공기 위주 + 블롭, 일부는 전도율 0 블롭)이 같이 들어 있고, 한 번도
 스킵이 안 일어나면 그 자체로 실패시킨다(스킵 경로가 안 돌았으면 검증한 게 없으니까).
 
+여기에 더해 **`tile_bits`를 1·2·3·프로덕션값·6으로 전부 돌린다**(프로덕션값은
+`dirtyTiles.ts`에서 읽어 온다). 타일 크기가 인자가 된 이상 커널이 받은 값대로 도는지가
+검증 대상이고, 이게 있어야 `dirtyTiles.ts`의 상수를 바꿔도 여기가 따라온다. 마지막으로
+**malformed-mask 5종**(`tile_bits` 0 / 상한 초과 / `tiles_x` 부족 / `tiles_y` 부족 /
+타일 수는 맞는데 크기가 틀림)이 전부 전면 순회 결과와 비트 동일한지 확인한다 —
+"못 믿을 마스크는 느려질 뿐 틀리지 않는다"는 계약을 실제로 고정한다.
+
 ## ABI
 
 `wasm-bindgen` 없이 C-ABI 함수만 export 한다.
 
 - `heat_alloc(bytes) -> ptr` / `heat_free(ptr, bytes)` — 호스트가 그리드 버퍼를
   미러링할 선형 메모리 영역 예약/해제.
-- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps, tiles, tiles_x, tiles_y)` —
+- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps, tiles, tiles_x, tiles_y, tile_bits)` —
   substep 횟수만큼 확산을 돌리고 최종 결과를 `temp`에 남긴다(JS `step()`이
   `diffuseHeat`를 substep번 호출한 뒤 `grid.temp`에 최종장이 있는 것과 동일).
   한 틱에 JS↔WASM 경계를 **한 번만** 넘도록 substep 루프를 커널 안에 둔다.
@@ -72,10 +79,18 @@ WASM 타일 스킵 / 엔진이 실제로 도는 JS 타일 루프. 즉 "타일을
     만들고 커널은 소비만 한다. 마스크가 0인 타일은 전도율 0 셀만 담고 있어
     자기에게도 이웃에게도 no-op이므로 **건너뛰어도 비트 동일**하다 —
     근거와 통과-복사 시드 얘기는 [`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md) §5.
-  - `tiles`에 **null(0)을 넘기면 전면 순회**한다. 마스크 영역 할당 실패는 치명적이지
-    않고 "느리지만 동일"로 자동 강등된다.
-  - `lib.rs`의 `TILE_BITS`는 `src/game/engine/dirtyTiles.ts`의 것과 **같은 값이어야
-    한다**(마스크 좌표계를 공유).
+  - **타일 크기(`tile_bits`)는 커널 상수가 아니라 인자다.** 마스크 기하를 아는 건
+    그걸 만드는 호스트뿐이고, 커널에 같은 숫자를 한 벌 더 두면
+    `engine/dirtyTiles.ts`와 조용히 어긋날 수 있다(그래도 WASM 테스트는 *커널 쪽*
+    복사본과 일치하니 계속 통과한다). 인자로 받으면 그 split-brain이 **표현
+    불가능**해진다. `src/game/engine/dirtyTiles.ts`의 `TILE_BITS`가 유일한 출처다.
+  - **못 믿을 마스크는 전면 순회로 강등된다** — null(0), `tile_bits`가 0이거나
+    `MAX_TILE_BITS`(16) 초과, 또는 `tiles_x`/`tiles_y`가 그 타일 크기에서의 정확한
+    타일 수가 아닐 때. "크기만 충분하면 OK"가 아니라 **정확히 일치**를 요구하는
+    이유는, 타일 수는 그럴듯한데 타일 크기가 틀린 마스크가 가장 고약하기
+    때문이다 — 크기 검사만으로는 통과하고서 각 타일의 표시를 **엉뚱한 물리 영역**
+    것으로 읽어 살아 있는 셀을 건너뛴다. 마스크 영역 할당 실패도 같은 경로로
+    "느리지만 동일"이 된다.
 
 호스트 측 배관은 `src/game/engine/heatWasm.ts`.
 

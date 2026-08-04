@@ -23,10 +23,24 @@ const RATE = 0.2; // HEAT_DIFFUSION_RATE
 const SUBSTEP_CASES = [1, 2, 3, 4, 9];
 const TOL = Number(process.env.TOL ?? 0); // 0 = require bit-identical
 
-// Inert-tile skip geometry — must match engine/dirtyTiles.ts TILE_BITS and the
-// TILE_BITS constant in the Rust kernel.
-const TILE_BITS = 4;
-const TILE = 1 << TILE_BITS;
+// Inert-tile skip geometry. The kernel holds no tile-size constant of its own —
+// it uses whatever `diffuse_heat` is handed — so this harness sweeps several
+// sizes to prove that, AND reads the production value straight out of
+// engine/dirtyTiles.ts so a change there is exercised here instead of silently
+// diverging. (Regex rather than an import: these harnesses run on bare Node
+// with no bundler, and dirtyTiles.ts is TypeScript.)
+const DIRTY_TILES_SRC = join(__dirname, '..', '..', 'src', 'game', 'engine', 'dirtyTiles.ts');
+const PROD_TILE_BITS = (() => {
+  const m = readFileSync(DIRTY_TILES_SRC, 'utf8').match(/export const TILE_BITS\s*=\s*(\d+)/);
+  if (!m) {
+    console.error(`could not read TILE_BITS out of ${DIRTY_TILES_SRC} — did the declaration move?`);
+    process.exit(1);
+  }
+  return Number(m[1]);
+})();
+// 1 is the degenerate 2×2 tiling (nearly every tile live), 6 is coarser than any
+// test grid here (one tile covering everything, exercising the clamped edges).
+const TILE_BITS_CASES = [...new Set([1, 2, 3, PROD_TILE_BITS, 6])].sort((a, b) => a - b);
 
 // --- JS reference: a faithful copy of Simulation.diffuseHeat, called SUBSTEPS
 // times with buffer swapping, exactly like Simulation.step(). ---
@@ -80,21 +94,23 @@ function diffuseHeatJs(cells, cond, temp, w, h, rate, substeps) {
 // Everything below must agree with the plain full-grid reference above — that
 // agreement IS the claim the skip rests on (an all-zero-conductivity tile is a
 // no-op, so not visiting it changes nothing). ---
-function buildTiles(cells, cond, w, h) {
-  const tilesX = (w + TILE - 1) >> TILE_BITS;
-  const tilesY = (h + TILE - 1) >> TILE_BITS;
+function buildTiles(cells, cond, w, h, tileBits) {
+  const tile = 1 << tileBits;
+  const tilesX = (w + tile - 1) >> tileBits;
+  const tilesY = (h + tile - 1) >> tileBits;
   const tiles = new Uint8Array(tilesX * tilesY);
   for (let y = 0; y < h; y++) {
     const row = y * w;
-    const trow = (y >> TILE_BITS) * tilesX;
+    const trow = (y >> tileBits) * tilesX;
     for (let x = 0; x < w; x++) {
-      if (cond[cells[row + x]] !== 0) tiles[trow + (x >> TILE_BITS)] = 1;
+      if (cond[cells[row + x]] !== 0) tiles[trow + (x >> tileBits)] = 1;
     }
   }
-  return { tiles, tilesX, tilesY };
+  return { tiles, tilesX, tilesY, tileBits };
 }
 
-function diffuseHeatJsTiled(cells, cond, temp, w, h, rate, substeps, tiles, tilesX, tilesY) {
+function diffuseHeatJsTiled(cells, cond, temp, w, h, rate, substeps, tiles, tilesX, tilesY, tileBits) {
+  const tile = 1 << tileBits;
   let cur = temp;
   // Seed the back buffer: skipped cells are never written, so this stands in for
   // the copy-through they would have done, in both buffers, for every substep.
@@ -102,12 +118,12 @@ function diffuseHeatJsTiled(cells, cond, temp, w, h, rate, substeps, tiles, tile
   for (let s = 0; s < substeps; s++) {
     for (let ty = 0; ty < tilesY; ty++) {
       const trow = ty * tilesX;
-      const y0 = ty << TILE_BITS;
-      const y1 = Math.min(y0 + TILE, h);
+      const y0 = ty << tileBits;
+      const y1 = Math.min(y0 + tile, h);
       for (let tx = 0; tx < tilesX; tx++) {
         if (tiles[trow + tx] === 0) continue;
-        const x0 = tx << TILE_BITS;
-        const x1 = Math.min(x0 + TILE, w);
+        const x0 = tx << tileBits;
+        const x1 = Math.min(x0 + tile, w);
         for (let y = y0; y < y1; y++) {
           const row = y * w;
           for (let x = x0; x < x1; x++) {
@@ -223,7 +239,7 @@ function diffuseHeatWasm(cells, cond, temp, w, h, rate, substeps, mask) {
   if (tilesPtr !== 0) new Uint8Array(memory.buffer, tilesPtr, nTiles).set(mask.tiles);
   diffuse_heat(
     cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, substeps,
-    tilesPtr, mask ? mask.tilesX : 0, mask ? mask.tilesY : 0,
+    tilesPtr, mask ? mask.tilesX : 0, mask ? mask.tilesY : 0, mask ? mask.tileBits : 0,
   );
   return new Float32Array(memory.buffer, tempPtr, n).slice();
 }
@@ -260,21 +276,28 @@ for (let rep = 0; rep < 6; rep++) {
     for (const [w, h] of sizes) {
       for (const substeps of SUBSTEP_CASES) {
         const { cells, cond, temp } = build(rnd, w, h);
-        const mask = buildTiles(cells, cond, w, h);
-        totalTiles += mask.tiles.length;
-        for (const t of mask.tiles) if (t === 0) skipped++;
-        const label = `${scene} ${w}x${h} substeps=${substeps} rep${rep}`;
+        const label0 = `${scene} ${w}x${h} substeps=${substeps} rep${rep}`;
         // The full-grid JS loop is the reference every other path must match.
         const js = diffuseHeatJs(cells, cond, temp.slice(), w, h, RATE, substeps);
         // 1. WASM with no mask — the original parity claim.
-        expect(js, diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps, null), `${label} wasm/full`);
-        // 2. WASM skipping inert tiles — the skip must change nothing.
-        expect(js, diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps, mask), `${label} wasm/tiled`);
-        // 3. The tiled JS loop the engine actually runs when WASM is unavailable.
-        const jsTiled = diffuseHeatJsTiled(
-          cells, cond, temp.slice(), w, h, RATE, substeps, mask.tiles, mask.tilesX, mask.tilesY,
-        );
-        expect(js, jsTiled, `${label} js/tiled`);
+        expect(js, diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps, null), `${label0} wasm/full`);
+        // The kernel takes the tile size as an argument, so sweep it: the same
+        // scene must come out identical at every tiling, which is what lets
+        // engine/dirtyTiles.ts own that number by itself.
+        for (const tileBits of TILE_BITS_CASES) {
+          const mask = buildTiles(cells, cond, w, h, tileBits);
+          totalTiles += mask.tiles.length;
+          for (const t of mask.tiles) if (t === 0) skipped++;
+          const label = `${label0} tileBits=${tileBits}`;
+          // 2. WASM skipping inert tiles — the skip must change nothing.
+          expect(js, diffuseHeatWasm(cells, cond, temp, w, h, RATE, substeps, mask), `${label} wasm/tiled`);
+          // 3. The tiled JS loop the engine actually runs when WASM is unavailable.
+          const jsTiled = diffuseHeatJsTiled(
+            cells, cond, temp.slice(), w, h, RATE, substeps,
+            mask.tiles, mask.tilesX, mask.tilesY, mask.tileBits,
+          );
+          expect(js, jsTiled, `${label} js/tiled`);
+        }
         grids++;
       }
     }
@@ -286,8 +309,35 @@ if (skipped === 0) {
   process.exit(1);
 }
 
+// A mask the kernel must refuse to trust. The tile size now crosses the ABI, so
+// a host that gets the geometry wrong is a real failure mode — and the kernel's
+// contract is "degrade to slower, never to broken": anything that doesn't
+// describe a mask spanning the whole grid falls back to the full sweep. Without
+// that guard an undersized mask silently leaves the far columns/rows undiffused,
+// which is exactly the bug that a second, drifting copy of the tile size used to
+// be able to cause. Each case must still reproduce the reference bit-for-bit.
+{
+  const { cells, cond, temp } = buildSparseCase(rnd, 64, 41);
+  const good = buildTiles(cells, cond, 64, 41, 4);
+  const js = diffuseHeatJs(cells, cond, temp.slice(), 64, 41, RATE, 9);
+  const bad = [
+    ['tileBits 0', { ...good, tileBits: 0 }],
+    ['tileBits past the cap', { ...good, tileBits: 20 }],
+    // Mask geometry that covers only part of the grid — the undersized case.
+    ['tilesX too small', { ...good, tilesX: good.tilesX - 1 }],
+    ['tilesY too small', { ...good, tilesY: good.tilesY - 1 }],
+    // Right tile count, wrong tile size: claims 32-cell tiles over a 16-cell mask.
+    ['tileBits disagrees with the mask', { ...good, tileBits: 5 }],
+  ];
+  for (const [name, mask] of bad) {
+    expect(js, diffuseHeatWasm(cells, cond, temp, 64, 41, RATE, 9, mask), `malformed mask (${name})`);
+  }
+  console.log(`      malformed-mask fallback: ${bad.length} cases, all matched the full sweep`);
+}
+
 console.log(
-  `OK — ${checked} cells checked across ${grids} grids × 3 paths ` +
-    `(substeps ${SUBSTEP_CASES.join(',')}), ${skipped}/${totalTiles} tiles skipped as inert, ` +
+  `OK — ${checked} cells checked across ${grids} grids ` +
+    `(substeps ${SUBSTEP_CASES.join(',')}; tileBits ${TILE_BITS_CASES.join(',')}, ` +
+    `production ${PROD_TILE_BITS}), ${skipped}/${totalTiles} tiles skipped as inert, ` +
     `max |diff| = ${maxDiff} (tol ${TOL})`,
 );
