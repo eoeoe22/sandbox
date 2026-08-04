@@ -247,13 +247,25 @@ function swim(x: number, y: number, sim: SimContext, a: number): void {
  *  a random sideways lean and otherwise falls, so a stranded fish visibly thrashes
  *  its way downhill and back toward whatever water is below. Written against
  *  `sim.gravityX/Y` rather than "up is -y" so it still flops the right way when the
- *  world's gravity is rotated. */
+ *  world's gravity is rotated.
+ *
+ *  The jump itself is deliberately NOT gravity-gated (SimContext.gravityPass) —
+ *  it's the fish's own muscle, not its weight, and the rule that gate documents is
+ *  to gate what gravity *causes*. But the jump is still *aimed* by the gravity
+ *  vector, and at strength 0 there is no "up" to throw yourself against while the
+ *  fall that should balance it never comes: a stranded fish then rowed itself
+ *  straight to the ceiling (measured: y 30 → 2 in ten seconds) and pinned there.
+ *  So when gravity is off, it thrashes in a random direction instead. It still
+ *   펄떡거린다 — freezing it would be both duller and less honest — it just has no
+ *  preferred way to go, which is what weightlessness means. */
 function flop(x: number, y: number, sim: SimContext, a: number, air: number): void {
   const faces = (a & FACING_RIGHT) !== 0;
   if (sim.chance(FLOP_CHANCE)) {
+    const weightless = sim.gravityStrength <= 0;
+    const [rx, ry] = RING[sim.randInt(RING.length)];
     const lean = sim.randInt(3) - 1; // -1, 0, +1 across the gravity axis
-    const jx = x - sim.gravityX - sim.gravityY * lean;
-    const jy = y - sim.gravityY + sim.gravityX * lean;
+    const jx = weightless ? x + rx : x - sim.gravityX - sim.gravityY * lean;
+    const jy = weightless ? y + ry : y - sim.gravityY + sim.gravityX * lean;
     if (sim.inBounds(jx, jy) && sim.isEmpty(jx, jy)) {
       // Read the facing off the step it is actually about to take, never off
       // `lean`: the perpendicular is (-gravityY, gravityX), so under the ordinary

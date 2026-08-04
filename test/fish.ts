@@ -549,6 +549,48 @@ function tank(grid: Grid, surface = 8): void {
   }
 }
 
+// ── 8e. 무중력에서 펄떡임은 추진기가 아니다 ──────────────────────────────────
+// 펄떡임은 중력 게이트를 타지 않는다(제 근육이지 무게가 아니다). 그런데 방향은
+// 중력 벡터로 잡으므로, 세기 0에서는 "중력 반대"가 매번 같은 쪽을 가리키고 균형을
+// 잡아 줄 낙하는 오지 않는다 — 물고기가 스스로 천장까지 노 저어 올라가 붙어 있었다.
+// 무중력은 "위가 없다"는 뜻이지 "가만히 있는다"가 아니므로, 여전히 펄떡이되 방향이
+// 없어야 한다. 정상 중력 대조군을 같은 하네스에서 같이 잰다.
+{
+  const drift: Record<number, number> = {};
+  for (const strength of [0, 1]) {
+    reseed();
+    const { grid, sim } = makeWorld(40, 40);
+    fill(grid, 0, 0, 39, 39, STONE);
+    fill(grid, 2, 2, 37, 37, EMPTY);
+    put(grid, 20, 30, FISH);
+    sim.setGravity('down', strength);
+    let moved = 0;
+    let prev = cellsOf(grid, FISH)[0];
+    let last = prev;
+    for (let t = 0; t < 10 * HZ; t++) {
+      sim.step();
+      const now = cellsOf(grid, FISH)[0];
+      if (!now || !prev) break;
+      if (now.x !== prev.x || now.y !== prev.y) moved++;
+      prev = now;
+      last = now;
+    }
+    drift[strength] = 30 - last.y; // 시작점 대비 얼마나 올라갔나 (+가 위)
+    if (strength === 0) {
+      check(
+        '무중력에서도 물고기는 펄떡인다 (얼어붙지 않는다)',
+        moved > 20,
+        `${moved} moves in 10s`,
+      );
+    }
+  }
+  check(
+    '…but it never rows itself up to the ceiling — weightless has no "up"',
+    drift[0] < 12 && drift[1] < 0,
+    `무중력 ${drift[0] > 0 ? '+' : ''}${drift[0]}칸, 정상 중력 ${drift[1]}칸 (천장까지는 +28)`,
+  );
+}
+
 // ── 8d. …그리고 남의 aux를 밟지 않는다 ────────────────────────────────────────
 // 8c의 낙하 분기 수정은 `moveDown`이 true를 주면 물고기가 중력 한 칸 앞에 있다고
 // 믿었는데, `tryMove`는 **움직이지 않고도** true를 준다. 그 목적지에 있는 것은

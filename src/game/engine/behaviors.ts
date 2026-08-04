@@ -487,8 +487,27 @@ const LOAD_SCAN_LIMIT = 64;
  * `loadWeight` zero (nothing resting on top) is the overwhelmingly common
  * case, and takes the exact original code path — computed to bit-identical
  * `idealSubmerged` — so an unloaded raft's behavior is untouched.
+ *
+ * Gated by gravity strength (SimContext.gravityPass), like every other
+ * gravity-driven move. Buoyancy IS gravity — a raft only rides at a depth at
+ * all because the liquid it displaces weighs something — so with the gate
+ * missing this was the one bulk motion in the engine that ran at full speed no
+ * matter what the gravity slider said. At reduced strength the raft outran the
+ * water holding it up (it re-equilibrated every tick while the pool around it
+ * moved on a fraction of them), and at zero strength — where a sand pile, a
+ * pool and a sunken grain all correctly hold still — a light powder column
+ * dropped on a heavy liquid still marched itself down to its density-ratio
+ * depth and then churned there, weightless water and all. The gate goes here,
+ * once per cell per tick, rather than inside shiftPowderColumnUp/Down: this
+ * one function is the whole behavior (both the column shift AND the
+ * load-bearing swap below are its arms, and this is their only caller), so one
+ * roll covers the behavior the way one roll covers a primitive. A stalled tick
+ * returns false and the caller falls through to its next rule, exactly as the
+ * movement primitives document — and exactly what an already-at-equilibrium
+ * raft does anyway.
  */
 function tryFloatLightPowderStack(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.gravityPass()) return false;
   const gx = sim.gravityX;
   const gy = sim.gravityY;
 
@@ -897,8 +916,22 @@ const HEAVY_GAS_WOBBLE_CHANCE = 0.4;
 /** Heavy gas: sink, else drift diagonally down, else spread sideways — with a
  *  chance to stall (slower fall) and a chance to wobble diagonally instead of
  *  dropping straight down (a spreading cloud, not a rigid column). The downward
- *  counterpart of updateGas. */
+ *  counterpart of updateGas.
+ *
+ *  Carries the same gravity-scaled thermal diffusion updateGas does, for the
+ *  same reason and on identical terms: what makes a heavy gas *slump* is its
+ *  weight, but its molecules jitter whether or not anything weighs anything, so
+ *  slumping is what weakening gravity should take away — not motion itself.
+ *  Without this term Chlorine and CO₂ were the only fluids in the game that
+ *  froze into immovable blocks at zero gravity (measured: Smoke's rms spread
+ *  grew 1.6 → 7.6 over 60 ticks while Chlorine's went 1.6 → 1.7), which read
+ *  as a bug rather than as weightlessness and left the gas weapons inert in the
+ *  one mode where a drifting cloud of them would be the most fun. At full
+ *  gravity the chance is 0, so the slump is bit-for-bit what it was. */
 export function updateHeavyGas(x: number, y: number, sim: SimContext): void {
+  const diffuse = 1 - sim.gravityStrength;
+  if (diffuse > 0 && sim.chance(diffuse) && sim.moveRandom(x, y)) return;
+
   if (sim.chance(HEAVY_GAS_STALL_CHANCE)) return;
   if (sim.chance(HEAVY_GAS_WOBBLE_CHANCE)) {
     if (sim.moveDiagonalDown(x, y)) return;

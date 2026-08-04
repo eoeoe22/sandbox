@@ -134,8 +134,20 @@ export class SimContext {
 
   /** True if a gravity-driven move should be attempted this tick, per the
    *  current strength: always at 1, never at 0, else with probability =
-   *  strength (giving a floaty, stall-and-drift settle at reduced gravity). */
-  private gravityPass(): boolean {
+   *  strength (giving a floaty, stall-and-drift settle at reduced gravity).
+   *
+   *  Public because gravity-driven motion isn't only the five primitives below.
+   *  Two other kinds of bulk motion have to roll the same gate or they outrun
+   *  (and at strength 0 outright ignore) the world around them: the buoyant
+   *  raft equilibrium, which moves a whole powder column at once through
+   *  shiftPowderColumnUp/Down instead of one primitive step
+   *  (behaviors.ts's tryFloatLightPowderStack), and the ballistic particles,
+   *  which integrate their own velocity rather than calling a primitive at all
+   *  (materials/ballistic.ts's applyFlightGravity). The rule for reaching for
+   *  this directly: if the motion is *caused by gravity*, gate it here; if it's
+   *  some other force (a Fan's gust, a blast, a Conveyor, an Electromagnet) or
+   *  gravity-independent thermal spreading (moveRandom), don't. */
+  gravityPass(): boolean {
     const s = this.gravityStrength;
     return s >= 1 ? true : s <= 0 ? false : Math.random() < s;
   }
@@ -1558,6 +1570,15 @@ export class SimContext {
    * 사이를 가로막아도 물이 샌다). Returns true if the liquid soaked in.
    */
   soakDown(x: number, y: number): boolean {
+    // Gravity-gated, like updateOverlay below — a pool only wicks into a bed
+    // because its own weight presses it in, so weightless water sits on the sand
+    // instead of sinking through it. This is the *entry* to the overlap layer and
+    // updateOverlay is the percolation once inside; gating one and not the other
+    // left fluid able to get in but not move, which is neither behavior.
+    // Direction stays screen-relative for the same reason updateOverlay's does
+    // (see its comment) — the two have to agree, and rotating that whole
+    // secondary layer isn't worth it for how niche it is.
+    if (!this.gravityPass()) return false;
     if (!this.chance(OVERLAP_SOAK_CHANCE)) return false;
     const dir = this.chance(0.5) ? 1 : -1;
     return (
