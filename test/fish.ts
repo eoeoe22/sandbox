@@ -947,6 +947,7 @@ function tank(grid: Grid, surface = 8): void {
   reseed();
   const POISON_RUNS = 20;
   let poisoned = 0;
+  let corpses = 0;
   const deathTicks: number[] = [];
   for (let r = 0; r < POISON_RUNS; r++) {
     const { grid: g, sim: s } = makeWorld(20, 20);
@@ -958,6 +959,7 @@ function tank(grid: Grid, surface = 8): void {
       if (count(g, FISH) === 0) {
         poisoned++;
         deathTicks.push(t);
+        if (count(g, DEAD) >= 1) corpses++;
         break;
       }
     }
@@ -969,19 +971,14 @@ function tank(grid: Grid, surface = 8): void {
     poisoned === POISON_RUNS && median < 5 * HZ,
     `${poisoned}/${POISON_RUNS} died, median tick ${median} (설계 평균 1.5초 = 45틱)`,
   );
-
-  // 죽는 방식은 다른 다섯 가지와 같다 — 같은 사체를 남긴다.
-  reseed();
-  const oily = makeWorld(20, 20);
-  fill(oily.grid, 0, 0, 19, 19, STONE);
-  fill(oily.grid, 5, 5, 14, 14, OIL);
-  put(oily.grid, 10, 10, FISH);
-  let rotting = false;
-  for (let t = 0; t < 10 * HZ && !rotting; t++) {
-    oily.sim.step();
-    rotting = count(oily.grid, DEAD) >= 1;
-  }
-  check('…그리고 오염수 사망도 같은 사체를 남긴다', rotting, `${count(oily.grid, DEAD)} corpses`);
+  // 사체 항목을 **같은 판**에서 세는 이유: 따로 한 판을 더 두면 기름 속 물고기는
+  // 오염수 판정이 통째로 빠져도 10초 창 안에 질식으로 죽어(38%) 우연히 통과한다.
+  // 위 항목과 같은 20판을 쓰면 판정이 빠졌을 때 둘 다 함께 걸린다.
+  check(
+    '…그리고 오염수 사망도 같은 사체를 남긴다',
+    corpses === POISON_RUNS,
+    `${corpses}/${POISON_RUNS} left a corpse`,
+  );
 
   // 소금물은 서식지다. 40초는 위 중앙값의 스무 배가 넘으므로, 판정이 "물이 아닌 것"
   // 으로 굳어 있으면(소금물을 빠뜨리면) 여기서 전멸한다.
@@ -1083,6 +1080,27 @@ function tank(grid: Grid, surface = 8): void {
     '…수조 안 물고기는 저마다 물 한 칸을 품고 있다',
     carrying === FISH_N,
     `${carrying}/${FISH_N} carrying`,
+  );
+
+  // **헤엄치는 쪽이 직접 담는지**를 가르는 장면. 위 세 항목은 `porous`+`overlapFluids`
+  // 선언만으로도 통과한다 — 물이 제 발로 움직이다 물고기의 빈 슬롯으로 들어가는
+  // 수동 경로(tryMove의 겹침 진입)가 열 틱쯤이면 같은 상태를 만들기 때문이다. 그
+  // 수동 경로는 **중력 게이트**를 타므로, 무중력에서는 물이 아예 안 움직여 물고기가
+  // 스스로 담지 않으면 슬롯이 영영 빈다. 즉 이 장면만이 `swim`의 `drawIntoOverlay`
+  // 호출을 실제로 잰다(그 줄만 지우면 여기만 빨개진다).
+  reseed();
+  const weightless = makeWorld(20, 20);
+  fill(weightless.grid, 0, 0, 19, 19, STONE);
+  fill(weightless.grid, 2, 2, 17, 17, WATER); // 사방이 막힌 물통
+  put(weightless.grid, 10, 10, FISH);
+  weightless.sim.setGravity('down', 0);
+  for (let t = 0; t < 5 * HZ; t++) weightless.sim.step();
+  const wf = cellsOf(weightless.grid, FISH)[0];
+  const wSlot = wf ? weightless.grid.overlay[weightless.grid.idx(wf.x, wf.y)] : -1;
+  check(
+    '무중력에서도 물고기가 제가 들어간 물을 직접 담는다 (수동 겹침 진입은 중력 게이트를 탄다)',
+    wSlot === WATER,
+    `slot=${wSlot} (물이면 ${WATER})`,
   );
 
   // 물 밖으로 나오면 도로 내려놓는다(fish.ts shedWater) — 폭발에 물째로 튕겨 나간
