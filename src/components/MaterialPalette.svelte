@@ -249,20 +249,26 @@
   let pressX = 0;
   let pressY = 0;
   /**
-   * Whether a finger is held on a chip *right now* — the only window in which
+   * The fingers currently held on a chip. Non-empty is the only window in which
    * the platform would raise its own long-press menu, and so the only window in
    * which `contextmenu` is suppressed.
    *
-   * The first attempt asked a different question — "was the last press a
-   * finger?" — and got two answers wrong, because `contextmenu` does not always
-   * follow a `pointerdown` on the chip: a keyboard Menu key / Shift+F10 raises
-   * one with no pointer involved at all, and on a hybrid device (touchscreen
-   * laptop) a right-click landing while a finger is mid-press would read the
-   * finger's answer. Both lost the browser menu they should have kept. "Is a
-   * finger down" has no such gap: the mouse and the keyboard both arrive with
-   * none.
+   * Two earlier shapes of this were wrong, and both failures were the same
+   * shape. "Was the last press a finger?" answered for the wrong pointer,
+   * because `contextmenu` does not have to follow a `pointerdown` on the chip at
+   * all: a keyboard Menu key / Shift+F10 raises one with no pointer involved,
+   * and on a hybrid device a right-click landing mid-press read the finger's
+   * answer. Narrowing it to a single "is a finger down" boolean fixed the
+   * question but not the arithmetic — one flag can't hold two fingers, so a
+   * mouse press clearing it stranded a finger that was still down, and a finger
+   * whose chip was unmounted before its `pointerup` stranded the flag set
+   * forever (on a tablet with no mouse, nothing would ever clear it).
+   *
+   * A set has neither problem: it is per-pointer by construction, and it is
+   * emptied from `window` rather than from the chip — a `pointerup` reaches the
+   * window whether or not the element it started on still exists.
    */
-  let touchDown = false;
+  const touchIds = new Set<number>();
   /**
    * Which chip's click a fired long press has claimed, or -1. An id rather than
    * a flag because the claim belongs to *that* chip: with two fingers on the
@@ -273,20 +279,13 @@
   let swallowFor = -1;
 
   function pressStart(e: PointerEvent, m: Material): void {
-    if (e.pointerType === 'mouse') {
-      // Not our gesture (the mouse has hover), but still the moment to notice
-      // that no finger is down — a press whose `pointerup` never arrived (its
-      // chip unmounted under it) would otherwise leave `touchDown` set and take
-      // this very click's context menu with it.
-      touchDown = false;
-      return;
-    }
+    if (e.pointerType === 'mouse') return; // the mouse has hover; see above
+    touchIds.add(e.pointerId); // every finger counts here, owner or not
     if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
     // Any new press supersedes a stale claim — see `armSwallow` for when one can
     // be left behind.
     swallowFor = -1;
     clearTimeout(swallowTimer);
-    touchDown = true;
     pressId = e.pointerId;
     pressX = e.clientX;
     pressY = e.clientY;
@@ -326,7 +325,7 @@
   }
 
   /** Only the timer. The finger is still down (a swipe that outran the slop), so
-   *  `touchDown` stays set — the platform's own long press can still fire, and
+   *  it stays in `touchIds` — the platform's own long press can still fire, and
    *  its menu is still the one we don't want. */
   function abortPress(): void {
     clearTimeout(pressTimer);
@@ -338,20 +337,26 @@
     if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) abortPress();
   }
 
-  /** The press is over (lifted or cancelled). Only the pointer that started it
-   *  may end it — otherwise a second finger lifting would cancel the first
-   *  one's press. */
+  /** A pointer lifted or was cancelled, anywhere. Bound on `window` ONLY — not
+   *  also on the chip — for the one case a chip can't report: a press whose
+   *  element is unmounted under it (a flyout closing, search results
+   *  re-filtering) never gets its own `pointerup`, and a finger that can never be
+   *  taken back out of `touchIds` would suppress every later context menu on the
+   *  page. The window sees every release either way, so a chip-level copy would
+   *  only mean running this twice. Only the pointer that started the press may
+   *  end it — otherwise a second finger lifting would cancel the first one's
+   *  press. */
   function pressEnd(e: PointerEvent): void {
+    touchIds.delete(e.pointerId);
     if (e.pointerId !== pressId) return;
     abortPress();
-    touchDown = false;
   }
 
   /** Suppress the platform's own long-press menu, which would fight ours — but
    *  only while a finger is actually down, so a right-click and a keyboard Menu
    *  key both keep the browser menu they always had. */
   function chipContextMenu(e: Event): void {
-    if (touchDown) e.preventDefault();
+    if (touchIds.size > 0) e.preventDefault();
   }
 
   const closeSheet = (): void => void (sheetMat = null);
@@ -594,6 +599,8 @@
   onclick={handleWindowClick}
   onresize={handleReflow}
   onkeydown={handleWindowKeydown}
+  onpointerup={pressEnd}
+  onpointercancel={pressEnd}
 />
 
 <div class="palette" bind:this={root}>
@@ -762,8 +769,6 @@
             onpointerleave={hideCard}
             onpointerdown={(e) => pressStart(e, m)}
             onpointermove={pressMove}
-            onpointerup={pressEnd}
-            onpointercancel={pressEnd}
             oncontextmenu={chipContextMenu}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
@@ -806,8 +811,6 @@
       onpointerleave={card ? hideCard : undefined}
       onpointerdown={card ? (e) => pressStart(e, m) : undefined}
       onpointermove={card ? pressMove : undefined}
-      onpointerup={card ? pressEnd : undefined}
-      onpointercancel={card ? pressEnd : undefined}
       oncontextmenu={card ? chipContextMenu : undefined}
       title={card ? undefined : materialName(m.id, m.name)}
     >
