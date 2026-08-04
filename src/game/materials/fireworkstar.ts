@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import {
   GRAVITY_Q,
-  clampTo,
+  applyFlightGravity,
   LEGACY_V_MAX_Q,
   cellsThisTick,
   decodeFlight,
@@ -111,10 +111,9 @@ function updateFireworkStar(x: number, y: number, sim: SimContext): void {
     bloom(sim, x, y, colorIndex);
     return;
   }
-  const vxQ = st.vxQ;
   // Same heavy parabola as the Bomblet: gravity every tick, terminal fall pinned
   // at the legacy ceiling these launch numbers were tuned against.
-  const vyQ = clampTo(st.vyQ + GRAVITY_Q, LEGACY_V_MAX_Q);
+  const [vxQ, vyQ] = applyFlightGravity(sim, st.vxQ, st.vyQ, GRAVITY_Q, LEGACY_V_MAX_Q);
 
   walkFlight(sim, x, y, cellsThisTick(sim, vxQ), cellsThisTick(sim, vyQ), {
     siblingId: FIREWORK_STAR.id,

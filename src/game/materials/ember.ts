@@ -4,7 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import {
   GRAVITY_Q,
-  clampTo,
+  applyFlightGravity,
   LEGACY_V_MAX_Q,
   cellsThisTick,
   decodeFlight,
@@ -96,13 +96,20 @@ function updateEmber(x: number, y: number, sim: SimContext): void {
     else sim.set(x, y, EMPTY);
     return;
   }
-  const vxQ = st.vxQ;
   // Gravity only bites on alternate ticks (life decrements every tick, so
   // parity alternates) — half-rate droop that keeps the flight mostly
-  // straight without a fractional-velocity field.
+  // straight without a fractional-velocity field. Expressed as a zero pull on
+  // the off-tick rather than a branch around the call, since a zero pull is a
+  // no-op that doesn't even spend a gate roll (see applyFlightGravity).
   // Terminal fall stays at the legacy 4 cells/tick this particle was tuned for
   // (the wider shared clamp exists only for Debris' boosted column).
-  const vyQ = (st.life & 1) === 0 ? clampTo(st.vyQ + GRAVITY_Q, LEGACY_V_MAX_Q) : st.vyQ;
+  const [vxQ, vyQ] = applyFlightGravity(
+    sim,
+    st.vxQ,
+    st.vyQ,
+    (st.life & 1) === 0 ? GRAVITY_Q : 0,
+    LEGACY_V_MAX_Q,
+  );
 
   // The shared straight-line walk handles the flight; the ember supplies only
   // what happens where it lands (smash/shatter/quench) and how it settles.
