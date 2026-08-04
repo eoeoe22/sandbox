@@ -215,7 +215,9 @@ export const ko = {
 
   // --- Hints ---
   hint: {
-    draw: '캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다.',
+    draw:
+      '캔버스를 드래그해 물질을 그리세요. 오른쪽 클릭이나 지우개 브러시로 지웁니다. ' +
+      '휠(가운데) 클릭은 스포이드 — 커서 아래의 물질이나 오브젝트를 그대로 집어 옵니다.',
   },
 
   // --- Material palette ---
@@ -227,6 +229,8 @@ export const ko = {
     noResults: '일치하는 물질이 없습니다',
     resultsGroup: '검색 결과',
     quickGroup: '즐겨찾기·최근 사용',
+    // 터치에서 길게 눌러 연 물질 카드가 도감 산문을 받아 오는 동안. 세션 첫 한 번뿐이다.
+    cardLoading: '불러오는 중…',
     objectKey: '오브젝트',
     favAdd: '{name} 즐겨찾기 추가',
     favRemove: '{name} 즐겨찾기 해제',

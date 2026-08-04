@@ -32,7 +32,7 @@ import {
 } from './store';
 import { $locale, LOCALES, type Locale } from '../i18n';
 import { syncHtmlLang } from '../i18n';
-import { getMaterial, MATERIALS } from '../game/materials';
+import { getMaterial, isPaletteMaterial, MATERIALS } from '../game/materials';
 import {
   AMBIENT_TEMP,
   BRUSH_MIN,
@@ -134,10 +134,12 @@ function parseSnapshotFit(v: unknown): SnapshotFit {
   return oneOf(v, SNAPSHOT_FIT_VALUES, $snapshotFit.get());
 }
 
-/** Palette-material ids the blend editor can actually offer, so a restored blend
- *  can't reference a material with no matching <option> (it validates to exactly
- *  what the editor produces). */
-const PALETTE_IDS = new Set(MATERIALS.map((m) => m.id));
+// The "is this id one the palette offers?" gate every reader below shares, so a
+// restored blend can't reference a material with no matching <option> and a
+// corrupt favorites list can't smuggle a hidden cell into the quick-access bar.
+// It lives in game/materials now rather than as a local Set, because the 스포이드
+// (휠클릭) asks the same question of the world and the two answers must be the
+// same one.
 
 /**
  * Validate a persisted blend-brush config. Accepts it only if it's a 2..MAX list
@@ -154,7 +156,7 @@ function parseBlend(v: unknown): BlendComponent[] | null {
     if (!item || typeof item !== 'object') return null;
     const id = (item as { id?: unknown }).id;
     const ratio = (item as { ratio?: unknown }).ratio;
-    if (typeof id !== 'number' || !PALETTE_IDS.has(id)) return null;
+    if (typeof id !== 'number' || !isPaletteMaterial(id)) return null;
     if (
       typeof ratio !== 'number' ||
       !Number.isFinite(ratio) ||
@@ -198,7 +200,7 @@ function oneOf<T>(v: unknown, allowed: readonly T[], fallback: T): T {
 
 /**
  * Parse a persisted list of material ids (favorites / recents). Keeps only
- * finite integer ids that belong to the curated palette (PALETTE_IDS), drops
+ * finite integer ids that belong to the curated palette (`isPaletteMaterial`), drops
  * duplicates, and caps the length. Anything malformed yields an empty list
  * rather than throwing.
  */
@@ -211,8 +213,8 @@ function parseIdList(v: unknown, cap: number): number[] {
     // Validate against the curated palette, not the whole registry: some
     // registered ids (Ember, Spark, Debris, the Eraser, …) are deliberately kept
     // out of MATERIALS and must never surface in the quick-access bar. Reuses the
-    // same PALETTE_IDS gate parseBlend relies on.
-    if (seen.has(item) || !PALETTE_IDS.has(item)) continue;
+    // same gate parseBlend relies on.
+    if (seen.has(item) || !isPaletteMaterial(item)) continue;
     seen.add(item);
     out.push(item);
     if (out.length >= cap) break;
@@ -223,7 +225,7 @@ function parseIdList(v: unknown, cap: number): number[] {
 /**
  * Parse the persisted recent-picks list. Same contract as `parseIdList`, widened
  * to the two things the palette can paint: numbers are material ids (gated by
- * PALETTE_IDS as before) and strings are object kinds (gated by OBJECT_KINDS).
+ * `isPaletteMaterial` as before) and strings are object kinds (gated by OBJECT_KINDS).
  * A save written before objects joined the list holds numbers only and survives
  * untouched; an unknown kind string from a hand-edited save is dropped.
  */
@@ -233,7 +235,7 @@ function parseRecentList(v: unknown, cap: number): RecentPick[] {
   const seen = new Set<RecentPick>();
   for (const item of v) {
     let pick: RecentPick;
-    if (typeof item === 'number' && Number.isInteger(item) && PALETTE_IDS.has(item)) {
+    if (typeof item === 'number' && Number.isInteger(item) && isPaletteMaterial(item)) {
       pick = item;
     } else if (typeof item === 'string' && OBJECT_KINDS.includes(item as ObjectKind)) {
       pick = item as ObjectKind;
@@ -298,8 +300,8 @@ function hydrateSettings(): void {
     clampInt(s.bottomDeadzone, BOTTOM_DEADZONE_MIN, BOTTOM_DEADZONE_MAX, BOTTOM_DEADZONE_DEFAULT),
   );
 
-  // Favorites/recents are validated against the curated palette (ids not in
-  // PALETTE_IDS — hidden/unknown — are dropped). Favorites can hold at most one
+  // Favorites/recents are validated against the curated palette (ids the
+  // palette does not list — hidden/unknown — are dropped). Favorites can hold at most one
   // of every palette material. The recents list also holds object kinds, so it
   // goes through `parseRecentList`; the storage field keeps its old
   // `recentMaterials` name so existing saves still hydrate.

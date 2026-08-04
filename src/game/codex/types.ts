@@ -86,6 +86,38 @@ export interface CodexEntry {
   reactions: CodexReaction[];
 }
 
+/**
+ * One entry as the detail card actually renders it: every string already
+ * localized, every id already resolved to a drawing. `CodexEntry` is what the
+ * extraction produces; this is what a reader sees.
+ *
+ * It exists because the card has two homes — the guide page's detail dialog and
+ * the sandbox palette's hover tooltip (`CodexCard.svelte`) — and one shape they
+ * agree on is what keeps the second from drifting into a second, worse codex.
+ * Deliberately structural rather than derived from `CodexEntry`: the two callers
+ * arrive from opposite directions (build-time props vs. a live `Material`) and
+ * have nothing in common but the answer.
+ */
+export interface CodexCardData {
+  name: string;
+  /** English name, shown under a Korean one; '' when there's nothing to add. */
+  sub: string;
+  categoryName: string;
+  /** 고체·가루·액체·기체, or null for an object (which has no phase). */
+  phaseName: string | null;
+  desc: string;
+  stats: readonly CodexStat[];
+  traits: readonly CodexTrait[];
+  reactions: readonly CodexReaction[];
+  /** The card's hero drawing as markup — a `<use>` into the guide page's sprite,
+   *  or an inline `materialSvgFor` tile in the sandbox, which has no sprite. Both
+   *  are generated from the registry, never from user input, so the card renders
+   *  it with `{@html}`. */
+  iconHtml: string;
+  /** An extra grey line under the description (오브젝트 note), or null. */
+  note?: string | null;
+}
+
 /** Everything the codex knows about one 독립 오브젝트. */
 export interface ObjectCodexEntry {
   /** Stable `ObjectKind` key — the id for both the icon and the i18n lookups. */
