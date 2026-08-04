@@ -29,8 +29,14 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Density', desc: 'Heavier matter pushes lighter fluid aside and sinks through it.' },
   },
   conductivity: {
-    ko: { label: '열전도율', desc: '0에 가까울수록 단열재이고, 1에 가까울수록 열이 그대로 지나갑니다.' },
-    en: { label: 'Heat conductivity', desc: 'Near 0 is an insulator; near 1 lets heat pass straight through.' },
+    ko: {
+      label: '열전도율',
+      desc: '0에 가까울수록 단열재입니다. 눈금은 고르게 오르지 않고 위로 갈수록 가팔라서, 1에 가까운 금속은 0.35쯤인 모래보다 열을 여덟 배 넘게 빨리 실어 나릅니다.',
+    },
+    en: {
+      label: 'Heat conductivity',
+      desc: 'Near 0 is an insulator. The dial climbs steeply rather than evenly — metal near 1 moves heat over eight times faster than sand at 0.35.',
+    },
   },
   initTemp: {
     ko: { label: '생성 온도', desc: '갓 놓인 셀이 가지고 시작하는 온도입니다.' },

@@ -1,4 +1,5 @@
 import wasmUrl from './heat.wasm?url';
+import { TILE_BITS } from './dirtyTiles';
 
 /**
  * Host-side plumbing for the Rust/WASM heat-diffusion kernel (see
@@ -28,6 +29,10 @@ interface HeatExports {
     h: number,
     rate: number,
     substeps: number,
+    tiles: number,
+    tilesX: number,
+    tilesY: number,
+    tileBits: number,
   ) => void;
 }
 
@@ -40,6 +45,9 @@ let bufCells = 0;
 let cellsPtr = 0;
 let tempPtr = 0;
 let scratchPtr = 0;
+// Inert-tile mask region, (re)allocated when the tile count changes.
+let bufTiles = 0;
+let tilesPtr = 0;
 
 /** True once the kernel has loaded and callers may use {@link diffuseHeatWasm}. */
 export function heatWasmReady(): boolean {
@@ -106,12 +114,39 @@ function ensureBuffers(m: HeatExports, n: number): boolean {
 }
 
 /**
+ * (Re)size the inert-tile mask region to `n` bytes. Unlike the grid buffers a
+ * failure here isn't fatal: the caller can pass a null mask and have the kernel
+ * run the full grid, which is slower but identical.
+ */
+function ensureTiles(m: HeatExports, n: number): boolean {
+  if (n === bufTiles) return true;
+  if (bufTiles > 0) {
+    m.heat_free(tilesPtr, bufTiles);
+    bufTiles = 0;
+    tilesPtr = 0;
+  }
+  const tp = m.heat_alloc(n);
+  if (tp === 0) return false;
+  tilesPtr = tp;
+  bufTiles = n;
+  return true;
+}
+
+/**
  * Run the WASM heat kernel over the grid buffers. Copies `cells`/`cond`/`temp`
  * into linear memory, runs `substeps` conduction substeps, and writes the
  * result back into `temp` in place. Returns false if WASM isn't ready or a
  * buffer allocation failed, in which case the caller must run the JS path.
  *
  * `cond` is the 256-entry conductivity LUT; `temp` is overwritten with output.
+ *
+ * `tiles` is the inert-tile mask (`Simulation.buildHeatTiles`), one byte per
+ * `TILE`×`TILE` tile: the kernel skips the 0s, which is bit-identical because
+ * such a tile holds only zero-conductivity cells. Pass it as `null` — or let
+ * its allocation fail — and the kernel simply walks the whole grid instead.
+ * The tile size travels with the mask (`TILE_BITS`, below) rather than being
+ * duplicated inside the kernel, so `dirtyTiles.ts` stays the only place that
+ * decides it.
  */
 export function diffuseHeatWasm(
   cells: Uint8Array,
@@ -121,22 +156,45 @@ export function diffuseHeatWasm(
   h: number,
   rate: number,
   substeps: number,
+  tiles: Uint8Array | null = null,
+  tilesX = 0,
+  tilesY = 0,
 ): boolean {
   const m = mod;
   if (m === null) return false;
   const n = w * h;
   if (n === 0) return true;
   if (!ensureBuffers(m, n)) return false;
+  const nTiles = tiles === null ? 0 : tilesX * tilesY;
+  // Allocation is best-effort — on failure we fall through with a null mask.
+  const useTiles = nTiles > 0 && nTiles <= (tiles as Uint8Array).length && ensureTiles(m, nTiles);
 
-  // Memory views are created after ensureBuffers: an allocation can grow the
-  // WebAssembly.Memory and detach the old ArrayBuffer. Within this function no
-  // further allocation happens, so these views stay valid through the call.
+  // Memory views are created after ensureBuffers/ensureTiles: an allocation can
+  // grow the WebAssembly.Memory and detach the old ArrayBuffer. Within this
+  // function no further allocation happens, so these views stay valid.
   const buf = m.memory.buffer;
   new Uint8Array(buf, cellsPtr, n).set(cells.subarray(0, n));
   new Float32Array(buf, condPtr, 256).set(cond.subarray(0, 256));
   new Float32Array(buf, tempPtr, n).set(temp.subarray(0, n));
+  if (useTiles) new Uint8Array(buf, tilesPtr, nTiles).set((tiles as Uint8Array).subarray(0, nTiles));
 
-  m.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, rate, substeps);
+  m.diffuse_heat(
+    cellsPtr,
+    condPtr,
+    tempPtr,
+    scratchPtr,
+    w,
+    h,
+    rate,
+    substeps,
+    useTiles ? tilesPtr : 0,
+    useTiles ? tilesX : 0,
+    useTiles ? tilesY : 0,
+    // The kernel holds no tile-size constant of its own — it uses whatever the
+    // host hands it, so this import is the single source of truth for the mask
+    // geometry on both sides of the boundary.
+    TILE_BITS,
+  );
 
   temp.set(new Float32Array(buf, tempPtr, n));
   return true;

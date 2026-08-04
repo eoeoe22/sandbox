@@ -52,15 +52,52 @@ bash wasm/build.sh
 `wasm/test/golden.mjs`가 이를 검증한다(`max |diff| = 0`). 즉
 `USE_WASM_HEAT`를 켜도 시뮬레이션 거동은 변하지 않는다.
 
+골든 테스트는 이제 **세 경로**를 같은 전면 JS 레퍼런스에 맞붙인다 — WASM 전면 /
+WASM 타일 스킵 / 엔진이 실제로 도는 JS 타일 루프. 즉 "타일을 건너뛰어도 같다"까지
+같은 자리에서 증명한다. 무작위 dense 장면만으로는 비활성 타일이 사실상 안 생기므로
+**sparse 장면**(공기 위주 + 블롭, 일부는 전도율 0 블롭)이 같이 들어 있고, 한 번도
+스킵이 안 일어나면 그 자체로 실패시킨다(스킵 경로가 안 돌았으면 검증한 게 없으니까).
+
+여기에 더해 **`tile_bits`를 1·2·3·프로덕션값·6으로 전부 돌린다**(프로덕션값은
+`dirtyTiles.ts`에서 읽어 온다). 타일 크기가 인자가 된 이상 커널이 받은 값대로 도는지가
+검증 대상이고, 이게 있어야 `dirtyTiles.ts`의 상수를 바꿔도 여기가 따라온다. 마지막으로
+**malformed-mask 6종**이 전부 전면 순회 결과와 비트 동일한지 확인한다 — "못 믿을 마스크는
+느려질 뿐 틀리지 않는다"는 계약을 고정한다. 6종은 커널의 두 거부 브랜치(크기 상한 /
+정확한 기하)에 3종씩 나뉘고, **각각 자기 브랜치가 없으면 반드시 실패하도록** 지어져 있다
+— 뮤테이션으로 확인 완료. 그렇게 안 지으면 전부 한쪽 브랜치에만 기대게 돼서 다른 쪽을
+지워도 통과한다(첫 판이 실제로 그랬다). 그리고 그 배타성은 주석이 아니라 **하네스가 매
+실행마다 단언**한다 — 케이스가 두 브랜치에 다 걸리게 되면 그 자리에서 멈춘다. 설계
+함정들은 [`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md) §5에 적어 뒀다.
+
 ## ABI
 
 `wasm-bindgen` 없이 C-ABI 함수만 export 한다.
 
 - `heat_alloc(bytes) -> ptr` / `heat_free(ptr, bytes)` — 호스트가 그리드 버퍼를
   미러링할 선형 메모리 영역 예약/해제.
-- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps)` —
+- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps, tiles, tiles_x, tiles_y, tile_bits)` —
   substep 횟수만큼 확산을 돌리고 최종 결과를 `temp`에 남긴다(JS `step()`이
   `diffuseHeat`를 substep번 호출한 뒤 `grid.temp`에 최종장이 있는 것과 동일).
   한 틱에 JS↔WASM 경계를 **한 번만** 넘도록 substep 루프를 커널 안에 둔다.
+  - `tiles`는 **비활성 타일 마스크**(타일당 1바이트, 1 = 전도 셀 있음). 호스트가
+    만들고 커널은 소비만 한다. 마스크가 0인 타일은 전도율 0 셀만 담고 있어
+    자기에게도 이웃에게도 no-op이므로 **건너뛰어도 비트 동일**하다 —
+    근거와 통과-복사 시드 얘기는 [`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md) §5.
+  - **타일 크기(`tile_bits`)는 커널 상수가 아니라 인자다.** 마스크 기하를 아는 건
+    그걸 만드는 호스트뿐이고, 커널에 같은 숫자를 한 벌 더 두면
+    `engine/dirtyTiles.ts`와 조용히 어긋날 수 있다(그래도 WASM 테스트는 *커널 쪽*
+    복사본과 일치하니 계속 통과한다). 인자로 받으면 그 split-brain이 **표현
+    불가능**해진다. `src/game/engine/dirtyTiles.ts`의 `TILE_BITS`가 유일한 출처다.
+  - **못 믿을 마스크는 전면 순회로 강등된다** — null(0), `tile_bits`가 0이거나
+    `MAX_TILE_BITS`(16) 초과, 또는 `tiles_x`/`tiles_y`가 그 타일 크기에서의 정확한
+    타일 수가 아닐 때. "크기만 충분하면 OK"가 아니라 **정확히 일치**를 요구하는
+    이유는, 타일 수는 그럴듯한데 타일 크기가 틀린 마스크가 가장 고약하기
+    때문이다 — 크기 검사만으로는 통과하고서 각 타일의 표시를 **엉뚱한 물리 영역**
+    것으로 읽어 살아 있는 셀을 건너뛴다. 마스크 영역 할당 실패도 같은 경로로
+    "느리지만 동일"이 된다.
 
 호스트 측 배관은 `src/game/engine/heatWasm.ts`.
+
+`cond`는 물질이 선언한 0~1 값이 아니라 **`config.effectiveConductivity`를 통과한
+지수 커브 값**이다(호스트가 LUT를 만들 때 한 번 적용 — 커널은 커브의 존재를 모른다).
+[`docs/PHYSICS.md`](../docs/PHYSICS.md) "열전도 로그 스케일" 참고.

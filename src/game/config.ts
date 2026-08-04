@@ -155,7 +155,7 @@ export const AMBIENT_TEMP = 20;
  * conductivities (0..1). Kept at 0.2 so that even four maximally-conductive
  * neighbors exchange < 1.0 of the gap per tick, which keeps the explicit
  * finite-difference diffusion numerically stable (no runaway oscillation).
- * The overall conduction *speed* is tripled not by raising this rate (which
+ * The overall conduction *speed* is raised not by raising this rate (which
  * would break that stability bound — four cond-1 neighbors at 0.6 would
  * overshoot), but by running the whole diffusion pass HEAT_DIFFUSION_SUBSTEPS
  * times per tick (see below), so each substep stays inside the stable regime.
@@ -167,13 +167,93 @@ export const HEAT_DIFFUSION_RATE = 0.2;
  * times faster globally without touching HEAT_DIFFUSION_RATE, so numerical
  * stability is preserved (each substep is an independent stable diffusion step)
  * while the world reaches thermal equilibrium far quicker — a cold sink pulls
- * heat out, and a hot mass spreads it, three times as fast. 1 = the original
+ * heat out, and a hot mass spreads it, that many times as fast. 1 = the original
  * single-pass speed.
+ *
+ * This is also the *only* lever for absolute conduction speed: a single substep
+ * is already near-saturated (four cond-1 neighbors exchange 4×0.2 = 0.8 of the
+ * ≤1 stability budget), so no conductivity curve can make one material conduct
+ * meaningfully faster within one substep. Raising the substep count buys the
+ * headroom; HEAT_CONDUCTIVITY_CURVE_BASE below decides who gets to spend it.
+ *
+ * Cost scales linearly with this number — the heat pass is ~17–18% of an
+ * occupied tick (docs/PERFORMANCE.md §2a). Going 3 → 9 is affordable only
+ * because the pass now skips all-inert tiles (see Simulation.heatTileMask),
+ * which reclaims most of the added work in a typical, mostly-empty scene.
  */
-export const HEAT_DIFFUSION_SUBSTEPS = 3;
+export const HEAT_DIFFUSION_SUBSTEPS = 9;
 
 /** Conductivity (0..1) for a material that doesn't declare `thermal.conductivity`. */
 export const DEFAULT_CONDUCTIVITY = 0.3;
+
+/**
+ * The authored conductivity whose *absolute* conduction speed the curve below
+ * pins in place, and the substep count it was tuned against. Sand (0.35) sits
+ * here: its heat spreads at exactly the same rate it did at 3 substeps with no
+ * curve, so retuning the top end never disturbs the mid-range feel that the
+ * powders, stone and glass were balanced around.
+ */
+export const HEAT_CURVE_ANCHOR = 0.35;
+const HEAT_CURVE_REF_SUBSTEPS = 3;
+
+/**
+ * Base of the exponential conductivity curve (see {@link effectiveConductivity}).
+ *
+ * Authored `thermal.conductivity` stays a plain 0..1 dial — that is what the
+ * codex shows and what material files declare — but the raw value is a terrible
+ * *speed* multiplier: the whole roster lives between 0.05 and 1.0, so the
+ * fastest conductor in the game (Heatpipe, 1.0) only ever moved heat 2.9× as
+ * fast as sand (0.35). Metals felt like slightly damp sand. Spreading that 0..1
+ * dial over an exponential instead turns it into something closer to a log
+ * scale of real conductivity, where the top end is orders of magnitude above
+ * the bottom.
+ *
+ * Derived, not hand-picked: it is exactly the base that makes the anchor's
+ * absolute speed survive the substep change (see the identity in
+ * `effectiveConductivity`), which is what keeps sand where it was.
+ */
+export const HEAT_CONDUCTIVITY_CURVE_BASE = Math.pow(
+  HEAT_DIFFUSION_SUBSTEPS / HEAT_CURVE_REF_SUBSTEPS,
+  1 / (1 - HEAT_CURVE_ANCHOR),
+);
+
+/**
+ * Map an authored conductivity (0..1) to the value the heat kernel actually
+ * uses. Applied once when the conductivity LUT is built (Simulation's
+ * constructor) — the kernels themselves are untouched, so the JS and WASM
+ * diffusion paths stay bit-identical to each other.
+ *
+ *     f(c) = c · BASE^(c-1)
+ *
+ * Three properties matter, and all three fall out of that shape:
+ *
+ * - **f(0) = 0 exactly.** Empty air and Wall are perfect insulators and the
+ *   kernel's `cond === 0` early-out depends on it. A bare exponential
+ *   (`BASE^(c-1)`) would leak a floor of `1/BASE` into them; the leading `c`
+ *   is what pins the bottom at zero.
+ * - **f(1) = 1 exactly.** The top of the dial is unchanged, so the ≤1
+ *   stability budget the diffusion rate was chosen against (see
+ *   HEAT_DIFFUSION_RATE) holds untouched: 4 × 0.2 × f(1) = 0.8.
+ * - **Strictly increasing.** Authoring a higher conductivity can never make a
+ *   material conduct slower — the ordering of the whole roster is preserved.
+ *
+ * And the anchor identity, which is why HEAT_CONDUCTIVITY_CURVE_BASE has the
+ * value it does: with BASE = (S/S_ref)^(1/(1−anchor)),
+ *
+ *     S · f(anchor) = S · anchor · BASE^(anchor−1) = S · anchor · (S/S_ref)^(−1)
+ *                   = S_ref · anchor
+ *
+ * i.e. the anchor's per-tick conduction is identical to what it was before the
+ * substep count moved. Speedups at 9 substeps, relative to the old 3:
+ * Heatpipe (1.0) 3.0×, Aluminum (0.9) 2.5×, Iron (0.85) 2.3×, Water (0.6) 1.5×,
+ * Sand (0.35) 1.0×, and the insulating tail below the anchor gets *slower*
+ * (0.15 → 0.71×), which is what widens Heatpipe:Sand from 2.9× to 8.6×.
+ */
+export function effectiveConductivity(c: number): number {
+  if (!(c > 0)) return 0; // exact zero for insulators (and a NaN/negative guard)
+  if (c >= 1) return 1; // exact one at the top of the dial
+  return c * Math.pow(HEAT_CONDUCTIVITY_CURVE_BASE, c - 1);
+}
 
 /**
  * Near-field radiative heat transfer (근거리 간접 복사 열전도) — a small
@@ -201,7 +281,10 @@ export const RADIANT_HEAT_MIN_TEMP = 500;
 export const RADIANT_HEAT_RANGE = 3;
 /**
  * Base per-ray exchange coefficient, scaled by the lower of the two cells'
- * conductivities and attenuated by 1/distance² (true Euclidean distance —
+ * conductivities (the curved ones — radiation reads the same LUT conduction
+ * does, so a metal's radiative nudge scales up with it and an insulator's
+ * scales down, keeping the two heat paths consistent) and attenuated by
+ * 1/distance² (true Euclidean distance —
  * a diagonal step counts double, see `radiateHeat`). Kept small — this is a
  * gentle warming, not a teleported conduction — so even the closest
  * *exchanging* case (a diagonal neighbor at distance 1, 1/2 falloff)
