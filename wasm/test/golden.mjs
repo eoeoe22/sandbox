@@ -309,30 +309,103 @@ if (skipped === 0) {
   process.exit(1);
 }
 
-// A mask the kernel must refuse to trust. The tile size now crosses the ABI, so
-// a host that gets the geometry wrong is a real failure mode — and the kernel's
+// Masks the kernel must refuse to trust. The tile size now crosses the ABI, so a
+// host that gets the geometry wrong is a real failure mode — and the kernel's
 // contract is "degrade to slower, never to broken": anything that doesn't
 // describe a mask spanning the whole grid falls back to the full sweep. Without
-// that guard an undersized mask silently leaves the far columns/rows undiffused,
-// which is exactly the bug that a second, drifting copy of the tile size used to
-// be able to cause. Each case must still reproduce the reference bit-for-bit.
+// that, a bad mask silently leaves live cells undiffused, which is the bug a
+// second drifting copy of the tile size used to be able to cause.
+//
+// `diffuse_step` has TWO independent rejection branches and each needs a case
+// that ONLY it can catch. That is not a theoretical worry: the first draft of
+// this block had five cases that all leaned on the geometry branch, and deleting
+// the size-cap branch from the kernel entirely left every one of them passing.
+// So each case below is built so the branch it names is the sole thing standing
+// between it and a wrong answer — verified by deleting each branch in turn and
+// watching exactly the intended cases go red.
+//
+// The trick for the size-cap cases: give the mask a geometry that is *valid for
+// the tile size the kernel would compute if the cap weren't there*. A shift ≥ 32
+// wraps on wasm32 (`1 << 32` masks to `1 << 0` = 1), so a per-cell mask is
+// geometrically consistent with the wrapped size — the geometry check waves it
+// through and only the explicit cap can stop it. Mark every tile inert so a
+// kernel that accepts the mask diffuses nothing at all and the mismatch is loud.
 {
-  const { cells, cond, temp } = buildSparseCase(rnd, 64, 41);
-  const good = buildTiles(cells, cond, 64, 41, 4);
-  const js = diffuseHeatJs(cells, cond, temp.slice(), 64, 41, RATE, 9);
+  // Purpose-built scene: every cell conducts, on a grid whose width and height
+  // are both non-multiples of the tile size (so the partial last row/column is
+  // in play). A blobby sparse scene will NOT do here — with inert gaps, whether
+  // a given mis-read mask happens to drop a *live* region comes down to where
+  // the blobs landed, and two of these cases were passing on that luck alone
+  // before this scene replaced it. With everything live, dropping or misreading
+  // any region is guaranteed to lose real work.
+  const W = 61;
+  const H = 39;
+  const n = W * H;
+  const cells = new Uint8Array(n).fill(7);
+  const cond = new Float32Array(256);
+  cond[7] = 0.8;
+  const temp = new Float32Array(n);
+  // Per-cell noise, NOT a smooth ramp. A linear gradient is harmonic — its
+  // Laplacian is zero — so under diffusion the interior does not move at all and
+  // dropping an interior tile would be invisible. (The first draft used
+  // `x*17 + y*29` and the vacuity guard below caught it: only 1319/2379 cells
+  // ever changed, all of them near the boundary.) Noise gives every cell a
+  // nonzero Laplacian, so any region the kernel skips visibly fails to change.
+  for (let i = 0; i < n; i++) temp[i] = rnd() * 2000 - 200;
+  const good = buildTiles(cells, cond, W, H, PROD_TILE_BITS);
+  const js = diffuseHeatJs(cells, cond, temp.slice(), W, H, RATE, 9);
+
+  // Guard the guard: if this scene barely diffuses, "skipped everything" and
+  // "swept everything" would agree and every case below would pass vacuously.
+  let moved = 0;
+  for (let i = 0; i < js.length; i++) if (js[i] !== temp[i]) moved++;
+  if (moved < n * 0.9) {
+    console.error(`MISMATCH: malformed-mask scene only moved ${moved}/${n} cells — cases could pass vacuously`);
+    process.exit(1);
+  }
+
+  // Every tile inert, at a granularity that matches the *wrapped/degenerate*
+  // tile size — so the geometry check passes and only the cap can reject.
+  const perCell = { tiles: new Uint8Array(W * H), tilesX: W, tilesY: H };
+  const single = { tiles: new Uint8Array(1), tilesX: 1, tilesY: 1 };
+
   const bad = [
-    ['tileBits 0', { ...good, tileBits: 0 }],
-    ['tileBits past the cap', { ...good, tileBits: 20 }],
-    // Mask geometry that covers only part of the grid — the undersized case.
+    // --- Branch 1: the tile_bits sanity cap (checked before the shift) ---
+    // tile_bits 0 → tile 1; a per-cell mask IS valid geometry for that, so the
+    // geometry check cannot fire. Only `tile_bits == 0` saves this.
+    ['tileBits 0, geometry consistent with it', { ...perCell, tileBits: 0 }],
+    // tile_bits 32 → the real hazard: an overflowing shift, which wasm32 masks
+    // to `1 << 0` = 1 rather than trapping. Per-cell geometry again matches that
+    // wrapped size exactly, so only `tile_bits > MAX_TILE_BITS` saves this.
+    ['tileBits 32 (shift wraps to 0 on wasm32)', { ...perCell, tileBits: 32 }],
+    // Same idea far past the cap without wrapping: tile 2^20 > the whole grid,
+    // so a 1×1 mask is consistent geometry. Only the cap saves this.
+    ['tileBits 20, geometry consistent with it', { ...single, tileBits: 20 }],
+
+    // --- Branch 2: exact mask geometry ---
+    // Undersized in x and in y separately: same `||`, but different operands, so
+    // a copy-paste slip that compares h twice is caught by the x case alone.
     ['tilesX too small', { ...good, tilesX: good.tilesX - 1 }],
     ['tilesY too small', { ...good, tilesY: good.tilesY - 1 }],
-    // Right tile count, wrong tile size: claims 32-cell tiles over a 16-cell mask.
-    ['tileBits disagrees with the mask', { ...good, tileBits: 5 }],
+    // The nastiest shape, and why this branch demands equality rather than
+    // "big enough": a plausible tile COUNT with the wrong tile SIZE. A mere size
+    // check passes it, and the kernel then reads each tile's mark for the wrong
+    // physical region. Deliberately the *smaller* tile size — reading the mask
+    // as finer tiles than it is means the loop's `tiles_x`/`tiles_y` bounds stop
+    // short of the grid, so the far edge goes undiffused no matter what the
+    // marks say. (The larger-size direction is the same class of bug but does
+    // not bite on a uniformly-live field: the oversized blocks happen to re-tile
+    // the whole grid and every mark it lands on says "process", so it silently
+    // comes out right here. Checked — don't "fix" this to +1.)
+    ['tileBits disagrees with the mask', { ...good, tileBits: PROD_TILE_BITS - 1 }],
   ];
   for (const [name, mask] of bad) {
-    expect(js, diffuseHeatWasm(cells, cond, temp, 64, 41, RATE, 9, mask), `malformed mask (${name})`);
+    expect(js, diffuseHeatWasm(cells, cond, temp, W, H, RATE, 9, mask), `malformed mask (${name})`);
   }
-  console.log(`      malformed-mask fallback: ${bad.length} cases, all matched the full sweep`);
+  console.log(
+    `      malformed-mask fallback: ${bad.length} cases (3 cap-only, 3 geometry-only) ` +
+      `all matched the full sweep`,
+  );
 }
 
 console.log(
