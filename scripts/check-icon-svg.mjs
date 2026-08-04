@@ -1,6 +1,6 @@
 // 손그림 물질 아이콘 SVG 검수 CLI.
 //
-//   node scripts/check-icon-svg.mjs temp/material-icons/foo.svg
+//   node scripts/check-icon-svg.mjs svg-assets/material-icons/foo.svg
 //
 // 규칙 자체는 `icon-svg.mjs` 에 있고(배선 생성기와 공유한다), 규격의 단일 진실
 // 공급원은 `.claude/skills/create-svg-assets/MATERIAL-ICON-BRIEF.md` 다.

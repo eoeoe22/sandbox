@@ -543,7 +543,7 @@ function iconKey(name: string): string {
  * material needs hand art only when its identity is an idea rather than a colour or
  * a texture (Void, Clone, …), or when the derived tile came out wrong, and the
  * trefoil is a label rather than a redrawing. Adding a `.svg` to
- * temp/material-icons/ and rebuilding the module is the whole wiring; nothing in the
+ * svg-assets/material-icons/ and rebuilding the module is the whole wiring; nothing in the
  * material's own definition changes.
  *
  * Hand art beating the trefoil is a real ordering choice and not an oversight: art

@@ -1,6 +1,6 @@
-// temp/material-icons/*.svg → src/game/render/handIcons.ts
+// svg-assets/material-icons/*.svg → src/game/render/handIcons.ts
 //
-// 이 저장소에는 런타임에 로드되는 이미지 파일이 없다(SKILL.md §0). `temp/` 의
+// 이 저장소에는 런타임에 로드되는 이미지 파일이 없다(SKILL.md §0). `svg-assets/` 의
 // `.svg` 는 디자인 핸드오프 원본이고, 실제로 번들되는 건 코드다 — 오브젝트
 // 스프라이트가 전부 그렇게 돼 있고 손그림 아이콘도 같은 규칙을 따른다.
 // Vite 의 `?raw` 나 `import.meta.glob` 을 쓰지 않는 이유는 테스트 하네스가
@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { parseIconSvg, iconKey } from './icon-svg.mjs';
 import { collectMaterials } from './check-material-ids.mjs';
 
-const SRC = 'temp/material-icons';
+const SRC = 'svg-assets/material-icons';
 const OUT = 'src/game/render/handIcons.ts';
 
 // 파일명이 곧 배선 키다: `materialSvg.ts` 는 `iconKey(m.name)` 으로 찾는다. 키가

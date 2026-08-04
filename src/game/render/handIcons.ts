@@ -1,6 +1,6 @@
 // GENERATED — 손대지 말 것. `node scripts/build-hand-icons.mjs` 가 만든다.
 //
-// 원본은 `temp/material-icons/*.svg` 이고, 규격은
+// 원본은 `svg-assets/material-icons/*.svg` 이고, 규격은
 // `.claude/skills/create-svg-assets/MATERIAL-ICON-BRIEF.md` 다. 여기 담긴 문자열은
 // 그 파일들을 검수기(`scripts/icon-svg.mjs`)로 통과시킨 뒤 **출하 형태로 정규화한**
 // `<rect>` 나열이다 — 작성자의 들여쓰기·공백·`<svg>` 래퍼는 들어 있지 않다.

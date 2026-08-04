@@ -909,7 +909,7 @@ Turbine · Mercury · Liquid Gallium), **한 칸만 고친 것 하나**(Gallium 
 1. **손그림 4종** — §7.1의 나머지(C4 · Fuse · Asphalt · Rust). Stone은 이 목록에서
    빠졌다 — 손그림이 아니라 `colorVary: 7`을 받아 유도 타일이 정직해졌다(Wood와 같은
    경로, §4.1). 들어오는 대로
-   `temp/material-icons/`에 넣고 `npm run build:hand-icons`만 돌리면 붙는다. 수은·액체
+   `svg-assets/material-icons/`에 넣고 `npm run build:hand-icons`만 돌리면 붙는다. 수은·액체
    갈륨은 이 목록에 **없다** — 단색이 그 둘의 정답이다(§4.1).
 2. **브라우저 실측 미확인.** 검색 결과 최악 케이스(동시 126칩, 가상 스크롤 없음)의
    체감 비용은 아직 측정하지 않았다. 마크업 총량은 §3의 실측치로 잡혀 있다.
