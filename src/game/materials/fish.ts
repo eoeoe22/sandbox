@@ -268,12 +268,26 @@ function flop(x: number, y: number, sim: SimContext, a: number, air: number): vo
   // The plain fall follows gravity exactly (SimContext.moveDown), so under
   // *sideways* gravity the fall itself IS a horizontal step and has to set the
   // facing like any other. The correction goes on the destination rather than
-  // up front, because a fall that doesn't happen must not flip the tail — and
-  // the destination is exactly one gravity step away, since moveDown's extra
-  // fall-boost hop is powder/liquid-only and the Fish is a Solid.
+  // up front, because a fall that doesn't happen must not flip the tail.
+  //
+  // `moveDown` returning true is NOT proof the fish is now one gravity step
+  // away, so the destination has to be confirmed to actually hold this fish
+  // before writing to it — the same guard moveDown uses on its own fall-boost
+  // hop (SimContext.moveDown), and for the same reasons. tryMove reports a move
+  // it did not make in two ways that are both reachable here: a displacement
+  // drag-gate stall consumes the move without swapping (a stranded fish falls
+  // *into* a gas cell — touchingLiquid only counts liquids, so a fish beside
+  // CO2 is out of water and flopping), and a void border deletes the cell at
+  // the edge and reports success with nothing left to correct. Trusting the
+  // return value wrote packed fish bits over the gas's own aux — which for
+  // Ethylene is a live polymerization counter — or, at a void edge, over an
+  // unrelated cell of the row above, since Grid.setAux does no bounds check.
   sim.setAux(x, y, pack(faces, -1, air));
-  if (sim.moveDown(x, y) && sim.gravityX !== 0) {
-    sim.setAux(x + sim.gravityX, y + sim.gravityY, pack(sim.gravityX > 0, -1, air));
+  if (!sim.moveDown(x, y) || sim.gravityX === 0) return;
+  const nx = x + sim.gravityX;
+  const ny = y + sim.gravityY;
+  if (sim.inBounds(nx, ny) && sim.get(nx, ny) === FISH.id) {
+    sim.setAux(nx, ny, pack(sim.gravityX > 0, -1, air));
   }
 }
 

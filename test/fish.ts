@@ -70,6 +70,7 @@ const WATER = ID('Water');
 const STONE = ID('Stone');
 const SAND = ID('Sand');
 const U238 = ID('U238');
+const CO2 = ID('CO2');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
  *  expectations (12초 질식) in seconds and converts here. */
@@ -544,6 +545,66 @@ function tank(grid: Grid, surface = 8): void {
       `…and under ${dir} gravity, where a "fall" can itself be sideways`,
       hops > 20 && wrong === 0,
       `${wrong} wrong out of ${hops} sideways steps`,
+    );
+  }
+}
+
+// ── 8d. …그리고 남의 aux를 밟지 않는다 ────────────────────────────────────────
+// 8c의 낙하 분기 수정은 `moveDown`이 true를 주면 물고기가 중력 한 칸 앞에 있다고
+// 믿었는데, `tryMove`는 **움직이지 않고도** true를 준다. 그 목적지에 있는 것은
+// 남의 칸이고, 거기에 물고기 aux를 쓰면 그 물질의 상태가 조용히 망가진다.
+// (에틸렌이라면 중합 세대 카운터다.) 두 경로 다 평범한 플레이로 닿는다.
+{
+  // (a) 기체로 떨어질 때의 항력 게이트 — tryMove가 "이번 틱은 버텼다"며 move를
+  // 소비하고 true를 반환한다(SimContext의 drag gate). 물 밖 판정은 액체만 보므로
+  // CO₂ 옆의 물고기는 펄떡이는 중이고, 낙하 분기가 그대로 기체 칸을 때린다.
+  reseed();
+  const { grid, sim } = makeWorld(40, 40);
+  fill(grid, 0, 0, 39, 39, STONE);
+  fill(grid, 2, 2, 37, 37, EMPTY);
+  fill(grid, 24, 16, 34, 24, CO2); // 중력 방향(오른쪽)에 깔린 기체 웅덩이
+  put(grid, 20, 20, FISH);
+  sim.setGravity('right', 1);
+  let dirtyGas = 0;
+  let contact = 0;
+  for (let t = 0; t < 12 * HZ; t++) {
+    sim.step();
+    const f = cellsOf(grid, FISH)[0];
+    if (!f) break;
+    if (grid.cells[grid.idx(f.x + 1, f.y)] === CO2) contact++;
+    for (const g of cellsOf(grid, CO2)) if (g.aux !== 0) dirtyGas++;
+  }
+  check(
+    'a fish falling against a gas never writes its aux into the gas cell',
+    contact > 20 && dirtyGas === 0,
+    `${dirtyGas} corrupted gas cells over ${contact} contact ticks`,
+  );
+}
+{
+  // (b) 보이드 경계(ControlPanel에서 켤 수 있다) — 가장자리에서 떨어진 칸은
+  // 삭제되는데 tryMove는 true다. 예전 코드는 격자 밖 좌표에 setAux를 했고,
+  // Grid.setAux는 경계 검사가 없어 y*width+x가 옆 줄의 멀쩡한 칸으로 감긴다.
+  for (const dir of ['left', 'right'] as const) {
+    reseed();
+    const { grid, sim } = makeWorld(40, 40);
+    fill(grid, 0, 0, 39, 39, STONE);
+    fill(grid, 0, 20, 39, 20, EMPTY); // 양끝이 열린 복도
+    put(grid, dir === 'right' ? 39 : 0, 20, FISH);
+    sim.setGravity(dir, 1);
+    sim.setBorderMode('void');
+    let gone = false;
+    for (let t = 0; t < 4 * HZ && !gone; t++) {
+      sim.step();
+      gone = count(grid, FISH) === 0;
+    }
+    // 이 세계에는 돌·빈칸·물고기뿐이고 셋 다 aux를 쓰지 않으므로, 0이 아닌 aux는
+    // 곧 격자 밖으로 새어 나간 쓰기다. 어느 줄로 감기는지 계산할 필요가 없다.
+    let stray = 0;
+    for (let i = 0; i < grid.aux.length; i++) if (grid.aux[i] !== 0) stray++;
+    check(
+      `…nor past the ${dir} void border, into an unrelated cell of another row`,
+      gone && stray === 0,
+      gone ? `${stray} cells left holding stray aux` : 'the fish never fell out',
     );
   }
 }
