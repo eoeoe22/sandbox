@@ -151,6 +151,15 @@ const DECAY_CHANCE = 0.5; // chance of losing 1 moisture per tick
 const GROW_CHANCE = 0.025;
 const GROW_COST = 12; // moisture a tip spends to put out one new cell
 const BRANCH_COST = 30; // a fork puts out two cells and needs real reserves
+// How often a crown tip that has finished a segment actually forks, rather than
+// running one more segment on the same shoot (no vigour spent). Forking used to
+// be automatic at every segment boundary, which came out dense and shrub-like;
+// gating it makes limbs longer and the branching sparser and more tree-like.
+// Below the segment boundary, not per cell: a spent segment averages
+// ~2 cells, so at 0.5 a fork lands roughly every ~4 cells of limb. Keep it well
+// above zero — too low and a plant is back to a few bare sticks (the "다리 몇
+// 개" look the crown rules were written to avoid, see docs/LIFE.md 2.2b).
+const BRANCH_CHANCE = 0.5;
 const LEAF_COST = 9; // …and a leaf is the cheapest thing a plant makes
 const LEAF_CHANCE = 0.05; // how often a spent bud puts out another leaf
 // Leaves may sit against more neighbours than a growing branch may: branches
@@ -430,6 +439,12 @@ function growTip(x: number, y: number, sim: SimContext, a: number): number {
   }
 
   if (gen > 0) {
+    // Segment done with vigour to spare: mostly just run another segment on the
+    // same shoot, keeping its heading and *not* spending a generation, so limbs
+    // grow long between forks. Only BRANCH_CHANCE of the time does it actually
+    // fork. A decision, not growth — no moisture spent until the tip extends.
+    if (!sim.chance(BRANCH_CHANCE)) return pack(m, true, dirOf(a), randSeg(sim), gen);
+
     // Fork: two shoots that diverge as widely as the open space allows.
     if (m < BRANCH_COST) return a;
     const okL = canGrowInto(x - 1, y - 1, sim);
