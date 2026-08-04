@@ -852,6 +852,24 @@ export interface Material {
    */
   arrow?: boolean;
   /**
+   * Draw a single pixel of this colour in the cell BEHIND each one of these — the
+   * Fish's 꼬리. Unlike every other hint here it paints a *neighbouring* cell, not
+   * this one, so it is the one way a material can be drawn wider than it is: the
+   * fish occupies one cell and no rule in the simulation can see the tail.
+   *
+   * Which side is "behind" comes from **bit 0 of the cell's `aux`** — 1 faces
+   * right, so the tail goes left. That single bit is the whole contract a
+   * `tailPixel` material owes the renderer; the rest of its aux word is its own
+   * (see materials/fish.ts for the layout it happens to use). The tail is drawn
+   * only over empty air or liquid, so it never punches a hole in the terrain the
+   * fish is swimming past, and it is skipped in the thermal camera (it has no
+   * temperature — it isn't there).
+   *
+   * Value is a packed 0xAABBGGRR colour, like `color`. Purely a rendering hint;
+   * omit for an ordinary material.
+   */
+  tailPixel?: number;
+  /**
    * Draw a 4-directional chevron (in the `lattice` color, over the base `color`)
    * pointing the way the cell's `aux` byte says it faces — the low 2 bits are the
    * direction (0 up / 1 down / 2 left / 3 right, see materials/fan.ts, which still

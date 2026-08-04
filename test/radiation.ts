@@ -148,6 +148,7 @@ const EXEMPT = new Map<string, string>([
   ['Nanobot', '기계 — a machine, not life; it keeps working in a hot zone'],
   ['Slime', '방사선 내성 — a radiation-tolerant extremophile'],
   ['Acid Slime', '방사선 내성 — ditto, identical to plain Slime'],
+  ['Dead Fish', '이미 사체 — a dose has nothing left to kill; it rots on its own timer either way'],
 ]);
 const reacts = (m: { radiationDeath?: number; radiationHit?: unknown }): boolean =>
   m.radiationDeath !== undefined || m.radiationHit !== undefined;

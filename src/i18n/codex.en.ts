@@ -154,6 +154,7 @@ export const materialCodexEn: Record<number, string> = {
   115: 'The variant acid makes of slime, corroding just as hard as the acid itself. Half of the water it absorbs comes back as plain slime, and water can rinse the acid out of it entirely. Acid it absorbs simply becomes more of itself, growing the blob. It slowly blends into plain slime it touches.',
   110: 'A living unit that eats through wood. It leaves sawdust when it dies.',
   111: 'An artificial unit that breaks metal down. Immune to radiation.',
+  146: 'A fish that swims through liquid, falling in with nearby fish to form a loose school. Out of water it flops about and suffocates in roughly 12 seconds; heat, blast shockwaves and radiation kill it too. It leaves a dead fish that floats to the surface.',
   134: 'A reef creature that grows in brine. Radiation and heat turn it into bleached coral.',
   135: 'The limestone skeleton dead coral leaves. Acid dissolves it, and given the right conditions it recolonizes.',
 
