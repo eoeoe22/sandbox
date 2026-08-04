@@ -150,10 +150,10 @@ const SCHOOL_RADIUS = 8;
 /** Having found company beyond arm's length, the chance it aligns with the group's heading
  *  or heads toward the group's centre.
  *  
- *  개인 공간(PERSONAL_SPACE=3)으로 밀착을 방지하면서, 정렬(ALIGN_CHANCE=0.2)과 응집(COHERE_CHANCE=0.35)을
- *  약하게 조합하여 완전히 붙어 뭉치지 않되 적당히 떼를 지어 수평 유영하는 중간 절충안입니다. */
-const ALIGN_CHANCE = 0.2;
-const COHERE_CHANCE = 0.35;
+ *  개인 공간(PERSONAL_SPACE=3)으로 밀착을 방지하면서, 정렬(ALIGN_CHANCE=0.3)과 응집(COHERE_CHANCE=0.45)을
+ *  조합하여 완전히 붙어 뭉치지 않되 좀 더 명확하게 떼를 지어 수평 유영하는 절충안입니다. */
+const ALIGN_CHANCE = 0.3;
+const COHERE_CHANCE = 0.45;
 /** 전기 감전 — chance a fish adjacent to a live Spark dies (see Material.
  *  sparkDeathChance). Water and Saltwater are both conductors, so dropping a live
  *  wire into a tank electrifies the water itself and the current fans out through
