@@ -185,7 +185,15 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   // Comfortably past the melt point: the diffusion pass runs before the material
   // update, so a bar started only a few degrees over would shed its way back
   // under the point against the cold terrain before its own turn came round.
-  for (let x = 30; x < 40; x++) paintHot(g2, x, 59, ALUMINUM.id, ALUMINUM_MELT_TEMP + 240);
+  //
+  // How much margin "comfortably" needs is a function of how fast Aluminum
+  // conducts, so this number moves when the heat curve does. It was +240 while
+  // conductivity fed the kernel raw; the 로그 스케일 개편 (config.effectiveConductivity)
+  // made Aluminum ~2.5× faster and a single-cell-thick bar at 900° now sheds to
+  // ~648° — under the point — within that one tick. +600 restores the headroom.
+  // If this scene goes red after a heat retune, that is what it is telling you:
+  // measure the one-tick drop before assuming the melt rule broke.
+  for (let x = 30; x < 40; x++) paintHot(g2, x, 59, ALUMINUM.id, ALUMINUM_MELT_TEMP + 600);
   s2.step();
   check('solid Aluminum over 660° melts back', count(g2, MOLTEN_ALUMINUM.id) > 0,
     `${count(g2, MOLTEN_ALUMINUM.id)} cells`);

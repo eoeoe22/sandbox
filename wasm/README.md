@@ -52,15 +52,33 @@ bash wasm/build.sh
 `wasm/test/golden.mjs`가 이를 검증한다(`max |diff| = 0`). 즉
 `USE_WASM_HEAT`를 켜도 시뮬레이션 거동은 변하지 않는다.
 
+골든 테스트는 이제 **세 경로**를 같은 전면 JS 레퍼런스에 맞붙인다 — WASM 전면 /
+WASM 타일 스킵 / 엔진이 실제로 도는 JS 타일 루프. 즉 "타일을 건너뛰어도 같다"까지
+같은 자리에서 증명한다. 무작위 dense 장면만으로는 비활성 타일이 사실상 안 생기므로
+**sparse 장면**(공기 위주 + 블롭, 일부는 전도율 0 블롭)이 같이 들어 있고, 한 번도
+스킵이 안 일어나면 그 자체로 실패시킨다(스킵 경로가 안 돌았으면 검증한 게 없으니까).
+
 ## ABI
 
 `wasm-bindgen` 없이 C-ABI 함수만 export 한다.
 
 - `heat_alloc(bytes) -> ptr` / `heat_free(ptr, bytes)` — 호스트가 그리드 버퍼를
   미러링할 선형 메모리 영역 예약/해제.
-- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps)` —
+- `diffuse_heat(cells, cond, temp, scratch, w, h, rate, substeps, tiles, tiles_x, tiles_y)` —
   substep 횟수만큼 확산을 돌리고 최종 결과를 `temp`에 남긴다(JS `step()`이
   `diffuseHeat`를 substep번 호출한 뒤 `grid.temp`에 최종장이 있는 것과 동일).
   한 틱에 JS↔WASM 경계를 **한 번만** 넘도록 substep 루프를 커널 안에 둔다.
+  - `tiles`는 **비활성 타일 마스크**(타일당 1바이트, 1 = 전도 셀 있음). 호스트가
+    만들고 커널은 소비만 한다. 마스크가 0인 타일은 전도율 0 셀만 담고 있어
+    자기에게도 이웃에게도 no-op이므로 **건너뛰어도 비트 동일**하다 —
+    근거와 통과-복사 시드 얘기는 [`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md) §5.
+  - `tiles`에 **null(0)을 넘기면 전면 순회**한다. 마스크 영역 할당 실패는 치명적이지
+    않고 "느리지만 동일"로 자동 강등된다.
+  - `lib.rs`의 `TILE_BITS`는 `src/game/engine/dirtyTiles.ts`의 것과 **같은 값이어야
+    한다**(마스크 좌표계를 공유).
 
 호스트 측 배관은 `src/game/engine/heatWasm.ts`.
+
+`cond`는 물질이 선언한 0~1 값이 아니라 **`config.effectiveConductivity`를 통과한
+지수 커브 값**이다(호스트가 LUT를 만들 때 한 번 적용 — 커널은 커브의 존재를 모른다).
+[`docs/PHYSICS.md`](../docs/PHYSICS.md) "열전도 로그 스케일" 참고.

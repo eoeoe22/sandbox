@@ -56,16 +56,25 @@ pub extern "C" fn heat_free(ptr: *mut u8, bytes: usize) {
     }
 }
 
-/// One finite-difference conduction step: `next[i]` = `cur[i]` plus the heat
-/// exchanged with each in-bounds orthogonal neighbor. Mirrors the inner loop of
-/// the TS `diffuseHeat` exactly, including the perfect-insulator early-out
-/// (`ci == 0` cells never exchange and copy through unchanged).
+/// Tile edge in cells for the inert-tile skip, as a shift. Must match
+/// `TILE_BITS` in engine/dirtyTiles.ts — the host builds the mask, this kernel
+/// only consumes it.
+const TILE_BITS: usize = 4;
+const TILE: usize = 1 << TILE_BITS;
+
+/// The per-cell body of one conduction step, for the cells `[x0, x1) × [y0, y1)`.
+/// Mirrors the inner loop of the TS `diffuseHeat` exactly, including the
+/// perfect-insulator early-out (`ci == 0` cells never exchange and copy through
+/// unchanged). Neighbor reads still address the whole grid, so a cell on a tile
+/// edge sees its neighbor in the next tile as it always did.
 ///
 /// # Safety
 /// All pointers must be valid for `w * h` elements; `cond` must be valid for the
-/// 256 possible material ids. Callers uphold this from `diffuse_heat`.
+/// 256 possible material ids, and the bounds must lie inside the grid. Callers
+/// uphold this from `diffuse_heat`.
 #[inline]
-unsafe fn diffuse_step(
+#[allow(clippy::too_many_arguments)]
+unsafe fn diffuse_block(
     cells: *const u8,
     cond: *const f32,
     cur: *const f32,
@@ -73,10 +82,14 @@ unsafe fn diffuse_step(
     w: usize,
     h: usize,
     rate: f64,
+    x0: usize,
+    x1: usize,
+    y0: usize,
+    y1: usize,
 ) {
-    for y in 0..h {
+    for y in y0..y1 {
         let row = y * w;
-        for x in 0..w {
+        for x in x0..x1 {
             let i = row + x;
             let ci = *cond.add(*cells.add(i) as usize) as f64;
             let ti = *cur.add(i) as f64;
@@ -111,6 +124,54 @@ unsafe fn diffuse_step(
     }
 }
 
+/// One finite-difference conduction step over the whole grid, or — when `tiles`
+/// is non-null — only over the tiles the host marked as holding at least one
+/// conducting cell.
+///
+/// Skipping an all-inert tile is bit-identical, not an approximation: every cell
+/// in it has `cond == 0`, which both copies its own temperature through and
+/// zeroes the `min(ci, cj)` gate for any neighbor looking in. `diffuse_heat`
+/// pre-seeds `scratch` from `temp` so the copy-through those cells would have
+/// done is already in both ping-pong buffers. And since this is a Jacobi step
+/// (reads `cur`, writes `next`, never both), visiting the remaining cells
+/// tile-by-tile instead of row-by-row reorders nothing that can be observed.
+///
+/// # Safety
+/// As `diffuse_block`, plus: `tiles`, if non-null, must be valid for
+/// `tiles_x * tiles_y` bytes covering the grid at `TILE_BITS` granularity.
+#[inline]
+#[allow(clippy::too_many_arguments)]
+unsafe fn diffuse_step(
+    cells: *const u8,
+    cond: *const f32,
+    cur: *const f32,
+    next: *mut f32,
+    w: usize,
+    h: usize,
+    rate: f64,
+    tiles: *const u8,
+    tiles_x: usize,
+    tiles_y: usize,
+) {
+    if tiles.is_null() {
+        diffuse_block(cells, cond, cur, next, w, h, rate, 0, w, 0, h);
+        return;
+    }
+    for ty in 0..tiles_y {
+        let trow = ty * tiles_x;
+        let y0 = ty << TILE_BITS;
+        let y1 = core::cmp::min(y0 + TILE, h);
+        for tx in 0..tiles_x {
+            if *tiles.add(trow + tx) == 0 {
+                continue; // all-inert tile: proven no-op
+            }
+            let x0 = tx << TILE_BITS;
+            let x1 = core::cmp::min(x0 + TILE, w);
+            diffuse_block(cells, cond, cur, next, w, h, rate, x0, x1, y0, y1);
+        }
+    }
+}
+
 /// Run `substeps` conduction substeps in one call, ping-ponging between the
 /// `temp` and `scratch` buffers, and leave the final result in `temp` (matching
 /// the TS `step()`, which calls `diffuseHeat` in a loop and always ends with the
@@ -122,12 +183,16 @@ unsafe fn diffuse_step(
 /// - `temp`: current temperature field (`w * h` `f32`); overwritten with output.
 /// - `scratch`: same-sized double buffer; contents are scratch.
 /// - `rate`: base per-neighbor exchange fraction (`HEAT_DIFFUSION_RATE`).
+/// - `tiles`: optional inert-tile mask, one byte per `TILE`×`TILE` tile
+///   (1 = contains a conducting cell). Null runs the full grid.
+/// - `tiles_x`/`tiles_y`: mask dimensions; ignored when `tiles` is null.
 ///
 /// # Safety
 /// `cells`, `temp`, and `scratch` must each be valid for `w * h` elements and
-/// `cond` for 256 `f32`. The host guarantees this by sizing the regions to the
-/// grid before the call.
+/// `cond` for 256 `f32`; `tiles`, if non-null, for `tiles_x * tiles_y` bytes.
+/// The host guarantees this by sizing the regions to the grid before the call.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn diffuse_heat(
     cells: *const u8,
     cond: *const f32,
@@ -137,16 +202,25 @@ pub unsafe extern "C" fn diffuse_heat(
     h: usize,
     rate: f64,
     substeps: u32,
+    tiles: *const u8,
+    tiles_x: usize,
+    tiles_y: usize,
 ) {
     if w == 0 || h == 0 || substeps == 0 {
         return;
     }
     let n = w * h;
+    // Seed the back buffer with the current field. Cells inside skipped tiles are
+    // never written again for the rest of the pass, so this one copy is exactly
+    // the copy-through they would each have done, in both ping-pong buffers, for
+    // every substep. Redundant but harmless when `tiles` is null (every cell is
+    // overwritten below), which keeps the masked and unmasked paths identical.
+    ptr::copy_nonoverlapping(temp as *const f32, scratch, n);
     // `a` holds the current field, `b` the buffer the next field is written to.
     let mut a = temp;
     let mut b = scratch;
     for _ in 0..substeps {
-        diffuse_step(cells, cond, a, b, w, h, rate);
+        diffuse_step(cells, cond, a, b, w, h, rate, tiles, tiles_x, tiles_y);
         core::mem::swap(&mut a, &mut b);
     }
     // After an odd number of swaps the latest field sits in `scratch`; copy it

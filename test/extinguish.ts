@@ -282,9 +282,20 @@ function pourOn(
   // The douse writes exactly AMBIENT_TEMP, so the reading that separates the two
   // classes is "was it slammed to ambient", not any absolute burn threshold — a
   // grain the douse skipped still loses heat by ordinary conduction into the cold
-  // water around it, just nowhere near ambient.
+  // water around it.
+  //
+  // So compare the two grains against each other rather than against a fixed
+  // margin. The margin used to be `alu > AMBIENT + 100`, which quietly depended
+  // on how fast a grain sheds heat into water in one tick: the 열전도 로그 스케일
+  // 개편 ([`docs/PHYSICS.md`](../docs/PHYSICS.md)) sped that up and the reading
+  // fell from well over 120° to 73° — still nowhere near the doused control's
+  // exact 20°, but under the old threshold. The relative form says what this
+  // scene actually means and survives the next conduction retune; the absolute
+  // floor stays only to stop a future change that conducts all the way to
+  // ambient from passing as "not doused".
   check('water does not douse a burning aluminum grain (class D)',
-    alu > AMBIENT + 100, `${alu.toFixed(0)}°C after one tick, ambient is ${AMBIENT}`);
+    alu > coal + 25 && alu > AMBIENT + 25,
+    `${alu.toFixed(0)}°C vs the doused control's ${coal.toFixed(0)}°C (ambient ${AMBIENT})`);
   check('…control: the same water douses a burning coal grain (class A)',
     coal <= AMBIENT + 5, `${coal.toFixed(0)}°C after one tick`);
 

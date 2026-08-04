@@ -8,6 +8,7 @@ import {
   HEAT_DIFFUSION_RATE,
   HEAT_DIFFUSION_SUBSTEPS,
   DEFAULT_CONDUCTIVITY,
+  effectiveConductivity,
   USE_WASM_HEAT,
   RADIANT_HEAT_MIN_TEMP,
   RADIANT_HEAT_RANGE,
@@ -36,8 +37,22 @@ export class Simulation {
   readonly grid: Grid;
   private ctx: SimContext;
   private tick = 0;
-  /** Conductivity per material id (0..1), flattened for the diffusion hot loop. */
+  /** Conductivity per material id (0..1), flattened for the diffusion hot loop.
+   *  Holds the *curved* value (config.effectiveConductivity), not the authored
+   *  one — the kernels read this table verbatim and know nothing of the curve. */
   private cond: Float32Array;
+  /** 1 for a material id the diffusion pass can prove inert (curved conductivity
+   *  exactly 0 — Empty air and Wall). Drives the all-inert tile skip below. */
+  private heatInert: Uint8Array;
+  /** One byte per 16×16 tile: 1 = the tile holds at least one conducting cell and
+   *  must be diffused. Rebuilt from `cells` at the top of every heat pass, so it
+   *  can never go stale (see buildHeatTiles). */
+  private heatTiles: Uint8Array;
+  private heatTilesX = 0;
+  private heatTilesY = 0;
+  /** Grid dimensions `heatTiles` was sized for; a resize reallocates the mask. */
+  private heatTilesW = -1;
+  private heatTilesH = -1;
   /** Per-tick decay probability per material id for the generalized lifetime tag
    *  (Material.life), flattened for the update hot loop. 0 = no lifetime. */
   private lifeP: Float32Array;
@@ -57,7 +72,9 @@ export class Simulation {
   constructor(grid: Grid) {
     this.grid = grid;
     this.ctx = new SimContext(grid);
-    this.cond = new Float32Array(256).fill(DEFAULT_CONDUCTIVITY);
+    this.cond = new Float32Array(256).fill(effectiveConductivity(DEFAULT_CONDUCTIVITY));
+    this.heatInert = new Uint8Array(256);
+    this.heatTiles = new Uint8Array(0);
     this.lifeP = new Float32Array(256);
     this.lifeInto = new Uint8Array(256);
     this.magneticId = new Uint8Array(256);
@@ -65,7 +82,8 @@ export class Simulation {
     for (const m of allMaterials()) {
       if (m.magnetic) this.magneticId[m.id] = 1;
       if (m.radiation) this.radiationP[m.id] = m.radiation;
-      this.cond[m.id] = m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY;
+      // Authored 0..1 dial → the exponential speed curve the kernel consumes.
+      this.cond[m.id] = effectiveConductivity(m.thermal?.conductivity ?? DEFAULT_CONDUCTIVITY);
       if (m.life) {
         // Memoryless decay: P(decay this tick) = 1/ticks gives a mean lifetime of
         // `ticks` with natural spread (the model Smoke always used).
@@ -73,6 +91,10 @@ export class Simulation {
         this.lifeInto[m.id] = m.life.into ?? EMPTY;
       }
     }
+    // Ids the diffusion pass provably cannot move heat through. Derived from the
+    // final table (not from `m.thermal`) so an id with no material registered —
+    // a gap in the id space — counts as conducting and is never skipped.
+    for (let id = 0; id < 256; id++) this.heatInert[id] = this.cond[id] === 0 ? 1 : 0;
   }
 
   /**
@@ -116,7 +138,11 @@ export class Simulation {
     // production default), so instrumentation is free unless you ask for it.
     const prof = profiler.enabled;
     let t = prof ? performance.now() : 0;
-    // Run several conduction substeps per tick so heat spreads ~3× faster
+    // Which 16×16 tiles hold anything that conducts. Recomputed from `cells`
+    // every tick, so it is a fact about this instant rather than an invariant
+    // some other writer has to remember to uphold (see buildHeatTiles).
+    this.buildHeatTiles();
+    // Run several conduction substeps per tick so heat spreads much faster
     // globally while each substep stays numerically stable (see config). The
     // Rust/WASM kernel runs all substeps in one call (bit-identical to the JS
     // path, proven by wasm/test/golden.mjs); if it isn't loaded/enabled we fall
@@ -124,10 +150,26 @@ export class Simulation {
     if (
       USE_WASM_HEAT &&
       heatWasmReady() &&
-      diffuseHeatWasm(g.cells, this.cond, g.temp, g.width, g.height, HEAT_DIFFUSION_RATE, HEAT_DIFFUSION_SUBSTEPS)
+      diffuseHeatWasm(
+        g.cells,
+        this.cond,
+        g.temp,
+        g.width,
+        g.height,
+        HEAT_DIFFUSION_RATE,
+        HEAT_DIFFUSION_SUBSTEPS,
+        this.heatTiles,
+        this.heatTilesX,
+        this.heatTilesY,
+      )
     ) {
       // WASM wrote the diffused field back into g.temp in place.
     } else {
+      // Seed the back buffer so the tiles the substeps skip already hold the
+      // right temperatures on *both* sides of the ping-pong. Those cells are
+      // inert for the whole pass (nothing writes them), so one copy up front
+      // keeps them correct through every swap — see diffuseHeat.
+      g.tempScratch.set(g.temp);
       for (let s = 0; s < HEAT_DIFFUSION_SUBSTEPS; s++) this.diffuseHeat();
     }
     // Once per tick (not per substep): the short-range radiative nudge that
@@ -238,6 +280,64 @@ export class Simulation {
   }
 
   /**
+   * Mark every 16×16 tile that contains at least one conducting cell, into
+   * `heatTiles`. Tiles left at 0 hold nothing but Empty air and Wall, and the
+   * diffusion substeps skip them wholesale.
+   *
+   * ## Why skipping is bit-identical
+   *
+   * A cell whose (curved) conductivity is exactly 0 does two things in
+   * `diffuseHeat`: it copies its own temperature through unchanged, and it
+   * contributes nothing to any neighbor, because the exchange is gated by
+   * `min(ci, cj)` and one side is 0. A tile of nothing but such cells is
+   * therefore a pure no-op — the same argument dirtyTiles makes for the CA
+   * scan, on the one property the heat kernel actually depends on. The
+   * copy-through is handled once per tick instead of once per substep, by
+   * seeding the back buffer before the loop (see `step`): those cells are
+   * untouched for the whole pass, so one copy keeps both ping-pong buffers
+   * correct through every swap.
+   *
+   * Rebuilt from `cells` each tick rather than maintained incrementally. The
+   * pass is a `Uint8Array` read per cell with a per-tile early-out — cheap next
+   * to the `HEAT_DIFFUSION_SUBSTEPS` float passes it gates — and buying it that
+   * way means there is no "every writer must wake its tile" invariant to get
+   * wrong, unlike the dirtyTiles marks.
+   */
+  private buildHeatTiles(): void {
+    const g = this.grid;
+    const w = g.width;
+    const h = g.height;
+    if (this.heatTilesW !== w || this.heatTilesH !== h) {
+      this.heatTilesX = (w + TILE - 1) >> TILE_BITS;
+      this.heatTilesY = (h + TILE - 1) >> TILE_BITS;
+      this.heatTiles = new Uint8Array(this.heatTilesX * this.heatTilesY);
+      this.heatTilesW = w;
+      this.heatTilesH = h;
+    }
+    const tiles = this.heatTiles;
+    const tilesX = this.heatTilesX;
+    const cells = g.cells;
+    const inert = this.heatInert;
+    tiles.fill(0);
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      const trow = (y >> TILE_BITS) * tilesX;
+      for (let tx = 0; tx < tilesX; tx++) {
+        // Already marked by an earlier row — nothing this row can add.
+        if (tiles[trow + tx] === 1) continue;
+        const x0 = tx << TILE_BITS;
+        const x1 = Math.min(x0 + TILE, w);
+        for (let x = x0; x < x1; x++) {
+          if (inert[cells[row + x]] === 0) {
+            tiles[trow + tx] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * One explicit finite-difference step of direct heat conduction: every cell
    * exchanges heat with its 4 orthogonal neighbors, the exchanged fraction
    * scaled by the lower of the two cells' conductivities (so the more
@@ -245,6 +345,11 @@ export class Simulation {
    * conserved). Computed into `tempScratch` from the current `temp` snapshot,
    * then the buffers are swapped. No convection or radiation is modeled — heat
    * only moves cell-to-cell here (and by material physically moving, in swap()).
+   *
+   * Visits only the tiles `buildHeatTiles` marked as conducting. That reorders
+   * the visits but changes no result: this is a Jacobi step, reading only `cur`
+   * and writing only `next`, so no cell can see another's update within a
+   * substep and the traversal order is free.
    */
   private diffuseHeat(): void {
     const g = this.grid;
@@ -255,37 +360,50 @@ export class Simulation {
     const next = g.tempScratch;
     const cond = this.cond;
     const rate = HEAT_DIFFUSION_RATE;
+    const tiles = this.heatTiles;
+    const tilesX = this.heatTilesX;
+    const tilesY = this.heatTilesY;
 
-    for (let y = 0; y < h; y++) {
-      const row = y * w;
-      for (let x = 0; x < w; x++) {
-        const i = row + x;
-        const ci = cond[cells[i]];
-        const ti = cur[i];
-        if (ci === 0) {
-          // Perfect insulator (air/Empty): never exchanges, stays put. Its
-          // neighbors see min(cj, 0) = 0 too, so the whole edge is inert.
-          next[i] = ti;
-          continue;
+    for (let ty = 0; ty < tilesY; ty++) {
+      const trow = ty * tilesX;
+      const y0 = ty << TILE_BITS;
+      const y1 = Math.min(y0 + TILE, h);
+      for (let tx = 0; tx < tilesX; tx++) {
+        if (tiles[trow + tx] === 0) continue; // all-inert tile: proven no-op
+        const x0 = tx << TILE_BITS;
+        const x1 = Math.min(x0 + TILE, w);
+        for (let y = y0; y < y1; y++) {
+          const row = y * w;
+          for (let x = x0; x < x1; x++) {
+            const i = row + x;
+            const ci = cond[cells[i]];
+            const ti = cur[i];
+            if (ci === 0) {
+              // Perfect insulator (air/Empty): never exchanges, stays put. Its
+              // neighbors see min(cj, 0) = 0 too, so the whole edge is inert.
+              next[i] = ti;
+              continue;
+            }
+            let acc = ti;
+            if (x > 0) {
+              const cj = cond[cells[i - 1]];
+              acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
+            }
+            if (x < w - 1) {
+              const cj = cond[cells[i + 1]];
+              acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
+            }
+            if (y > 0) {
+              const cj = cond[cells[i - w]];
+              acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
+            }
+            if (y < h - 1) {
+              const cj = cond[cells[i + w]];
+              acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
+            }
+            next[i] = acc;
+          }
         }
-        let acc = ti;
-        if (x > 0) {
-          const cj = cond[cells[i - 1]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i - 1] - ti);
-        }
-        if (x < w - 1) {
-          const cj = cond[cells[i + 1]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i + 1] - ti);
-        }
-        if (y > 0) {
-          const cj = cond[cells[i - w]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i - w] - ti);
-        }
-        if (y < h - 1) {
-          const cj = cond[cells[i + w]];
-          acc += rate * (ci < cj ? ci : cj) * (cur[i + w] - ti);
-        }
-        next[i] = acc;
       }
     }
 

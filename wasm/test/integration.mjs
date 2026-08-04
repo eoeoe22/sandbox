@@ -15,7 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, '..', 'heat', 'target', 'wasm32-unknown-unknown', 'release', 'heat.wasm');
 
 const RATE = 0.2;
-const SUBSTEPS = 3;
+const SUBSTEPS = 9; // HEAT_DIFFUSION_SUBSTEPS
+const TILE_BITS = 4; // engine/dirtyTiles.ts TILE_BITS, mirrored in the kernel
+const TILE = 1 << TILE_BITS;
 
 // --- JS reference (matches Simulation.diffuseHeat + step's substep loop),
 // leaving the final field in `temp`. ---
@@ -48,6 +50,7 @@ const wasm = await WebAssembly.instantiate(readFileSync(WASM_PATH), {});
 const ex = wasm.instance.exports;
 const condPtr = ex.heat_alloc(256 * 4);
 let bufCells = 0, cellsPtr = 0, tempPtr = 0, scratchPtr = 0;
+let bufTiles = 0, tilesPtr = 0;
 
 function ensureBuffers(n) {
   if (n === bufCells) return;
@@ -62,14 +65,44 @@ function ensureBuffers(n) {
   bufCells = n;
 }
 
+function ensureTiles(n) {
+  if (n === bufTiles) return;
+  if (bufTiles > 0) ex.heat_free(tilesPtr, bufTiles);
+  tilesPtr = ex.heat_alloc(n);
+  bufTiles = n;
+}
+
+// Mirrors Simulation.buildHeatTiles: mark every tile holding a conducting cell.
+let skippedTiles = 0;
+function buildTiles(cells, cond, w, h) {
+  const tilesX = (w + TILE - 1) >> TILE_BITS;
+  const tilesY = (h + TILE - 1) >> TILE_BITS;
+  const tiles = new Uint8Array(tilesX * tilesY);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    const trow = (y >> TILE_BITS) * tilesX;
+    for (let x = 0; x < w; x++) {
+      if (cond[cells[row + x]] !== 0) tiles[trow + (x >> TILE_BITS)] = 1;
+    }
+  }
+  for (const t of tiles) if (t === 0) skippedTiles++;
+  return { tiles, tilesX, tilesY };
+}
+
 function diffuseHeatWasm(cells, cond, temp, w, h) {
   const n = w * h;
   ensureBuffers(n);
-  const buf = ex.memory.buffer; // re-read after ensureBuffers (a grow detaches it)
+  const mask = buildTiles(cells, cond, w, h);
+  ensureTiles(mask.tiles.length);
+  const buf = ex.memory.buffer; // re-read after the allocs (a grow detaches it)
   new Uint8Array(buf, cellsPtr, n).set(cells.subarray(0, n));
   new Float32Array(buf, condPtr, 256).set(cond.subarray(0, 256));
   new Float32Array(buf, tempPtr, n).set(temp.subarray(0, n));
-  ex.diffuse_heat(cellsPtr, condPtr, tempPtr, scratchPtr, w, h, RATE, SUBSTEPS);
+  new Uint8Array(buf, tilesPtr, mask.tiles.length).set(mask.tiles);
+  ex.diffuse_heat(
+    cellsPtr, condPtr, tempPtr, scratchPtr, w, h, RATE, SUBSTEPS,
+    tilesPtr, mask.tilesX, mask.tilesY,
+  );
   temp.set(new Float32Array(buf, tempPtr, n));
 }
 
@@ -105,10 +138,17 @@ let w = 50, h = 30;
 let cells = new Uint8Array(w * h);
 let wasmTemp = new Float32Array(w * h);
 let jsTemp = new Float32Array(w * h);
-for (let i = 0; i < w * h; i++) {
-  cells[i] = (rnd() * 256) | 0;
-  const t = rnd() * 1500 - 100;
-  wasmTemp[i] = t; jsTemp[i] = t; // identical start
+// Sandbox-shaped: empty air over the top ~45% of the world, material below. The
+// empty band is what gives the inert-tile skip whole tiles to drop, so the mask
+// plumbing (ensureTiles + the kernel's skip) is actually exercised here rather
+// than trivially marking everything.
+for (let y = 0; y < h; y++) {
+  for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    cells[i] = y < h * 0.45 ? 0 : (rnd() * 256) | 0;
+    const t = rnd() * 1500 - 100;
+    wasmTemp[i] = t; jsTemp[i] = t; // identical start
+  }
 }
 let jsScratch = new Float32Array(w * h);
 
@@ -144,4 +184,11 @@ for (let tick = 0; tick < TICKS; tick++) {
   }
 }
 
-console.log(`OK — ${TICKS} ticks with 2 resizes, WASM ≡ JS, max |diff| = ${maxDiff}`);
+if (skippedTiles === 0) {
+  console.error('MISMATCH: no inert tile was skipped — the mask plumbing went untested');
+  process.exit(1);
+}
+
+console.log(
+  `OK — ${TICKS} ticks with 2 resizes, WASM ≡ JS, ${skippedTiles} inert tile-skips, max |diff| = ${maxDiff}`,
+);
