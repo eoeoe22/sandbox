@@ -1,186 +1,178 @@
-// English codex text — the description paragraph for each material and object.
-// The shared tag vocabulary (stat and trait names) is not here: it lives with
-// its Korean twin in codexTerms.ts, one entry per tag.
+// English description texts for the material codex — material and object descriptions.
 //
-// The Korean table (codex.ko.ts) is the original here, not the other way round:
-// its descriptions come from the Cloudwiki 물질 guide, and this file is their
-// English rendering. So a new material's Korean line is written first and this
-// one follows it — which is also the order test/codex.ts reports a gap in, since
-// it checks both tables against the palette roster and prints whichever one is
-// short.
-//
-// Keyed by `Material.id` and `ObjectKind` exactly as the Korean table is.
+// Names and descriptions of property tags are in codexTerms.ts.
+// Keys are `Material.id` and `ObjectKind`.
 
 import type { ObjectKind } from '../state/store';
 
-// --- Material descriptions --------------------------------------------------
+// --- Material Codex (English) ------------------------------------------------
 
 export const materialCodexEn: Record<number, string> = {
-  // Solid
-  1: 'An indestructible wall. Sits entirely outside the heat system.',
-  4: 'Melts into Lava above 1100°C.',
-  124: 'Black volcanic glass, formed by pouring water straight onto lava. It is as blast-proof as Diamond or Wall, but like stone it melts back to lava at 1100°C, and acid eats it.',
-  28: 'A metal with high thermal and electrical conductivity. Brine slowly rusts it, and dissolving in acid gives off hydrogen.',
-  113: 'Rusted metal. It can be smelted back into iron, at a poor yield.',
-  116: 'A metal that melts at 30°C. Acid dissolves it slowly, releasing hydrogen.',
-  136: 'Melts at 660°C. Liquid gallium embrittles it into powder. Acid dissolves it, releasing hydrogen. Heated past 250°C it burns away in chlorine gas, leaving flame and white fume.',
-  32: 'Transparent and acid-proof. Melts into molten glass above 1150°C, and a blast shockwave shatters it.',
-  46: 'What cement becomes once water has set it. Hard, but weak to explosions and acid.',
-  57: 'Extremely conductive to heat and immune to most blasts, heat, cold and acid. Only a shaped charge and a nuclear blast can break it.',
-  85: 'A dedicated solid that moves heat very fast.',
-  83: 'A screen that blocks powder grains and lets only liquids and gases through.',
-  93: 'Resin hardened over a long time. It burns slowly and, when heated, melts back into sticky resin.',
-  98: 'An extreme insulator. A blast shockwave still shatters it like any other solid.',
+  // Solids
+  1: 'An indestructible wall. It is completely excluded from the thermal conduction system.',
+  4: 'Melts into lava at 1100°C or higher.',
+  124: 'A black volcanic glass formed when lava directly contacts water. Immune to most explosions, but like stone, it melts back into lava at 1100°C and corrodes in acid.',
+  28: 'A metal with high thermal and electrical conductivity. Slowly turns to rust when in contact with saltwater, and releases hydrogen gas when dissolving in acid.',
+  113: 'Rusted metal. Can be smelted back into iron in a blast furnace, but with low yield.',
+  116: 'A metal that melts at 30°C. Slowly releases hydrogen gas and dissolves when in contact with acid.',
+  136: 'Melts at 660°C and becomes embrittled and crumbles into powder when touching liquid gallium. Dissolves releasing hydrogen when contacting acid. When heated above 250°C, it burns with flames and white smoke in contact with chlorine gas.',
+  32: 'Transparent and acid-resistant. Melts into molten glass at 1150°C or higher, and shatters when exposed to explosive shockwaves.',
+  46: 'The hardened result of mixing cement with water. Solid, but vulnerable to explosions and acid.',
+  57: 'Extremely high thermal conductivity, immune to explosions, high temperatures, and acid. However, it is destroyed by shaped charges and nuclear explosions.',
+  85: 'The solid with the highest thermal conductivity.',
+  83: 'A sieve that blocks powder particles and allows only liquids and gases to pass through.',
+  93: 'A solid formed by tree resin hardening over a long period. Burns slowly, and melts back into sticky pine resin upon heating.',
+  98: 'The ultimate thermal insulator.',
 
-  // Powder
-  2: 'The most common powder. Melts into molten glass at 1250°C and becomes glass when cooled.',
-  7: 'Dissolves readily in water. Becomes molten salt above 800°C.',
-  101: 'Turns into soapy water on contact with water.',
-  119: 'Powdered shards of broken glass.',
-  80: 'A dry-powder extinguisher and acid neutralizer. It snuffs adjacent fire on the spot and neutralizes acid into brine. Heated past 150°C it decomposes away.',
-  43: 'Mixes with water into mud.',
-  45: 'Water darkens a grain, which then cures slowly before setting into concrete. Grains set at slightly different moments, so a slab hardens as a spreading speckle rather than flipping over all at once. It stays powder while curing, so water keeps flowing through it, and one cell of water wets several grains on its way down — pour it on top and it soaks deep into the pile. A grain water cannot get into sets along with a curing neighbor, so a finished wall is left with no unset specks in it.',
-  55: 'The powdery residue of combustion. Light enough to float on water.',
-  105: 'Magnetic, so an electromagnet drags it in; brine slowly corrodes it into rust powder. Poured into acid it dissolves far faster than a solid bar, releasing hydrogen.',
-  128: 'Mixed with rust powder it makes thermite, with saltpeter flash powder, with ammonium nitrate ammonal. A flame in direct contact lights it, and above 660°C it becomes molten aluminum. Suspended in the air it goes off as a dust explosion. Chlorine gas burns it on contact with no ignition source at all, leaving flame and white fume.',
-  144: 'Aluminum powder with its oxide skin stripped off by liquid gallium. Water makes it fizz hydrogen at once; melting it at 660°C returns it to ordinary aluminum. With no film in the way it burns in chlorine twice as fast as ordinary aluminum powder.',
-  114: 'Powdered rusted metal. Smelting turns it back into iron.',
-  86: 'Water or acid sets off a violent reaction — flame, hydrogen and a detonation. It reacts with chlorine gas to form salt.',
-  95: 'Sugar, soluble in water. Heated past 200°C it caramelizes and then chars to ash; in contact with yeast it ferments into alcohol and CO₂.',
+  // Powders
+  2: 'The most common powder. Melts into molten glass at 1250°C and turns into glass upon cooling.',
+  7: 'Dissolves easily in water. Becomes molten salt at 800°C or higher.',
+  101: 'Turns into soapy water upon contact with water.',
+  119: 'Broken glass powder fragments.',
+  80: 'Powder fire extinguisher and acid neutralizer. Immediately extinguishes adjacent fires, and neutralizes acid into saltwater upon contact. Decomposes and vanishes when heated above 150°C.',
+  43: 'Turns into mud when mixed with water.',
+  45: 'Grains touched by water get dark and wet, then slowly cure into concrete. The hardening timing varies slightly per grain, so the slab hardens gradually like a spreading wave rather than all at once. It remains powder while curing so water can pass through, and a single block of water wets multiple grains on its way, allowing poured water to seep deep into the heap. Grains that water cannot reach harden alongside neighboring curing grains, leaving no uncured spots in a dry wall.',
+  55: 'Combustion residue powder. Extremely light, so it floats on water.',
+  105: 'Magnetic, so it is attracted to electromagnets, and slowly corrodes into rust powder in saltwater. When poured into acid, it dissolves and releases hydrogen much faster than solid iron.',
+  128: 'Mix with rust powder to make thermite, with niter to make flash powder, or with ammonium nitrate to make ammonal explosive. Burns when directly touched by flames, and melts into molten aluminum at 660°C or higher. Causes a dust explosion when airborne. Burns with flames and white smoke upon contact with chlorine gas even without an ignition source.',
+  144: 'State where liquid gallium has stripped the oxide film off aluminum powder. Immediately generates hydrogen bubbles upon contact with water, and melts back into regular aluminum at 660°C. Lacking an oxide layer, it burns twice as fast as normal aluminum powder in chlorine gas.',
+  114: 'Rusted metal powder. Can be returned to iron through smelting.',
+  86: 'Reacts violently with flames and hydrogen discharge upon contact with water or acid, causing an explosion. Reacts with chlorine gas to produce salt.',
+  95: 'Water-soluble sugar. Caramelizes and then carbonizes (ashes) when heated above 200°C, and ferments into alcohol and CO₂ when contacting yeast.',
 
-  // Liquid
-  3: 'Boils to steam at 100°C and turns to snow or ice below freezing. A current running through it splits it into hydrogen and oxygen.',
-  5: 'Heavier than water, so it sinks through it. Boiling precipitates the salt back out, and it freezes at -18°C. Highly conductive.',
-  104: 'Water with sugar dissolved in it. It carries no current, and yeast ferments it into alcohol and CO₂.',
-  11: 'Corrodes solids and powders. Boils into acid vapor and freezes at -20°C. Corroding a metal above hydrogen in the reactivity series produces hydrogen bubbles. Contact turns slime into acid slime, and — as when it eats a solid — only occasionally spends the acid doing it. Slime drinks acid the way it drinks water, so a poured pool ends up as acid slime itself, swelling the blob.',
-  40: 'A metal that is liquid at room temperature. Heat turns it into mercury vapor. It sits below hydrogen in the reactivity series, so dissolving it in acid gives off none.',
-  117: 'Molten gallium. It strips aluminum of its oxide skin and activates it, and sets back into solid gallium below 28°C.',
-  41: 'A viscous, slow-flowing flammable liquid. It stiffens below 5°C.',
-  42: 'A light fuel liquid. Highly flammable, freezes at -80°C, and kills virus. It mixes into water instead of floating on it, so pouring water on an alcohol fire spreads the fuel through the puddle rather than putting it out.',
-  102: 'Soap dissolved in water. It forms bubbles and washes virus away. Being a surfactant it mixes with water and with the oils alike (crude oil, gasoline, kerosene, diesel) — a slick that would ride on plain water in a flat layer is emulsified and stirred through this instead.',
-  44: 'Wet dirt. It dries back into dirt and freezes at -3°C.',
-  88: 'Decomposes into water and oxygen. The oxygen it releases feeds nearby fires and sterilizes virus.',
-  92: 'Sticky tree sap. Left alone it slowly hardens into amber.',
+  // Liquids
+  3: 'Evaporates into steam at 100°C and turns into snow/ice below zero. Decomposes into hydrogen and oxygen when electricity flows through it.',
+  5: 'Heavier than water, so it sinks. Boiling precipitates salt, and it freezes at -18°C. Has high electrical conductivity.',
+  104: 'Water with dissolved sugar. Non-conductive, and ferments into alcohol and CO₂ upon contact with yeast.',
+  11: 'Corrodes solids and powders. Becomes acid gas when boiled and freezes at -20°C. Releases hydrogen bubbles when corroding metals with high reactivity. Turns slime into acid slime upon contact, consuming acid only occasionally like when corroding solids. Since slime drinks acid just as it drinks water, poured acid eventually turns into acid slime, increasing its volume.',
+  40: 'Liquid metal at room temperature. Becomes mercury vapor when heated. Being less reactive than hydrogen, it does not produce hydrogen when dissolving in acid.',
+  117: 'Molten gallium. Activates aluminum by stripping its oxide film, and solidifies into solid gallium below 28°C.',
+  41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C.',
+  42: 'Light liquid fuel. Highly flammable, freezing at -80°C. Eradicates viruses.',
+  102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel).',
+  44: 'Wet soil. Hardens into dirt when dried, and freezes at -3°C.',
+  88: 'Releases water and oxygen as it decomposes. Released oxygen feeds nearby fires and strongly sterilizes viruses.',
+  92: 'Sticky tree sap. Gradually hardens into amber (solid) if left alone.',
 
-  // Gas
-  8: 'Water as a gas. It condenses back to water when cooled.',
-  6: 'The smoke a fire gives off. It fades away after a while.',
-  16: 'Evaporated acid. It corrodes whatever it touches and condenses back to acid when cooled.',
-  36: 'An oxidizing gas that feeds combustion. In a fire it produces an ultra-hot blue flame.',
-  37: 'A light flammable gas. Ignited with oxygen present, it produces steam.',
-  118: 'The hot, toxic vapor evaporated mercury gives off.',
-  87: 'A heavy gas. It settles downward and smothers fire.',
-  96: 'A heavy toxic gas. It kills living units and reacts with sodium to form salt. Being an oxidiser in its own right it also burns aluminum in a sealed, airless pocket — that one leaves no solid behind, only white fume.',
-  97: 'An ultra-light inert gas. It rises to the very top and reacts with nothing.',
+  // Gases
+  8: 'Gaseous water. Condenses into water upon cooling.',
+  6: 'Smoke produced during combustion. Vanishes after a certain time.',
+  16: 'Evaporated acid gas. Corrodes materials it touches and returns to acid upon cooling.',
+  36: 'A combustion-supporting gas. Produces an ultra-high temperature blue flame during fires.',
+  37: 'Light flammable gas. Reacts with oxygen when ignited to create steam.',
+  118: 'High-temperature toxic vapor from evaporated mercury.',
+  87: 'Heavy gas. Sinks downward and has a fire-extinguishing effect.',
+  96: 'Heavy toxic gas. Kills living creatures and reacts with sodium to form salt. Burns aluminum powder.',
+  97: 'Ultra-light inert gas. Rises to the top and does not react with other substances.',
 
   // Fire / Heat
-  9: 'Ignites flammable materials.',
-  19: 'The ultra-hot flame that burns where oxygen is supplied.',
+  9: 'Ignites flammable substances.',
+  19: 'Ultra-high-temperature flame generated by oxygen supply.',
   10: 'Molten stone.',
-  29: 'Molten iron. It runs as freely as water, and sets back into solid iron as it cools.',
-  31: 'Molten sand and glass. It sets back into solid glass as it cools.',
+  29: 'Molten iron. Becomes solid iron when cooled.',
+  31: 'Molten sand and glass. Becomes solid glass when cooled.',
   56: 'Molten salt.',
-  143: 'Aluminum melted past 660°C. It runs as freely as water, and sets back into solid aluminum below 560°C.',
-  25: 'A staple solid fuel. It burns slowly and long, and in smelting it doubles as the reductant that turns molten iron ore back into iron.',
-  26: 'A staple solid fuel. It catches fire readily, and termites eat through it.',
-  27: 'The powdered fuel wood leaves when it breaks. Light, and quick to catch.',
-  94: 'A material that ignites spontaneously in air. It is only stable stored under water.',
+  143: 'Molten aluminum above 660°C. Flows easily like water and becomes solid aluminum when cooled below 560°C.',
+  25: 'A classic solid fuel. Burns slowly for a long time, and is used as a reducing agent in smelting to convert molten iron ore back into iron.',
+  26: 'A classic solid fuel. Burns easily and is eaten by termites.',
+  27: 'Powder fuel produced when wood breaks down. Light and easily ignited.',
+  94: 'Spontaneously ignites in air. Must be stored in water to remain stable.',
 
   // Smelting
-  67: 'A reddish-brown ore powder. It melts above 850°C and, cooled without coal, sets into slag.',
-  71: 'Molten iron ore. It runs as freely as water. Contact with coal reduces it to molten iron; below 750°C it sets into slag.',
-  70: 'Coal in powdered form. It sinks into molten iron ore and reduces it from the inside.',
-  69: 'A flux that improves smelting yield. Added in the right proportion it cuts down slag.',
-  68: 'The waste left behind by smelting. It floats to the top of the furnace.',
+  67: 'Reddish-brown ore powder. Melts above 850°C and solidifies into slag if cooled without coal.',
+  71: 'Molten iron ore. Flows easily like water. Reduced to molten iron upon contact with coal, and hardens into slag when cooled below 750°C.',
+  70: 'Powdered coal. Reduces molten iron ore.',
+  69: 'Flux that increases smelting yield. Reduces slag formation during iron smelting when added in the proper ratio.',
+  68: 'Smelting byproduct waste. Rises to the upper layer inside the blast furnace.',
 
   // Petroleum
-  23: 'The feedstock of the distillation process. Indirect heat evaporates it; a flame in direct contact burns it.',
-  59: 'The vapor heated crude oil gives off. Captured and condensed, it separates out by fraction.',
-  24: 'The lightest and most flammable of the liquid fuels.',
-  60: 'A liquid fuel of middling flammability.',
-  61: 'The heaviest liquid fuel, and the slowest to burn.',
-  62: 'The residue left at the bottom of the crude column. Above 200°C it melts into a sticky flow.',
-  58: 'The light, flammable gas that boils off first.',
+  23: 'Raw material for the distillation process. Evaporates under indirect heating and burns upon direct contact with flames.',
+  59: 'Vapor generated from heated crude oil. Separated into fuel types when captured and condensed.',
+  24: 'Highly flammable liquid fuel.',
+  60: 'Moderately flammable liquid fuel.',
+  61: 'Slow-burning liquid fuel.',
+  62: 'Byproduct of crude oil fractional distillation. Melts viscously above 200°C.',
+  58: 'Light flammable gas that evaporates first.',
 
-  // Polymer
-  139: 'The gas petroleum vapor cracks into on contact with a catalyst. It is the feedstock for polymerization.',
-  140: 'A permanent fixture solid. It cracks petroleum vapor into ethylene and polymerizes ethylene into polyethylene.',
-  141: 'Finished plastic. It floats on water and insulates well.',
+  // Polymers
+  139: 'Gas produced when petroleum vapor breaks down upon contact with catalyst. Raw material for polymerization.',
+  140: 'Cracks petroleum vapor into ethylene or polymerizes ethylene into polyethylene.',
+  141: 'Finished plastic solid.',
 
-  // Explosive
-  12: 'Black powder. It can be made from sulfur, saltpeter and coal powder.',
-  125: 'A low-ignition-point fuel that self-ignites at 250°C.',
-  126: 'An oxidizer that decomposes above 400°C, releasing oxygen.',
-  13: 'Nitroglycerin, a liquid explosive.',
-  20: 'An explosive flammable gas.',
-  52: 'A powerful solid explosive.',
-  53: 'A slow-burning cord that carries a flame along its length.',
-  54: 'A metal mixture that gives off extreme oxidation heat.',
-  17: 'The blast shockwave itself.',
-  74: 'A first blast scatters submunitions that go off as a second.',
-  77: 'An incendiary that sticks where it lands and keeps burning.',
-  79: 'A military explosive, safe against shock and flame, fired electrically.',
-  127: 'A directional penetrating charge. It forms a focused jet along the drag direction it was placed in.',
-  137: 'A powerful flash charge made from aluminum powder and saltpeter.',
-  145: 'A wide-area explosive made from ammonium nitrate and aluminum powder.',
-  129: 'A pyrotechnic charge for colourful firework displays.',
+  // Explosives
+  12: 'Black powder. Can be made by combining sulfur, niter, and coal powder. Low destructive power.',
+  125: 'Low ignition point fuel that spontaneously ignites at 250°C, used as gunpowder ingredient.',
+  126: 'An oxidizer that decomposes above 400°C to release oxygen, used in various explosives.',
+  13: 'Liquid explosive nitroglycerin.',
+  20: 'Explosive flammable gas.',
+  52: 'Powerful solid explosive.',
+  53: 'Fuse wire that slowly transmits sparks.',
+  54: 'Metal mixture producing ultra-high oxidation heat.',
+  17: 'Explosive shockwave phenomenon.',
+  74: 'After primary explosion, submunitions spread causing secondary explosions.',
+  77: 'Incendiary bomb that sticks and burns continuously.',
+  79: 'Military explosive detonated by electricity. Will not explode when ignited with fire.',
+  127: 'Directional penetration explosive. Forms a focused penetration wave in the direction of placement drag.',
+  137: 'Flash charge made from aluminum powder and niter.',
+  145: 'Explosive mixed from ammonium nitrate and aluminum powder.',
+  129: 'Firework explosive creating colorful sparks.',
 
-  // Cryo
-  21: 'Solid ice. It melts into water.',
-  22: 'A light freezing powder. It melts into water and freezes into ice with more cooling.',
-  33: 'A cryogenic coolant at -196°C.',
-  34: 'Solid CO₂ at -78°C. It sublimates away, giving off cold CO₂ gas.',
-  99: 'Contact with water triggers a strong endothermic reaction that chills everything around it.',
+  // Cooling
+  21: 'Solid ice. Turns into water when melted.',
+  22: 'Light freezing powder. Turns into water when melted and freezes into ice upon further cooling.',
+  33: 'Cryogenic coolant at -196°C.',
+  34: 'Solid CO₂ at -78°C. Emits cold CO₂ gas as it sublimates.',
+  99: 'Causes a powerful endothermic reaction upon contact with water, producing a cooling effect. Ingredient in various explosives.',
 
-  // Electric
-  39: 'A power source that emits current. Exposed to high heat it explodes.',
-  82: 'A battery with far better thermal stability.',
-  133: 'Produces electricity from laser light.',
-  132: 'Insulated electrical cable. Current runs along it without leaking out.',
-  81: 'A heating element that reaches 750–1050°C while current flows. Acid-proof.',
-  109: 'Powered, it thumps out a sonic shockwave that shoves nearby particles away.',
-  112: 'Blows wind that pushes gases and particles around and cools things down.',
-  121: 'A device that fires a powerful heat-ray beam.',
-  122: 'Powered, it lifts powder and liquid upward.',
-  123: 'Draws in magnetic matter such as iron powder.',
-  84: 'A steam turbine that generates power as steam passes through it.',
+  // Electricity
+  39: 'Power supply unit emitting electricity. Explodes when exposed to high heat.',
+  82: 'Battery with excellent thermal stability.',
+  133: 'Generates electricity upon receiving laser light.',
+  132: 'Insulated electrical wiring. Conducts power without leakage.',
+  81: 'Heating wire that generates heat between 750–1050°C when power flows. Acid-resistant.',
+  109: 'Generates acoustic shockwaves when powered to push nearby particles away.',
+  112: 'Creates wind to push gases/particles and cool down heat.',
+  121: 'Device emitting a powerful heat beam.',
+  122: 'Pumps powders and liquids upward when powered.',
+  123: 'Device attracting magnetic substances such as iron powder.',
+  100: 'Conveyor belt that runs only when powered. Transports accumulated particles column by column in the drag direction rather than scraping thin layers, and stops immediately when power cut off. Arranging like stairs moves cargo up slopes, and shaping into a U-trough prevents cargo from being trapped and carries it over to the opposite side.',
+  84: 'Steam turbine that generates electricity when steam passes through.',
 
   // Life
-  47: 'Absorbs water to grow, and burns readily.',
-  48: 'Spreads by eating into nearby flammable matter. Alcohol, soapy water and radiation sterilize it.',
-  89: 'Ferments sugars (sugar water, honey) into CO₂ and alcohol.',
-  90: 'Germinates into a plant on wet dirt.',
-  91: 'A viscous fluid that absorbs water and multiplies. It absorbs acid just the same, and what it drinks comes back as acid slime — as does the cell the acid touched. Radiation-tolerant.',
-  115: 'The variant acid makes of slime, corroding just as hard as the acid itself. Half of the water it absorbs comes back as plain slime, and water can rinse the acid out of it entirely. Acid it absorbs simply becomes more of itself, growing the blob. It slowly blends into plain slime it touches.',
-  110: 'A living unit that eats through wood. It leaves sawdust when it dies.',
-  111: 'An artificial unit that breaks metal down. Immune to radiation.',
-  146: 'A fish that swims through water. It drifts loosely toward nearby fish but keeps out of their way, so a tank holds a scattered group rather than a tight shoal. The brush sows only a few at a time. Water and saltwater are the only liquids it can live in — oil, acid and the rest kill it within a few seconds, so a slick floating on a tank takes the fish that rise into it. It never raises the water level: the cell it swims into keeps its water, held inside the fish. Out of water it flops about and suffocates — not on a fixed clock but with a risk that grows the longer it is stranded, so usually around 12 seconds; heat, blast shockwaves and radiation kill it too. Water conducts, so a current running through a tank electrocutes half the fish in it. It leaves a dead fish that floats to the surface.',
-  134: 'A reef creature that grows in brine. Radiation and heat turn it into bleached coral.',
-  135: 'The limestone skeleton dead coral leaves. Acid dissolves it, and given the right conditions it recolonizes.',
+  47: 'Absorbs water to grow and burns easily.',
+  48: 'Spreads by eroding surrounding flammable materials. Sterilized by alcohol, soapy water, and radiation.',
+  89: 'Ferments sugars (sugar water, honey) to generate CO₂ and alcohol.',
+  90: 'Germinates into plants on wet soil.',
+  91: 'Viscous fluid that absorbs water to multiply. Radiation resistant and can be decomposed with electricity.',
+  115: 'A variant formed when slime absorbs acid instead of water, having the same corrosive power as acid. Can be diluted by pouring water. Decomposes more easily with electricity.',
+  110: 'Biological unit that gnaws on wood. Leaves sawdust when killed.',
+  111: 'Gnaws on metal. Immune to radiation.',
+  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water.',
+  134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
+  135: 'Calcareous skeleton left when coral dies. Regenerates in saltwater at an appropriate temperature.',
 
   // Radioactive
-  63: 'Highly enriched uranium. It runs hot and melts down into molten U235 when overheated.',
-  65: 'Uranium in meltdown. It decays whatever is around it.',
-  106: 'Depleted uranium. In meltdown it becomes molten U238.',
-  107: 'U238 in meltdown. It runs as freely as water, and cooled it becomes nuclear waste.',
-  108: 'Waste that gives off residual radioactivity.',
+  63: 'Highly enriched uranium. Generates heat and undergoes meltdown when overheated.',
+  65: 'Uranium in meltdown state. Explodes quickly and decays all surrounding materials.',
+  106: 'Low-enriched uranium. Turns into molten U-238 upon meltdown.',
+  107: 'Meltdown U-238. Flows easily like water and turns into nuclear waste when cooled.',
+  108: 'Waste emitting residual radiation.',
 
-  // Exotic
-  49: 'Endlessly copies the first material it touches.',
-  50: 'Instantly annihilates every particle that touches it.',
-  51: 'Annihilates 1:1 with the material beside it.',
-  100: 'A belt that runs only while it has power. It carries the whole depth of whatever is piled on it — not a thin skim off the top — along the direction it was dragged, lifts a load up a slope if you lay it as a staircase, and ferries it out of a dip rather than letting it settle there. Cut the current and it soon stops.',
+  // Special
+  49: 'Continuously duplicates the first material it touches.',
+  50: 'Instantly annihilates all particles it touches.',
+  51: 'Mutually annihilates 1:1 with neighboring materials.'
 };
 
-// --- Object descriptions ----------------------------------------------------
+// --- Object Codex (English) --------------------------------------------------
 
 export const objectCodexEn: Record<ObjectKind, string> = {
-  ball: 'A rubber ball with strong bounce. It ricochets off walls and solids and floats on water.',
-  drum: 'A steel drum. It answers an electromagnet and floats on water.',
-  oildrum: 'A drum that spills crude oil when it breaks.',
-  aciddrum: 'A drum that spills acid when it breaks.',
-  dynamite: 'A stick of dynamite, spawned already lit and about to go off.',
-  smokebomb: 'A visual-effect object that pours out a great deal of smoke.',
-  crate: 'A wooden crate, broken by a hard impact or by fire.',
-  molotov: 'A bottle that smashes and sets off an alcohol fire.',
+  ball: 'A rubber ball with high elasticity. Bounces off walls and solids, and floats on water.',
+  drum: 'A metal drum barrel. Responds to electromagnets and floats on water.',
+  oildrum: 'A drum barrel that leaks crude oil when broken.',
+  aciddrum: 'A drum barrel that leaks acid when broken.',
+  dynamite: 'A stick of dynamite spawned in an ignited state that explodes shortly.',
+  smokebomb: 'Emits a large amount of smoke.',
+  crate: 'A wooden crate destroyed by strong impacts or fire.',
+  molotov: 'A Molotov cocktail that shatters to ignite alcohol flames.',
 };
