@@ -1544,13 +1544,13 @@ function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
         } else {
           pen = bp + r;
         }
-        // Contact point: the surface edge the centre is being pushed toward, found
-        // by walking from the centre back along the (outward) normal by the
-        // penetration. The lever arm is small here (centre near the edge) so the
-        // torque is minor — this branch only fires for a stuck/spawned-into-wall
-        // ball, where rolling is beside the point.
-        qx = o.x - nx * pen;
-        qy = o.y - ny * pen;
+        // Contact point: a circle's "core" is its centre, so the lever arm here
+        // is zero (this branch only fires for a ball stuck/spawned into terrain,
+        // where rolling is beside the point — it just needs to be squeezed out).
+        // That mirrors the capsule gridContacts, which pins the deep-contact point
+        // to the core so no spurious torque spins the body while it's entombed.
+        qx = o.x;
+        qy = o.y;
       }
 
       if (pen > bestPen) {
@@ -1576,6 +1576,9 @@ function resolveGridCollision(o: SimObject, ctx: SimContext): boolean {
   const invMass = 1 / o.mass;
   const invI = o.held ? 0 : 1 / o.momentOfInertia;
   let grounded = false;
+  // A disc presents a single contact, so a few relaxation passes are enough —
+  // one fewer than the capsule's 4 (resolveCapsuleCollision) since there's no
+  // multi-point manifold to settle here.
   for (let iter = 0; iter < 3; iter++) {
     const c = deepestContact(o, ctx);
     if (!c) break;
@@ -3143,8 +3146,8 @@ function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
-  // Every body spins now (the ball rolls too); only a held body is skipped by
-  // the caller.
+  // Every body spins now — the ball rolls too. (A held body never reaches here;
+  // stepObjects skips held bodies before the knockback pass.)
   o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
 }
 

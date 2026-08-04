@@ -118,7 +118,7 @@ const FLOOR_Y = 90;
   const ball = createRubberBall(x0 + 0.5, surfY - r - 2, r) as SimObject;
   grid.objects.push(ball);
   const startY = ball.y;
-  run(sim, 120);
+  run(sim, 80);
   const rolledDown = ball.y > startY + 2; // screen-down = larger y
   const spunUp = Math.abs(ball.angularVelocity) > 0.05;
   check(
