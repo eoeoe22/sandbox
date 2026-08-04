@@ -426,6 +426,18 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // appliance's own update can't reliably see an adjacent Spark — it may have
       // reverted to its conductor before the appliance's turn this same tick.
       m.directPulse(sim, nx, ny);
+    } else if (m.sparkDeathChance !== undefined && m.blastDeathId !== undefined) {
+      // 감전 — a living body the current reaches (see Material.sparkDeathChance).
+      // Driven from here rather than from the victim's own update for the same
+      // reason the appliance hook above is: this cell may have reverted to its
+      // conductor before the victim's turn comes round this tick, so a victim
+      // looking for an adjacent Spark would see it or not depending on scan
+      // order. Ungated by `arced` — electrocuting a fish is not an arc, and a
+      // pulse running down a tank should kill every fish it passes, not one.
+      if (sim.chance(m.sparkDeathChance)) {
+        sim.set(nx, ny, m.blastDeathId);
+        sim.setAux(nx, ny, 0); // set() keeps the old aux on a non-empty write
+      }
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.

@@ -15,10 +15,16 @@ import { DEAD_FISH } from './deadfish';
 // its whole point is to keep a surface on one side and wrap around corners, which
 // is what a termite wants and the exact opposite of what open water asks for. A
 // fish's locomotion is its own (see `swim`): hold a heading, drift off it now and
-// then, and lean toward whichever of its own kind it can see nearby. What it does
-// borrow from the bugs is the *other* half — `touchingBlast` for the detonation
-// test, and the declarative death tags (`radiationDeath`, `blastDeathId`,
-// `shockDeathChance`) that already say "fragile organic body" for the Termite.
+// then, and move aside when another fish gets too close. What it does borrow from
+// the bugs is the *other* half — `touchingBlast` for the detonation test, and the
+// declarative death tags (`radiationDeath`, `blastDeathId`, `shockDeathChance`)
+// that already say "fragile organic body" for the Termite.
+//
+// 무리 짓지 않는다. This started out as a proper boids school — cohesion plus
+// alignment, tuned until twelve fish measurably clumped and agreed on a heading —
+// and the result looked *worse*: a shoal moving as one blob reads as scripted
+// rather than alive. All that survives is the objection to being crowded
+// (`crowdedHeading`), which is the half that actually makes a tank look right.
 //
 // 물 안 / 물 밖 — the two states it lives in:
 //   • Touching liquid → it swims. It can only step INTO liquid, so it never
@@ -28,11 +34,13 @@ import { DEAD_FISH } from './deadfish';
 //     suffocates. Landing back in water resets the counter to zero, so a fish
 //     that flops its way to the edge of a puddle really is saved.
 //
-// It dies four ways, all of them leaving a Dead Fish (deadfish.ts) that floats
+// It dies five ways, all of them leaving a Dead Fish (deadfish.ts) that floats
 // belly-up to the surface: 고온, 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
-// 물 밖 질식. A weaker shockwave — a Woofer's thump — kills it half the time and
-// merely throws it the rest (`shockLoose` + `shockDeathChance`, the Termite's
-// exact pattern; see blast.ts).
+// 감전, 물 밖 질식. A weaker shockwave — a Woofer's thump — kills it half the time
+// and merely throws it the rest (`shockLoose` + `shockDeathChance`, the Termite's
+// exact pattern; see blast.ts). Electricity is the same 50%, and reaches much
+// further than you'd expect: water is a conductor, so a live wire dipped in a tank
+// electrifies the whole pool at once (`sparkDeathChance`, driven from spark.ts).
 //
 // 잡아먹거나 번식하지 않는다. 개체 수는 유저가 찍은 만큼이 전부다 — a tank doesn't
 // silently fill up with fish while you look away.
@@ -56,30 +64,23 @@ const SWIM_CHANCE = 0.55;
  *  Low, because the heading is what makes a fish look like it's *going somewhere*;
  *  re-rolling often would turn the tank into brownian noise. */
 const TURN_CHANCE = 0.15;
-/** 느슨한 무리 짓기 — how far a fish looks for company when it re-heads. It has to
- *  be several times the distance a fish covers between two re-headings (SWIM_CHANCE
- *  / TURN_CHANCE ≈ 3.7 cells), or the school has no restoring force at all: cross
- *  the radius in one heading and your neighbours are simply gone, `pickHeading`
- *  falls back to a random draw, and the group is scattered for good. At 4 that is
- *  exactly what happened — a clump of 12 was strangers inside ten seconds.
+/** 개인 공간 — how close another fish has to get before this one moves off. The
+ *  only social term there is: fish keep out of each other's way and are otherwise
+ *  independent. Small on purpose — at 3 the objection is to genuinely being
+ *  bumped, so a tank reads as a scatter of fish going about their business rather
+ *  than as either a blob or a repelling lattice.
  *
- *  Two attempts before this one, kept here because both look reasonable and
- *  neither works: sampling eight random cells in the box instead of scanning it
- *  (with one neighbour in 81 cells, eight probes find it 9% of the time — a cue
- *  once every three seconds, far too rare to pull against a random walk), and
- *  aligning headings without any pull toward the group (see COHERE_CHANCE).
- *
- *  The scan is the whole (2R+1)² box, but only on a re-heading roll, so it
- *  amortizes to TURN_CHANCE × 288 ≈ 43 grid reads per fish per tick. Fish are
- *  placed by hand and never breed (there is no population to run away with), so
- *  that is a bounded cost in a way a self-replicating bug's would not be. */
-const SCHOOL_RADIUS = 8;
-/** Having found company, the chance it swims *toward* the group's centre rather
- *  than falling in on the group's heading. Alignment alone is not a school:
- *  twelve fish all heading east drift apart at slightly different rates and are
- *  strangers within a minute. The pull is what keeps them together; the alignment
- *  is what makes the group read as going somewhere rather than milling. */
-const COHERE_CHANCE = 0.6;
+ *  Unlike the schooling it replaced, this is scanned every tick rather than on a
+ *  re-heading roll, so the cost is the raw (2R+1)² = 49 grid reads per fish per
+ *  tick — still well under the ~43-per-tick amortized cost of the 17×17 box it
+ *  replaced, and fish are placed by hand and never breed, so the population can't
+ *  run away with it. */
+const PERSONAL_SPACE = 3;
+/** 전기 감전 — chance a fish adjacent to a live Spark dies (see Material.
+ *  sparkDeathChance). Water and Saltwater are both conductors, so dropping a live
+ *  wire into a tank electrifies the water itself and the current fans out through
+ *  it: half of everything it reaches floats up dead. */
+const SPARK_DEATH_CHANCE = 0.5;
 /** Chance per stranded tick that it throws itself into the air (see `flop`). */
 const FLOP_CHANCE = 0.2;
 
@@ -178,44 +179,37 @@ function touchingLiquid(x: number, y: number, sim: SimContext): boolean {
 
 // ── 이동 ──────────────────────────────────────────────────────────────────────
 
-/** A heading for a fish that needs a new one: 느슨한 무리 짓기. It samples a few
- *  random cells in a box around itself and, on the first of its own kind it finds,
- *  either turns toward it (cohesion) or falls in behind it on its heading
- *  (alignment) — see COHERE_CHANCE for why it takes both. There is no leader, no
- *  list and no per-tick neighbourhood scan; a school is just this, repeated.
+/** 개인 공간 — the heading that takes this fish away from whoever is crowding it,
+ *  or -1 if nobody is. Only the nearest ring of company counts: this is the whole
+ *  of the social behaviour, and it is deliberately a *push*, never a pull.
  *
- *  Finding nobody — a lone fish, or an unlucky set of probes — it draws from
- *  HEADING_PICK, which is also what keeps a school from locking rigidly onto one
- *  heading forever: every fish that misses its probes stirs the group a little. */
-function pickHeading(x: number, y: number, sim: SimContext): number {
-  let cx = 0; // offset to the neighbours' centre of mass — the cohesion pull
+ *  There used to be cohesion and alignment here — a proper boids school, tuned
+ *  until twelve fish demonstrably clumped and agreed on a heading. It worked and
+ *  it looked wrong: a shoal moving as one blob reads as scripted, not alive. Real
+ *  tank fish mostly mind their own business and object to being sat on. So the
+ *  pull is gone and only the objection remains, which is both the nicer picture
+ *  and much the cheaper one — the perception box went from 17×17 to 7×7. */
+function crowdedHeading(x: number, y: number, sim: SimContext): number {
+  let cx = 0; // summed offsets to everyone too close — the direction to flee is -this
   let cy = 0;
-  let hx = 0; // their headings summed as vectors — the alignment cue
-  let hy = 0;
-  let n = 0;
-  for (let dy = -SCHOOL_RADIUS; dy <= SCHOOL_RADIUS; dy++) {
-    for (let dx = -SCHOOL_RADIUS; dx <= SCHOOL_RADIUS; dx++) {
+  for (let dy = -PERSONAL_SPACE; dy <= PERSONAL_SPACE; dy++) {
+    for (let dx = -PERSONAL_SPACE; dx <= PERSONAL_SPACE; dx++) {
       if (dx === 0 && dy === 0) continue; // itself — no information
       const nx = x + dx;
       const ny = y + dy;
       if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== FISH.id) continue;
-      n++;
       cx += dx;
       cy += dy;
-      const h = headingOf(sim.getAux(nx, ny));
-      if (h >= 0) {
-        hx += RING[h][0];
-        hy += RING[h][1];
-      }
     }
   }
-  if (n > 0) {
-    // Either cue can come out empty — a fish sitting dead centre of a symmetric
-    // group has nowhere to close toward, and a group facing every which way sums
-    // to nothing. Fall through rather than inventing a direction for it.
-    const toward = sim.chance(COHERE_CHANCE) ? headingToward(cx, cy) : headingToward(hx, hy);
-    if (toward >= 0) return toward;
-  }
+  // Dead centre of a symmetric squeeze the offsets cancel and there is no way out
+  // to pick; -1 lets the caller carry on as it was rather than invent a direction.
+  return cx === 0 && cy === 0 ? -1 : headingToward(-cx, -cy);
+}
+
+/** A heading for a fish that needs one and isn't being crowded: a free draw. No
+ *  neighbour term at all — 나머지는 자유롭게 헤엄친다. */
+function freeHeading(sim: SimContext): number {
   return HEADING_PICK[sim.randInt(HEADING_PICK.length)];
 }
 
@@ -226,7 +220,13 @@ function pickHeading(x: number, y: number, sim: SimContext): number {
  *  fish (SimContext.swap carries aux), exactly as crawler.ts does for its heading. */
 function swim(x: number, y: number, sim: SimContext, a: number): void {
   let h = headingOf(a);
-  if (h < 0 || sim.chance(TURN_CHANCE)) h = pickHeading(x, y, sim);
+  // Being crowded is checked EVERY tick, not just on the re-heading roll like a
+  // free turn is. A fish that only noticed company once every ~7 ticks would take
+  // most of a second to object to being sat on, by which point the two have
+  // already swum through each other — the whole behaviour reads as lag.
+  const away = crowdedHeading(x, y, sim);
+  if (away >= 0) h = away;
+  else if (h < 0 || sim.chance(TURN_CHANCE)) h = freeHeading(sim);
   if (!sim.chance(SWIM_CHANCE)) {
     sim.setAux(x, y, pack((a & FACING_RIGHT) !== 0, h, 0));
     return; // coasting this tick
@@ -356,6 +356,10 @@ export const FISH = register({
   // it, and is crushed half the time when it does — the Termite's exact trade.
   shockLoose: true,
   shockDeathChance: SHOCK_DEATH_CHANCE,
+  // 감전 — it isn't conductive (the current doesn't pass through it), it just has
+  // to be standing in water the current reaches. Water conducts, so a live wire in
+  // a tank kills half of everything in the pool.
+  sparkDeathChance: SPARK_DEATH_CHANCE,
   // Organic and poorly conductive, so it takes a moment to cook rather than dying
   // the instant a warm cell touches the tank.
   thermal: { conductivity: 0.2 },

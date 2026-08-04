@@ -595,6 +595,24 @@ export interface Material {
    */
   shockDeathChance?: number;
   /**
+   * 감전사 확률, 0..1 — the chance that a live Spark reaching a cell of this
+   * material kills it outright, leaving `blastDeathId` behind (the Fish's 50%).
+   * The electric sibling of `shockDeathChance`, and it requires `blastDeathId`
+   * for the same reason: there would be no remains to leave otherwise.
+   *
+   * Driven from the Spark's own arc phase (spark.ts), NOT by the victim looking
+   * for an adjacent Spark on its own turn — the same reason `directPulse` and
+   * `electricDetonate` are. A Spark lives for one tick and reverts to its
+   * conductor, so whether the victim can still see it depends on which of the two
+   * the scan reached first; driven from the spark it is scan-order independent.
+   *
+   * This does not need `conductive`, and shouldn't have it: the current doesn't
+   * pass *through* the body, it just has to reach the water the body is in. Both
+   * Water and Saltwater conduct, so a live wire in a tank electrifies the whole
+   * pool and everything standing in it.
+   */
+  sparkDeathChance?: number;
+  /**
    * What a *fragile* solid crazes into when a blast's shock washes over it but
    * can't otherwise break it (power < durability) — Glass shattering into Broken
    * Glass under a Gunpowder concussion or a Woofer's power-0 shockwave (see

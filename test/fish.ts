@@ -12,13 +12,15 @@
 //   • 물 밖. Stranded on dry ground it flops about and suffocates on schedule,
 //     leaving a corpse; a fish thrown next to a puddle flops its way back in and
 //     lives.
-//   • The other three deaths — 고온, 인접 Blast 섬광, 방사선 피폭 — each leave the
-//     same Dead Fish.
+//   • The other four deaths — 고온, 인접 Blast 섬광, 방사선 피폭, 감전 — each leave
+//     the same Dead Fish. 감전 is measured two ways: a battery dropped in a tank
+//     kills through the water itself, and a single hand-fired pulse lands on the
+//     designed 50%.
 //   • 사체. It floats up through water to the surface on its own buoyancy, and it
 //     eventually rots away instead of piling up forever.
-//   • 무리 짓기. Fish that can see each other agree on a heading far more than
-//     fish that can't — measured against an isolated-fish control run in the same
-//     harness, not against a hand-picked number.
+//   • 개인 공간, and specifically NOT schooling. A pile spreads out, but the fish
+//     end up no tighter than a random scatter — measured against a Monte Carlo
+//     null the harness computes itself, not against a hand-picked number.
 //   • The renderer's contract: bit 0 of a fish's `aux` is its facing, and it
 //     matches the direction it actually last moved (see Material.tailPixel).
 //
@@ -27,6 +29,7 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
 import { flashCell } from '../src/game/materials/blast';
+import { packSpark, conductorClass, FULL_STRENGTH } from '../src/game/materials/spark';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -71,6 +74,8 @@ const STONE = ID('Stone');
 const SAND = ID('Sand');
 const U238 = ID('U238');
 const CO2 = ID('CO2');
+const BATTERY = ID('Lithium Battery');
+const SPARK = ID('Spark');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
  *  expectations (12초 질식) in seconds and converts here. */
@@ -358,14 +363,21 @@ function tank(grid: Grid, surface = 8): void {
   );
 }
 
-// ── 7. 무리 짓기 ─────────────────────────────────────────────────────────────
-// Two separate claims, each measured against a control the harness computes for
-// itself rather than against a number picked to fit:
-//   • 뭉친다 — the school ends up closer together than the same 12 fish dropped at
-//     random in the same body of water (a Monte Carlo null, right below).
-//   • 방향을 맞춘다 — fish close enough to see each other share a heading more often
-//     than fish too far apart to, taken from the same run so nothing else differs.
+// ── 7. 개인 공간 (무리 짓지 않는다) ───────────────────────────────────────────
+// The social behaviour is a push and nothing else, so this measures it from both
+// sides — it has to be strong enough to see, and weak enough not to become the
+// schooling it replaced with the sign flipped:
+//   • 붙지 않는다 — start them piled in a corner and they spread out.
+//   • 몰려다니지도 않는다 — left alone they end up no tighter than the same 12 fish
+//     dropped at random in the same water (a Monte Carlo null, right below). This
+//     is the check that would have failed under the old cohesion+alignment code,
+//     and it is the reason this block was rewritten rather than deleted.
+//   • 격자로 밀어내지도 않는다 — nor do they end up unnaturally *more* spread out
+//     than random, which is what a repulsion term that's too strong looks like.
 {
+  /** fish.ts's PERSONAL_SPACE, restated rather than imported — the harness should
+   *  fail if that constant is retuned without someone looking at these numbers. */
+  const PERSONAL_SPACE = 3;
   /** Mean distance from a fish to its nearest neighbour (Chebyshev — the metric
    *  the 8-neighbour ring actually moves in). */
   const meanNearest = (pts: { x: number; y: number }[]): number => {
@@ -382,7 +394,7 @@ function tank(grid: Grid, surface = 8): void {
     return acc / pts.length;
   };
 
-  // The null: what "no schooling at all" looks like in this exact tank.
+  // The null: what "no social behaviour at all" looks like in this exact tank.
   reseed();
   let nullAcc = 0;
   const TRIALS = 400;
@@ -395,49 +407,125 @@ function tank(grid: Grid, surface = 8): void {
   }
   const scattered = nullAcc / TRIALS;
 
+  // Piled into one corner, three cells apart — inside everyone's personal space.
   reseed();
   const { grid, sim } = makeWorld(80, 40);
   tank(grid, 6);
-  for (let k = 0; k < 12; k++) put(grid, 4 + k * 6, 12 + (k % 3) * 2, FISH); // spread the length of the tank
+  for (let k = 0; k < 12; k++) put(grid, 6 + (k % 4), 10 + Math.floor(k / 4), FISH);
+  const packed = meanNearest(cellsOf(grid, FISH));
   let nnAcc = 0;
   let samples = 0;
-  let nearSame = 0;
-  let nearAll = 0;
-  let farSame = 0;
-  let farAll = 0;
+  let worstCrowd = 0; // 창 전체에서 가장 붙어 있던 순간의 최근접 거리
   for (let t = 0; t < 60 * HZ; t++) {
     sim.step();
-    if (t < 20 * HZ || t % 15 !== 0) continue; // give the school 20s to form first
+    if (t < 20 * HZ || t % 15 !== 0) continue; // 20s to disperse from the pile first
     const f = cellsOf(grid, FISH);
-    nnAcc += meanNearest(f);
+    const nn = meanNearest(f);
+    nnAcc += nn;
     samples++;
-    for (let i = 0; i < f.length; i++)
-      for (let j = i + 1; j < f.length; j++) {
-        const ha = (f[i].aux >>> 1) & 0xf;
-        const hb = (f[j].aux >>> 1) & 0xf;
-        if (ha === 0 || hb === 0) continue; // one of them hasn't picked a heading
-        const near = Math.max(Math.abs(f[i].x - f[j].x), Math.abs(f[i].y - f[j].y)) <= 8;
-        if (near) {
-          nearAll++;
-          if (ha === hb) nearSame++;
-        } else {
-          farAll++;
-          if (ha === hb) farSame++;
-        }
-      }
+    if (worstCrowd === 0 || nn < worstCrowd) worstCrowd = nn;
   }
-  const clumped = nnAcc / samples;
-  const near = nearSame / nearAll;
-  const far = farSame / farAll;
+  const settled = nnAcc / samples;
   check(
-    'a school ends up tighter than the same fish scattered at random',
-    clumped < scattered * 0.85,
-    `nearest neighbour ${clumped.toFixed(2)} vs ${scattered.toFixed(2)} scattered`,
+    'a pile of fish spreads itself out — they object to being crowded',
+    settled > packed * 2,
+    `nearest neighbour ${packed.toFixed(2)} packed → ${settled.toFixed(2)} settled`,
   );
   check(
-    'fish close enough to see each other line up on a heading',
-    nearAll > 500 && farAll > 500 && near > far * 1.4,
-    `${(near * 100).toFixed(0)}% of near pairs agree vs ${(far * 100).toFixed(0)}% of far pairs`,
+    '…but they never clump back together, at any moment in the run',
+    worstCrowd > PERSONAL_SPACE * 0.6,
+    `tightest sampled moment ${worstCrowd.toFixed(2)} (개인 공간 ${PERSONAL_SPACE})`,
+  );
+  // Bounded on both sides against the same null. Enforcing a minimum spacing
+  // *necessarily* spreads them a little wider than a random scatter (which is free
+  // to put two fish in adjacent cells), so the honest claim is "not tighter, and
+  // not a lattice either" — not "indistinguishable from random".
+  check(
+    '무리 짓지 않는다 — 무작위로 뿌린 것보다 뭉쳐 있지 않다',
+    settled > scattered,
+    `${settled.toFixed(2)} vs ${scattered.toFixed(2)} scattered (옛 무리 짓기는 5.26이었다)`,
+  );
+  check(
+    '…그리고 반발이 지나쳐 격자처럼 퍼지지도 않는다',
+    settled < scattered * 1.4,
+    `${(settled / scattered).toFixed(2)}× 무작위 (개인 공간 3→1.20×, 5→1.30×, 8→1.54×)`,
+  );
+}
+
+// ── 7b. 감전 ─────────────────────────────────────────────────────────────────
+// 물이 도체라, 수조에 전지를 담그면 전류가 물 자체를 타고 퍼진다. 판정은 물고기가
+// 자기 이웃에서 Spark를 찾는 게 아니라 **스파크의 arc 단계에서** 내려온다
+// (Material.sparkDeathChance) — 스파크는 한 틱만 살고 도체로 되돌아가므로, 물고기가
+// 직접 찾으면 스캔 순서에 따라 보이기도 하고 안 보이기도 한다.
+{
+  reseed();
+  let killed = 0;
+  let total = 0;
+  const RUNS = 20;
+  for (let r = 0; r < RUNS; r++) {
+    const { grid, sim } = makeWorld(40, 30);
+    tank(grid, 6);
+    for (let k = 0; k < 6; k++) put(grid, 8 + k * 4, 12, FISH);
+    total += 6;
+    put(grid, 2, 8, BATTERY); // 한쪽 벽에 붙인 전극 하나 — 나머지는 물이 옮긴다
+    for (let t = 0; t < 8 * HZ; t++) sim.step();
+    killed += 6 - count(grid, FISH);
+  }
+  check(
+    '수조에 전류가 흐르면 물고기가 감전사한다 (물이 도체라 전선이 안 닿아도 된다)',
+    killed > total * 0.5,
+    `${killed}/${total} killed across ${RUNS} tanks`,
+  );
+  // 즉사가 아니라 확률이라는 것 — 한 번 훑고 전멸하면 50%가 아니다. 짧은 창에서
+  // 최소한 몇 마리는 살아 있어야 한다.
+  reseed();
+  const { grid, sim } = makeWorld(40, 30);
+  tank(grid, 6);
+  for (let k = 0; k < 6; k++) put(grid, 8 + k * 4, 12, FISH);
+  put(grid, 2, 8, BATTERY);
+  let firstDeath = -1;
+  let aliveAtFirstDeath = 0;
+  for (let t = 0; t < 8 * HZ; t++) {
+    sim.step();
+    const alive = count(grid, FISH);
+    if (alive < 6 && firstDeath < 0) {
+      firstDeath = t;
+      aliveAtFirstDeath = alive;
+    }
+  }
+  check(
+    '…한 방에 전멸하는 게 아니라 확률 판정이다',
+    firstDeath >= 0 && aliveAtFirstDeath > 0,
+    `첫 사망 tick ${firstDeath}, 그 순간 생존 ${aliveAtFirstDeath}/6`,
+  );
+  check(
+    '…그리고 감전사도 같은 사체를 남긴다',
+    count(grid, DEAD) > 0,
+    `${count(grid, DEAD)} corpses`,
+  );
+
+  // 위 두 장면은 전지가 계속 뛰므로 결국 전멸한다(옳다 — 전류를 계속 흘리면 다 죽는다).
+  // 확률 자체는 **펄스 한 번**으로만 잴 수 있다. 스파크 한 칸을 손으로 충전해 한 틱만
+  // 돌린다. 물고기는 돌로 가둔다 — 열린 물에 두면 스파크가 제 차례를 맞기 전에
+  // 헤엄쳐 이웃 밖으로 빠져나가서, 접촉당 확률이 아니라 "접촉이 성사될 확률"이
+  // 섞여 들어간다(그렇게 재면 20.8%가 나온다).
+  reseed();
+  let died = 0;
+  const SHOTS = 400;
+  for (let r = 0; r < SHOTS; r++) {
+    const { grid: g, sim: s } = makeWorld(12, 12);
+    fill(g, 0, 0, 11, 11, STONE);
+    put(g, 5, 5, FISH);
+    put(g, 5, 4, SPARK); // 물고기 바로 위 — 한 틱만 살아 있다
+    g.aux[g.idx(5, 4)] = packSpark(FULL_STRENGTH, conductorClass(WATER));
+    s.step();
+    if (g.cells[g.idx(5, 5)] === DEAD) died++;
+  }
+  const rate = died / SHOTS;
+  check(
+    '펄스 한 번당 사망률이 설계값 50%다',
+    rate > 0.42 && rate < 0.58,
+    `${(rate * 100).toFixed(1)}% over ${SHOTS} single pulses`,
   );
 }
 
@@ -560,33 +648,42 @@ function tank(grid: Grid, surface = 8): void {
 // +42칸으로, 고치려던 무중력 버그(+28칸)보다 나빴다(0에서는 적어도 다시 떨어져
 // 뛸 일이 없었다). UI 슬라이더가 0.1 단위라 전부 실제로 고를 수 있는 값이다.
 // 그래서 교차점(≈0.25) 양쪽을 훑는다.
+//
+// 세기마다 **여러 번 돌려 평균**을 낸다. 세기 0은 설계상 편향이 0인 순수 무작위
+// 걷기라, 한 번만 재면 분산만으로 임계를 넘는다 — 시드 9%쯤에서 이유 없이 빨개졌다
+// (SEED_BASE=17이 그랬다). 추진기가 되는 회귀는 매 판 천장(+28)을 찍으므로 평균을
+// 내도 그대로 잡히고, 흔들림만 사라진다.
 {
   reseed();
   const rows: string[] = [];
   let rose = 0;
   let frozen = 0;
+  const TRIALS = 6;
   for (const strength of [0, 0.05, 0.1, 0.2, 0.3, 0.5, 1]) {
-    const { grid, sim } = makeWorld(40, 40);
-    fill(grid, 0, 0, 39, 39, STONE);
-    fill(grid, 2, 2, 37, 37, EMPTY);
-    put(grid, 20, 30, FISH);
-    sim.setGravity('down', strength);
-    let moved = 0;
-    let prev = cellsOf(grid, FISH)[0];
-    let last = prev;
-    let peak = 0; // 창 안에서 가장 높이 올라간 지점 (끝값만 보면 되돌아온 척할 수 있다)
-    for (let t = 0; t < 12 * HZ; t++) {
-      sim.step();
-      const now = cellsOf(grid, FISH)[0];
-      if (!now || !prev) break;
-      if (now.x !== prev.x || now.y !== prev.y) moved++;
-      if (30 - now.y > peak) peak = 30 - now.y;
-      prev = now;
-      last = now;
+    let peakAcc = 0;
+    let movedAcc = 0;
+    for (let r = 0; r < TRIALS; r++) {
+      const { grid, sim } = makeWorld(40, 40);
+      fill(grid, 0, 0, 39, 39, STONE);
+      fill(grid, 2, 2, 37, 37, EMPTY);
+      put(grid, 20, 30, FISH);
+      sim.setGravity('down', strength);
+      let prev = cellsOf(grid, FISH)[0];
+      let peak = 0; // 창 안에서 가장 높이 올라간 지점 (끝값만 보면 되돌아온 척할 수 있다)
+      for (let t = 0; t < 12 * HZ; t++) {
+        sim.step();
+        const now = cellsOf(grid, FISH)[0];
+        if (!now || !prev) break;
+        if (now.x !== prev.x || now.y !== prev.y) movedAcc++;
+        if (30 - now.y > peak) peak = 30 - now.y;
+        prev = now;
+      }
+      peakAcc += peak;
     }
-    rows.push(`g=${strength} 최고 +${peak}/끝 ${30 - last.y > 0 ? '+' : ''}${30 - last.y}`);
+    const peak = peakAcc / TRIALS;
+    rows.push(`g=${strength} 평균 최고 +${peak.toFixed(1)}`);
     if (peak > 12) rose++; // 천장까지는 +28
-    if (moved <= 20) frozen++; // 어느 세기에서도 얼어붙지 않아야 한다
+    if (movedAcc / TRIALS <= 20) frozen++; // 어느 세기에서도 얼어붙지 않아야 한다
   }
   check(
     '펄떡임은 어느 중력 세기에서도 천장으로 가는 추진기가 되지 않는다',

@@ -148,6 +148,12 @@ export const STAT_SPECS: readonly StatSpec[] = [
     fields: ['shockDeathChance'],
     read: (m) => (m.shockDeathChance === undefined ? undefined : { value: m.shockDeathChance }),
   },
+  {
+    key: 'sparkDeathChance',
+    unit: 'chance',
+    fields: ['sparkDeathChance'],
+    read: (m) => (m.sparkDeathChance === undefined ? undefined : { value: m.sparkDeathChance }),
+  },
 
   // --- 기타 ---------------------------------------------------------------
   {
