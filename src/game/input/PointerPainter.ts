@@ -1032,6 +1032,12 @@ export class PointerPainter {
     // tool and in 영역 mode too — it paints nothing, so there is no gesture for
     // it to conflict with. Returning here leaves `down` false, so the per-frame
     // `update()` doesn't start stamping either.
+    //
+    // Nothing gates this on the pointer type because `button === 1` already
+    // does: touch reports 0 and a pen has no wheel, so the 스포이드 is a
+    // mouse-only affordance by construction — on a phone the gesture simply
+    // never happens, and the material card there is reached by a long press on
+    // the palette instead (MaterialPalette's `pressStart`).
     if (e.button === 1) {
       this.pickUnderCursor(e);
       return;

@@ -229,6 +229,8 @@ export const ko = {
     noResults: '일치하는 물질이 없습니다',
     resultsGroup: '검색 결과',
     quickGroup: '즐겨찾기·최근 사용',
+    // 터치에서 길게 눌러 연 물질 카드가 도감 산문을 받아 오는 동안. 세션 첫 한 번뿐이다.
+    cardLoading: '불러오는 중…',
     objectKey: '오브젝트',
     favAdd: '{name} 즐겨찾기 추가',
     favRemove: '{name} 즐겨찾기 해제',

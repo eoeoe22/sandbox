@@ -232,6 +232,8 @@ export const en = {
     noResults: 'No matching materials',
     resultsGroup: 'Search results',
     quickGroup: 'Favorites · Recent',
+    // Shown while a long-pressed material card waits for the codex prose chunk.
+    cardLoading: 'Loading…',
     objectKey: 'Objects',
     favAdd: 'Add {name} to favorites',
     favRemove: 'Remove {name} from favorites',

@@ -11,10 +11,17 @@
 </script>
 
 <script lang="ts">
-  // A centered overlay dialog, portaled to <body> so it escapes the sidebar's
+  // An overlay dialog, portaled to <body> so it escapes the sidebar's
   // `backdrop-filter` containing block and `overflow` clipping (the same reason
   // the palette flyouts portal out). Used for the 설정 and 혼합 브러시 modals on
   // both desktop and mobile. Closes on the backdrop, the × button, or Escape.
+  //
+  // Two shapes, one set of machinery (`variant`): a centered card, and an
+  // **오프캔버스** panel docked to the right edge at full height. The difference is
+  // twenty lines of CSS; everything that is actually hard — the portal, the
+  // stacking so Escape peels one dialog at a time, the document scroll lock and
+  // its ordering hazard, the focus trap, the backdrop press/release test — is the
+  // same problem either way and is solved once, here.
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
   import { t } from '../i18n';
@@ -35,11 +42,22 @@
      * viewport on a phone rather than overflowing it.
      */
     width?: number;
+    /**
+     * How the dialog sits on screen.
+     *
+     * - `'center'` (default) — a centered card, capped at 86% of the viewport.
+     * - `'offcanvas'` — a full-height panel docked to the right edge, sliding in
+     *   from it. For content that is a *document* rather than a form: the 도감
+     *   상세 card and its in-game twin, which are long, scroll, and are read
+     *   beside the thing they describe rather than on top of it. `width` still
+     *   sets the panel's width and still degrades to the viewport on a phone.
+     */
+    variant?: 'center' | 'offcanvas';
     /** Body content. */
     children: Snippet;
   }
 
-  let { open, title, icon, onclose, width = 340, children }: Props = $props();
+  let { open, title, icon, onclose, width = 340, variant = 'center', children }: Props = $props();
 
 
   let dialogEl = $state<HTMLDivElement | null>(null);
@@ -122,6 +140,36 @@
     };
   }
 
+  /**
+   * Dismiss from a backdrop release, eating the `click` that comes after it.
+   *
+   * `click` is dispatched *after* `pointerup`, and by then this handler has
+   * already closed the dialog and Svelte has taken the overlay out of the DOM —
+   * so the click lands on whatever is now under the cursor. On the 도감 that is a
+   * grid card, and tapping beside an open detail panel to dismiss it immediately
+   * opened a different material's panel instead: the dialog looked like it never
+   * closed, it just changed its mind about what it was showing.
+   *
+   * Deciding on the pointer pair and *acting* on it is still right (see the
+   * overlay's handlers for why the press/release/travel test is what works on
+   * touch) — what was missing is that the gesture isn't over at `pointerup`. The
+   * capture-phase trap swallows exactly one click, anywhere, and disarms itself
+   * either way: a release that produces no click at all (a touch the UA decides
+   * was a scroll) must not leave the trap waiting to eat someone's next one.
+   */
+  function dismissFromBackdrop(): void {
+    let timer: ReturnType<typeof setTimeout>;
+    const swallow = (ev: MouseEvent): void => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      window.removeEventListener('click', swallow, true);
+      clearTimeout(timer);
+    };
+    window.addEventListener('click', swallow, true);
+    timer = setTimeout(() => window.removeEventListener('click', swallow, true), 500);
+    onclose();
+  }
+
   // The tabbable controls inside the dialog card, for the focus trap and for
   // moving focus in on open. Skips hidden/disabled controls.
   function focusables(): HTMLElement[] {
@@ -195,8 +243,10 @@
        pointerup is retargeted to the overlay even when the finger ended up over
        the card, and a position test is the only thing that still tells a tap
        from a swipe. -->
+  {@const offcanvas = variant === 'offcanvas'}
   <div
     class="overlay"
+    class:offcanvas
     use:portal
     onpointerdown={(e) => {
       pressedBackdrop = e.target === e.currentTarget;
@@ -209,11 +259,12 @@
       pressedBackdrop = false;
       if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > BACKDROP_SLOP) return;
       if (e.target !== e.currentTarget) return;
-      onclose();
+      dismissFromBackdrop();
     }}
   >
     <div
       class="modal"
+      class:offcanvas
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -248,6 +299,15 @@
     backdrop-filter: blur(2px);
   }
 
+  /* 오프캔버스: the panel is pinned to the right edge at full height, so the
+     overlay stops centering and stops insetting it. The backdrop itself is
+     unchanged — same scrim, same press/release dismissal. */
+  .overlay.offcanvas {
+    align-items: stretch;
+    justify-content: flex-end;
+    padding: 0;
+  }
+
   .modal {
     display: flex;
     flex-direction: column;
@@ -269,6 +329,32 @@
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
     user-select: none;
+  }
+
+  /* The panel form. `width` still comes from the inline style (so a caller sizes
+     it the same way either way) and `max-width: 100%` still caps it, which is
+     what makes this a full-screen sheet on a phone with no second rule. Only the
+     right edge is drawn: the other three sit against the viewport. */
+  .modal.offcanvas {
+    height: 100%;
+    max-height: 100%;
+    border-radius: 12px 0 0 12px;
+    border-right: none;
+    box-shadow: -12px 0 40px rgba(0, 0, 0, 0.55);
+    animation: offcanvas-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  @keyframes offcanvas-in {
+    from {
+      transform: translateX(100%);
+    }
+  }
+
+  /* The slide is decoration; the panel still has to appear. */
+  @media (prefers-reduced-motion: reduce) {
+    .modal.offcanvas {
+      animation: none;
+    }
   }
 
   .modal-head {

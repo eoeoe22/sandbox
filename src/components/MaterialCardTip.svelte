@@ -19,10 +19,22 @@
   //    sandbox has no sprite, and the palette already inlines `materialSvgFor`
   //    per chip, so one more copy for the open card costs a string.
   //
-  // Purely passive: `pointer-events: none`, so it can never swallow a click
-  // meant for the chip underneath and never has to keep itself alive against the
-  // flyout's own hover bookkeeping. The price is that a very long card clips at
-  // the bottom rather than scrolling — the full one is a click away in /guide.
+  // Two presentations, because two pointers.
+  //
+  //  • **hover** (mouse) — a floating panel beside the chip, purely passive
+  //    (`pointer-events: none`), so it can never swallow a click meant for the
+  //    chip underneath and never has to keep itself alive against the flyout's
+  //    own hover bookkeeping. The price is that a very long card clips at the
+  //    bottom rather than scrolling — the full one is a click away in /guide.
+  //  • **sheet** (touch) — the same card in an 오프캔버스 panel, opened by a long
+  //    press. A finger has no way to *rest* on something, so there is no hover to
+  //    borrow; the card has to be asked for and then dismissed, which means it
+  //    needs a scrim, an × and a way out. That is `Modal variant="offcanvas"`
+  //    already, so this borrows it rather than growing its own. Being a real
+  //    panel it also scrolls, so nothing clips here.
+  //
+  // The card itself, the extraction and the lazy prose are shared — only the
+  // frame around them differs.
   import type { Material } from '../game/engine/types';
   import type { CodexCardData } from '../game/codex/types';
   import { EMPTY } from '../game/engine/types';
@@ -32,17 +44,25 @@
   import { $locale as locale, t, materialName, categoryLabel } from '../i18n';
   import { codexTextNow, loadCodexText, type CodexText } from '../i18n/codexLazy';
   import CodexCard from './CodexCard.svelte';
+  import Modal from './Modal.svelte';
 
   interface Props {
-    /** The material to describe, or null when nothing is hovered. */
+    /** The material to describe, or null when there is nothing to show. */
     material: Material | null;
+    /** Present as an 오프캔버스 sheet (touch long-press) instead of a floating
+     *  hover panel. `anchor` is ignored in this mode — the panel docks to the
+     *  edge rather than hanging off the chip. */
+    sheet?: boolean;
     /** The box to sit beside, in viewport coordinates. The palette hands over
      *  the open flyout's rect rather than the chip's when the chip is inside one
      *  — a card that covered the very list it is describing would be worse than
      *  useless, and anchoring to the panel also stops it jumping chip to chip. */
     anchor: DOMRect | null;
+    /** Dismissal (×, scrim, Escape). Sheet mode only — the hover panel has no
+     *  controls of its own and is closed by the pointer leaving. */
+    onclose?: () => void;
   }
-  let { material, anchor }: Props = $props();
+  let { material, anchor, sheet = false, onclose }: Props = $props();
 
   // Already loaded by an earlier hover (module-level cache) → render on the
   // first frame; otherwise null until the import lands.
@@ -103,6 +123,17 @@
     return { card, term: tx.codexTerm };
   });
 
+  /** The sheet's header name. Derived separately from `view` because it does NOT
+   *  need the prose tables — which is the point: a long press has to open
+   *  something *now*, so the panel goes up with its title and fills in the body
+   *  when the chunk lands (first press of a session only). The hover panel makes
+   *  the opposite trade and waits, because a tooltip that pops up empty and then
+   *  reflows under a resting pointer is worse than one that arrives a beat late. */
+  const sheetTitle = $derived.by(() => {
+    void $locale;
+    return material === null ? '' : materialName(material.id, material.name);
+  });
+
   // --- Placement ------------------------------------------------------------
   // Same problem the category flyout has (the sidebar sets `backdrop-filter` and
   // `overflow-y: auto`, which clips even a fixed-position descendant), so the
@@ -155,6 +186,7 @@
   // palette's flyout relies on. `card` is in the dependency list because the
   // height follows the content.
   $effect(() => {
+    if (sheet) return; // the panel docks to the edge; nothing to measure
     void view;
     void anchor;
     void el;
@@ -162,7 +194,21 @@
   });
 </script>
 
-{#if view !== null && anchor !== null}
+{#if sheet}
+  {#if material !== null}
+    <!-- 오프캔버스. The shared Modal already owns the scrim, the ×, Escape, the
+         focus trap and the "a tap beside it dismisses, and doesn't fall through
+         to whatever is underneath" release test — the three ways out the long
+         press needs. -->
+    <Modal open variant="offcanvas" title={sheetTitle} onclose={onclose ?? (() => {})} width={420}>
+      {#if view !== null}
+        <CodexCard card={view.card} term={view.term} {refName} />
+      {:else}
+        <p class="loading">{t('palette.cardLoading')}</p>
+      {/if}
+    </Modal>
+  {/if}
+{:else if view !== null && anchor !== null}
   <!-- Off-screen until measured, rather than hidden: `visibility: hidden` would
        still let it paint at the wrong spot for a frame on a slow layout. -->
   <div
@@ -179,6 +225,15 @@
 {/if}
 
 <style>
+  /* Only ever visible for the beat between a long press and the prose chunk
+     arriving, and only on the first press of a session. */
+  .loading {
+    margin: 0;
+    padding: 1rem 0;
+    color: #6b7684;
+    text-align: center;
+  }
+
   .tip {
     position: fixed;
     z-index: 30; /* above the category flyout (20), which it sits beside */

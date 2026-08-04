@@ -528,7 +528,10 @@
 </div>
 
 {#if openCard !== null}
-  <Modal open title={openCard.name} onclose={close} width={640}>
+  <!-- 오프캔버스, not a centered card. The detail is a document — long, scrolling,
+       and read *against* the grid it came from — so it docks to the edge and
+       leaves the list it was opened from in view behind the scrim. -->
+  <Modal open variant="offcanvas" title={openCard.name} onclose={close} width={560}>
     <CodexCard card={openCard} term={codexTerm} {refName}>
       {#snippet actions()}
         <button class="copy" class:done={copyNotice?.where === 'entry'} onclick={copyEntry}>

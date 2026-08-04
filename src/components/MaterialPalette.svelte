@@ -211,14 +211,95 @@
   //    they are there *because* you just used them — and the strip sits under
   //    the search box where a card would cover the categories on every pass of
   //    the pointer. Requested that way, and it is the right cut.
-  //  • Touch. There is no hover to rest, and a card triggered by a tap would
-  //    fight the tap that picks the material. Gated on `pointerType === 'mouse'`
-  //    rather than on a media query, because what makes this work is a pointer
-  //    that can hover without committing, not a wide screen.
+  //  • Touch — but only in this form. A finger has no way to *rest* on something,
+  //    and a card on tap would fight the tap that picks the material, so the
+  //    hover path is gated on `pointerType === 'mouse'` and touch gets the long
+  //    press below instead. The gate is on the pointer, not on a media query,
+  //    because what makes hover work is a pointer that can point without
+  //    committing — not a wide screen.
   const CARD_DELAY = 300;
   let cardMat = $state<Material | null>(null);
   let cardAnchor = $state<DOMRect | null>(null);
   let cardTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // --- 물질 카드 (touch: 길게 누르기) ---------------------------------------
+  // The same card, asked for instead of hovered into. It opens as an 오프캔버스
+  // sheet (MaterialCardTip's `sheet` mode) because on a phone there is nowhere to
+  // float a panel *beside* anything, and because a card that has to be dismissed
+  // needs the things a dialog has: a scrim, an ×, and Escape.
+  //
+  // The press has to end without also picking the material — the whole gesture is
+  // "tell me about this", not "give me this" — so a fired long press arms
+  // `swallowClick`, which the chip's own click handler spends. It cancels on
+  // movement (the palette scrolls sideways on mobile; a swipe that starts on a
+  // chip must stay a swipe) and on `pointercancel` (the UA claiming the gesture
+  // for a scroll, which is the same thing from the other side).
+  const LONG_PRESS_MS = 420;
+  /** How far a finger may travel and still be a press rather than a swipe. */
+  const LONG_PRESS_SLOP = 12;
+  let sheetMat = $state<Material | null>(null);
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressX = 0;
+  let pressY = 0;
+  /** Set when a long press fired, spent by the click that the same touch is
+   *  about to produce. Plain `let`: nothing renders off it. */
+  let swallowClick = false;
+
+  function pressStart(e: PointerEvent, m: Material): void {
+    // Any new press supersedes a stale arm — see `armSwallow` for when one can
+    // be left behind.
+    swallowClick = false;
+    clearTimeout(swallowTimer);
+    if (e.pointerType === 'mouse') return; // the mouse has hover; see above
+    pressX = e.clientX;
+    pressY = e.clientY;
+    // Same head start as the hover path — the sheet opens immediately either way
+    // (it shows its title while the prose lands), this just usually beats it.
+    void loadCodexText().catch(() => {});
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      // Clear the handle as well as firing: `pressMove` uses "is there a timer?"
+      // as its "is a press in flight?" test, and a spent handle left behind would
+      // read as one — for the mouse especially, whose every move over a chip runs
+      // that check.
+      pressTimer = undefined;
+      armSwallow();
+      sheetMat = m;
+    }, LONG_PRESS_MS);
+  }
+
+  /** Claim the click this same touch is about to produce, and disarm on a timer
+   *  in case it never does — a browser that suppressed the click (some do, after
+   *  a long press that would have opened a context menu) would otherwise leave
+   *  this set, and the next genuine tap anywhere in the palette would be eaten. */
+  let swallowTimer: ReturnType<typeof setTimeout> | undefined;
+  function armSwallow(): void {
+    swallowClick = true;
+    clearTimeout(swallowTimer);
+    swallowTimer = setTimeout(() => (swallowClick = false), 800);
+  }
+
+  /** A chip click — unless a long press just claimed this same touch. */
+  function chipClick(id: number): void {
+    if (swallowClick) {
+      swallowClick = false;
+      clearTimeout(swallowTimer);
+      return;
+    }
+    pick(id);
+  }
+
+  function pressMove(e: PointerEvent): void {
+    if (pressTimer === undefined) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) pressCancel();
+  }
+
+  function pressCancel(): void {
+    clearTimeout(pressTimer);
+    pressTimer = undefined;
+  }
+
+  const closeSheet = (): void => void (sheetMat = null);
 
   /** What the card hangs off: the open flyout when the chip lives inside one (a
    *  card that covered the list you are reading would be self-defeating, and
@@ -264,6 +345,8 @@
     clearTimeout(closeTimer);
     clearTimeout(pickCloseTimer);
     clearTimeout(cardTimer);
+    clearTimeout(pressTimer);
+    clearTimeout(swallowTimer);
   });
 
   // The sidebar (`ASIDE.panel`) sets `backdrop-filter`, which per spec makes
@@ -618,10 +701,15 @@
             class="chip"
             role="menuitem"
             class:active={$selected === m.id && $tool === 'material'}
-            onclick={() => pick(m.id)}
+            onclick={() => chipClick(m.id)}
             ondblclick={() => pickClone(m.id)}
             onpointerenter={(e) => cardEnter(e, m)}
             onpointerleave={hideCard}
+            onpointerdown={(e) => pressStart(e, m)}
+            onpointermove={pressMove}
+            onpointerup={pressCancel}
+            onpointercancel={pressCancel}
+            oncontextmenu={(e) => e.preventDefault()}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
                  weave, chevron or heat ramp the renderer draws (see
@@ -637,10 +725,17 @@
   {/if}
 </div>
 
-<!-- The hover card. Renders (and portals itself out of this clipping sidebar)
-     only while a chip is being rested on; the codex prose it needs is fetched
-     the first time that happens. -->
+<!-- The hover card (mouse). Renders (and portals itself out of this clipping
+     sidebar) only while a chip is being rested on; the codex prose it needs is
+     fetched the first time that happens. -->
 <MaterialCardTip material={cardMat} anchor={cardAnchor} />
+
+<!-- The same card as an 오프캔버스 sheet (touch), opened by a long press and
+     dismissed by its ×, the scrim or Escape. Kept separate from the hover
+     instance rather than switched between: the two are driven by different
+     pointers and can never be open at once, and one shared `material` prop
+     would make the mode flip mid-render on a hybrid device. -->
+<MaterialCardTip material={sheetMat} sheet anchor={null} onclose={closeSheet} />
 
 <!-- A material chip with a star toggle in its corner, shared by the quick-access
      bar and the search results. The star is a sibling button (not nested inside
@@ -650,10 +745,15 @@
     <button
       class="chip"
       class:active={$selected === m.id && $tool === 'material'}
-      onclick={() => pick(m.id)}
+      onclick={() => (card ? chipClick(m.id) : pick(m.id))}
       ondblclick={() => pickClone(m.id)}
       onpointerenter={card ? (e) => cardEnter(e, m) : undefined}
       onpointerleave={card ? hideCard : undefined}
+      onpointerdown={card ? (e) => pressStart(e, m) : undefined}
+      onpointermove={card ? pressMove : undefined}
+      onpointerup={card ? pressCancel : undefined}
+      onpointercancel={card ? pressCancel : undefined}
+      oncontextmenu={card ? (e) => e.preventDefault() : undefined}
       title={card ? undefined : materialName(m.id, m.name)}
     >
       <span class="swatch mat">{@html materialSvgFor(m)}</span>
@@ -916,6 +1016,14 @@
   }
   .chip:hover {
     border-color: #3a3a46;
+  }
+  /* A long press on a chip is ours (it opens the 물질 카드 — see pressStart), so
+     the platform's own long-press gestures must not fire on top of it: the iOS
+     callout menu, and the text selection a press-and-hold starts on Android. The
+     chip's label is a name on a button, not prose anyone reads by selecting it. */
+  .chip {
+    -webkit-touch-callout: none;
+    user-select: none;
   }
   .chip.active {
     border-color: #6ea8fe;
