@@ -63,16 +63,34 @@ function touchingMelt(x: number, y: number, sim: SimContext): boolean {
 // pile on the floor.
 const MIX_CHANCE = 0.5;
 
+// Sinking is sinking: this shortcut exists only to skip tryMove's drag roll, not
+// to be a second, gravity-exempt way down — so it rolls the same strength gate
+// every gravity-driven move does, and steps along the world's gravity vector
+// rather than toward the bottom of the screen. Without both, carbon kept
+// stirring itself into a melt in a weightless (or upside-down) furnace while the
+// generic path it stands in for had stopped. At the default down-gravity the
+// gate always passes and (gx,gy) is (0,1), so this is the code it replaced.
 function mixIntoMelt(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.gravityPass()) return false;
   if (!sim.chance(MIX_CHANCE)) return false;
-  if (sim.inBounds(x, y + 1) && sim.get(x, y + 1) === MOLTEN_IRON_ORE.id) {
-    sim.swap(x, y, x, y + 1); // sink straight into the pool
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  // Perpendicular to gravity — the two "diagonally down" flanks below. Both
+  // flanks are tried in a coin-flipped order, so this axis's sign doesn't
+  // matter; written as (gy, −gx) so it is (+1, 0) at the default down-gravity
+  // and the two candidate cells are then exactly the x±1 the old code used.
+  const px = gy;
+  const py = -gx;
+  if (sim.inBounds(x + gx, y + gy) && sim.get(x + gx, y + gy) === MOLTEN_IRON_ORE.id) {
+    sim.swap(x, y, x + gx, y + gy); // sink straight into the pool
     return true;
   }
   const dir = sim.chance(0.5) ? 1 : -1;
   for (const d of [dir, -dir]) {
-    if (sim.inBounds(x + d, y + 1) && sim.get(x + d, y + 1) === MOLTEN_IRON_ORE.id) {
-      sim.swap(x, y, x + d, y + 1); // …or diagonally down into it
+    const nx = x + gx + px * d;
+    const ny = y + gy + py * d;
+    if (sim.inBounds(nx, ny) && sim.get(nx, ny) === MOLTEN_IRON_ORE.id) {
+      sim.swap(x, y, nx, ny); // …or diagonally down into it
       return true;
     }
   }

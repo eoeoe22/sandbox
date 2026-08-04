@@ -6,7 +6,7 @@ import { AMBIENT_TEMP } from '../config';
 import type { SimContext } from '../engine/SimContext';
 import {
   GRAVITY_Q,
-  clampTo,
+  applyFlightGravity,
   LEGACY_V_MAX_Q,
   cellsThisTick,
   decodeFlight,
@@ -91,10 +91,9 @@ function updateFlying(x: number, y: number, sim: SimContext): void {
     ignite(sim, x, y);
     return;
   }
-  const vxQ = st.vxQ;
   // Heavy, gravity every tick; terminal fall pinned at the legacy ceiling this
   // particle was tuned for (the wider shared clamp is Debris-only).
-  const vyQ = clampTo(st.vyQ + GRAVITY_Q, LEGACY_V_MAX_Q);
+  const [vxQ, vyQ] = applyFlightGravity(sim, st.vxQ, st.vyQ, GRAVITY_Q, LEGACY_V_MAX_Q);
 
   // The shared straight-line walk handles the flight; the blob sticks where it
   // lands — and, unusually, mostly *sticks and burns on water's surface* rather

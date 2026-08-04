@@ -34,10 +34,63 @@ export const V_MAX_Q = 24;
 export const LEGACY_V_MAX_Q = 16;
 /** Encodable velocity values per axis (−V_MAX_Q … +V_MAX_Q). */
 const V_SPAN = V_MAX_Q * 2 + 1;
-/** One quarter-cell of downward pull — the base gravity step. Ember applies it
- *  on alternate ticks (a gentle droop); the heavier debris/bomblet/gel apply it
- *  every tick for a real parabola. */
+/** One quarter-cell of pull along gravity — the base gravity step. Ember applies
+ *  it on alternate ticks (a gentle droop); the heavier debris/bomblet/gel apply
+ *  it every tick for a real parabola. Always fed through `applyFlightGravity`,
+ *  never added to `vyQ` directly — see that function. */
 export const GRAVITY_Q = 1;
+
+/** Scratch for applyFlightGravity's (vxQ, vyQ) result. Module-level because that
+ *  runs once per ballistic particle per tick and a burst can be hundreds of them,
+ *  so it must not allocate; destructuring the return copies the two numbers out
+ *  immediately, so it never escapes the call. */
+const FLIGHT_G: [number, number] = [0, 0];
+
+/**
+ * One tick of gravitational pull on a ballistic particle's packed velocity —
+ * `pullQ` quarter-cells along the world's gravity vector, gated by the world's
+ * gravity strength, each component saturating at `maxQ`.
+ *
+ * Every ballistic particle used to write `vyQ + GRAVITY_Q` itself, i.e. pull
+ * toward the bottom of the *screen* at a fixed rate. That was invisible while
+ * gravity was a constant, and wrong in both of the ways it could be once the
+ * gravity control existed: under up/left/right gravity a spark's arc still
+ * drooped toward the screen's bottom edge (against the direction everything
+ * else in the world was falling), and at reduced or zero strength it drooped
+ * just as hard as ever — a weightless explosion still rained its sparks down.
+ * The object layer already got this right (`objects.ts` scales OBJECT_GRAVITY
+ * by `ctx.gravityX/Y` and `ctx.gravityStrength`), so the particle layer was the
+ * odd one out.
+ *
+ * Strength is applied as a probability gate (SimContext.gravityPass), not a
+ * multiplier, because velocity is stored as whole quarter-cells with no
+ * fractional field to accumulate into — the same trick the movement primitives
+ * use, and it averages to the right acceleration over a flight. At strength 0
+ * the pull never lands, so sparks and fragments fly in dead-straight lines
+ * until their flight time runs out and they settle where they are.
+ *
+ * Gravity is always axis-aligned (see GRAVITY_VECTORS), so exactly one of the
+ * two components is nonzero and the other is returned untouched.
+ */
+export function applyFlightGravity(
+  sim: SimContext,
+  vxQ: number,
+  vyQ: number,
+  pullQ: number,
+  maxQ: number,
+): readonly [number, number] {
+  // A zero pull is a no-op on both axes, so it doesn't spend a gate roll —
+  // Ember passes 0 on its off-ticks (see ember.ts) rather than branching around
+  // the call, and that must stay as cheap as the branch it replaced.
+  if (pullQ !== 0 && sim.gravityPass()) {
+    FLIGHT_G[0] = clampTo(vxQ + sim.gravityX * pullQ, maxQ);
+    FLIGHT_G[1] = clampTo(vyQ + sim.gravityY * pullQ, maxQ);
+  } else {
+    FLIGHT_G[0] = vxQ;
+    FLIGHT_G[1] = vyQ;
+  }
+  return FLIGHT_G;
+}
 
 /** Pack (life, vxQ, vyQ) into one float small enough to stay inside Float32's
  *  exact-integer range (max ≈ 30·49² ≈ 72k ≪ 2^24). */
@@ -106,13 +159,24 @@ export function launchBallistic(
   // spray reads as a circle, not a square with fast corners.
   if (dirX !== 0 && dirY !== 0) speedQ = (speedQ * 3) >> 2;
   const jitterSpan = spec.jitterQ * 2 + 1;
+  // The loft (`upBiasQ`) is a kick *against gravity*, not toward the top of the
+  // screen — under flipped or sideways gravity a star has to climb the way that
+  // world's things climb, and it especially has to agree with the in-flight pull
+  // applyFlightGravity now applies along the same axis. At the default
+  // down-gravity this is exactly the old `- spec.upBiasQ` on vy and nothing on
+  // vx, so every launch spec's tuning is untouched there.
+  const liftX = -sim.gravityX * spec.upBiasQ;
+  const liftY = -sim.gravityY * spec.upBiasQ;
   // Saturate at the legacy ceiling, not V_MAX_Q: every launchBallistic user
   // (Ember, Bomblet, Gel) was tuned against the old 4 cells/tick clamp, and
   // their extreme rolls must keep flattening there — the wider encoding
   // headroom exists only for Debris' boosted column (its own launcher).
-  const vxQ = clampTo(dirX * speedQ + sim.randInt(jitterSpan) - spec.jitterQ, LEGACY_V_MAX_Q);
+  const vxQ = clampTo(
+    dirX * speedQ + sim.randInt(jitterSpan) - spec.jitterQ + liftX,
+    LEGACY_V_MAX_Q,
+  );
   const vyQ = clampTo(
-    dirY * speedQ + sim.randInt(jitterSpan) - spec.jitterQ - spec.upBiasQ,
+    dirY * speedQ + sim.randInt(jitterSpan) - spec.jitterQ + liftY,
     LEGACY_V_MAX_Q,
   );
   sim.spawn(x, y, id);
