@@ -64,7 +64,7 @@ import { SAWDUST } from '../src/game/materials/sawdust';
 import { WATER } from '../src/game/materials/water';
 import { SAND } from '../src/game/materials/sand';
 import { CHLORINE } from '../src/game/materials/chlorine';
-import { SMOKE } from '../src/game/materials/smoke';
+import { HELIUM } from '../src/game/materials/helium';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
 import { MOLTEN_IRON_ORE } from '../src/game/materials/moltenironore';
 import '../src/game/materials';
@@ -329,42 +329,72 @@ function paintRotated(
 // ---------------------------------------------------------------------------
 // 3. 무거운 기체. Buoyancy needs gravity; molecular jitter does not. Chlorine must
 //    slump at full gravity (net travel along the gravity vector) and, at zero
-//    gravity, must stop slumping but keep SPREADING — comparably to Smoke, which
-//    already had the diffusion term. "Comparable to Smoke" rather than an
-//    absolute number, so the pair can be retuned together without this breaking.
+//    gravity, must stop slumping but keep SPREADING — comparably to Helium, a
+//    light gas that has always had the diffusion term. "Comparable to a light
+//    gas" rather than an absolute number, so the two can be retuned together
+//    without this breaking.
+//
+//    This is the one scene in the file with no exact answer in it — a weightless
+//    cloud is a random walk, so every number here is a sample. Two things keep
+//    that from becoming a coin flip dressed up as an assertion:
+//
+//    • **The drift is averaged over RUNS.** A single 16-cell cloud's centroid
+//      wanders a couple of cells over 60 ticks in whichever direction the rolls
+//      went, which is the same order as the threshold — a seed sweep of the
+//      earlier single-run version found a genuine failure at roughly 1 seed in
+//      60. The mean over GAS_RUNS independent runs converges on the 0 that
+//      "doesn't slump" actually predicts, while a real slump (~19 cells) is
+//      untouched by averaging.
+//    • **The control has to still exist.** Smoke was the original control and
+//      was a bad one: it decays on a ~37-tick timer against this scene's 60
+//      ticks, so on some seeds the entire sample was gone and `spread()`'s
+//      empty-set 0 made the comparison vacuously true. Helium never decays and
+//      reacts with nothing, and the count is asserted nonzero regardless.
 // ---------------------------------------------------------------------------
 {
-  function gasRun(id: number, strength: number): { fall: number; spread: number } {
+  /** Independent runs averaged per measurement — see the note above. */
+  const GAS_RUNS = 8;
+  function gasRun(id: number, strength: number): { fall: number; spread: number; n: number } {
     const { grid, sim } = world();
     for (let y = 18; y < 22; y++) for (let x = 18; x < 22; x++) grid.set(x, y, id);
     sim.setGravity('down', strength);
     const b = centroid(grid, id);
     for (let t = 0; t < 60; t++) sim.step();
-    return { fall: fallDistance(grid, id, b, 'down'), spread: spread(grid, id) };
+    return {
+      fall: fallDistance(grid, id, b, 'down'),
+      spread: spread(grid, id),
+      n: centroid(grid, id).n,
+    };
   }
-  const clFull = gasRun(CHLORINE.id, 1);
-  const clZero = gasRun(CHLORINE.id, 0);
-  const smokeZero = gasRun(SMOKE.id, 0);
+  function gasMean(id: number, strength: number): { fall: number; spread: number; minN: number } {
+    let fall = 0;
+    let spr = 0;
+    let minN = Infinity;
+    for (let i = 0; i < GAS_RUNS; i++) {
+      const r = gasRun(id, strength);
+      fall += r.fall / GAS_RUNS;
+      spr += r.spread / GAS_RUNS;
+      minN = Math.min(minN, r.n);
+    }
+    return { fall, spread: spr, minN };
+  }
+  const clFull = gasMean(CHLORINE.id, 1);
+  const clZero = gasMean(CHLORINE.id, 0);
+  const heZero = gasMean(HELIUM.id, 0);
   check(
     '무거운 기체: 중력 100%에선 바닥으로 가라앉는다',
     clFull.fall > 1,
-    `염소가 중력 방향으로 ${clFull.fall.toFixed(2)}칸 이동`,
+    `염소가 중력 방향으로 평균 ${clFull.fall.toFixed(2)}칸 이동`,
   );
-  // Measured against the full-gravity slump, not an absolute number: at zero
-  // gravity the cloud is doing an isotropic random walk, and a dozen-odd cells
-  // wandering for 60 ticks moves its centroid by a couple of cells in whichever
-  // direction the rolls went. A tight absolute bound here would be a coin flip
-  // dressed up as an assertion; what is actually true and worth pinning is that
-  // whatever drift is left is a small fraction of a real slump.
   check(
     '무거운 기체: 무중력에선 (표류는 있어도) 가라앉지는 않는다',
     Math.abs(clZero.fall) < clFull.fall / 4,
-    `염소 순이동 ${clZero.fall.toFixed(2)}칸 vs 중력 100% 슬럼프 ${clFull.fall.toFixed(2)}칸`,
+    `염소 평균 순이동 ${clZero.fall.toFixed(2)}칸 vs 중력 100% 슬럼프 ${clFull.fall.toFixed(2)}칸`,
   );
   check(
     '무거운 기체: 무중력에서도 굳지 않고 가벼운 기체만큼 퍼진다',
-    clZero.spread > smokeZero.spread * 0.5,
-    `염소 rms ${clZero.spread.toFixed(2)} vs 연기 rms ${smokeZero.spread.toFixed(2)}`,
+    heZero.minN > 0 && clZero.spread > heZero.spread * 0.5,
+    `염소 rms ${clZero.spread.toFixed(2)} vs 헬륨 rms ${heZero.spread.toFixed(2)} (대조군 최소 ${heZero.minN}칸)`,
   );
 }
 
