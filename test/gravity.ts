@@ -37,18 +37,36 @@
 // scenes assert the four directions agree with each other rather than asserting
 // screen coordinates, which is the actual invariant.
 //
+// **Every scene was mutation-checked**: each fix was reverted one at a time and
+// this file was confirmed to go red for it. That is not ceremony — the first
+// draft of the raft scene (scene 1, the reported bug, the whole reason the file
+// exists) passed with its fix reverted, because it built the raft in a state
+// where the function under test returns before it reaches anything. See scene
+// 1's own comment. A gravity scene can look completely convincing and exercise
+// nothing, so don't add one here without reverting the corresponding line and
+// watching it fail.
+//
 // Run: `node test/run-gravity.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
+import { getMaterial } from '../src/game/materials/registry';
 import type { GravityDir } from '../src/game/config';
 import { EMBER } from '../src/game/materials/ember';
 import { DEBRIS, launchDebris } from '../src/game/materials/debris';
-import { applyFlightGravity, encodeFlight, V_MAX_Q } from '../src/game/materials/ballistic';
+import {
+  applyFlightGravity,
+  decodeFlight,
+  encodeFlight,
+  launchBallistic,
+  V_MAX_Q,
+} from '../src/game/materials/ballistic';
 import { SAWDUST } from '../src/game/materials/sawdust';
 import { WATER } from '../src/game/materials/water';
 import { SAND } from '../src/game/materials/sand';
 import { CHLORINE } from '../src/game/materials/chlorine';
 import { SMOKE } from '../src/game/materials/smoke';
+import { COAL_POWDER } from '../src/game/materials/coalpowder';
+import { MOLTEN_IRON_ORE } from '../src/game/materials/moltenironore';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -179,37 +197,102 @@ function paintRotated(
 //    waterline and a leak there would look like "it held still" too.
 // ---------------------------------------------------------------------------
 {
-  const results: Record<number, { fall: number; sawdust: number; water: number }> = {};
+  // 1a. 젖은 뗏목이 떠오르는 쪽. The scene has to be built so the equilibrium
+  //     ACTUALLY RUNS, and that is easy to get wrong: tryFloatLightPowderStack
+  //     reads its `liquidDensity` from the liquid the column has ALREADY
+  //     ABSORBED (its 겹침 overlays — the waterline), so an unloaded column merely
+  //     *resting* on a pond it hasn't soaked yet leaves that 0 and the function
+  //     returns before it ever reaches a shift. A raft dropped on water and left
+  //     alone therefore tests nothing here — a first draft of this scene did
+  //     exactly that, passed with the fix reverted, and only an instrumented
+  //     count of how often the shift path was entered (0 times in 120 ticks)
+  //     showed why. So the raft is stamped fully soaked, which is over its
+  //     equilibrium draught (density 2 in density 3 ⇒ 6 × 2/3 = 4 of 6 cells
+  //     submerged) and leaves the column with a rise it must perform.
+  const results: Record<number, { fall: number; soaked: number; sawdust: number; water: number }> =
+    {};
+  let sawdust0 = 0;
+  let water0 = 0;
   for (const strength of [1, 0]) {
     const { grid, sim } = world();
-    for (let y = 24; y < H; y++) for (let x = 0; x < W; x++) grid.set(x, y, WATER.id);
-    for (let y = 20; y < 24; y++) for (let x = 14; x < 26; x++) grid.set(x, y, SAWDUST.id);
+    for (let y = 22; y < H; y++) for (let x = 0; x < W; x++) grid.set(x, y, WATER.id);
+    // The raft sits INSIDE the pond with its top flush to the surface, so the
+    // only thing that can move it is the equilibrium — no falling through air
+    // first, which would swamp the measurement with an ordinary (already gated)
+    // drop.
+    for (let y = 22; y < 28; y++)
+      for (let x = 14; x < 26; x++) {
+        grid.set(x, y, SAWDUST.id);
+        grid.setOverlay(x, y, WATER.id); // 흘수선: soaked through, i.e. riding too deep
+      }
+    sawdust0 = count(grid, SAWDUST.id);
+    water0 = count(grid, WATER.id);
     sim.setGravity('down', strength);
     const before = centroid(grid, SAWDUST.id);
     for (let t = 0; t < 120; t++) sim.step();
+    let soaked = 0;
+    for (let i = 0; i < grid.cells.length; i++) if (grid.overlay[i] === WATER.id) soaked++;
     results[strength] = {
       fall: fallDistance(grid, SAWDUST.id, before, 'down'),
+      soaked,
       sawdust: count(grid, SAWDUST.id),
       water: count(grid, WATER.id),
     };
   }
   check(
-    '뗏목: 중력 100%에선 부력 평형까지 가라앉는다',
-    results[1].fall > 0.5,
-    `가라앉은 거리 ${results[1].fall.toFixed(2)}칸`,
+    '뗏목: 중력 100%에선 잠긴 뗏목이 흘수선까지 떠오른다',
+    results[1].fall < -0.3 && results[1].soaked < 72,
+    `중력축 이동 ${results[1].fall.toFixed(2)}칸, 잠긴 칸 72 → ${results[1].soaked}`,
   );
   check(
-    '뗏목: 무중력에선 한 칸도 움직이지 않는다 (신고된 버그)',
-    Math.abs(results[0].fall) < 0.001,
-    `이동 ${results[0].fall.toFixed(3)}칸`,
+    '뗏목: 무중력에선 한 칸도 떠오르지 않는다 (신고된 버그)',
+    Math.abs(results[0].fall) < 0.001 && results[0].soaked === 72,
+    `이동 ${results[0].fall.toFixed(3)}칸, 잠긴 칸 ${results[0].soaked}`,
   );
   check(
-    '뗏목: 두 세기 모두 질량 보존 (톱밥 48 / 물 640)',
-    results[1].sawdust === 48 &&
-      results[0].sawdust === 48 &&
-      results[1].water === 640 &&
-      results[0].water === 640,
-    `g=1 ${results[1].sawdust}/${results[1].water}, g=0 ${results[0].sawdust}/${results[0].water}`,
+    '뗏목: 두 세기 모두 질량 보존 (기둥 시프트가 흘수선 너머로 겹침을 주고받는다)',
+    results[1].sawdust === sawdust0 &&
+      results[0].sawdust === sawdust0 &&
+      results[1].water === water0 &&
+      results[0].water === water0,
+    `기준 ${sawdust0}/${water0} — g=1 ${results[1].sawdust}/${results[1].water}, g=0 ${results[0].sawdust}/${results[0].water}`,
+  );
+}
+{
+  // 1b. 짐을 실은 뗏목이 가라앉는 쪽 — the other arm of the same function, and the
+  //     one that reaches the load-bearing `sim.swap`. A *dry* raft can't wait to
+  //     soak before it answers for weight put on it, so a nonzero `loadWeight`
+  //     bootstraps the liquid's density directly: Sand (density 6) piled on the
+  //     Sawdust presses the raft under at full gravity and, once the column is
+  //     fully submerged and still can't carry it, digs down into it a cell at a
+  //     time. In weightlessness the pile weighs nothing, so neither happens.
+  const results: Record<number, { sawFall: number; sandFall: number }> = {};
+  for (const strength of [1, 0]) {
+    const { grid, sim } = world();
+    for (let y = 24; y < H; y++) for (let x = 0; x < W; x++) grid.set(x, y, WATER.id);
+    for (let y = 20; y < 24; y++) for (let x = 16; x < 24; x++) grid.set(x, y, SAWDUST.id);
+    for (let y = 17; y < 20; y++) for (let x = 16; x < 24; x++) grid.set(x, y, SAND.id);
+    sim.setGravity('down', strength);
+    const saw0 = centroid(grid, SAWDUST.id);
+    const sand0 = centroid(grid, SAND.id);
+    for (let t = 0; t < 60; t++) sim.step();
+    results[strength] = {
+      sawFall: fallDistance(grid, SAWDUST.id, saw0, 'down'),
+      sandFall: fallDistance(grid, SAND.id, sand0, 'down'),
+    };
+  }
+  // The discriminating number is the SAWDUST's: sand is denser than water and
+  // would sink on its own once it got past the raft, so only the raft being
+  // pressed under proves `loadWeight` was read at all.
+  check(
+    '적재 뗏목: 중력 100%에선 짐 무게로 눌려 가라앉는다',
+    results[1].sawFall > 0.3,
+    `톱밥 ${results[1].sawFall.toFixed(2)}칸, 모래 ${results[1].sandFall.toFixed(2)}칸`,
+  );
+  check(
+    '적재 뗏목: 무중력에선 짐이 무게를 갖지 않아 아무 일도 없다',
+    Math.abs(results[0].sawFall) < 0.001 && Math.abs(results[0].sandFall) < 0.001,
+    `톱밥 ${results[0].sawFall.toFixed(3)}칸, 모래 ${results[0].sandFall.toFixed(3)}칸`,
   );
 }
 
@@ -267,10 +350,16 @@ function paintRotated(
     clFull.fall > 1,
     `염소가 중력 방향으로 ${clFull.fall.toFixed(2)}칸 이동`,
   );
+  // Measured against the full-gravity slump, not an absolute number: at zero
+  // gravity the cloud is doing an isotropic random walk, and a dozen-odd cells
+  // wandering for 60 ticks moves its centroid by a couple of cells in whichever
+  // direction the rolls went. A tight absolute bound here would be a coin flip
+  // dressed up as an assertion; what is actually true and worth pinning is that
+  // whatever drift is left is a small fraction of a real slump.
   check(
-    '무거운 기체: 무중력에선 가라앉지 않는다',
-    Math.abs(clZero.fall) < 1,
-    `염소 순이동 ${clZero.fall.toFixed(2)}칸`,
+    '무거운 기체: 무중력에선 (표류는 있어도) 가라앉지는 않는다',
+    Math.abs(clZero.fall) < clFull.fall / 4,
+    `염소 순이동 ${clZero.fall.toFixed(2)}칸 vs 중력 100% 슬럼프 ${clFull.fall.toFixed(2)}칸`,
   );
   check(
     '무거운 기체: 무중력에서도 굳지 않고 가벼운 기체만큼 퍼진다',
@@ -412,6 +501,117 @@ function paintRotated(
     rises.every((r) => r.v > 0.5),
     rises.map((r) => `${r.d} ${r.v.toFixed(2)}`).join(', '),
   );
+
+  // The other rotated half of the same launcher, and the only one with no
+  // randomness in it at all: a fragment whose carried material is a LIQUID is
+  // shoved straight to the surface within the launch call itself (the
+  // incompressible jet — an underwater charge erupts a column on the next frame
+  // rather than crawling up at flight speed). `outB` 2 buys 2 × JET_CELLS_PER_OUT
+  // = 8 cells of climb, so with deep water on the against-gravity side the
+  // fragment must land exactly 8 cells that way, in every direction, with no
+  // stepping and nothing to average.
+  const jets = (['down', 'up', 'left', 'right'] as const).map((dir) => {
+    const [gx, gy] = GRAVITY_VECTORS[dir];
+    const { grid, sim } = world();
+    sim.setGravity(dir, 1);
+    paintRotated(grid, dir, WATER.id, -6, -12, 6, 6);
+    const cx = W >> 1;
+    const cy = H >> 1;
+    launchDebris(sim.context, cx, cy, WATER.id, 0, 0, 2);
+    const c = centroid(grid, DEBRIS.id);
+    return { dir, climb: -((c.x - cx) * gx + (c.y - cy) * gy), n: c.n };
+  });
+  check(
+    '파편: 잠긴 액체 파편의 제트는 네 방향 모두에서 정확히 8칸 솟는다',
+    jets.every((j) => j.n === 1 && j.climb === 8),
+    jets.map((j) => `${j.dir} ${j.climb}칸(n=${j.n})`).join(', '),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6b. 발사 로프트(`launchBallistic`의 `upBiasQ`). Every non-Debris ballistic
+//     particle is thrown with a kick that means "upward" — and had to stop
+//     meaning "toward the top of the screen" once the in-flight pull started
+//     following gravity, or a spark would be lofted one way and pulled another.
+//     Fired with a zero-jitter spec so the against-gravity component of the
+//     launch velocity is exactly `upBiasQ` with nothing to average out.
+// ---------------------------------------------------------------------------
+{
+  const SPEC = { speedMinQ: 8, speedVarQ: 1, jitterQ: 0, upBiasQ: 5, lifeMin: 20, lifeVar: 1 };
+  const lofts = (['down', 'up', 'left', 'right'] as const).map((dir) => {
+    const [gx, gy] = GRAVITY_VECTORS[dir];
+    const px = gy;
+    const py = -gx;
+    const { grid, sim } = world();
+    sim.setGravity(dir, 1);
+    const cx = W >> 1;
+    const cy = H >> 1;
+    // Fired perpendicular to gravity, so the launch direction contributes
+    // nothing to the gravity axis and the loft is all that is left there.
+    launchBallistic(sim.context, cx, cy, px, py, EMBER.id, SPEC);
+    const st = decodeFlight(grid.getTemp(cx, cy));
+    return { dir, up: -(st.vxQ * gx + st.vyQ * gy), across: st.vxQ * px + st.vyQ * py };
+  });
+  check(
+    '발사 로프트: 네 방향 모두에서 중력 반대로 정확히 upBiasQ만큼 실린다',
+    lofts.every((l) => l.up === SPEC.upBiasQ && l.across >= SPEC.speedMinQ),
+    lofts.map((l) => `${l.dir} up ${l.up} / 진행 ${l.across}`).join(', '),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6c. 용탕 교반 지름길(`coalpowder.mixIntoMelt`). Coal Powder dusted on a Molten
+//     Iron Ore pool stirs a cell deeper — a shortcut that exists only to skip
+//     tryMove's density-gap drag roll, not to be a second way down that gravity
+//     doesn't apply to. Zero gravity is where that distinction is visible: the
+//     generic path it stands in for has stopped, so if the shortcut hasn't, a
+//     weightless furnace keeps mixing its charge. One grain, so "did it move"
+//     is exact rather than a centroid.
+// ---------------------------------------------------------------------------
+//     Driven by calling Coal Powder's own `update` once rather than stepping the
+//     simulation, because stepping can't see this: the melt's reduction consumes
+//     a grain the moment it touches (measured — one tick, at every gravity
+//     setting), so the grain that stirs is gone before a second tick can show
+//     where it went. `Math.random` is pinned so MIX_CHANCE always fires.
+//
+//     Note what this does and doesn't isolate. The zero-gravity halves are the
+//     real check — the shortcut is the only thing that could move the grain
+//     there. The full-gravity halves are a control, not a proof of the rotation:
+//     `fallAndPile` is rotated too and would carry the grain downhill anyway if
+//     the shortcut declined.
+{
+  const rolled = Math.random;
+  Math.random = () => 0;
+  function coalSank(dir: GravityDir, strength: number): boolean {
+    const [gx, gy] = GRAVITY_VECTORS[dir];
+    const { grid, sim } = world();
+    // A melt body filling the gravity-ward side, hot enough to stay molten
+    // (placed at ambient it freezes to Slag on the first tick and the scene
+    // silently tests nothing).
+    for (let d = 1; d <= 8; d++)
+      for (let a = -6; a <= 6; a++) {
+        const x = 20 + gx * d + gy * a;
+        const y = 20 + gy * d - gx * a;
+        grid.set(x, y, MOLTEN_IRON_ORE.id);
+        grid.setTemp(x, y, 1500);
+      }
+    grid.set(20, 20, COAL_POWDER.id);
+    sim.setGravity(dir, strength);
+    getMaterial(COAL_POWDER.id).update!(20, 20, sim.context);
+    return grid.get(20 + gx, 20 + gy) === COAL_POWDER.id;
+  }
+  const dirs = ['down', 'up', 'left', 'right'] as const;
+  check(
+    '용탕 교반: 중력 100%에선 탄가루가 용탕으로 파고든다 (네 방향)',
+    dirs.every((d) => coalSank(d, 1)),
+    dirs.map((d) => `${d} ${coalSank(d, 1)}`).join(', '),
+  );
+  check(
+    '용탕 교반: 무중력에선 파고들지 않는다 (네 방향)',
+    dirs.every((d) => !coalSank(d, 0)),
+    dirs.map((d) => `${d} ${coalSank(d, 0)}`).join(', '),
+  );
+  Math.random = rolled;
 }
 
 // ---------------------------------------------------------------------------
