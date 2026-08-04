@@ -155,11 +155,21 @@ const BRANCH_COST = 30; // a fork puts out two cells and needs real reserves
 // running one more segment on the same shoot (no vigour spent). Forking used to
 // be automatic at every segment boundary, which came out dense and shrub-like;
 // gating it makes limbs longer and the branching sparser and more tree-like.
-// Below the segment boundary, not per cell: a spent segment averages
-// ~2 cells, so at 0.5 a fork lands roughly every ~4 cells of limb. Keep it well
-// above zero — too low and a plant is back to a few bare sticks (the "다리 몇
-// 개" look the crown rules were written to avoid, see docs/LIFE.md 2.2b).
-const BRANCH_CHANCE = 0.5;
+// Rolled per segment boundary, not per cell — a segment averages ~2 cells, so
+// at 0.7 a fork lands roughly every ~3 cells of limb instead of every ~2.
+//
+// This dial is NOT free to push toward zero, and the reason is the water budget
+// rather than taste: a tip has to spend all MAX_GEN forks to become a bud, and
+// buds are the only thing that leafs. Stretching the distance between forks
+// stretches how far a tip must climb to get there, and the moisture gradient
+// (WICK_STEP) caps that climb — so tips start dying dry *before* they ever bud,
+// and the crown loses its foliage. Measured over 8 seeds: 1.0 → 52-76 leaves,
+// 0.7 → 34-64, but 0.5 → 7-31, i.e. some plants come out as bare forked sticks
+// (the "다리 몇 개" look the crown rules exist to avoid, docs/LIFE.md 2.2b).
+// Going sparser than this means paying for it — cutting MAX_GEN so the crown
+// still completes inside the same water budget (0.5 + MAX_GEN 3 measures at
+// 47-68 leaves), not just lowering this number.
+const BRANCH_CHANCE = 0.7;
 const LEAF_COST = 9; // …and a leaf is the cheapest thing a plant makes
 const LEAF_CHANCE = 0.05; // how often a spent bud puts out another leaf
 // Leaves may sit against more neighbours than a growing branch may: branches
