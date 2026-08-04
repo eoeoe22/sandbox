@@ -75,6 +75,7 @@ const SAND = ID('Sand');
 const U238 = ID('U238');
 const CO2 = ID('CO2');
 const BATTERY = ID('Lithium Battery');
+const OIL = ID('Crude Oil'); // 도체가 아닌 액체 — 감전 경로를 직접 접촉만 남기고 자른다
 const SPARK = ID('Spark');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
@@ -670,6 +671,30 @@ function tank(grid: Grid, surface = 8): void {
     '스파크가 둘이어도 한 틱엔 한 번만 굴린다 (50%가 66%로 불어나지 않는다)',
     twoRate > 0.42 && twoRate < 0.58,
     `${(twoRate * 100).toFixed(1)}% (memo 없을 땐 66.0%)`,
+  );
+
+  // 전극에 **직접** 닿은 경우. 위 장면들은 전부 도체(물)를 거쳐 스파크가 생기는 경로라,
+  // 전지가 이웃을 직접 때리는 경로(pulseCell → reactToPulse)는 하나도 안 거친다.
+  // 물고기를 도체가 아닌 액체(기름)에 담가 두면 — 숨은 쉬고 전류는 물이 안 옮긴다 —
+  // 판정이 오직 직접 접촉으로만 온다. reactToPulse에 감전 분기가 없으면 안 죽는다.
+  reseed();
+  let oiled = 0;
+  const OIL_RUNS = 20;
+  for (let r = 0; r < OIL_RUNS; r++) {
+    const { grid: g, sim: s } = makeWorld(12, 12);
+    fill(g, 0, 0, 11, 11, STONE);
+    // 전극을 가운데 두고 기름 8칸으로 두른다 — 물고기가 어디로 헤엄쳐도 이웃 안이라,
+    // "닿을 확률"이 아니라 "닿았을 때 죽는가"만 남는다.
+    fill(g, 4, 4, 6, 6, OIL); // 도체가 아닌 웅덩이 — 질식만 막아 준다
+    put(g, 5, 5, BATTERY);
+    put(g, 4, 4, FISH);
+    for (let t = 0; t < 3 * HZ; t++) s.step();
+    if (count(g, FISH) === 0) oiled++;
+  }
+  check(
+    '전극에 직접 닿아도 감전된다 (도체를 거치지 않는 경로)',
+    oiled >= OIL_RUNS - 2,
+    `${oiled}/${OIL_RUNS} (reactToPulse에 분기가 없으면 0)`,
   );
 }
 

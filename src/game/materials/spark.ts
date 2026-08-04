@@ -310,12 +310,21 @@ function electrocute(sim: SimContext, x: number, y: number, chance: number, deat
  *  updateSpark). This is the single dispatch every pulse source shares for its
  *  non-conductor branch, so a new electric-reaction material reacts to *every*
  *  source (all battery chemistries and the Turbine, direct-contact or wired) the
- *  moment it registers `directPulse`/`explosive` — no source special-cases it by
- *  id. */
+ *  moment it registers `directPulse`/`explosive`/`sparkDeathChance` — no source
+ *  special-cases it by id.
+ *
+ *  감전이 여기에도 있어야 하는 이유: 이 함수를 안 거치면 **전극에 직접 닿은** 물고기가
+ *  멀쩡하다. 수조 안이라면 곁의 물이 도체라 그쪽이 스파크가 되어 어차피 죽지만,
+ *  물고기 주위의 유일한 도체가 전극 자체일 때(기름 웅덩이에 담근 전지 같은) 판정이
+ *  통째로 비었다. 아래 분기 순서는 `updateSpark`의 이웃 루프와 같게 맞춘다. */
 export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: number): boolean {
-  const hook = getMaterial(nid).directPulse;
-  if (hook) {
-    hook(sim, nx, ny);
+  const m = getMaterial(nid);
+  if (m.directPulse) {
+    m.directPulse(sim, nx, ny);
+    return true;
+  }
+  if (m.sparkDeathChance !== undefined && m.blastDeathId !== undefined) {
+    electrocute(sim, nx, ny, m.sparkDeathChance, m.blastDeathId);
     return true;
   }
   return tryArcExplosive(sim, nx, ny, nid);
