@@ -477,9 +477,14 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
     // scanned yet this tick would pick this freshly-reverted cell up as a
     // `with: SLIME.id` partner, chaining Spark → Slime → Acid Slime inside a
     // single tick — the same-tick cascade engine/reactions.ts exists to prevent.
-    // The mark costs nothing here: spark propagation never consults the moved
-    // flag (nothing else in this file does), and the cell has already taken its
-    // turn as a Spark, so this only closes it to *other* cells' passes.
+    // The mark costs nothing electrically: spark propagation never consults the
+    // moved flag (nothing else in this file does), so reach, the battery/turbine/
+    // solar beat and the dissolve-front seeding above are all untouched, and the
+    // flag is per-tick scratch that no save ever sees. What it *does* change is
+    // that the pushers which do read it — Fan's wind, the Conveyor, the
+    // Electromagnet's grip — leave this cell alone until next tick, exactly as
+    // they already do for every cell produced by `spawn()`. That is the engine's
+    // ordinary "it has had its turn" rule, which this cell was quietly outside of.
     sim.markMoved(x, y);
     return;
   }
