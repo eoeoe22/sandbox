@@ -255,7 +255,12 @@ function flop(x: number, y: number, sim: SimContext, a: number, air: number): vo
     const jx = x - sim.gravityX - sim.gravityY * lean;
     const jy = y - sim.gravityY + sim.gravityX * lean;
     if (sim.inBounds(jx, jy) && sim.isEmpty(jx, jy)) {
-      sim.setAux(x, y, pack(lean === 0 ? faces : lean > 0, -1, air));
+      // Read the facing off the step it is actually about to take, never off
+      // `lean`: the perpendicular is (-gravityY, gravityX), so under the ordinary
+      // downward gravity a positive lean moves the fish LEFT. Deriving it from
+      // `lean` had the tail on the wrong side of every sideways flop, and would
+      // have been wrong again in a different way under rotated gravity.
+      sim.setAux(x, y, pack(facingAfter(jx - x, a), -1, air));
       sim.tryMove(x, y, jx, jy);
       return;
     }

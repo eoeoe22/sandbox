@@ -268,10 +268,16 @@ function tank(grid: Grid, surface = 8): void {
   }
   put(hot.grid, 10, 10, FISH);
   hot.grid.temp[hot.grid.idx(10, 10)] = 60;
-  for (let t = 0; t < 5 * HZ; t++) hot.sim.step();
+  // Stop on death, don't run a fixed window: the corpse starts rotting the instant
+  // it appears, and a fixed window loses it outright once in ten runs.
+  let cooked = false;
+  for (let t = 0; t < 5 * HZ && !cooked; t++) {
+    hot.sim.step();
+    cooked = count(hot.grid, FISH) === 0;
+  }
   check(
     '60° water cooks a fish into a corpse',
-    count(hot.grid, FISH) === 0 && count(hot.grid, DEAD) >= 1,
+    cooked && count(hot.grid, DEAD) >= 1,
     `${count(hot.grid, FISH)} live, ${count(hot.grid, DEAD)} dead`,
   );
 
@@ -290,12 +296,18 @@ function tank(grid: Grid, surface = 8): void {
     `${count(bang.grid, FISH)} live, ${count(bang.grid, DEAD)} dead`,
   );
 
-  // 피폭 — declarative (Material.radiationDeath), so this is a wiring check.
+  // 피폭 — declarative (Material.radiationDeath), so this is a wiring check. The
+  // fish goes in a 3×3 pocket rather than an open tank: dose falls off as 선량/d,
+  // so in a big tank its own wander can spend most of the window out at 6 cells
+  // and the check turns into a coin flip on the seed. Penned in, it is always
+  // within 2 cells of the source, and the water between them doesn't shield
+  // (only solids do).
   reseed();
   const rad = makeWorld(20, 20);
-  tank(rad.grid, 4);
+  fill(rad.grid, 0, 0, 19, 19, STONE);
+  fill(rad.grid, 9, 9, 11, 11, WATER);
   put(rad.grid, 10, 10, FISH);
-  put(rad.grid, 11, 10, U238);
+  put(rad.grid, 12, 10, U238);
   let died = false;
   for (let t = 0; t < 20 * HZ && !died; t++) {
     rad.sim.step();
@@ -466,6 +478,40 @@ function tank(grid: Grid, surface = 8): void {
     '…and a purely vertical step never flips the tail to the other side',
     verticalHolds === 0,
     `${verticalHolds} flips with no horizontal motion`,
+  );
+}
+
+// ── 8b. …펄떡일 때도 ─────────────────────────────────────────────────────────
+// The same contract on the OTHER movement path. Worth its own scene because the
+// block above never leaves the tank, so it exercises `swim` only — and `flop`
+// had the facing backwards on every sideways hop the whole time it went unseen.
+// (The jump is built off the perpendicular to gravity, which is (-gy, gx): under
+// ordinary downward gravity a positive lean moves the fish LEFT, not right.)
+{
+  reseed();
+  let wrong = 0;
+  let hops = 0;
+  for (let k = 0; k < 8; k++) {
+    const { grid, sim } = makeWorld();
+    fill(grid, 0, 30, grid.width - 1, grid.height - 1, SAND); // dry bank, no water
+    put(grid, 30, 29, FISH);
+    let prev = cellsOf(grid, FISH)[0];
+    for (let t = 0; t < 11 * HZ; t++) {
+      sim.step();
+      const now = cellsOf(grid, FISH)[0];
+      if (!now || !prev) break;
+      const dx = now.x - prev.x;
+      if (dx !== 0) {
+        hops++;
+        if (((now.aux & 1) !== 0) !== dx > 0) wrong++;
+      }
+      prev = now;
+    }
+  }
+  check(
+    'the facing bit is right on a flop too, not just a swim',
+    hops > 50 && wrong === 0,
+    `${wrong} wrong out of ${hops} sideways hops`,
   );
 }
 
