@@ -17,7 +17,9 @@ import {
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
+  recordRecentPick,
 } from '../../state/store';
+import type { ObjectKind } from '../../state/store';
 import {
   BRUSH_MIN,
   BRUSH_MAX,
@@ -32,8 +34,8 @@ import {
 } from '../config';
 import type { HeatRateMode } from '../config';
 import { createFloatingOverlay } from './floatingOverlay';
-import { getMaterial } from '../materials';
-import { Phase } from '../engine/types';
+import { getMaterial, isPaletteMaterial } from '../materials';
+import { EMPTY, Phase } from '../engine/types';
 import { heatCells, heatDelta, mixCells, inspectCells, sparkCells } from '../engine/brushTools';
 import type { InspectStats } from '../engine/brushTools';
 import { CONVEYOR, CONVEYOR_LEFT, CONVEYOR_RIGHT } from '../materials/conveyor';
@@ -55,6 +57,57 @@ import {
   RUBBER_BALL_SPAWN_SCATTER,
 } from '../engine/objects';
 import type { SimBody, DrumFill } from '../engine/objects';
+
+/**
+ * Which palette chip a free body corresponds to — the 스포이드(휠클릭)'s answer
+ * for the object layer, and the inverse of `spawnObject`'s kind → body mapping.
+ *
+ * Two shapes don't map one-to-one, which is where the nulls come from. The three
+ * drums are one `SimCapsule` that differs only in `fill`, so the fill is what
+ * picks between 빈/원유/산 드럼통. And both the drum and the crate carry a `part`:
+ * their shards exist ONLY as wreckage (see DrumPart / WoodBoxPart) and have no
+ * chip of their own, so pointing at one is a silent miss, exactly like pointing
+ * at a material the palette doesn't list.
+ */
+export function paletteKindOf(o: SimBody): ObjectKind | null {
+  switch (o.kind) {
+    case 'ball':
+      return 'ball';
+    case 'dynamite':
+      return 'dynamite';
+    case 'smokebomb':
+      return 'smokebomb';
+    case 'molotov':
+      return 'molotov';
+    case 'drum':
+      if (o.part !== 'drum') return null;
+      return o.fill === 'oil' ? 'oildrum' : o.fill === 'acid' ? 'aciddrum' : 'drum';
+    case 'woodbox':
+      return o.part === 'crate' ? 'crate' : null;
+  }
+}
+
+/**
+ * Which material the 스포이드 selects at cell (x, y), or null for "nothing to
+ * pick" — out of bounds, empty space, or a cell holding something the palette
+ * doesn't list.
+ *
+ * The whole of the two rules the pick follows on the grid, split out from the
+ * event handling so they can be checked headlessly (test/eyedropper.ts):
+ *
+ *  • **The host beats what soaked into it.** A wet sandpile is Sand in `cells`
+ *    with Water in the `overlay` layer, and the host is the thing you were
+ *    pointing at — 모래+물이면 모래. The overlay is only read where there is no
+ *    host at all, which a soaked fluid has no way to reach on its own; it is
+ *    there so the rule has an answer rather than a hole.
+ *  • **Unlisted picks nothing.** Silently — see `isPaletteMaterial`.
+ */
+export function pickedMaterialAt(grid: Grid, x: number, y: number): number | null {
+  if (!grid.inBounds(x, y)) return null;
+  const host = grid.get(x, y);
+  const id = host !== EMPTY ? host : grid.getOverlay(x, y);
+  return isPaletteMaterial(id) ? id : null;
+}
 
 /**
  * Ordering of phases from "easiest to overwrite" to "hardest", used by the
@@ -135,8 +188,10 @@ function effectiveOverwriteLevel(level: number, selectedId: number): number {
  * `spark` (전기) delivers a real full-strength pulse to every cell it covers, and
  * `shock` (충격파) fires a Woofer shockwave out of the footprint's own shape.
  *
- * Also owns two pieces of pointer-adjacent UX: a brush-size cursor outline
- * that follows the pointer, and mouse-wheel resizing of the brush.
+ * Also owns three pieces of pointer-adjacent UX: a brush-size cursor outline
+ * that follows the pointer, mouse-wheel resizing of the brush, and the 스포이드 —
+ * a middle click picks up whatever is under the cursor as the palette selection
+ * without touching the world (see `pickUnderCursor`).
  */
 /** Whether two inspect surveys are identical, so refreshInspect() can skip
  *  re-publishing (and re-rendering the panel) when nothing under the cursor
@@ -250,6 +305,17 @@ export class PointerPainter {
     // stay stuck true and the per-frame `update()` would paint forever.
     window.addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The 스포이드 is on the middle button, whose default action on Windows/Linux
+    // Chrome is to start autoscroll — a drifting scroll cursor over a canvas that
+    // has nothing to scroll. That default hangs off the *mouse* event, not the
+    // pointer event `onDown` reads, so it has to be cancelled here; `auxclick`
+    // too, since some browsers fire the paste/navigate default off the release.
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    canvas.addEventListener('auxclick', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
     canvas.addEventListener('pointerenter', this.onEnter);
     canvas.addEventListener('pointerleave', this.onLeave);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
@@ -916,7 +982,60 @@ export class PointerPainter {
     }
   }
 
+  /**
+   * 스포이드 (휠클릭): select whatever the cursor is over, so you can carry on
+   * building with the stuff already in front of you instead of hunting for its
+   * chip. Nothing is painted, moved or erased — this only changes the selection.
+   *
+   * Three rules, in this order:
+   *
+   *  1. **An object wins.** A body sits *above* the grid, so the cells under it
+   *     are whatever it happens to be floating over — picking those instead
+   *     would answer a question nobody asked. Same hit test the 보기 drag uses
+   *     (`pickBody`), so what you can grab is what you can pick.
+   *  2. **The host beats what soaked into it**, and
+   *  3. **anything the palette doesn't list picks nothing** — silently, since an
+   *     Ember mid-flight or a patch of empty space isn't a *failure*, it just
+   *     isn't a selection. Both rules live in `pickedMaterialAt` /
+   *     `paletteKindOf` above, where they can be tested.
+   *
+   * A successful pick mirrors MaterialPalette's own `pick()`/`pickObject()` down
+   * to the recent-picks entry, because it *is* a palette pick — made on the
+   * canvas rather than in the sidebar. It switches the active tool the same way
+   * too (picking a material is a request to paint it), which is what makes the
+   * 스포이드 useful mid-build from a 가열 brush.
+   */
+  private pickUnderCursor(e: PointerEvent): void {
+    const [gx, gy] = this.clientToGridFloat(e.clientX, e.clientY);
+    const body = pickBody(this.grid.objects, gx, gy);
+    if (body !== null) {
+      const kind = paletteKindOf(body);
+      if (kind === null) return; // wreckage — no chip to select
+      $selectedObject.set(kind);
+      $tool.set('object');
+      recordRecentPick(kind);
+      return;
+    }
+    const [x, y] = this.toCell(e);
+    const id = pickedMaterialAt(this.grid, x, y);
+    if (id === null) return;
+    $selectedMaterial.set(id);
+    // Like a plain palette pick, this drops any 더블클릭 Clone target: the
+    // selection came from the world, not from "a Clone latched onto this".
+    $cloneTarget.set(null);
+    $tool.set('material');
+    recordRecentPick(id);
+  }
+
   private onDown = (e: PointerEvent): void => {
+    // 휠클릭 = 스포이드. Handled before everything else so it works from any
+    // tool and in 영역 mode too — it paints nothing, so there is no gesture for
+    // it to conflict with. Returning here leaves `down` false, so the per-frame
+    // `update()` doesn't start stamping either.
+    if (e.button === 1) {
+      this.pickUnderCursor(e);
+      return;
+    }
     this.down = true;
     // Right (secondary) button erases for the whole press; any other button
     // paints/uses the active tool. `contextmenu` is already suppressed on the

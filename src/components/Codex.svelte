@@ -11,6 +11,7 @@
   // grid and the detail view both point `<use>` at the same `<symbol>`, so the
   // 24×24 drawing is in the document once no matter how many places show it.
   import type {
+    CodexCardData,
     CodexEntry,
     CodexReaction,
     CodexStat,
@@ -26,8 +27,6 @@
   import {
     entryMarkdown,
     listMarkdown,
-    reactionNotes as formatReactionNotes,
-    statValue as formatStatValue,
     type CodexMarkdownText,
   } from '../game/codex/format';
   import {
@@ -42,6 +41,9 @@
   import { materialDescription, objectDescription, codexTerm } from '../i18n/codex';
   import type { ObjectKind } from '../state/store';
   import Modal from './Modal.svelte';
+  // The card body itself — shared with the sandbox palette's hover tooltip, so
+  // the in-game card and this dialog can't say different things. See CodexCard.
+  import CodexCard from './CodexCard.svelte';
 
   interface Props {
     materials: CodexEntry[];
@@ -55,31 +57,34 @@
   /** The objects tab's key — deliberately not a category any material can claim. */
   const OBJECTS = '__objects__';
 
-  /** One card's worth of already-localized text, so markup does no lookups. */
-  interface Card {
+  /** One card's worth of already-localized text, so markup does no lookups.
+   *  `CodexCardData` is the part the detail dialog renders (and the part the
+   *  sandbox's hover tooltip renders too — see CodexCard); everything added here
+   *  is what this page needs on top of it to run the grid and the filters. */
+  interface Card extends CodexCardData {
     key: string;
+    /** Sprite reference for the grid thumbnail — the same `<symbol>` the card's
+     *  `iconHtml` points `<use>` at, without the wrapper. */
     symbol: string;
-    name: string;
-    /** The English name, shown under a Korean one as a second handle to search by. */
-    sub: string;
+    /** Stable category key, for the tabs. */
     category: string;
-    categoryName: string;
     /** Stable phase key, or null for an object — see CodexEntry.phase. */
     phase: string | null;
-    phaseName: string | null;
-    desc: string;
-    stats: CodexStat[];
-    traits: CodexTrait[];
-    reactions: CodexReaction[];
     /** This card's tag ids, for the 태그 필터. Same strings the panel offers. */
     tags: string[];
   }
+
+  /** The hero drawing as markup: a reference into the page's own sprite, which
+   *  is where all 134 drawings already live (see the note at the top). */
+  const heroHtml = (symbol: string): string =>
+    `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="${symbol}"/></svg>`;
 
   const cards = $derived.by<Card[]>(() => {
     void $locale;
     const mats = materials.map((e) => ({
       key: `m-${e.id}`,
       symbol: `#codex-m-${e.id}`,
+      iconHtml: heroHtml(`#codex-m-${e.id}`),
       name: materialName(e.id, e.name),
       sub: e.name,
       category: e.category,
@@ -97,6 +102,7 @@
     const objs = objects.map((o) => ({
       key: `o-${o.kind}`,
       symbol: `#codex-o-${o.kind}`,
+      iconHtml: heroHtml(`#codex-o-${o.kind}`),
       name: objectLabel(o.kind as ObjectKind),
       sub: '',
       category: OBJECTS,
@@ -104,6 +110,9 @@
       phase: null,
       phaseName: null,
       desc: objectDescription(o.kind as ObjectKind),
+      // The one line the material cards don't have: 오브젝트 are bodies above the
+      // grid, not cells in it, and the card says so where the difference bites.
+      note: t('codex.objectNote'),
       stats: o.stats,
       traits: o.traits,
       reactions: [] as CodexReaction[],
@@ -215,10 +224,9 @@
   const close = (): void => void (openKey = null);
 
   // --- Formatting -----------------------------------------------------------
-  // The two that also have to come out on the clipboard are imported; these are
-  // the thin locale-bound wrappers the markup calls.
-
-  const statValue = (s: CodexStat): string => formatStatValue(s, t);
+  // The number/reaction formatters now live in CodexCard (which renders them)
+  // and in codex/format.ts (which writes them to the clipboard); what is left
+  // here is the two lookups both of those borrow from the page.
 
   /** A material named by a stat or trait, in the current locale. */
   function refName(id: number): string {
@@ -239,8 +247,6 @@
 
   const termOf = (tr: CodexTrait) =>
     codexTerm(tr.variant === undefined ? tr.key : `${tr.key}.${tr.variant}`);
-
-  const reactionNotes = (r: CodexReaction): string[] => formatReactionNotes(r, t, refName);
 
   /** How many badges a grid card shows before collapsing the rest into "+n". */
   const BADGE_LIMIT = 3;
@@ -523,103 +529,14 @@
 
 {#if openCard !== null}
   <Modal open title={openCard.name} onclose={close} width={640}>
-    <div class="detail">
-      <header>
-        <svg class="hero" viewBox="0 0 24 24" aria-hidden="true"><use href={openCard.symbol} /></svg>
-        <div class="titles">
-          {#if openCard.sub !== '' && openCard.sub !== openCard.name}
-            <p class="sub">{openCard.sub}</p>
-          {/if}
-          <span class="chip">{openCard.categoryName}</span>
-          {#if openCard.phaseName !== null && openCard.phaseName !== openCard.categoryName}
-            <span class="chip">{openCard.phaseName}</span>
-          {/if}
-        </div>
+    <CodexCard card={openCard} term={codexTerm} {refName}>
+      {#snippet actions()}
         <button class="copy" class:done={copyNotice?.where === 'entry'} onclick={copyEntry}>
           <i class={`bi ${copyNotice?.where === 'entry' ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
           <span>{copyLabel('entry', t('codex.copy'))}</span>
         </button>
-      </header>
-
-      <p class="desc">{openCard.desc}</p>
-      {#if openCard.category === OBJECTS}
-        <p class="note">{t('codex.objectNote')}</p>
-      {/if}
-
-      {#if openCard.stats.length > 0}
-        <section>
-          <h3>{t('codex.statsHeading')}</h3>
-          <div class="table-wrap">
-            <table>
-              <tbody>
-                {#each openCard.stats as s (s.key)}
-                  <tr>
-                    <th scope="row">
-                      {codexTerm(s.key).label}
-                      <span class="stat-desc">{codexTerm(s.key).desc}</span>
-                    </th>
-                    <td>
-                      <span class="num">{statValue(s)}</span>
-                      {#if s.refId !== undefined}
-                        <span class="arrow">→</span><span class="ref">{refName(s.refId)}</span>
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      {/if}
-
-      {#if openCard.traits.length > 0}
-        <section>
-          <h3>{t('codex.traitsHeading')}</h3>
-          <ul class="traits">
-            {#each openCard.traits as tr (tr.key + (tr.variant ?? ''))}
-              <li class="trait">
-                <span class="trait-name">{termOf(tr).label}</span>
-                <span class="trait-desc">{termOf(tr).desc}</span>
-                {#if tr.refId !== undefined}
-                  <span class="trait-ref">→ {refName(tr.refId)}</span>
-                {/if}
-                {#if tr.refIds !== undefined && tr.refIds.length > 0}
-                  <span class="trait-ref">→ {tr.refIds.map(refName).join(', ')}</span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        </section>
-      {/if}
-
-      {#if openCard.reactions.length > 0}
-        <section>
-          <h3>{t('codex.reactionsHeading')}</h3>
-          <ul class="reactions">
-            {#each openCard.reactions as r, i (i)}
-              <li class="reaction">
-                <span class="formula">
-                  <span class="term self">{openCard.name}</span>
-                  <span class="plus">+</span>
-                  <span class="term">{refName(r.with)}</span>
-                  <span class="arrow">→</span>
-                  <span class="term out">{r.produce === undefined ? t('codex.reaction.unchanged') : refName(r.produce)}</span>
-                  {#if r.otherBecomes !== undefined}
-                    <span class="plus">+</span>
-                    <span class="term out">{refName(r.otherBecomes)}</span>
-                  {/if}
-                </span>
-                {#if reactionNotes(r).length > 0}
-                  <span class="notes">
-                    {#each reactionNotes(r) as note}<span class="note-chip">{note}</span>{/each}
-                  </span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        </section>
-      {/if}
-    </div>
+      {/snippet}
+    </CodexCard>
   </Modal>
 {/if}
 
@@ -1156,241 +1073,6 @@
     opacity: 0.75;
   }
 
-  /* --- Detail dialog ---------------------------------------------------- */
-  /* The shell is the app's shared Modal; everything below styles what goes in
-     its body. The body inherits the toolbar's compact 13px and, from the modal
-     card, `user-select: none` — right for a settings sheet, wrong for a
-     reference page, so this root turns both back into document defaults. */
-  .detail {
-    font-size: 0.95rem;
-    line-height: 1.5;
-    user-select: text;
-  }
-
-  .detail header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  /* Pushed to the right of the title block, and allowed to drop to its own line
-     rather than squeezing the name on a narrow phone. */
-  .detail header .copy {
-    margin-left: auto;
-    flex: none;
-  }
-
-  .hero {
-    width: 76px;
-    height: 76px;
-    flex: none;
-    border-radius: 0.5rem;
-    background: #0b0c10;
-  }
-
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .titles .sub {
-    margin: 0;
-  }
-
-  .chip {
-    display: inline-block;
-    margin-top: 0.3rem;
-    /* A material carries two — its shelf and its state of matter — and inline
-       blocks would otherwise sit flush against each other. */
-    margin-right: 0.3rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 999px;
-    background: #212633;
-    color: #a5b4fc;
-    font-size: 0.72rem;
-  }
-
-  .desc {
-    margin: 1.1rem 0 0 0;
-    line-height: 1.65;
-    color: #c7cede;
-  }
-
-  .note {
-    margin: 0.5rem 0 0 0;
-    color: #6b7684;
-    font-size: 0.82rem;
-  }
-
-  .detail section {
-    margin-top: 1.4rem;
-  }
-
-  .detail h3 {
-    margin: 0 0 0.6rem 0;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #6b7684;
-  }
-
-  .table-wrap {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.88rem;
-  }
-
-  tbody tr + tr {
-    border-top: 1px solid #22262f;
-  }
-
-  th {
-    text-align: left;
-    font-weight: 500;
-    color: #9aa4b2;
-    padding: 0.45rem 0.6rem 0.45rem 0;
-    white-space: nowrap;
-  }
-
-  /* What a row *means*, on the page rather than in a `title=` tooltip. A tooltip
-     needs a hover, and a touch device has none — on a phone the explanation of
-     every number here simply did not exist. The trait cards below already say
-     their sentence out loud; this makes the table agree with them.
-
-     `white-space: normal` is load-bearing: it undoes the `nowrap` it inherits
-     from the `th` (there to keep the row label on one line), which a sentence
-     would otherwise obey — stretching the table until `.table-wrap` turned into
-     a horizontal scroller on a narrow phone. */
-  .stat-desc {
-    display: block;
-    white-space: normal;
-    max-width: 22rem;
-    margin-top: 0.15rem;
-    color: #6b7684;
-    font-size: 0.78rem;
-    font-weight: 400;
-    line-height: 1.45;
-  }
-
-  td {
-    padding: 0.45rem 0;
-    text-align: right;
-  }
-
-  .num {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-  }
-
-  .arrow {
-    margin: 0 0.35rem;
-    color: #6b7684;
-  }
-
-  .ref {
-    color: #a5b4fc;
-  }
-
-  .traits {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 0.5rem;
-  }
-
-  .trait {
-    padding: 0.6rem 0.7rem;
-    border-radius: 0.5rem;
-    border: 1px solid #22262f;
-    background: #10131a;
-  }
-
-  .trait-name {
-    display: block;
-    font-size: 0.85rem;
-    font-weight: 650;
-    color: #a5b4fc;
-  }
-
-  .trait-desc {
-    display: block;
-    margin-top: 0.2rem;
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: #9aa4b2;
-  }
-
-  .trait-ref {
-    display: block;
-    margin-top: 0.25rem;
-    font-size: 0.78rem;
-    color: #c7cede;
-  }
-
-  .reactions {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .reaction {
-    padding: 0.55rem 0.7rem;
-    border-radius: 0.5rem;
-    border: 1px solid #22262f;
-    background: #10131a;
-  }
-
-  .formula {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.3rem;
-    font-size: 0.85rem;
-  }
-
-  .term {
-    color: #c7cede;
-  }
-
-  .term.self {
-    color: #e0e6ed;
-    font-weight: 650;
-  }
-
-  .term.out {
-    color: #a5b4fc;
-  }
-
-  .plus {
-    color: #6b7684;
-  }
-
-  .notes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    margin-top: 0.35rem;
-  }
-
-  .note-chip {
-    padding: 0.1rem 0.4rem;
-    border-radius: 0.3rem;
-    background: #1a1e27;
-    color: #6b7684;
-    font-size: 0.72rem;
-  }
-
   @media (max-width: 520px) {
     .grid {
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -1399,11 +1081,6 @@
     /* Two columns, and the badge row wraps — the cards are taller here. */
     .grid > li {
       contain-intrinsic-size: auto 175px;
-    }
-
-    .hero {
-      width: 56px;
-      height: 56px;
     }
   }
 

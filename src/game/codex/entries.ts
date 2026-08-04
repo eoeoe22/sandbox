@@ -9,6 +9,14 @@
 // function, the island's props stop serializing — that is the guard rail, and it
 // fails at build rather than in production.
 //
+// One caller is not build-time, and it is worth saying why that is fine.
+// MaterialPalette calls `codexEntryFor` in the browser to build the hover card
+// for a single chip. The rule above is about not dragging the simulation into a
+// page that doesn't have it — and the sandbox *is* the simulation, so there is
+// nothing there to keep out. `codexEntryFor` takes the `Material` rather than
+// looking one up, so it adds no import of its own; `buildCodexEntries` (which
+// reaches for the whole registry) stays build-time only.
+//
 // The roster is `MATERIALS`, the palette's own list, not `allMaterials()`. The
 // difference is the dozen effect-only cells (Ember, Debris, a heat ray in
 // flight) that exist for a few ticks mid-blast and can't be placed by hand — a
@@ -43,7 +51,7 @@ export function traitsFor(m: Material): CodexTrait[] {
 }
 
 /** `Material.reactions`, stripped to the serializable fields the codex shows. */
-function reactionsFor(m: Material): CodexReaction[] {
+export function reactionsFor(m: Material): CodexReaction[] {
   return (m.reactions ?? []).map((r) => ({
     with: r.with,
     produce: r.produce,
@@ -57,9 +65,11 @@ function reactionsFor(m: Material): CodexReaction[] {
   }));
 }
 
-/** The whole codex, in palette order. Call from build-time code only. */
-export function buildCodexEntries(): CodexEntry[] {
-  return MATERIALS.map((m) => ({
+/** One material's entry. Pure reduction of the `Material` handed in — it reads
+ *  no registry of its own, which is what lets the sandbox call it at runtime
+ *  (see below) as cheaply as the guide page calls it at build time. */
+export function codexEntryFor(m: Material): CodexEntry {
+  return {
     id: m.id,
     name: m.name,
     category: categoryOf(m),
@@ -67,5 +77,10 @@ export function buildCodexEntries(): CodexEntry[] {
     stats: statsFor(m),
     traits: traitsFor(m),
     reactions: reactionsFor(m),
-  }));
+  };
+}
+
+/** The whole codex, in palette order. Call from build-time code only. */
+export function buildCodexEntries(): CodexEntry[] {
+  return MATERIALS.map(codexEntryFor);
 }

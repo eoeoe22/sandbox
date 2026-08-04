@@ -45,6 +45,7 @@
 | [`npm run test:extinguish`](#소화-계통) | 소화 1:1화·화재 등급·`fireActive` |
 | [`npm run test:phasechange`](#상전이녹는점어는점) | `Material.phaseChange` 선언 훑기·히스테리시스 |
 | [`npm run test:codex`](#물질-도감-커버리지) | `/guide` 도감의 필드·설명문·용어 커버리지 |
+| [`npm run test:eyedropper`](#스포이드휠클릭-물질-선택) | 휠클릭 픽의 겹침 우선순위·팔레트 관문·오브젝트 역매핑 |
 | [`npm run test:gravity`](#중력방향세기) | 중력 구동 운동이 전부 중력 벡터 + 세기 게이트를 탄다 |
 | [`npm run test:active-tiles`](#활성-타일-스캔-동등성) | 활성 타일 스캔 = 전면 스캔 |
 
@@ -840,6 +841,43 @@ esbuild `metafile`로 `src/i18n/index.ts`의 import 그래프를 훑어, 도감 
 `codex/`의 스펙 목록·`codex/tags.ts`·`codex/format.ts`·`i18n/codex.*.ts`·
 `i18n/codexTerms.ts`·`i18n/ui.*.ts`의 `codex` 절·`i18n/index.ts`의 import·`Material`에
 새 태그를 건드리면 이걸 돌릴 것.
+
+카드 본문은 이제 `/guide` 만의 것이 아니다 — `components/CodexCard.svelte` 를 샌드박스
+팔레트의 호버 카드가 같이 쓰고(CODEX.md §11), 산문은 `i18n/codexLazy.ts` 를 통해 거기서만
+지연 로드된다. 그 셋 중 하나를 건드렸다면 **`npm run build` 로 산출물도 같이 확인**할 것:
+이 검사는 배럴 경계만 보므로, `codex-*.js` 청크가 `ControlPanel` 에 **정적으로** 딸려
+들어가기 시작해도 여기서는 안 잡힌다(정적 `from"./codex-*"` 가 없어야 한다).
+
+## 스포이드(휠클릭 물질 선택)
+
+`npm run test:eyedropper` (`test/eyedropper.ts`). 가운데(휠) 클릭이 커서 아래의 것을
+팔레트 선택으로 집어 오는 기능(→ [FEATURES.md](./FEATURES.md)의 「휠클릭 스포이드」)에서,
+**손으로 확인할 수 없는 부분만** 본다. 픽 자체는 포인터 배선이라 눌러 보면 알지만,
+**픽이 팔레트를 계속 덮고 있는가**는 눌러 봐서는 모른다. 두 매핑 다 조용히 낡는다.
+
+- **겹침은 호스트 우선.** 요청 문구 그대로의 규칙 — 모래+물이면 모래. 젖은 셀은 알갱이
+  하나 안에 액체가 든 것이고, 사용자가 가리킨 것은 알갱이다. 호스트가 빈 칸일 때만
+  겹침으로 떨어지는 예비 경로까지 값을 박아 둔다(시뮬이 만들지 않는 상태지만, 규칙에
+  구멍 대신 답을 둔 것).
+- **빈 칸은 아무것도 아니다.** 지우개는 id 0의 **실재하는 물질**이라, 관문이 없으면
+  하늘을 한 번 클릭하는 것만으로 브러시가 지우개로 바뀐다. 경계 밖도 같다.
+- **관문 = 팔레트 명단.** `MATERIALS` 전종이 집히고, 효과 전용 셀(불똥·파편·열선·거품·
+  물고기 사체)은 안 집힌다. 칩을 추가하고 이걸 잊으면 아무것도 안 터지고 **그 칩만 캔버스
+  에서 못 집히는** — 기능이 불안정한 것처럼 보이는 — 상태가 된다.
+- **오브젝트는 자기 칩으로 되짚힌다.** `spawnObject`는 종류에서 몸체를 만들고
+  `paletteKindOf`는 몸체에서 종류를 읽는데, 둘은 다른 자리에서 반대 방향으로 쓰였다:
+  드럼 세 종은 한 캡슐이 `fill`로만 갈리고, 드럼·나무 상자의 `part` 파편 값들은 칩이
+  아예 없다. 그래서 스윕은 손으로 적은 목록이 아니라 **`OBJECT_KINDS`** 위를 돈다
+  (`test/codex.ts`가 도감을 같은 명단에 묶어 두는 것과 같은 이유) — 아홉 번째 오브젝트나
+  네 번째 드럼 fill이 한쪽만 갱신되면 여기서 걸린다. 파편 6종이 전부 null인 것,
+  드럼 세 종이 서로 다른 칩으로 갈리는 것도 함께 본다.
+
+검사가 가능한 건 규칙 둘이 DOM 없는 순수 함수로 분리돼 있기 때문이다 —
+`pickedMaterialAt(grid, x, y)`(겹침·관문)와 `paletteKindOf(body)`(몸체 역매핑), 둘 다
+`game/input/PointerPainter.ts`에서 export 한다.
+
+`MATERIALS` 명단, `PointerPainter`의 픽 경로, `engine/objects.ts`의 몸체 종류/`part`/
+`fill`, `state/store.ts`의 `OBJECT_KINDS`를 건드리면 이걸 돌릴 것.
 
 ## 중력(방향·세기)
 

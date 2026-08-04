@@ -461,3 +461,27 @@ export const MATERIALS = [
   NANOBOT,
   FISH,
 ];
+
+// `MATERIALS` as a lookup instead of a list. Built once at module load, because
+// the one caller asks per click and a linear scan of 130-odd entries for "is
+// this in the palette?" is the wrong shape for a question with a yes/no answer.
+const PALETTE_IDS = new Set<number>(MATERIALS.map((m) => m.id));
+
+/**
+ * Whether `id` is a material the palette actually lists — i.e. one the user
+ * could have selected by hand.
+ *
+ * Two callers, asking the same question of different inputs:
+ *
+ *  • The 스포이드 (휠클릭 — PointerPainter), of the world. It is full of cells no
+ *    chip exists for (an Ember mid-flight, Debris, a Nuclear Ray, the Eraser's
+ *    own id 0 under empty space — see the roll-call above `MATERIALS`), and
+ *    picking one would leave the palette showing a selection that isn't there.
+ *    Those pick nothing at all instead, silently.
+ *  • `state/persistence`, of a save file. Same reason from the other side: a
+ *    corrupt or hand-edited favorites list must not smuggle a hidden cell into
+ *    the quick-access bar.
+ *
+ * They used to have a Set each. One question, one answer.
+ */
+export const isPaletteMaterial = (id: number): boolean => PALETTE_IDS.has(id);

@@ -21,6 +21,8 @@
   import { objectSvgFor } from '../game/render/objectSvg';
   import { materialSvgFor } from '../game/render/materialSvg';
   import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
+  import { loadCodexText } from '../i18n/codexLazy';
+  import MaterialCardTip from './MaterialCardTip.svelte';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
@@ -197,9 +199,68 @@
     hovered = null;
   }
 
+  // --- 물질 카드 (hover) ----------------------------------------------------
+  // Resting on a chip floats the /guide 도감 card for that material beside the
+  // palette — the whole card, not a shortened restatement of it (see
+  // MaterialCardTip). It answers the question the palette itself can't: a swatch
+  // and a name say what a material looks like and nothing about what it does.
+  //
+  // Two places deliberately don't do this:
+  //
+  //  • The 최근/즐겨찾기 quick strip. Those chips are the ones you already know —
+  //    they are there *because* you just used them — and the strip sits under
+  //    the search box where a card would cover the categories on every pass of
+  //    the pointer. Requested that way, and it is the right cut.
+  //  • Touch. There is no hover to rest, and a card triggered by a tap would
+  //    fight the tap that picks the material. Gated on `pointerType === 'mouse'`
+  //    rather than on a media query, because what makes this work is a pointer
+  //    that can hover without committing, not a wide screen.
+  const CARD_DELAY = 300;
+  let cardMat = $state<Material | null>(null);
+  let cardAnchor = $state<DOMRect | null>(null);
+  let cardTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** What the card hangs off: the open flyout when the chip lives inside one (a
+   *  card that covered the list you are reading would be self-defeating, and
+   *  anchoring to the panel also keeps it still as the pointer runs along the
+   *  chips), otherwise the chip itself. */
+  function anchorFor(chip: HTMLElement): DOMRect {
+    const host = flyoutEl !== null && flyoutEl.contains(chip) ? flyoutEl : chip;
+    return host.getBoundingClientRect();
+  }
+
+  function cardEnter(e: PointerEvent, m: Material): void {
+    if (e.pointerType !== 'mouse') return;
+    const chip = e.currentTarget as HTMLElement;
+    // Start fetching the prose now rather than when the timer fires, so the
+    // first card of a session appears with the rest of them (see codexLazy).
+    void loadCodexText();
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(() => {
+      cardMat = m;
+      cardAnchor = anchorFor(chip);
+    }, CARD_DELAY);
+  }
+
+  function hideCard(): void {
+    clearTimeout(cardTimer);
+    cardMat = null;
+    cardAnchor = null;
+  }
+
+  // The card outlives its chip in two ways the chip's own pointerleave can't
+  // catch: a flyout that closes on its delay (the chip is unmounted, not left)
+  // and a search that changes its results under a stationary pointer.
+  $effect(() => {
+    void open;
+    void matches;
+    hideCard();
+  });
+
   onDestroy(() => {
     clearTimeout(closeTimer);
     clearTimeout(pickCloseTimer);
+    clearTimeout(cardTimer);
   });
 
   // The sidebar (`ASIDE.panel`) sets `backdrop-filter`, which per spec makes
@@ -424,7 +485,8 @@
       <div class="quick" role="group" aria-label={t('palette.quickGroup')}>
         {#each quickSlots as slot, i (i)}
           {#if slot?.kind === 'material'}
-            {@render starChip(slot.mat)}
+            <!-- No hover card in the quick strip — see the note on cardEnter. -->
+            {@render starChip(slot.mat, false)}
           {:else if slot?.kind === 'object'}
             {@render quickObjectChip(slot.key)}
           {:else}
@@ -443,7 +505,7 @@
         <span class="no-results">{t('palette.noResults')}</span>
       {:else}
         {#each matches as m (m.id)}
-          {@render starChip(m)}
+          {@render starChip(m, true)}
         {/each}
       {/if}
     </div>
@@ -540,7 +602,13 @@
         aria-label={cat.label}
         style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
         onmouseenter={() => openOnHover(cat.key)}
-        onmouseleave={scheduleHoverClose}
+        onmouseleave={() => {
+          // Leaving the flyout for the gap around it drops the card too — the
+          // chips' own pointerleave doesn't fire when the pointer exits over the
+          // flyout's padding.
+          hideCard();
+          scheduleHoverClose();
+        }}
       >
         {#each cat.materials as m (m.id)}
           <button
@@ -549,7 +617,8 @@
             class:active={$selected === m.id && $tool === 'material'}
             onclick={() => pick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={materialName(m.id, m.name)}
+            onpointerenter={(e) => cardEnter(e, m)}
+            onpointerleave={hideCard}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
                  weave, chevron or heat ramp the renderer draws (see
@@ -565,17 +634,24 @@
   {/if}
 </div>
 
+<!-- The hover card. Renders (and portals itself out of this clipping sidebar)
+     only while a chip is being rested on; the codex prose it needs is fetched
+     the first time that happens. -->
+<MaterialCardTip material={cardMat} anchor={cardAnchor} />
+
 <!-- A material chip with a star toggle in its corner, shared by the quick-access
      bar and the search results. The star is a sibling button (not nested inside
      the chip button — that would be invalid HTML) positioned over the corner. -->
-{#snippet starChip(m: Material)}
+{#snippet starChip(m: Material, card: boolean)}
   <div class="chip-wrap">
     <button
       class="chip"
       class:active={$selected === m.id && $tool === 'material'}
       onclick={() => pick(m.id)}
       ondblclick={() => pickClone(m.id)}
-      title={materialName(m.id, m.name)}
+      onpointerenter={card ? (e) => cardEnter(e, m) : undefined}
+      onpointerleave={card ? hideCard : undefined}
+      title={card ? undefined : materialName(m.id, m.name)}
     >
       <span class="swatch mat">{@html materialSvgFor(m)}</span>
       <span class="label">{materialName(m.id, m.name)}</span>

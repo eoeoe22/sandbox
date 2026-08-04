@@ -218,7 +218,9 @@ export const en = {
 
   // --- Hints ---
   hint: {
-    draw: 'Drag on the canvas to paint a material. Right-click or use the erase brush to erase.',
+    draw:
+      'Drag on the canvas to paint a material. Right-click or use the erase brush to erase. ' +
+      'Middle-click (the wheel) is the eyedropper — it picks up whatever material or object is under the cursor.',
   },
 
   // --- Material palette ---
