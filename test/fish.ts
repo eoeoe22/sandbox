@@ -134,26 +134,20 @@ function tank(grid: Grid, surface = 8): void {
   for (const [x, y] of start) put(grid, x, y, FISH);
 
   const visited = new Set<number>();
-  let everOutOfWater = 0;
+  let escaped = 0;
+  let worstAir = 0;
   for (let t = 0; t < 40 * HZ; t++) {
     sim.step();
     for (const f of cellsOf(grid, FISH)) {
       visited.add(f.y * grid.width + f.x);
-      // Out of the tank means: no liquid touching it at all. (Sitting on the
-      // stone floor with water beside it is still in the water.)
-      let wet = false;
-      for (const [dx, dy] of [
-        [0, -1],
-        [0, 1],
-        [-1, 0],
-        [1, 0],
-      ]) {
-        const nx = f.x + dx;
-        const ny = f.y + dy;
-        if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-        if (grid.cells[grid.idx(nx, ny)] === WATER) wet = true;
-      }
-      if (!wet) everOutOfWater++;
+      // Left the water body it was poured into. Measured as position rather than
+      // as "has a wet cardinal neighbour": three schooling fish packed into a
+      // corner can box each other in for a single tick with stone on the other
+      // two sides, which reads as dry without anyone having gone anywhere. The
+      // air counter below is what says that blip stayed a blip.
+      if (f.x < 2 || f.x > grid.width - 3 || f.y < 8 || f.y > grid.height - 4) escaped++;
+      const air = (f.aux >>> 5) & 0x3ff; // 물 밖 경과 틱 (see fish.ts aux layout)
+      if (air > worstAir) worstAir = air;
     }
   }
   check('all five fish survive 40s of swimming', count(grid, FISH) === 5, `${count(grid, FISH)}/5`);
@@ -169,8 +163,13 @@ function tank(grid: Grid, surface = 8): void {
   );
   check(
     'no fish ever climbs out of the water on its own',
-    everOutOfWater === 0,
-    `${everOutOfWater} fish-ticks with no water touching`,
+    escaped === 0,
+    `${escaped} fish-ticks outside the poured water body`,
+  );
+  check(
+    '…and none of them ever starts suffocating (12초 = 360틱)',
+    worstAir <= 2,
+    `worst air counter reached ${worstAir} ticks`,
   );
 }
 
@@ -513,6 +512,40 @@ function tank(grid: Grid, surface = 8): void {
     hops > 50 && wrong === 0,
     `${wrong} wrong out of ${hops} sideways hops`,
   );
+}
+
+// ── 8c. …중력이 돌아가 있어도 ─────────────────────────────────────────────────
+// 좌우 중력(UI로 고를 수 있다)에서는 `moveDown`의 한 걸음 자체가 가로 이동이라,
+// "떨어지는 것"에도 좌우 방향이 있다. flop의 점프 분기만 고치고 낙하 분기를 두면
+// 여기서만 틀리므로 — 첫 수정이 정확히 그랬다 — 네 방향을 전부 돈다.
+{
+  for (const dir of ['down', 'up', 'left', 'right'] as const) {
+    reseed();
+    const { grid, sim } = makeWorld(40, 40);
+    fill(grid, 0, 0, 39, 39, STONE);
+    fill(grid, 2, 2, 37, 37, EMPTY); // a dry stone box — nothing but flopping in here
+    put(grid, 20, 20, FISH);
+    sim.setGravity(dir, 1);
+    let wrong = 0;
+    let hops = 0;
+    let prev = cellsOf(grid, FISH)[0];
+    for (let t = 0; t < 11 * HZ; t++) {
+      sim.step();
+      const now = cellsOf(grid, FISH)[0];
+      if (!now || !prev) break;
+      const dx = now.x - prev.x;
+      if (dx !== 0) {
+        hops++;
+        if (((now.aux & 1) !== 0) !== dx > 0) wrong++;
+      }
+      prev = now;
+    }
+    check(
+      `…and under ${dir} gravity, where a "fall" can itself be sideways`,
+      hops > 20 && wrong === 0,
+      `${wrong} wrong out of ${hops} sideways steps`,
+    );
+  }
 }
 
 console.log(

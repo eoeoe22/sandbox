@@ -265,8 +265,16 @@ function flop(x: number, y: number, sim: SimContext, a: number, air: number): vo
       return;
     }
   }
+  // The plain fall follows gravity exactly (SimContext.moveDown), so under
+  // *sideways* gravity the fall itself IS a horizontal step and has to set the
+  // facing like any other. The correction goes on the destination rather than
+  // up front, because a fall that doesn't happen must not flip the tail — and
+  // the destination is exactly one gravity step away, since moveDown's extra
+  // fall-boost hop is powder/liquid-only and the Fish is a Solid.
   sim.setAux(x, y, pack(faces, -1, air));
-  sim.moveDown(x, y);
+  if (sim.moveDown(x, y) && sim.gravityX !== 0) {
+    sim.setAux(x + sim.gravityX, y + sim.gravityY, pack(sim.gravityX > 0, -1, air));
+  }
 }
 
 function die(x: number, y: number, sim: SimContext): void {
