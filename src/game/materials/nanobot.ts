@@ -171,7 +171,7 @@ function updateNanobot(x: number, y: number, sim: SimContext): void {
 export const NANOBOT = register({
   id: 111,
   name: 'Nanobot',
-  phase: Phase.Solid,
+  phase: Phase.Powder,
   // A cool cyan-steel machine tone, clearly reading as a swarm of tiny robots
   // rather than the grey metal it consumes.
   color: rgb(120, 208, 202),

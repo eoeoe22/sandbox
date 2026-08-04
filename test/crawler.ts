@@ -33,7 +33,12 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
 import { detonate, flashCell } from '../src/game/materials/blast';
+import { Phase } from '../src/game/engine/types';
 import '../src/game/materials';
+
+check('Termite phase is Phase.Powder', getMaterial(TERMITE).phase === Phase.Powder);
+check('Nanobot phase is Phase.Powder', getMaterial(NANOBOT).phase === Phase.Powder);
+check('Fish phase is Phase.Powder', getMaterial(ID('Fish')).phase === Phase.Powder);
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;

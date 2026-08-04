@@ -21,6 +21,8 @@ import { ALCOHOL } from '../materials/alcohol';
 import { BROKEN_GLASS } from '../materials/brokenglass';
 import { FUEL_BURN_TEMP } from '../materials/combustion';
 import { VOID } from '../materials/void';
+import { TERMITE } from '../materials/termite';
+import { NANOBOT } from '../materials/nanobot';
 import { WOOD_BOX_SPRITES } from '../render/woodenBoxSprite';
 import { drumPieceSpriteFor } from '../render/drumSprite';
 import { MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from '../render/molotovSprite';
@@ -3100,6 +3102,51 @@ function footprintTouchesAcid(o: SimBody, ctx: SimContext): boolean {
   return false;
 }
 
+/** Per-cell tick chance a bug (Termite on WoodBox, Nanobot on Drum) triggers destruction.
+ *  With N touching cells, the total chance per tick is 1 - (1 - p)^N, so a larger contact area
+ *  yields a higher chance of destroying the object. Reduced to 0.001 so a swarm takes a
+ *  satisfying few seconds of visible chewing rather than popping instantly. */
+const BUG_EAT_OBJECT_CHANCE_PER_CELL = 0.001;
+
+/**
+ * Count how many cells of `targetId` touch the body's footprint (within `margin` cells).
+ * Used for bug contact destruction checks (Termite on Wooden Box, Nanobot on Drum).
+ */
+function footprintCountMaterial(o: SimBody, ctx: SimContext, targetId: number, margin = 1): number {
+  const core = bodyCore(o);
+  const r = core.r + margin;
+  const r2 = r * r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX - margin);
+  const x1 = Math.ceil(o.x + spanX + margin);
+  const y0 = Math.floor(o.y - spanY - margin);
+  const y1 = Math.ceil(o.y + spanY + margin);
+  let count = 0;
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      if (ctx.get(cx, cy) !== targetId) continue;
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy <= r2) count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Probabilistic destruction trigger based on contact count: each touching cell rolls
+ * `BUG_EAT_OBJECT_CHANCE_PER_CELL`. If any roll succeeds, returns true.
+ */
+function bugTriggersDestruction(count: number, ctx: SimContext): boolean {
+  if (count <= 0) return false;
+  for (let i = 0; i < count; i++) {
+    if (ctx.chance(BUG_EAT_OBJECT_CHANCE_PER_CELL)) return true;
+  }
+  return false;
+}
+
 /**
  * A blast that doesn't consume a body still shoves it. Scan the ring just outside
  * the body's footprint for shockwave flash cells; if any are near, push the body
@@ -4387,6 +4434,12 @@ function stepWoodBox(
   } else if (o.acidTicks > 0) {
     o.acidTicks--;
   }
+  // 흰개미 접촉 파괴: 접촉 면적(셀 수)이 넓을수록 더 높은 확률로 상자가 부서짐
+  const termiteCount = footprintCountMaterial(o, ctx, TERMITE.id, 1);
+  if (bugTriggersDestruction(termiteCount, ctx)) {
+    breakWoodBox(o, ctx, spawn, o.burnTicks > 0, 'collapse');
+    return false;
+  }
   if (o.burnTicks <= 0) {
     if (heat >= WOOD_BOX_IGNITE_TEMP) {
       o.heatTicks++;
@@ -4640,6 +4693,16 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // A molotov neither melts nor burns away: it runs its wick down and waits to be
   // broken (which is the point of it). See stepMolotov.
   if (o.kind === 'molotov') return stepMolotov(o, ctx, heat);
+  if (o.kind === 'drum') {
+    // 나노봇 접촉 파괴: 접촉 면적(셀 수)이 넓을수록 더 높은 확률로 드럼통 3종 및 조각이 부서짐
+    const nanobotCount = footprintCountMaterial(o, ctx, NANOBOT.id, 1);
+    if (bugTriggersDestruction(nanobotCount, ctx)) {
+      spawnFillSpill(o, ctx);
+      breakDrum(o, ctx, spawn, 'collapse');
+      o.state = 'destroyed';
+      return false;
+    }
+  }
   // Sustained heat: a drum melts in TWO stages, a ball burns away to nothing.
   // The barrel doesn't run straight to liquid — it sags open into its three shards
   // (and pours out whatever it held), and those shards, held a notch hotter for a

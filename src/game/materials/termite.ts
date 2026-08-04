@@ -54,7 +54,7 @@ function updateTermite(x: number, y: number, sim: SimContext): void {
 export const TERMITE = register({
   id: 110,
   name: 'Termite',
-  phase: Phase.Solid,
+  phase: Phase.Powder,
   // Pale, waxy body — the milky yellow-white of a real termite, kept distinct
   // from the browner Sawdust it eats and leaves behind.
   color: rgb(224, 206, 168),
