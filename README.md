@@ -117,4 +117,3 @@ src/
 `main` 브랜치에 푸시하면 Cloudflare Workers Builds가 `npm run build` 후
 `dist/` 를 정적 자산으로 자동 배포한다. (`wrangler.toml` 의 `name` 은 연결된 Worker
 이름과 일치해야 한다.)
-
