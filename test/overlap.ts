@@ -112,6 +112,20 @@ function bed(
       if (fluid !== EMPTY) grid.setOverlay(x, y, fluid);
     }
 }
+/** A block of `id` placed the way the game places powder: with a random per-cell
+ *  tint. `Grid.set` alone leaves the tint byte at 0, and for a Powder that byte
+ *  *is* the 액체 겹침 계수 roll (SimContext.canOverlapAt) — a bed written with the
+ *  raw setter is therefore uniformly tint 0, i.e. every grain permeable, which
+ *  silently disables the "some grains are sealed" half of any scene about soaking.
+ *  `SimContext.set`/the brush both seed this; a scene that skips it isn't testing
+ *  the bed the player gets. */
+function pile(grid: Grid, x0: number, x1: number, y0: number, y1: number, id: number): void {
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      grid.set(x, y, id);
+      grid.tint[grid.idx(x, y)] = (Math.random() * 256) | 0;
+    }
+}
 /** Every cell of `fluid` in the world, wherever it currently lives: a primary
  *  cell, an overlap occupant, or the payload of a Debris fragment in flight
  *  (which carries its grain in `aux` and that grain's soak in the overlap slot).
@@ -521,7 +535,7 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
     for (let x = 0; x < 30; x++)
       if (x < 8 || x >= 22 || y < 8 || y >= 22) grid.set(x, y, WALL.id);
   bed(grid, 8, 22, 8, 22, CEMENT.id, WATER.id);
-  for (let t = 0; t < 200; t++) sim.step();
+  for (let t = 0; t < 400; t++) sim.step(); // > CURE_TICKS with room to spare (cement.ts)
   check(
     '시멘트: 스며든 물로도 굳는다',
     count(grid, CONCRETE.id) > 0 && count(grid, CEMENT.id) === 0,
@@ -547,7 +561,7 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
   for (let y = 0; y < 60; y++)
     for (let x = 0; x < 40; x++) if (x < 14 || x >= 26) grid.set(x, y, WALL.id);
   floor(grid, 50, WALL.id);
-  for (let y = 30; y < 50; y++) for (let x = 14; x < 26; x++) grid.set(x, y, CEMENT.id); // 20칸 깊이
+  pile(grid, 14, 26, 30, 50, CEMENT.id); // 20칸 깊이 — 틴트까지 실제 배치대로
   for (let y = 28; y < 30; y++) for (let x = 14; x < 26; x++) grid.set(x, y, WATER.id); // 2겹만 붓는다
 
   for (let t = 0; t < 20; t++) sim.step();
@@ -591,6 +605,50 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
     '시멘트: 물이 없으면 스스로 굳지 않는다',
     count(grid, CEMENT.id) === grains && count(grid, CONCRETE.id) === 0,
     `${count(grid, CEMENT.id)}/${grains} cement, ${count(grid, CONCRETE.id)} concrete`,
+  );
+}
+
+// ── 5e. 시멘트 — 겹침 불가 알갱이가 마른 얼룩으로 남지 않는다 ─────────────────
+// The 액체 겹침 계수 is rolled per *grain* off its tint byte, so a minority of any
+// powder bed is sealed against liquids no matter how permeable the material is.
+// For cement that used to be a dead end rather than a budget: those grains could
+// never be reached by water, however much you poured, and stayed behind as dry
+// grey specks freckled through the finished slab. A sealed grain now joins a
+// curing neighbour. The premise is asserted, not assumed — `SimContext.canSoak`
+// is the engine's own answer, so the scene can prove it actually contains the
+// grains the rule is for instead of trusting a coefficient written down twice.
+{
+  const { grid, sim } = makeWorld(30, 40);
+  for (let y = 0; y < 40; y++)
+    for (let x = 0; x < 30; x++) if (x < 9 || x >= 21) grid.set(x, y, WALL.id);
+  floor(grid, 30, WALL.id);
+  pile(grid, 9, 21, 24, 30, CEMENT.id);
+  // 확률에 기대지 않는다: 안쪽 몇 알을 확실히 막아 둔다(틴트 255 — 어떤 겹침 계수로도
+  // 통과 못 하는 값). 그러고도 **엔진에게 물어서** 세므로 전제가 자기충족이 아니다.
+  for (const [sx, sy] of [
+    [12, 26],
+    [15, 27],
+    [18, 25],
+  ])
+    grid.tint[grid.idx(sx, sy)] = 255;
+  const grains = count(grid, CEMENT.id);
+  let sealed = 0;
+  for (let y = 24; y < 30; y++)
+    for (let x = 9; x < 21; x++) if (!sim.context.canSoak(x, y, WATER.id)) sealed++;
+  // 물은 넉넉히 — 알갱이 수만큼 부어(한 칸이 여러 알을 적시므로 크게 남는다)
+  // "물이 모자랐다"가 실패 해석으로 남지 않게 한다.
+  for (let y = 18; y < 24; y++) for (let x = 9; x < 21; x++) grid.set(x, y, WATER.id);
+
+  check(
+    '전제: 이 시멘트 층에 물이 절대 못 들어가는 알갱이가 실제로 있다',
+    sealed > 0,
+    `${sealed}/${grains} grains refuse the soak`,
+  );
+  for (let t = 0; t < 600; t++) sim.step();
+  check(
+    '시멘트: 겹침 불가 알갱이도 이웃을 따라 굳는다 (마른 얼룩이 안 남는다)',
+    count(grid, CEMENT.id) === 0 && count(grid, CONCRETE.id) === grains,
+    `${count(grid, CEMENT.id)} cement left, ${count(grid, CONCRETE.id)}/${grains} concrete`,
   );
 }
 

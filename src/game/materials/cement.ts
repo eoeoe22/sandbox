@@ -1,7 +1,7 @@
 import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR4 } from '../engine/directions';
+import { DIR4, DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { WATER } from './water';
@@ -48,6 +48,23 @@ import { CONCRETE } from './concrete';
 // The two constants below are therefore the "how fast does cement set" knobs, and
 // they govern different halves of it: WATER_SPEND_CHANCE decides how *deep* a
 // splash reaches, CURE_TICKS how long the pile stays open before it seals.
+//
+// ## 겹침 불가 알갱이는 이웃을 따라 굳는다
+//
+// The 액체 겹침 계수 (Material.liquidOverlap) is rolled per *grain*, off the cell's
+// own tint byte — so however permeable cement is as a material, a scattered
+// minority of grains are sealed and can never take water in at all. Water alone
+// therefore leaves those grains dry **forever**, however much of it you pour, and
+// they stay behind as permanent grey specks freckled through a finished wall.
+// That is not a water budget, it is a dead end, so a sealed grain (SimContext.
+// canSoak says no) joins the cure of any neighbouring grain that is already
+// curing, **at that neighbour's progress** — the two set in the same tick, which
+// is what makes it read as one slab hardening rather than as a patch catching up.
+//
+// This can only ever spread *through* sealed grains — a permeable grain still
+// waits for real water — so it is not a chain reaction that could cure a pile the
+// water never reached: every run of it has to start at a grain some water
+// actually wetted, and sealed grains are far too sparse to percolate.
 
 /** Chance that the water which wets a grain is consumed doing it, rather than
  *  left to soak on down and wet the next one. So one cell of water wets about
@@ -59,10 +76,13 @@ const WATER_SPEND_CHANCE = 0.2;
 /** Ticks a wetted grain spends curing before it sets to Concrete — the window
  *  during which the pile is still porous powder that water can travel through.
  *  Stored in `aux`, and doubles as the last index of CURE_RAMP, so it must stay
- *  well inside 16 bits. ~2s at the default sim speed (SIM_HZ_AT_1X): long enough
- *  for a poured splash to get all the way in, short enough that "splash it and it
- *  sets" still reads as one action rather than a wait. */
-const CURE_TICKS = 60;
+ *  well inside 16 bits. ~6s at the default sim speed (SIM_HZ_AT_1X): concrete
+ *  going off is a thing you *watch*, so this is deliberately long enough to be a
+ *  visible process — the first pass at 60 (~2s) set so fast that the whole pile
+ *  flipped almost as soon as it darkened, which was the old instant behaviour with
+ *  a flicker in front of it. Long also means a deep pile stays open to water for
+ *  longer, so this and WATER_SPEND_CHANCE push the same way. */
+const CURE_TICKS = 180;
 
 /** Dry grey (aux 0 — the same tone as `color`, so an untouched grain and the
  *  palette swatch agree) → the dark of freshly wetted cement (aux 1) → Concrete's
@@ -123,6 +143,22 @@ function shedSoaked(x: number, y: number, sim: SimContext): void {
   sim.pushOverlay(x, y, x - dir, y);
 }
 
+/** The cure progress of a curing neighbour, for a grain water can't reach on its
+ *  own (see the 겹침 불가 note up top) — its neighbour's progress, so the two set
+ *  together, and 0 when nothing next to it is curing. DIR8 rather than DIR4: the
+ *  point is that no sealed grain is left stranded, and a diagonal pocket is
+ *  exactly where one would be. */
+function neighborCure(x: number, y: number, sim: SimContext): number {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== CEMENT.id) continue;
+    const cure = sim.getAux(nx, ny);
+    if (cure > 0) return cure;
+  }
+  return 0;
+}
+
 function updateCement(x: number, y: number, sim: SimContext): void {
   const cure = sim.getAux(x, y);
   if (cure > 0) {
@@ -144,6 +180,15 @@ function updateCement(x: number, y: number, sim: SimContext): void {
   if (wet(x, y, sim)) {
     sim.setAux(x, y, 1);
     return;
+  }
+  // A grain water can't get into rides along with the ones around it. Checked
+  // last, so a grain that *can* be wetted is never cured by proximity alone.
+  if (!sim.canSoak(x, y, WATER.id)) {
+    const joined = neighborCure(x, y, sim);
+    if (joined > 0) {
+      sim.setAux(x, y, joined);
+      return;
+    }
   }
   updatePowder(x, y, sim);
 }
