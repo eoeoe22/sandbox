@@ -1118,6 +1118,18 @@ export interface Material {
    */
   life?: { ticks: number; into?: MatId };
   /**
+   * 배치 밀도 — a material that declares this is *sown, not poured*: the brush
+   * and 영역 painters (PointerPainter.paintCells/paintBlend) place it into only
+   * about this fraction (0..1) of the cells they cover, so however big the
+   * brush, it lands as a sparse scatter rather than a solid block. Seed is the
+   * motivating case — a fistful of seeds over a bed, not a seed *wall* — but
+   * the tag is generic for any material that should be planted grain by grain.
+   * Independent of Particle mode (a user toggle; this is the material's own
+   * nature, always on). The eraser ignores it: clearing must stay gap-free.
+   * Omit for normal solid-fill painting.
+   */
+  placementDensity?: number;
+  /**
    * Declarative contact reactions (see ReactionRule / engine/reactions.ts). The
    * engine runs a single contact pass each tick before this material's `update`:
    * a cell that reacts is transformed and marked moved (so it skips its own update

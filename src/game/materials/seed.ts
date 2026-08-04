@@ -119,6 +119,12 @@ export const SEED = register({
   // to reach the soil bed at the bottom of a flooded plot instead of floating
   // on the surface out of germinating reach.
   density: 3.45,
+  // 흩뿌리기 — seeds are sown, not poured: the brush scatters a few grains
+  // across its footprint instead of stamping a solid seed block (which then
+  // germinated into a wall of plants). A press always lands at least one
+  // grain, and a 영역 fill reads as a sparsely sown bed (see
+  // Material.placementDensity / PointerPainter.paintCells).
+  placementDensity: 0.05,
   category: 'life',
   // 피폭사 — a kernel is alive too, so radiation kills it where it lies and it goes
   // the same way a grown Plant does, to Ash (see engine/radiation.ts). Sowing into

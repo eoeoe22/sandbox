@@ -50,6 +50,12 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   rotorPattern: 'rendering: rotor blade overlay',
   rotorSpinShift: 'rendering: rotor spin rate',
 
+  // --- Authoring: how the brush places it, not what it does in play -------
+  // A property of the painting tools (PointerPainter), not of the material's
+  // behaviour once it's on the grid — so the codex, which describes what a
+  // material does in play, leaves it out.
+  placementDensity: 'authoring: brush scatters it sparsely instead of solid-fill',
+
   // --- Engine bookkeeping about how `temp` is stored ----------------------
   // These say what the number in the temperature slot MEANS for the engine's own
   // readers, not anything about the material. All three belong to effect cells

@@ -27,6 +27,12 @@ import { tryBurn } from './combustion';
 //   • Only a TIP grows. The cell it grows into becomes the new tip and the old
 //     one settles into plain stem, so a shoot advances one cell at a time along
 //     a line instead of every cell budding sideways at once.
+//   • A germinated sprout climbs as a TRUNK first: its tip carries the trunk
+//     marker (GEN_TRUNK) and runs segment after segment upward *without*
+//     forking, each finished segment rolling TRUNK_FORK_CHANCE to hand over to
+//     the branching crown. So a plant reads bottom-up as stem → boughs → twigs
+//     instead of bushing out at ground level, and trunk heights vary plant to
+//     plant with no height bookkeeping.
 //   • A tip carries a heading (up-left / up / up-right) and mostly keeps it,
 //     turning one step now and then — the wobble that makes a stem look grown
 //     rather than drawn.
@@ -79,7 +85,9 @@ import { tryBurn } from './combustion';
 //   bit  7     tip (only a tip grows)
 //   bits 8-9   heading: 0 = up-left, 1 = up, 2 = up-right
 //   bits 10-11 segment cells left before this shoot forks
-//   bits 12-14 generations of vigour left (forks remaining)
+//   bits 12-14 generations of vigour left (forks remaining); 7 = trunk stage
+//              (GEN_TRUNK — an encoding the branching rules never produce,
+//              since they only count MAX_GEN=6 down to 0)
 //   bit  15    initialised (this cell has been given a structural role)
 //
 // The "initialised" flag lives in the TOP bit on purpose, and that's a
@@ -105,6 +113,15 @@ const INIT_BIT = 1 << 15;
 // more legs than foliage. Six forks with a run of 1-3 cells between them gives
 // the same height out of many more twigs, which is what reads as a bush.
 const MAX_GEN = 6;
+// 줄기 단계 — the out-of-band gen value marking a tip still climbing its trunk.
+// A trunk tip runs whole segments without forking; each finished segment rolls
+// TRUNK_FORK_CHANCE to open the crown (demote to a MAX_GEN branching tip).
+// Chance-per-segment rather than a counted height means trunks vary plant to
+// plant and cost no aux bits: mean trunk ≈ mean segment (~2 cells) / chance
+// ≈ 8 cells. Save-safe because 7 never occurred in stored data before this —
+// the branching rules only ever wrote 0..6.
+const GEN_TRUNK = 7;
+const TRUNK_FORK_CHANCE = 0.25;
 
 /** Moisture a fresh sprout (a germinated Seed) starts with, so it can climb out
  *  of the soil straight away before its roots have topped up. */
@@ -126,7 +143,12 @@ const SOIL_MOISTURE = 76; // what damp ground alone sustains — enough for a mo
 // to fork, which is where the difference between a bush and a bare frame is.
 const WICK_STEP = 3;
 const DECAY_CHANCE = 0.5; // chance of losing 1 moisture per tick
-const GROW_CHANCE = 0.09; // how often a tip attempts to advance
+// How often a tip attempts to advance. At 0.09 a plant went from seed to full
+// bush in a few seconds — impressive once, then wallpaper. 0.025 stretches
+// that to minutes: slow enough that growth is something you *watch happen*
+// (심어 두고 지켜보는 맛), fast enough that it visibly changes while you play.
+// Wall-clock only — final size is set by the moisture gradient, not this rate.
+const GROW_CHANCE = 0.025;
 const GROW_COST = 12; // moisture a tip spends to put out one new cell
 const BRANCH_COST = 30; // a fork puts out two cells and needs real reserves
 const LEAF_COST = 9; // …and a leaf is the cheapest thing a plant makes
@@ -168,11 +190,12 @@ function pack(m: number, tip: boolean, dir: number, seg: number, gen: number): n
  *  the plant spends its height on twigs rather than on long bare limbs. */
 const randSeg = (sim: SimContext): number => 1 + sim.randInt(3);
 
-/** The `aux` a freshly germinated Seed hands its sprout: a full-vigour tip
- *  heading straight up, pre-charged with moisture so it can start climbing
- *  before its roots have topped up (see seed.ts). */
+/** The `aux` a freshly germinated Seed hands its sprout: a trunk tip heading
+ *  straight up (GEN_TRUNK — it climbs a while before it may branch),
+ *  pre-charged with moisture so it can start climbing before its roots have
+ *  topped up (see seed.ts). */
 export function plantSproutAux(sim: SimContext): number {
-  return pack(START_MOISTURE, true, 1, randSeg(sim), MAX_GEN);
+  return pack(START_MOISTURE, true, 1, randSeg(sim), GEN_TRUNK);
 }
 
 /** Headings, in left-to-right / right-to-left order, tried when the preferred
@@ -305,7 +328,10 @@ function pickEmpty(x: number, y: number, sim: SimContext): boolean {
  * Give a structure-less cell a role. Hand-painted plant (or a cell cloned/pasted
  * in) arrives with a zeroed aux: the cells along the top of what was painted
  * become tips and everything under them plain stem, so a painted patch sprouts
- * from its surface instead of every cell of it erupting at once.
+ * from its surface instead of every cell of it erupting at once. These go
+ * straight to the branching stage (MAX_GEN, no trunk): a painted patch is
+ * already a body of growth, not a germinating sprout — and a pre-rework saved
+ * plant re-initialised here keeps behaving the way it was saved.
  */
 function initCell(x: number, y: number, sim: SimContext, m: number): number {
   let tip = true;
@@ -389,6 +415,18 @@ function growTip(x: number, y: number, sim: SimContext, a: number): number {
     if (m < GROW_COST || !findGrowth(x, y, sim, dirOf(a))) return a;
     sprout(growX, growY, sim, m - GROW_COST, growDir, seg - 1, gen);
     return withMoist(a & ~TIP_BIT, m - GROW_COST);
+  }
+
+  if (gen === GEN_TRUNK) {
+    // Trunk stage, segment done: usually just run another segment, heading
+    // re-squared to straight up — the wobble may bend a segment, but the trunk
+    // as a whole keeps climbing vertically instead of wandering off diagonally.
+    // Now and then it opens its crown instead: demoted to a full-vigour
+    // branching tip (seg 0), it forks on its next growth attempt. Both are
+    // decisions, not growth — no moisture is spent until the tip next extends.
+    return sim.chance(TRUNK_FORK_CHANCE)
+      ? pack(m, true, dirOf(a), 0, MAX_GEN)
+      : pack(m, true, 1, randSeg(sim), GEN_TRUNK);
   }
 
   if (gen > 0) {
