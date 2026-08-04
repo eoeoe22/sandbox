@@ -20,11 +20,20 @@ import { DEAD_FISH } from './deadfish';
 // declarative death tags (`radiationDeath`, `blastDeathId`, `shockDeathChance`)
 // that already say "fragile organic body" for the Termite.
 //
-// 무리 짓지 않는다. This started out as a proper boids school — cohesion plus
-// alignment, tuned until twelve fish measurably clumped and agreed on a heading —
-// and the result looked *worse*: a shoal moving as one blob reads as scripted
-// rather than alive. All that survives is the objection to being crowded
-// (`crowdedHeading`), which is the half that actually makes a tank look right.
+// 사회성은 밀고 당기는 두 항뿐이고, 그 조합이 요점이다: a hard push out of arm's
+// reach (`crowdedHeading`, every tick) against a weak pull toward company
+// (`freeHeading`, only when re-heading). Neither alone is right, and both failures
+// were seen rather than guessed:
+//   • Cohesion + ALIGNMENT — a proper boids school. Measurably worked (twelve fish
+//     clumped and agreed on a heading) and looked scripted: the shoal swung about
+//     as one body. The alignment term is what did that, so it's gone.
+//   • Separation ALONE — the most natural-looking rule, and at any real fish count
+//     genuinely unpleasant: evenly-spaced dots on a grid. 환공포증.
+// A weak pull against a hard push never settles at an equilibrium spacing, so the
+// tank stays lumpy and irregular, which is what actually reads as alive.
+//
+// The other half of that fix isn't in this file: fish are **sown, not poured**
+// (`placementDensity`), because the lattice needed a crowd to be visible at all.
 //
 // 물 안 / 물 밖 — the two states it lives in:
 //   • Touching liquid → it swims. It can only step INTO liquid, so it never
@@ -64,18 +73,32 @@ const SWIM_CHANCE = 0.55;
  *  Low, because the heading is what makes a fish look like it's *going somewhere*;
  *  re-rolling often would turn the tank into brownian noise. */
 const TURN_CHANCE = 0.15;
-/** 개인 공간 — how close another fish has to get before this one moves off. The
- *  only social term there is: fish keep out of each other's way and are otherwise
- *  independent. Small on purpose — at 3 the objection is to genuinely being
- *  bumped, so a tank reads as a scatter of fish going about their business rather
- *  than as either a blob or a repelling lattice.
+/** 개인 공간 — how close another fish has to get before this one moves off. Small
+ *  on purpose: at 3 the objection is to genuinely being bumped, not to company.
  *
- *  Unlike the schooling it replaced, this is scanned every tick rather than on a
- *  re-heading roll, so the cost is the raw (2R+1)² = 49 grid reads per fish per
- *  tick — still well under the ~43-per-tick amortized cost of the 17×17 box it
- *  replaced, and fish are placed by hand and never breed, so the population can't
- *  run away with it. */
+ *  Scanned EVERY tick, unlike the loose cohesion below which only fires on a
+ *  re-heading roll. That asymmetry is the point — being crowded is urgent and
+ *  wanting company is not — and it costs (2R+1)² = 49 grid reads per fish per
+ *  tick. Fish are placed by hand, never breed, and are now sown sparsely
+ *  (`placementDensity`), so the population can't run away with that. */
 const PERSONAL_SPACE = 3;
+/** 느슨한 모임 — how far a fish looks for company when it picks a fresh heading.
+ *  Has to be several times the ~3.7 cells it covers between two re-headings
+ *  (SWIM_CHANCE / TURN_CHANCE) or there is no restoring force at all: at radius 4
+ *  a group crossed its own perception range in one heading and was strangers
+ *  inside ten seconds. Measured, twice — this number is not a guess. */
+const SCHOOL_RADIUS = 8;
+/** Having found company beyond arm's length, the chance it heads that way rather
+ *  than drawing a free heading. This is cohesion WITHOUT alignment, deliberately:
+ *  cohesion alone gathers them loosely, while adding alignment made the group
+ *  swing about as one body and read as scripted rather than alive.
+ *
+ *  Paired with PERSONAL_SPACE it is also what keeps the spacing *irregular*.
+ *  Separation on its own settles into an evenly-spaced lattice — technically the
+ *  most natural-looking rule and, at any real fish count, genuinely unpleasant to
+ *  look at. A weak pull inward against a hard push outward never reaches an
+ *  equilibrium spacing, so the tank stays lumpy. */
+const COHERE_CHANCE = 0.45;
 /** 전기 감전 — chance a fish adjacent to a live Spark dies (see Material.
  *  sparkDeathChance). Water and Saltwater are both conductors, so dropping a live
  *  wire into a tank electrifies the water itself and the current fans out through
@@ -207,9 +230,31 @@ function crowdedHeading(x: number, y: number, sim: SimContext): number {
   return cx === 0 && cy === 0 ? -1 : headingToward(-cx, -cy);
 }
 
-/** A heading for a fish that needs one and isn't being crowded: a free draw. No
- *  neighbour term at all — 나머지는 자유롭게 헤엄친다. */
-function freeHeading(sim: SimContext): number {
+/** A heading for a fish that needs one and isn't being crowded: 느슨하게 모인다.
+ *  It looks for company out to SCHOOL_RADIUS and heads roughly that way, or draws
+ *  a free heading if there's nobody about (or if the roll says to go its own way,
+ *  which is what keeps a group from locking rigidly together).
+ *
+ *  Only the pull is here. There is no alignment term — see COHERE_CHANCE. */
+function freeHeading(x: number, y: number, sim: SimContext): number {
+  if (sim.chance(COHERE_CHANCE)) {
+    let cx = 0;
+    let cy = 0;
+    for (let dy = -SCHOOL_RADIUS; dy <= SCHOOL_RADIUS; dy++) {
+      for (let dx = -SCHOOL_RADIUS; dx <= SCHOOL_RADIUS; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== FISH.id) continue;
+        cx += dx;
+        cy += dy;
+      }
+    }
+    // Nobody about, or a symmetric ring that cancels — either way there is no
+    // direction to head, so fall through to a free draw rather than invent one.
+    const toward = headingToward(cx, cy);
+    if (toward >= 0) return toward;
+  }
   return HEADING_PICK[sim.randInt(HEADING_PICK.length)];
 }
 
@@ -226,7 +271,7 @@ function swim(x: number, y: number, sim: SimContext, a: number): void {
   // already swum through each other — the whole behaviour reads as lag.
   const away = crowdedHeading(x, y, sim);
   if (away >= 0) h = away;
-  else if (h < 0 || sim.chance(TURN_CHANCE)) h = freeHeading(sim);
+  else if (h < 0 || sim.chance(TURN_CHANCE)) h = freeHeading(x, y, sim);
   if (!sim.chance(SWIM_CHANCE)) {
     sim.setAux(x, y, pack((a & FACING_RIGHT) !== 0, h, 0));
     return; // coasting this tick
@@ -344,6 +389,13 @@ export const FISH = register({
   color: rgb(0x1e, 0x30, 0x5e),
   colorVary: 18,
   density: 3,
+  // 흩뿌리기 — a fish is a creature, not a fill: the brush sows a few rather than
+  // stamping a wall of them (Seed's tag, at a third of Seed's rate — a fistful of
+  // seeds is a bed, a fistful of fish is an aquarium). A single click still lands
+  // one, since PointerPainter guarantees a press places at least one grain. This
+  // is also half the answer to the even-spacing problem: a lattice needs a crowd
+  // to be visible, and now you have to work to make a crowd.
+  placementDensity: 0.015,
   category: 'life',
   // 꼬리 — the grey pixel the renderer trails behind it. Display only: it is not a
   // cell, occupies nothing, and no rule in the simulation can see it.

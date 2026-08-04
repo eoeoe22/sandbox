@@ -363,40 +363,48 @@ function tank(grid: Grid, surface = 8): void {
   );
 }
 
-// ── 7. 개인 공간 (무리 짓지 않는다) ───────────────────────────────────────────
-// The social behaviour is a push and nothing else, so this measures it from both
-// sides — it has to be strong enough to see, and weak enough not to become the
-// schooling it replaced with the sign flipped:
-//   • 붙지 않는다 — start them piled in a corner and they spread out.
-//   • 몰려다니지도 않는다 — left alone they end up no tighter than the same 12 fish
-//     dropped at random in the same water (a Monte Carlo null, right below). This
-//     is the check that would have failed under the old cohesion+alignment code,
-//     and it is the reason this block was rewritten rather than deleted.
-//   • 격자로 밀어내지도 않는다 — nor do they end up unnaturally *more* spread out
-//     than random, which is what a repulsion term that's too strong looks like.
+// ── 7. 개인 공간 + 느슨한 모임 ────────────────────────────────────────────────
+// 사회성은 밀기와 당기기 두 항이고, 잘못될 수 있는 방향이 정확히 세 가지라 셋 다
+// 잰다. 이 블록은 두 번 갈아엎였고 세 번째가 지금이다:
+//   • 붙지 않는다 — 구석에 쌓아 두면 흩어지고, 다시 뭉쳐 붙지 않는다.
+//   • 한 덩어리로 다니지 않는다 — 응집만 세면 옛 boids로 돌아간다. 같은 수조에
+//     무작위로 뿌린 몬테카를로 대조군보다 뭉쳐 있으면 안 된다.
+//   • **간격이 규칙적이지 않다** — 이게 이번에 추가된 진짜 요구사항이다. 분리만
+//     남기면 물고기가 고르게 벌어져 격자가 되는데, 규칙으로는 가장 자연스러워도
+//     보기에는 환공포증을 자극한다. 평균 거리로는 이걸 못 잡는다 — 격자와 뭉친
+//     분포가 같은 평균을 가질 수 있기 때문이다. 그래서 최근접 거리의 **변동계수**
+//     (표준편차/평균)를 같은 무작위 대조군과 비교한다. 격자는 변동계수가 0에
+//     가깝고, 얼룩덜룩한 분포는 무작위만큼 크다.
 {
   /** fish.ts's PERSONAL_SPACE, restated rather than imported — the harness should
    *  fail if that constant is retuned without someone looking at these numbers. */
   const PERSONAL_SPACE = 3;
-  /** Mean distance from a fish to its nearest neighbour (Chebyshev — the metric
-   *  the 8-neighbour ring actually moves in). */
-  const meanNearest = (pts: { x: number; y: number }[]): number => {
-    let acc = 0;
-    for (const a of pts) {
+  /** Every fish's distance to its nearest neighbour (Chebyshev — the metric the
+   *  8-neighbour ring actually moves in). */
+  const nearest = (pts: { x: number; y: number }[]): number[] =>
+    pts.map((a) => {
       let best = Infinity;
       for (const b of pts) {
         if (a === b) continue;
         const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
         if (d < best) best = d;
       }
-      acc += best;
-    }
-    return acc / pts.length;
+      return best;
+    });
+  const mean = (v: number[]): number => v.reduce((s, x) => s + x, 0) / v.length;
+  const meanNearest = (pts: { x: number; y: number }[]): number => mean(nearest(pts));
+  /** 변동계수 — 표준편차/평균. 간격이 얼마나 **불규칙한가**의 척도로, 평균 거리가
+   *  못 잡는 것을 잡는다: 격자는 0에 가깝고, 얼룩덜룩한 분포는 크다. */
+  const spacingCV = (pts: { x: number; y: number }[]): number => {
+    const nn = nearest(pts);
+    const m = mean(nn);
+    return Math.sqrt(mean(nn.map((d) => (d - m) * (d - m)))) / m;
   };
 
   // The null: what "no social behaviour at all" looks like in this exact tank.
   reseed();
   let nullAcc = 0;
+  let nullCV = 0;
   const TRIALS = 400;
   for (let t = 0; t < TRIALS; t++) {
     const pts = [];
@@ -404,8 +412,10 @@ function tank(grid: Grid, surface = 8): void {
       pts.push({ x: 2 + Math.floor(Math.random() * 76), y: 6 + Math.floor(Math.random() * 31) });
     }
     nullAcc += meanNearest(pts);
+    nullCV += spacingCV(pts);
   }
   const scattered = nullAcc / TRIALS;
+  const scatteredCV = nullCV / TRIALS;
 
   // Piled into one corner, three cells apart — inside everyone's personal space.
   reseed();
@@ -415,6 +425,7 @@ function tank(grid: Grid, surface = 8): void {
   const packed = meanNearest(cellsOf(grid, FISH));
   let nnAcc = 0;
   let samples = 0;
+  let cvAcc = 0;
   let worstCrowd = 0; // 창 전체에서 가장 붙어 있던 순간의 최근접 거리
   for (let t = 0; t < 60 * HZ; t++) {
     sim.step();
@@ -422,10 +433,12 @@ function tank(grid: Grid, surface = 8): void {
     const f = cellsOf(grid, FISH);
     const nn = meanNearest(f);
     nnAcc += nn;
+    cvAcc += spacingCV(f);
     samples++;
     if (worstCrowd === 0 || nn < worstCrowd) worstCrowd = nn;
   }
   const settled = nnAcc / samples;
+  const settledCV = cvAcc / samples;
   check(
     'a pile of fish spreads itself out — they object to being crowded',
     settled > packed * 2,
@@ -441,14 +454,37 @@ function tank(grid: Grid, surface = 8): void {
   // to put two fish in adjacent cells), so the honest claim is "not tighter, and
   // not a lattice either" — not "indistinguishable from random".
   check(
-    '무리 짓지 않는다 — 무작위로 뿌린 것보다 뭉쳐 있지 않다',
+    '한 덩어리로 다니지 않는다 — 무작위로 뿌린 것보다 뭉쳐 있지 않다',
     settled > scattered,
-    `${settled.toFixed(2)} vs ${scattered.toFixed(2)} scattered (옛 무리 짓기는 5.26이었다)`,
+    `${settled.toFixed(2)} vs ${scattered.toFixed(2)} scattered (옛 boids는 5.26이었다)`,
   );
   check(
-    '…그리고 반발이 지나쳐 격자처럼 퍼지지도 않는다',
+    '…그리고 반발이 지나쳐 멀찍이 벌어지지도 않는다',
     settled < scattered * 1.4,
-    `${(settled / scattered).toFixed(2)}× 무작위 (개인 공간 3→1.20×, 5→1.30×, 8→1.54×)`,
+    `${(settled / scattered).toFixed(2)}× 무작위 (분리만 남겼을 땐 1.20×)`,
+  );
+  // 이번 요구사항 본체. 평균이 아니라 **분포의 고름**을 본다 — 격자와 얼룩덜룩한
+  // 배치는 평균이 같을 수 있고, 눈에 거슬리는 쪽은 고른 쪽이다.
+  // 임계 0.8×는 실측으로 잡았다. 응집을 끄면(분리만) 0.37로 떨어지고 — 유저가 실제로
+  // 지적한 그 그림이다 — 개인 공간을 키울수록 6칸 0.30, 8칸 0.21로 더 고르게 굳는다.
+  // 지금 설정은 0.56으로 무작위와 사실상 같다. 0.7×(=0.38)로 두면 분리만 남긴 판이
+  // 아슬아슬하게 걸리므로 여유를 둔다.
+  check(
+    '간격이 규칙적이지 않다 (격자로 굳지 않는다 — 환공포증)',
+    settledCV > scatteredCV * 0.8,
+    `변동계수 ${settledCV.toFixed(2)} vs 무작위 ${scatteredCV.toFixed(2)} (분리만: 0.37, 개인 공간 8칸: 0.21)`,
+  );
+  // 위 세 항목은 전부 "물고기가 여럿일 때"의 그림이고, 애초에 여럿이 되지 않게 하는
+  // 것이 나머지 절반이다. 배치는 PointerPainter(UI 경로)에 있어 헤드리스로 돌릴 수
+  // 없으므로 태그의 존재만 못 박는다 — 이게 조용히 빠지면 브러시 한 번에 수십 마리가
+  // 찍히고 격자 그림이 그대로 돌아온다.
+  const fishMat = getMaterial(FISH);
+  const seedMat = getMaterial(ID('Seed'));
+  check(
+    '물고기는 붓는 게 아니라 흩뿌린다 (배치 밀도 태그가 살아 있다)',
+    fishMat.placementDensity !== undefined &&
+      fishMat.placementDensity < (seedMat.placementDensity ?? 1),
+    `물고기 ${fishMat.placementDensity} vs 씨앗 ${seedMat.placementDensity}`,
   );
 }
 
