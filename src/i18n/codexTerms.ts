@@ -310,10 +310,6 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     ko: { label: '체', desc: '액체 및 기체를 통과시키는 격자 망입니다.' },
     en: { label: 'Mesh', desc: 'It is a lattice mesh that allows liquids and gases to pass through.' },
   },
-  soakedUpdate: {
-    ko: { label: '스며든 상태 반응', desc: '다른 물질에 스며든 채로도 제 할 일을 합니다.' },
-    en: { label: 'Acts while soaked', desc: 'Goes on doing its job while soaked into another material.' },
-  },
   miscible: {
     ko: {
       label: '섞이는 액체',
