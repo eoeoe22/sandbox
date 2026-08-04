@@ -201,5 +201,38 @@ for (const name of ['Lava', 'Mud']) {
     `(5,7)=${getMaterial(grid.get(5, 7)).name}, (5,8)=${getMaterial(grid.get(5, 8)).name}`);
 }
 
+// The map edge is only a wall when the border says so. Under `borderMode: 'void'`
+// a cell that steps off the grid is gone (SimContext.tryMove), so an out-of-bounds
+// side of a hole is a genuine opening and must not be counted as enclosure — the
+// collapse is for bubbles trapped inside goo, not for the open edge of the world.
+//
+// Read with every roll forced to fail, which pins the two modes apart exactly: the
+// ungated collapse is then the ONLY thing that can move the cell, so "moved" means
+// it fired and "stayed" means it declined. Same scene, one field different.
+{
+  const HONEY = ID('Honey');
+  const at = (mode: 'wall' | 'void'): number => {
+    const grid = new Grid(8, 8);
+    const sim = new Simulation(grid);
+    sim.setBorderMode(mode);
+    // A honey cell in the bottom-left corner column with a hole under it whose
+    // only enclosure comes from the grid edge: left is out of bounds, below the
+    // hole is out of bounds, and the right flank is walled.
+    grid.cells[grid.idx(0, 6)] = HONEY;
+    grid.cells[grid.idx(1, 6)] = WALL;
+    grid.cells[grid.idx(1, 7)] = WALL;
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    const rolled = Math.random;
+    Math.random = () => 1; // every chance() fails: the flow gate never opens
+    sim.step();
+    Math.random = rolled;
+    return grid.get(0, 7);
+  };
+  check('a hole enclosed by a wall border is a bubble and collapses', at('wall') === HONEY,
+    `cell below is ${getMaterial(at('wall')).name}`);
+  check('…but the same hole at a void border is the open edge, and is left alone',
+    at('void') !== HONEY, `cell below is ${getMaterial(at('void')).name}`);
+}
+
 console.log(failures === 0 ? '\nAll goo void checks passed.' : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);
