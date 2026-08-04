@@ -19,7 +19,7 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   // --- The entry's own identity, rendered by the page rather than as a tag ---
   id: 'the codex renders it as the entry key',
   name: 'the codex renders it as the title',
-  phase: 'the codex renders it as the 상태 line',
+  phase: 'the codex renders it as the 상태 chip and filter (CodexEntry.phase)',
   color: 'the codex renders it as the icon',
   category: 'the codex renders it as the filter tab',
   update: 'the per-tick rule itself — prose, not a tag; the description covers it',

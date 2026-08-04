@@ -74,6 +74,13 @@ export interface CodexEntry {
   name: string;
   /** Stable category key (see materials/categories.ts), for the filter tabs. */
   category: string;
+  /** Stable phase key — 'solid' | 'powder' | 'liquid' | 'gas'. Separate from
+   *  `category` because a thematic tab says nothing about state of matter:
+   *  Molten Iron files under 제련 and Acid under 액체, and a player looking for
+   *  "everything that pours" wants both. Objects have no equivalent (they are
+   *  rigid bodies above the grid), so `ObjectCodexEntry` has no phase and the
+   *  상태 filter simply doesn't match them. */
+  phase: string;
   stats: CodexStat[];
   traits: CodexTrait[];
   reactions: CodexReaction[];
@@ -95,6 +102,18 @@ export interface CodexTerm {
   label: string;
   /** One sentence saying what it means in play. */
   desc: string;
+}
+
+/** One heading of the codex's 태그 필터 panel and the tags filed under it.
+ *  Built at build time (codex/tags.ts) from the tags the entries actually
+ *  declare, so the panel can never offer a filter that matches nothing. */
+export interface CodexTagGroup {
+  /** i18n key under `codex.tagGroup` (see i18n/ui.*.ts). */
+  key: string;
+  /** Tag ids, in TRAIT_SPECS order. A tag id is a trait's `key`, or
+   *  `${key}.${variant}` for a trait with forms — the same string `codexTerm`
+   *  is asked for, so the panel and the trait card always read alike. */
+  tags: string[];
 }
 
 /** A declaration that one `Material` field becomes one row of the numeric table. */

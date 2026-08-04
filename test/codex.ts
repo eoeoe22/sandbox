@@ -23,10 +23,17 @@ import { EXCLUDED_FIELDS } from '../src/game/codex/fields';
 import { buildCodexEntries } from '../src/game/codex/entries';
 import { buildObjectEntries } from '../src/game/codex/objects';
 import { buildIconSprite, materialSymbolId, objectSymbolId } from '../src/game/codex/icons';
+import { buildTagGroups, GROUPED_TRAIT_KEYS, TAG_GROUP_KEYS } from '../src/game/codex/tags';
+import { entryMarkdown, listMarkdown } from '../src/game/codex/format';
+import { PHASE_KEYS } from '../src/game/materials/categories';
 import { materialCodexKo, objectCodexKo } from '../src/i18n/codex.ko';
 import { materialCodexEn, objectCodexEn } from '../src/i18n/codex.en';
 import { codexTerms } from '../src/i18n/codexTerms';
-import { LOCALES } from '../src/i18n/locale';
+import { codexTerm, materialDescription, objectDescription } from '../src/i18n/codex';
+import { ko as uiKo } from '../src/i18n/ui.ko';
+import { en as uiEn } from '../src/i18n/ui.en';
+import { $locale, LOCALES } from '../src/i18n/locale';
+import { categoryLabel, materialName, objectLabel, t } from '../src/i18n';
 import '../src/game/materials';
 
 let failures = 0;
@@ -283,6 +290,134 @@ function check(name: string, ok: boolean, detail = ''): void {
     unused.length === 0,
     unused.length ? unused.join(', ') : `${used.size} terms all in use`,
   );
+}
+
+// ── 8. Every entry has a state of matter, and every 상태 chip matches ───────
+// The 상태 filter is the one axis that isn't derived from a label the palette
+// already draws, so a phase key that stopped resolving would silently empty a
+// chip rather than break anything. Both directions: no entry outside the four,
+// and none of the four left with nothing under it.
+{
+  const entries = buildCodexEntries();
+  const bad = entries.filter((e) => !PHASE_KEYS.includes(e.phase)).map((e) => `${e.name} → ${e.phase}`);
+  check(
+    'every codex entry carries one of the four phase keys',
+    bad.length === 0,
+    bad.length ? bad.join(', ') : `${PHASE_KEYS.join(', ')}`,
+  );
+  const empty = PHASE_KEYS.filter((p) => !entries.some((e) => e.phase === p));
+  check(
+    '…and each 상태 filter chip has materials behind it',
+    empty.length === 0,
+    empty.length
+      ? `no material is ${empty.join(', ')}`
+      : PHASE_KEYS.map((p) => `${p} ${entries.filter((e) => e.phase === p).length}`).join(', '),
+  );
+}
+
+// ── 9. The 태그 필터 panel offers every tag the codex shows ─────────────────
+// Same failure mode as the coverage sweep at the top, one layer up: a new trait
+// card that nothing files under a heading doesn't crash, it just never appears
+// in the filter — the page keeps working and the tag is unfindable. And a
+// heading with no i18n label renders as its own key.
+{
+  const used = new Set<string>();
+  for (const e of [...buildCodexEntries(), ...buildObjectEntries()]) {
+    for (const t of e.traits) used.add(t.key);
+  }
+  const ungrouped = [...used].filter((k) => !GROUPED_TRAIT_KEYS.includes(k));
+  check(
+    'every trait the codex shows is filed under a 태그 필터 heading',
+    ungrouped.length === 0,
+    ungrouped.length
+      ? `add these to a group in game/codex/tags.ts: ${ungrouped.join(', ')}`
+      : `${used.size} traits grouped`,
+  );
+
+  const groups = buildTagGroups(buildCodexEntries(), buildObjectEntries());
+  const chips = groups.reduce((n, g) => n + g.tags.length, 0);
+  check(
+    '…and the panel is built with real chips under real headings',
+    groups.length > 0 && chips >= used.size,
+    `${groups.length} groups, ${chips} chips`,
+  );
+
+  for (const [loc, table] of [['ko', uiKo], ['en', uiEn]] as const) {
+    const unlabelled = TAG_GROUP_KEYS.filter(
+      (k) => ((table.codex.tagGroup as Record<string, string>)[k] ?? '').trim() === '',
+    );
+    check(
+      `every 태그 필터 heading has a ${loc} label`,
+      unlabelled.length === 0,
+      unlabelled.join(', ') || `${TAG_GROUP_KEYS.length} headings`,
+    );
+  }
+}
+
+// ── 10. The Markdown export resolves every string it asks for ───────────────
+// `t()` answers an unknown key with the key itself, which is exactly how the
+// export would fail: silently, as a paste reading `codex.md.value` where a
+// column header belongs. So drive the real writers over the real roster in both
+// locales and fail on any leaked key. This also exercises the writers against
+// every entry shape there is — no stats, no reactions, an object with no phase.
+{
+  const before = $locale.get();
+  const tx = {
+    t,
+    term: codexTerm,
+    refName: (id: number) => (id === 0 ? t('codex.nothing') : materialName(id, String(id))),
+    tagLabel: (tr: { key: string; variant?: string }) =>
+      codexTerm(tr.variant === undefined ? tr.key : `${tr.key}.${tr.variant}`).label,
+  };
+
+  for (const loc of LOCALES) {
+    $locale.set(loc);
+    const entries = [
+      ...buildCodexEntries().map((e) => ({
+        name: materialName(e.id, e.name),
+        sub: e.name,
+        categoryName: categoryLabel(e.category),
+        phaseName: categoryLabel(e.phase),
+        desc: materialDescription(e.id),
+        stats: e.stats,
+        traits: e.traits,
+        reactions: e.reactions,
+      })),
+      ...buildObjectEntries().map((o) => ({
+        name: objectLabel(o.kind as never),
+        sub: '',
+        categoryName: t('codex.objects'),
+        phaseName: null,
+        desc: objectDescription(o.kind as never),
+        stats: o.stats,
+        traits: o.traits,
+        reactions: [],
+      })),
+    ];
+
+    const docs = [
+      listMarkdown(entries, tx, { filters: [t('codex.md.category') + ': x'], total: entries.length }),
+      ...entries.map((e) => entryMarkdown(e, tx)),
+    ];
+    // A leaked key is a dotted lowercase path with no spaces — the shape `t()`
+    // hands back on a miss, and nothing the prose contains.
+    const leaks = new Set<string>();
+    for (const doc of docs) for (const m of doc.match(/\bcodex\.[a-zA-Z.]+/g) ?? []) leaks.add(m);
+    check(
+      `the ${loc} Markdown export resolves every i18n key it uses`,
+      leaks.size === 0,
+      leaks.size ? [...leaks].join(', ') : `${docs.length} documents`,
+    );
+    // A table row per entry plus the two header rows, and a heading per entry.
+    const list = docs[0];
+    check(
+      `…and the ${loc} list export carries every visible entry`,
+      list.split('\n').filter((l) => l.startsWith('| ')).length === entries.length + 2 &&
+        list.split('\n').filter((l) => l.startsWith('## ')).length === entries.length,
+      `${entries.length} entries`,
+    );
+  }
+  $locale.set(before);
 }
 
 console.log(failures === 0 ? '\nAll 도감 checks passed.' : `\n${failures} check(s) FAILED.`);

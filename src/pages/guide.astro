@@ -15,15 +15,19 @@ import Codex from '../components/Codex.svelte';
 import { buildCodexEntries } from '../game/codex/entries';
 import { buildObjectEntries } from '../game/codex/objects';
 import { buildIconSprite } from '../game/codex/icons';
+import { buildTagGroups } from '../game/codex/tags';
 
 const materials = buildCodexEntries();
 const objects = buildObjectEntries();
+// The 태그 필터 panel's shape, swept out of the entries above rather than listed
+// by hand, so it can only ever offer a tag something actually declares.
+const tagGroups = buildTagGroups(materials, objects);
 const sprite = buildIconSprite();
 ---
 
 <Base title="Particle Sandbox - 물질 도감">
   <div class="guide-page">
-    <Codex client:load materials={materials} objects={objects} />
+    <Codex client:load materials={materials} objects={objects} tagGroups={tagGroups} />
     <!-- The icon definitions, once per document. Every `<use href="#codex-…">`
          in the grid and the detail view points in here.
 
