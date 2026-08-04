@@ -249,23 +249,32 @@ function swim(x: number, y: number, sim: SimContext, a: number): void {
  *  `sim.gravityX/Y` rather than "up is -y" so it still flops the right way when the
  *  world's gravity is rotated.
  *
- *  The jump itself is deliberately NOT gravity-gated (SimContext.gravityPass) —
- *  it's the fish's own muscle, not its weight, and the rule that gate documents is
- *  to gate what gravity *causes*. But the jump is still *aimed* by the gravity
- *  vector, and at strength 0 there is no "up" to throw yourself against while the
- *  fall that should balance it never comes: a stranded fish then rowed itself
- *  straight to the ceiling (measured: y 30 → 2 in ten seconds) and pinned there.
- *  So when gravity is off, it thrashes in a random direction instead. It still
- *   펄떡거린다 — freezing it would be both duller and less honest — it just has no
- *  preferred way to go, which is what weightlessness means. */
+ *  Whether the jump *happens* is muscle, not weight, so it is deliberately NOT
+ *  gravity-gated — the rule `SimContext.gravityPass` documents is to gate what
+ *  gravity *causes*, and a fish thrashes whether or not it weighs anything.
+ *  Whether the jump is **aimed against gravity** is a different question, and that
+ *  one does roll the gate, because it has to stay in proportion to the fall that
+ *  balances it. The fall goes through `moveDown`, which is gated, so its rate
+ *  scales with strength; an ungated upward bias does not, and below the crossover
+ *  (FLOP_CHANCE/(1-FLOP_CHANCE) ≈ 0.25 — well inside the 0.1 steps the UI slider
+ *  offers) the fish out-jumps its own falling and rows itself to the ceiling. That
+ *  is not a zero-gravity special case: measured drift was WORSE at 0.05 (+57칸)
+ *  and 0.1 (+42칸) than at 0 (+28칸), because at 0 it at least never fell back to
+ *  jump again. Gating the aim instead of the jump makes the balance hold at every
+ *  strength continuously, and reduces to exactly the old behaviour at both ends —
+ *  always aimed at 1, never aimed at 0.
+ *
+ *  Unaimed, it thrashes in a random direction. It still 펄떡거린다 at zero gravity —
+ *  freezing it would be both duller and less honest — it just has no preferred way
+ *  to go, which is what weightlessness means. */
 function flop(x: number, y: number, sim: SimContext, a: number, air: number): void {
   const faces = (a & FACING_RIGHT) !== 0;
   if (sim.chance(FLOP_CHANCE)) {
-    const weightless = sim.gravityStrength <= 0;
+    const aimed = sim.gravityPass();
     const [rx, ry] = RING[sim.randInt(RING.length)];
     const lean = sim.randInt(3) - 1; // -1, 0, +1 across the gravity axis
-    const jx = weightless ? x + rx : x - sim.gravityX - sim.gravityY * lean;
-    const jy = weightless ? y + ry : y - sim.gravityY + sim.gravityX * lean;
+    const jx = aimed ? x - sim.gravityX - sim.gravityY * lean : x + rx;
+    const jy = aimed ? y - sim.gravityY + sim.gravityX * lean : y + ry;
     if (sim.inBounds(jx, jy) && sim.isEmpty(jx, jy)) {
       // Read the facing off the step it is actually about to take, never off
       // `lean`: the perpendicular is (-gravityY, gravityX), so under the ordinary

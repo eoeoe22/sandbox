@@ -549,16 +549,23 @@ function tank(grid: Grid, surface = 8): void {
   }
 }
 
-// ── 8e. 무중력에서 펄떡임은 추진기가 아니다 ──────────────────────────────────
-// 펄떡임은 중력 게이트를 타지 않는다(제 근육이지 무게가 아니다). 그런데 방향은
-// 중력 벡터로 잡으므로, 세기 0에서는 "중력 반대"가 매번 같은 쪽을 가리키고 균형을
-// 잡아 줄 낙하는 오지 않는다 — 물고기가 스스로 천장까지 노 저어 올라가 붙어 있었다.
-// 무중력은 "위가 없다"는 뜻이지 "가만히 있는다"가 아니므로, 여전히 펄떡이되 방향이
-// 없어야 한다. 정상 중력 대조군을 같은 하네스에서 같이 잰다.
+// ── 8e. 펄떡임은 어느 중력 세기에서도 추진기가 아니다 ────────────────────────
+// 펄떡임의 *발생*은 중력 게이트를 타지 않는다(제 근육이지 무게가 아니다). 그런데
+// *방향*을 중력 벡터로 잡으면, 균형을 잡아 줄 낙하는 게이트를 타서 세기에 비례해
+// 줄어드는데 위로 뛰는 편향만 그대로 남는다. 물고기가 스스로 천장까지 노 저어
+// 올라가 붙는다.
+//
+// **끝점 두 개만 재면 이걸 못 본다.** 실제로 첫 수정은 세기 0만 특수 처리했고
+// {0, 1}만 검사해서 통과했는데, 정작 최악은 그 사이였다 — 0.05에서 +57칸, 0.1에서
+// +42칸으로, 고치려던 무중력 버그(+28칸)보다 나빴다(0에서는 적어도 다시 떨어져
+// 뛸 일이 없었다). UI 슬라이더가 0.1 단위라 전부 실제로 고를 수 있는 값이다.
+// 그래서 교차점(≈0.25) 양쪽을 훑는다.
 {
-  const drift: Record<number, number> = {};
-  for (const strength of [0, 1]) {
-    reseed();
+  reseed();
+  const rows: string[] = [];
+  let rose = 0;
+  let frozen = 0;
+  for (const strength of [0, 0.05, 0.1, 0.2, 0.3, 0.5, 1]) {
     const { grid, sim } = makeWorld(40, 40);
     fill(grid, 0, 0, 39, 39, STONE);
     fill(grid, 2, 2, 37, 37, EMPTY);
@@ -567,27 +574,29 @@ function tank(grid: Grid, surface = 8): void {
     let moved = 0;
     let prev = cellsOf(grid, FISH)[0];
     let last = prev;
-    for (let t = 0; t < 10 * HZ; t++) {
+    let peak = 0; // 창 안에서 가장 높이 올라간 지점 (끝값만 보면 되돌아온 척할 수 있다)
+    for (let t = 0; t < 12 * HZ; t++) {
       sim.step();
       const now = cellsOf(grid, FISH)[0];
       if (!now || !prev) break;
       if (now.x !== prev.x || now.y !== prev.y) moved++;
+      if (30 - now.y > peak) peak = 30 - now.y;
       prev = now;
       last = now;
     }
-    drift[strength] = 30 - last.y; // 시작점 대비 얼마나 올라갔나 (+가 위)
-    if (strength === 0) {
-      check(
-        '무중력에서도 물고기는 펄떡인다 (얼어붙지 않는다)',
-        moved > 20,
-        `${moved} moves in 10s`,
-      );
-    }
+    rows.push(`g=${strength} 최고 +${peak}/끝 ${30 - last.y > 0 ? '+' : ''}${30 - last.y}`);
+    if (peak > 12) rose++; // 천장까지는 +28
+    if (moved <= 20) frozen++; // 어느 세기에서도 얼어붙지 않아야 한다
   }
   check(
-    '…but it never rows itself up to the ceiling — weightless has no "up"',
-    drift[0] < 12 && drift[1] < 0,
-    `무중력 ${drift[0] > 0 ? '+' : ''}${drift[0]}칸, 정상 중력 ${drift[1]}칸 (천장까지는 +28)`,
+    '펄떡임은 어느 중력 세기에서도 천장으로 가는 추진기가 되지 않는다',
+    rose === 0,
+    rows.join(', '),
+  );
+  check(
+    '…그리고 어느 세기에서도 얼어붙지 않는다 (게이트로 막아 고친 게 아니다)',
+    frozen === 0,
+    `${frozen} strengths where the fish barely moved`,
   );
 }
 
