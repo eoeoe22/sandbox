@@ -21,6 +21,8 @@
   import { objectSvgFor } from '../game/render/objectSvg';
   import { materialSvgFor } from '../game/render/materialSvg';
   import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
+  import { loadCodexText } from '../i18n/codexLazy';
+  import MaterialCardTip from './MaterialCardTip.svelte';
 
   // Category grouping (declared `category`, or a phase fallback) lives in the
   // shared `categories` module so the blend brush's picker groups materials
@@ -197,9 +199,263 @@
     hovered = null;
   }
 
+  // --- 물질 카드 (hover) ----------------------------------------------------
+  // Resting on a chip floats the /guide 도감 card for that material beside the
+  // palette — the whole card, not a shortened restatement of it (see
+  // MaterialCardTip). It answers the question the palette itself can't: a swatch
+  // and a name say what a material looks like and nothing about what it does.
+  //
+  // Two places deliberately don't do this:
+  //
+  //  • The 최근/즐겨찾기 quick strip. Those chips are the ones you already know —
+  //    they are there *because* you just used them — and the strip sits under
+  //    the search box where a card would cover the categories on every pass of
+  //    the pointer. Requested that way, and it is the right cut.
+  //  • Touch — but only in this form. A finger has no way to *rest* on something,
+  //    and a card on tap would fight the tap that picks the material, so the
+  //    hover path is gated on `pointerType === 'mouse'` and touch gets the long
+  //    press below instead. The gate is on the pointer, not on a media query,
+  //    because what makes hover work is a pointer that can point without
+  //    committing — not a wide screen.
+  const CARD_DELAY = 300;
+  let cardMat = $state<Material | null>(null);
+  let cardAnchor = $state<DOMRect | null>(null);
+  let cardTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // --- 물질 카드 (touch: 길게 누르기) ---------------------------------------
+  // The same card, asked for instead of hovered into. It opens as an 오프캔버스
+  // sheet (MaterialCardTip's `sheet` mode) because on a phone there is nowhere to
+  // float a panel *beside* anything, and because a card that has to be dismissed
+  // needs the things a dialog has: a scrim, an ×, and Escape.
+  //
+  // The press has to end without also picking the material — the whole gesture is
+  // "tell me about this", not "give me this" — so a fired long press claims the
+  // click that same touch is about to produce (`swallowFor`), which the chip's
+  // own click handler spends. It cancels on movement (the palette scrolls
+  // sideways on mobile; a swipe that starts on a chip must stay a swipe) and on
+  // `pointercancel` (the UA claiming the gesture for a scroll, which is the same
+  // thing from the other side).
+  const LONG_PRESS_MS = 420;
+  /** How far a finger may travel and still be a press rather than a swipe. */
+  const LONG_PRESS_SLOP = 12;
+  let sheetMat = $state<Material | null>(null);
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The pointer that owns the press in flight. A second finger landing on
+   *  another chip (or a palm alongside a real touch) must not clobber the first
+   *  one's timer and start point — its later movement would then be measured
+   *  against the wrong origin. First finger down owns the gesture; the rest are
+   *  ignored until it ends. */
+  let pressId = -1;
+  let pressX = 0;
+  let pressY = 0;
+  /**
+   * The fingers currently held on a chip. Non-empty is the only window in which
+   * the platform would raise its own long-press menu, and so the only window in
+   * which `contextmenu` is suppressed.
+   *
+   * Two earlier shapes of this were wrong, and both failures were the same
+   * shape. "Was the last press a finger?" answered for the wrong pointer,
+   * because `contextmenu` does not have to follow a `pointerdown` on the chip at
+   * all: a keyboard Menu key / Shift+F10 raises one with no pointer involved,
+   * and on a hybrid device a right-click landing mid-press read the finger's
+   * answer. Narrowing it to a single "is a finger down" boolean fixed the
+   * question but not the arithmetic — one flag can't hold two fingers, so a
+   * mouse press clearing it stranded a finger that was still down, and a finger
+   * whose chip was unmounted before its `pointerup` stranded the flag set
+   * forever (on a tablet with no mouse, nothing would ever clear it).
+   *
+   * A map has neither problem: it is per-pointer by construction, and it is
+   * emptied from `window` rather than from the chip — a `pointerup` reaches the
+   * window whether or not the element it started on still exists. The value is
+   * when that finger landed; see `CONTEXT_SUPPRESS_MS` for what reads it.
+   */
+  const touchIds = new Map<number, number>();
+  /**
+   * Which chip's click a fired long press has claimed, or -1. An id rather than
+   * a flag because the claim belongs to *that* chip: with two fingers on the
+   * palette, a bare boolean armed by finger A's long press was spent by finger
+   * B's ordinary tap on another chip, silently eating a real pick. `click`
+   * carries no pointer id to match on, but it does carry which chip it is.
+   */
+  let swallowFor = -1;
+
+  function pressStart(e: PointerEvent, m: Material): void {
+    if (e.pointerType === 'mouse') return; // the mouse has hover; see above
+    touchIds.set(e.pointerId, performance.now()); // every finger counts, owner or not
+    if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
+    // Any new press supersedes a stale claim — see `armSwallow` for when one can
+    // be left behind.
+    swallowFor = -1;
+    clearTimeout(swallowTimer);
+    pressId = e.pointerId;
+    pressX = e.clientX;
+    pressY = e.clientY;
+    // Same head start as the hover path — the sheet opens immediately either way
+    // (it shows its title while the prose lands), this just usually beats it.
+    void loadCodexText().catch(() => {});
+    pressTimer = setTimeout(() => {
+      // Clear the handle as well as firing: `pressMove` uses "is there a timer?"
+      // as its "is a press in flight?" test, and a spent handle left behind would
+      // read as one.
+      pressTimer = undefined;
+      armSwallow(m.id);
+      sheetMat = m;
+    }, LONG_PRESS_MS);
+  }
+
+  /** Claim the click this same touch is about to produce, and drop the claim on
+   *  a timer in case it never does — a browser that suppressed the click (some
+   *  do, after a long press that would have opened a context menu) would
+   *  otherwise leave this set, and the next genuine tap on that chip would be
+   *  eaten. */
+  let swallowTimer: ReturnType<typeof setTimeout> | undefined;
+  function armSwallow(id: number): void {
+    swallowFor = id;
+    clearTimeout(swallowTimer);
+    swallowTimer = setTimeout(() => (swallowFor = -1), 800);
+  }
+
+  /** A chip click — unless a long press on *this* chip just claimed it. */
+  function chipClick(id: number): void {
+    if (swallowFor === id) {
+      swallowFor = -1;
+      clearTimeout(swallowTimer);
+      return;
+    }
+    pick(id);
+  }
+
+  /** Only the timer. The finger is still down (a swipe that outran the slop), so
+   *  it stays in `touchIds` — the platform's own long press can still fire, and
+   *  its menu is still the one we don't want. */
+  function abortPress(): void {
+    clearTimeout(pressTimer);
+    pressTimer = undefined;
+  }
+
+  function pressMove(e: PointerEvent): void {
+    if (pressTimer === undefined || e.pointerId !== pressId) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) abortPress();
+  }
+
+  /** A pointer lifted or was cancelled, anywhere. Bound on `window` ONLY — not
+   *  also on the chip — for the one case a chip can't report: a press whose
+   *  element is unmounted under it (a flyout closing, search results
+   *  re-filtering) never gets its own `pointerup`, and a finger that can never be
+   *  taken back out of `touchIds` would suppress every later context menu on the
+   *  page. The window sees every release either way, so a chip-level copy would
+   *  only mean running this twice. Only the pointer that started the press may
+   *  end it — otherwise a second finger lifting would cancel the first one's
+   *  press. */
+  function pressEnd(e: PointerEvent): void {
+    touchIds.delete(e.pointerId);
+    if (e.pointerId !== pressId) return;
+    abortPress();
+  }
+
+  /**
+   * Forget every finger, because the page is no longer the one being touched.
+   *
+   * `pressEnd` handles every release the page is told about, and that is nearly
+   * all of them — but not quite. A gesture the OS takes over mid-touch (an iOS
+   * Control Center or app-switcher swipe, where `pointercancel` has a long
+   * history of not arriving) or a tab backgrounded with a finger down can leave
+   * an id in the set that nothing removes. All three of these events mean the
+   * page stopped being touched, so clearing on them is right rather than merely
+   * recovering — the boolean this replaced self-healed off any mouse press,
+   * which wasn't a recovery so much as a second bug (it erased somebody else's
+   * finger).
+   */
+  function forgetTouches(): void {
+    touchIds.clear();
+  }
+
+  /**
+   * How long after a finger lands its own long-press menu is still plausibly
+   * coming — measured per finger, so one that never reported its release stops
+   * mattering three seconds after *it* began, no matter how much the palette is
+   * used in between.
+   *
+   * This is the belt to `forgetTouches`'s braces, and it exists because that one
+   * cannot be *proven* to cover the case it was written for. The motivating leak
+   * is an iOS system gesture stealing the touch — and Control Center draws over
+   * Safari rather than switching away from it, so whether the page is told
+   * anything at all (a `blur`, a `visibilitychange`) is exactly as unsettled as
+   * the `pointercancel` that already doesn't arrive.
+   *
+   * Three seconds is not a proof either: platforms raise their long-press menu
+   * around half a second in, and Android's accessibility ceiling for the delay
+   * is 1.5s, but iOS's Touch Accommodations hold duration is a +/- stepper with
+   * no documented cap, so a long enough setting could outlast this. The number
+   * doesn't have to be a proof, because the two ways of being wrong are not
+   * remotely the same size: too short costs ONE press a native menu appearing
+   * beside the sheet, and unbounded costs the session every context menu on
+   * every chip — silently, with no way back short of a reload. Given that, a
+   * finite window is right even where its exact value can only be a judgement.
+   */
+  const CONTEXT_SUPPRESS_MS = 3000;
+
+  /** Suppress the platform's own long-press menu, which would fight ours — but
+   *  only while a finger is actually down, so a right-click and a keyboard Menu
+   *  key both keep the browser menu they always had. */
+  function chipContextMenu(e: Event): void {
+    const now = performance.now();
+    for (const started of touchIds.values()) {
+      if (now - started <= CONTEXT_SUPPRESS_MS) {
+        e.preventDefault();
+        return;
+      }
+    }
+  }
+
+  const closeSheet = (): void => void (sheetMat = null);
+
+  /** What the card hangs off: the open flyout when the chip lives inside one (a
+   *  card that covered the list you are reading would be self-defeating, and
+   *  anchoring to the panel also keeps it still as the pointer runs along the
+   *  chips), otherwise the chip itself. */
+  function anchorFor(chip: HTMLElement): DOMRect {
+    const host = flyoutEl !== null && flyoutEl.contains(chip) ? flyoutEl : chip;
+    return host.getBoundingClientRect();
+  }
+
+  function cardEnter(e: PointerEvent, m: Material): void {
+    if (e.pointerType !== 'mouse') return;
+    const chip = e.currentTarget as HTMLElement;
+    // Start fetching the prose now rather than when the timer fires, so the
+    // first card of a session appears with the rest of them (see codexLazy).
+    // A failure just means no card — swallowed here rather than left to become
+    // an unhandled rejection on every hover, since this call is only a head
+    // start and MaterialCardTip asks again anyway.
+    void loadCodexText().catch(() => {});
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(() => {
+      cardMat = m;
+      cardAnchor = anchorFor(chip);
+    }, CARD_DELAY);
+  }
+
+  function hideCard(): void {
+    clearTimeout(cardTimer);
+    cardMat = null;
+    cardAnchor = null;
+  }
+
+  // The card outlives its chip in two ways the chip's own pointerleave can't
+  // catch: a flyout that closes on its delay (the chip is unmounted, not left)
+  // and a search that changes its results under a stationary pointer.
+  $effect(() => {
+    void open;
+    void matches;
+    hideCard();
+  });
+
   onDestroy(() => {
     clearTimeout(closeTimer);
     clearTimeout(pickCloseTimer);
+    clearTimeout(cardTimer);
+    clearTimeout(pressTimer);
+    clearTimeout(swallowTimer);
   });
 
   // The sidebar (`ASIDE.panel`) sets `backdrop-filter`, which per spec makes
@@ -392,7 +648,13 @@
   onclick={handleWindowClick}
   onresize={handleReflow}
   onkeydown={handleWindowKeydown}
+  onpointerup={pressEnd}
+  onpointercancel={pressEnd}
+  onblur={forgetTouches}
+  onpagehide={forgetTouches}
 />
+
+<svelte:document onvisibilitychange={() => document.hidden && forgetTouches()} />
 
 <div class="palette" bind:this={root}>
   <div class="pal-tools">
@@ -424,7 +686,8 @@
       <div class="quick" role="group" aria-label={t('palette.quickGroup')}>
         {#each quickSlots as slot, i (i)}
           {#if slot?.kind === 'material'}
-            {@render starChip(slot.mat)}
+            <!-- No hover card in the quick strip — see the note on cardEnter. -->
+            {@render starChip(slot.mat, false)}
           {:else if slot?.kind === 'object'}
             {@render quickObjectChip(slot.key)}
           {:else}
@@ -443,7 +706,7 @@
         <span class="no-results">{t('palette.noResults')}</span>
       {:else}
         {#each matches as m (m.id)}
-          {@render starChip(m)}
+          {@render starChip(m, true)}
         {/each}
       {/if}
     </div>
@@ -540,16 +803,26 @@
         aria-label={cat.label}
         style={`top:${flyoutPos.top}px; left:${flyoutPos.left}px`}
         onmouseenter={() => openOnHover(cat.key)}
-        onmouseleave={scheduleHoverClose}
+        onmouseleave={() => {
+          // Leaving the flyout for the gap around it drops the card too — the
+          // chips' own pointerleave doesn't fire when the pointer exits over the
+          // flyout's padding.
+          hideCard();
+          scheduleHoverClose();
+        }}
       >
         {#each cat.materials as m (m.id)}
           <button
             class="chip"
             role="menuitem"
             class:active={$selected === m.id && $tool === 'material'}
-            onclick={() => pick(m.id)}
+            onclick={() => chipClick(m.id)}
             ondblclick={() => pickClone(m.id)}
-            title={materialName(m.id, m.name)}
+            onpointerenter={(e) => cardEnter(e, m)}
+            onpointerleave={hideCard}
+            onpointerdown={(e) => pressStart(e, m)}
+            onpointermove={pressMove}
+            oncontextmenu={chipContextMenu}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
                  weave, chevron or heat ramp the renderer draws (see
@@ -565,17 +838,34 @@
   {/if}
 </div>
 
+<!-- The hover card (mouse). Renders (and portals itself out of this clipping
+     sidebar) only while a chip is being rested on; the codex prose it needs is
+     fetched the first time that happens. -->
+<MaterialCardTip material={cardMat} anchor={cardAnchor} />
+
+<!-- The same card as an 오프캔버스 sheet (touch), opened by a long press and
+     dismissed by its ×, the scrim or Escape. Kept separate from the hover
+     instance rather than switched between: the two are driven by different
+     pointers and can never be open at once, and one shared `material` prop
+     would make the mode flip mid-render on a hybrid device. -->
+<MaterialCardTip material={sheetMat} sheet anchor={null} onclose={closeSheet} />
+
 <!-- A material chip with a star toggle in its corner, shared by the quick-access
      bar and the search results. The star is a sibling button (not nested inside
      the chip button — that would be invalid HTML) positioned over the corner. -->
-{#snippet starChip(m: Material)}
+{#snippet starChip(m: Material, card: boolean)}
   <div class="chip-wrap">
     <button
       class="chip"
       class:active={$selected === m.id && $tool === 'material'}
-      onclick={() => pick(m.id)}
+      onclick={() => (card ? chipClick(m.id) : pick(m.id))}
       ondblclick={() => pickClone(m.id)}
-      title={materialName(m.id, m.name)}
+      onpointerenter={card ? (e) => cardEnter(e, m) : undefined}
+      onpointerleave={card ? hideCard : undefined}
+      onpointerdown={card ? (e) => pressStart(e, m) : undefined}
+      onpointermove={card ? pressMove : undefined}
+      oncontextmenu={card ? chipContextMenu : undefined}
+      title={card ? undefined : materialName(m.id, m.name)}
     >
       <span class="swatch mat">{@html materialSvgFor(m)}</span>
       <span class="label">{materialName(m.id, m.name)}</span>
@@ -837,6 +1127,14 @@
   }
   .chip:hover {
     border-color: #3a3a46;
+  }
+  /* A long press on a chip is ours (it opens the 물질 카드 — see pressStart), so
+     the platform's own long-press gestures must not fire on top of it: the iOS
+     callout menu, and the text selection a press-and-hold starts on Android. The
+     chip's label is a name on a button, not prose anyone reads by selecting it. */
+  .chip {
+    -webkit-touch-callout: none;
+    user-select: none;
   }
   .chip.active {
     border-color: #6ea8fe;
