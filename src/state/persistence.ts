@@ -608,6 +608,7 @@ export function sanitizeObject(raw: unknown): SimBody | null {
   if (kind === 'ball') {
     const r = num(o.r, 4);
     if (r <= 0) return null;
+    const mass = Math.max(0.001, num(o.mass, 1));
     return {
       kind: 'ball',
       x,
@@ -615,10 +616,17 @@ export function sanitizeObject(raw: unknown): SimBody | null {
       vx,
       vy,
       r,
-      mass: num(o.mass, 1),
+      mass,
       restitution: num(o.restitution, 0.8),
       heatTicks: Math.max(0, Math.round(num(o.heatTicks))),
       temp: num(o.temp, AMBIENT_TEMP),
+      // The ball now rolls: it carries the same rotation scalars the capsules do.
+      // `angle` is cosmetic (a disc looks the same at every orientation) but kept
+      // for round-trip parity; momentOfInertia defaults to the solid-disc ½·m·r²
+      // when a legacy save omits it.
+      angle: num(o.angle),
+      angularVelocity: num(o.angularVelocity),
+      momentOfInertia: Math.max(0.001, num(o.momentOfInertia, 0.5 * mass * r * r)),
     };
   }
 

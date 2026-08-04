@@ -22,6 +22,7 @@
 | [`npm run test:woodbox`](#나무-상자-오브젝트) | 나무 상자 회전·가연성·파괴 연쇄 |
 | [`npm run test:drumbreak`](#드럼통-파괴-연쇄) | 드럼통 3종 조각 파괴·2단 용융 |
 | [`npm run test:stacking`](#쌓기--오브젝트끼리-충돌-파괴) | 평면 충돌 형상·오브젝트끼리 파괴 |
+| [`npm run test:ballroll`](#고무공-회전) | 고무공 접촉 마찰 토크·경사 굴림·구름 저항 |
 | [`npm run test:molotov`](#화염병-오브젝트) | 화염병 파괴 임계·심지 상태 기계 |
 | [`npm run test:fireworks`](#불꽃놀이-꽃) | `decorTemp`·도화선 끝 판정 |
 | [`npm run test:aluminum`](#알루미늄-계통) | 용융/연소 갈림·주조·갈륨·분진 폭발 |
@@ -137,6 +138,18 @@
 각자 스핀), 조각이 고철 밀도라 **가라앉는 것**(통은 뜨는 대조군).
 
 `breakDrum`·`DRUM_PIECE_*` 상수·`placeShard`나 드럼 조각 아트를 건드리면 이걸 돌릴 것.
+
+## 고무공 회전
+
+`npm run test:ballroll` (`test/ballroll.ts`). 고무공이 **굴러간다**는 것을 지킨다 — 원형이라
+방향성이 없어 회전이 눈에 안 보이지만, 접촉 마찰 토크 `r × J` 로 운동이 바뀌는 것(캡슐과
+같은 1축 회전 모델)을 헤드리스로 검증한다: 평지에서 가로로 밀면 각속도가 생김(ω>0, 오른쪽
+구름 ⇒ 시계 회전), **45° 경사**에 놓으면 아래로 굴러 내려가며 회전(|ω|≈0.5 rad/틱), 접지
+시 **구름 저항**(`ROLL_RESISTANCE`)으로 peak ω 0.69 → 0 으로 수렴(영원히 안 굴름), 정지
+대조군은 회전 없이 제자리.
+
+`stepBall`·`resolveGridCollision`·`deepestContact`·`BALL_FRICTION`·`invInertiaOf` 등 공 회전
+경로를 건드리면 이걸 돌릴 것.
 
 ## 쌓기 · 오브젝트끼리 충돌 파괴
 

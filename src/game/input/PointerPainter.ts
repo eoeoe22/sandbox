@@ -512,9 +512,8 @@ export class PointerPainter {
       const d = Math.hypot(dx, dy) || 1; // outward from the stir center (center hit → pure random)
       o.vx += (dx / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
       o.vy += (dy / d) * MIX_PUSH_SPEED * 0.5 + (Math.random() * 2 - 1) * MIX_PUSH_SPEED;
-      // Any capsule body (drum, dynamite, smoke bomb, wooden box) also gets a
-      // random spin; a ball has no orientation to spin.
-      if (o.kind !== 'ball') o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
+      // Every body also gets a random spin — the ball too, now that it rolls.
+      o.angularVelocity += (Math.random() * 2 - 1) * MIX_SPIN;
     }
   }
 
