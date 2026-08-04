@@ -122,6 +122,11 @@ const MAX_GEN = 6;
 // the branching rules only ever wrote 0..6.
 const GEN_TRUNK = 7;
 const TRUNK_FORK_CHANCE = 0.25;
+// How often a trunk segment leans aside instead of re-squaring to straight up.
+// Purely a straightness dial: the trunk still averages vertical (a lean is one
+// segment, and the next boundary mostly squares it back), it just stops being
+// one unbroken vertical line. See the trunk branch of growTip.
+const TRUNK_LEAN_CHANCE = 0.5;
 
 /** Moisture a fresh sprout (a germinated Seed) starts with, so it can climb out
  *  of the soil straight away before its roots have topped up. */
@@ -170,6 +175,18 @@ const BRANCH_COST = 30; // a fork puts out two cells and needs real reserves
 // still completes inside the same water budget (0.5 + MAX_GEN 3 measures at
 // 47-68 leaves), not just lowering this number.
 const BRANCH_CHANCE = 0.7;
+// A segment boundary that does NOT fork is the shoot's other chance to change
+// shape: with this probability it KINKS — carries on as one shoot, spending no
+// vigour, but on a new heading. Without it a non-forking boundary continued on
+// the heading it had, and limbs came out as long ruler-straight diagonals: the
+// per-cell wobble in findGrowth is clamped to the three upward headings, so a
+// shoot already leaning hard one way has half its wobbles absorbed by that
+// clamp (effective turn rate 0.15, not TURN_CHANCE) and just keeps going. A
+// kink picks one of the two headings the shoot is *not* on, so unlike the
+// wobble it always actually turns. This is a shape dial with no water cost —
+// unlike BRANCH_CHANCE it spends no vigour, so it breaks up straight runs
+// without touching how far a tip can climb before it buds.
+const KINK_CHANCE = 0.55;
 const LEAF_COST = 9; // …and a leaf is the cheapest thing a plant makes
 const LEAF_CHANCE = 0.05; // how often a spent bud puts out another leaf
 // Leaves may sit against more neighbours than a growing branch may: branches
@@ -208,6 +225,12 @@ function pack(m: number, tip: boolean, dir: number, seg: number, gen: number): n
 /** Cells a shoot runs before it forks — 1..3, so branches come out short and
  *  the plant spends its height on twigs rather than on long bare limbs. */
 const randSeg = (sim: SimContext): number => 1 + sim.randInt(3);
+
+/** One of the two upward headings that isn't `d`, picked evenly. Unlike the
+ *  wobble in findGrowth (which clamps, and so often leaves an extreme heading
+ *  unchanged) this always returns a different heading — that is the point of a
+ *  kink: it is the thing that reliably breaks a straight run. */
+const kinked = (d: number, sim: SimContext): number => (d + 1 + sim.randInt(2)) % 3;
 
 /** The `aux` a freshly germinated Seed hands its sprout: a trunk tip heading
  *  straight up (GEN_TRUNK — it climbs a while before it may branch),
@@ -437,23 +460,35 @@ function growTip(x: number, y: number, sim: SimContext, a: number): number {
   }
 
   if (gen === GEN_TRUNK) {
-    // Trunk stage, segment done: usually just run another segment, heading
-    // re-squared to straight up — the wobble may bend a segment, but the trunk
-    // as a whole keeps climbing vertically instead of wandering off diagonally.
-    // Now and then it opens its crown instead: demoted to a full-vigour
-    // branching tip (seg 0), it forks on its next growth attempt. Both are
-    // decisions, not growth — no moisture is spent until the tip next extends.
-    return sim.chance(TRUNK_FORK_CHANCE)
-      ? pack(m, true, dirOf(a), 0, MAX_GEN)
-      : pack(m, true, 1, randSeg(sim), GEN_TRUNK);
+    // Trunk stage, segment done: usually just run another segment. Now and then
+    // it opens its crown instead — demoted to a full-vigour branching tip
+    // (seg 0), it forks on its next growth attempt. Both are decisions, not
+    // growth — no moisture is spent until the tip next extends.
+    //
+    // A trunk segment mostly re-squares to straight up, which is what keeps the
+    // trunk climbing instead of wandering off diagonally — but not *always*,
+    // because re-squaring every single boundary is what made the trunk a ruler:
+    // heading 1 held for its whole length is a perfectly vertical line, and a
+    // long trunk was by far the longest straight run in the plant. Leaning it
+    // aside now and then (TRUNK_LEAN_CHANCE) makes the trunk zigzag gently
+    // around vertical — still a trunk, no longer drawn with a straightedge.
+    if (sim.chance(TRUNK_FORK_CHANCE)) return pack(m, true, dirOf(a), 0, MAX_GEN);
+    const d = sim.chance(TRUNK_LEAN_CHANCE) ? (sim.chance(0.5) ? 0 : 2) : 1;
+    return pack(m, true, d, randSeg(sim), GEN_TRUNK);
   }
 
   if (gen > 0) {
     // Segment done with vigour to spare: mostly just run another segment on the
-    // same shoot, keeping its heading and *not* spending a generation, so limbs
-    // grow long between forks. Only BRANCH_CHANCE of the time does it actually
-    // fork. A decision, not growth — no moisture spent until the tip extends.
-    if (!sim.chance(BRANCH_CHANCE)) return pack(m, true, dirOf(a), randSeg(sim), gen);
+    // same shoot, *not* spending a generation, so limbs grow long between forks.
+    // Only BRANCH_CHANCE of the time does it actually fork. Carrying on is not
+    // the same as carrying straight on, though — KINK_CHANCE of those boundaries
+    // turn the shoot onto a new heading, which is what keeps a limb from running
+    // as one long straight diagonal between forks. Both are decisions, not
+    // growth — no moisture is spent until the tip next extends.
+    if (!sim.chance(BRANCH_CHANCE)) {
+      const d = dirOf(a);
+      return pack(m, true, sim.chance(KINK_CHANCE) ? kinked(d, sim) : d, randSeg(sim), gen);
+    }
 
     // Fork: two shoots that diverge as widely as the open space allows.
     if (m < BRANCH_COST) return a;
