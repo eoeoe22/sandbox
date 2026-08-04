@@ -2,7 +2,15 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { clampTo, clampV, cellsThisTick, decodeFlight, encodeFlight } from './ballistic';
+import {
+  applyFlightGravity,
+  clampTo,
+  clampV,
+  cellsThisTick,
+  decodeFlight,
+  encodeFlight,
+  V_MAX_Q,
+} from './ballistic';
 
 // Debris — the grain a weak blast flings instead of erasing. It carries the
 // original powder/liquid/gas id in `aux` and, when its flight expires, deposits
@@ -76,11 +84,20 @@ const JET_CELLS_PER_OUT = 4;
  * fragment. Every launch is UPWARD (the solid ground reflects a downward push,
  * so nothing is driven into the floor): VERTICAL_CHANCE of fragments take the
  * full speed straight up (the central column) and the rest fly a ~45° diagonal,
- * siding with the shock's outward normal (entryDx) so the left flank of a blast
- * sprays left — together a tall plume with a thinner skirt, like a real splash.
- * `outB` (remaining outward budget) sets the speed, fiercest at the epicenter.
- * Called from `detonate`'s default cell handler (blast.ts) for each loose
- * powder/liquid/gas cell a blast is too weak to destroy.
+ * siding with the shock's outward normal (entryDx/entryDy) so the left flank of
+ * a blast sprays left — together a tall plume with a thinner skirt, like a real
+ * splash. `outB` (remaining outward budget) sets the speed, fiercest at the
+ * epicenter. Called from `detonate`'s default cell handler (blast.ts) for each
+ * loose powder/liquid/gas cell a blast is too weak to destroy.
+ *
+ * "Up" here means against the world's gravity vector, not toward the top of the
+ * screen, and "sideways" means perpendicular to it — the whole fountain shape is
+ * a statement about which way the ground is, so it has to turn with the ground.
+ * (It has to turn for a second reason too, now that the flight itself follows
+ * gravity: a plume launched screen-up that then curved screen-left would read as
+ * two different physics arguing.) Both bases collapse to the screen axes at the
+ * default down-gravity — up = (0,−1), perp = (1,0) — so every tuned number below,
+ * every clamp and every RNG draw is bit-for-bit what it was there.
  */
 export function launchDebris(
   sim: SimContext,
@@ -88,36 +105,57 @@ export function launchDebris(
   y: number,
   origId: number,
   entryDx: number,
-  _entryDy: number, // kept for call-site symmetry; every launch is upward now
+  entryDy: number,
   outB: number,
 ): void {
   const speedQ = BASE_SPEED_Q + Math.round(outB) * GAIN_Q;
   const jitterSpan = JITTER_Q * 2 + 1;
-  let vxQ: number;
-  let vyQ: number;
+  // Against-gravity ("up") and perpendicular-to-gravity ("side") unit vectors.
+  // The side axis's sign is physically arbitrary (the jitter added to it is
+  // symmetric, and the entry normal is both projected onto it and re-projected
+  // off it, so its sign cancels there) — SimContext says the same about its own
+  // `perp`. It's written as (gy, −gx) rather than the engine's (−gy, gx) purely
+  // so that at the default down-gravity it comes out as (+1, 0) and every line
+  // below is then literally the screen-axis arithmetic it replaced, checked
+  // exhaustively over the whole speed × jitter × normal space.
+  const ux = -sim.gravityX;
+  const uy = -sim.gravityY;
+  const px = sim.gravityY;
+  const py = -sim.gravityX;
+  // Velocity in that basis; projected back onto the screen axes at the end.
+  let sideQ: number;
+  let upQ: number;
   if (sim.chance(VERTICAL_CHANCE)) {
     // Straight up, boosted ×1.5: the column is the show, so it rides the full
     // velocity clamp near the epicenter. Jitter only sideways (it keeps a
     // column from stacking into a single line of cells).
-    vxQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
+    sideQ = clampV(sim.randInt(jitterSpan) - JITTER_Q);
     const upSpeedQ = ((speedQ * VERTICAL_BOOST_NUM) >> 1) + UP_BIAS_Q;
-    vyQ = clampV(-upSpeedQ + sim.randInt(jitterSpan) - JITTER_Q);
+    upQ = clampV(upSpeedQ - (sim.randInt(jitterSpan) - JITTER_Q));
   } else {
     // ~45° diagonal: the speed split across both axes (×3/4 ≈ 1/√2 per axis so
     // the diagonal covers the same ground). Side follows the shock's outward
-    // normal when it has one; a fragment shoved purely vertically picks a side
-    // at random so a centered burst still fans both ways. Both FINAL components
-    // (bias and jitter included) saturate at the pre-boost ceiling — exactly
-    // where the old shared clamp flattened them — so the skirt stays the modest
-    // 45° fan it always was and only the column got taller.
-    const side = entryDx !== 0 ? entryDx : sim.chance(0.5) ? 1 : -1;
+    // normal when it has one; a fragment shoved purely along gravity picks a
+    // side at random so a centered burst still fans both ways. Both FINAL
+    // components (bias and jitter included) saturate at the pre-boost ceiling —
+    // exactly where the old shared clamp flattened them — so the skirt stays the
+    // modest 45° fan it always was and only the column got taller.
+    // The normal arrives in screen axes, so project it onto the side axis: at
+    // default gravity that is just entryDx back again, and under sideways
+    // gravity it is entryDy (the component that is now "across" the blast).
+    const entrySide = entryDx * px + entryDy * py;
+    const side = entrySide !== 0 ? entrySide : sim.chance(0.5) ? 1 : -1;
     const axisQ = (speedQ * 3) >> 2;
-    vxQ = clampTo(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q, DIAG_MAX_AXIS_Q);
-    vyQ = clampTo(
-      -(axisQ + UP_BIAS_Q) + sim.randInt(jitterSpan) - JITTER_Q,
+    sideQ = clampTo(side * axisQ + sim.randInt(jitterSpan) - JITTER_Q, DIAG_MAX_AXIS_Q);
+    upQ = clampTo(
+      axisQ + UP_BIAS_Q - (sim.randInt(jitterSpan) - JITTER_Q),
       DIAG_MAX_AXIS_Q,
     );
   }
+  // Both clamps are symmetric about 0, so clamping in the gravity basis and
+  // projecting is identical to the old clamp-in-screen-axes at default gravity.
+  const vxQ = px * sideQ + ux * upQ;
+  const vyQ = py * sideQ + uy * upQ;
   sim.spawn(x, y, DEBRIS.id);
   sim.setTemp(x, y, encodeFlight(LIFE_MIN + sim.randInt(LIFE_VAR), vxQ, vyQ));
   sim.setAux(x, y, origId); // the material to rain back down (material ids fit a byte)
@@ -125,16 +163,22 @@ export function launchDebris(
   // Incompressible jet: surface a submerged liquid fragment now (see
   // JET_CELLS_PER_OUT). Swaps carry the packed flight state and aux along, and
   // stop at anything non-liquid — air (surfaced), a stacked sibling fragment
-  // (the forming column), a solid lid, or a frozen (hardened) liquid.
+  // (the forming column), a solid lid, or a frozen (hardened) liquid. "Surface"
+  // is against gravity, same as the launch above.
   if (getMaterial(origId).phase === Phase.Liquid) {
     let climb = Math.round(outB) * JET_CELLS_PER_OUT;
+    let jx = x;
     let jy = y;
-    while (climb-- > 0 && jy > 0) {
-      const aid = sim.get(x, jy - 1);
+    while (climb-- > 0) {
+      const ax = jx + ux;
+      const ay = jy + uy;
+      if (!sim.inBounds(ax, ay)) break;
+      const aid = sim.get(ax, ay);
       if (aid === EMPTY || getMaterial(aid).phase !== Phase.Liquid) break;
-      if (sim.isFrozen(x, jy - 1)) break;
-      sim.swap(x, jy, x, jy - 1);
-      jy--;
+      if (sim.isFrozen(ax, ay)) break;
+      sim.swap(jx, jy, ax, ay);
+      jx = ax;
+      jy = ay;
     }
   }
 }
@@ -187,8 +231,11 @@ function updateDebris(x: number, y: number, sim: SimContext): void {
   // it ricochets off a solid — a springy material keeps most of its speed, a dull
   // one thuds and settles. Read from the origin id it's carrying in aux.
   const restitution = getMaterial(origId).elasticity ?? DEBRIS_RESTITUTION;
-  let vxQ = st.vxQ;
-  let vyQ = clampV(st.vyQ + GRAVITY_Q); // brisk gravity every tick → a quick arc
+  // Brisk gravity every tick → a quick arc. Along the world's gravity vector and
+  // gated by its strength (see applyFlightGravity): a fragment falls back toward
+  // whichever way this world's ground is, and in weightlessness it doesn't fall
+  // back at all — the burst just keeps expanding until its flight time runs out.
+  let [vxQ, vyQ] = applyFlightGravity(sim, st.vxQ, st.vyQ, GRAVITY_Q, V_MAX_Q);
   if (Math.abs(vxQ) <= STILL_Q && Math.abs(vyQ) <= STILL_Q) {
     // Momentum spent on both axes → settle now instead of hovering, so the burst
     // doesn't linger. (A freshly launched fragment always has speed on at least
