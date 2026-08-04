@@ -135,9 +135,11 @@ const SLIME_ACIDIFY_SELF_CONSUME = 0.08;
 // is the check `test:acidslime` pins. The first pass at this rule missed it badly:
 // tuned only against the *conversion* count it landed at 0.01, where the goo took
 // 353–392 ticks to drink an acid pool against water's 153 — 산성 슬라임이 산을 제대로
-// 침식하지 않는다는 피드백이 정확히 이 자리였다. Once acid meets goo that is already
-// acidic there is nothing left to acidify, so this row is the *only* thing acting,
-// and at 0.01 it was 2.5× too slow.
+// 침식하지 않는다는 피드백이 정확히 이 자리였다. The Acid-Slime row is where that bit
+// hardest, and it is also the only place this constant can be read cleanly: acid
+// meeting goo that is already acidic has nothing left to acidify, so no other rule
+// in the table fires and the drain rate is this row alone. (Against plain Slime the
+// acidify rows spend acid too, so that case measures the table as a whole.)
 //
 // The conversion pace stays honest at this rate too, scored as the **share** of
 // the goo that has changed rather than a raw count — the raw counts are not

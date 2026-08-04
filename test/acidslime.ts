@@ -9,10 +9,13 @@
 // a world-eating catalyst, and one that consumes too much never visibly fires at
 // all. So what this file pins is the *bookkeeping* as much as the outcome:
 //
-//   • **Acid poured on Slime acidifies it, one cell per acid cell.** Acid Slime
-//     appears at the boundary, and the acid consumed exactly equals the slime
-//     converted (`produce: EMPTY`). The goo itself is conserved — every cell of
-//     Slime that stops being Slime is now Acid Slime, none of it vanishes.
+//   • **Acid poured on Slime acidifies it, and is drunk by it.** Acid Slime
+//     appears at the boundary, the pool is spent doing it, and the blob *grows* —
+//     because the goo drinks acid the way it drinks water — but it can only grow
+//     by as many cells as the pool lost, so nothing is conjured.
+//   • **Both liquids are drunk at the same rate.** The goo empties a pool of acid
+//     in about the time it empties a pool of water. This is the sharpest check
+//     here, and the one whose absence let the absorb rate ship 2.5× too slow.
 //   • **Acid alone doesn't evaporate.** The control: the same box with no slime
 //     in it keeps every acid cell, so the loss measured above is the recipe's and
 //     not some other pass eating the puddle.
@@ -187,8 +190,18 @@ const TICKS = 600;
   const acidShare = acidSlime / (slime + acidSlime);
   check('a quenched acid slime blob ends up mostly plain slime', acidShare < 0.15,
     `${(acidShare * 100).toFixed(0)}% of the goo is still acidic`);
+  // Scored against the blob's *starting* size, which is the strong form: the blob
+  // roughly octuples over these 600 ticks and half of every water cell it drinks
+  // comes back acidic (ABSORB_ACID_CHANCE), so acidic goo is being *manufactured*
+  // the whole time. Ending below where it started means the rinse outran that.
+  // The bar used to be `goo0 * 0.75` (48), which sat inside the healthy spread —
+  // measured over 24 seed streams the count lands at 31–50, so seeds 12/15/21 hit
+  // 48/50/48 and went red on a working build. With the rinse disabled the count is
+  // 90–110, so `< goo0` separates the two populations with room on both sides
+  // (14 clear of the healthy max, 26 clear of the broken min) instead of splitting
+  // one of them.
   check('…with a good part of the original blob rinsed clean outright',
-    acidSlime < goo0 * 0.75, `${acidSlime} acid slime left of the ${goo0} poured`);
+    acidSlime < goo0, `${acidSlime} acid slime left of the ${goo0} poured`);
   check('…while still feeding, so the goo grows overall', slime + acidSlime > goo0,
     `${slime + acidSlime} goo vs ${goo0} to start`);
   check('…and the water is spent doing it', count(grid, WATER) < water0,
@@ -217,15 +230,24 @@ const TICKS = 600;
 //
 //    This is the sharpest check in the file because it needs no mirror scene and no
 //    ratio of unlike things: the *same* goo, the *same* sealed box, the *same*
-//    pool size, and only the liquid differs. Once acid meets goo that is already
-//    acidic there is nothing left to acidify, so the absorb row is the only thing
-//    acting on it — which makes this the one measurement that isolates that row.
-//    Tuned only against the conversion count it had landed at 0.01, where the goo
-//    needed 353–392 ticks to drink an acid pool against water's 153.
+//    pool size, and only the liquid differs. Tuned only against the conversion
+//    count the absorb rate had landed at 0.01, where the goo needed 353–392 ticks
+//    to drink an acid pool against water's 153.
+//
+//    The two iterations are not equally clean, and the acid slime one is the point.
+//    Against **Acid Slime** the absorb row is genuinely the only rule that can fire
+//    — there is nothing left to acidify, so this run isolates that row and nothing
+//    else. Against **plain Slime** the acidify rows are live too and spend acid of
+//    their own (`SLIME_ACIDIFY_SELF_CONSUME`), so that run is a broader "the pool
+//    drains at a sane rate" check rather than an isolation of the absorb row. Both
+//    are worth having; only the first one pins the constant.
 //
 //    Scored as "did the pool go" rather than a rate curve, and with a generous
 //    band (±60%), because the point is parity of feel, not a tuned constant: what
 //    fails here is a regression that puts the two liquids in different leagues.
+//    (The two runs deliberately draw from different streams — `reseed()` per run —
+//    since a drain time is an aggregate over hundreds of ticks, not a seed-matched
+//    duel like #6. Measured spread across seed streams is 0.66–1.16×.)
 {
   const POOL = 288; // 24×12 of reagent over 24×12 of goo
   const CAP = 900; // ~6× the passing time; a stuck scene ends the loop, not the run
@@ -309,7 +331,7 @@ const TICKS = 600;
   check('…and not by exploding into goo either', ratio < 1.9, `${ratio.toFixed(2)}×`);
 }
 
-// 5. The two halves meeting in one tick — the regression this file exists to
+// 7. The two halves meeting in one tick — the regression this file exists to
 //    catch as much as anything. A rinsed cell becomes plain Slime, and Slime is
 //    now a reaction-table partner, so an Acid cell that has not had its turn yet
 //    can pick the fresh Slime up and convert it straight back inside the same
@@ -342,7 +364,7 @@ const TICKS = 600;
     grid.get(5, 10) === SLIME, `cell is ${getMaterial(grid.get(5, 10)).name}`);
 }
 
-// 6. The same hazard from the other direction, and the reason it is worth a
+// 8. The same hazard from the other direction, and the reason it is worth a
 //    second check: a Spark travelling through a Slime blob reverts its cell to
 //    Slime at the end of its turn (spark.ts), which is another bare write of a
 //    material that only became a reaction partner when the recipe landed. Left
