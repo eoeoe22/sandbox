@@ -211,27 +211,72 @@ const TICKS = 600;
     `${count(grid, SLIME)} vs ${goo0} to start`);
 }
 
-// 5. The pace, which is the whole point of the acid side's absorb row: 산이
-//    슬라임을 침식하는 속도가 물이 산성 슬라임을 씻어 내는 속도와 같아야 한다.
+// 5. **The goo drinks acid as fast as it drinks water.** 슬라임은 유체를 마셔 몸집을
+//    키우는데, 그 유체가 산일 때만 굼떴다 — 산성 슬라임이 산을 제대로 침식하지 않는
+//    문제로 보고된 자리다.
 //
-//    Scored as the *ratio* of the two directions run on the mirror-image scene —
-//    a goo blob on open ground with a pool of the other liquid poured over it,
-//    which is the scene a player actually makes and (unlike the sealed boxes
-//    above) lets the pool run down the blob's flanks and drain, the thing the
-//    first attempt at this blamed. Same geometry, same seed, same tick count, so
-//    the only difference is which recipe is running.
+//    This is the sharpest check in the file because it needs no mirror scene and no
+//    ratio of unlike things: the *same* goo, the *same* sealed box, the *same*
+//    pool size, and only the liquid differs. Once acid meets goo that is already
+//    acidic there is nothing left to acidify, so the absorb row is the only thing
+//    acting on it — which makes this the one measurement that isolates that row.
+//    Tuned only against the conversion count it had landed at 0.01, where the goo
+//    needed 353–392 ticks to drink an acid pool against water's 153.
+//
+//    Scored as "did the pool go" rather than a rate curve, and with a generous
+//    band (±60%), because the point is parity of feel, not a tuned constant: what
+//    fails here is a regression that puts the two liquids in different leagues.
+{
+  const POOL = 288; // 24×12 of reagent over 24×12 of goo
+  const CAP = 900; // ~6× the passing time; a stuck scene ends the loop, not the run
+  /** Ticks until the goo has drunk the whole pool (CAP if it never does). */
+  function drainTicks(gooId: number, liquidId: number): number {
+    reseed();
+    const { grid, sim } = layered(liquidId, gooId); // the liquid is lighter, so on top
+    for (let t = 1; t <= CAP; t++) {
+      sim.step();
+      if (count(grid, liquidId) === 0) return t;
+    }
+    return CAP;
+  }
+  for (const [label, gooId] of [
+    ['acid slime', ACID_SLIME],
+    ['plain slime', SLIME],
+  ] as [string, number][]) {
+    const onWater = drainTicks(gooId, WATER);
+    const onAcid = drainTicks(gooId, ACID);
+    const ratio = onAcid / onWater;
+    check(`${label} drinks a pool of acid as fast as one of water`,
+      ratio > 0.4 && ratio < 1.6,
+      `${POOL} cells gone in ${onAcid} ticks of acid vs ${onWater} of water (${ratio.toFixed(2)}×)`);
+  }
+}
+
+// 6. The other half of the pace: 산이 슬라임을 침식하는 속도가 물이 산성 슬라임을
+//    씻어 내는 속도와 같아야 한다 — the complaint that put the absorb row here.
+//
+//    Run on the mirror-image scene a player actually makes: a goo blob on open
+//    ground with a pool of the other liquid poured over it, so (unlike the sealed
+//    boxes above) the pool runs down the blob's flanks and drains. Same geometry,
+//    same seed, same tick count; only the recipe differs.
+//
+//    Scored as the **share of the goo that has changed**, not a raw product count.
+//    The counts are not comparable between the directions: 100% of a drunk acid
+//    cell comes back acidic, while only 50% of a drunk water cell comes back plain
+//    (ABSORB_ACID_CHANCE), so a raw count flatters the acid side for free — it was
+//    what made a 1.20 read as 1.60. Both shares start at 0%, which is what makes
+//    them a fair pair.
 //
 //    The bar is deliberately two-sided. A floor is the regression this exists for
-//    (the acid direction was ~0.3× water and read as broken), but a ceiling
-//    matters just as much, because the fix is a growth rule: overshoot it and a
-//    splash of acid turns into a goo explosion instead of an erosion. Measured
-//    over 10 seeds the ratio sits at 0.82–1.16, so [0.6, 1.8] is comfortably
-//    outside the noise while still catching either failure.
+//    (the acid direction was ~0.3× water and read as broken), but a ceiling matters
+//    just as much, because the fix is a *growth* rule: overshoot it and a splash of
+//    acid is a goo explosion rather than an erosion. Measured over 8 seeds the
+//    ratio sits at 1.20–1.29, so [0.7, 1.9] clears the noise either way.
 {
   const W = 60;
   const H = 40;
-  /** A `size`-square goo blob resting on the floor with a wider pool of `liquid`
-   *  suspended above it, so the pool falls onto the mound and runs off its sides. */
+  /** A 12×12 goo blob resting on the floor with a wider pool of `liquid` suspended
+   *  above it, so the pool falls onto the mound and runs off its sides. */
   function poured(gooId: number, liquidId: number): { grid: Grid; sim: Simulation } {
     const grid = new Grid(W, H);
     const sim = new Simulation(grid);
@@ -246,20 +291,22 @@ const TICKS = 600;
   }
   const PACE_TICKS = 200; // before either direction saturates (water levels off ~300)
   reseed();
-  const seed = Math.random();
-  const run = (gooId: number, liquidId: number, productId: number): number => {
-    Math.random = mulberry32((seed * 0xffffffff) >>> 0);
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  /** Share of all goo — both kinds — now reading as `productId`. */
+  const share = (gooId: number, liquidId: number, productId: number): number => {
+    Math.random = mulberry32(seed);
     const { grid, sim } = poured(gooId, liquidId);
     for (let t = 0; t < PACE_TICKS; t++) sim.step();
-    return count(grid, productId);
+    return count(grid, productId) / (count(grid, SLIME) + count(grid, ACID_SLIME));
   };
-  const acidified = run(SLIME, ACID, ACID_SLIME);
-  const rinsed = run(ACID_SLIME, WATER, SLIME);
+  const acidified = share(SLIME, ACID, ACID_SLIME);
+  const rinsed = share(ACID_SLIME, WATER, SLIME);
   const ratio = acidified / rinsed;
-  check('acid erodes slime at water\'s pace, not slower', ratio > 0.6,
-    `${acidified} acidified vs ${rinsed} rinsed in ${PACE_TICKS} ticks (${ratio.toFixed(2)}×)`);
-  check('…and not by exploding into goo either', ratio < 1.8,
-    `${ratio.toFixed(2)}×`);
+  const detail =
+    `${(acidified * 100).toFixed(0)}% acidic vs ${(rinsed * 100).toFixed(0)}% ` +
+    `rinsed in ${PACE_TICKS} ticks (${ratio.toFixed(2)}×)`;
+  check('acid erodes slime at water\'s pace, not slower', ratio > 0.7, detail);
+  check('…and not by exploding into goo either', ratio < 1.9, `${ratio.toFixed(2)}×`);
 }
 
 // 5. The two halves meeting in one tick — the regression this file exists to

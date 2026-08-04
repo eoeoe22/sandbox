@@ -121,20 +121,34 @@ const SLIME_ACIDIFY_SELF_CONSUME = 0.08;
 // Both goos drink it, for the same reason water is drunk by both — otherwise the
 // blob's newly-acidified face would stop the growth dead the moment it forms.
 //
-// The number is a fifth of Slime's water feed and is not comparable to it: this
-// rule is rolled from the *acid's* turn across all 8 neighbours, where the pool
-// is the numerous side, while Slime's feed is rolled from the goo's turn across
-// 4 — and the acidify rows below pile on top of it. So it was tuned by measuring
-// the thing that was actually asked for. On open ground (144-cell blob, 240-cell
-// pool poured over it, 3 seeds) the two directions now convert in step:
+// The number is half of Slime's water feed and is not comparable to it: this rule
+// is rolled from the *acid's* turn across all 8 neighbours, where the pool is the
+// numerous side, while Slime's feed is rolled from the goo's turn across 4 — and
+// the acidify rows below pile on top of it. So it is tuned against the thing the
+// player can actually see, which is **how fast the goo drinks the pool**:
 //
-//   tick        50   100   200   300   600
-//   산 → 산성    89–109  119–144  163–196  218–243  298–310
-//   물 → 일반    63–80   93–118   166–197  227–237  227–237
+//   시약 288칸이 사라지기까지 (밀폐 상자, 3시드 평균)
+//     산성 슬라임 + 물 152틱   |  산성 슬라임 + 산 150틱
+//     일반 슬라임 + 물 154틱   |  일반 슬라임 + 산 157틱
 //
-// Neck and neck through the visible stretch, with the acid pulling ahead only at
-// the tail — which is the right way round for the corrosive one.
-const SLIME_ABSORB_CHANCE = 0.01;
+// 물이든 산이든 goo가 웅덩이를 마시는 속도가 같다 — that parity is the point, and it
+// is the check `test:acidslime` pins. The first pass at this rule missed it badly:
+// tuned only against the *conversion* count it landed at 0.01, where the goo took
+// 353–392 ticks to drink an acid pool against water's 153 — 산성 슬라임이 산을 제대로
+// 침식하지 않는다는 피드백이 정확히 이 자리였다. Once acid meets goo that is already
+// acidic there is nothing left to acidify, so this row is the *only* thing acting,
+// and at 0.01 it was 2.5× too slow.
+//
+// The conversion pace stays honest at this rate too, scored as the **share** of
+// the goo that has changed rather than a raw count — the raw counts are not
+// comparable between the directions, since 100% of a drunk acid cell comes back
+// acidic while only 50% of a drunk water cell comes back plain (acidslime.ts's
+// ABSORB_ACID_CHANCE), which flatters the acid side for free. By share, on open
+// ground at 200 ticks over 8 seeds: 산 73–76% vs 물 56–62%, a ratio of 1.20–1.29.
+// The corrosive direction running ~a quarter ahead is the right way round, and it
+// is the side to err on — this rule has now been reported as too slow twice and
+// never as too fast.
+const SLIME_ABSORB_CHANCE = 0.025;
 
 function updateAcid(x: number, y: number, sim: SimContext): void {
   // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
