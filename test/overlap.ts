@@ -530,6 +530,70 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
   check('…굳은 자리에 물이 남지 않는다 (양생에 소모)', countOverlay(grid, WATER.id) === 0);
 }
 
+// ── 5c. 시멘트 양생 — 물이 더미 속으로 스며든다 ───────────────────────────────
+// The scene 5b's packed pocket can't show, because there the water starts already
+// inside every grain: **pouring** water on a deep dry pile. Cement used to set the
+// instant it met water, and Concrete is a plain Solid that hosts no 겹침 fluid, so
+// the top row flipped into a waterproof lid within a few ticks and everything
+// under it stayed powder no matter how much more water you added. A wetted grain
+// now cures for CURE_TICKS as *powder* before it sets, and the water that wets it
+// is usually not spent doing so — so it goes on down and wets the grains below.
+// The pins are therefore depth (did the water get past its own crust?) and the
+// delay itself (nothing has set yet while the water is still travelling).
+{
+  const { grid, sim } = makeWorld(40, 60);
+  // A walled shaft, so the pile can't slump sideways and confuse "how deep did the
+  // water get" with "where did the grains slide to".
+  for (let y = 0; y < 60; y++)
+    for (let x = 0; x < 40; x++) if (x < 14 || x >= 26) grid.set(x, y, WALL.id);
+  floor(grid, 50, WALL.id);
+  for (let y = 30; y < 50; y++) for (let x = 14; x < 26; x++) grid.set(x, y, CEMENT.id); // 20칸 깊이
+  for (let y = 28; y < 30; y++) for (let x = 14; x < 26; x++) grid.set(x, y, WATER.id); // 2겹만 붓는다
+
+  for (let t = 0; t < 20; t++) sim.step();
+  let curing = 0;
+  for (let i = 0; i < grid.cells.length; i++)
+    if (grid.cells[i] === CEMENT.id && grid.aux[i] > 0) curing++;
+  check(
+    '시멘트: 물을 먹어도 바로 굳지 않는다 (양생 중에는 아직 가루)',
+    count(grid, CONCRETE.id) === 0 && curing > 0,
+    `${curing} curing, ${count(grid, CONCRETE.id)} concrete at tick 20`,
+  );
+
+  for (let t = 0; t < 400; t++) sim.step();
+  // 표면에서 10칸 아래(y ≥ 40) — 옛 규칙이라면 물이 첫 겹에서 전부 소모되고 그 위로
+  // 콘크리트 뚜껑이 덮여 절대 닿을 수 없던 깊이.
+  let deep = 0;
+  for (let y = 40; y < 50; y++)
+    for (let x = 14; x < 26; x++) if (grid.get(x, y) === CONCRETE.id) deep++;
+  check(
+    '…부은 물이 더미 깊숙이 스며들어 아래쪽 알갱이까지 굳힌다',
+    deep > 0,
+    `${deep} concrete cells 10+ rows deep, ${count(grid, CONCRETE.id)} total`,
+  );
+  check(
+    '…물 한 칸이 알갱이 하나만 굳히지는 않는다 (스며들며 여러 알을 적신다)',
+    count(grid, CONCRETE.id) > 24,
+    `24 water → ${count(grid, CONCRETE.id)} concrete`,
+  );
+}
+
+// ── 5d. 시멘트 대조군 — 물이 없으면 아무 일도 없다 ─────────────────────────────
+// The counterweight to 5c: the cure is a *timer*, and a timer is exactly the shape
+// of bug that fires on its own. A dry pile left alone must still be a dry pile.
+{
+  const { grid, sim } = makeWorld(30, 40);
+  floor(grid, 30, WALL.id);
+  for (let y = 20; y < 30; y++) for (let x = 10; x < 20; x++) grid.set(x, y, CEMENT.id);
+  const grains = count(grid, CEMENT.id);
+  for (let t = 0; t < 400; t++) sim.step();
+  check(
+    '시멘트: 물이 없으면 스스로 굳지 않는다',
+    count(grid, CEMENT.id) === grains && count(grid, CONCRETE.id) === 0,
+    `${count(grid, CEMENT.id)}/${grains} cement, ${count(grid, CONCRETE.id)} concrete`,
+  );
+}
+
 // ── 6. ANFO 무회귀 ──────────────────────────────────────────────────────────
 // The soak that is *supposed* to be inert. Ammonium Nitrate hosts Diesel on
 // purpose (ANFO), and neither side declares a reaction with the other — so the
