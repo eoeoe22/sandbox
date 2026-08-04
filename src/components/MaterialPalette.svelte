@@ -264,11 +264,12 @@
    * whose chip was unmounted before its `pointerup` stranded the flag set
    * forever (on a tablet with no mouse, nothing would ever clear it).
    *
-   * A set has neither problem: it is per-pointer by construction, and it is
+   * A map has neither problem: it is per-pointer by construction, and it is
    * emptied from `window` rather than from the chip — a `pointerup` reaches the
-   * window whether or not the element it started on still exists.
+   * window whether or not the element it started on still exists. The value is
+   * when that finger landed; see `CONTEXT_SUPPRESS_MS` for what reads it.
    */
-  const touchIds = new Set<number>();
+  const touchIds = new Map<number, number>();
   /**
    * Which chip's click a fired long press has claimed, or -1. An id rather than
    * a flag because the claim belongs to *that* chip: with two fingers on the
@@ -280,8 +281,7 @@
 
   function pressStart(e: PointerEvent, m: Material): void {
     if (e.pointerType === 'mouse') return; // the mouse has hover; see above
-    touchIds.add(e.pointerId); // every finger counts here, owner or not
-    lastTouchStart = performance.now();
+    touchIds.set(e.pointerId, performance.now()); // every finger counts, owner or not
     if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
     // Any new press supersedes a stale claim — see `armSwallow` for when one can
     // be left behind.
@@ -372,34 +372,40 @@
 
   /**
    * How long after a finger lands its own long-press menu is still plausibly
-   * coming. The platforms fire theirs around half a second in; three seconds is
-   * far past that and still bounded.
+   * coming — measured per finger, so one that never reported its release stops
+   * mattering three seconds after *it* began, no matter how much the palette is
+   * used in between.
    *
    * This is the belt to `forgetTouches`'s braces, and it exists because that one
    * cannot be *proven* to cover the case it was written for. The motivating leak
    * is an iOS system gesture stealing the touch — and Control Center draws over
    * Safari rather than switching away from it, so whether the page is told
    * anything at all (a `blur`, a `visibilitychange`) is exactly as unsettled as
-   * the `pointercancel` that already doesn't arrive. Rather than leave the
-   * answer to a device check, the suppression simply stops being able to
-   * outlive its own reason: a stranded id can cost at most three seconds of
-   * suppressed context menus instead of the rest of the session.
+   * the `pointercancel` that already doesn't arrive.
    *
-   * Nothing real is lost. The rule reads "while a finger is down" and it is now
-   * "while a finger is down AND the platform might still act on it" — a finger
-   * resting on a chip past three seconds has no menu left to raise.
+   * Three seconds is not a proof either: platforms raise their long-press menu
+   * around half a second in, and Android's accessibility ceiling for the delay
+   * is 1.5s, but iOS's Touch Accommodations hold duration is a +/- stepper with
+   * no documented cap, so a long enough setting could outlast this. The number
+   * doesn't have to be a proof, because the two ways of being wrong are not
+   * remotely the same size: too short costs ONE press a native menu appearing
+   * beside the sheet, and unbounded costs the session every context menu on
+   * every chip — silently, with no way back short of a reload. Given that, a
+   * finite window is right even where its exact value can only be a judgement.
    */
   const CONTEXT_SUPPRESS_MS = 3000;
-  /** When the most recent finger landed on a chip — see CONTEXT_SUPPRESS_MS. */
-  let lastTouchStart = 0;
 
   /** Suppress the platform's own long-press menu, which would fight ours — but
    *  only while a finger is actually down, so a right-click and a keyboard Menu
    *  key both keep the browser menu they always had. */
   function chipContextMenu(e: Event): void {
-    if (touchIds.size === 0) return;
-    if (performance.now() - lastTouchStart > CONTEXT_SUPPRESS_MS) return;
-    e.preventDefault();
+    const now = performance.now();
+    for (const started of touchIds.values()) {
+      if (now - started <= CONTEXT_SUPPRESS_MS) {
+        e.preventDefault();
+        return;
+      }
+    }
   }
 
   const closeSheet = (): void => void (sheetMat = null);
