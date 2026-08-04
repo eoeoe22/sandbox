@@ -37,7 +37,7 @@ description: 이 샌드박스 프로젝트의 픽셀아트 에셋(독립 오브�
 **생성**된다. 따라서 "에셋을 만든다"는 건 그림 파일을 넣는 게 아니라
 `src/game/render/` 에 스프라이트 모듈을 하나 추가하는 일이다.
 
-`temp/` 에 있는 `.svg`들(`wooden-crate.svg`, `piece1~3.svg`)은 디자인 핸드오프
+`svg-assets/` 에 있는 `.svg`들(`objects/wooden-crate.svg`, `objects/wooden-crate-pieces/piece1~3.svg` 등)은 디자인 핸드오프
 원본일 뿐 **런타임에 절대 로드되지 않는다.** 유일하게 번들되는 `.svg` 파일은
 `src/assets/favicon.svg` 하나다(`astro.config.mjs`가 `assetsInlineLimit: 0`이라
 base64 인라인도 일어나지 않는다).
@@ -395,4 +395,4 @@ const ART: Record<WoodBoxPart, readonly string[]> = {
 | `docs/OBJECTS.md` | 오브젝트 레이어 전체 설계 기록 |
 | `docs/MATERIAL-ICONS.md` | 물질 아이콘 전체 설계·분류·손그림 대상 |
 | `./MATERIAL-ICON-BRIEF.md` | **자체 완결** 손그림 규격 — 외부 AI 시스템 프롬프트에 그대로 붙여 넣는다 |
-| `temp/*.svg` | 디자인 핸드오프 원본(런타임 미사용) |
+| `svg-assets/**/*.svg` | 디자인 핸드오프 원본(런타임 미사용) |
