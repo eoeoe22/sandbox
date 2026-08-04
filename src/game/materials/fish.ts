@@ -145,23 +145,15 @@ const TURN_CHANCE = 0.15;
  *  tick. Fish are placed by hand, never breed, and are now sown sparsely
  *  (`placementDensity`), so the population can't run away with that. */
 const PERSONAL_SPACE = 3;
-/** 느슨한 모임 — how far a fish looks for company when it picks a fresh heading.
- *  Has to be several times the ~3.7 cells it covers between two re-headings
- *  (SWIM_CHANCE / TURN_CHANCE) or there is no restoring force at all: at radius 4
- *  a group crossed its own perception range in one heading and was strangers
- *  inside ten seconds. Measured, twice — this number is not a guess. */
+/** 느슨한 모임 — how far a fish looks for company when it picks a fresh heading. */
 const SCHOOL_RADIUS = 8;
-/** Having found company beyond arm's length, the chance it heads that way rather
- *  than drawing a free heading. This is cohesion WITHOUT alignment, deliberately:
- *  cohesion alone gathers them loosely, while adding alignment made the group
- *  swing about as one body and read as scripted rather than alive.
- *
- *  Paired with PERSONAL_SPACE it is also what keeps the spacing *irregular*.
- *  Separation on its own settles into an evenly-spaced lattice — technically the
- *  most natural-looking rule and, at any real fish count, genuinely unpleasant to
- *  look at. A weak pull inward against a hard push outward never reaches an
- *  equilibrium spacing, so the tank stays lumpy. */
-const COHERE_CHANCE = 0.45;
+/** Having found company beyond arm's length, the chance it aligns with the group's heading
+ *  or heads toward the group's centre.
+ *  
+ *  개인 공간(PERSONAL_SPACE=3)으로 밀착을 방지하면서, 정렬(ALIGN_CHANCE=0.2)과 응집(COHERE_CHANCE=0.35)을
+ *  약하게 조합하여 완전히 붙어 뭉치지 않되 적당히 떼를 지어 수평 유영하는 중간 절충안입니다. */
+const ALIGN_CHANCE = 0.2;
+const COHERE_CHANCE = 0.35;
 /** 전기 감전 — chance a fish adjacent to a live Spark dies (see Material.
  *  sparkDeathChance). Water and Saltwater are both conductors, so dropping a live
  *  wire into a tank electrifies the water itself and the current fans out through
@@ -345,30 +337,39 @@ function crowdedHeading(x: number, y: number, sim: SimContext): number {
   return cx === 0 && cy === 0 ? -1 : headingToward(-cx, -cy);
 }
 
-/** A heading for a fish that needs one and isn't being crowded: 느슨하게 모인다.
- *  It looks for company out to SCHOOL_RADIUS and heads roughly that way, or draws
- *  a free heading if there's nobody about (or if the roll says to go its own way,
- *  which is what keeps a group from locking rigidly together).
- *
- *  Only the pull is here. There is no alignment term — see COHERE_CHANCE. */
+/** A heading for a fish that needs one and isn't being crowded: 느슨하게 무리 짓는다.
+ *  개인 공간(PERSONAL_SPACE)으로 근접 밀착을 방지하며, 정렬(ALIGN_CHANCE)과 응집(COHERE_CHANCE)을
+ *  조합하여 완전히 붙어 뭉치지 않되 적당히 떼를 지어 유영합니다. */
 function freeHeading(x: number, y: number, sim: SimContext): number {
-  if (sim.chance(COHERE_CHANCE)) {
-    let cx = 0;
-    let cy = 0;
-    for (let dy = -SCHOOL_RADIUS; dy <= SCHOOL_RADIUS; dy++) {
-      for (let dx = -SCHOOL_RADIUS; dx <= SCHOOL_RADIUS; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== FISH.id) continue;
-        cx += dx;
-        cy += dy;
+  let cx = 0;
+  let cy = 0;
+  let hx = 0;
+  let hy = 0;
+  let n = 0;
+  for (let dy = -SCHOOL_RADIUS; dy <= SCHOOL_RADIUS; dy++) {
+    for (let dx = -SCHOOL_RADIUS; dx <= SCHOOL_RADIUS; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!sim.inBounds(nx, ny) || sim.get(nx, ny) !== FISH.id) continue;
+      n++;
+      cx += dx;
+      cy += dy;
+      const h = headingOf(sim.getAux(nx, ny));
+      if (h >= 0) {
+        hx += RING[h][0];
+        hy += RING[h][1];
       }
     }
-    // Nobody about, or a symmetric ring that cancels — either way there is no
-    // direction to head, so fall through to a free draw rather than invent one.
-    const toward = headingToward(cx, cy);
-    if (toward >= 0) return toward;
+  }
+  if (n > 0) {
+    if (sim.chance(ALIGN_CHANCE)) {
+      const toward = headingToward(hx, hy);
+      if (toward >= 0) return toward;
+    } else if (sim.chance(COHERE_CHANCE)) {
+      const toward = headingToward(cx, cy);
+      if (toward >= 0) return toward;
+    }
   }
   return HEADING_PICK[sim.randInt(HEADING_PICK.length)];
 }
