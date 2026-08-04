@@ -179,7 +179,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Insulated', desc: 'Current never leaks out. A cable run through a puddle or across a steel wall electrifies neither.' },
   },
   wiring: {
-    ko: { label: '배선재', desc: '제대로 된 배선으로 취급됩니다. 터빈처럼 배선에만 전기를 보내는 전원이 이것을 골라 먹입니다.' },
+    ko: { label: '배선재', desc: '제대로 된 배선으로 취급됩니다. 배선에만 전기를 보내는 전원이 이것을 골라 먹입니다.' },
     en: { label: 'Wiring', desc: 'Counts as proper wiring — what a source that only feeds cable (the turbine) picks out.' },
   },
   appliance: {
@@ -191,13 +191,13 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Photoelectric', desc: 'Absorbs laser light and converts it instead of soaking it up as heat, so it never cooks in a beam.' },
   },
   magnetic: {
-    ko: { label: '자성', desc: '통전된 전자석이 끌어당깁니다.' },
-    en: { label: 'Magnetic', desc: 'A powered electromagnet drags it in.' },
+    ko: { label: '자성', desc: '자석이 끌어당깁니다.' },
+    en: { label: 'Magnetic', desc: 'A magnet drags it in.' },
   },
 
   // Traits — light
   laserReflective: {
-    ko: { label: '레이저 반사', desc: '열선을 흡수하지 않고 거울처럼 튕겨 냅니다.' },
+    ko: { label: '레이저 반사', desc: '레이저를 거울처럼 튕겨 냅니다.' },
     en: { label: 'Laser mirror', desc: 'Reflects a heat ray cleanly instead of absorbing it.' },
   },
 
@@ -211,15 +211,15 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Fuel', desc: 'Burns as a front creeping in from the surface, so the fire walks through the whole body.' },
   },
   'fireClass.A': {
-    ko: { label: 'A급 화재', desc: '일반 가연물입니다. 물이 가장 잘 듣습니다.' },
+    ko: { label: '화재', desc: '일반 가연물입니다. 물이 가장 잘 듣습니다.' },
     en: { label: 'Class A fire', desc: 'Ordinary combustibles. Water is the right tool.' },
   },
   'fireClass.B': {
-    ko: { label: 'B급 화재', desc: '유류 화재입니다. 물은 겉돌기만 할 뿐 꺼뜨리지 못합니다.' },
+    ko: { label: '유류 화재', desc: '유류 화재입니다. 물은 겉돌기만 할 뿐 꺼뜨리지 못합니다.' },
     en: { label: 'Class B fire', desc: 'A fuel fire. Water runs off it and does nothing.' },
   },
   'fireClass.D': {
-    ko: { label: 'D급 화재', desc: '금속 화재입니다. 물을 부으면 오히려 수소가 나옵니다.' },
+    ko: { label: '금속 화재', desc: '금속 화재입니다. 물을 부으면 수소가 나옵니다.' },
     en: { label: 'Class D fire', desc: 'A metal fire. Water makes it worse — it cracks into hydrogen.' },
   },
   'douses.evaporate': {
@@ -227,11 +227,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Extinguisher (evaporates)', desc: 'Puts fire out on contact, and that cell evaporates doing it.' },
   },
   'douses.melt': {
-    ko: { label: '소화제(융해)', desc: '불에 닿으면 불을 끄고, 그 한 칸은 녹아 물이 됩니다. 남은 물이 계속 싸웁니다.' },
+    ko: { label: '소화제(융해)', desc: '불에 닿으면 불을 끄고, 그 한 칸은 녹아 물이 됩니다.' },
     en: { label: 'Extinguisher (melts)', desc: 'Puts fire out on contact and melts to water, which carries on fighting.' },
   },
   easyDouse: {
-    ko: { label: '쉽게 꺼짐', desc: '적은 물로도 쉽게 진화됩니다.' },
+    ko: { label: '쉬운 소화', desc: '적은 물로도 쉽게 진화됩니다.' },
     en: { label: 'Doused easily', desc: 'A little water is enough to put it out.' },
   },
   petroleum: {
@@ -255,45 +255,45 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Dies of radiation', desc: 'Radiation kills it.' },
   },
   radiationHit: {
-    ko: { label: '피폭 반응', desc: '방사선을 즉사가 아니라 자기 나름의 손상으로 받습니다.' },
+    ko: { label: '피폭 반응', desc: '방사선을 즉사가 손상으로 받습니다.' },
     en: { label: 'Radiation damage', desc: 'Takes radiation as its own kind of damage rather than dying outright.' },
   },
 
   // Traits — blast
   explosive: {
-    ko: { label: '폭발물', desc: '타는 게 아니라 터집니다. 이어 붙은 덩어리 전체가 한 번에 기폭합니다.' },
+    ko: { label: '폭발물', desc: '타는 게 아니라 터집니다. 덩어리 전체가 한 번에 폭발합니다.' },
     en: { label: 'Explosive', desc: 'Detonates rather than burning. A whole connected mass goes off at once.' },
   },
   electricDetonate: {
-    ko: { label: '전기 기폭', desc: '전류가 닿으면 그 자리에서 기폭합니다.' },
+    ko: { label: '전기 기폭', desc: '전류가 닿으면 그 자리에서 기폭됩니다.' },
     en: { label: 'Electrically fired', desc: 'A current reaching it sets it off on the spot.' },
   },
   explosionProof: {
-    ko: { label: '방폭', desc: '폭발을 막아 서고, 뒤쪽에 그늘을 만들어 줍니다.' },
-    en: { label: 'Blast-proof', desc: 'Stops a blast front and casts a shadow over what is behind it.' },
+    ko: { label: '방폭', desc: '폭발에 대해 면역입니다.' },
+    en: { label: 'Blast-proof', desc: 'Immunes at explosions' },
   },
   jetProof: {
-    ko: { label: '관통 제트 방호', desc: '방폭을 뚫는 성형작약의 관통파에도 견딥니다.' },
-    en: { label: 'Jet-proof', desc: 'Survives even a shaped charge’s armor-piercing jet.' },
+    ko: { label: '강한 방폭', desc: '방폭을 뚫는 성형작약의 관통파에도 견딥니다.' },
+    en: { label: 'Stronger Blast-proof', desc: 'Survives even a shaped charge’s armor-piercing jet.' },
   },
   indestructible: {
-    ko: { label: '불괴', desc: '세상의 어떤 힘으로도 부술 수 없습니다. 지우개와 전체 지우기만이 치웁니다.' },
-    en: { label: 'Indestructible', desc: 'No force in the world can remove it. Only the eraser and a full clear will.' },
+    ko: { label: '파괴 불가', desc: '절대 부술 수 없습니다.' },
+    en: { label: 'Indestructible', desc: 'No force in the world can remove it.' },
   },
   isWall: {
-    ko: { label: '경계 벽', desc: '세계의 테두리를 이루는 벽입니다.' },
-    en: { label: 'Boundary wall', desc: 'The wall that forms the edge of the world.' },
+    ko: { label: '벽', desc: '절대 부술 수 없습니다.' },
+    en: { label: 'Boundary wall', desc: 'No force in the world can remove it.' },
   },
   shockLoose: {
-    ko: { label: '충격파에 휩쓸림', desc: '고체지만 구조물이 아니라 낱개로 취급되어, 충격파에 날아갑니다.' },
-    en: { label: 'Blown by shockwaves', desc: 'A solid, but treated as loose matter — a shockwave flings it rather than being blocked.' },
+    ko: { label: '충격파에 휩쓸림', desc: '충격파에 날아갑니다.' },
+    en: { label: 'Blown by shockwaves', desc: 'Blown away by the shockwave.' },
   },
   blastDeath: {
-    ko: { label: '폭발 잔재', desc: '폭발에 부서지면 이것을 남깁니다.' },
-    en: { label: 'Blast residue', desc: 'What it leaves behind when a blast destroys it.' },
+    ko: { label: '폭발 잔재', desc: '폭발에 부서지면 잔재물을 남깁니다.' },
+    en: { label: 'Blast residue', desc: 'Leaves behind when a blast destroys it.' },
   },
   shatter: {
-    ko: { label: '파쇄', desc: '부수지 못하는 충격파에도 금이 가 다른 물질이 됩니다.' },
+    ko: { label: '파쇄', desc: '충격파에 파괴되어 다른 물질이 됩니다.' },
     en: { label: 'Shatters', desc: 'Crazes into another material under a shockwave too weak to break it.' },
   },
 
@@ -307,8 +307,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Passes powder', desc: 'Powder gets through it too.' },
   },
   latticeFilter: {
-    ko: { label: '격자 여과', desc: '격자무늬의 밝은 칸만 유체를 받아들입니다.' },
-    en: { label: 'Lattice filter', desc: 'Only the light cells of its woven pattern admit fluid.' },
+    ko: { label: '체', desc: '액체 및 기체를 통과시키는 격자 망입니다.' },
+    en: { label: 'Mesh', desc: 'It is a lattice mesh that allows liquids and gases to pass through.' },
   },
   soakedUpdate: {
     ko: { label: '스며든 상태 반응', desc: '다른 물질에 스며든 채로도 제 할 일을 합니다.' },
@@ -347,12 +347,12 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Spills its contents', desc: 'Breaking it pours out everything inside at once.' },
   },
   'fuse.waterproof': {
-    ko: { label: '도화선', desc: '심지가 타들어 가는 동안 진짜 불을 뿌립니다. 물속에서도 꺼지지 않고 계속 탑니다.' },
-    en: { label: 'Lit fuse', desc: 'Throws real fire while the wick burns down. It keeps burning underwater — dunking it does nothing.' },
+    ko: { label: '도화선', desc: '타들어가는 심지가 있습니다. 물속에서도 꺼지지 않고 계속 탑니다.' },
+    en: { label: 'Lit fuse', desc: 'It has the wick that burns down. It keeps burning underwater — dunking it does nothing.' },
   },
   'fuse.quenchable': {
-    ko: { label: '도화선(소화 가능)', desc: '심지가 타들어 가는 동안 진짜 불을 뿌립니다. 물에 잠기면 꺼지고, 연료는 남아 있어 다시 붙일 수 있습니다.' },
-    en: { label: 'Lit fuse (douseable)', desc: 'Throws real fire while the wick burns down. Submerging it puts it out, and the fuel keeps, so it can be lit again.' },
+    ko: { label: '도화선(소화 가능)', desc: '물에 잠기면 꺼지는 심지가 있습니다. 연료는 남아 있어 다시 붙일 수 있습니다.' },
+    en: { label: 'Lit fuse (douseable)', desc: 'It has the wick that burns down. Submerging it puts it out, and the fuel keeps, so it can be lit again.' },
   },
   smashable: {
     ko: { label: '충돌 파괴', desc: '빠르게 부딪히면 조각으로 부서집니다.' },
@@ -363,7 +363,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Dissolves in acid', desc: 'Contact with an acid pool eats it away.' },
   },
   fragile: {
-    ko: { label: '약한 내구', desc: '웬만한 낙하에도 깨질 만큼 약합니다.' },
-    en: { label: 'Fragile', desc: 'Weak enough that an ordinary fall will break it.' },
+    ko: { label: '약한 내구', desc: '약간의 충격에도 깨질 만큼 약합니다.' },
+    en: { label: 'Fragile', desc: 'It is fragile enough to break from even a slight impact.' },
   },
 };
