@@ -203,7 +203,6 @@
       <span>{t('brand')}</span>
     </a>
     <h1>{t('codex.title')}</h1>
-    <p class="tagline">{t('codex.subtitle')}</p>
   </header>
 
   <div class="toolbar">
@@ -413,19 +412,13 @@
   }
 
   .page-head h1 {
-    margin: 0 0 0.35rem 0;
+    margin: 0;
     font-size: 2.1rem;
     font-weight: 800;
     background: linear-gradient(135deg, #a5b4fc 0%, #38bdf8 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-  }
-
-  .tagline {
-    margin: 0;
-    color: #6b7684;
-    font-size: 0.95rem;
   }
 
   /* --- Footer links ----------------------------------------------------- */
