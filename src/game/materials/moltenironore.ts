@@ -53,7 +53,6 @@ const REDUCE_CHANCE = 0.25; // per-tick chance a carbon-touching cell reduces (f
 const IRON_YIELD = 0.7; // chance a reduction yields iron (else slag)
 const FLUX_YIELD = 0.95; // …raised when a Limestone flux grain is adjacent
 const FLUX_CONSUME = 0.5; // chance that flux grain is spent
-const FLOW_CHANCE = 0.2; // viscous: flows on a fraction of ticks (like Molten Iron)
 const REDUCE_HEAT = 1450; // exothermic: fresh iron is forced this hot so it stays
 // molten (well above Molten Iron's 650° freeze) and sinks clear instead of crusting.
 
@@ -191,8 +190,11 @@ function updateMoltenIronOre(x: number, y: number, sim: SimContext): void {
     return;
   }
 
-  // Still a molten pool: flow viscously (thicker than water, like Molten Iron).
-  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+  // Still a molten pool: flows freely, every tick, like the rest of the liquid
+  // metals (see molteniron.ts). The one thing in the hearth that still creeps is
+  // the Slag it sets into — which is what keeps a slag skin reading as a crust
+  // over a runny melt rather than two equally thick liquids.
+  updateLiquid(x, y, sim);
 }
 
 export const MOLTEN_IRON_ORE = register({
