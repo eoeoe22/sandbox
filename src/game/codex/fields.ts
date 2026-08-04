@@ -49,6 +49,11 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   tntPattern: 'rendering: TNT stencil',
   rotorPattern: 'rendering: rotor blade overlay',
   rotorSpinShift: 'rendering: rotor spin rate',
+  // The Fish's tail. It is the one hint here that paints a *neighbouring* cell,
+  // which makes it tempting to call a property — but the tail is not there: it
+  // occupies nothing, blocks nothing, and no rule can see it. What a player needs
+  // to know (물고기는 한 칸이다) is in the entry's own description.
+  tailPixel: 'rendering: trailing tail pixel overlay',
 
   // --- Authoring: how the brush places it, not what it does in play -------
   // A property of the painting tools (PointerPainter), not of the material's

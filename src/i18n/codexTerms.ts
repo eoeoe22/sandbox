@@ -108,6 +108,16 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     ko: { label: '충격파 치사율', desc: '부수지 못하는 충격파에도 그냥 죽어 버릴 확률입니다.' },
     en: { label: 'Shock lethality', desc: 'The chance a shockwave too weak to break it kills it anyway.' },
   },
+  sparkDeathChance: {
+    ko: {
+      label: '감전 치사율',
+      desc: '전류가 닿았을 때 감전사할 확률입니다. 물도 전기를 통하므로 수조에 전선을 담그면 물 전체가 위험해집니다.',
+    },
+    en: {
+      label: 'Shock (electric) lethality',
+      desc: 'The chance a live current reaching it is fatal. Water conducts, so a wire dipped in a tank puts the whole pool at risk.',
+    },
+  },
 
   // Stats — other
   sparkLoss: {

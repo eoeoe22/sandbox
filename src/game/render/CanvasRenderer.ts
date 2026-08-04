@@ -386,6 +386,15 @@ export class CanvasRenderer implements Renderer {
   /** id → 1 if the material draws a directional chevron from its aux byte
    *  (Conveyor), in the `lattice` colour over the base (see Material.arrow). */
   private arrow: Uint8Array;
+  /** id → the packed colour of the display-only pixel this material trails behind
+   *  itself (Fish — see Material.tailPixel), or 0 for the materials that trail
+   *  nothing, which is all but one of them. */
+  private tailPixel: Uint32Array;
+  /** Indices of this frame's `tailPixel` cells, collected by the cell loop and
+   *  drained by drawTailPixels once the pass is done — the tail lands on a
+   *  neighbouring cell, which may not have been painted yet when the fish is
+   *  reached. Reused across frames (length reset, never reallocated). */
+  private tailCells: number[] = [];
   /** id → 1 if the material draws a 4-directional chevron from its aux byte, with
    *  the low 2 bits the facing and the rest a powered countdown that brightens the
    *  chevron (Laser — see Material.windArrow. The Fan drew this until it took the
@@ -628,6 +637,7 @@ export class CanvasRenderer implements Renderer {
     this.checker2x2 = new Uint8Array(256);
     this.batteryPattern = new Uint8Array(256);
     this.arrow = new Uint8Array(256);
+    this.tailPixel = new Uint32Array(256);
     this.windArrow = new Uint8Array(256);
     this.triArrow = new Uint8Array(256);
     this.coilPattern = new Uint8Array(256);
@@ -679,6 +689,7 @@ export class CanvasRenderer implements Renderer {
         if (m.checker2x2) this.checker2x2[i] = 1;
         if (m.batteryPattern) this.batteryPattern[i] = 1;
         if (m.arrow) this.arrow[i] = 1;
+        if (m.tailPixel !== undefined) this.tailPixel[i] = m.tailPixel;
         if (m.windArrow) this.windArrow[i] = 1;
         if (m.triArrow) this.triArrow[i] = 1;
         if (m.coilPattern) this.coilPattern[i] = 1;
@@ -826,6 +837,10 @@ export class CanvasRenderer implements Renderer {
     const chk2x2 = this.checker2x2;
     const batPat = this.batteryPattern;
     const arrow = this.arrow;
+    // Drained by drawTailPixels below; emptied here rather than reallocated so a
+    // tank full of fish doesn't churn a fresh array every frame.
+    const tailCells = this.tailCells;
+    tailCells.length = 0;
     // Scroll offset for a powered Conveyor's tread, in cells (see the `arrow`
     // branch below). Driven by the sim tick rather than by rendered frames — the
     // belt carries its load exactly one cell per tick, so this makes the pattern
@@ -941,6 +956,10 @@ export class CanvasRenderer implements Renderer {
         continue;
       }
       let id = cells[i];
+      // 꼬리: note the cell now (the loop already has its id in hand) and paint it
+      // after the pass — the tail lands one cell to the side, which may still be
+      // unpainted at this point. See drawTailPixels.
+      if (this.tailPixel[id] !== 0) tailCells.push(i);
       // A carrier cell (Debris) draws as the material named in its aux byte, so a
       // flung grain wears its own material's color instead of the carrier's.
       let carried = false;
@@ -1445,6 +1464,10 @@ export class CanvasRenderer implements Renderer {
     this.windMaxX = bxMax;
     this.windMinY = byMin;
     this.windMaxY = byMax;
+    // 물고기 꼬리: one grey pixel behind each fish, drawn over the finished cells
+    // (see drawTailPixels). Nothing is collected in the thermal camera, so this
+    // costs a single empty-array check there.
+    this.drawTailPixels(grid);
     // Electromagnet field rings: static contour lines around each powered magnet,
     // drawn over the finished cell image on empty air only (see drawMagnetFields).
     this.drawMagnetFields(grid, heat);
@@ -1480,6 +1503,46 @@ export class CanvasRenderer implements Renderer {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
     }
     this.drawBoundary(rect.x, rect.y, rect.width, rect.height, scale);
+  }
+
+  /**
+   * 꼬리 픽셀 — the display-only pixel a `tailPixel` material trails behind itself
+   * (the Fish's grey tail; see Material.tailPixel). It is drawn, never simulated:
+   * no cell holds it, nothing collides with it, and the fish that owns it is still
+   * exactly one cell wide to every rule in the engine.
+   *
+   * Which side it goes on is bit 0 of the cell's `aux` — 1 faces right, so the tail
+   * trails left. Vertical motion doesn't enter into it: a fish rising or diving
+   * keeps the facing it last swam sideways with, which is the material's business
+   * to maintain (materials/fish.ts) and not this pass's.
+   *
+   * Two guards, both about not lying with the pixel. It stays inside the fish's own
+   * row (a raw ±1 on the index would wrap a tail at the left edge onto the far end
+   * of the row above), and it only paints over empty air or liquid — over rock or
+   * plant it would read as a bite taken out of the terrain rather than as a fish
+   * behind it.
+   */
+  private drawTailPixels(grid: Grid): void {
+    const list = this.tailCells;
+    if (list.length === 0) return; // no fish, or the thermal camera (collects none)
+    const buf = this.buf32;
+    const cells = grid.cells;
+    const aux = grid.aux;
+    const w = grid.width;
+    const liquid = this.isLiquid;
+    const tail = this.tailPixel;
+    for (let k = 0; k < list.length; k++) {
+      const i = list[k];
+      const y = (i / w) | 0;
+      const x = i - y * w;
+      // Behind = opposite the facing. Bit 0 set means it faces right.
+      const tx = (aux[i] & 1) !== 0 ? x - 1 : x + 1;
+      if (tx < 0 || tx >= w) continue;
+      const ti = i - x + tx;
+      const over = cells[ti];
+      if (over !== EMPTY && liquid[over] === 0) continue;
+      buf[ti] = tail[cells[i]];
+    }
   }
 
   /**

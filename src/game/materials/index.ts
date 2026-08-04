@@ -116,6 +116,8 @@ import { SOAP } from './soap';
 import { WOOFER } from './woofer';
 import { TERMITE } from './termite';
 import { NANOBOT } from './nanobot';
+import { FISH } from './fish';
+import { DEAD_FISH } from './deadfish';
 import { FAN } from './fan';
 import { RUST } from './rust';
 import { RUST_POWDER } from './rustpowder';
@@ -256,6 +258,8 @@ export {
   WOOFER,
   TERMITE,
   NANOBOT,
+  FISH,
+  DEAD_FISH,
   FAN,
   RUST,
   RUST_POWDER,
@@ -319,6 +323,11 @@ export {
  *   • FLASH — the white light a Flash Powder detonation fills its reach with
  *     (flash.ts), the same kind of thing as the shockwave flash it replaces.
  *     Hand-placed it would be a lone motionless white dot that blinks out.
+ *   • DEAD_FISH — a Fish's corpse (deadfish.ts). Unlike the rest of this list it
+ *     would work perfectly well if placed by hand — it is left out because a
+ *     사체 is something you *cause*, not something you paint: it should mean a
+ *     fish of yours died. The live Fish is in the 생명 tab; its corpse is what
+ *     comes out the other end.
  *
  *  The Fan's gust is deliberately NOT a material at all: it's a transient wind
  *  *field* (Grid.wind) the Fan stamps and the renderer/object layer read, so there
@@ -450,4 +459,5 @@ export const MATERIALS = [
   ACID_SLIME,
   TERMITE,
   NANOBOT,
+  FISH,
 ];

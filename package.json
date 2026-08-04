@@ -20,6 +20,7 @@
     "test:fireworks": "node test/run-fireworks.mjs",
     "test:aluminum": "node test/run-aluminum.mjs",
     "test:plantcoral": "node test/run-plantcoral.mjs",
+    "test:fish": "node test/run-fish.mjs",
     "test:radiation": "node test/run-radiation.mjs",
     "test:plastic": "node test/run-plastic.mjs",
     "test:magnetobjects": "node test/run-magnetobjects.mjs",
@@ -42,7 +43,7 @@
     "test:liquidmetalflow": "node test/run-liquidmetalflow.mjs",
     "test:goovoids": "node test/run-goovoids.mjs",
     "test:gravity": "node test/run-gravity.mjs",
-    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium && npm run test:chlorinealuminum && npm run test:miscible && npm run test:stacking && npm run test:antimatter && npm run test:overlap && npm run test:extinguish && npm run test:crawler && npm run test:phasechange && npm run test:codex && npm run test:acidslime && npm run test:liquidmetalflow && npm run test:goovoids && npm run test:gravity && npm run test:startscreen",
+    "test": "npm run test:heat && npm run test:active-tiles && npm run test:electricity && npm run test:snapshot-file && npm run test:woodbox && npm run test:drumbreak && npm run test:molotov && npm run test:fireworks && npm run test:aluminum && npm run test:plantcoral && npm run test:fish && npm run test:radiation && npm run test:plastic && npm run test:magnetobjects && npm run test:smokebomb && npm run test:materialicons && npm run test:acidmetal && npm run test:heatrayobjects && npm run test:chlorinesodium && npm run test:chlorinealuminum && npm run test:miscible && npm run test:stacking && npm run test:antimatter && npm run test:overlap && npm run test:extinguish && npm run test:crawler && npm run test:phasechange && npm run test:codex && npm run test:acidslime && npm run test:liquidmetalflow && npm run test:goovoids && npm run test:gravity && npm run test:startscreen",
     "check:hand-icons": "node scripts/build-hand-icons.mjs --check",
     "build:hand-icons": "node scripts/build-hand-icons.mjs"
   },

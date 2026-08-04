@@ -595,6 +595,24 @@ export interface Material {
    */
   shockDeathChance?: number;
   /**
+   * 감전사 확률, 0..1 — the chance that a live Spark reaching a cell of this
+   * material kills it outright, leaving `blastDeathId` behind (the Fish's 50%).
+   * The electric sibling of `shockDeathChance`, and it requires `blastDeathId`
+   * for the same reason: there would be no remains to leave otherwise.
+   *
+   * Driven from the Spark's own arc phase (spark.ts), NOT by the victim looking
+   * for an adjacent Spark on its own turn — the same reason `directPulse` and
+   * `electricDetonate` are. A Spark lives for one tick and reverts to its
+   * conductor, so whether the victim can still see it depends on which of the two
+   * the scan reached first; driven from the spark it is scan-order independent.
+   *
+   * This does not need `conductive`, and shouldn't have it: the current doesn't
+   * pass *through* the body, it just has to reach the water the body is in. Both
+   * Water and Saltwater conduct, so a live wire in a tank electrifies the whole
+   * pool and everything standing in it.
+   */
+  sparkDeathChance?: number;
+  /**
    * What a *fragile* solid crazes into when a blast's shock washes over it but
    * can't otherwise break it (power < durability) — Glass shattering into Broken
    * Glass under a Gunpowder concussion or a Woofer's power-0 shockwave (see
@@ -851,6 +869,24 @@ export interface Material {
    * ordinary material.
    */
   arrow?: boolean;
+  /**
+   * Draw a single pixel of this colour in the cell BEHIND each one of these — the
+   * Fish's 꼬리. Unlike every other hint here it paints a *neighbouring* cell, not
+   * this one, so it is the one way a material can be drawn wider than it is: the
+   * fish occupies one cell and no rule in the simulation can see the tail.
+   *
+   * Which side is "behind" comes from **bit 0 of the cell's `aux`** — 1 faces
+   * right, so the tail goes left. That single bit is the whole contract a
+   * `tailPixel` material owes the renderer; the rest of its aux word is its own
+   * (see materials/fish.ts for the layout it happens to use). The tail is drawn
+   * only over empty air or liquid, so it never punches a hole in the terrain the
+   * fish is swimming past, and it is skipped in the thermal camera (it has no
+   * temperature — it isn't there).
+   *
+   * Value is a packed 0xAABBGGRR colour, like `color`. Purely a rendering hint;
+   * omit for an ordinary material.
+   */
+  tailPixel?: number;
   /**
    * Draw a 4-directional chevron (in the `lattice` color, over the base `color`)
    * pointing the way the cell's `aux` byte says it faces — the low 2 bits are the

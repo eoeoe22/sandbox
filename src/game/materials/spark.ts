@@ -274,6 +274,33 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
   return arcFireBeside(sim, nx, ny);
 }
 
+/** 감전 — roll the current's kill on a living neighbour that declares
+ *  `Material.sparkDeathChance`, leaving its `blastDeathId` corpse.
+ *
+ *  Rolled at most ONCE per cell per tick (`SimContext.sparkRolled`), for the same
+ *  reason `shockKill` memoizes its shockwave roll: a spreading current is many
+ *  Sparks, not one, so a fish with two charged neighbours in a tick would be
+ *  rolled twice and "50% on exposure" would come out at 66%. See the memo's own
+ *  doc comment.
+ *
+ *  `spawn`, not `set`: this is a write to a neighbour cell that isn't Empty, so
+ *  the corpse has to be marked moved or it gets updated *again* this same tick by
+ *  whatever scan order put the Spark first — a fresh Dead Fish handed straight to
+ *  `updateDeadFish` decays on the spot, so the fish vanishes instead of floating
+ *  up. Same primitive `radiationDeath` and `shockKill` use, for the same reason;
+ *  it also zeroes the aux the dead fish must not inherit from the live one. */
+function electrocute(sim: SimContext, x: number, y: number, chance: number, deathId: number): void {
+  if (sim.tick !== sim.sparkRollTick) {
+    sim.sparkRollTick = sim.tick;
+    sim.sparkRolled.clear();
+  }
+  const k = y * sim.width + x;
+  if (sim.sparkRolled.has(k)) return; // already exposed this tick — one roll only
+  sim.sparkRolled.add(k);
+  if (!sim.chance(chance)) return;
+  sim.spawn(x, y, deathId);
+}
+
 /** Deliver a live electric pulse to a NON-conductive neighbor (nx,ny) of a pulse
  *  source (a Battery/Turbine in direct contact, or a travelling Spark's arc
  *  phase): fire the material's electric-appliance hook if it declares one
@@ -283,12 +310,21 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
  *  updateSpark). This is the single dispatch every pulse source shares for its
  *  non-conductor branch, so a new electric-reaction material reacts to *every*
  *  source (all battery chemistries and the Turbine, direct-contact or wired) the
- *  moment it registers `directPulse`/`explosive` — no source special-cases it by
- *  id. */
+ *  moment it registers `directPulse`/`explosive`/`sparkDeathChance` — no source
+ *  special-cases it by id.
+ *
+ *  감전이 여기에도 있어야 하는 이유: 이 함수를 안 거치면 **전극에 직접 닿은** 물고기가
+ *  멀쩡하다. 수조 안이라면 곁의 물이 도체라 그쪽이 스파크가 되어 어차피 죽지만,
+ *  물고기 주위의 유일한 도체가 전극 자체일 때(기름 웅덩이에 담근 전지 같은) 판정이
+ *  통째로 비었다. 아래 분기 순서는 `updateSpark`의 이웃 루프와 같게 맞춘다. */
 export function reactToPulse(sim: SimContext, nx: number, ny: number, nid: number): boolean {
-  const hook = getMaterial(nid).directPulse;
-  if (hook) {
-    hook(sim, nx, ny);
+  const m = getMaterial(nid);
+  if (m.directPulse) {
+    m.directPulse(sim, nx, ny);
+    return true;
+  }
+  if (m.sparkDeathChance !== undefined && m.blastDeathId !== undefined) {
+    electrocute(sim, nx, ny, m.sparkDeathChance, m.blastDeathId);
     return true;
   }
   return tryArcExplosive(sim, nx, ny, nid);
@@ -426,6 +462,15 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // appliance's own update can't reliably see an adjacent Spark — it may have
       // reverted to its conductor before the appliance's turn this same tick.
       m.directPulse(sim, nx, ny);
+    } else if (m.sparkDeathChance !== undefined && m.blastDeathId !== undefined) {
+      // 감전 — a living body the current reaches (see Material.sparkDeathChance).
+      // Driven from here rather than from the victim's own update for the same
+      // reason the appliance hook above is: this cell may have reverted to its
+      // conductor before the victim's turn comes round this tick, so a victim
+      // looking for an adjacent Spark would see it or not depending on scan
+      // order. Ungated by `arced` — electrocuting a fish is not an arc, and a
+      // pulse running down a tank should kill every fish it passes, not one.
+      electrocute(sim, nx, ny, m.sparkDeathChance, m.blastDeathId);
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.
