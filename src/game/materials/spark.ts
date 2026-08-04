@@ -274,6 +274,33 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
   return arcFireBeside(sim, nx, ny);
 }
 
+/** 감전 — roll the current's kill on a living neighbour that declares
+ *  `Material.sparkDeathChance`, leaving its `blastDeathId` corpse.
+ *
+ *  Rolled at most ONCE per cell per tick (`SimContext.sparkRolled`), for the same
+ *  reason `shockKill` memoizes its shockwave roll: a spreading current is many
+ *  Sparks, not one, so a fish with two charged neighbours in a tick would be
+ *  rolled twice and "50% on exposure" would come out at 66%. See the memo's own
+ *  doc comment.
+ *
+ *  `spawn`, not `set`: this is a write to a neighbour cell that isn't Empty, so
+ *  the corpse has to be marked moved or it gets updated *again* this same tick by
+ *  whatever scan order put the Spark first — a fresh Dead Fish handed straight to
+ *  `updateDeadFish` decays on the spot, so the fish vanishes instead of floating
+ *  up. Same primitive `radiationDeath` and `shockKill` use, for the same reason;
+ *  it also zeroes the aux the dead fish must not inherit from the live one. */
+function electrocute(sim: SimContext, x: number, y: number, chance: number, deathId: number): void {
+  if (sim.tick !== sim.sparkRollTick) {
+    sim.sparkRollTick = sim.tick;
+    sim.sparkRolled.clear();
+  }
+  const k = y * sim.width + x;
+  if (sim.sparkRolled.has(k)) return; // already exposed this tick — one roll only
+  sim.sparkRolled.add(k);
+  if (!sim.chance(chance)) return;
+  sim.spawn(x, y, deathId);
+}
+
 /** Deliver a live electric pulse to a NON-conductive neighbor (nx,ny) of a pulse
  *  source (a Battery/Turbine in direct contact, or a travelling Spark's arc
  *  phase): fire the material's electric-appliance hook if it declares one
@@ -434,10 +461,7 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
       // looking for an adjacent Spark would see it or not depending on scan
       // order. Ungated by `arced` — electrocuting a fish is not an arc, and a
       // pulse running down a tank should kill every fish it passes, not one.
-      if (sim.chance(m.sparkDeathChance)) {
-        sim.set(nx, ny, m.blastDeathId);
-        sim.setAux(nx, ny, 0); // set() keeps the old aux on a non-empty write
-      }
+      electrocute(sim, nx, ny, m.sparkDeathChance, m.blastDeathId);
     } else if (!arced && m.explosive) {
       // Electricity sets off explosives (electric detonator) but no longer
       // ignites ordinary fuels or flammable gas. One arc per tick is plenty.

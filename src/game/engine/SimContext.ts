@@ -263,6 +263,28 @@ export class SimContext {
   shockRolled: Set<number> = new Set();
 
   /**
+   * Per-tick memo for the electrocution roll (`Material.sparkDeathChance`, see
+   * `electrocute` in materials/spark.ts) — same shape and same reason as
+   * `shockRolled` above: one *exposure* is one roll, however many charged
+   * neighbours the victim happens to have.
+   *
+   * A current front spreading through a tank is not one Spark: every conductor
+   * cell it energizes becomes its own Spark, each taking its own arc-phase turn
+   * over its own 8 neighbours. A fish with two live Spark neighbours in the same
+   * tick therefore gets rolled twice, and 감전 치사율 50% quietly becomes 75% —
+   * measured at 66% for the 2-neighbour case before this memo existed. The
+   * calibration test boxes its fish in stone to guarantee exactly one contact,
+   * which is precisely why the compounding never showed up there.
+   *
+   * Deliberately NOT shared with `shockRolled`: a blast wave and a live wire are
+   * different exposures, and a fish that survives the shockwave of an explosion
+   * should still be at risk from the current it throws. Sharing one memo would
+   * let whichever landed first silently cancel the other.
+   */
+  sparkRollTick = -1;
+  sparkRolled: Set<number> = new Set();
+
+  /**
    * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
    * `wooferFlood` above (both are one-way "outside → inside" electric sinks that
    * flood the whole connected body from any powered face). When a pulse reaches

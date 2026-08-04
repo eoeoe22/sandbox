@@ -458,24 +458,34 @@ function tank(grid: Grid, surface = 8): void {
   const scatteredCV = nullCV / TRIALS;
 
   // Piled into one corner, three cells apart — inside everyone's personal space.
+  //
+  // **네 판을 이어 붙여 평균 낸다.** 한 판만 재면 시드에 따라 빨개진다: 아래 두 항목이
+  // 주장하는 마진이 무작위 대비 겨우 1~3%인데(설계상 그렇다 — 무작위와 구분되지 않을
+  // 만큼만 퍼지는 게 목표였다) 한 판의 노이즈가 그만큼 크다. 시드 1..1000을 훑어 실측한
+  // 플레이크가 15/1000(1.5%)이었고, 전부 clump 아니면 CV 항목이었다(상한 항목은 한 번도
+  // 걸리지 않았다 — 마진이 넉넉하다). 8c·8d·8e가 같은 이유로 이미 여러 판을 이어 붙인다.
   reseed();
-  const { grid, sim } = makeWorld(80, 40);
-  tank(grid, 6);
-  for (let k = 0; k < 12; k++) put(grid, 6 + (k % 4), 10 + Math.floor(k / 4), FISH);
-  const packed = meanNearest(cellsOf(grid, FISH));
+  const TANKS = 4;
   let nnAcc = 0;
   let samples = 0;
   let cvAcc = 0;
-  let worstCrowd = 0; // 창 전체에서 가장 붙어 있던 순간의 최근접 거리
-  for (let t = 0; t < 60 * HZ; t++) {
-    sim.step();
-    if (t < 20 * HZ || t % 15 !== 0) continue; // 20s to disperse from the pile first
-    const f = cellsOf(grid, FISH);
-    const nn = meanNearest(f);
-    nnAcc += nn;
-    cvAcc += spacingCV(f);
-    samples++;
-    if (worstCrowd === 0 || nn < worstCrowd) worstCrowd = nn;
+  let worstCrowd = 0; // 창 전체에서 가장 붙어 있던 순간의 최근접 거리 (판을 통틀어)
+  let packed = 0;
+  for (let run = 0; run < TANKS; run++) {
+    const { grid, sim } = makeWorld(80, 40);
+    tank(grid, 6);
+    for (let k = 0; k < 12; k++) put(grid, 6 + (k % 4), 10 + Math.floor(k / 4), FISH);
+    packed = meanNearest(cellsOf(grid, FISH));
+    for (let t = 0; t < 60 * HZ; t++) {
+      sim.step();
+      if (t < 20 * HZ || t % 15 !== 0) continue; // 20s to disperse from the pile first
+      const f = cellsOf(grid, FISH);
+      const nn = meanNearest(f);
+      nnAcc += nn;
+      cvAcc += spacingCV(f);
+      samples++;
+      if (worstCrowd === 0 || nn < worstCrowd) worstCrowd = nn;
+    }
   }
   const settled = nnAcc / samples;
   const settledCV = cvAcc / samples;
@@ -602,6 +612,60 @@ function tank(grid: Grid, surface = 8): void {
     '펄스 한 번당 사망률이 설계값 50%다',
     rate > 0.42 && rate < 0.58,
     `${(rate * 100).toFixed(1)}% over ${SHOTS} single pulses`,
+  );
+
+  // 스파크를 물고기 **아래**에 두면 스캔 순서가 뒤집혀 스파크가 먼저 처리된다. 그러면
+  // 사체는 '이번 틱에 아직 안 훑은 칸'에 쓰이는 것이라, moved 표시를 안 하면
+  // updateDeadFish가 **같은 틱에 한 번 더** 돈다 — 태어나자마자 부력으로 한 칸 뜨고,
+  // 부패 판정도 한 번 더 받는다. 그래서 이웃 칸에 대한 비어 있지 않은 쓰기는 `set`이
+  // 아니라 `spawn`이어야 한다(SimContext.spawn 주석의 규칙, radiationDeath·shockKill도
+  // 같은 이유로 spawn을 쓴다). 스파크가 위에 있는 위 장면은 순서가 반대라 이걸 못 잡는다.
+  reseed();
+  let below = 0;
+  let unmarked = 0;
+  for (let r = 0; r < SHOTS; r++) {
+    const { grid: g, sim: s } = makeWorld(12, 12);
+    fill(g, 0, 0, 11, 11, STONE);
+    put(g, 5, 5, FISH);
+    put(g, 5, 6, SPARK); // 물고기 바로 아래 — 스파크가 먼저 스캔된다
+    g.aux[g.idx(5, 6)] = packSpark(FULL_STRENGTH, conductorClass(WATER));
+    s.step();
+    if (g.cells[g.idx(5, 5)] !== DEAD) continue;
+    below++;
+    if (g.moved[g.idx(5, 5)] !== 1) unmarked++;
+  }
+  check(
+    '감전사한 사체는 태어난 틱에 처리 완료로 표시된다 (set이 아니라 spawn)',
+    below > 0 && unmarked === 0,
+    `사체 ${below}개 중 moved 안 된 것 ${unmarked}개 (스파크가 아래=먼저 스캔되는 배치)`,
+  );
+  check(
+    '…그 배치에서도 사망률은 그대로 50%다',
+    below / SHOTS > 0.42 && below / SHOTS < 0.58,
+    `${((below / SHOTS) * 100).toFixed(1)}%`,
+  );
+
+  // 이웃이 둘이면 두 번 굴리는가 — 전류의 앞머리가 넓어지면 한 틱에 여러 칸이 동시에
+  // 스파크가 되므로 실제로 일어난다. 노출 한 번은 판정 한 번이어야 한다(SimContext의
+  // sparkRolled). 없으면 50%가 66%가 된다 — 충격파 쪽이 이미 같은 이유로 memo를 쓴다.
+  reseed();
+  let twoSided = 0;
+  for (let r = 0; r < SHOTS; r++) {
+    const { grid: g, sim: s } = makeWorld(12, 12);
+    fill(g, 0, 0, 11, 11, STONE);
+    put(g, 5, 5, FISH);
+    put(g, 5, 4, SPARK);
+    put(g, 5, 6, SPARK); // 위아래 동시 — 각자 제 arc 차례를 갖는다
+    g.aux[g.idx(5, 4)] = packSpark(FULL_STRENGTH, conductorClass(WATER));
+    g.aux[g.idx(5, 6)] = packSpark(FULL_STRENGTH, conductorClass(WATER));
+    s.step();
+    if (g.cells[g.idx(5, 5)] === DEAD) twoSided++;
+  }
+  const twoRate = twoSided / SHOTS;
+  check(
+    '스파크가 둘이어도 한 틱엔 한 번만 굴린다 (50%가 66%로 불어나지 않는다)',
+    twoRate > 0.42 && twoRate < 0.58,
+    `${(twoRate * 100).toFixed(1)}% (memo 없을 땐 66.0%)`,
   );
 }
 

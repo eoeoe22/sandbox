@@ -39,9 +39,12 @@ import { DEAD_FISH } from './deadfish';
 //   • Touching liquid → it swims. It can only step INTO liquid, so it never
 //     climbs out of its own tank; the waterline is a ceiling it can't cross.
 //   • Out of liquid → 펄떡임. It hops off the ground in a random direction and
-//     falls back, and a counter in `aux` runs up: AIR_DEATH_TICKS of that and it
-//     suffocates. Landing back in water resets the counter to zero, so a fish
-//     that flops its way to the edge of a puddle really is saved.
+//     falls back, and a counter in `aux` runs up. It doesn't suffocate ON that
+//     counter — the counter feeds a per-tick risk that climbs the longer it's
+//     been out (AIR_HAZARD), so a brief slip out of the water is near-harmless
+//     and a long one is near-certain death. Landing back in water resets the
+//     counter to zero, so a fish that flops its way to the edge of a puddle
+//     really is saved.
 //
 // It dies five ways, all of them leaving a Dead Fish (deadfish.ts) that floats
 // belly-up to the surface: 고온, 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
@@ -77,9 +80,12 @@ const AIR_DEATH_MEDIAN = Math.round(12 * SIM_HZ_AT_1X);
  *
  *  선형 위험률의 생존곡선은 S(t) = exp(-t²·AIR_HAZARD/2)이므로, 중앙값을
  *  AIR_DEATH_MEDIAN에 맞추려면 AIR_HAZARD = 2·ln2 / median². 분포는 레일리 분포라
- *  표준편차가 중앙값의 약 0.5배 — 12초쯤에 몰리되 6~20초로 흩어진다. 카운터가 10비트
- *  (최대 1023)라 그 언저리에서 p가 1을 넘어 확실히 죽으므로, 아무리 운이 좋아도
- *  34초 넘게 버티는 개체는 없다. */
+ *  표준편차가 중앙값의 약 0.5배 — 12초쯤에 몰리되 6~20초로 흩어진다.
+ *
+ *  꼬리는 유한하지 않고 그냥 아주 얇다. 카운터가 10비트라 1023틱(34초)에서 멈추므로
+ *  위험률도 거기서 오르기를 그치고 1.1%/틱로 굳는다 — 상한이 아니라 지수 꼬리다.
+ *  34초를 넘기는 개체가 0.4%쯤 있고, 그중 대부분이 몇 초 안에 죽어 60초까지 가는
+ *  것은 100만 마리에 하나꼴이다(3번 검사의 60초 창이 잘라내는 양). */
 const AIR_HAZARD = (2 * Math.LN2) / (AIR_DEATH_MEDIAN * AIR_DEATH_MEDIAN);
 /** 충격파 노출 시 사망 확률 — half of a school caught in a (non-destructive) wave is
  *  crushed; the rest is only flung. */
