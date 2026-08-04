@@ -376,7 +376,6 @@ export const ko = {
   // 여기는 페이지 골격 문구만.
   codex: {
     title: '물질 도감',
-    subtitle: '이 세계에 있는 모든 것',
     search: '물질 검색',
     searchClear: '검색어 지우기',
     all: '전체',
