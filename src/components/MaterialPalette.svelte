@@ -229,11 +229,12 @@
   // needs the things a dialog has: a scrim, an ×, and Escape.
   //
   // The press has to end without also picking the material — the whole gesture is
-  // "tell me about this", not "give me this" — so a fired long press arms
-  // `swallowClick`, which the chip's own click handler spends. It cancels on
-  // movement (the palette scrolls sideways on mobile; a swipe that starts on a
-  // chip must stay a swipe) and on `pointercancel` (the UA claiming the gesture
-  // for a scroll, which is the same thing from the other side).
+  // "tell me about this", not "give me this" — so a fired long press claims the
+  // click that same touch is about to produce (`swallowFor`), which the chip's
+  // own click handler spends. It cancels on movement (the palette scrolls
+  // sideways on mobile; a swipe that starts on a chip must stay a swipe) and on
+  // `pointercancel` (the UA claiming the gesture for a scroll, which is the same
+  // thing from the other side).
   const LONG_PRESS_MS = 420;
   /** How far a finger may travel and still be a press rather than a swipe. */
   const LONG_PRESS_SLOP = 12;
@@ -247,80 +248,110 @@
   let pressId = -1;
   let pressX = 0;
   let pressY = 0;
-  /** Whether the press in flight came from a finger. Read by the chips'
-   *  `contextmenu` handler, which must suppress the platform's long-press menu
-   *  (it would fight ours) WITHOUT also killing a desktop right-click's ordinary
-   *  browser menu — `contextmenu` itself carries no pointer type, but it always
-   *  follows a `pointerdown` on the same element, so this is that pointer. */
-  let lastPressWasTouch = false;
-  /** Set when a long press fired, spent by the click that the same touch is
-   *  about to produce. Plain `let`: nothing renders off it. */
-  let swallowClick = false;
+  /**
+   * Whether a finger is held on a chip *right now* — the only window in which
+   * the platform would raise its own long-press menu, and so the only window in
+   * which `contextmenu` is suppressed.
+   *
+   * The first attempt asked a different question — "was the last press a
+   * finger?" — and got two answers wrong, because `contextmenu` does not always
+   * follow a `pointerdown` on the chip: a keyboard Menu key / Shift+F10 raises
+   * one with no pointer involved at all, and on a hybrid device (touchscreen
+   * laptop) a right-click landing while a finger is mid-press would read the
+   * finger's answer. Both lost the browser menu they should have kept. "Is a
+   * finger down" has no such gap: the mouse and the keyboard both arrive with
+   * none.
+   */
+  let touchDown = false;
+  /**
+   * Which chip's click a fired long press has claimed, or -1. An id rather than
+   * a flag because the claim belongs to *that* chip: with two fingers on the
+   * palette, a bare boolean armed by finger A's long press was spent by finger
+   * B's ordinary tap on another chip, silently eating a real pick. `click`
+   * carries no pointer id to match on, but it does carry which chip it is.
+   */
+  let swallowFor = -1;
 
   function pressStart(e: PointerEvent, m: Material): void {
+    if (e.pointerType === 'mouse') {
+      // Not our gesture (the mouse has hover), but still the moment to notice
+      // that no finger is down — a press whose `pointerup` never arrived (its
+      // chip unmounted under it) would otherwise leave `touchDown` set and take
+      // this very click's context menu with it.
+      touchDown = false;
+      return;
+    }
     if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
-    // Any new press supersedes a stale arm — see `armSwallow` for when one can
+    // Any new press supersedes a stale claim — see `armSwallow` for when one can
     // be left behind.
-    swallowClick = false;
+    swallowFor = -1;
     clearTimeout(swallowTimer);
-    lastPressWasTouch = e.pointerType !== 'mouse';
-    if (!lastPressWasTouch) return; // the mouse has hover; see above
+    touchDown = true;
     pressId = e.pointerId;
     pressX = e.clientX;
     pressY = e.clientY;
     // Same head start as the hover path — the sheet opens immediately either way
     // (it shows its title while the prose lands), this just usually beats it.
     void loadCodexText().catch(() => {});
-    clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
       // Clear the handle as well as firing: `pressMove` uses "is there a timer?"
       // as its "is a press in flight?" test, and a spent handle left behind would
-      // read as one — for the mouse especially, whose every move over a chip runs
-      // that check.
+      // read as one.
       pressTimer = undefined;
-      armSwallow();
+      armSwallow(m.id);
       sheetMat = m;
     }, LONG_PRESS_MS);
   }
 
-  /** Claim the click this same touch is about to produce, and disarm on a timer
-   *  in case it never does — a browser that suppressed the click (some do, after
-   *  a long press that would have opened a context menu) would otherwise leave
-   *  this set, and the next genuine tap anywhere in the palette would be eaten. */
+  /** Claim the click this same touch is about to produce, and drop the claim on
+   *  a timer in case it never does — a browser that suppressed the click (some
+   *  do, after a long press that would have opened a context menu) would
+   *  otherwise leave this set, and the next genuine tap on that chip would be
+   *  eaten. */
   let swallowTimer: ReturnType<typeof setTimeout> | undefined;
-  function armSwallow(): void {
-    swallowClick = true;
+  function armSwallow(id: number): void {
+    swallowFor = id;
     clearTimeout(swallowTimer);
-    swallowTimer = setTimeout(() => (swallowClick = false), 800);
+    swallowTimer = setTimeout(() => (swallowFor = -1), 800);
   }
 
-  /** A chip click — unless a long press just claimed this same touch. */
+  /** A chip click — unless a long press on *this* chip just claimed it. */
   function chipClick(id: number): void {
-    if (swallowClick) {
-      swallowClick = false;
+    if (swallowFor === id) {
+      swallowFor = -1;
       clearTimeout(swallowTimer);
       return;
     }
     pick(id);
   }
 
-  function pressMove(e: PointerEvent): void {
-    if (pressTimer === undefined || e.pointerId !== pressId) return;
-    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) pressCancel(e);
-  }
-
-  /** End the press in flight. Only the pointer that started it may — otherwise a
-   *  second finger lifting would cancel the first one's press. */
-  function pressCancel(e?: PointerEvent): void {
-    if (e !== undefined && e.pointerId !== pressId) return;
+  /** Only the timer. The finger is still down (a swipe that outran the slop), so
+   *  `touchDown` stays set — the platform's own long press can still fire, and
+   *  its menu is still the one we don't want. */
+  function abortPress(): void {
     clearTimeout(pressTimer);
     pressTimer = undefined;
   }
 
-  /** Suppress the platform's own long-press menu, but only for a finger — a
-   *  right-click on a chip keeps the browser menu it always had. */
+  function pressMove(e: PointerEvent): void {
+    if (pressTimer === undefined || e.pointerId !== pressId) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) abortPress();
+  }
+
+  /** The press is over (lifted or cancelled). Only the pointer that started it
+   *  may end it — otherwise a second finger lifting would cancel the first
+   *  one's press. */
+  function pressEnd(e: PointerEvent): void {
+    if (e.pointerId !== pressId) return;
+    abortPress();
+    touchDown = false;
+  }
+
+  /** Suppress the platform's own long-press menu, which would fight ours — but
+   *  only while a finger is actually down, so a right-click and a keyboard Menu
+   *  key both keep the browser menu they always had. */
   function chipContextMenu(e: Event): void {
-    if (lastPressWasTouch) e.preventDefault();
+    if (touchDown) e.preventDefault();
   }
 
   const closeSheet = (): void => void (sheetMat = null);
@@ -731,8 +762,8 @@
             onpointerleave={hideCard}
             onpointerdown={(e) => pressStart(e, m)}
             onpointermove={pressMove}
-            onpointerup={pressCancel}
-            onpointercancel={pressCancel}
+            onpointerup={pressEnd}
+            onpointercancel={pressEnd}
             oncontextmenu={chipContextMenu}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
@@ -775,8 +806,8 @@
       onpointerleave={card ? hideCard : undefined}
       onpointerdown={card ? (e) => pressStart(e, m) : undefined}
       onpointermove={card ? pressMove : undefined}
-      onpointerup={card ? pressCancel : undefined}
-      onpointercancel={card ? pressCancel : undefined}
+      onpointerup={card ? pressEnd : undefined}
+      onpointercancel={card ? pressEnd : undefined}
       oncontextmenu={card ? chipContextMenu : undefined}
       title={card ? undefined : materialName(m.id, m.name)}
     >
