@@ -204,6 +204,16 @@ export const MOLTEN_IRON_ORE = register({
   color: rgb(255, 140, 60),
   density: 6.5,
   category: 'smelt',
+  // Magnetite melt: unlike Molten Iron (see Material.magnetic's own doc — pure
+  // iron above the Curie point loses its ferromagnetism, the deliberate reason
+  // that liquid is left untagged), this pool is tagged anyway. 재미 우선
+  // (CLAUDE.md's own ordering: 재미 > 편의성 > 과학적 고증) — a live Electromagnet
+  // dragging the glowing melt itself, not just the cooled powder, is a better toy
+  // than the strict Curie-point call. `isPullable` (electromagnet.ts) doesn't
+  // gate on phase beyond "not a structural solid", so a Liquid pulls exactly like
+  // a powder grain would: one cell closer per tick, held against gravity while
+  // the field is live.
+  magnetic: true,
   // Placed hot; conducts a little worse than stone.
   thermal: { init: 1000, conductivity: 0.35 },
   glow: { min: SOLIDIFY_TEMP, max: 1150, cool: rgb(62, 56, 66) },

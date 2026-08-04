@@ -241,10 +241,17 @@ export interface Material {
    * (Iron, Rust) are deliberately NOT tagged even though real iron is magnetic:
    * dragging a fixed structure around would walk a player's wiring, machines and
    * walls off their mounts, the same reason the Fan's gust refuses to push solids
-   * (see fan.ts `isWindPushable`). Molten Iron isn't tagged either — above the
-   * Curie point iron isn't ferromagnetic, so the one liquid that might qualify
-   * has a real excuse not to. The magnet enforces this too (it only ever moves
-   * loose matter), so a mistagged wall stays put rather than tearing apart.
+   * (see fan.ts `isWindPushable`). The magnet enforces this too (it only ever
+   * moves loose matter), so a mistagged wall stays put rather than tearing apart.
+   *
+   * Molten Iron (pure liquid metal, molteniron.ts) is deliberately left
+   * untagged — above the Curie point iron isn't ferromagnetic, and that's the
+   * one liquid the real physics might otherwise allow. Molten Iron Ore
+   * (moltenironore.ts) breaks that rule anyway: it's tagged magnetic despite
+   * being just as hot, a 재미 > 과학적 고증 call (CLAUDE.md's own priority order)
+   * — pulling the glowing melt itself with a live Electromagnet is a better toy
+   * than the strict Curie-point holdout. `isPullable` only gates on phase-not-
+   * Solid, so a Liquid is pulled exactly like a powder grain.
    */
   magnetic?: boolean;
   /** Fire/Lava convert this to Fire on contact (see fire.ts/lava.ts). */
