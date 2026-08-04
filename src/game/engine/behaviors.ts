@@ -8,6 +8,51 @@ import { getMaterial, misciblePartnersOf } from '../materials/registry';
 // no logic). Override `update` only for special behavior.
 
 /**
+ * 진공 기포는 goo 안에 남지 않는다 — collapse an *enclosed* empty cell directly
+ * below this one, ignoring whatever flow gate the caller is throttling movement
+ * with. Returns true if the cell dropped into it (the caller must then stop).
+ *
+ * The problem this solves is specific to the thick goos (Slime, Acid Slime,
+ * Honey), and it comes from their two throttles working together rather than
+ * from either alone. A `FLOW_CHANCE` gate means a cell only moves on ~1 tick in
+ * 6, so when one falls, the cell above it does *not* follow that tick and a gap
+ * opens; a high `viscosity` then blocks the lateral step that would otherwise
+ * close the gap from the side. The result is a settling blob riddled with holes
+ * that take several ticks each to close — and an empty cell renders as the bare
+ * background, so a green blob reads as if it were full of black windows. It is
+ * measurable: a 12×12 blob dropped in air averages ~15 enclosed holes per tick
+ * for Slime and ~14 for Honey, while Lava — same gate, no `viscosity` — has
+ * exactly none, and Mud — `viscosity`, no gate — has ~1.
+ *
+ * The fix is deliberately *not* "let goo move faster". Enclosure is the whole
+ * discriminator: a hole with a filled cell on every side is an interior bubble
+ * and collapses at once, while the open air under a mound is not enclosed and
+ * stays as slow as ever. So the ooze the gates exist to produce is untouched,
+ * and what disappears is only the artifact. Cells are conserved — the goo drops
+ * in and the hole moves up one, so a bubble rises through the blob and pops at
+ * the surface, which is also what a bubble in something thick should look like.
+ */
+export function collapseVoidBelow(x: number, y: number, sim: SimContext): boolean {
+  const bx = x + sim.gravityX;
+  const by = y + sim.gravityY;
+  if (!sim.inBounds(bx, by) || !sim.isEmpty(bx, by)) return false;
+  // At most one of the hole's four sides may be open (this cell is one of the
+  // filled ones). Out of bounds counts as filled: a hole against the floor is
+  // still a hole. One opening is allowed rather than none because the holes a
+  // settling blob leaves are often two or three cells stacked, and a strict
+  // "sealed on all four sides" test declines every one of them — each cell of
+  // the cluster is the other's opening. Two openings is where a hole stops being
+  // a bubble and starts being the air the blob is mounding in.
+  let open = 0;
+  for (const [dx, dy] of DIR4) {
+    const hx = bx + dx;
+    const hy = by + dy;
+    if (sim.inBounds(hx, hy) && sim.isEmpty(hx, hy) && ++open > 1) return false;
+  }
+  return sim.moveDown(x, y);
+}
+
+/**
  * With low probability, swap places with an adjacent cell of `otherId`.
  * SimContext.tryMove only ever lets same-phase fluids past each other when
  * their densities differ, so two liquids of *equal* density (e.g. Acid and

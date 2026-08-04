@@ -2,7 +2,7 @@ import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
-import { updateLiquid, diffuseWith } from '../engine/behaviors';
+import { updateLiquid, diffuseWith, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { tryCorrode, tryCorrodeSoaked, ACID_SLIME_CORROSION } from './corrosion';
@@ -74,9 +74,17 @@ const MELT_TEMP = 130; // …or enough ambient heat does the same
 const DILUTE_CHANCE = 0.08;
 const ABSORB_ACID_CHANCE = 0.5; // …of a drunk water cell coming back acidic
 
-// Slow, occasional swap with a neighbouring plain-Slime cell so the two miscible
-// goos gradually interdiffuse across their boundary (mirrors Acid↔Water).
-const DIFFUSE_CHANCE = 0.02;
+// Occasional swap with a neighbouring plain-Slime cell so the two goos
+// interdiffuse across their boundary. Brisker than the Acid↔Water blur it was
+// copied from (0.02, acid.ts) for a reason that showed up in play: this is the
+// only thing that ever brings a blob's *buried* cells to a surface, and both
+// conversions — acid in, water out — only ever work on the surface. At 0.02 a
+// quenched or splashed blob kept a stubborn core of the old goo long after its
+// face had changed; at 0.05 the core turns over while the boundary still reads as
+// a gradient rather than an instant blend. It is also the more honest number for
+// this pair specifically: acid and water are two different liquids that merely
+// mix, while these two are the *same* goo at two acidities.
+const DIFFUSE_CHANCE = 0.05;
 
 // Freshly-dissolved Water carries this "recently electrolysed" countdown in its aux
 // so the blob can't drink its own dissolve puddle back and heal before it drains —
@@ -176,6 +184,11 @@ function updateAcidSlime(x: number, y: number, sim: SimContext): void {
 
   // Interdiffuse with plain Slime across their shared boundary (like Water+Acid).
   if (diffuseWith(x, y, sim, SLIME.id, DIFFUSE_CHANCE)) return;
+
+  // Enclosed holes collapse outside the gate, exactly as in plain Slime — and it
+  // matters a little more here, since the rinse (above) empties a cell of its own
+  // every time it fires (behaviors.ts's collapseVoidBelow).
+  if (collapseVoidBelow(x, y, sim)) return;
 
   // Very viscous — the flow gate throttles all movement (fall included) to Lava's
   // pace, and `viscosity` on top of that holds a wobbling mound instead of leveling

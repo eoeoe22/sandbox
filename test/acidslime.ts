@@ -108,7 +108,14 @@ function layered(topId: number, botId: number): { grid: Grid; sim: Simulation } 
 const TICKS = 600;
 
 // 1. The recipe. Acid over Slime: the seam turns to Acid Slime, and it keeps
-//    turning as fresh acid sinks onto the shrinking pool of goo it hasn't reached.
+//    turning as fresh acid works into the goo it hasn't reached.
+//
+//    The accounting here is what pins the *shape* of the reaction, and that shape
+//    is Acid's own corrosion (acid.ts): it converts on contact and spends the acid
+//    cell only occasionally, so the acid outlasts a single bite but still runs
+//    down. Both halves get a check, because each failure is silent in its own way
+//    — never spending the acid makes one drop a world-eating catalyst, and always
+//    spending it is where this started and was far too weak to read as an effect.
 {
   reseed();
   const { grid, sim } = layered(ACID, SLIME);
@@ -118,10 +125,19 @@ const TICKS = 600;
   const acidSlime = count(grid, ACID_SLIME);
   const slime = count(grid, SLIME);
   const acidSpent = acid0 - count(grid, ACID);
-  check('acid poured on slime turns it acidic', acidSlime > 20,
+  // 40%, and the ceiling is geometry rather than the rule: this box is sealed and
+  // full, so the acid meets the goo along one flat seam and can never get under or
+  // around it — the far side of the slime is only ever reached by the two goos
+  // interdiffusing. (Poured over a blob on open ground, where the acid can run
+  // down its flanks, the same rule takes ~82% of a 144-cell blob.) What the bar
+  // is really separating is "works through the blob" from the old strict-1:1
+  // behaviour, which managed a quarter of this scene.
+  check('acid poured on slime works well into the blob', acidSlime > goo0 * 0.4,
     `${acidSlime} acid slime out of ${goo0} goo`);
-  check('…spending exactly one acid cell per slime cell converted',
-    acidSpent === acidSlime, `${acidSpent} acid spent, ${acidSlime} acid slime made`);
+  check('…outlasting a single bite, so a splash works rather than stains',
+    acidSpent < acidSlime, `${acidSpent} acid spent for ${acidSlime} cells converted`);
+  check('…while still being spent by the work (no free catalyst)', acidSpent > 0,
+    `${acidSpent} acid spent`);
   check('…and converting, not creating or destroying, the goo',
     slime + acidSlime === goo0, `${slime} slime + ${acidSlime} acid slime vs ${goo0}`);
 }

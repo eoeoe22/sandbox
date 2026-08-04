@@ -51,12 +51,27 @@ const DIFFUSE_CHANCE = 0.02;
 // Slime is the one *liquid* acid does something to. It can't corrode it (that
 // pass only eats Solids and Powders), and the two goos are chemically the same
 // stuff, so contact soaks the acid into the goo instead: 산 + 슬라임 → 산성 슬라임.
-// One acid cell is spent per slime cell converted (`produce: EMPTY`), so a
-// splash acidifies exactly as much slime as there was acid — a drop stains the
-// face of a blob, a poured pool converts the whole thing. That 1:1 consumption
-// is the whole balance of the recipe: leaving the acid cell alive would make one
-// drop a catalyst that turns every slime in the world (compare Liquid Gallium's
-// deliberately one-sided aluminum rules, liquidgallium.ts).
+//
+// The shape is Acid's own corrosion, not a new bargain: **it acidifies on
+// contact, and only sometimes spends the cell doing it** — exactly how this
+// liquid already treats every solid and powder it eats (corrosion.ts's
+// `ACID_CORROSION`, whose `selfConsumeChance` is this same 0.08). A splash
+// therefore works through a blob rather than staining one cell per drop, and a
+// puddle still runs out eventually, which is what keeps it from being a free
+// catalyst (compare Liquid Gallium's deliberately never-consumed aluminum rules,
+// liquidgallium.ts — that one IS a catalyst, and says so).
+//
+// It started at a strict 1:1 (`produce: EMPTY` unconditionally, 0.2 per contact)
+// and that was too weak to read as an effect at all: measured on a 144-cell blob
+// with a pool of acid poured over it, 1:1 converted 73 cells over 300 ticks while
+// the reverse direction (water) converted all 144 in 200 — 산이 물보다 한참 굼떠
+// 보였다. Raising the *probability* barely moved it (76 → 74 at p=1), because the
+// limit was never the roll: acid is a thin liquid, so most of the pool drains off
+// the blob before it ever touches it, and 1:1 meant every cell that did touch was
+// worth exactly one conversion. Spending the acid only occasionally is what fixed
+// it (104 cells at 0.08), and letting the two goos interdiffuse a little faster
+// carried it the rest of the way to water's pace (118 — acidslime.ts's
+// DIFFUSE_CHANCE, which is what surfaces the buried core for either direction).
 //
 // Declared here rather than on Slime's side for the usual import-graph reason:
 // Acid Slime already imports Slime, so a rule on Slime naming Acid Slime would
@@ -66,7 +81,8 @@ const DIFFUSE_CHANCE = 0.02;
 // The reverse — water washing the acid back out of the goo — lives on Acid
 // Slime's own update (acidslime.ts), because it is a dilution rather than a
 // contact reaction: it happens as the blob *drinks*, which is Slime's mechanic.
-const SLIME_ACIDIFY_CHANCE = 0.2;
+const SLIME_ACIDIFY_CHANCE = 1;
+const SLIME_ACIDIFY_SELF_CONSUME = 0.08;
 
 function updateAcid(x: number, y: number, sim: SimContext): void {
   // Conductor bookkeeping: tick down the post-spark refractory stamped in `aux`
@@ -104,14 +120,19 @@ export const ACID = register({
   // 끓는점 — the Vapor is born with the hot temperature, then rises and
   // corrodes/condenses on its own (see acidvapor.ts).
   phaseChange: { at: () => ACID_BOIL_TEMP, when: 'atOrAbove', into: () => ACID_VAPOR.id },
-  // 산 + 슬라임 → 산성 슬라임, one acid cell spent per slime cell (see above).
+  // 산 + 슬라임 → 산성 슬라임. Two rows for one reaction, because the table has no
+  // "consume the declaring cell sometimes" field and this needs one (see above).
+  // The rows are tried in order, so the first is the branch where the acid is
+  // spent (joint probability: it fires, AND it was the cell's last bite) and the
+  // second is the ordinary one where the acid survives to keep working.
   reactions: [
     {
       with: SLIME.id,
       produce: EMPTY,
       otherBecomes: ACID_SLIME.id,
-      probability: SLIME_ACIDIFY_CHANCE,
+      probability: SLIME_ACIDIFY_CHANCE * SLIME_ACIDIFY_SELF_CONSUME,
     },
+    { with: SLIME.id, otherBecomes: ACID_SLIME.id, probability: SLIME_ACIDIFY_CHANCE },
   ],
   update: updateAcid,
   // 스며든 산도 계속 먹는다: soaked into a powder bed through the 겹침 layer, it
