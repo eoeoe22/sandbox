@@ -53,13 +53,24 @@ const DIFFUSE_CHANCE = 0.02;
 // stuff, so contact soaks the acid into the goo instead: 산 + 슬라임 → 산성 슬라임.
 //
 // The shape is Acid's own corrosion, not a new bargain: **it acidifies on
-// contact, and only sometimes spends the cell doing it** — exactly how this
-// liquid already treats every solid and powder it eats (corrosion.ts's
-// `ACID_CORROSION`, whose `selfConsumeChance` is this same 0.08). A splash
-// therefore works through a blob rather than staining one cell per drop, and a
-// puddle still runs out eventually, which is what keeps it from being a free
-// catalyst (compare Liquid Gallium's deliberately never-consumed aluminum rules,
-// liquidgallium.ts — that one IS a catalyst, and says so).
+// contact, and only sometimes spends the cell doing it** — the way this liquid
+// already treats every solid and powder it eats (corrosion.ts's `ACID_CORROSION`,
+// whose `selfConsumeChance` is this same 0.08). A splash therefore works through
+// a blob rather than staining one cell per drop, and a puddle still runs out
+// eventually, which is what keeps it from being a free catalyst (compare Liquid
+// Gallium's deliberately never-consumed aluminum rules, liquidgallium.ts — that
+// one IS a catalyst, and says so).
+//
+// One difference from the corrosion pass is worth stating, because the table's
+// shape forces it: `tryCorrode` rolls its self-consume **once per tick**, after
+// the whole neighbour loop, while `tryReact` re-rolls each rule **per matching
+// neighbour** (engine/reactions.ts). So the spend chance here is per *contact*,
+// not per turn — an acid cell against one slime cell keeps working for a hundred
+// ticks or so, while one engulfed on all sides is spent almost at once (measured
+// averages: ~100 ticks at one neighbour, ~5.6 at four, ~1.2 at eight). It reads
+// as "the more goo it is working on, the faster it is used up", which is fine on
+// its own terms — and it errs toward the acid running out sooner rather than
+// lasting forever, which is the side to err on.
 //
 // It started at a strict 1:1 (`produce: EMPTY` unconditionally, 0.2 per contact)
 // and that was too weak to read as an effect at all: measured on a 144-cell blob

@@ -33,22 +33,43 @@ import { getMaterial, misciblePartnersOf } from '../materials/registry';
  * the surface, which is also what a bubble in something thick should look like.
  */
 export function collapseVoidBelow(x: number, y: number, sim: SimContext): boolean {
+  // A liquid chilled past its freezing point acts solid and must not wander —
+  // the same guard diffuseWith/diffuseMiscible/updateLiquid all open with, and it
+  // is load-bearing here because SimContext.tryMove's plain move-into-empty
+  // branch does not check it itself. Honey is the goo this catches (it declares
+  // `freeze`): candied honey sits rigid, pocket underneath or not.
+  if (sim.isFrozen(x, y)) return false;
   const bx = x + sim.gravityX;
   const by = y + sim.gravityY;
   if (!sim.inBounds(bx, by) || !sim.isEmpty(bx, by)) return false;
-  // At most one of the hole's four sides may be open (this cell is one of the
-  // filled ones). Out of bounds counts as filled: a hole against the floor is
-  // still a hole. One opening is allowed rather than none because the holes a
-  // settling blob leaves are often two or three cells stacked, and a strict
-  // "sealed on all four sides" test declines every one of them — each cell of
-  // the cluster is the other's opening. Two openings is where a hole stops being
-  // a bubble and starts being the air the blob is mounding in.
+  // At most one of the hole's other three sides may be open (the fourth is this
+  // cell). One opening rather than none, because the holes a settling blob leaves
+  // are often two or three cells stacked or elbowed, and each cell of such a
+  // cluster is the other's opening — a strict "sealed on every side" test
+  // declines all of them (measured: 14.9 → 11.2 average holes, against 14.9 → 2.6
+  // with one opening allowed). Two openings is where a hole stops being a bubble
+  // and starts being the air the blob is mounding in.
+  //
+  // Out of bounds counts as filled — a hole against the floor is still a hole —
+  // except under a `void` border, where the edge of the map is a genuine opening
+  // that cells really do fall through (SimContext.tryMove).
+  const solidOut = sim.borderMode !== 'void';
   let open = 0;
   for (const [dx, dy] of DIR4) {
+    if (dx === -sim.gravityX && dy === -sim.gravityY) continue; // "up" is this cell
     const hx = bx + dx;
     const hy = by + dy;
-    if (sim.inBounds(hx, hy) && sim.isEmpty(hx, hy) && ++open > 1) return false;
+    const filled = sim.inBounds(hx, hy) ? !sim.isEmpty(hx, hy) : solidOut;
+    if (!filled && ++open > 1) return false;
   }
+  // moveDown, so this inherits the ordinary fall boost every liquid gets (a ~50%
+  // chance of a second consecutive step, SimContext.moveDown). That is left alone
+  // on purpose: the boost can only find somewhere to go when the cell past the
+  // hole is open too, which is the case where the goo was falling down a channel
+  // rather than popping a sealed bubble — and there it is doing what a fall does.
+  // Requiring the hole to be closed below instead would suppress it, at the cost
+  // of most of the fix (measured 2.6 → 5.0 average holes), which is a bad trade
+  // for the thing the player actually sees.
   return sim.moveDown(x, y);
 }
 

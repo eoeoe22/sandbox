@@ -171,5 +171,35 @@ for (const name of ['Lava', 'Mud']) {
   }
 }
 
+// Frozen goo stays put, pocket underneath or not. Honey is the one goo that
+// declares `freeze` (5°), and the void collapse runs *before* the movement path
+// that normally enforces this — SimContext.tryMove's plain move-into-empty branch
+// does not check frozen itself, so the helper has to. Chilled honey is supposed
+// to sit rigid until it warms; without the guard it slumps into any sealed pocket
+// beneath it, which is both wrong and the exact thing `freeze` promises not to do.
+{
+  Math.random = mulberry32(SEED_BASE + 0xf0f0);
+  const grid = new Grid(12, 12);
+  const sim = new Simulation(grid);
+  for (let y = 0; y < 12; y++)
+    for (let x = 0; x < 12; x++)
+      grid.cells[grid.idx(x, y)] = x === 0 || y === 0 || x === 11 || y === 11 ? WALL : 0;
+  const HONEY = ID('Honey');
+  // A sealed one-cell pocket at (5,8): honey above it, wall on both flanks and
+  // below, so the collapse would fire on the very first tick if it fired at all.
+  for (let x = 4; x <= 6; x++) grid.cells[grid.idx(x, 7)] = HONEY;
+  grid.cells[grid.idx(4, 8)] = WALL;
+  grid.cells[grid.idx(6, 8)] = WALL;
+  grid.cells[grid.idx(5, 9)] = WALL;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  for (let y = 0; y < 12; y++)
+    for (let x = 0; x < 12; x++)
+      if (grid.cells[grid.idx(x, y)] === HONEY) grid.temp[grid.idx(x, y)] = -50;
+  for (let t = 0; t < 20; t++) sim.step();
+  check('frozen honey does not slump into a pocket under it',
+    grid.get(5, 7) === HONEY && grid.get(5, 8) === 0,
+    `(5,7)=${getMaterial(grid.get(5, 7)).name}, (5,8)=${getMaterial(grid.get(5, 8)).name}`);
+}
+
 console.log(failures === 0 ? '\nAll goo void checks passed.' : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);
