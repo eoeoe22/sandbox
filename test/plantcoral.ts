@@ -194,6 +194,52 @@ function heat(grid: Grid, x0: number, y0: number, x1: number, y1: number, t: num
   );
 }
 
+// 1b. A *germinated* sprout is different from a painted patch: it climbs as a
+//     single-file trunk first (GEN_TRUNK, plant.ts) and only then opens its
+//     crown, so a plant reads as stem → boughs → twigs. Each seedling is
+//     measured *young* — the first time its ±5-column band holds ~10 plant
+//     cells — by the run of rows holding exactly one cell, counted up from the
+//     bed. Trunk lengths are random (chance-per-segment), so no single plant
+//     proves anything; the fork-at-once rule this replaced averaged ~3 rows,
+//     a trunk-first sprout well above that, and sixteen seedlings keep one
+//     short trunk from swinging the mean.
+{
+  reseed();
+  const xs: number[] = [];
+  for (let x = 10; x <= 220; x += 14) xs.push(x);
+  const { grid, sim } = makeWorld(232, 60);
+  bed(grid);
+  for (const x of xs) put(grid, x, 50, SEED); // sown, not painted — the real pipeline
+  const trunk = new Map<number, number>();
+  for (let t = 0; t < 6000 && trunk.size < xs.length; t++) {
+    sim.step();
+    if (t % 25 !== 0) continue;
+    for (const x of xs) {
+      if (trunk.has(x)) continue;
+      let total = 0;
+      for (let y = 0; y <= 50; y++)
+        for (let dx = -5; dx <= 5; dx++) if (grid.cells[grid.idx(x + dx, y)] === PLANT) total++;
+      if (total < 10) continue; // still a seed, or too young to have shown its shape
+      let run = 0;
+      for (let y = 50; y >= 0; y--) {
+        let row = 0;
+        for (let dx = -5; dx <= 5; dx++) if (grid.cells[grid.idx(x + dx, y)] === PLANT) row++;
+        if (row !== 1) break; // 2+ = the crown's first fork; 0 = past the top
+        run++;
+      }
+      trunk.set(x, run);
+    }
+  }
+  const runs = [...trunk.values()];
+  const mean = runs.reduce((a, b) => a + b, 0) / Math.max(1, runs.length);
+  check('every sown seedling grew enough to measure', runs.length === xs.length, `${runs.length}/${xs.length}`);
+  check(
+    'a germinated sprout climbs a single trunk before branching',
+    mean >= 4.5,
+    `mean single-file run ${mean.toFixed(1)} rows over ${runs.length} seedlings`,
+  );
+}
+
 // 2. No water, no growth: the same painted sprout on dry dirt goes nowhere.
 {
   reseed();

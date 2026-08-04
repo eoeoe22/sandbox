@@ -646,6 +646,7 @@ export class PointerPainter {
    *  separately (see `eraseObjectsWhere`). */
   private paintCells(cells: readonly number[], erase: boolean): void {
     const id = erase ? 0 : $selectedMaterial.get();
+    const mat = getMaterial(id);
     // Resolve the "자동" overwrite rule into a concrete level for this material.
     const level = effectiveOverwriteLevel($overwriteLevel.get(), id);
     // The overwrite gate is about new material displacing existing particles;
@@ -653,11 +654,19 @@ export class PointerPainter {
     const isEraser = id === 0;
     // Solid materials always paint Full — a sparse pile of solid grains reads
     // as a bug, not a feature, so Particle mode only applies to non-solid
-    // materials (sand, water, gases, ...).
-    const particle = !erase && $brushMode.get() === 'particle' && getMaterial(id).phase !== Phase.Solid;
+    // materials (sand, water, gases, ...). A material that scatters by its own
+    // nature (placementDensity, below) is exempt too: its sparseness is already
+    // the material's, not the user toggle's, and stacking the Particle gate on
+    // top would drop cells before they reach the scatter reservoir — breaking
+    // the "always at least one grain" guarantee that reservoir exists to keep.
+    const particle =
+      !erase &&
+      $brushMode.get() === 'particle' &&
+      mat.phase !== Phase.Solid &&
+      mat.placementDensity === undefined;
     // Fresh material is placed at its own initial temperature (e.g. Lava lands
     // molten, Water cool) so the heat system starts from a sensible state.
-    const initTemp = getMaterial(id).thermal?.init ?? AMBIENT_TEMP;
+    const initTemp = mat.thermal?.init ?? AMBIENT_TEMP;
     // A Conveyor records the stroke's direction in its aux so it runs that way
     // (좌우 정렬); a Clone painted via the palette's 더블클릭 shortcut records the
     // pre-latched target material's id so it starts emitting immediately instead
@@ -681,28 +690,56 @@ export class PointerPainter {
           : id === CLONE.id
             ? ($cloneTarget.get() ?? 0)
             : 0;
+    // 배치 밀도 — a material that declares placementDensity is sown, not
+    // poured: each covered cell takes it only with that probability, so Seed
+    // lands as a scatter however big the brush (Material.placementDensity).
+    // One skipped-but-paintable cell is reservoir-kept so a press always sows
+    // at least one grain — a click that visibly does nothing reads as a bug,
+    // not as sparseness. The eraser ignores it: clearing must stay gap-free.
+    const scatter = isEraser ? undefined : mat.placementDensity;
+    let sown = false;
+    let keepX = -1;
+    let keepY = -1;
+    let kept = 0;
     for (let k = 0; k < cells.length; k += 2) {
       const x = cells[k];
       const y = cells[k + 1];
       if (particle && Math.random() > PARTICLE_FILL_RATE) continue;
       if (!isEraser && !canOverwrite(this.grid.get(x, y), level)) continue;
-      this.grid.set(x, y, id);
-      this.grid.setTemp(x, y, initTemp);
-      // Freshly placed (or erased) material carries no prior per-cell state, so
-      // clear aux — otherwise a stale byte left by whatever occupied this cell
-      // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
-      // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
-      // only other create/clear paths; the raw grid.set here bypasses them. A
-      // Conveyor/pre-latched Clone instead seed their own state here (initAux).
-      this.grid.setAux(x, y, initAux);
-      // Seed a random per-particle tint so a freshly painted powder/liquid is
-      // grainy from the first frame instead of a flat block (see game/tint.ts).
-      this.grid.setTint(x, y, (Math.random() * 256) | 0);
-      // Painting (or erasing) replaces the whole cell, 겹침 overlap fluid
-      // included — the eraser really empties a wet cell, and fresh material
-      // starts dry.
-      this.grid.setOverlay(x, y, 0);
+      if (scatter !== undefined && Math.random() > scatter) {
+        kept++;
+        if (Math.random() * kept < 1) {
+          keepX = x;
+          keepY = y;
+        }
+        continue;
+      }
+      sown = true;
+      this.paintCell(x, y, id, initTemp, initAux);
     }
+    if (scatter !== undefined && !sown && keepX >= 0) this.paintCell(keepX, keepY, id, initTemp, initAux);
+  }
+
+  /** Write one painted (or erased) cell — the single per-cell path under
+   *  `paintCells()`, split out so its scatter fallback can place the one
+   *  reservoir-kept cell the same way as the main loop. */
+  private paintCell(x: number, y: number, id: number, initTemp: number, initAux: number): void {
+    this.grid.set(x, y, id);
+    this.grid.setTemp(x, y, initTemp);
+    // Freshly placed (or erased) material carries no prior per-cell state, so
+    // clear aux — otherwise a stale byte left by whatever occupied this cell
+    // (a Battery's cadence, a spark refractory, a Clone's adopted id) would
+    // be read by the new material. Mirrors SimContext.spawn/set(EMPTY), the
+    // only other create/clear paths; the raw grid.set here bypasses them. A
+    // Conveyor/pre-latched Clone instead seed their own state here (initAux).
+    this.grid.setAux(x, y, initAux);
+    // Seed a random per-particle tint so a freshly painted powder/liquid is
+    // grainy from the first frame instead of a flat block (see game/tint.ts).
+    this.grid.setTint(x, y, (Math.random() * 256) | 0);
+    // Painting (or erasing) replaces the whole cell, 겹침 overlap fluid
+    // included — the eraser really empties a wet cell, and fresh material
+    // starts dry.
+    this.grid.setOverlay(x, y, 0);
   }
 
   /** Brush-footprint wrapper around `paintCells()`: builds the circular/square
@@ -743,6 +780,10 @@ export class PointerPainter {
       const mat = getMaterial(id);
       // Particle mode leaves random gaps for non-solids (matches paintCells()).
       if (particleMode && mat.phase !== Phase.Solid && Math.random() > PARTICLE_FILL_RATE) continue;
+      // A sown material stays sparse inside a blend too (placementDensity —
+      // matches paintCells(); no at-least-one fallback here, the blend's other
+      // components keep a press from reading as a dud).
+      if (mat.placementDensity !== undefined && Math.random() > mat.placementDensity) continue;
       if (!canOverwrite(this.grid.get(x, y), level)) continue;
       this.grid.set(x, y, id);
       this.grid.setTemp(x, y, mat.thermal?.init ?? AMBIENT_TEMP);
