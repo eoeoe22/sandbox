@@ -1,7 +1,7 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { updateLiquid, diffuseWith } from '../engine/behaviors';
+import { updateLiquid, diffuseWith, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn } from './combustion';
 import { WATER } from './water';
@@ -39,6 +39,11 @@ const FLOW_CHANCE = 0.18;
 function updateHoney(x: number, y: number, sim: SimContext): void {
   if (tryBurn(x, y, sim)) return;
   if (diffuseWith(x, y, sim, WATER.id, DIFFUSE_CHANCE)) return;
+  // Enclosed holes collapse outside the gate — honey is the third goo with both
+  // a flow gate and a high `viscosity`, and it pitted exactly like slime did
+  // (behaviors.ts's collapseVoidBelow).
+  if (collapseVoidBelow(x, y, sim)) return;
+
   // Reactions above run every tick; only the movement is throttled, so a stalled
   // honey cell still burns and still mixes with the water it's sitting in.
   if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);

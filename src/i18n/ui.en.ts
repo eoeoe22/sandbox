@@ -379,7 +379,6 @@ export const en = {
   // explanations in codexTerms.ts. This is only the page's own furniture.
   codex: {
     title: 'Material Codex',
-    subtitle: 'Everything in this world',
     search: 'Search materials',
     searchClear: 'Clear search',
     all: 'All',

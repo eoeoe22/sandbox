@@ -10,7 +10,7 @@ import { ALUMINUM_POWDER } from './aluminumpowder';
 import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 import { MOLTEN_ALUMINUM, ALUMINUM_MELT_TEMP } from './moltenaluminum';
 import { SALTWATER } from './saltwater';
-import { RUST } from './rust';
+import { RUST_POWDER } from './rustpowder';
 import {
   crawl,
   crawlerState,
@@ -40,10 +40,12 @@ import { DIR8 } from '../engine/directions';
 //   • 파괴 — a blast shatters it back into loose powder of its own metal (Iron
 //     Powder or Aluminum Powder), at the crater's epicenter (blastDeathIdFor) and
 //     at its rim alike.
-//   • 소금물 부식 — an *iron* bot exposed to Saltwater slowly corrodes into Rust.
-//     Aluminum doesn't rust, so an aluminum-bodied bot is immune — the trade that
-//     comes with its miserable melting point. Neither one consumes or interacts
-//     with the Rust series (Rust / Rust Powder).
+//   • 소금물 부식 — an *iron* bot exposed to Saltwater slowly corrodes into Rust
+//     Powder, the same way loose Iron Powder does (a swarm is tiny and unbodied,
+//     not a solid casting, so it crumbles to grains rather than caking into solid
+//     Rust). Aluminum doesn't rust, so an aluminum-bodied bot is immune — the
+//     trade that comes with its miserable melting point. Neither one consumes or
+//     interacts with the Rust series (Rust / Rust Powder).
 // The memory only distinguishes those two metals (철/알루미늄 한정); anything else
 // it eats leaves it iron-bodied, which is also what a bot placed straight from the
 // palette (and every cell in a save written before the memory existed) reads as.
@@ -156,7 +158,7 @@ function updateNanobot(x: number, y: number, sim: SimContext): void {
   }
   if (body.corrodes && sim.chance(RUST_CHANCE) && touchingSaltWater(x, y, sim)) {
     sim.setTemp(x, y, sim.getTemp(x, y) + 100);
-    becomes(x, y, sim, RUST.id);
+    becomes(x, y, sim, RUST_POWDER.id);
     return;
   }
   // 갉아먹은 금속을 기억 — the newborn is stamped by FEED.onBorn, and the eater

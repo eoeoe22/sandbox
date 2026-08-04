@@ -82,7 +82,7 @@ const ALUMINUM = ID('Aluminum');
 const ALUMINUM_POWDER = ID('Aluminum Powder');
 const MOLTEN_ALUMINUM = ID('Molten Aluminum');
 const SALTWATER = ID('Saltwater');
-const RUST = ID('Rust');
+const RUST_POWDER = ID('Rust Powder');
 
 // The 금속 기억 lives above the 3 heading bits crawler.ts owns (see its aux layout
 // note). The harness reads/writes the raw word so a change to that packing shows
@@ -334,11 +334,11 @@ for (const [label, metal, wantRust] of [
   }
   const bots0 = count(grid, NANOBOT);
   for (let t = 0; t < 1500; t++) sim.step();
-  const rust = count(grid, RUST);
+  const rust = count(grid, RUST_POWDER);
   check(
     `소금물 속 ${label} 나노봇은 ${wantRust ? '녹슨다' : '녹슬지 않는다'}`,
     wantRust ? rust > 0 : rust === 0,
-    `${bots0}마리 중 Rust ${rust}칸, 남은 나노봇 ${count(grid, NANOBOT)}마리`,
+    `${bots0}마리 중 Rust Powder ${rust}칸, 남은 나노봇 ${count(grid, NANOBOT)}마리`,
   );
 }
 

@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
-import { updateLiquid } from '../engine/behaviors';
+import { updateLiquid, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { WATER } from './water';
@@ -135,6 +135,12 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
       return;
     }
   }
+
+  // An enclosed hole inside the goo collapses at once, outside the gate below —
+  // otherwise the gate + viscosity leave a settling blob full of black windows
+  // (see behaviors.ts's collapseVoidBelow for the measurements and why enclosure
+  // is what keeps this from just making slime runny).
+  if (collapseVoidBelow(x, y, sim)) return;
 
   // Very viscous — the flow gate throttles all movement (fall included) to Lava's
   // pace, and `viscosity` on top of that holds a wobbling mound instead of leveling

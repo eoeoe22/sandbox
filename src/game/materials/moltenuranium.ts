@@ -165,8 +165,8 @@ function updateMoltenUranium(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // No viscosity gate (compare Lava/Molten Iron's FLOW_CHANCE): a meltdown
-  // flows like ordinary water, every tick.
+  // No viscosity gate (compare Lava's FLOW_CHANCE): a meltdown flows like
+  // ordinary water, every tick — as every liquid metal now does (molteniron.ts).
   updateLiquid(x, y, sim);
 }
 

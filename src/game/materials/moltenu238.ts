@@ -69,8 +69,10 @@ function updateMoltenU238(x: number, y: number, sim: SimContext): void {
   }
   sim.setTemp(x, y, temp);
 
-  // Oozes rather than racing flat like Molten U235's free-flowing corium — a
-  // thicker, cooling slag (viscosity read by updateLiquid).
+  // Runs flat as freely as Molten U235's corium does: it's a metal melt, and no
+  // liquid metal carries a `viscosity` any more (see molteniron.ts). What still
+  // sets the two apart is the heat — this one is always cooling toward Nuke
+  // Waste, so a spill spreads and then sets, rather than staying a live pool.
   updateLiquid(x, y, sim);
 }
 
@@ -86,7 +88,6 @@ export const MOLTEN_U238 = register({
   radiation: 0.06,
   explosionProof: true, // 방폭 — see uranium.ts
   jetProof: true, // immune even to the Shaped Charge's pierceProof jet — see uranium.ts
-  viscosity: 0.5,
   thermal: { init: MOLTEN_U238_TEMP, conductivity: 0.5 },
   // Glows warm olive-green from the freeze point up to its molten init temp, so a
   // pool visibly darkens as it cools toward setting into Nuke Waste.

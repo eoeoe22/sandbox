@@ -675,7 +675,22 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
 //     and the identical powder in a heap, under the identical flame, does not.
 //     The second half is the load-bearing one: the suspension gate is what keeps
 //     the material's "제일 안 붙는 연료" identity intact.
+//
+//     This block takes its own seeded stream. The file otherwise runs every scene
+//     off one shared `mulberry32(7)` (line 65), which means any change *anywhere*
+//     upstream that adds or removes a `Math.random()` draw shifts this scene onto
+//     a different phase — and that is not hypothetical: dropping molten aluminum's
+//     viscosity roll (one fewer draw per cell per tick) is what once turned the
+//     heap check below red, with the scene's own mechanism measured identical.
+//     A local reseed is the cheap version of the real fix (per-block streams
+//     everywhere, as test/miscible.ts does); it costs nothing here and takes this
+//     scene out of the blast radius. The shared stream is *restored* at the end of
+//     the block rather than left replaced — the closure carries its own position,
+//     so the blocks after this one resume the file's stream exactly where block 13
+//     left it, and are insulated from this block's draw count too.
 {
+  const shared = Math.random;
+  Math.random = mulberry32(0xd057);
   const { grid, sim } = makeWorld(80, 80);
   floor(grid, 76);
   // A loose cloud, the way a Fan leaves a heap it has blown apart — every grain
@@ -707,8 +722,18 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
     s2.step();
   }
   const pileLeft = count(g2, ALUMINUM_POWDER.id);
+  // The bar is 0.6, not 0.85. "Smoulders" is not "is inert": the grains right in
+  // the flame do melt away over 25 ticks, and how many depends on how the fire
+  // happens to lick the surface — measured across nine streams the heap keeps
+  // 69–99% of itself. The old 0.85 sat *inside* that spread, so what the check
+  // really read was which phase the shared stream had reached by this point, and
+  // it went red on an upstream change that left this scene's mechanism measured
+  // identical (79 vs 80 grains in isolation). The bar now sits below the whole
+  // measured spread, and the local reseed above keeps the scene on one stream.
+  // What the check actually distinguishes is a *flash-off* — the suspended cloud
+  // above leaves under 50%, and in practice 7–39% — so 0.6 is still clear of it.
   check('…but a heap under the same flame just smoulders (the pile is untouched)',
-    pileLeft > pile * 0.85, `${pileLeft}/${pile} grains left`);
+    pileLeft > pile * 0.6, `${pileLeft}/${pile} grains left`);
 
   // …and the other half of the same gate, which is the one a future change is
   // most likely to break: **dust in a liquid never goes off**. `isSuspended`
@@ -764,6 +789,7 @@ function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): v
   const actLeft = count(g4, ACTIVATED_ALUMINUM.id);
   check('…and an activated cloud flashes off the same way',
     actLeft < actCloud * 0.5, `${actLeft}/${actCloud} grains left`);
+  Math.random = shared; // hand the file's own stream back, at the position it was left
 }
 
 // 15. Ammonal: the fourth recipe off the same grain, on the same gates as the
