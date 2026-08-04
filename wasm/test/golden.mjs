@@ -42,6 +42,19 @@ const PROD_TILE_BITS = (() => {
 // test grid here (one tile covering everything, exercising the clamped edges).
 const TILE_BITS_CASES = [...new Set([1, 2, 3, PROD_TILE_BITS, 6])].sort((a, b) => a - b);
 
+// The kernel's sanity cap on tile_bits, read from the kernel for the same reason
+// TILE_BITS is read from dirtyTiles.ts: a hardcoded copy here could drift and
+// this harness would keep agreeing with itself.
+const KERNEL_SRC = join(__dirname, '..', 'heat', 'src', 'lib.rs');
+const MAX_TILE_BITS = (() => {
+  const m = readFileSync(KERNEL_SRC, 'utf8').match(/const MAX_TILE_BITS:\s*u32\s*=\s*(\d+)/);
+  if (!m) {
+    console.error(`could not read MAX_TILE_BITS out of ${KERNEL_SRC} — did the declaration move?`);
+    process.exit(1);
+  }
+  return Number(m[1]);
+})();
+
 // --- JS reference: a faithful copy of Simulation.diffuseHeat, called SUBSTEPS
 // times with buffer swapping, exactly like Simulation.step(). ---
 function diffuseHeatJsOnce(cells, cond, cur, next, w, h, rate) {
@@ -369,24 +382,56 @@ if (skipped === 0) {
   const perCell = { tiles: new Uint8Array(W * H), tilesX: W, tilesY: H };
   const single = { tiles: new Uint8Array(1), tilesX: 1, tilesY: 1 };
 
+  // "Which branch rejects this mask" as an executable predicate, mirroring
+  // `diffuse_step`. JS masks shift counts by 31 exactly as wasm32 does, so
+  // `1 << 32` degenerates to 1 in both — which is the whole point of the cap
+  // cases below. Each case declares the branch it means to exercise and we
+  // assert *exactly* that one fires.
+  //
+  // This started life as a comment claiming "3 cap-only, 3 geometry-only", which
+  // was true but unenforced: review pointed out that setting TILE_BITS to 1 in
+  // dirtyTiles.ts makes the "disagrees" case's tile_bits 0, catching it on the
+  // cap branch as well and silently halving the geometry branch's coverage with
+  // no test noticing. A claim about which branch does the work belongs in an
+  // assertion, not in prose, so here it is.
+  const rejectedBy = (mask) => {
+    const byCap = mask.tileBits === 0 || mask.tileBits > MAX_TILE_BITS;
+    const tile = 1 << mask.tileBits; // same wrap-by-31 the kernel would see
+    const byGeom = mask.tilesX !== Math.ceil(W / tile) || mask.tilesY !== Math.ceil(H / tile);
+    return { byCap, byGeom };
+  };
+
+  // The "wrong tile size" case has to be the *smaller* direction to bite (see
+  // its comment), which needs a bit below the production one to exist. At
+  // TILE_BITS = 1 there is none, and quietly settling for a weaker case is how
+  // the coverage gap above happened — so say so and stop instead.
+  if (PROD_TILE_BITS < 2) {
+    console.error(
+      `MISMATCH: TILE_BITS is ${PROD_TILE_BITS}; the "wrong tile size" malformed-mask case needs a ` +
+        `smaller-but-nonzero tile size to exercise the geometry branch on its own. Rethink that case.`,
+    );
+    process.exit(1);
+  }
+
   const bad = [
     // --- Branch 1: the tile_bits sanity cap (checked before the shift) ---
     // tile_bits 0 → tile 1; a per-cell mask IS valid geometry for that, so the
     // geometry check cannot fire. Only `tile_bits == 0` saves this.
-    ['tileBits 0, geometry consistent with it', { ...perCell, tileBits: 0 }],
+    ['cap', 'tileBits 0, geometry consistent with it', { ...perCell, tileBits: 0 }],
     // tile_bits 32 → the real hazard: an overflowing shift, which wasm32 masks
     // to `1 << 0` = 1 rather than trapping. Per-cell geometry again matches that
     // wrapped size exactly, so only `tile_bits > MAX_TILE_BITS` saves this.
-    ['tileBits 32 (shift wraps to 0 on wasm32)', { ...perCell, tileBits: 32 }],
+    ['cap', 'tileBits 32 (shift wraps to 0 on wasm32)', { ...perCell, tileBits: 32 }],
     // Same idea far past the cap without wrapping: tile 2^20 > the whole grid,
     // so a 1×1 mask is consistent geometry. Only the cap saves this.
-    ['tileBits 20, geometry consistent with it', { ...single, tileBits: 20 }],
+    ['cap', `tileBits ${MAX_TILE_BITS + 4}, geometry consistent with it`,
+      { ...single, tileBits: MAX_TILE_BITS + 4 }],
 
     // --- Branch 2: exact mask geometry ---
     // Undersized in x and in y separately: same `||`, but different operands, so
     // a copy-paste slip that compares h twice is caught by the x case alone.
-    ['tilesX too small', { ...good, tilesX: good.tilesX - 1 }],
-    ['tilesY too small', { ...good, tilesY: good.tilesY - 1 }],
+    ['geom', 'tilesX too small', { ...good, tilesX: good.tilesX - 1 }],
+    ['geom', 'tilesY too small', { ...good, tilesY: good.tilesY - 1 }],
     // The nastiest shape, and why this branch demands equality rather than
     // "big enough": a plausible tile COUNT with the wrong tile SIZE. A mere size
     // check passes it, and the kernel then reads each tile's mark for the wrong
@@ -397,13 +442,30 @@ if (skipped === 0) {
     // not bite on a uniformly-live field: the oversized blocks happen to re-tile
     // the whole grid and every mark it lands on says "process", so it silently
     // comes out right here. Checked — don't "fix" this to +1.)
-    ['tileBits disagrees with the mask', { ...good, tileBits: PROD_TILE_BITS - 1 }],
+    ['geom', 'tileBits disagrees with the mask', { ...good, tileBits: PROD_TILE_BITS - 1 }],
   ];
-  for (const [name, mask] of bad) {
+  const branchCount = { cap: 0, geom: 0 };
+  for (const [branch, name, mask] of bad) {
+    const { byCap, byGeom } = rejectedBy(mask);
+    const fired = [byCap && 'cap', byGeom && 'geom'].filter(Boolean);
+    if (fired.length !== 1 || fired[0] !== branch) {
+      console.error(
+        `MISMATCH malformed mask (${name}): meant to be rejected by the ${branch} branch alone, ` +
+          `but ${fired.length === 0 ? 'no branch rejects it' : `it is rejected by: ${fired.join(' + ')}`}. ` +
+          `A case caught by both branches proves neither, and one caught by none proves nothing.`,
+      );
+      process.exit(1);
+    }
+    branchCount[branch]++;
     expect(js, diffuseHeatWasm(cells, cond, temp, W, H, RATE, 9, mask), `malformed mask (${name})`);
   }
+  if (branchCount.cap === 0 || branchCount.geom === 0) {
+    console.error(`MISMATCH: malformed-mask cases cover only one branch (${JSON.stringify(branchCount)})`);
+    process.exit(1);
+  }
   console.log(
-    `      malformed-mask fallback: ${bad.length} cases (3 cap-only, 3 geometry-only) ` +
+    `      malformed-mask fallback: ${bad.length} cases ` +
+      `(${branchCount.cap} cap-only, ${branchCount.geom} geometry-only, each asserted exclusive) ` +
       `all matched the full sweep`,
   );
 }
