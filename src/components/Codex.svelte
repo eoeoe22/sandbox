@@ -428,23 +428,31 @@
     {#if tagsOpen}
       <div class="tag-panel" id="tag-panel">
         <p class="tag-hint">{t('codex.tagFilterHint')}</p>
+        <!-- Cards, not chips, and the sentence is on the page rather than in a
+             `title=`. Half these labels don't explain themselves (「체」,
+             「충격파에 휩쓸림」) and a tooltip needs a hover a phone doesn't
+             have — the same mistake the stat table already made once and had
+             fixed (see .stat-desc). So the tag reads exactly the way its trait
+             card does in the detail view, which is where the reader met it. -->
         {#each tagGroups as group (group.key)}
           <div class="tag-group">
             <h2 id={`tag-group-${group.key}`}>{t(`codex.tagGroup.${group.key}`)}</h2>
-            <div class="chips" role="group" aria-labelledby={`tag-group-${group.key}`}>
+            <div class="tag-cards" role="group" aria-labelledby={`tag-group-${group.key}`}>
               {#each group.tags as id (id)}
                 {@const on = activeTags.includes(id)}
                 {@const n = tagCounts.get(id) ?? 0}
                 <button
-                  class="chip-btn"
+                  class="tag-card"
                   class:on
                   aria-pressed={on}
-                  title={codexTerm(id).desc}
                   disabled={n === 0 && !on}
                   onclick={() => (activeTags = toggle(activeTags, id))}
                 >
-                  <span>{codexTerm(id).label}</span>
-                  <span class="n">{n}</span>
+                  <span class="tag-card-head">
+                    <span class="tag-card-name">{codexTerm(id).label}</span>
+                    <span class="n">{n}</span>
+                  </span>
+                  <span class="tag-card-desc">{codexTerm(id).desc}</span>
                 </button>
               {/each}
             </div>
@@ -852,7 +860,7 @@
     transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
 
-  .chip-btn:hover:not(:disabled) {
+  .chip-btn:hover {
     color: #e0e6ed;
     border-color: #3a4150;
   }
@@ -861,24 +869,6 @@
     background: #1e214f;
     border-color: #4f46e5;
     color: #c7d2fe;
-  }
-
-  /* Under AND semantics a tag no current result carries is a dead end, and the
-     label alone gives no way to know that. Never disabled while selected, or a
-     filter that emptied the grid could not be clicked off again. */
-  .chip-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  .chip-btn .n {
-    color: #6b7684;
-    font-size: 0.7rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .chip-btn.on .n {
-    color: #a5b4fc;
   }
 
   .disclosure,
@@ -919,6 +909,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Bounded, unlike the page itself. The rule against nested scroll boxes on
+     this page is about the *document* — losing inertial scroll, the address
+     bar's auto-hide and find-in-page for the reading content. This is control
+     furniture, and 43 explained tags unrolled in place would push the grid a
+     screenful down every time the panel opens. `60vh` before the `min()` for
+     the usual reason: an engine that doesn't know `dvh` throws the whole
+     declaration away and the cap disappears. */
   .tag-panel {
     display: flex;
     flex-direction: column;
@@ -927,6 +924,9 @@
     border-radius: 0.6rem;
     border: 1px solid #22262f;
     background: #10131a;
+    max-height: 60vh;
+    max-height: min(60vh, 60dvh);
+    overflow-y: auto;
   }
 
   .tag-hint {
@@ -942,6 +942,78 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #6b7684;
+  }
+
+  /* Same grid the 특성 cards use in the detail view — a tag should look the
+     same wherever the reader meets it. */
+  .tag-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.4rem;
+  }
+
+  .tag-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid #22262f;
+    background: #14161c;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .tag-card:hover:not(:disabled) {
+    border-color: #3a4150;
+  }
+
+  .tag-card.on {
+    background: #1e214f;
+    border-color: #4f46e5;
+  }
+
+  /* Under AND semantics a tag no current result carries is a dead end, and the
+     label alone gives no way to know that. Never disabled while selected, or a
+     filter that emptied the grid could not be clicked off again. */
+  .tag-card:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .tag-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+
+  .tag-card-name {
+    font-size: 0.82rem;
+    font-weight: 650;
+    color: #a5b4fc;
+  }
+
+  .tag-card.on .tag-card-name {
+    color: #c7d2fe;
+  }
+
+  .tag-card .n {
+    color: #6b7684;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tag-card.on .n {
+    color: #a5b4fc;
+  }
+
+  .tag-card-desc {
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: #9aa4b2;
   }
 
   /* --- Result bar ------------------------------------------------------- */
@@ -1350,9 +1422,8 @@
       min-height: 44px;
     }
 
-    /* Same argument as the tabs, and it applies harder in the tag panel: 35
-       chips wrap into six rows, so a thumb aimed at 내산성 has a neighbour
-       directly above and below it. */
+    /* Same argument as the tabs. The tag cards need no rule of their own — a
+       label over a sentence is already well past 44px. */
     .chips {
       gap: 0.5rem;
     }
