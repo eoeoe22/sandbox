@@ -239,18 +239,33 @@
   const LONG_PRESS_SLOP = 12;
   let sheetMat = $state<Material | null>(null);
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The pointer that owns the press in flight. A second finger landing on
+   *  another chip (or a palm alongside a real touch) must not clobber the first
+   *  one's timer and start point — its later movement would then be measured
+   *  against the wrong origin. First finger down owns the gesture; the rest are
+   *  ignored until it ends. */
+  let pressId = -1;
   let pressX = 0;
   let pressY = 0;
+  /** Whether the press in flight came from a finger. Read by the chips'
+   *  `contextmenu` handler, which must suppress the platform's long-press menu
+   *  (it would fight ours) WITHOUT also killing a desktop right-click's ordinary
+   *  browser menu — `contextmenu` itself carries no pointer type, but it always
+   *  follows a `pointerdown` on the same element, so this is that pointer. */
+  let lastPressWasTouch = false;
   /** Set when a long press fired, spent by the click that the same touch is
    *  about to produce. Plain `let`: nothing renders off it. */
   let swallowClick = false;
 
   function pressStart(e: PointerEvent, m: Material): void {
+    if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
     // Any new press supersedes a stale arm — see `armSwallow` for when one can
     // be left behind.
     swallowClick = false;
     clearTimeout(swallowTimer);
-    if (e.pointerType === 'mouse') return; // the mouse has hover; see above
+    lastPressWasTouch = e.pointerType !== 'mouse';
+    if (!lastPressWasTouch) return; // the mouse has hover; see above
+    pressId = e.pointerId;
     pressX = e.clientX;
     pressY = e.clientY;
     // Same head start as the hover path — the sheet opens immediately either way
@@ -290,13 +305,22 @@
   }
 
   function pressMove(e: PointerEvent): void {
-    if (pressTimer === undefined) return;
-    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) pressCancel();
+    if (pressTimer === undefined || e.pointerId !== pressId) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP) pressCancel(e);
   }
 
-  function pressCancel(): void {
+  /** End the press in flight. Only the pointer that started it may — otherwise a
+   *  second finger lifting would cancel the first one's press. */
+  function pressCancel(e?: PointerEvent): void {
+    if (e !== undefined && e.pointerId !== pressId) return;
     clearTimeout(pressTimer);
     pressTimer = undefined;
+  }
+
+  /** Suppress the platform's own long-press menu, but only for a finger — a
+   *  right-click on a chip keeps the browser menu it always had. */
+  function chipContextMenu(e: Event): void {
+    if (lastPressWasTouch) e.preventDefault();
   }
 
   const closeSheet = (): void => void (sheetMat = null);
@@ -709,7 +733,7 @@
             onpointermove={pressMove}
             onpointerup={pressCancel}
             onpointercancel={pressCancel}
-            oncontextmenu={(e) => e.preventDefault()}
+            oncontextmenu={chipContextMenu}
           >
             <!-- The material's real in-world look as SVG — the same speckle,
                  weave, chevron or heat ramp the renderer draws (see
@@ -753,7 +777,7 @@
       onpointermove={card ? pressMove : undefined}
       onpointerup={card ? pressCancel : undefined}
       onpointercancel={card ? pressCancel : undefined}
-      oncontextmenu={card ? (e) => e.preventDefault() : undefined}
+      oncontextmenu={card ? chipContextMenu : undefined}
       title={card ? undefined : materialName(m.id, m.name)}
     >
       <span class="swatch mat">{@html materialSvgFor(m)}</span>

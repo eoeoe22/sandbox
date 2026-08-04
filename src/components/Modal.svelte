@@ -152,21 +152,34 @@
    *
    * Deciding on the pointer pair and *acting* on it is still right (see the
    * overlay's handlers for why the press/release/travel test is what works on
-   * touch) — what was missing is that the gesture isn't over at `pointerup`. The
-   * capture-phase trap swallows exactly one click, anywhere, and disarms itself
-   * either way: a release that produces no click at all (a touch the UA decides
-   * was a scroll) must not leave the trap waiting to eat someone's next one.
+   * touch) — what was missing is that the gesture isn't over at `pointerup`.
+   *
+   * The trap has to be narrow, because a capture-phase `preventDefault()` on a
+   * click is a heavy thing to hold: it doesn't just stop a handler, it cancels
+   * the activation behaviour the browser computes after dispatch — a `<label>`
+   * forwarding to its input, a link navigating. Eating the wrong click is a
+   * control that silently does nothing. So it takes ONLY the click this very
+   * release produced, identified the way the release itself was: same place,
+   * same slop. A click somewhere else is somebody's real one and goes through
+   * untouched — and disarms the trap, because clicks arrive in order, so ours is
+   * evidently never coming. The timer is the last resort for a release that
+   * produces no click at all (a touch the UA decided was a scroll), and it is
+   * short: when a click does come it comes with the same gesture, not later.
    */
-  function dismissFromBackdrop(): void {
+  function dismissFromBackdrop(x: number, y: number): void {
     let timer: ReturnType<typeof setTimeout>;
-    const swallow = (ev: MouseEvent): void => {
-      ev.stopPropagation();
-      ev.preventDefault();
+    const disarm = (): void => {
       window.removeEventListener('click', swallow, true);
       clearTimeout(timer);
     };
+    const swallow = (ev: MouseEvent): void => {
+      disarm();
+      if (Math.hypot(ev.clientX - x, ev.clientY - y) > BACKDROP_SLOP) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+    };
     window.addEventListener('click', swallow, true);
-    timer = setTimeout(() => window.removeEventListener('click', swallow, true), 500);
+    timer = setTimeout(disarm, 300);
     onclose();
   }
 
@@ -259,7 +272,7 @@
       pressedBackdrop = false;
       if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > BACKDROP_SLOP) return;
       if (e.target !== e.currentTarget) return;
-      dismissFromBackdrop();
+      dismissFromBackdrop(e.clientX, e.clientY);
     }}
   >
     <div
