@@ -375,7 +375,7 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
     }
     grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
     let broken = false;
-    for (let t = 0; t < 50; t++) {
+    for (let t = 0; t < 200; t++) {
       sim.step();
       if (!grid.objects.includes(drum as SimBody)) {
         broken = true;

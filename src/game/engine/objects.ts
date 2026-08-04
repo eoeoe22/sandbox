@@ -3104,8 +3104,9 @@ function footprintTouchesAcid(o: SimBody, ctx: SimContext): boolean {
 
 /** Per-cell tick chance a bug (Termite on WoodBox, Nanobot on Drum) triggers destruction.
  *  With N touching cells, the total chance per tick is 1 - (1 - p)^N, so a larger contact area
- *  yields a higher chance of destroying the object. */
-const BUG_EAT_OBJECT_CHANCE_PER_CELL = 0.04;
+ *  yields a higher chance of destroying the object. Reduced to 0.001 so a swarm takes a
+ *  satisfying few seconds of visible chewing rather than popping instantly. */
+const BUG_EAT_OBJECT_CHANCE_PER_CELL = 0.001;
 
 /**
  * Count how many cells of `targetId` touch the body's footprint (within `margin` cells).

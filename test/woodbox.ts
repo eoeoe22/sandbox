@@ -830,7 +830,7 @@ function shoveIntoWall(
   }
   grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
   let broken = false;
-  for (let t = 0; t < 50; t++) {
+  for (let t = 0; t < 200; t++) {
     sim.step();
     if (!grid.objects.includes(crate as SimBody)) {
       broken = true;
