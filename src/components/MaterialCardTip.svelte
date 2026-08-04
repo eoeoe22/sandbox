@@ -51,9 +51,14 @@
   $effect(() => {
     if (material === null || text !== null) return;
     let alive = true;
-    void loadCodexText().then((mod) => {
-      if (alive) text = mod;
-    });
+    // No card if the fetch fails, and no unhandled rejection either. The next
+    // hover retries from scratch — `loadCodexText` doesn't cache a failure.
+    void loadCodexText().then(
+      (mod) => {
+        if (alive) text = mod;
+      },
+      () => {},
+    );
     return () => {
       alive = false;
     };

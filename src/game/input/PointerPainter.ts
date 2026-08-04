@@ -1135,6 +1135,15 @@ export class PointerPainter {
   };
 
   private onUp = (e: PointerEvent): void => {
+    // A middle-button release ends nothing. The 스포이드 press never started a
+    // gesture (see `onDown`, which returns before touching any of the state
+    // below), and a stroke or a 영역 marquee driven by *another* button may well
+    // still be live under it — eyedropping mid-drag is a natural thing to do.
+    // Without this, that release would confirm the marquee early or clear
+    // `down` and silently freeze a stroke whose button is still held.
+    // `pointercancel` is exempt: it reports no button (-1) and genuinely does
+    // end the gesture, which is the whole reason it's listened for.
+    if (e.type !== 'pointercancel' && e.button === 1) return;
     // Release a dragged object: hand it the smoothed drag velocity so a flick
     // flings it, clamped so a fast flick can't launch it across the world.
     if (this.dragBody) {

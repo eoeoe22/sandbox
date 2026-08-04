@@ -30,13 +30,27 @@ export function codexTextNow(): CodexText | null {
   return cached;
 }
 
-/** Fetch the tables (or hand back the in-flight promise / the cached module).
- *  Safe to call on every hover: after the first one it is a resolved promise. */
+/**
+ * Fetch the tables (or hand back the in-flight promise / the cached module).
+ * Safe to call on every hover: after the first one it is a resolved promise.
+ *
+ * A failure clears `pending` rather than caching it. Holding the rejected
+ * promise would make one bad fetch permanent — a network blip, or a chunk hash
+ * that went stale under a tab left open across a deploy — and every hover for
+ * the rest of the session would get the same dead promise back with no retry.
+ * The next hover is exactly the moment to try again.
+ */
 export function loadCodexText(): Promise<CodexText> {
   if (cached !== null) return Promise.resolve(cached);
-  pending ??= import('./codex').then((mod) => {
-    cached = mod;
-    return mod;
-  });
+  pending ??= import('./codex').then(
+    (mod) => {
+      cached = mod;
+      return mod;
+    },
+    (err) => {
+      pending = null;
+      throw err;
+    },
+  );
   return pending;
 }

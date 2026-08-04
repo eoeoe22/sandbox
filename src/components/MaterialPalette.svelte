@@ -234,7 +234,10 @@
     const chip = e.currentTarget as HTMLElement;
     // Start fetching the prose now rather than when the timer fires, so the
     // first card of a session appears with the rest of them (see codexLazy).
-    void loadCodexText();
+    // A failure just means no card — swallowed here rather than left to become
+    // an unhandled rejection on every hover, since this call is only a head
+    // start and MaterialCardTip asks again anyway.
+    void loadCodexText().catch(() => {});
     clearTimeout(cardTimer);
     cardTimer = setTimeout(() => {
       cardMat = m;
