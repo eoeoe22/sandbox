@@ -209,6 +209,7 @@ function resampleObjects(
     if (o.kind === 'ball') {
       o.r = o.r * s;
       o.mass = o.mass * s * s;
+      o.momentOfInertia = o.momentOfInertia * s * s * s * s;
     } else if (o.kind === 'drum' || o.kind === 'woodbox') {
       o.radius = o.radius * s;
       o.halfLength = o.halfLength * s;

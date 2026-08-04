@@ -33,15 +33,19 @@ import { MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from '../render/molotovSprite';
  * water entry (a later step).
  *
  * This milestone models CIRCLES ONLY — the rubber ball. A circle looks the same
- * at every orientation, so it deliberately carries no angle / angular velocity.
- * Do NOT add rotation fields here: capsule objects (drums, etc.) that genuinely
- * need 1-axis rotation are a separate type in a later milestone and must not be
- * wedged into this one.
+ * at every orientation, so it originally carried no angle / angular velocity.
+ * That changed once the ball was made to ROLL down a slope: it now carries the
+ * same 1-axis rotation the capsules do (angle / angularVelocity), driven by the
+ * contact torque r × J just like a drum. The disc still LOOKS orientation-less
+ * — the renderer draws a flat disc, so the spin is felt in the motion (a slope
+ * rolls it, a flat floor arrests it) rather than seen. The capsules remain a
+ * separate `kind` because their long axis makes rotation change the silhouette.
  */
 export interface SimObject {
   /** Discriminant so the object array can hold circles and capsules together
-   *  (see SimBody). A ball looks the same at every orientation, so it stays the
-   *  no-rotation type; capsules (drums) are a separate `kind`. */
+   *  (see SimBody). A ball looks the same at every orientation, so its spin
+   *  changes motion but not appearance; capsules (drums) are a separate `kind`
+   *  whose long axis makes rotation visible. */
   kind: 'ball';
   /** Center position in grid coordinates (float, same units as the cell grid). */
   x: number;
@@ -65,6 +69,19 @@ export interface SimObject {
    *  reaches a body even where it floats over empty air (which the cell heat brush
    *  can't warm). The burn trigger judges by max(surroundings, this). */
   temp: number;
+  /** Orientation (rad) of the 1-axis spin. The disc looks the same at every
+   *  angle, so unlike a capsule this never changes what's drawn — it only lives
+   *  so contact torque can produce a rolling motion (a slope rolls the ball, a
+   *  flat floor spins it up under friction). 0 = no preferred axis (cosmetic). */
+  angle: number;
+  /** Angular velocity (rad/tick), integrated from contact torque r × J exactly
+   *  like a capsule's (the same solve in resolveGridCollision / resolvePair).
+   *  Damped by fluid/granular drag and by ROLL_RESISTANCE when grounded, so the
+   *  ball rolls to a stop instead of spinning forever. */
+  angularVelocity: number;
+  /** Moment of inertia about the centre — ½·mass·r² for a solid disc. Inverse is
+   *  what the contact solve multiplies torque by to get angular acceleration. */
+  momentOfInertia: number;
   /** True while the pointer is dragging this body (보기 모드 grab): its own
    *  physics and all destruction triggers are suspended so it tracks the cursor
    *  and can be pulled out of harm. Shared with SimCapsule via SimBody. */
@@ -96,6 +113,12 @@ export const BALL_BURN_TEMP = 300;
 /** Sustained ticks above BALL_BURN_TEMP before the ball is destroyed. Shorter
  *  than the drum's melt (thin rubber gives way faster than a metal shell). */
 export const BALL_BURN_TICKS = 10;
+/** Coulomb friction coefficient for the ball's contact with the solid grid (and
+ *  with other bodies via OBJECT_FRICTION). This off-centre grip is the torque
+ *  source that turns a slide into a roll on a slope — the same role DRUM_FRICTION
+ *  plays for capsules. Rubber grips harder than a steel shell, so it sits a notch
+ *  above DRUM_FRICTION. */
+export const BALL_FRICTION = 0.8;
 /** Max horizontal jitter — as a fraction of the ball's radius — applied to an
  *  *interactively* spawned rubber ball, kicked a random amount to a random side.
  *  Clicking repeatedly at one spot used to drop every ball on the exact same
@@ -103,11 +126,13 @@ export const BALL_BURN_TICKS = 10;
  *  and they balanced into a straight vertical tower (수직으로 쌓임). Nudging each
  *  spawn a random sliver sideways drops it *off-centre* onto the pile, where the
  *  unstable ball-on-ball contact rolls it off to spread into a low heap instead of
- *  a tower. A position offset, not a velocity — a starting velocity would drift
- *  forever on the friction-free floor (balls have no rolling resistance), whereas
- *  an offset lets a lone ball still settle at rest right under the cursor. Scaled
- *  to the radius so it stays proportionate across brush sizes, and small enough
- *  that a single placement still lands essentially where you clicked (편의성). */
+ *  a tower. A position offset, not a velocity — a starting velocity used to drift
+ *  far on the near-frictionless floor, whereas an offset lets a lone ball still
+ *  settle at rest right under the cursor (it now rolls to a stop via the contact
+ *  friction + ROLL_RESISTANCE the ball shares with capsules, just faster from a
+ *  bare nudge than a thrown velocity). Scaled to the radius so it stays
+ *  proportionate across brush sizes, and small enough that a single placement
+ *  still lands essentially where you clicked (편의성). */
 export const RUBBER_BALL_SPAWN_SCATTER = 0.5;
 
 /** Build a rubber ball centered at (x,y) with radius `r` cells, at rest. `r` is
@@ -116,6 +141,7 @@ export const RUBBER_BALL_SPAWN_SCATTER = 0.5;
 export function createRubberBall(x: number, y: number, r = 4): SimObject {
   const rr = r > 0.5 ? r : 0.5;
   const area = Math.PI * rr * rr;
+  const mass = RUBBER_BALL_DENSITY * area;
   return {
     kind: 'ball',
     x,
@@ -123,10 +149,15 @@ export function createRubberBall(x: number, y: number, r = 4): SimObject {
     vx: 0,
     vy: 0,
     r: rr,
-    mass: RUBBER_BALL_DENSITY * area,
+    mass,
     restitution: RUBBER_BALL_RESTITUTION,
     heatTicks: 0,
     temp: AMBIENT_TEMP,
+    // Solid-disc inertia ½·m·r² (capsules use the rectangle figure; a disc is the
+    // degenerate capsule here). At rest: no spin, no preferred orientation.
+    angle: 0,
+    angularVelocity: 0,
+    momentOfInertia: 0.5 * mass * rr * rr,
   };
 }
 
@@ -1376,15 +1407,6 @@ const POWDER_IMPACT_MIN_SPEED = 1.0;
 const POWDER_SCATTER_MAX = 4;
 
 /**
- * Below this outward normal speed (cells/tick) a bounce is treated as a rest:
- * the normal velocity is zeroed instead of bouncing. Without it, gravity would
- * re-inject a hair of downward speed every tick and a "resting" ball would
- * micro-bounce forever. Sized above a single tick's gravity-driven rebound
- * (OBJECT_GRAVITY × restitution ≈ 0.2) so genuine drops still bounce.
- */
-const REST_EPS = 0.4;
-
-/**
  * Is the grid cell (x,y) solid to an object — something it bounces off rather
  * than sinks into? Walls, ordinary solids, and frozen liquids all count; a
  * powder (sand) and a flowing liquid do NOT (those are buoyancy / penetration,
@@ -1409,6 +1431,10 @@ interface Contact {
   nx: number;
   ny: number;
   pen: number;
+  /** Contact point on the cell surface — the closest point q on the cell square to
+   *  the centre — so the contact solve can take the torque lever arm r = q − c. */
+  px: number;
+  py: number;
 }
 
 /**
@@ -1436,8 +1462,9 @@ function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
     for (let cx = x0; cx <= x1; cx++) {
       if (!isSolidCell(cx, cy, ctx)) continue;
       // Closest point on the unit cell square [cx,cx+1]×[cy,cy+1] to the center.
-      const qx = o.x < cx ? cx : o.x > cx + 1 ? cx + 1 : o.x;
-      const qy = o.y < cy ? cy : o.y > cy + 1 ? cy + 1 : o.y;
+      // `let` because the deep-penetration branch rewrites it to the exit surface.
+      let qx = o.x < cx ? cx : o.x > cx + 1 ? cx + 1 : o.x;
+      let qy = o.y < cy ? cy : o.y > cy + 1 ? cy + 1 : o.y;
       const dx = o.x - qx;
       const dy = o.y - qy;
       const d2 = dx * dx + dy * dy;
@@ -1517,11 +1544,18 @@ function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
         } else {
           pen = bp + r;
         }
+        // Contact point: the surface edge the centre is being pushed toward, found
+        // by walking from the centre back along the (outward) normal by the
+        // penetration. The lever arm is small here (centre near the edge) so the
+        // torque is minor — this branch only fires for a stuck/spawned-into-wall
+        // ball, where rolling is beside the point.
+        qx = o.x - nx * pen;
+        qy = o.y - ny * pen;
       }
 
       if (pen > bestPen) {
         bestPen = pen;
-        best = { nx, ny, pen };
+        best = { nx, ny, pen, px: qx, py: qy };
       }
     }
   }
@@ -1530,30 +1564,59 @@ function deepestContact(o: SimObject, ctx: SimContext): Contact | null {
 
 /**
  * Resolve the circle out of the solid grid: push it to just-touching along the
- * deepest contact normal and reflect the inbound normal velocity by the
- * restitution, leaving the tangential (rolling) velocity untouched. Iterated a
- * few times so an object wedged into a corner is separated from both faces. A
- * very small rebound is damped to rest so a settled ball doesn't jitter.
+ * deepest contact normal, apply the normal impulse (restitution) AND a Coulomb
+ * tangential (friction) impulse, the latter producing the torque r × J that
+ * spins the ball into a roll — the single-contact mirror of the capsule solver
+ * in resolveCapsuleCollision. Iterated a few times so an object wedged into a
+ * corner is separated from both faces. A very small rebound is damped to rest so
+ * a settled ball doesn't jitter. Returns whether the ball touched the grid this
+ * call (grounded), so the stepper can apply rolling resistance.
  */
-function resolveGridCollision(o: SimObject, ctx: SimContext): void {
+function resolveGridCollision(o: SimObject, ctx: SimContext): boolean {
+  const invMass = 1 / o.mass;
+  const invI = o.held ? 0 : 1 / o.momentOfInertia;
+  let grounded = false;
   for (let iter = 0; iter < 3; iter++) {
     const c = deepestContact(o, ctx);
     if (!c) break;
-    o.x += c.nx * c.pen;
-    o.y += c.ny * c.pen;
-    const vn = o.vx * c.nx + o.vy * c.ny;
-    if (vn < 0) {
-      // Reflect the normal component, scaled by restitution.
-      o.vx -= (1 + o.restitution) * vn * c.nx;
-      o.vy -= (1 + o.restitution) * vn * c.ny;
-      // Damp a tiny residual bounce to a rest (kills gravity-driven jitter).
-      const out = o.vx * c.nx + o.vy * c.ny;
-      if (out > 0 && out < REST_EPS) {
-        o.vx -= out * c.nx;
-        o.vy -= out * c.ny;
-      }
+    grounded = true;
+    const nx = c.nx;
+    const ny = c.ny;
+    o.x += nx * c.pen;
+    o.y += ny * c.pen;
+    // Lever arm r = contact − centre, and r × n (scalar, z-component). The
+    // surface velocity at the contact is v + ω×r (ω×r = ω·(−r_y, r_x)).
+    const rx = c.px - o.x;
+    const ry = c.py - o.y;
+    const cross = rx * ny - ry * nx;
+    const vn = (o.vx - o.angularVelocity * ry) * nx + (o.vy + o.angularVelocity * rx) * ny;
+    if (vn >= 0) continue; // touching/separating — positional fix is enough
+    // Normal impulse: jn = −(1+e)·vn / (1/m + (r×n)²/I). Slow contacts don't
+    // bounce (kills gravity-driven micro-bounce at rest), matching the capsule.
+    const e = -vn < CAPSULE_REST_EPS ? 0 : o.restitution;
+    const jn = (-(1 + e) * vn) / (invMass + invI * cross * cross);
+    if (jn > 0) {
+      o.vx += jn * nx * invMass;
+      o.vy += jn * ny * invMass;
+      o.angularVelocity += invI * cross * jn;
+      // Coulomb friction along the tangent, clamped to μ·jn and recomputed from
+      // the post-normal velocity for stability. Off-centre (which a circle on a
+      // slope always is), this is the torque source that turns the slide into a
+      // roll — the ball-parallel of resolveCapsuleCollision's friction block.
+      const tx = -ny;
+      const ty = nx;
+      const vt = (o.vx - o.angularVelocity * ry) * tx + (o.vy + o.angularVelocity * rx) * ty;
+      const rtCross = rx * ty - ry * tx;
+      let jt = -vt / (invMass + invI * rtCross * rtCross);
+      const maxF = BALL_FRICTION * jn;
+      if (jt > maxF) jt = maxF;
+      else if (jt < -maxF) jt = -maxF;
+      o.vx += jt * tx * invMass;
+      o.vy += jt * ty * invMass;
+      o.angularVelocity += invI * rtCross * jt;
     }
   }
+  return grounded;
 }
 
 /**
@@ -1732,6 +1795,7 @@ function stepBall(o: SimObject, ctx: SimContext, ax: number, ay: number, s: numb
     const drag = OBJECT_FLUID_DRAG * (ms.liquidCells / footprint);
     o.vx -= o.vx * drag;
     o.vy -= o.vy * drag;
+    o.angularVelocity -= o.angularVelocity * drag; // fluid damps spin too
   }
   if (ms.powderCells > 0) {
     const frac = ms.powderCells / footprint;
@@ -1747,6 +1811,7 @@ function stepBall(o: SimObject, ctx: SimContext, ax: number, ay: number, s: numb
     const drag = Math.min(0.9, POWDER_DRAG * frac);
     o.vx -= o.vx * drag;
     o.vy -= o.vy * drag;
+    o.angularVelocity -= o.angularVelocity * drag;
   }
   // Impact speed along gravity, captured before integration — the speed the
   // object hits a medium's surface at (drives the splash / scatter tests below).
@@ -1756,20 +1821,43 @@ function stepBall(o: SimObject, ctx: SimContext, ax: number, ay: number, s: numb
   // enough. Prioritize liquid when a cell somehow holds both interpretations.
   const enteredLiquid = ms.liquidCells === 0 && entrySpeed >= SPLASH_MIN_SPEED;
   const enteredPowder = ms.powderCells === 0 && entrySpeed >= POWDER_IMPACT_MIN_SPEED;
-  // Integrate position over substeps ≤ MAX_SUBSTEP so nothing tunnels, with a
-  // read-only solid-grid collision resolve after each. Time-based, so a bounce
-  // mid-tick changes direction for the remainder of the tick.
+  // Integrate position AND orientation in collision-safe substeps, with a grid
+  // collision resolve (now friction + torque, see resolveGridCollision) after
+  // each. The substep budget accounts for the rim's linear speed from spin
+  // (|ω|·r, a disc's reach being its radius) so a fast-rolling ball still
+  // resolves contact each fraction of a cell — the same guard the capsule uses.
+  const reach = o.r;
   let remaining = 1;
   let guard = 0;
+  let grounded = false;
   while (remaining > 1e-4 && guard++ < 64) {
-    const speed = Math.hypot(o.vx, o.vy);
+    const speed = Math.hypot(o.vx, o.vy) + Math.abs(o.angularVelocity) * reach;
     if (speed < 1e-6) break;
     const dt = Math.min(remaining, MAX_SUBSTEP / speed);
     o.x += o.vx * dt;
     o.y += o.vy * dt;
-    resolveGridCollision(o, ctx);
+    // Integrate orientation. The screen y-axis points DOWN, so a positive
+    // angularVelocity (from the r×J contact solve, self-consistent in that
+    // frame) is a clockwise visual spin — and the disc rotates the same way
+    // under θ decreasing, matching the capsule's `angle -= ω·dt` convention so
+    // a ball and a drum roll the same direction for the same torque.
+    o.angle -= o.angularVelocity * dt;
+    if (resolveGridCollision(o, ctx)) grounded = true;
     remaining -= dt;
   }
+  // Rolling resistance: a grounded ball sheds a little spin (and a matching
+  // sliver of linear speed) each tick so it rolls to a stop instead of forever.
+  // The same ROLL_RESISTANCE the capsule uses — a ball is now its sibling.
+  if (grounded) {
+    o.angularVelocity -= o.angularVelocity * ROLL_RESISTANCE;
+    o.vx -= o.vx * ROLL_RESISTANCE;
+    o.vy -= o.vy * ROLL_RESISTANCE;
+  }
+  // Keep the angle wrapped to [−π, π) so it never grows to a precision-losing
+  // magnitude, even after a very fast spin (the disc looks the same at every
+  // angle, but the stored value still drifts otherwise).
+  const TWO_PI = 2 * Math.PI;
+  o.angle = ((((o.angle + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI) - Math.PI;
   // Surface-entry scatter: a discrete edge event, detected statelessly by
   // comparing the medium before (ms, clear this tick) and after the move. It
   // fires only on the tick the object first breaks a surface fast enough — next
@@ -1961,9 +2049,11 @@ function invMassOf(o: SimBody): number {
   return o.held ? 0 : 1 / o.mass;
 }
 
-/** Inverse rotational inertia — 0 for a ball (no rotation) and for any held body. */
+/** Inverse rotational inertia — 0 only for a held body. A ball now rolls, so it
+ *  carries a real momentOfInertia like every capsule (the ball was the lone 0
+ *  back when it had no rotation; that special case is gone). */
 function invInertiaOf(o: SimBody): number {
-  return o.held || o.kind === 'ball' ? 0 : 1 / o.momentOfInertia;
+  return o.held ? 0 : 1 / o.momentOfInertia;
 }
 
 /** Shortest distance from point (px,py) to the body's solid shape (0 if inside).
@@ -3053,8 +3143,9 @@ function applyBlastKnockback(o: SimBody, ctx: SimContext): void {
     o.vy += ny * add;
   }
   // Tumble in the shove's travel sense: rolling right ⇒ ω>0 (see stepCapsule).
-  // Any capsule body (drum or dynamite) spins; a ball has no rotation.
-  if (o.kind !== 'ball') o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
+  // Every body spins now (the ball rolls too); only a held body is skipped by
+  // the caller.
+  o.angularVelocity += BLAST_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -3104,7 +3195,7 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  if (o.kind !== 'ball') o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
+  o.angularVelocity += WOOFER_KNOCK_SPIN * Math.sign(nx);
 }
 
 /**
@@ -3153,7 +3244,7 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  if (o.kind !== 'ball') o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
+  o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
 }
 
 // ── Electromagnet attraction (자력) on the object layer ───────────────────────
@@ -3399,9 +3490,10 @@ function resolvePair(a: SimBody, b: SimBody): number {
   const crossA: number[] = [];
   const crossB: number[] = [];
   const vn: number[] = [];
-  // Any rotating body carries spin; a ball's ω is always 0.
-  const wA = a.kind !== 'ball' ? a.angularVelocity : 0;
-  const wB = b.kind !== 'ball' ? b.angularVelocity : 0;
+  // Every body carries spin now — the ball rolls too (a held body's is 0 via
+  // invInertiaOf, which the caller's iIA/iIB already bake in).
+  const wA = a.angularVelocity;
+  const wB = b.angularVelocity;
   for (let k = 0; k < count; k++) {
     const s = twoPoint ? (k === 0 ? lo : hi) : (lo + hi) / 2;
     const px = nx * cn + tx * s;
@@ -3444,15 +3536,15 @@ function resolvePair(a: SimBody, b: SimBody): number {
     a.vy -= jn[k] * ny * imA;
     b.vx += jn[k] * nx * imB;
     b.vy += jn[k] * ny * imB;
-    if (a.kind !== 'ball') a.angularVelocity -= iIA * crossA[k] * jn[k];
-    if (b.kind !== 'ball') b.angularVelocity += iIB * crossB[k] * jn[k];
+    a.angularVelocity -= iIA * crossA[k] * jn[k];
+    b.angularVelocity += iIB * crossB[k] * jn[k];
   }
   // Friction along the tangent, Coulomb-clamped to μ·jn, from the post-normal
   // relative velocity — the torque source that lets one body spin another.
   for (let k = 0; k < count; k++) {
     if (jn[k] <= 0) continue;
-    const wA2 = a.kind !== 'ball' ? a.angularVelocity : 0;
-    const wB2 = b.kind !== 'ball' ? b.angularVelocity : 0;
+    const wA2 = a.angularVelocity;
+    const wB2 = b.angularVelocity;
     const vrx2 = b.vx - wB2 * rby[k] - (a.vx - wA2 * ray[k]);
     const vry2 = b.vy + wB2 * rbx[k] - (a.vy + wA2 * rax[k]);
     const vt = vrx2 * tx + vry2 * ty;
@@ -3467,8 +3559,8 @@ function resolvePair(a: SimBody, b: SimBody): number {
     a.vy -= jt * ty * imA;
     b.vx += jt * tx * imB;
     b.vy += jt * ty * imB;
-    if (a.kind !== 'ball') a.angularVelocity -= iIA * raCrossT * jt;
-    if (b.kind !== 'ball') b.angularVelocity += iIB * rbCrossT * jt;
+    a.angularVelocity -= iIA * raCrossT * jt;
+    b.angularVelocity += iIB * rbCrossT * jt;
   }
   return impact;
 }
