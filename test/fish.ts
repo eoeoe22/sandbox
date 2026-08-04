@@ -208,30 +208,70 @@ function tank(grid: Grid, surface = 8): void {
   );
 }
 
-// ── 3. 물 밖: 펄떡임 and suffocation on schedule ───────────────────────────────
+// ── 3. 물 밖: 펄떡임 and suffocation as a distribution ────────────────────────
+// 질식은 고정 타이머가 아니라 **물 밖에 있던 시간에 비례해 오르는 위험률**이다
+// (fish.ts AIR_HAZARD). 그래서 한 마리를 재는 게 아니라 분포를 재는데, 못 박아야
+// 하는 성질이 서로 다른 방향으로 셋이다:
+//   • 중앙값이 설계값(~12초) 근처일 것 — 체감 시간이 유지된다.
+//   • 진짜로 흩어질 것 — 같이 던져진 무리가 한 프레임에 몰살하면 기계처럼 보인다.
+//     고정 타이머로 되돌리면 이 항목이 걸린다.
+//   • **물 밖에 나온 직후는 사실상 안전할 것** — 이게 균일 확률 대신 오르는 위험률을
+//     쓰는 이유 전부다. 매 틱 같은 확률이면 첫 틱에 죽는 개체가 나오는데, 수면이
+//     출렁이거나 물고기끼리 한두 틱 서로를 가두는 일은 실제로 있으므로(1번 블록이
+//     그 blip을 재고 있다) 멀쩡한 물고기가 이유 없이 죽는 것으로 보인다.
 {
   reseed();
-  const { grid, sim } = makeWorld();
-  fill(grid, 0, 30, grid.width - 1, grid.height - 1, SAND); // dry bank, no water anywhere
-  put(grid, 30, 29, FISH);
-  const seen = new Set<number>();
-  let diedAt = -1;
-  for (let t = 0; t < 30 * HZ; t++) {
-    sim.step();
-    const f = cellsOf(grid, FISH)[0];
-    if (!f) {
-      diedAt = t;
-      break; // stop the moment it dies — the corpse starts rotting immediately
+  const deaths: number[] = [];
+  const RUNS = 200;
+  let thrashed = 0;
+  let corpses = 0;
+  for (let r = 0; r < RUNS; r++) {
+    const { grid, sim } = makeWorld(20, 20);
+    fill(grid, 0, 14, 19, 19, SAND); // dry bank, no water anywhere
+    put(grid, 10, 13, FISH);
+    const seen = new Set<number>();
+    for (let t = 0; t < 60 * HZ; t++) {
+      sim.step();
+      const f = cellsOf(grid, FISH)[0];
+      if (!f) {
+        deaths.push(t);
+        if (seen.size >= 4) thrashed++;
+        if (count(grid, DEAD) === 1) corpses++;
+        break; // stop the moment it dies — the corpse starts rotting immediately
+      }
+      seen.add(f.y * grid.width + f.x);
     }
-    seen.add(f.y * grid.width + f.x);
   }
+  deaths.sort((a, b) => a - b);
+  const median = deaths[deaths.length >> 1];
+  const spread = deaths[Math.floor(deaths.length * 0.9)] - deaths[Math.floor(deaths.length * 0.1)];
+  const early = deaths.filter((d) => d < 1 * HZ).length;
+  const blip = deaths.filter((d) => d <= 3).length; // 수면 출렁임 정도의 스침
   check(
-    'a stranded fish suffocates — but only after ~12s of flopping',
-    diedAt >= 10 * HZ && diedAt <= 16 * HZ,
-    `died at tick ${diedAt} (${(diedAt / HZ).toFixed(1)}s)`,
+    'a stranded fish suffocates — median ~12s, and every one of them dies eventually',
+    deaths.length === RUNS && median >= 9 * HZ && median <= 16 * HZ,
+    `${deaths.length}/${RUNS} died, median tick ${median} (${(median / HZ).toFixed(1)}s)`,
   );
-  check('…and it thrashes while it does, rather than lying still', seen.size >= 4, `${seen.size} cells`);
-  check('…leaving a corpse, not nothing', count(grid, DEAD) === 1, `${count(grid, DEAD)} dead fish`);
+  check(
+    '…확률이라 시점이 흩어진다 (고정 타이머가 아니다)',
+    spread > 6 * HZ,
+    `10~90분위 폭 ${spread}틱 (${(spread / HZ).toFixed(1)}s), 최소 ${deaths[0]} 최대 ${deaths[deaths.length - 1]}`,
+  );
+  // 같은 중앙값을 갖는 **균일** 확률(p = ln2/360)이었다면 첫 1초 사망률이 5.6%다.
+  // 오르는 위험률은 0.5%로, 5배 넘게 낮다 — 이 격차가 두 설계를 가르는 측정값이다.
+  // 한두 틱 스치는 경우(수면 출렁임, 물고기끼리 잠깐 가두기)는 아예 0이어야 한다:
+  // 이론값이 2e-5라 200판에서 한 번이라도 나오면 그게 이상한 것이다.
+  check(
+    '…하지만 물 밖에 나오자마자 죽지는 않는다 (균일 확률이었다면 여기서 걸린다)',
+    early <= RUNS * 0.025 && blip === 0,
+    `첫 1초 ${((early / RUNS) * 100).toFixed(1)}% (균일 확률이면 5.6%), 3틱 이내 ${blip}`,
+  );
+  check(
+    '…and it thrashes while it does, rather than lying still',
+    thrashed > RUNS * 0.8,
+    `${thrashed}/${RUNS} moved through 4+ cells`,
+  );
+  check('…leaving a corpse, not nothing', corpses === RUNS, `${corpses}/${RUNS} left a corpse`);
 }
 
 // ── 4. 펄떡여서 물로 복귀 ─────────────────────────────────────────────────────
@@ -646,24 +686,28 @@ function tank(grid: Grid, surface = 8): void {
 {
   for (const dir of ['down', 'up', 'left', 'right'] as const) {
     reseed();
-    const { grid, sim } = makeWorld(40, 40);
-    fill(grid, 0, 0, 39, 39, STONE);
-    fill(grid, 2, 2, 37, 37, EMPTY); // a dry stone box — nothing but flopping in here
-    put(grid, 20, 20, FISH);
-    sim.setGravity(dir, 1);
     let wrong = 0;
     let hops = 0;
-    let prev = cellsOf(grid, FISH)[0];
-    for (let t = 0; t < 11 * HZ; t++) {
-      sim.step();
-      const now = cellsOf(grid, FISH)[0];
-      if (!now || !prev) break;
-      const dx = now.x - prev.x;
-      if (dx !== 0) {
-        hops++;
-        if (((now.aux & 1) !== 0) !== dx > 0) wrong++;
+    // 여러 판을 이어 붙인다. 질식이 확률이 된 뒤로는 한 판이 얼마나 오래 가는지가
+    // 제각각이라(중앙값 12초, 최소는 1초 미만) 한 판만 돌리면 표본이 모자랄 수 있다.
+    for (let r = 0; r < 8; r++) {
+      const { grid, sim } = makeWorld(40, 40);
+      fill(grid, 0, 0, 39, 39, STONE);
+      fill(grid, 2, 2, 37, 37, EMPTY); // a dry stone box — nothing but flopping in here
+      put(grid, 20, 20, FISH);
+      sim.setGravity(dir, 1);
+      let prev = cellsOf(grid, FISH)[0];
+      for (let t = 0; t < 11 * HZ; t++) {
+        sim.step();
+        const now = cellsOf(grid, FISH)[0];
+        if (!now || !prev) break;
+        const dx = now.x - prev.x;
+        if (dx !== 0) {
+          hops++;
+          if (((now.aux & 1) !== 0) !== dx > 0) wrong++;
+        }
+        prev = now;
       }
-      prev = now;
     }
     check(
       `…and under ${dir} gravity, where a "fall" can itself be sideways`,
@@ -743,20 +787,23 @@ function tank(grid: Grid, surface = 8): void {
   // 소비하고 true를 반환한다(SimContext의 drag gate). 물 밖 판정은 액체만 보므로
   // CO₂ 옆의 물고기는 펄떡이는 중이고, 낙하 분기가 그대로 기체 칸을 때린다.
   reseed();
-  const { grid, sim } = makeWorld(40, 40);
-  fill(grid, 0, 0, 39, 39, STONE);
-  fill(grid, 2, 2, 37, 37, EMPTY);
-  fill(grid, 24, 16, 34, 24, CO2); // 중력 방향(오른쪽)에 깔린 기체 웅덩이
-  put(grid, 20, 20, FISH);
-  sim.setGravity('right', 1);
   let dirtyGas = 0;
   let contact = 0;
-  for (let t = 0; t < 12 * HZ; t++) {
-    sim.step();
-    const f = cellsOf(grid, FISH)[0];
-    if (!f) break;
-    if (grid.cells[grid.idx(f.x + 1, f.y)] === CO2) contact++;
-    for (const g of cellsOf(grid, CO2)) if (g.aux !== 0) dirtyGas++;
+  // 질식이 확률이 된 뒤로 한 판의 길이가 제각각이라, 접촉 표본은 여러 판에서 모은다.
+  for (let r = 0; r < 6; r++) {
+    const { grid, sim } = makeWorld(40, 40);
+    fill(grid, 0, 0, 39, 39, STONE);
+    fill(grid, 2, 2, 37, 37, EMPTY);
+    fill(grid, 24, 16, 34, 24, CO2); // 중력 방향(오른쪽)에 깔린 기체 웅덩이
+    put(grid, 20, 20, FISH);
+    sim.setGravity('right', 1);
+    for (let t = 0; t < 12 * HZ; t++) {
+      sim.step();
+      const f = cellsOf(grid, FISH)[0];
+      if (!f) break;
+      if (grid.cells[grid.idx(f.x + 1, f.y)] === CO2) contact++;
+      for (const g of cellsOf(grid, CO2)) if (g.aux !== 0) dirtyGas++;
+    }
   }
   check(
     'a fish falling against a gas never writes its aux into the gas cell',

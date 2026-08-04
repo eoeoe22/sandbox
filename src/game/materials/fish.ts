@@ -57,10 +57,30 @@ import { DEAD_FISH } from './deadfish';
 /** 사망 온도 — a fish is far more fragile than a termite (70°): water this warm is
  *  already lethal long before it would boil. */
 const DEATH_TEMP = 45;
-/** 물 밖에서 버티는 시간(틱) — ~12초 at ×1 speed. Long enough that a fish flung onto
- *  the bank by a blast has a real chance to flop back in. Bounded by the 10 bits
- *  the aux layout gives the counter (max 1023). */
-const AIR_DEATH_TICKS = Math.round(12 * SIM_HZ_AT_1X);
+/** 물 밖에서 버티는 시간(틱) — the MEDIAN, ~12초 at ×1 speed, not a deadline. Long
+ *  enough that a fish flung onto the bank by a blast has a real chance to flop
+ *  back in. */
+const AIR_DEATH_MEDIAN = Math.round(12 * SIM_HZ_AT_1X);
+/** 질식은 타이머가 아니라 매 틱 굴리는 확률이고, 그 확률은 물 밖에 있던 시간에
+ *  비례해 오른다 — p(t) = t × AIR_HAZARD. 두 가지를 동시에 만족해야 해서 이 모양이다.
+ *
+ *  **고정 타이머가 아닐 것.** 정확히 360틱에 죽으면 같이 던져진 무리가 한 프레임에
+ *  일제히 죽어 기계처럼 보인다. 사체 부패가 카운터 대신 확률을 쓰는 것과 같은 이유다
+ *  (deadfish.ts).
+ *
+ *  **그런데 매 틱 *같은* 확률이어도 안 된다.** 그러면 물 밖에 나온 첫 틱에 죽는
+ *  개체가 나온다. 수조에서 물이 출렁이거나 물고기끼리 서로를 한두 틱 가두는 일은
+ *  실제로 일어나므로(1번 검사가 그 blip을 재고 있다), 균일 확률은 멀쩡히 헤엄치던
+ *  물고기를 이유 없이 죽이는 것으로 보인다. 위험률이 시간에 비례해 오르면 스친
+ *  경우는 사실상 안전하고(2틱이면 1e-5), 오래 나와 있을수록 진짜로 위험해진다 —
+ *  "빨리 물로 돌아가야 한다"가 규칙이 아니라 압력으로 읽힌다.
+ *
+ *  선형 위험률의 생존곡선은 S(t) = exp(-t²·AIR_HAZARD/2)이므로, 중앙값을
+ *  AIR_DEATH_MEDIAN에 맞추려면 AIR_HAZARD = 2·ln2 / median². 분포는 레일리 분포라
+ *  표준편차가 중앙값의 약 0.5배 — 12초쯤에 몰리되 6~20초로 흩어진다. 카운터가 10비트
+ *  (최대 1023)라 그 언저리에서 p가 1을 넘어 확실히 죽으므로, 아무리 운이 좋아도
+ *  34초 넘게 버티는 개체는 없다. */
+const AIR_HAZARD = (2 * Math.LN2) / (AIR_DEATH_MEDIAN * AIR_DEATH_MEDIAN);
 /** 충격파 노출 시 사망 확률 — half of a school caught in a (non-destructive) wave is
  *  crushed; the rest is only flung. */
 const SHOCK_DEATH_CHANCE = 0.5;
@@ -372,8 +392,11 @@ function updateFish(x: number, y: number, sim: SimContext): void {
     swim(x, y, sim, a); // swim() re-packs with the air counter cleared
     return;
   }
+  // 질식 — 시간에 비례해 오르는 위험률을 매 틱 굴린다(AIR_HAZARD). 카운터는 여전히
+  // 세지만 그건 이제 '기한'이 아니라 위험률의 입력이고, 물에 닿는 순간 0으로 돌아가는
+  // 것은 그대로다 — 웅덩이 가장자리까지 튀어 가면 사는 것도 그대로.
   const air = airOf(a) + 1;
-  if (air >= AIR_DEATH_TICKS) {
+  if (sim.chance(air * AIR_HAZARD)) {
     die(x, y, sim);
     return;
   }
