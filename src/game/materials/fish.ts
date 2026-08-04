@@ -531,7 +531,7 @@ function updateFish(x: number, y: number, sim: SimContext): void {
 export const FISH = register({
   id: 146,
   name: 'Fish',
-  phase: Phase.Solid,
+  phase: Phase.Powder,
   // 짙은 네이비 몸통 — dark enough to read as a silhouette against the water it
   // swims in (and against the oil slick that kills it), which a mid-tone body
   // would not.

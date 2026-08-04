@@ -360,5 +360,31 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
     `y=${shard.y.toFixed(1)}, floor 90`);
 }
 
+// ─────────────────── 8. Nanobot contact destroys drum 3 kinds ───────────────────
+{
+  const NANOBOT = ID('Nanobot');
+  for (const fill of ['empty', 'oil', 'acid'] as const) {
+    const { grid, sim } = makeWorld();
+    floor(grid, 90);
+    const drum = createDrum(50, 80, fill);
+    grid.objects.push(drum as SimBody);
+    for (let y = 70; y <= 85; y++) {
+      for (let x = 40; x <= 60; x++) {
+        grid.cells[grid.idx(x, y)] = NANOBOT;
+      }
+    }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    let broken = false;
+    for (let t = 0; t < 50; t++) {
+      sim.step();
+      if (!grid.objects.includes(drum as SimBody)) {
+        broken = true;
+        break;
+      }
+    }
+    check(`nanobots touching ${fill} drum break it`, broken);
+  }
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 if (failures > 0) process.exitCode = 1;

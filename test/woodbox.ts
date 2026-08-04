@@ -816,6 +816,30 @@ function shoveIntoWall(
     !g2.objects.includes(crate1 as SimBody) || !g2.objects.includes(crate2 as SimBody));
 }
 
+// 13. Termite contact breaks wooden crate probabilistically
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 90);
+  const crate = createWoodBox(50, 80);
+  grid.objects.push(crate as SimBody);
+  const TERMITE = ID('Termite');
+  for (let y = 75; y <= 85; y++) {
+    for (let x = 43; x <= 57; x++) {
+      grid.cells[grid.idx(x, y)] = TERMITE;
+    }
+  }
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  let broken = false;
+  for (let t = 0; t < 50; t++) {
+    sim.step();
+    if (!grid.objects.includes(crate as SimBody)) {
+      broken = true;
+      break;
+    }
+  }
+  check('termites touching wooden crate break it probabilistically', broken);
+}
+
 console.log(failures === 0 ? '\nAll wooden-box checks passed.' : `\n${failures} check(s) FAILED.`);
 if (failures > 0) process.exit(1);
 
