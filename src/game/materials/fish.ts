@@ -6,6 +6,8 @@ import { DIR4 } from '../engine/directions';
 import { SIM_HZ_AT_1X } from '../config';
 import { touchingBlast } from './crawler';
 import { DEAD_FISH } from './deadfish';
+import { WATER } from './water';
+import { SALTWATER } from './saltwater';
 
 // Fish (물고기) — the first *swimming* life in the sandbox. One cell is one fish
 // (엔진 판정은 1픽셀); the grey tail that trails it is drawn by the renderer and
@@ -36,9 +38,9 @@ import { DEAD_FISH } from './deadfish';
 // (`placementDensity`), because the lattice needed a crowd to be visible at all.
 //
 // 물 안 / 물 밖 — the two states it lives in:
-//   • Touching liquid → it swims. It can only step INTO liquid, so it never
+//   • Touching water → it swims. It can only step INTO water, so it never
 //     climbs out of its own tank; the waterline is a ceiling it can't cross.
-//   • Out of liquid → 펄떡임. It hops off the ground in a random direction and
+//   • Out of water → 펄떡임. It hops off the ground in a random direction and
 //     falls back, and a counter in `aux` runs up. It doesn't suffocate ON that
 //     counter — the counter feeds a per-tick risk that climbs the longer it's
 //     been out (AIR_HAZARD), so a brief slip out of the water is near-harmless
@@ -46,13 +48,35 @@ import { DEAD_FISH } from './deadfish';
 //     counter to zero, so a fish that flops its way to the edge of a puddle
 //     really is saved.
 //
-// It dies five ways, all of them leaving a Dead Fish (deadfish.ts) that floats
+// 물과 소금물뿐 — "water" above means exactly Water and Saltwater (`BREATHABLE`).
+// Every other liquid is 오염수: it can't be swum in and it kills (POISON_HAZARD,
+// 대략 1.5초). This used to be the opposite — a fish would happily swim through
+// oil or acid — and it read as a bug rather than as a feature: 기름을 부어도
+// 물고기가 태연히 헤엄치면 수조에 무슨 짓을 해도 상관없다는 뜻이라, 어항을 관리할
+// 이유가 사라진다. 이제 기름 유출은 떼죽음이고, 그 편이 훨씬 재미있다. A liquid
+// chilled to its freezing point acts solid everywhere else in the engine (see
+// SimContext.isFrozen), so it walls a fish in rather than drowning or poisoning
+// it.
+//
+// 수위 — 물고기는 물을 밀어내지 않는다. A fish swimming into a cell takes that
+// cell's water into its own 겹침 (overlap) slot instead of shoving it aside
+// (`porous` + `overlapFluids`, drawIntoOverlay in `swim`), so a tank's surface
+// sits exactly where it would with no fish in it: 열 마리를 풀어도 물이 넘치지
+// 않는다. The engine already had the whole mechanism for it — wet sand carries
+// its water the same way — and it comes with the bookkeeping for free: `swap`
+// carries the overlay, `set` hands it to the corpse (a Powder hosts a liquid),
+// and a corpse rotting away releases it back into the cell. The water is parked,
+// never destroyed. Out of water the fish sheds it again (`shedWater`), so a
+// stranded one is an ordinary opaque body dripping a puddle at its feet.
+//
+// It dies six ways, all of them leaving a Dead Fish (deadfish.ts) that floats
 // belly-up to the surface: 고온, 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
-// 감전, 물 밖 질식. A weaker shockwave — a Woofer's thump — kills it half the time
-// and merely throws it the rest (`shockLoose` + `shockDeathChance`, the Termite's
-// exact pattern; see blast.ts). Electricity is the same 50%, and reaches much
-// further than you'd expect: water is a conductor, so a live wire dipped in a tank
-// electrifies the whole pool at once (`sparkDeathChance`, driven from spark.ts).
+// 감전, 물 밖 질식, 오염수 접촉. A weaker shockwave — a Woofer's thump — kills it
+// half the time and merely throws it the rest (`shockLoose` + `shockDeathChance`,
+// the Termite's exact pattern; see blast.ts). Electricity is the same 50%, and
+// reaches much further than you'd expect: water is a conductor, so a live wire
+// dipped in a tank electrifies the whole pool at once (`sparkDeathChance`, driven
+// from spark.ts).
 //
 // 잡아먹거나 번식하지 않는다. 개체 수는 유저가 찍은 만큼이 전부다 — a tank doesn't
 // silently fill up with fish while you look away.
@@ -90,6 +114,19 @@ const AIR_HAZARD = (2 * Math.LN2) / (AIR_DEATH_MEDIAN * AIR_DEATH_MEDIAN);
 /** 충격파 노출 시 사망 확률 — half of a school caught in a (non-destructive) wave is
  *  crushed; the rest is only flung. */
 const SHOCK_DEATH_CHANCE = 0.5;
+
+/** 오염수 사망 — 물·소금물이 아닌 액체에 닿아 있는 동안 매 틱 굴리는 확률. 평균
+ *  수명 POISON_MEAN_SECONDS이라 기름이 덮친 수조는 몇 초 만에 조용해진다.
+ *
+ *  질식(AIR_HAZARD)과 달리 **시간에 비례해 오르지 않고 매 틱 같은 확률**이다. 오르는
+ *  위험률을 쓰려면 노출 시간을 또 하나 세야 하는데 `aux`가 이미 꽉 차 있고(아래 레이아웃
+ *  — 남은 건 비트 하나뿐), 무엇보다 질식이 그 모양이어야 했던 이유가 여기엔 없다:
+ *  물고기가 제 수조에서 한두 틱 물이 안 닿는 일은 늘 있지만, 기름에 스치는 것은 사고가
+ *  아니라 유저가 기름을 부은 결과다. 그래도 지수분포라 사망 시점은 흩어지고(무리가 한
+ *  프레임에 몰살하지 않는다) 한 틱 스친 개체는 2.2%만 죽으므로, 파도가 기름을 잠깐
+ *  끼얹은 정도로는 대개 살아남는다. */
+const POISON_MEAN_SECONDS = 1.5;
+const POISON_HAZARD = 1 / (POISON_MEAN_SECONDS * SIM_HZ_AT_1X);
 
 /** Chance a swimming fish actually advances this tick. Below 1 it *cruises* —
  *  gliding and coasting rather than teleporting a cell every single tick, which
@@ -173,7 +210,7 @@ const headingToward = (dx: number, dy: number): number =>
 //              the way it last went sideways — the tail must not flip.
 //   bits 1-4   heading + 1 (0 = 아직 못 정함, 1..8 = RING 0..7), the engine's usual
 //              "a freshly placed cell reads 0" convention.
-//   bits 5-14  물 밖 경과 틱 (0..1023), reset to 0 the moment it touches liquid.
+//   bits 5-14  물 밖 경과 틱 (0..1023), reset to 0 the moment it touches water.
 const FACING_RIGHT = 1;
 const HEADING_SHIFT = 1;
 const AIR_SHIFT = 5;
@@ -196,34 +233,86 @@ const facingAfter = (dx: number, a: number): boolean =>
 
 // ── 물 ────────────────────────────────────────────────────────────────────────
 
-/** True if (x,y) is water a fish can be *in*: any non-frozen liquid. Deliberately
- *  not water-specific — a fish swimming through oil or acid (briefly, in the
- *  acid's case) is more fun than a fish that phases through everything but H₂O,
- *  and every liquid is already a thing you can pour a tank of. A liquid chilled
- *  to its freezing point acts solid everywhere else in the engine (see
- *  SimContext.isFrozen), so it walls a fish in rather than letting it swim. */
+/** 물고기가 살 수 있는 액체 — 물과 소금물뿐. Also the exact list the fish may take
+ *  into its 겹침 slot (`overlapFluids` below), which is what keeps the two halves
+ *  of the design honest: it can only carry what it can breathe, so a fish is never
+ *  found holding a pocket of oil. */
+const BREATHABLE: readonly number[] = [WATER.id, SALTWATER.id];
+
+const isBreathable = (id: number): boolean => id === WATER.id || id === SALTWATER.id;
+
+/** True if (x,y) is water a fish can be *in*: unfrozen Water or Saltwater. Frozen
+ *  water acts solid everywhere else in the engine (see SimContext.isFrozen), so it
+ *  walls a fish in rather than letting it swim; every other liquid is 오염수 and is
+ *  refused here so the fish never *chooses* to swim into what kills it (it can
+ *  still be dropped in one, which is what `touchingPoison` is for). */
 function swimmable(x: number, y: number, sim: SimContext): boolean {
   if (!sim.inBounds(x, y)) return false;
   const id = sim.get(x, y);
   if (id === EMPTY) return false; // 수면 위 공기로는 스스로 나가지 않는다
-  return getMaterial(id).phase === Phase.Liquid && !sim.isFrozen(x, y);
+  return isBreathable(id) && !sim.isFrozen(x, y);
 }
 
-/** True if any cardinal neighbour is liquid — "아직 물에 닿아 있다". Note this is
- *  NOT crawler.ts's `isSubmerged`, which the bugs use to drown: that one demands
- *  *no* air neighbour, so a fish cruising just under the waterline would read as
- *  out of water and slowly suffocate at the top of its own tank. A fish only needs
- *  to be touching water, not buried in it. */
-function touchingLiquid(x: number, y: number, sim: SimContext): boolean {
+/** True if any cardinal neighbour is breathable water — "아직 물에 닿아 있다". Note
+ *  this is NOT crawler.ts's `isSubmerged`, which the bugs use to drown: that one
+ *  demands *no* air neighbour, so a fish cruising just under the waterline would
+ *  read as out of water and slowly suffocate at the top of its own tank. A fish
+ *  only needs to be touching water, not buried in it.
+ *
+ *  Deliberately blind to the water the fish is *carrying* in its own 겹침 slot
+ *  (see the header note on 수위). Counting that would mean a fish flung onto dry
+ *  land breathes out of the pocket it swallowed on the way — for as long as the
+ *  pocket lasts, which under zero gravity is forever, since nothing drains. The
+ *  fish sheds that water the same tick it finds itself out of water (`shedWater`),
+ *  so the two rules agree: 이웃에 물이 없으면 물 밖이다. */
+function touchingWater(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR4) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (isBreathable(sim.get(nx, ny)) && !sim.isFrozen(nx, ny)) return true;
+  }
+  return false;
+}
+
+/** True if any cardinal neighbour is a liquid that ISN'T water — 오염수 접촉.
+ *  Frozen liquids are excluded for the same reason `swimmable` excludes them:
+ *  a block of frozen oil is a wall the fish is pressed against, not a bath it is
+ *  dying in. Checked even while it is happily swimming, so a slick of oil floating
+ *  on a tank kills the fish that come up to meet it. */
+function touchingPoison(x: number, y: number, sim: SimContext): boolean {
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const id = sim.get(nx, ny);
-    if (id === EMPTY) continue;
+    if (id === EMPTY || isBreathable(id)) continue;
     if (getMaterial(id).phase === Phase.Liquid && !sim.isFrozen(nx, ny)) return true;
   }
   return false;
+}
+
+/** 물 밖으로 나온 물고기가 품고 있던 물을 흘려보낸다 — the counterpart to the
+ *  `drawIntoOverlay` in `swim`, and what keeps "물고기 한 마리 = 물 한 칸을 밀어냄"
+ *  from surviving out of the tank. Gravity's way first, then the two sides, then
+ *  up: a fish stranded on a bank leaves its water on the ground rather than
+ *  hovering with it. Written against the gravity vector, like `flop`, so it still
+ *  drips downhill when the world's gravity is rotated — and NOT gated on gravity
+ *  *strength*, because a weightless fish still has to let go (`SimContext.
+ *  updateOverlay`, which is gated, would otherwise never drain the slot and the
+ *  fish would breathe out of it forever).
+ *
+ *  Boxed in on all four sides by solids it keeps carrying — there is nowhere to
+ *  put a cell of water — and suffocates holding it, which is the corpse's problem
+ *  then (a Dead Fish is a Powder and hosts the liquid quite happily). */
+function shedWater(x: number, y: number, sim: SimContext): void {
+  if (sim.getOverlay(x, y) === EMPTY) return;
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  if (sim.pushOverlay(x, y, x + gx, y + gy)) return;
+  if (sim.pushOverlay(x, y, x - gy, y + gx)) return;
+  if (sim.pushOverlay(x, y, x + gy, y - gx)) return;
+  sim.pushOverlay(x, y, x - gx, y - gy);
 }
 
 // ── 이동 ──────────────────────────────────────────────────────────────────────
@@ -307,6 +396,18 @@ function swim(x: number, y: number, sim: SimContext, a: number): void {
     const [dx, dy] = RING[d];
     if (!swimmable(x + dx, y + dy, sim)) continue;
     sim.setAux(x, y, pack(facingAfter(dx, a), d, 0));
+    // 수위 — 밀어내지 않고 **품고** 간다. Drawing the target's water into this
+    // fish's own 겹침 slot empties that cell, so the swap below walks the fish
+    // into a vacated cell instead of shoving a cell of water out to where the
+    // fish just was — which is exactly the displacement that used to make a
+    // tank's level climb by one cell for every fish poured into it. Two cells
+    // become one, the way a sinking grain of sand swallows the drop it
+    // displaces (SimContext.tryMove's 겹침 absorb).
+    //
+    // It returns false when the slot is already full, and that case is just as
+    // correct: the fish carries its own water and `swap` trades it with the
+    // target's, so the water stays put and only the fish moves.
+    sim.drawIntoOverlay(x, y, x + dx, y + dy);
     sim.swap(x, y, x + dx, y + dy);
     return;
   }
@@ -368,7 +469,7 @@ function flop(x: number, y: number, sim: SimContext, a: number, air: number): vo
   // hop (SimContext.moveDown), and for the same reasons. tryMove reports a move
   // it did not make in two ways that are both reachable here: a displacement
   // drag-gate stall consumes the move without swapping (a stranded fish falls
-  // *into* a gas cell — touchingLiquid only counts liquids, so a fish beside
+  // *into* a gas cell — touchingWater only counts water, so a fish beside
   // CO2 is out of water and flopping), and a void border deletes the cell at
   // the edge and reports success with nothing left to correct. Trusting the
   // return value wrote packed fish bits over the gas's own aux — which for
@@ -383,9 +484,16 @@ function flop(x: number, y: number, sim: SimContext, a: number, air: number): vo
   }
 }
 
+/** 사망 — the corpse takes over the cell, keeping nothing of the fish's state but
+ *  the one bit the renderer needs: which way it was facing, so the Dead Fish's own
+ *  꼬리 (deadfish.ts's `tailPixel`) trails on the same side the living fish's did
+ *  instead of flipping the instant it dies. `set`, not `spawn`, hands the corpse
+ *  whatever was in the 겹침 slot as well (a Powder hosts a liquid), so a fish that
+ *  dies mid-tank doesn't spit its cell of water back out and bump the level. */
 function die(x: number, y: number, sim: SimContext): void {
+  const faces = sim.getAux(x, y) & FACING_RIGHT;
   sim.set(x, y, DEAD_FISH.id);
-  sim.setAux(x, y, 0); // the corpse keeps no state of its own (see deadfish.ts)
+  sim.setAux(x, y, faces);
 }
 
 function updateFish(x: number, y: number, sim: SimContext): void {
@@ -393,11 +501,22 @@ function updateFish(x: number, y: number, sim: SimContext): void {
     die(x, y, sim);
     return;
   }
+  // 오염수 — 물·소금물이 아닌 액체에 닿아 있으면 매 틱 굴린다(POISON_HAZARD).
+  // Rolled before the swim so it applies at the waterline too: a slick of oil on
+  // top of a tank kills the fish that surface into it, which is the whole point.
+  if (touchingPoison(x, y, sim) && sim.chance(POISON_HAZARD)) {
+    die(x, y, sim);
+    return;
+  }
   const a = sim.getAux(x, y);
-  if (touchingLiquid(x, y, sim)) {
+  if (touchingWater(x, y, sim)) {
     swim(x, y, sim, a); // swim() re-packs with the air counter cleared
     return;
   }
+  // 물 밖 — 품고 있던 물부터 내려놓는다(see shedWater). Before the suffocation
+  // roll, so a fish that dies out of water has already left its water behind
+  // rather than handing a puddle to the corpse.
+  shedWater(x, y, sim);
   // 질식 — 시간에 비례해 오르는 위험률을 매 틱 굴린다(AIR_HAZARD). 카운터는 여전히
   // 세지만 그건 이제 '기한'이 아니라 위험률의 입력이고, 물에 닿는 순간 0으로 돌아가는
   // 것은 그대로다 — 웅덩이 가장자리까지 튀어 가면 사는 것도 그대로.
@@ -413,8 +532,9 @@ export const FISH = register({
   id: 146,
   name: 'Fish',
   phase: Phase.Solid,
-  // 짙은 네이비 몸통 — dark enough to read as a silhouette against every liquid
-  // it can swim in (Water, Oil, Acid), which a mid-tone body would not.
+  // 짙은 네이비 몸통 — dark enough to read as a silhouette against the water it
+  // swims in (and against the oil slick that kills it), which a mid-tone body
+  // would not.
   color: rgb(0x1e, 0x30, 0x5e),
   colorVary: 18,
   density: 3,
@@ -426,6 +546,17 @@ export const FISH = register({
   // to be visible, and now you have to work to make a crowd.
   placementDensity: 0.015,
   category: 'life',
+  // 수위 — a fish takes up no room in the water it swims in: its cell holds the
+  // water too, in the 겹침 (overlap) slot every porous host has (see the header
+  // note). `porous` is what makes a *Solid* eligible to host at all
+  // (SimContext.canHostOverlap), and it comes with the rest of the porous rule
+  // for free, all of which reads right for a fish: water flows through its cell
+  // rather than piling up on it, and smoke drifts past it instead of being
+  // walled out. The allowlist is the same two liquids it can breathe, so nothing
+  // else ever ends up inside a fish — a fish full of oil would be a fish that
+  // deleted the oil.
+  porous: true,
+  overlapFluids: BREATHABLE,
   // 꼬리 — the grey pixel the renderer trails behind it. Display only: it is not a
   // cell, occupies nothing, and no rule in the simulation can see it.
   tailPixel: rgb(0x8c, 0x95, 0xa2),

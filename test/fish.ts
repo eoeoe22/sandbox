@@ -675,26 +675,31 @@ function tank(grid: Grid, surface = 8): void {
 
   // 전극에 **직접** 닿은 경우. 위 장면들은 전부 도체(물)를 거쳐 스파크가 생기는 경로라,
   // 전지가 이웃을 직접 때리는 경로(pulseCell → reactToPulse)는 하나도 안 거친다.
-  // 물고기를 도체가 아닌 액체(기름)에 담가 두면 — 숨은 쉬고 전류는 물이 안 옮긴다 —
-  // 판정이 오직 직접 접촉으로만 온다. reactToPulse에 감전 분기가 없으면 안 죽는다.
+  // 그래서 도체를 통째로 지운 세계에 물고기를 둔다 — 판정이 오직 직접 접촉으로만 온다.
+  //
+  // 예전엔 기름 웅덩이였다("숨은 쉬고 전류는 안 옮기는 액체"). 물·소금물이 아닌 액체가
+  // 물고기를 죽이게 된 뒤로 기름은 그 역할을 못 한다 — 3초면 감전이 아니라 기름으로
+  // 죽으므로 분기가 빠져도 20/20이 나오는, 조용히 아무것도 안 재는 장면이 된다. 이제
+  // 남은 비도체 매질은 **공기**뿐이라 3×3 공기 주머니를 돌로 두르고 전극을 가운데
+  // 놓는다. 물고기가 어디로 펄떡여도 여덟 칸 전부 전극의 이웃(DIR8)이라 "닿을 확률"이
+  // 섞이지 않는 것은 그대로고, 대신 질식이 섞인다 — 3초 창의 질식 사망률은 4.2%라
+  // (AIR_HAZARD, 중앙값 12초) 분기가 빠지면 20판 중 1판쯤 죽는 데 그쳐 여전히 걸린다.
   reseed();
-  let oiled = 0;
-  const OIL_RUNS = 20;
-  for (let r = 0; r < OIL_RUNS; r++) {
+  let zapped = 0;
+  const DRY_RUNS = 20;
+  for (let r = 0; r < DRY_RUNS; r++) {
     const { grid: g, sim: s } = makeWorld(12, 12);
     fill(g, 0, 0, 11, 11, STONE);
-    // 전극을 가운데 두고 기름 8칸으로 두른다 — 물고기가 어디로 헤엄쳐도 이웃 안이라,
-    // "닿을 확률"이 아니라 "닿았을 때 죽는가"만 남는다.
-    fill(g, 4, 4, 6, 6, OIL); // 도체가 아닌 웅덩이 — 질식만 막아 준다
+    fill(g, 4, 4, 6, 6, EMPTY); // 공기 주머니 — 도체도, 물고기를 죽이는 액체도 없다
     put(g, 5, 5, BATTERY);
     put(g, 4, 4, FISH);
     for (let t = 0; t < 3 * HZ; t++) s.step();
-    if (count(g, FISH) === 0) oiled++;
+    if (count(g, FISH) === 0) zapped++;
   }
   check(
     '전극에 직접 닿아도 감전된다 (도체를 거치지 않는 경로)',
-    oiled >= OIL_RUNS - 2,
-    `${oiled}/${OIL_RUNS} (reactToPulse에 분기가 없으면 0)`,
+    zapped >= DRY_RUNS - 2,
+    `${zapped}/${DRY_RUNS} (reactToPulse에 분기가 없으면 1판쯤)`,
   );
 }
 
@@ -931,6 +936,234 @@ function tank(grid: Grid, surface = 8): void {
       gone ? `${stray} cells left holding stray aux` : 'the fish never fell out',
     );
   }
+}
+
+// ── 9. 오염수: 물과 소금물이 아니면 죽는다 ────────────────────────────────────
+// 물고기는 예전엔 **아무 액체에서나** 헤엄쳤다(기름·산·꿀). 지금은 물/소금물만
+// 서식지이고 나머지는 오염수다 — 매 틱 굴리는 확률이라(fish.ts POISON_HAZARD,
+// 평균 1.5초) 못 박아야 하는 것이 셋이다: 정말 죽는가, 소금물은 멀쩡한가, 그리고
+// **한 틱 스친 것으로는 대개 안 죽는가**(즉사가 아니라 확률이라는 것).
+{
+  reseed();
+  const POISON_RUNS = 20;
+  let poisoned = 0;
+  const deathTicks: number[] = [];
+  for (let r = 0; r < POISON_RUNS; r++) {
+    const { grid: g, sim: s } = makeWorld(20, 20);
+    fill(g, 0, 0, 19, 19, STONE);
+    fill(g, 5, 5, 14, 14, OIL); // 기름 웅덩이 한가운데 — 어디로 가도 기름이 이웃이다
+    put(g, 10, 10, FISH);
+    for (let t = 0; t < 10 * HZ; t++) {
+      s.step();
+      if (count(g, FISH) === 0) {
+        poisoned++;
+        deathTicks.push(t);
+        break;
+      }
+    }
+  }
+  deathTicks.sort((a, b) => a - b);
+  const median = deathTicks.length ? deathTicks[deathTicks.length >> 1] : -1;
+  check(
+    '기름 속 물고기는 몇 초 안에 죽는다 (물·소금물이 아닌 액체는 오염수다)',
+    poisoned === POISON_RUNS && median < 5 * HZ,
+    `${poisoned}/${POISON_RUNS} died, median tick ${median} (설계 평균 1.5초 = 45틱)`,
+  );
+
+  // 죽는 방식은 다른 다섯 가지와 같다 — 같은 사체를 남긴다.
+  reseed();
+  const oily = makeWorld(20, 20);
+  fill(oily.grid, 0, 0, 19, 19, STONE);
+  fill(oily.grid, 5, 5, 14, 14, OIL);
+  put(oily.grid, 10, 10, FISH);
+  let rotting = false;
+  for (let t = 0; t < 10 * HZ && !rotting; t++) {
+    oily.sim.step();
+    rotting = count(oily.grid, DEAD) >= 1;
+  }
+  check('…그리고 오염수 사망도 같은 사체를 남긴다', rotting, `${count(oily.grid, DEAD)} corpses`);
+
+  // 소금물은 서식지다. 40초는 위 중앙값의 스무 배가 넘으므로, 판정이 "물이 아닌 것"
+  // 으로 굳어 있으면(소금물을 빠뜨리면) 여기서 전멸한다.
+  reseed();
+  const brine = makeWorld();
+  const SALTWATER = ID('Saltwater');
+  fill(brine.grid, 0, brine.grid.height - 3, brine.grid.width - 1, brine.grid.height - 1, STONE);
+  fill(brine.grid, 0, 0, 1, brine.grid.height - 1, STONE);
+  fill(brine.grid, brine.grid.width - 2, 0, brine.grid.width - 1, brine.grid.height - 1, STONE);
+  fill(brine.grid, 2, 8, brine.grid.width - 3, brine.grid.height - 4, SALTWATER);
+  for (const [x, y] of [
+    [10, 14],
+    [20, 20],
+    [30, 26],
+    [40, 16],
+  ] as const)
+    put(brine.grid, x, y, FISH);
+  for (let t = 0; t < 40 * HZ; t++) brine.sim.step();
+  check(
+    '소금물에서는 40초를 멀쩡히 산다 (바다도 서식지다)',
+    count(brine.grid, FISH) === 4 && count(brine.grid, DEAD) === 0,
+    `${count(brine.grid, FISH)}/4 live, ${count(brine.grid, DEAD)} dead`,
+  );
+
+  // 한 틱만 스치는 경우. 매 틱 확률(2.2%)이지 접촉 즉사가 아니라는 것 — 파도가 기름을
+  // 잠깐 끼얹거나 물 위 기름막을 스쳐 지나는 정도로 떼죽음이 나면 안 된다. 즉사로
+  // 굳으면 100%가 나온다.
+  reseed();
+  let grazed = 0;
+  const GRAZE_RUNS = 400;
+  for (let r = 0; r < GRAZE_RUNS; r++) {
+    const { grid: g, sim: s } = makeWorld(9, 9);
+    fill(g, 0, 0, 8, 8, STONE);
+    fill(g, 3, 3, 5, 5, WATER);
+    put(g, 4, 4, FISH);
+    put(g, 4, 3, OIL); // 머리 위 기름 한 칸 — 딱 한 틱
+    s.step();
+    if (count(g, FISH) === 0) grazed++;
+  }
+  const grazeRate = grazed / GRAZE_RUNS;
+  check(
+    '…하지만 한 틱 스친 것으로 죽지는 않는다 (접촉 즉사가 아니라 확률이다)',
+    grazeRate < 0.08,
+    `${(grazeRate * 100).toFixed(1)}% of ${GRAZE_RUNS} (설계 2.2%, 즉사면 100%)`,
+  );
+}
+
+// ── 10. 수위: 물고기는 물을 밀어내지 않는다 (겹침) ────────────────────────────
+// 물고기가 수조에 들어가면 물 한 칸을 밀어내 수위가 올라갔다. 지금은 들어간 칸의 물을
+// **제 겹침(overlay) 슬롯에 담고** 헤엄치므로(fish.ts swim의 drawIntoOverlay) 수조는
+// 물고기가 없을 때와 같은 높이를 유지한다. 재는 방법은 표면 높이가 아니라 **채워진 칸
+// 수**다 — 표면은 울퉁불퉁해도 채워진 칸 수는 정확히 수위를 뜻하고, 물고기 한 마리가
+// 물을 밀어내면 딱 그만큼 늘어난다.
+{
+  const filled = (g: Grid): number => {
+    let n = 0;
+    for (let i = 0; i < g.cells.length; i++) if (g.cells[i] !== EMPTY && g.cells[i] !== STONE) n++;
+    return n;
+  };
+  /** 세계에 있는 물 전부 — 칸으로 있는 것과 무언가에 스며들어 있는 것 둘 다. */
+  const allWater = (g: Grid): number => {
+    let n = 0;
+    for (let i = 0; i < g.cells.length; i++) {
+      if (g.cells[i] === WATER) n++;
+      if (g.overlay[i] === WATER) n++;
+    }
+    return n;
+  };
+
+  reseed();
+  const control = makeWorld();
+  tank(control.grid, 8);
+  const water0 = allWater(control.grid);
+  for (let t = 0; t < 20 * HZ; t++) control.sim.step();
+  const flat = filled(control.grid);
+
+  reseed();
+  const stocked = makeWorld();
+  tank(stocked.grid, 8);
+  const FISH_N = 8;
+  for (let k = 0; k < FISH_N; k++) put(stocked.grid, 8 + k * 5, 6, FISH); // 수면 위 공중
+  for (let t = 0; t < 20 * HZ; t++) stocked.sim.step();
+
+  check(
+    '물고기를 풀어도 수위가 오르지 않는다 (들어간 물을 겹침으로 품는다)',
+    count(stocked.grid, FISH) === FISH_N && filled(stocked.grid) === flat,
+    `${filled(stocked.grid)} filled vs ${flat} with no fish (밀어내면 +${FISH_N})`,
+  );
+  check(
+    '…그리고 그 물은 어디로도 사라지지 않는다 (칸 + 겹침 총량 보존)',
+    allWater(stocked.grid) === water0,
+    `${allWater(stocked.grid)} vs ${water0} at the start`,
+  );
+  let carrying = 0;
+  for (let i = 0; i < stocked.grid.cells.length; i++) {
+    if (stocked.grid.cells[i] === FISH && stocked.grid.overlay[i] === WATER) carrying++;
+  }
+  check(
+    '…수조 안 물고기는 저마다 물 한 칸을 품고 있다',
+    carrying === FISH_N,
+    `${carrying}/${FISH_N} carrying`,
+  );
+
+  // 물 밖으로 나오면 도로 내려놓는다(fish.ts shedWater) — 폭발에 물째로 튕겨 나간
+  // 물고기가 물 한 칸을 업고 육지를 돌아다니면 안 된다. **무중력에서도** 내려놓아야
+  // 하는데, 겹침의 자연 배수(SimContext.updateOverlay)는 중력 게이트에 걸려 멈추므로
+  // 그쪽에 맡겼다면 무중력 물고기는 제가 삼킨 물로 영영 숨을 쉰다(touchingWater가
+  // 이웃만 보고 제 슬롯은 안 보는 이유이기도 하다).
+  for (const g of [1, 0]) {
+    reseed();
+    const dry = makeWorld(20, 20);
+    fill(dry.grid, 0, 0, 19, 19, STONE);
+    fill(dry.grid, 1, 1, 18, 18, EMPTY); // 물 한 방울 없는 마른 방
+    put(dry.grid, 10, 10, FISH);
+    dry.grid.overlay[dry.grid.idx(10, 10)] = WATER; // 수조에서 업고 나온 한 칸
+    dry.sim.setGravity('down', g);
+    // 한 틱이면 된다 — 물 밖이라는 걸 알아차린 그 틱에 내려놓는다. 더 오래 돌리면
+    // 물고기가 제가 떨어뜨린 물 한 칸 옆으로 펄떡여 다시 삼키므로(웅덩이가 한 칸이면
+    // 삼켰다 뱉었다 한다) 재는 것이 흐려진다.
+    dry.sim.step();
+    const f = cellsOf(dry.grid, FISH)[0];
+    const still = f ? dry.grid.overlay[dry.grid.idx(f.x, f.y)] : -1;
+    check(
+      `뭍에 오른 물고기는 업고 나온 물을 흘린다 (중력 ${g})`,
+      still === EMPTY && allWater(dry.grid) === 1,
+      `slot=${still}, ${allWater(dry.grid)} water cell(s) in the room`,
+    );
+  }
+}
+
+// ── 11. 사체에도 꼬리가 달린다 ────────────────────────────────────────────────
+// 꼬리는 `Material.tailPixel` + aux 비트 0(1이면 오른쪽을 본다)이 전부다 — 렌더러와의
+// 계약은 8번 블록이 산 물고기 쪽에서 재고 있고, 여기서는 **사체가 그 계약을 물려받는지**
+// 를 본다: 태그가 달려 있는가, 그리고 죽는 순간의 방향이 그대로 남는가(0으로 지워지면
+// 죽자마자 꼬리가 반대쪽으로 튄다).
+{
+  check(
+    '죽은 물고기도 꼬리 태그를 갖는다',
+    getMaterial(DEAD).tailPixel !== undefined,
+    `tailPixel=${getMaterial(DEAD).tailPixel}`,
+  );
+
+  // 스무 판을 서로 다른 길이만큼 헤엄치게 둔 뒤 수조를 통째로 끓여 죽인다 — 방향을
+  // 손으로 찍지 않고 물고기가 **실제로 마지막에 움직인 방향**과 대조하려는 것이고,
+  // 길이를 흩뜨리는 것은 양쪽 방향이 다 나오게 하려는 것이다(한쪽만 나오면 aux를 0으로
+  // 지우는 회귀가 왼쪽 판에서 그냥 통과한다). 물이 전부 뜨거우면 물고기는 제 차례가
+  // 오자마자 움직이기 전에 죽으므로, 직전 틱에 기록해 둔 방향이 곧 죽는 순간의 방향이다.
+  reseed();
+  let mismatched = 0;
+  let corpses = 0;
+  let right = 0;
+  for (let r = 0; r < 20; r++) {
+    const { grid, sim } = makeWorld(30, 24);
+    tank(grid, 6);
+    put(grid, 15, 12, FISH);
+    let facing = -1;
+    for (let t = 0; t < 10 + r * 5; t++) {
+      sim.step();
+      const f = cellsOf(grid, FISH)[0];
+      if (f) facing = f.aux & 1;
+    }
+    if (facing < 0) continue; // 판 자체가 성립 안 함 (물고기가 사라졌다)
+    for (let i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] !== STONE) grid.temp[i] = 60; // 수조를 끓인다
+    }
+    sim.step();
+    const corpse = cellsOf(grid, DEAD)[0];
+    if (!corpse) continue;
+    corpses++;
+    if (facing) right++;
+    if ((corpse.aux & 1) !== facing) mismatched++;
+  }
+  check(
+    '사체는 죽는 순간 보던 방향을 그대로 물려받는다',
+    corpses >= 15 && mismatched === 0,
+    `${mismatched} mismatched of ${corpses} corpses`,
+  );
+  check(
+    '…그리고 그 판들에 양쪽 방향이 다 있다 (aux를 0으로 지워도 통과하지 않는다)',
+    right > 0 && right < corpses,
+    `${right} facing right, ${corpses - right} left`,
+  );
 }
 
 console.log(

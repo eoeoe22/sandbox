@@ -18,13 +18,28 @@ import { SIM_HZ_AT_1X } from '../config';
 // died in and collects in a pale raft on the waterline, and "이 물고기는 죽었다"
 // reads twice over: once from the colour, once from where it ended up.
 //
+// 꼬리는 죽어도 남는다 — the corpse trails the same display-only tail pixel the
+// living fish does (`Material.tailPixel`), just washed out to match the body. A
+// fish that lost its tail the instant it died stopped reading as *that* fish and
+// started reading as a stray grain of ash; keeping it is what makes a raft of
+// corpses on the waterline legible as 물고기들.
+//
+// Which side it trails from is bit 0 of the cell's `aux` — the renderer's whole
+// contract for a `tailPixel` material (see CanvasRenderer.drawTailPixels). The
+// corpse doesn't maintain it, it inherits it: fish.ts's own `die` copies the
+// living fish's facing bit across, and `set`/`spawn` hand the rest of the aux word
+// over (or zero it) without either being able to mean anything else here, since
+// nothing below reads aux. A corpse from one of the paths that zeroes it simply
+// faces left. 죽은 물고기는 방향을 바꾸지 않는다 — it drifts as it is pushed.
+//
 // 부패 — a corpse doesn't pile up forever. Instead of a countdown in `aux` it just
 // rolls DECAY_CHANCE every tick, which costs no state at all and comes out better:
 // a shoal that died together doesn't blink out together, it thins away one fish at
 // a time over about DECAY_SECONDS. (A counter would have needed care anyway — `set`
 // keeps the old cell's aux on a non-empty write, so a corpse would have inherited
 // the fish's own aux word as a decay count from the declarative death hooks, which
-// don't clear it.)
+// don't clear it. That inheritance is now load-bearing for the facing bit above,
+// which is another reason not to spend aux on a timer here.)
 const DECAY_SECONDS = 45;
 /** 부패 확률/틱 — mean lifetime DECAY_SECONDS at ×1 speed. Exponential rather than
  *  fixed, so corpses fade out staggered instead of all at once. */
@@ -50,6 +65,11 @@ export const DEAD_FISH = register({
   // Lighter than Water (3), so it rises to the surface on its own — see above.
   density: 2,
   category: 'life',
+  // 꼬리 — the same display-only pixel the live fish trails, in a muted version of
+  // the corpse's own colour: dark enough to be seen against the pale belly and
+  // against water, but well short of the living fish's slate grey, so a floating
+  // corpse never reads as a fish that is still swimming.
+  tailPixel: rgb(0x93, 0x8b, 0x79),
   // Organic and poorly conductive, like the live fish and the Termite.
   thermal: { conductivity: 0.2 },
   update: updateDeadFish,
