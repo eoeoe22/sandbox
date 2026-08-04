@@ -191,15 +191,29 @@ const TICKS = 600;
   check('a quenched acid slime blob ends up mostly plain slime', acidShare < 0.15,
     `${(acidShare * 100).toFixed(0)}% of the goo is still acidic`);
   // Scored against the blob's *starting* size, which is the strong form: the blob
-  // roughly octuples over these 600 ticks and half of every water cell it drinks
-  // comes back acidic (ABSORB_ACID_CHANCE), so acidic goo is being *manufactured*
-  // the whole time. Ending below where it started means the rinse outran that.
+  // roughly octuples over these 600 ticks (measured 528–551 cells from 64) and half
+  // of every water cell it drinks comes back acidic (ABSORB_ACID_CHANCE), so acidic
+  // goo is being *manufactured* the whole time. Ending below where it started means
+  // the rinse outran that.
+  //
   // The bar used to be `goo0 * 0.75` (48), which sat inside the healthy spread —
   // measured over 24 seed streams the count lands at 31–50, so seeds 12/15/21 hit
   // 48/50/48 and went red on a working build. With the rinse disabled the count is
-  // 90–110, so `< goo0` separates the two populations with room on both sides
-  // (14 clear of the healthy max, 26 clear of the broken min) instead of splitting
-  // one of them.
+  // 90–110, so `< goo0` separates those two populations with room on both sides
+  // instead of splitting one of them.
+  //
+  // Know what this does NOT catch, because the scene has a ceiling on sensitivity
+  // that no choice of bar fixes: measured by sweeping DILUTE_CHANCE, it goes red at
+  // 0.02 and below (a quarter of normal) and reliably at 0, but a *halving* to 0.04
+  // passes the whole file. The reason is structural — the blob turns mostly plain
+  // Slime early, and from then on it is plain Slime's feeding that drinks the pool,
+  // which grows the goo without any rinse involved. So the rinse only shapes a brief
+  // early window here, and the end state can't resolve a factor of two in it. Even
+  // the sharper statistic this scene admits — rinses = water spent that did *not*
+  // grow the goo — only separates 0.08 (≈37) from 0.04 (≈29) by less than the seed
+  // spread. Pinning DILUTE_CHANCE itself needs a scene where the water runs out
+  // while the blob is still acidic (a pool sized near the blob rather than 8× it),
+  // which is not this one.
   check('…with a good part of the original blob rinsed clean outright',
     acidSlime < goo0, `${acidSlime} acid slime left of the ${goo0} poured`);
   check('…while still feeding, so the goo grows overall', slime + acidSlime > goo0,
