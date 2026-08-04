@@ -37,17 +37,19 @@ import { CONCRETE } from './concrete';
 //     whole trail of them (~1/WATER_SPEND_CHANCE) instead of stopping at the
 //     first. This is what "물이 스며든다" means in practice — the wet, darkened
 //     region you can see spreading down into the pile is where the water went.
-//   • aux 1..CURE_TICKS — 양생 중. **Still a Powder, so still porous**: it never
-//     touches water again, its 겹침 slot stays free, and anything above keeps
-//     percolating straight through it to the dry grains deeper down. This is what
-//     kills the lid — there is no crust until CURE_TICKS is up, by which time the
-//     splash has had time to get all the way in.
-//   • aux = CURE_TICKS — it sets to Concrete. From here it *is* a lid, which is
+//   • aux 1..CURE_STEPS — 양생 중. **Still a Powder, so still porous**: it never
+//     reaches for water again, it never keeps a drop that arrives (the one already
+//     in its slot at the moment it was wetted percolates on next tick like any
+//     other), and anything above goes straight through it to the dry grains deeper
+//     down. This is what kills the lid — there is no crust until the cure is up,
+//     by which time the splash has had time to get all the way in.
+//   • aux = CURE_STEPS — it sets to Concrete. From here it *is* a lid, which is
 //     the entire point of building with it.
 //
-// The two constants below are therefore the "how fast does cement set" knobs, and
-// they govern different halves of it: WATER_SPEND_CHANCE decides how *deep* a
-// splash reaches, CURE_TICKS how long the pile stays open before it seals.
+// The constants below are therefore the "how fast does cement set" knobs, and they
+// govern different halves of it: WATER_SPEND_CHANCE decides how *deep* a splash
+// reaches, CURE_STEPS/CURE_STEP_CHANCE how long the pile stays open before it
+// seals — and, because the steps are rolled rather than counted, how raggedly.
 //
 // ## 겹침 불가 알갱이는 이웃을 따라 굳는다
 //
@@ -57,14 +59,20 @@ import { CONCRETE } from './concrete';
 // therefore leaves those grains dry **forever**, however much of it you pour, and
 // they stay behind as permanent grey specks freckled through a finished wall.
 // That is not a water budget, it is a dead end, so a sealed grain (SimContext.
-// canSoak says no) joins the cure of any neighbouring grain that is already
-// curing, **at that neighbour's progress** — the two set in the same tick, which
-// is what makes it read as one slab hardening rather than as a patch catching up.
+// canHostFluid says no) joins the cure of any neighbouring grain that is already
+// curing, **at that neighbour's progress** — so they finish together and it reads
+// as one slab hardening rather than as a patch catching up.
 //
 // This can only ever spread *through* sealed grains — a permeable grain still
 // waits for real water — so it is not a chain reaction that could cure a pile the
 // water never reached: every run of it has to start at a grain some water
-// actually wetted, and sealed grains are far too sparse to percolate.
+// actually wetted, and sealed grains are far too sparse to percolate. Note the
+// join is checked on every dry tick, so a sealed grain is swept up within a tick
+// of any neighbour starting to cure, not at the end of the cure; and because the
+// scan is a single in-place sweep, a run of sealed grains lying along the scan
+// direction can join in the *same* tick rather than one cell per tick. Neither
+// widens what can be reached — only how fast the sweep travels through grains
+// that were going to be reached anyway.
 
 /** Chance that the water which wets a grain is consumed doing it, rather than
  *  left to soak on down and wet the next one. So one cell of water wets about
@@ -73,26 +81,42 @@ import { CONCRETE } from './concrete';
  *  amount of cement, the same reason Salt consumes the water it dissolves into. */
 const WATER_SPEND_CHANCE = 0.2;
 
-/** Ticks a wetted grain spends curing before it sets to Concrete — the window
- *  during which the pile is still porous powder that water can travel through.
- *  Stored in `aux`, and doubles as the last index of CURE_RAMP, so it must stay
- *  well inside 16 bits. ~6s at the default sim speed (SIM_HZ_AT_1X): concrete
- *  going off is a thing you *watch*, so this is deliberately long enough to be a
- *  visible process — the first pass at 60 (~2s) set so fast that the whole pile
- *  flipped almost as soon as it darkened, which was the old instant behaviour with
- *  a flicker in front of it. Long also means a deep pile stays open to water for
- *  longer, so this and WATER_SPEND_CHANCE push the same way. */
-const CURE_TICKS = 180;
+/**
+ * How a wetted grain gets from wet to set: `CURE_STEPS` steps of progress, each
+ * one advanced with probability `CURE_STEP_CHANCE` per tick. Mean duration is
+ * therefore STEPS/CHANCE ≈ 180 ticks, ~6s at the default sim speed
+ * (SIM_HZ_AT_1X) — concrete going off is a thing you *watch*, and the first pass
+ * at ~2s set so fast that the pile flipped almost as soon as it darkened, which
+ * was the old instant behaviour with a flicker in front of it.
+ *
+ * **The roll is the point, not the mean.** A plain countdown gave every grain the
+ * *same* duration, so a pile wetted together set together — one flat instant where
+ * the whole slab turned over at once, which reads as a scripted cut rather than as
+ * curing. Rolling each step makes the total a negative binomial: mean 180 ticks,
+ * σ = √(STEPS·(1−CHANCE))/CHANCE ≈ 38 ticks. Grains that were wetted in the same
+ * tick now finish across a window of several seconds, in no particular order, so
+ * the slab hardens as a spreading speckle. Same idiom as Seed's germination
+ * (GERMINATE_CHANCE × SPROUT_PROGRESS), and for the same reason: progress you can
+ * see, at a pace that isn't a metronome.
+ *
+ * STEPS is also the ramp's resolution and the aux range, so it stays small and
+ * well inside 16 bits. Fewer steps at a lower chance would scatter the finish
+ * *more* (σ grows as CHANCE shrinks) at the cost of a chunkier colour ramp; 20 is
+ * the balance — a visibly staggered set with a ramp fine enough to read as a
+ * gradient rather than as bands.
+ */
+const CURE_STEPS = 20;
+const CURE_STEP_CHANCE = 0.11;
 
 /** Dry grey (aux 0 — the same tone as `color`, so an untouched grain and the
  *  palette swatch agree) → the dark of freshly wetted cement (aux 1) → Concrete's
- *  own colour (aux CURE_TICKS). A grain therefore darkens the instant water
+ *  own colour (aux CURE_STEPS). A grain therefore darkens the instant water
  *  reaches it and then creeps toward the colour it is about to become, so "how
  *  far did the water actually get?" is answered by looking at the pile. Built
- *  rather than written out so the ramp can't drift out of step with CURE_TICKS. */
-const CURE_RAMP: readonly number[] = Array.from({ length: CURE_TICKS + 1 }, (_, i) => {
+ *  rather than written out so the ramp can't drift out of step with CURE_STEPS. */
+const CURE_RAMP: readonly number[] = Array.from({ length: CURE_STEPS + 1 }, (_, i) => {
   if (i === 0) return rgb(165, 165, 170);
-  const t = (i - 1) / (CURE_TICKS - 1);
+  const t = (i - 1) / (CURE_STEPS - 1);
   return rgb(
     Math.round(128 + (110 - 128) * t),
     Math.round(128 + (112 - 128) * t),
@@ -131,8 +155,12 @@ function wet(x: number, y: number, sim: SimContext): boolean {
  *  passing through gets on with wetting the pile instead of being bricked up:
  *  `SimContext.set` destroys an overlay its new occupant can't host, and Concrete
  *  hosts nothing. Same directions percolation itself would take. Water with
- *  nowhere left to go really is sealed in, which is the right reading — cured
- *  concrete keeps the water it set with. */
+ *  nowhere left to go is **destroyed**, not stored — say it plainly, because
+ *  "sealed into the concrete" is the in-world reading of that, not a second
+ *  mechanism: nothing holds it and nothing can ever give it back. This is the one
+ *  path on which cement loses water, and it is bounded by how often a grain
+ *  happens to be holding a drop on the exact tick it sets with all five exits
+ *  blocked (a mold's floor and walls, or neighbours setting in the same tick). */
 function shedSoaked(x: number, y: number, sim: SimContext): void {
   if (sim.getOverlay(x, y) === EMPTY) return;
   const dir = sim.chance(0.5) ? 1 : -1;
@@ -162,7 +190,7 @@ function neighborCure(x: number, y: number, sim: SimContext): number {
 function updateCement(x: number, y: number, sim: SimContext): void {
   const cure = sim.getAux(x, y);
   if (cure > 0) {
-    if (cure >= CURE_TICKS) {
+    if (cure >= CURE_STEPS) {
       shedSoaked(x, y, sim);
       sim.set(x, y, CONCRETE.id);
       // Cleared explicitly: an in-place transform to a *non-empty* material keeps
@@ -172,8 +200,10 @@ function updateCement(x: number, y: number, sim: SimContext): void {
       return;
     }
     // 양생 중에도 여전히 가루다 — it neither drinks nor blocks; it piles and slumps
-    // like the dry powder while the water goes past it to the grains below.
-    sim.setAux(x, y, cure + 1);
+    // like the dry powder while the water goes past it to the grains below. The
+    // step is rolled, not counted: that is what staggers a slab's set (see
+    // CURE_STEPS) rather than flipping it over in one tick.
+    if (sim.chance(CURE_STEP_CHANCE)) sim.setAux(x, y, cure + 1);
     updatePowder(x, y, sim);
     return;
   }
@@ -183,7 +213,7 @@ function updateCement(x: number, y: number, sim: SimContext): void {
   }
   // A grain water can't get into rides along with the ones around it. Checked
   // last, so a grain that *can* be wetted is never cured by proximity alone.
-  if (!sim.canSoak(x, y, WATER.id)) {
+  if (!sim.canHostFluid(x, y, WATER.id)) {
     const joined = neighborCure(x, y, sim);
     if (joined > 0) {
       sim.setAux(x, y, joined);

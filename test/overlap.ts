@@ -614,7 +614,7 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
 // For cement that used to be a dead end rather than a budget: those grains could
 // never be reached by water, however much you poured, and stayed behind as dry
 // grey specks freckled through the finished slab. A sealed grain now joins a
-// curing neighbour. The premise is asserted, not assumed — `SimContext.canSoak`
+// curing neighbour. The premise is asserted, not assumed — `SimContext.canHostFluid`
 // is the engine's own answer, so the scene can prove it actually contains the
 // grains the rule is for instead of trusting a coefficient written down twice.
 {
@@ -634,7 +634,7 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
   const grains = count(grid, CEMENT.id);
   let sealed = 0;
   for (let y = 24; y < 30; y++)
-    for (let x = 9; x < 21; x++) if (!sim.context.canSoak(x, y, WATER.id)) sealed++;
+    for (let x = 9; x < 21; x++) if (!sim.context.canHostFluid(x, y, WATER.id)) sealed++;
   // 물은 넉넉히 — 알갱이 수만큼 부어(한 칸이 여러 알을 적시므로 크게 남는다)
   // "물이 모자랐다"가 실패 해석으로 남지 않게 한다.
   for (let y = 18; y < 24; y++) for (let x = 9; x < 21; x++) grid.set(x, y, WATER.id);

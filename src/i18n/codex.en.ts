@@ -39,7 +39,7 @@ export const materialCodexEn: Record<number, string> = {
   119: 'Powdered shards of broken glass.',
   80: 'A dry-powder extinguisher and acid neutralizer. It snuffs adjacent fire on the spot and neutralizes acid into brine. Heated past 150°C it decomposes away.',
   43: 'Mixes with water into mud.',
-  45: 'Water darkens a grain, which then cures slowly before setting into concrete. It stays powder while curing, so water keeps flowing through it, and one cell of water wets several grains on its way down — pour it on top and it soaks deep into the pile. A grain water cannot get into sets along with a curing neighbor, so a finished wall is left with no unset specks in it.',
+  45: 'Water darkens a grain, which then cures slowly before setting into concrete. Grains set at slightly different moments, so a slab hardens as a spreading speckle rather than flipping over all at once. It stays powder while curing, so water keeps flowing through it, and one cell of water wets several grains on its way down — pour it on top and it soaks deep into the pile. A grain water cannot get into sets along with a curing neighbor, so a finished wall is left with no unset specks in it.',
   55: 'The powdery residue of combustion. Light enough to float on water.',
   105: 'Magnetic, so an electromagnet drags it in; brine slowly corrodes it into rust powder. Poured into acid it dissolves far faster than a solid bar, releasing hydrogen.',
   128: 'Mixed with rust powder it makes thermite, with saltpeter flash powder, with ammonium nitrate ammonal. A flame in direct contact lights it, and above 660°C it becomes molten aluminum. Suspended in the air it goes off as a dust explosion. Chlorine gas burns it on contact with no ignition source at all, leaving flame and white fume.',

@@ -836,11 +836,17 @@ export class SimContext {
   }
 
   /**
-   * Whether `fluidId` could ever enter THIS cell's 겹침 slot — the public read of
-   * `canOverlapAt` above, asked about the cell's current occupant. This is a
-   * question about the cell, not just its material: for a Powder the answer is
-   * per-grain (the 액체 겹침 계수 is rolled off the cell's own tint byte), so a bed
-   * of one material has both permeable and 겹침 불가 grains scattered through it.
+   * Whether this cell is the *kind* that could hold `fluidId` in its 겹침 slot —
+   * the public read of `canOverlapAt` above, asked about the cell's current
+   * occupant. A question about the cell, not just its material: for a Powder the
+   * answer is per-grain (the 액체 겹침 계수 is rolled off the cell's own tint byte),
+   * so a bed of one material has both permeable and 겹침 불가 grains scattered
+   * through it.
+   *
+   * **Capability, not availability** — hence the name rather than a `canSoak`.
+   * It says nothing about whether a soak would actually happen here *now*: the
+   * slot may already be full, and the fluid may be nowhere near. A caller that
+   * wants "will this soak" has to check `getOverlay` itself.
    *
    * It exists because a rule can need to know that a grain is one of the sealed
    * ones. Cement asks: a 겹침 불가 grain can never be reached by the water curing
@@ -849,7 +855,7 @@ export class SimContext {
    * (materials/cement.ts). Answering "no" for an out-of-bounds or Empty cell falls
    * out of `canHostOverlap`, so callers don't need their own guard.
    */
-  canSoak(x: number, y: number, fluidId: number): boolean {
+  canHostFluid(x: number, y: number, fluidId: number): boolean {
     if (!this.inBounds(x, y)) return false;
     return this.canOverlapAt(x, y, this.get(x, y), fluidId);
   }
