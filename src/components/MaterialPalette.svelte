@@ -281,6 +281,7 @@
   function pressStart(e: PointerEvent, m: Material): void {
     if (e.pointerType === 'mouse') return; // the mouse has hover; see above
     touchIds.add(e.pointerId); // every finger counts here, owner or not
+    lastTouchStart = performance.now();
     if (pressTimer !== undefined) return; // a press is already in flight; it owns the gesture
     // Any new press supersedes a stale claim — see `armSwallow` for when one can
     // be left behind.
@@ -359,26 +360,46 @@
    * all of them — but not quite. A gesture the OS takes over mid-touch (an iOS
    * Control Center or app-switcher swipe, where `pointercancel` has a long
    * history of not arriving) or a tab backgrounded with a finger down can leave
-   * an id in the set that nothing will ever remove. That id is not a small leak:
-   * `touchIds.size > 0` would then be true forever, and every native context
-   * menu on a chip — a real right-click, a keyboard Menu key — would be silently
-   * suppressed for the rest of the session.
-   *
-   * The previous boolean at least self-healed off any mouse press; the set,
-   * being correctly per-pointer, gave that up. This is the replacement, and it
-   * is a better one: all three of these mean the page stopped being touched, so
-   * clearing is right rather than merely recovering. No timeouts — a finger may
-   * legitimately rest on a chip for as long as it likes.
+   * an id in the set that nothing removes. All three of these events mean the
+   * page stopped being touched, so clearing on them is right rather than merely
+   * recovering — the boolean this replaced self-healed off any mouse press,
+   * which wasn't a recovery so much as a second bug (it erased somebody else's
+   * finger).
    */
   function forgetTouches(): void {
     touchIds.clear();
   }
 
+  /**
+   * How long after a finger lands its own long-press menu is still plausibly
+   * coming. The platforms fire theirs around half a second in; three seconds is
+   * far past that and still bounded.
+   *
+   * This is the belt to `forgetTouches`'s braces, and it exists because that one
+   * cannot be *proven* to cover the case it was written for. The motivating leak
+   * is an iOS system gesture stealing the touch — and Control Center draws over
+   * Safari rather than switching away from it, so whether the page is told
+   * anything at all (a `blur`, a `visibilitychange`) is exactly as unsettled as
+   * the `pointercancel` that already doesn't arrive. Rather than leave the
+   * answer to a device check, the suppression simply stops being able to
+   * outlive its own reason: a stranded id can cost at most three seconds of
+   * suppressed context menus instead of the rest of the session.
+   *
+   * Nothing real is lost. The rule reads "while a finger is down" and it is now
+   * "while a finger is down AND the platform might still act on it" — a finger
+   * resting on a chip past three seconds has no menu left to raise.
+   */
+  const CONTEXT_SUPPRESS_MS = 3000;
+  /** When the most recent finger landed on a chip — see CONTEXT_SUPPRESS_MS. */
+  let lastTouchStart = 0;
+
   /** Suppress the platform's own long-press menu, which would fight ours — but
    *  only while a finger is actually down, so a right-click and a keyboard Menu
    *  key both keep the browser menu they always had. */
   function chipContextMenu(e: Event): void {
-    if (touchIds.size > 0) e.preventDefault();
+    if (touchIds.size === 0) return;
+    if (performance.now() - lastTouchStart > CONTEXT_SUPPRESS_MS) return;
+    e.preventDefault();
   }
 
   const closeSheet = (): void => void (sheetMat = null);
