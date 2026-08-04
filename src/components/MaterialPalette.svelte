@@ -352,6 +352,28 @@
     abortPress();
   }
 
+  /**
+   * Forget every finger, because the page is no longer the one being touched.
+   *
+   * `pressEnd` handles every release the page is told about, and that is nearly
+   * all of them — but not quite. A gesture the OS takes over mid-touch (an iOS
+   * Control Center or app-switcher swipe, where `pointercancel` has a long
+   * history of not arriving) or a tab backgrounded with a finger down can leave
+   * an id in the set that nothing will ever remove. That id is not a small leak:
+   * `touchIds.size > 0` would then be true forever, and every native context
+   * menu on a chip — a real right-click, a keyboard Menu key — would be silently
+   * suppressed for the rest of the session.
+   *
+   * The previous boolean at least self-healed off any mouse press; the set,
+   * being correctly per-pointer, gave that up. This is the replacement, and it
+   * is a better one: all three of these mean the page stopped being touched, so
+   * clearing is right rather than merely recovering. No timeouts — a finger may
+   * legitimately rest on a chip for as long as it likes.
+   */
+  function forgetTouches(): void {
+    touchIds.clear();
+  }
+
   /** Suppress the platform's own long-press menu, which would fight ours — but
    *  only while a finger is actually down, so a right-click and a keyboard Menu
    *  key both keep the browser menu they always had. */
@@ -601,7 +623,11 @@
   onkeydown={handleWindowKeydown}
   onpointerup={pressEnd}
   onpointercancel={pressEnd}
+  onblur={forgetTouches}
+  onpagehide={forgetTouches}
 />
+
+<svelte:document onvisibilitychange={() => document.hidden && forgetTouches()} />
 
 <div class="palette" bind:this={root}>
   <div class="pal-tools">
