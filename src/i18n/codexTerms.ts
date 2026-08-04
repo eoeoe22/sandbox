@@ -229,8 +229,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Class B fire', desc: 'A fuel fire. Water runs off it and does nothing.' },
   },
   'fireClass.D': {
-    ko: { label: '금속 화재', desc: '금속 화재입니다. 물을 부으면 수소가 나옵니다.' },
-    en: { label: 'Class D fire', desc: 'A metal fire. Water makes it worse — it cracks into hydrogen.' },
+    ko: { label: '금속 화재', desc: '금속 화재입니다.' },
+    en: { label: 'Class D fire', desc: 'A metal fire. ' },
   },
   'douses.evaporate': {
     ko: { label: '소화제(증발)', desc: '불에 닿으면 불을 끄고, 그 한 칸은 증발합니다.' },
