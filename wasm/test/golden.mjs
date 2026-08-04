@@ -351,8 +351,19 @@ if (skipped === 0) {
   // the blobs landed, and two of these cases were passing on that luck alone
   // before this scene replaced it. With everything live, dropping or misreading
   // any region is guaranteed to lose real work.
-  const W = 61;
-  const H = 39;
+  //
+  // The size is DERIVED from the tile size, not fixed. It was hardcoded 61×39,
+  // which is what these formulas give at TILE_BITS = 4 — but from TILE_BITS = 7
+  // up, a 61-wide grid is narrower than a single tile, so the real tiling and
+  // the deliberately-wrong smaller one both collapse to 1×1 and the "wrong tile
+  // size" mask stops being malformed at all. (It failed loudly rather than
+  // silently — the exclusivity assertion caught it as "no branch rejects it" —
+  // but pointing at the wrong thing.) Spanning several tiles on both axes at
+  // both the real and the halved tile size keeps every case meaningful at any
+  // plausible TILE_BITS; the `+13`/`+7` keep both dimensions off a tile boundary.
+  const TILE_SZ = 1 << PROD_TILE_BITS;
+  const W = 3 * TILE_SZ + 13;
+  const H = 2 * TILE_SZ + 7;
   const n = W * H;
   const cells = new Uint8Array(n).fill(7);
   const cond = new Float32Array(256);
@@ -396,6 +407,18 @@ if (skipped === 0) {
   // assertion, not in prose, so here it is.
   const rejectedBy = (mask) => {
     const byCap = mask.tileBits === 0 || mask.tileBits > MAX_TILE_BITS;
+    // Mirror the kernel's CONTROL FLOW, not just its two conditions: on the cap
+    // branch `diffuse_step` returns immediately and never computes `tile` or
+    // compares the geometry at all. Evaluating both unconditionally reports a
+    // case as "caught by cap + geometry" that the kernel only ever sees the cap
+    // for — a false positive that would fail the exclusivity assertion below for
+    // no real reason. It is reachable: raise the kernel's MAX_TILE_BITS to 28
+    // and the derived `MAX_TILE_BITS + 4` case becomes 32, whose shift wraps to
+    // `tile = 1`, against which the 1×1 mask is no longer valid geometry.
+    // (A predicate that mirrors the kernel is a second implementation of it —
+    // the same hazard that got the tile size moved out of the kernel in the
+    // first place — so it has to mirror the whole thing, early return included.)
+    if (byCap) return { byCap: true, byGeom: false };
     const tile = 1 << mask.tileBits; // same wrap-by-31 the kernel would see
     const byGeom = mask.tilesX !== Math.ceil(W / tile) || mask.tilesY !== Math.ceil(H / tile);
     return { byCap, byGeom };
