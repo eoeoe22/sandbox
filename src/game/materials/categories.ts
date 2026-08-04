@@ -34,8 +34,10 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: 'exotic', icon: 'bi-stars' },
 ];
 
-/** Stable phase-fallback keys (the displayed labels are localized). */
-const PHASE_FALLBACK: Record<Phase, string> = {
+/** Stable phase keys (the displayed labels are localized). Doubles as the
+ *  category fallback for a material that declares none — which is why the four
+ *  real phases share their keys with the first four CATEGORY_META tabs. */
+export const PHASE_KEY: Record<Phase, string> = {
   [Phase.Empty]: 'eraser',
   [Phase.Solid]: 'solid',
   [Phase.Powder]: 'powder',
@@ -43,7 +45,16 @@ const PHASE_FALLBACK: Record<Phase, string> = {
   [Phase.Gas]: 'gas',
 };
 
-export const categoryOf = (m: Material): string => m.category ?? PHASE_FALLBACK[m.phase];
+/** The phases a material can actually be in, in the palette's own order. The
+ *  codex's 상태 filter offers exactly these; `eraser` is the empty cell, not a
+ *  state of matter anything is in. */
+export const PHASE_KEYS: readonly string[] = ['solid', 'powder', 'liquid', 'gas'];
+
+/** Stable phase key of a material — its state of matter, independent of which
+ *  thematic tab it was filed under (Molten Iron is a liquid in 제련). */
+export const phaseKeyOf = (m: Material): string => PHASE_KEY[m.phase];
+
+export const categoryOf = (m: Material): string => m.category ?? PHASE_KEY[m.phase];
 
 export const iconFor = (key: string): string =>
   CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-tag-fill';

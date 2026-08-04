@@ -10,9 +10,26 @@
   // Icons come from the sprite the Astro page emits above this component — the
   // grid and the detail view both point `<use>` at the same `<symbol>`, so the
   // 24×24 drawing is in the document once no matter how many places show it.
-  import type { CodexEntry, CodexReaction, CodexStat, CodexTrait, ObjectCodexEntry } from '../game/codex/types';
+  import type {
+    CodexEntry,
+    CodexReaction,
+    CodexStat,
+    CodexTagGroup,
+    CodexTrait,
+    ObjectCodexEntry,
+  } from '../game/codex/types';
   import { EMPTY } from '../game/engine/types';
-  import { CATEGORY_META } from '../game/materials/categories';
+  import { CATEGORY_META, PHASE_KEYS } from '../game/materials/categories';
+  import { tagIdOf } from '../game/codex/tags';
+  // The number/reaction formatters live beside the Markdown writers so the page
+  // and the clipboard can't say different things — see codex/format.ts.
+  import {
+    entryMarkdown,
+    listMarkdown,
+    reactionNotes as formatReactionNotes,
+    statValue as formatStatValue,
+    type CodexMarkdownText,
+  } from '../game/codex/format';
   import {
     $locale as locale,
     t,
@@ -29,8 +46,11 @@
   interface Props {
     materials: CodexEntry[];
     objects: ObjectCodexEntry[];
+    /** The 태그 필터 panel's headings and their tags, built at build time from
+     *  what the entries declare (game/codex/tags.ts). */
+    tagGroups: CodexTagGroup[];
   }
-  let { materials, objects }: Props = $props();
+  let { materials, objects, tagGroups }: Props = $props();
 
   /** The objects tab's key — deliberately not a category any material can claim. */
   const OBJECTS = '__objects__';
@@ -44,10 +64,15 @@
     sub: string;
     category: string;
     categoryName: string;
+    /** Stable phase key, or null for an object — see CodexEntry.phase. */
+    phase: string | null;
+    phaseName: string | null;
     desc: string;
     stats: CodexStat[];
     traits: CodexTrait[];
     reactions: CodexReaction[];
+    /** This card's tag ids, for the 태그 필터. Same strings the panel offers. */
+    tags: string[];
   }
 
   const cards = $derived.by<Card[]>(() => {
@@ -59,10 +84,15 @@
       sub: e.name,
       category: e.category,
       categoryName: categoryLabel(e.category),
+      phase: e.phase,
+      // The four phase keys double as the first four category keys, so the
+      // 상태 chips reuse the labels the palette already has for them.
+      phaseName: categoryLabel(e.phase),
       desc: materialDescription(e.id),
       stats: e.stats,
       traits: e.traits,
       reactions: e.reactions,
+      tags: e.traits.map(tagIdOf),
     }));
     const objs = objects.map((o) => ({
       key: `o-${o.kind}`,
@@ -71,17 +101,52 @@
       sub: '',
       category: OBJECTS,
       categoryName: t('codex.objects'),
+      phase: null,
+      phaseName: null,
       desc: objectDescription(o.kind as ObjectKind),
       stats: o.stats,
       traits: o.traits,
       reactions: [] as CodexReaction[],
+      tags: o.traits.map(tagIdOf),
     }));
     return [...mats, ...objs];
   });
 
   // --- Filtering ------------------------------------------------------------
+  // Three axes that narrow independently and at the same time. The category tabs
+  // are the palette's own shelves; 상태 is the state of matter, which cuts across
+  // them (Molten Iron files under 제련, Acid under 액체, and "everything that
+  // pours" wants both); tags are what a material can *do*.
+  //
+  // Within an axis, selections widen (any of the chosen states); across axes and
+  // between tags they narrow. Several tags is an AND because that is the
+  // question being asked — "acid-proof AND conductive" is a thing you are trying
+  // to build with, whereas "acid-proof OR conductive" is most of the palette.
   let query = $state('');
   let activeCategory = $state<string>('all');
+  let activePhases = $state<string[]>([]);
+  let activeTags = $state<string[]>([]);
+  let tagsOpen = $state(false);
+
+  const toggle = (list: string[], key: string): string[] =>
+    list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+
+  const anyFilter = $derived(
+    activeCategory !== 'all' || activePhases.length > 0 || activeTags.length > 0 || query !== '',
+  );
+
+  function resetFilters(): void {
+    activeCategory = 'all';
+    activePhases = [];
+    activeTags = [];
+    query = '';
+  }
+
+  /** The 상태 chips, in the palette's phase order. */
+  const phaseOptions = $derived.by(() => {
+    void $locale;
+    return PHASE_KEYS.map((key) => ({ key, label: categoryLabel(key) }));
+  });
 
   /** The tabs, in the palette's own thematic order, with the objects tab last. */
   const tabs = $derived.by(() => {
@@ -106,12 +171,16 @@
     ];
   });
 
-  // Name and category only — a "like" match on what the chip actually says, the
-  // same rule the in-game palette search uses, so the two behave alike.
+  // The search half is name and category only — a "like" match on what the chip
+  // actually says, the same rule the in-game palette search uses, so the two
+  // behave alike. An object has no phase, so a 상태 selection excludes objects
+  // rather than pretending they are solids.
   const visible = $derived.by(() => {
     const q = query.trim().toLowerCase();
     return cards.filter((c) => {
       if (activeCategory !== 'all' && c.category !== activeCategory) return false;
+      if (activePhases.length > 0 && (c.phase === null || !activePhases.includes(c.phase))) return false;
+      if (activeTags.length > 0 && !activeTags.every((tag) => c.tags.includes(tag))) return false;
       if (q === '') return true;
       return (
         c.name.toLowerCase().includes(q) ||
@@ -119,6 +188,18 @@
         c.categoryName.toLowerCase().includes(q)
       );
     });
+  });
+
+  // How many of the *current* results carry each tag. Counted off `visible`, so
+  // a selected tag reads as the result count and an unselected one reads as
+  // where clicking it would land — which is what makes a zero worth greying
+  // out: with AND semantics that chip is a dead end, and there is no way to see
+  // that from the label. A selected chip is never disabled, or a filter could
+  // become impossible to undo.
+  const tagCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const c of visible) for (const tag of c.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    return counts;
   });
 
   // --- Detail modal ---------------------------------------------------------
@@ -134,24 +215,10 @@
   const close = (): void => void (openKey = null);
 
   // --- Formatting -----------------------------------------------------------
+  // The two that also have to come out on the clipboard are imported; these are
+  // the thin locale-bound wrappers the markup calls.
 
-  /** Trim a float to at most two decimals without leaving `1.00` behind. */
-  const trim = (n: number): string => String(Math.round(n * 100) / 100);
-
-  function statValue(s: CodexStat): string {
-    switch (s.unit) {
-      case 'temp':
-        return `${trim(s.value)}${t('codex.unit.temp')}`;
-      case 'chance':
-        return `${trim(s.value * 100)}%`;
-      case 'cells':
-        return `${trim(s.value)}${t('codex.unit.cells')}`;
-      case 'ticks':
-        return `${trim(s.value)}${t('codex.unit.ticks')}`;
-      default:
-        return trim(s.value);
-    }
-  }
+  const statValue = (s: CodexStat): string => formatStatValue(s, t);
 
   /** A material named by a stat or trait, in the current locale. */
   function refName(id: number): string {
@@ -173,21 +240,102 @@
   const termOf = (tr: CodexTrait) =>
     codexTerm(tr.variant === undefined ? tr.key : `${tr.key}.${tr.variant}`);
 
-  /** The extra conditions on a reaction, as short chips. */
-  function reactionNotes(r: CodexReaction): string[] {
-    const notes: string[] = [];
-    if (r.probability !== undefined) notes.push(t('codex.reaction.chance', { v: `${trim(r.probability * 100)}%` }));
-    if (r.tempMin !== undefined) notes.push(t('codex.reaction.tempMin', { v: trim(r.tempMin) }));
-    if (r.tempMax !== undefined) notes.push(t('codex.reaction.tempMax', { v: trim(r.tempMax) }));
-    if (r.heat !== undefined && r.heat > 0) notes.push(t('codex.reaction.exo', { v: trim(r.heat) }));
-    if (r.heat !== undefined && r.heat < 0) notes.push(t('codex.reaction.endo', { v: trim(r.heat) }));
-    if (r.byproduct !== undefined) notes.push(`${t('codex.reaction.byproduct')} ${refName(r.byproduct)}`);
-    if (r.catalyst !== undefined) notes.push(`${t('codex.reaction.catalyst')} ${refName(r.catalyst)}`);
-    return notes;
-  }
+  const reactionNotes = (r: CodexReaction): string[] => formatReactionNotes(r, t, refName);
 
   /** How many badges a grid card shows before collapsing the rest into "+n". */
   const BADGE_LIMIT = 3;
+
+  // --- 마크다운 복사 ---------------------------------------------------------
+  // The writer itself is in game/codex/markdown.ts and holds no i18n of its own;
+  // it borrows the very functions this component renders with, so what lands on
+  // the clipboard can't disagree with what was on screen — same numbers, same
+  // units, same tag names, same language.
+
+  const markdownText = (): CodexMarkdownText => ({
+    t,
+    term: codexTerm,
+    refName,
+    tagLabel: (tr) => termOf(tr).label,
+  });
+
+  /** Every tag id in panel order — the order a filter summary lists them in. */
+  const tagOrder = $derived(tagGroups.flatMap((g) => g.tags));
+
+  /** What the copied list says it was filtered by, so a pasted table still
+   *  explains which 34 of 134 these are. */
+  function filterSummary(): string[] {
+    void $locale;
+    const out: string[] = [];
+    if (activeCategory !== 'all') {
+      const label = activeCategory === OBJECTS ? t('codex.objects') : categoryLabel(activeCategory);
+      out.push(`${t('codex.md.category')}: ${label}`);
+    }
+    if (activePhases.length > 0) {
+      const names = PHASE_KEYS.filter((k) => activePhases.includes(k)).map((k) => categoryLabel(k));
+      out.push(`${t('codex.phaseFilter')}: ${names.join(', ')}`);
+    }
+    if (activeTags.length > 0) {
+      const names = tagOrder.filter((id) => activeTags.includes(id)).map((id) => codexTerm(id).label);
+      out.push(`${t('codex.tagFilter')}: ${names.join(', ')}`);
+    }
+    if (query.trim() !== '') out.push(`${t('codex.md.search')}: "${query.trim()}"`);
+    return out;
+  }
+
+  /** Which button last ran, and whether it worked — the label swaps for a beat. */
+  let copyNotice = $state<{ where: 'list' | 'entry'; ok: boolean } | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** The pre-async-clipboard route. `navigator.clipboard` needs a secure
+   *  context, and the guide page is the kind of thing that gets opened off a
+   *  LAN address or a `file://` copy of the build; falling back costs a dozen
+   *  lines and the alternative is a button that silently does nothing. */
+  function copyByExecCommand(text: string): boolean {
+    const area = document.createElement('textarea');
+    area.value = text;
+    // Off-screen but still focusable — `display: none` can't be selected.
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+
+  async function copy(text: string, where: 'list' | 'entry'): Promise<void> {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      ok = copyByExecCommand(text);
+    }
+    clearTimeout(copyTimer);
+    copyNotice = { where, ok };
+    copyTimer = setTimeout(() => (copyNotice = null), 2200);
+  }
+
+  const copyList = (): void => {
+    void copy(
+      listMarkdown(visible, markdownText(), { filters: filterSummary(), total: cards.length }),
+      'list',
+    );
+  };
+
+  const copyEntry = (): void => {
+    if (openCard === null) return;
+    void copy(entryMarkdown(openCard, markdownText()), 'entry');
+  };
+
+  /** A copy button's label: its name, or how the last press went. */
+  const copyLabel = (where: 'list' | 'entry', idle: string): string =>
+    copyNotice?.where !== where ? idle : t(copyNotice.ok ? 'codex.copied' : 'codex.copyFailed');
 </script>
 
 <div class="codex">
@@ -235,9 +383,91 @@
         </button>
       {/each}
     </div>
+
+    <!-- The two filters that run *beside* the category tabs rather than inside
+         them. 상태 is short enough to stay open; tags are 35-odd chips, which
+         would be five wrapped rows of furniture above a page you came here to
+         read, so they live behind a disclosure that reports its own count. -->
+    <div class="filter-row">
+      <span class="filter-label" id="phase-filter-label">{t('codex.phaseFilter')}</span>
+      <div class="chips" role="group" aria-labelledby="phase-filter-label">
+        {#each phaseOptions as p (p.key)}
+          <button
+            class="chip-btn"
+            class:on={activePhases.includes(p.key)}
+            aria-pressed={activePhases.includes(p.key)}
+            onclick={() => (activePhases = toggle(activePhases, p.key))}
+          >{p.label}</button>
+        {/each}
+      </div>
+    </div>
+
+    <!-- `aria-controls` only while the panel is mounted: a reference to an id
+         that isn't in the document is worse than not claiming one. -->
+    <div class="filter-row">
+      <button
+        class="disclosure"
+        class:open={tagsOpen}
+        aria-expanded={tagsOpen}
+        aria-controls={tagsOpen ? 'tag-panel' : undefined}
+        onclick={() => (tagsOpen = !tagsOpen)}
+      >
+        <i class="bi bi-tags-fill" aria-hidden="true"></i>
+        <span>{t('codex.tagFilter')}</span>
+        {#if activeTags.length > 0}<span class="pill">{activeTags.length}</span>{/if}
+        <i class={`bi ${tagsOpen ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true"></i>
+      </button>
+      {#if anyFilter}
+        <button class="reset" onclick={resetFilters}>
+          <i class="bi bi-x-circle" aria-hidden="true"></i>
+          <span>{t('codex.filterReset')}</span>
+        </button>
+      {/if}
+    </div>
+
+    {#if tagsOpen}
+      <div class="tag-panel" id="tag-panel">
+        <p class="tag-hint">{t('codex.tagFilterHint')}</p>
+        {#each tagGroups as group (group.key)}
+          <div class="tag-group">
+            <h2 id={`tag-group-${group.key}`}>{t(`codex.tagGroup.${group.key}`)}</h2>
+            <div class="chips" role="group" aria-labelledby={`tag-group-${group.key}`}>
+              {#each group.tags as id (id)}
+                {@const on = activeTags.includes(id)}
+                {@const n = tagCounts.get(id) ?? 0}
+                <button
+                  class="chip-btn"
+                  class:on
+                  aria-pressed={on}
+                  title={codexTerm(id).desc}
+                  disabled={n === 0 && !on}
+                  onclick={() => (activeTags = toggle(activeTags, id))}
+                >
+                  <span>{codexTerm(id).label}</span>
+                  <span class="n">{n}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 
-  <p class="count">{t('codex.count', { n: visible.length })}</p>
+  <div class="result-bar">
+    <p class="count">{t('codex.count', { n: visible.length })}</p>
+    <!-- Copies what is on screen, filters and all — the reason the filters and
+         this button sit next to each other. -->
+    <button
+      class="copy"
+      class:done={copyNotice?.where === 'list'}
+      disabled={visible.length === 0}
+      onclick={copyList}
+    >
+      <i class={`bi ${copyNotice?.where === 'list' ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
+      <span>{copyLabel('list', t('codex.copyList'))}</span>
+    </button>
+  </div>
 
   {#if visible.length === 0}
     <div class="empty">
@@ -293,7 +523,14 @@
             <p class="sub">{openCard.sub}</p>
           {/if}
           <span class="chip">{openCard.categoryName}</span>
+          {#if openCard.phaseName !== null && openCard.phaseName !== openCard.categoryName}
+            <span class="chip">{openCard.phaseName}</span>
+          {/if}
         </div>
+        <button class="copy" class:done={copyNotice?.where === 'entry'} onclick={copyEntry}>
+          <i class={`bi ${copyNotice?.where === 'entry' ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
+          <span>{copyLabel('entry', t('codex.copy'))}</span>
+        </button>
       </header>
 
       <p class="desc">{openCard.desc}</p>
@@ -576,10 +813,161 @@
     color: #fff;
   }
 
+  /* --- Filters beside the tabs ------------------------------------------ */
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+  }
+
+  .filter-label {
+    color: #6b7684;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  /* A toggle, not a tab: the category pills are one-of-many and these are
+     any-of-many, so they read as outlined until pressed rather than as a
+     highlighted selection in a row. */
+  .chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.4rem;
+    border: 1px solid #262a33;
+    background: #14161c;
+    color: #9aa4b2;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .chip-btn:hover:not(:disabled) {
+    color: #e0e6ed;
+    border-color: #3a4150;
+  }
+
+  .chip-btn.on {
+    background: #1e214f;
+    border-color: #4f46e5;
+    color: #c7d2fe;
+  }
+
+  /* Under AND semantics a tag no current result carries is a dead end, and the
+     label alone gives no way to know that. Never disabled while selected, or a
+     filter that emptied the grid could not be clicked off again. */
+  .chip-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .chip-btn .n {
+    color: #6b7684;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip-btn.on .n {
+    color: #a5b4fc;
+  }
+
+  .disclosure,
+  .reset,
+  .copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.4rem;
+    border: 1px solid #262a33;
+    background: #14161c;
+    color: #9aa4b2;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .disclosure:hover,
+  .reset:hover,
+  .copy:hover:not(:disabled) {
+    color: #e0e6ed;
+    border-color: #3a4150;
+  }
+
+  .disclosure.open {
+    color: #c7d2fe;
+    border-color: #3a4150;
+  }
+
+  .disclosure .pill {
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tag-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 0.6rem;
+    border: 1px solid #22262f;
+    background: #10131a;
+  }
+
+  .tag-hint {
+    margin: 0;
+    color: #6b7684;
+    font-size: 0.75rem;
+  }
+
+  .tag-group h2 {
+    margin: 0 0 0.35rem 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7684;
+  }
+
+  /* --- Result bar ------------------------------------------------------- */
+  .result-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.9rem;
+  }
+
   .count {
-    margin: 0 0 0.9rem 0;
+    margin: 0;
     color: #6b7684;
     font-size: 0.8rem;
+  }
+
+  .copy:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .copy.done {
+    border-color: #4f46e5;
+    color: #c7d2fe;
   }
 
   /* --- Grid ------------------------------------------------------------- */
@@ -709,8 +1097,16 @@
 
   .detail header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
+  }
+
+  /* Pushed to the right of the title block, and allowed to drop to its own line
+     rather than squeezing the name on a narrow phone. */
+  .detail header .copy {
+    margin-left: auto;
+    flex: none;
   }
 
   .hero {
@@ -733,6 +1129,9 @@
   .chip {
     display: inline-block;
     margin-top: 0.3rem;
+    /* A material carries two — its shelf and its state of matter — and inline
+       blocks would otherwise sit flush against each other. */
+    margin-right: 0.3rem;
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
     background: #212633;
@@ -948,6 +1347,20 @@
     }
 
     .tab {
+      min-height: 44px;
+    }
+
+    /* Same argument as the tabs, and it applies harder in the tag panel: 35
+       chips wrap into six rows, so a thumb aimed at 내산성 has a neighbour
+       directly above and below it. */
+    .chips {
+      gap: 0.5rem;
+    }
+
+    .chip-btn,
+    .disclosure,
+    .reset,
+    .copy {
       min-height: 44px;
     }
   }
