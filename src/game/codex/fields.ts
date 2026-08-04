@@ -50,6 +50,17 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   rotorPattern: 'rendering: rotor blade overlay',
   rotorSpinShift: 'rendering: rotor spin rate',
 
+  // --- Not a property, just where the code for one had to live ------------
+  // Acting while soaked is the rule for *every* material, not a privilege some
+  // opt into: a co-occupant meets its host as a contact pair and the declarative
+  // reaction table matches across the seam on its own (SimContext.updateSoaked).
+  // `overlapUpdate` is only the escape hatch for what a table row can't say
+  // (Acid's probabilistic corrosion) — the interaction it runs is already shown
+  // as that material's 반응 or in its description, so a card here would announce
+  // an implementation shape rather than anything a player can act on. It briefly
+  // had one ('스며든 상태 반응'), left over from making soaked acid work at all.
+  overlapUpdate: 'engine: hook shape of an interaction the codex already shows',
+
   // --- Engine bookkeeping about how `temp` is stored ----------------------
   // These say what the number in the temperature slot MEANS for the engine's own
   // readers, not anything about the material. All three belong to effect cells

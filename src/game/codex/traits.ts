@@ -7,10 +7,11 @@
 // spec's `key`; a trait with several forms (화재 등급 A/B/D) adds a `variant` and
 // its text is looked up at `${key}.${variant}`.
 //
-// A hook-shaped tag (`directPulse`, `lightPulse`, `radiationHit`,
-// `overlapUpdate`) is reported by its *presence*: the function itself can't
-// cross into the browser, but "this is an electric appliance" is exactly the
-// fact a codex wants, and it is what declaring the hook means.
+// A hook-shaped tag (`directPulse`, `lightPulse`, `radiationHit`) is reported by
+// its *presence*: the function itself can't cross into the browser, but "this is
+// an electric appliance" is exactly the fact a codex wants, and it is what
+// declaring the hook means. That only holds where declaring the hook is what
+// makes the material special — `overlapUpdate` isn't, and is excluded (fields.ts).
 //
 // See stats.ts's header for what `fields` is doing here.
 
@@ -123,7 +124,6 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
   { key: 'porousPowder', fields: ['porousPowder'], read: flag('porousPowder') },
   { key: 'latticeFilter', fields: ['latticeFilter'], read: flag('latticeFilter') },
   { key: 'overlapCarrier', fields: ['overlapCarrier'], read: flag('overlapCarrier') },
-  { key: 'soakedUpdate', fields: ['overlapUpdate'], read: present('overlapUpdate') },
   {
     key: 'overlapFluids',
     fields: ['overlapFluids'],
