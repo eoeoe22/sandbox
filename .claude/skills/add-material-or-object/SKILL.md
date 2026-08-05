@@ -83,6 +83,14 @@ solid powder liquid gas fire smelt oil polymer explosive cooling electric life r
 + `docs/I18N.md`의 키 목록 셋을 같이 고친다. 새 탭은 `/guide` 도감 필터에도 자동으로
 생기므로 도감 쪽에 따로 할 일은 없다.
 
+`category:` 는 **정본 하나**다 — 도감 칩이 말하는 값이고, `m.category === 'life'` 류의
+판정이 읽는 값이다. 물질이 다른 탭에서도 찾아져야 한다면 지우거나 바꾸지 말고
+`alsoIn:` 에 **추가 탭**을 적는다(`alsoIn: ['fire', 'powder']`). 판단 기준은 "무엇에
+속하는가"가 아니라 **"이걸 찾는 사람이 어느 탭을 열어 보는가"** 다. `alsoIn` 키는
+`CATEGORY_META` 에 이미 있는 것만 되고(오타·중복은 `npm run test:codex` 가 이름을 대며
+막는다), 팔레트·도감 양쪽에 자동 반영되므로 다른 배선은 없다. 자세한 건
+`docs/FEATURES.md`의 「한 물질이 여러 탭에」.
+
 ## A-5. 아이콘 / 스와치 지정
 
 `docs/MATERIAL-ICONS.md`의 분류(버킷)에 이 물질이 어디로 떨어지는지 확인한다.

@@ -137,8 +137,28 @@ export interface Material {
    * derived from `phase` — so an untagged material still lands in a sensible
    * default group and the "add material = one file" rule holds. Purely a UI
    * hint; the simulation never reads it.
+   *
+   * This is the material's *canonical* shelf — the one the codex chip names and
+   * the one code asking "what kind of thing is this?" reads (`m.category ===
+   * 'radioactive'`). Exactly one, always. Extra shelves go in `alsoIn`.
    */
   category?: string;
+  /**
+   * Extra palette tabs this material also appears under, beyond its canonical
+   * `category`. Coal Powder is filed under 제련 because that's what it's *for*,
+   * but someone hunting for something to burn looks in 불·열 and someone after a
+   * powder looks in 가루 — and finding nothing there, concludes the game has no
+   * coal. A tab is a place people look, not an exclusive owner.
+   *
+   * Keys must already exist in CATEGORY_META — an extra shelf is one that's
+   * there, whereas a *new* tab is introduced by being some material's canonical
+   * `category`. Purely additive: nothing but the palette's own bucketing and the
+   * codex's category filter reads it, so a material's identity everywhere else
+   * stays single-valued. `categoriesOf` dedupes, so a redundant listing can't
+   * double-render; test/codex.ts §9 rejects one anyway, so the declaration keeps
+   * meaning what it says.
+   */
+  alsoIn?: string[];
   /**
    * Carries an electric charge: a Spark propagates from cell to cell only
    * through `conductive` materials (Metal, Mercury), the same tag-based,

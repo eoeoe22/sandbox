@@ -17,7 +17,7 @@
   import { MATERIALS, getMaterial, CLONE } from '../game/materials';
   import { canAdopt } from '../game/materials/clone';
   import type { Material } from '../game/engine/types';
-  import { buildCategories, categoryOf } from '../game/materials/categories';
+  import { buildCategories, categoriesOf } from '../game/materials/categories';
   import { objectSvgFor } from '../game/render/objectSvg';
   import { materialSvgFor } from '../game/render/materialSvg';
   import { $locale as locale, t, materialName, objectLabel, categoryLabel } from '../i18n';
@@ -54,11 +54,14 @@
 
   // --- Search --------------------------------------------------------------
   // A non-empty query flips the palette from category tabs to a flat filtered
-  // grid, matching the material name or its category (both case-insensitive), in
-  // registry order. Matches against the current locale's display name so typing
-  // Korean finds Korean-named materials. The category flyout is suppressed while
-  // searching. Re-runs when the locale changes so the query language tracks the
-  // display language.
+  // grid, matching the material name or any of its categories (both
+  // case-insensitive), in registry order. Matches against the current locale's
+  // display name so typing Korean finds Korean-named materials. Searching a
+  // category name has to agree with clicking that tab, so it matches every tab
+  // the material appears under, not just its canonical one. Each material is
+  // still listed once — this is a flat registry scan, not a per-tab one. The
+  // category flyout is suppressed while searching. Re-runs when the locale
+  // changes so the query language tracks the display language.
   let query = $state('');
   const searching = $derived(query.trim().length > 0);
   const matches = $derived.by<Material[]>(() => {
@@ -67,8 +70,8 @@
     if (!q) return [];
     return MATERIALS.filter((m) => {
       const name = materialName(m.id, m.name).toLowerCase();
-      const cat = categoryLabel(categoryOf(m)).toLowerCase();
-      return name.includes(q) || cat.includes(q);
+      if (name.includes(q)) return true;
+      return categoriesOf(m).some((key) => categoryLabel(key).toLowerCase().includes(q));
     });
   });
 

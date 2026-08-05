@@ -24,7 +24,7 @@
 // line (see materials/index.ts for the roll-call and the reasons).
 
 import { MATERIALS } from '../materials';
-import { categoryOf, phaseKeyOf } from '../materials/categories';
+import { categoriesOf, categoryOf, phaseKeyOf } from '../materials/categories';
 import { STAT_SPECS } from './stats';
 import { TRAIT_SPECS } from './traits';
 import type { CodexEntry, CodexReaction, CodexStat, CodexTrait } from './types';
@@ -73,6 +73,7 @@ export function codexEntryFor(m: Material): CodexEntry {
     id: m.id,
     name: m.name,
     category: categoryOf(m),
+    categories: categoriesOf(m),
     phase: phaseKeyOf(m),
     stats: statsFor(m),
     traits: traitsFor(m),
