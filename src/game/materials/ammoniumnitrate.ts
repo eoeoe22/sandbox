@@ -155,15 +155,28 @@ export const AMMONIUM_NITRATE = register({
   // so a pile chills its puddle over time rather than flashing it cold at once.
   // Now that water can soak in, this table also runs across the 겹침 seam
   // (reactions.ts `tryReactSoaked`), which is what keeps the cold pack working
-  // for a buried grain. One wrinkle worth knowing: when a *soaked* grain
-  // dissolves, the cell holds two things (the grain and the drop) and can only
-  // produce one, so the drop merges into the Water the grain becomes instead of
-  // surviving as its own cell (SimContext.set's "transformed into a non-host"
-  // rule). In practice it barely shows — a soaked drop normally percolates back
-  // out of the heap and reacts as an ordinary neighbour long before this fires,
-  // so it only bites in a bed packed too tight to drain (measured: 4 cells of
-  // 120). Venting the drop instead was tried and made conservation *worse*
-  // (102/120) by perturbing the drainage it depends on.
+  // for a buried grain. It does not behave identically to the neighbour case,
+  // and the difference is worth stating plainly:
+  //
+  //   • **Neighbour water**: the prill cell turns into Water and the puddle
+  //     beside it is untouched, so dissolving a heap *adds* a cell of water per
+  //     grain.
+  //   • **Soaked water**: the cell is holding two things (grain + drop) and can
+  //     only produce one, so the drop merges into the Water the grain becomes
+  //     (SimContext.set destroys an occupant the new host can't hold — its
+  //     documented "transformed into a non-host" rule). No cell is added.
+  //
+  // Measured on a 14×14 sealed pocket of fully soaked prills, 200 ticks: 197
+  // water where the neighbour path's accounting would predict 387, i.e. one drop
+  // per dissolution, ~49%. An open bed on a floor lands the same way (~58%).
+  // From the player's side it reads as "the water you poured comes back", not as
+  // a leak, because the extra cell they never had is the thing that goes missing.
+  // Re-plumbing applySoakedReaction to vent the drop instead was tried and
+  // changes nothing (48–51% sealed): the cell it would vent into is Water, and a
+  // packed heap has no empty neighbour to take it. Left as is deliberately —
+  // note the same destroy applies to the ordinary neighbour path (applyReaction)
+  // whenever a soaked cell is transformed, so this is an engine-wide property,
+  // not something this material introduced.
   reactions: [
     { with: WATER.id, produce: WATER.id, probability: 0.06, heat: -18, tempMax: 80 },
     { with: SALTWATER.id, produce: SALTWATER.id, probability: 0.06, heat: -18, tempMax: 80 },
