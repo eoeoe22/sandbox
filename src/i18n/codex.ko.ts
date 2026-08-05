@@ -188,6 +188,7 @@ export const objectCodexKo: Record<ObjectKind, string> = {
   aciddrum: '부서질 때 산을 유출시키는 드럼통입니다.',
   dynamite: '점화 상태로 생성되어 금방 폭발하는 다이너마이트입니다.',
   smokebomb: '연기를 다량 내뿜습니다.',
+  flashbang: '생성 3초 뒤 아무 예고 없이 새하얗게 터지는 섬광탄입니다. 아무것도 부수지 못하지만 주변의 가루와 액체를 밀어냅니다.',
   crate: '강한 충격이나 불에 파괴되는 나무 상자입니다.',
   molotov: '깨지며 알코올 불길을 일으키는 화염병입니다.',
 };

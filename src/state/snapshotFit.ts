@@ -218,7 +218,12 @@ function resampleObjects(
       o.cornerRadius = o.cornerRadius * s;
       o.mass = o.mass * s * s;
       o.momentOfInertia = o.momentOfInertia * s * s * s * s;
-    } else if (o.kind === 'dynamite' || o.kind === 'smokebomb' || o.kind === 'molotov') {
+    } else if (
+      o.kind === 'dynamite' ||
+      o.kind === 'smokebomb' ||
+      o.kind === 'flashbang' ||
+      o.kind === 'molotov'
+    ) {
       o.radius = o.radius * s;
       o.halfLength = o.halfLength * s;
       o.mass = o.mass * s * s;

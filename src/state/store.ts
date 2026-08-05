@@ -140,6 +140,7 @@ export type ObjectKind =
   | 'aciddrum'
   | 'dynamite'
   | 'smokebomb'
+  | 'flashbang'
   | 'crate'
   | 'molotov';
 
@@ -156,6 +157,7 @@ export const OBJECT_KINDS: readonly ObjectKind[] = [
   'aciddrum',
   'dynamite',
   'smokebomb',
+  'flashbang',
   'crate',
   'molotov',
 ];

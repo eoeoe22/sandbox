@@ -1,4 +1,4 @@
-// 독립 오브젝트 entries — the eight rigid bodies that live above the grid rather
+// 독립 오브젝트 entries — the nine rigid bodies that live above the grid rather
 // than in it (engine/objects.ts).
 //
 // A caveat worth stating plainly, because it is the one place this page is not
@@ -12,7 +12,7 @@
 // What is NOT hand-written is the numbers: every stat here reads the very
 // constant the physics reads, so a retuned density or ignition point moves the
 // codex with it. And test/codex.ts holds the roster to `OBJECT_KINDS`, so a
-// ninth object fails the build rather than quietly missing its page.
+// tenth object fails the build rather than quietly missing its page.
 
 import {
   RUBBER_BALL_DENSITY,
@@ -35,6 +35,12 @@ import {
   SMOKE_BOMB_IGNITE_TEMP,
   SMOKE_BOMB_FUSE_TICKS,
   SMOKE_BOMB_VENT_TICKS,
+  FLASHBANG_DENSITY,
+  FLASHBANG_RESTITUTION,
+  FLASHBANG_IGNITE_TEMP,
+  FLASHBANG_FUSE_TICKS,
+  FLASHBANG_REACH,
+  FLASHBANG_POWER,
   WOOD_BOX_DENSITY,
   WOOD_BOX_RESTITUTION,
   WOOD_BOX_IGNITE_TEMP,
@@ -126,6 +132,20 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'ventTicks', unit: 'ticks', value: SMOKE_BOMB_VENT_TICKS },
     ],
     traits: [{ key: 'magnetic' }, { key: 'fuse', variant: 'waterproof' }],
+  },
+  flashbang: {
+    stats: [
+      { key: 'density', unit: 'number', value: FLASHBANG_DENSITY },
+      { key: 'elasticity', unit: 'ratio', value: FLASHBANG_RESTITUTION },
+      { key: 'autoIgniteTemp', unit: 'temp', value: FLASHBANG_IGNITE_TEMP },
+      // `armTicks`, not the `fuseTicks` every other charge here uses: that term
+      // says "불이 붙고 나서" and this can was never lit. Its timer starts when it
+      // is made and nothing can pause it.
+      { key: 'armTicks', unit: 'ticks', value: FLASHBANG_FUSE_TICKS },
+      { key: 'blastRadius', unit: 'number', value: FLASHBANG_REACH },
+      { key: 'destructivePower', unit: 'number', value: FLASHBANG_POWER },
+    ],
+    traits: [{ key: 'magnetic' }, { key: 'explosive' }],
   },
   crate: {
     stats: [

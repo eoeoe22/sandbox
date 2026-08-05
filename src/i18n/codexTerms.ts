@@ -164,6 +164,16 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     ko: { label: '도화선 시간', desc: '불이 붙고 나서 터지기까지 걸리는 시간입니다.' },
     en: { label: 'Fuse time', desc: 'How long from lighting to going off.' },
   },
+  armTicks: {
+    ko: {
+      label: '기폭 시간',
+      desc: '만들어진 순간부터 터질 때까지의 시간입니다. 도화선이 아니라서 물을 끼얹거나 불을 다시 붙이는 식으로는 손댈 수 없습니다.',
+    },
+    en: {
+      label: 'Arming time',
+      desc: 'How long from being created to going off. It is not a fuse, so it cannot be doused or relit the way one can.',
+    },
+  },
   ventTicks: {
     ko: { label: '분출 시간', desc: '연기를 뿜어내는 시간입니다.' },
     en: { label: 'Vent time', desc: 'How long it pours out smoke.' },

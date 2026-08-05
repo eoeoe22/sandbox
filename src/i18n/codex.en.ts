@@ -175,6 +175,7 @@ export const objectCodexEn: Record<ObjectKind, string> = {
   aciddrum: 'A drum barrel that leaks acid when broken.',
   dynamite: 'A stick of dynamite spawned in an ignited state that explodes shortly.',
   smokebomb: 'Emits a large amount of smoke.',
+  flashbang: 'A flashbang that goes off in a blinding white flash three seconds after it is created, with no warning at all. It breaks nothing, but shoves the loose powder and liquid around it aside.',
   crate: 'A wooden crate destroyed by strong impacts or fire.',
   molotov: 'A Molotov cocktail that shatters to ignite alcohol flames.',
 };

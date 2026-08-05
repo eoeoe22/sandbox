@@ -722,6 +722,29 @@ export function sanitizeObject(raw: unknown): SimBody | null {
     };
   }
 
+  if (kind === 'flashbang') {
+    return {
+      kind: 'flashbang',
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      angularVelocity,
+      halfLength,
+      radius,
+      mass,
+      momentOfInertia,
+      restitution,
+      heatTicks,
+      temp,
+      // A save made mid-countdown reloads still counting. The fallback is a full
+      // fresh fuse rather than 0: a corrupt/absent field must not reload as a can
+      // that flashes on the first tick of the restored world.
+      fuseTicks: Math.max(0, Math.round(num(o.fuseTicks, 150))),
+    };
+  }
+
   if (kind === 'woodbox') {
     const part = (['crate', 'piece1', 'piece2', 'piece3'].includes(o.part as string)
       ? o.part

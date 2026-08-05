@@ -13,6 +13,11 @@ import {
   SMOKE_BOMB_SPRITE_W,
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
+import {
+  FLASHBANG_SPRITE,
+  FLASHBANG_SPRITE_W,
+  FLASHBANG_SPRITE_H,
+} from './flashbangSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from './molotovSprite';
 import type { DrumFill } from '../engine/objects';
@@ -71,6 +76,16 @@ const molotovSvg = pixelSvg(
   spriteRects(MOLOTOV_SPRITES.full, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H),
 );
 
+// The flashbang: the can straight through — there is nothing to leave out. It has
+// no fuse to draw (the object deliberately shows nothing at all before it goes
+// off — see engine/objects.ts SimFlashbang) and its flash is real Flash cells
+// in-world, so the chip is the whole of what a click spawns.
+const flashbangSvg = pixelSvg(
+  FLASHBANG_SPRITE_W,
+  FLASHBANG_SPRITE_H,
+  spriteRects(FLASHBANG_SPRITE, FLASHBANG_SPRITE_W, FLASHBANG_SPRITE_H),
+);
+
 // The rubber ball: a flat red disc with a thin dark rim, mirroring rasterizeBall
 // (BALL_COLOR / BALL_BORDER_COLOR). A vector circle here (not pixel rects) — the
 // in-world ball is a rasterized disc, and a smooth circle reads truer at this
@@ -93,6 +108,7 @@ const OBJECT_SVG: Record<ObjectKind, string> = {
   aciddrum: drumSvg('acid'),
   dynamite: dynamiteSvg,
   smokebomb: smokeBombSvg,
+  flashbang: flashbangSvg,
   crate: crateSvg,
   molotov: molotovSvg,
 };

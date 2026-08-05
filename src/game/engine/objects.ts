@@ -4,6 +4,7 @@ import { AMBIENT_TEMP, SIM_HZ_AT_1X } from '../config';
 import { getMaterial } from '../materials/registry';
 import { launchDebris } from '../materials/debris';
 import { BLAST, detonate } from '../materials/blast';
+import { flashLight } from '../materials/flash';
 import { MOLTEN_IRON } from '../materials/molteniron';
 import { IRON_POWDER } from '../materials/ironpowder';
 import { OIL } from '../materials/oil';
@@ -376,6 +377,67 @@ export interface SimSmokeBomb {
 }
 
 /**
+ * A flashbang — a capsule body (it shares the drum/dynamite/smoke-bomb
+ * segment+radius physics and 1-axis rotation, so it tumbles and rolls) that is a
+ * *timer* and nothing else: `fuseTicks` runs down from the moment it's created
+ * and at zero the can goes off in the same blinding white flash a Flash Powder
+ * charge makes (섬광폭발 — see detonateFlashbang and materials/flash.ts).
+ *
+ * What separates it from the dynamite it otherwise resembles structurally is
+ * what it does *before* that, which is nothing at all (기획: 터지기 전까지 도화선
+ * 효과 없음). The dynamite has a lit fuse that throws real Fire, boils the water
+ * it's dropped into, and can be snuffed to a dud and re-lit; the smoke bomb
+ * trickles a marker wisp for its whole first stage. This can just sits there,
+ * inert-looking, and then it is over. So there is no `lit` flag either: nothing
+ * can put out a fuse that was never burning, and the countdown has no pause
+ * state to keep. The one thing that does suspend it is the pointer holding the
+ * body (`held`), and that suspends every body's everything, not this one's timer
+ * in particular.
+ *
+ * It is still set off *early* by the things that set off any charge (열·폭발·끼임):
+ * a sustained bath at Flash Powder's own 200° autoignition point cooks it off
+ * (FLASHBANG_IGNITE_TEMP), and a blast or being crushed detonates it through
+ * destroyByproduct, so a pile of them chains.
+ */
+export interface SimFlashbang {
+  kind: 'flashbang';
+  /** Center position (float, grid coordinates). */
+  x: number;
+  y: number;
+  /** Velocity (cells/tick). */
+  vx: number;
+  vy: number;
+  /** Orientation of the long axis in radians (0 = upright, cap pointing up). */
+  angle: number;
+  /** Spin rate in radians/tick, integrated from contact torque. */
+  angularVelocity: number;
+  /** Half the straight segment between the two round caps (cells). */
+  halfLength: number;
+  /** Cap radius (cells). */
+  radius: number;
+  /** Mass — buoyancy and collision response. */
+  mass: number;
+  /** Rotational inertia (see SimCapsule). */
+  momentOfInertia: number;
+  /** Coefficient of restitution (0..1) — a steel can barely bounces. */
+  restitution: number;
+  /** Consecutive ticks the footprint has sampled above the cook-off threshold, so
+   *  a stray hot pixel doesn't pop it early — only sustained heat does. */
+  heatTicks: number;
+  /** The can's own heat reservoir (°) — see SimObject.temp. The 가열 brush writes
+   *  it, so heating one (even in mid-air) sets it off early. */
+  temp: number;
+  /** Ticks left before it flashes. Counts down every tick from creation — there is
+   *  no fuse to snuff or re-light, so nothing about the charge itself touches this
+   *  (see the interface header). The one thing that stops it is `held`, which stops
+   *  every body's every judgement, not this timer in particular. */
+  fuseTicks: number;
+  /** True while the pointer is dragging this body (see SimObject.held): its
+   *  physics and its countdown alike are suspended so it tracks the cursor. */
+  held?: boolean;
+}
+
+/**
  * Which piece of the wooden box a body is. `crate` is the whole box — the only
  * one the palette can spawn (나무 상자만 팔레트에서 소환 가능) — and the three
  * `piece*` shards exist ONLY as the wreckage a crate leaves when it is broken
@@ -543,9 +605,16 @@ export interface SimMolotov {
 }
 
 /** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
- *  smoke bombs, wooden boxes, molotovs) share one array on the Grid, discriminated
- *  by `kind`. */
-export type SimBody = SimObject | SimCapsule | SimDynamite | SimSmokeBomb | SimWoodBox | SimMolotov;
+ *  smoke bombs, flashbangs, wooden boxes, molotovs) share one array on the Grid,
+ *  discriminated by `kind`. */
+export type SimBody =
+  | SimObject
+  | SimCapsule
+  | SimDynamite
+  | SimSmokeBomb
+  | SimFlashbang
+  | SimWoodBox
+  | SimMolotov;
 
 /**
  * The physics-only fields every rotating (non-ball) body shares, plus 1-axis
@@ -1010,6 +1079,93 @@ export function createSmokeBomb(
     temp: AMBIENT_TEMP,
     fuseTicks: SMOKE_BOMB_FUSE_TICKS,
     ventTicks: 0,
+  };
+}
+
+/**
+ * Flashbang defaults. A small steel can — denser than Water (3) so it sinks (and
+ * keeps its countdown down there: there is no flame for a pond to put out), barely
+ * bouncy. Its capsule box (2·radius wide × 2·(halfLength+radius) tall = 4 × 9
+ * cells) matches the 8×18 sprite's aspect at the standard 1 cell : 2 sprite px,
+ * so display and collision agree exactly as they do for the drum, the dynamite
+ * and the smoke bomb. Slimmer than the smoke bomb (6.5 × 10) — a stun grenade is
+ * a smaller thing than a smoke canister, and the two must not be mistaken for
+ * each other at a glance.
+ */
+export const FLASHBANG_RADIUS = 2;
+export const FLASHBANG_HALF_LENGTH = 2.5;
+export const FLASHBANG_DENSITY = 3.2;
+export const FLASHBANG_RESTITUTION = 0.25;
+/** Max magnitude (rad/tick) of the small random spin a freshly-placed can spawns
+ *  with, so it topples off its cap to one side instead of balancing — the same
+ *  gentle nudge the dynamite and the smoke bomb get (see DYNAMITE_SPAWN_SPIN). */
+export const FLASHBANG_SPAWN_SPIN = 0.06;
+/** How long after it's created the can flashes (기획: 생성 시 몇 초 뒤 섬광폭발 —
+ *  3초). Sized in *seconds* at the default sim rate like every other body's timer,
+ *  so the sandbox's speed dial scales the wall-clock delay with everything else.
+ *  Fixed rather than rolled per-can the way the dynamite's 3–5s fuse is: this one
+ *  shows you nothing while it runs (no fuse, no wisp), so a random length would be
+ *  an invisible random, and a throw you can't time is no fun. Shorter than the
+ *  smoke bomb's 4s and at the floor of the dynamite's range. */
+export const FLASHBANG_FUSE_TICKS = Math.round(3 * SIM_HZ_AT_1X);
+/** Footprint/reservoir temperature (°) at/above which external heat cooks the can
+ *  off early. Set at Flash Powder's own autoignition point (200°, see
+ *  materials/flashpowder.ts) rather than the dynamite's 1100°, because that is
+ *  literally what is inside it — this is the most heat-sensitive charge in the
+ *  game, and a can that has been sitting in a fire should already have gone. It's
+ *  also free of the dynamite's constraint: that threshold has to clear its own
+ *  fuse's 1000° Fire, and a flashbang emits nothing to be sensitive to. */
+export const FLASHBANG_IGNITE_TEMP = 200;
+/** Sustained ticks above FLASHBANG_IGNITE_TEMP before the early trigger fires, so
+ *  a single hot splash (a fleck of flung lava) doesn't instant-pop it. */
+const FLASHBANG_HEAT_TICKS = 5;
+/** Flash reach (cells), before blast.ts's global 2/3 scale — so ~20 cells of
+ *  actual radius. A grenade's worth: three times a single Flash Powder grain's
+ *  own 10 and clearly inside the dynamite's 36-cell shockwave, so one can whites
+ *  out a room without whiting out the screen. */
+export const FLASHBANG_REACH = 30;
+/** Destructive power — Flash Powder's own 6 (파괴력 6), which is below every
+ *  phase's default durability (see blast.ts): the flash breaks nothing at all. It
+ *  still *shoves*, because a weak blast's shove is built into every detonation —
+ *  loose powder and liquid within reach are flung outward as mass-conserving
+ *  Debris, and the pressure ring rides out past that. 섬광탄은 부수지 않고 밀친다. */
+export const FLASHBANG_POWER = 6;
+
+/**
+ * Build a flashbang centered at (x,y), at rest and upright with its countdown
+ * already running, plus the same weak random spin the dynamite and smoke bomb
+ * spawn with so it topples to one side. Mass and moment of inertia follow the
+ * shared capsule formulas.
+ */
+export function createFlashbang(
+  x: number,
+  y: number,
+  radius = FLASHBANG_RADIUS,
+  halfLength = FLASHBANG_HALF_LENGTH,
+): SimFlashbang {
+  const r = radius > 1 ? radius : 1;
+  const l = halfLength > 0 ? halfLength : 0;
+  const area = 4 * r * l + Math.PI * r * r;
+  const mass = FLASHBANG_DENSITY * area;
+  const w = 2 * r;
+  const h = 2 * (l + r);
+  const momentOfInertia = (mass * (w * w + h * h)) / 12;
+  return {
+    kind: 'flashbang',
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    angle: 0,
+    angularVelocity: (Math.random() * 2 - 1) * FLASHBANG_SPAWN_SPIN,
+    halfLength: l,
+    radius: r,
+    mass,
+    momentOfInertia,
+    restitution: FLASHBANG_RESTITUTION,
+    heatTicks: 0,
+    temp: AMBIENT_TEMP,
+    fuseTicks: FLASHBANG_FUSE_TICKS,
   };
 }
 
@@ -3313,12 +3469,14 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
 
 /** True if the Electromagnet's field can grab this body. Steel bodies only: the
  *  드럼통 (every fill — an empty, an oil and an acid drum are one steel shell, so
- *  they behave identically here as they do everywhere else) and the 연막탄's steel
- *  canister. A rubber ball, a wooden crate and a wax-and-paper stick of dynamite
- *  are not ferrous and sail right past a live magnet — which is the point: the
- *  magnet must stay a 자력 선별기 you can sort a pile with, not a vacuum. */
+ *  they behave identically here as they do everywhere else) and the two steel
+ *  cans, the 연막탄 and the 섬광탄. A rubber ball, a wooden crate and a
+ *  wax-and-paper stick of dynamite are not ferrous and sail right past a live
+ *  magnet — which is the point: the magnet must stay a 자력 선별기 you can sort a
+ *  pile with, not a vacuum. (A live flashbang being dragged in by a magnet it
+ *  will then go off inside of is, of course, the fun of including it.) */
 function isMagneticBody(o: SimBody): boolean {
-  return o.kind === 'drum' || o.kind === 'smokebomb';
+  return o.kind === 'drum' || o.kind === 'smokebomb' || o.kind === 'flashbang';
 }
 
 /** True if the magnet's pull can travel *through* this cell — `isFieldPassable`
@@ -4103,6 +4261,80 @@ function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean 
   return --o.ventTicks > 0;
 }
 
+// ─────────────────────────── Flashbang: the flash ───────────────────────────
+
+/** Resolve one cell the flash front reached. Claims only empty air, which becomes
+ *  the flat white Flash light (materials/flash.ts) instead of the ordinary BLAST
+ *  flash — the same trick, and for the same reason, as Flash Powder's own
+ *  `paintFlash` (see flashpowder.ts): the default BLAST cell fades white → orange
+ *  and dusts Fire as it dies, which would make a charge whose entire identity is
+ *  "it breaks nothing, it just blinds you" look and act like a small bomb.
+ *
+ *  Every other cell returns false and falls through to blast.ts's default
+ *  handling, exactly as under any other weak charge: loose powder/liquid the
+ *  feeble power can't break is flung outward as mass-conserving Debris, and
+ *  structural solids shadow the front, untouched. Flash Powder additionally
+ *  claims its own grains so a triggered heap is consumed rather than re-triggering
+ *  on the same 200° reading; a flashbang has no grains on the grid — the whole
+ *  charge is the body, and the body is already gone by the time this runs — so
+ *  empty air is the only case here. */
+function paintFlashbang(sim: SimContext, x: number, y: number, prevId: number): boolean {
+  if (prevId === EMPTY) {
+    flashLight(sim, x, y);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Set off a flashbang at its current cell — one wide, weak, white flash (섬광폭발),
+ * the object-scale version of what a Flash Powder charge does. Unlike the
+ * dynamite's two-zone blast there is only one zone and it craters nothing: the
+ * power is Flash Powder's own 6, below every phase's default durability. The
+ * pressure ring is deliberately left ON (the default) — it's the 뻥 half of the
+ * bang, and with no crater to speak of it's most of what the can does to the
+ * world besides the light. A can drifted out of a `void` world just vanishes with
+ * no flash, like the dynamite.
+ */
+function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
+  const cx = Math.floor(o.x);
+  const cy = Math.floor(o.y);
+  if (!ctx.inBounds(cx, cy)) return;
+  detonate(ctx, cx, cy, 0, {
+    reach: FLASHBANG_REACH,
+    power: FLASHBANG_POWER,
+    onCell: paintFlashbang,
+  });
+}
+
+/**
+ * Per-tick lifecycle for a flashbang, after this tick's heat conduction (called
+ * from evaluateTriggers with the resolved `heat`). It is the shortest step
+ * function in this file, which is the point of the object:
+ *   1. Sustained external heat (fire, lava, the 가열 brush) cooks it off early.
+ *   2. Otherwise the countdown runs, and at zero it flashes.
+ * There is no third stage and nothing is emitted along the way — no fuse flame,
+ * no wisp, no sound of any kind (기획: 터지기 전까지 도화선 효과 없음). A blast or a
+ * crush sets it off too, but that arrives through destroyByproduct rather than
+ * here. Returns true to keep the can, false once it has gone off.
+ */
+function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean {
+  if (heat >= FLASHBANG_IGNITE_TEMP) {
+    o.heatTicks++;
+    if (o.heatTicks >= FLASHBANG_HEAT_TICKS) {
+      detonateFlashbang(o, ctx);
+      return false;
+    }
+  } else if (o.heatTicks > 0) {
+    o.heatTicks--;
+  }
+  if (--o.fuseTicks <= 0) {
+    detonateFlashbang(o, ctx);
+    return false;
+  }
+  return true;
+}
+
 // ───────────────────── Wooden box: burning and breaking ─────────────────────
 //
 // The wooden box is the first *flammable* body (가연성). Everything above either
@@ -4632,6 +4864,10 @@ function destroyByproduct(
     // Blown open rather than burned down: the charge that would have vented over a
     // whole second goes up at once, filling the cloud disc in a single tick.
     ventSmoke(o, ctx, 1);
+  } else if (o.kind === 'flashbang') {
+    // A knock or a passing blast sets it off exactly as it sets off a stick of
+    // dynamite — so flashbangs chain, and one thrown into a blast flashes early.
+    detonateFlashbang(o, ctx);
   } else if (o.kind === 'molotov') {
     // Glass shatters the same way whatever broke it, and its contents land where
     // it stood — hence no `cause` here (see breakMolotov).
@@ -4687,6 +4923,9 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // A smoke bomb likewise runs its own two-stage countdown (trickle → discharge →
   // spent) rather than melting or burning.
   if (o.kind === 'smokebomb') return stepSmokeBomb(o, ctx, heat);
+  // A flashbang runs a bare countdown to its flash (plus a heat cook-off) and
+  // emits nothing at all until then. See stepFlashbang.
+  if (o.kind === 'flashbang') return stepFlashbang(o, ctx, heat);
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
   if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);
