@@ -152,6 +152,9 @@ export const SUGAR = register({
   // same sugar meeting should fuse, not swallow each other.
   liquidOverlap: 0,
   category: 'powder',
+  // Also on the 요리 shelf — it was a kitchen material long before there was a
+  // kitchen tab to put it in.
+  alsoIn: ['food'],
   thermal: { conductivity: 0.3 },
   update: updateSugar,
 });

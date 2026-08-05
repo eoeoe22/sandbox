@@ -79,6 +79,9 @@ export const YEAST = register({
   // floating away from the mash.
   density: 3.3,
   category: 'life',
+  // Also on the 요리 shelf — it was a kitchen material long before there was a
+  // kitchen tab to put it in.
+  alsoIn: ['food'],
   // 피폭사 — a live culture is killed by radiation exactly as it's killed by heat:
   // it simply dies off to nothing (see engine/radiation.ts). So a mash set up
   // beside a waste drum stops fermenting, and the sugar and water just sit there.

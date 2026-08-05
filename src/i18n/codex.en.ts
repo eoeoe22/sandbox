@@ -154,6 +154,16 @@ export const materialCodexEn: Record<number, string> = {
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
   135: 'Calcareous skeleton left when coral dies. Regenerates in saltwater at an appropriate temperature.',
 
+  // Cooking
+  151: 'Finely milled grain. Heaped up it will not burn at all, no matter what flame you hold to it — but the same grains suspended in the air go off as a whole cloud the instant a spark or 350° heat reaches them (a dust explosion). Blow a cloud with the fan and light it. A pile merely heated past 260° simply chars to ash, and even a dust explosion leaves a little scorched ash behind. Touch water and it becomes batter.',
+  152: 'Thick dough formed where flour meets water. It creeps even more slowly than mud, so you can shape it before baking, and heating it past 120° bakes it into bread. Sprinkle on baking soda and it is ready to rise at once; sprinkle on yeast instead and it takes time but rises far more. Both work their way through the dough on their own, so a sprinkle on one corner leavens the whole body (soda travels faster), and yeast burps CO₂ and pales the dough as it proofs so you can see how far along it is. Yeast dies above 60°, so proof it first and bake it after.',
+  153: 'What batter becomes when baked at 120° or above. Whichever faces met open air while baking become dark browned crust, and whatever the dough closed around becomes ivory crumb — so baking a large body of dough gives you a real crusted cross-section. Leavened dough springs the moment it enters the oven — the gas in it expands and pushes extra dough upward, and the enlarged body then bakes as one: about 40% more with baking soda, up to double for a fully proofed yeast dough. A lid or wall overhead blocks the rise and it bakes dense instead. Keep burning a finished loaf and it burns slowly like wood, leaving a lot of ash.',
+  154: 'Becomes cooked meat past 70°. It steams as soon as it starts to warm, so you get a warning before the colour turns. Being wet, it will not catch fire on its own.',
+  155: 'Meat cooked at 70° or above. Past 200° it chars into burnt meat, so holding the temperature between the two is the whole trick. Once cooked it never goes back to raw, even as it cools.',
+  156: 'Meat cooked past 200° and blackened. With all the moisture gone it will finally catch fire, burning slowly like charcoal and leaving mostly ash.',
+  157: 'A hard, heavy grain. Past 180° the hull bursts: it leaps upward and one kernel puffs into two pieces of popcorn, hissing steam as it goes — so a bowl of kernels on the heat doubles in volume and overflows. Blocked overhead it puffs in place instead of leaping. The kernel itself never burns; popping always wins.',
+  158: 'What a corn kernel becomes when it bursts. Lighter than anything in the palette but ash, so it rafts on water and drifts sideways as it falls instead of dropping straight. Bone dry, so it catches fire very readily.',
+
   // Radioactive
   63: 'Highly enriched uranium. Generates heat and undergoes meltdown when overheated.',
   65: 'Uranium in meltdown state. Explodes quickly and decays all surrounding materials.',

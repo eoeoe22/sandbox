@@ -146,6 +146,14 @@ import { POLYETHYLENE } from './polyethylene';
 import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 import { AMMONAL } from './ammonal';
 import { ANFO } from './anfo';
+import { FLOUR } from './flour';
+import { BATTER } from './batter';
+import { BREAD } from './bread';
+import { RAW_MEAT } from './rawmeat';
+import { COOKED_MEAT } from './cookedmeat';
+import { BURNT_MEAT } from './burntmeat';
+import { CORN_KERNEL } from './cornkernel';
+import { POPCORN } from './popcorn';
 
 export {
   EMPTY_MAT,
@@ -291,6 +299,14 @@ export {
   ACTIVATED_ALUMINUM,
   AMMONAL,
   ANFO,
+  FLOUR,
+  BATTER,
+  BREAD,
+  RAW_MEAT,
+  COOKED_MEAT,
+  BURNT_MEAT,
+  CORN_KERNEL,
+  POPCORN,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -478,6 +494,20 @@ export const MATERIALS = [
   TERMITE,
   NANOBOT,
   FISH,
+  // 요리. Ordered as the three chains actually run, because the tab is a set of
+  // recipes rather than a shelf of unrelated things: 밀가루 → 반죽 → 빵, then the
+  // grill's 생고기 → 익은 고기 → 탄 고기, then 옥수수 알갱이 → 팝콘. The tab also
+  // collects the kitchen materials that were already in the palette (Salt, Sugar,
+  // Caramel, Honey, Soda, Yeast) through their `alsoIn`, so they appear after
+  // these in the order they are listed above.
+  FLOUR,
+  BATTER,
+  BREAD,
+  RAW_MEAT,
+  COOKED_MEAT,
+  BURNT_MEAT,
+  CORN_KERNEL,
+  POPCORN,
 ];
 
 // `MATERIALS` as a lookup instead of a list. Built once at module load, because

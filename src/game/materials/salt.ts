@@ -88,6 +88,9 @@ export const SALT = register({
   // Interlocking crystals grip, so a salt pile holds a fairly steep cone (마찰).
   friction: 0.38,
   thermal: { conductivity: 0.35 },
+  // Also on the 요리 shelf — it was a kitchen material long before there was a
+  // kitchen tab to put it in.
+  alsoIn: ['food'],
   // 녹는점 → 용융염.
   phaseChange: { at: () => SALT_MELT_TEMP, when: 'atOrAbove', into: () => MOLTEN_SALT.id },
   update: updateSalt,

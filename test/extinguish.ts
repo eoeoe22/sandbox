@@ -527,6 +527,16 @@ function pourOn(
     C4: ['A', 0.05, 320],
     Plant: ['A', 0.1, 400],
     Polyethylene: ['A', 0.05, 380],
+    // 요리. All three are ordinary class-A solids water puts out, and all three
+    // are the *end* of their chain rather than a raw ingredient: what burns is
+    // the baked loaf, the overcooked steak and the popped kernel, never the
+    // dough, the raw cut or the corn (none of which carry a spec at all, which
+    // is why they are absent here). Flour is the pointed absence — it is a fuel
+    // in every intuitive sense and deliberately has no spec, because a heap of
+    // it must not burn; its cloud goes off through dustexplosion.ts instead.
+    Bread: ['A', 0.05, 300],
+    'Burnt Meat': ['A', 0.04, 350],
+    Popcorn: ['A', 0.1, 250],
   };
   const wrong: string[] = [];
   const roster: string[] = [];

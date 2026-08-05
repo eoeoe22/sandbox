@@ -57,6 +57,9 @@ export const HONEY = register({
   density: 3.5,
   combustion: { burnChance: 0.05, autoIgniteTemp: 360 },
   category: 'liquid',
+  // Also on the 요리 shelf — it was a kitchen material long before there was a
+  // kitchen tab to put it in.
+  alsoIn: ['food'],
   // Very viscous — holds a mound instead of racing flat like water. Stacks on
   // top of FLOW_CHANCE above (which is what slows the *fall*): this is the extra
   // reluctance to level out sideways once it has landed.
