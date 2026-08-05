@@ -174,7 +174,15 @@ export const CARAMEL = register({
   thermal: { init: 180, conductivity: 0.3 },
   // Molten amber cooling to set toffee. Also what suppresses `freeze`'s icy frost
   // tint — see the header.
-  glow: { min: 20, max: 200, cool: rgb(96, 46, 20) },
+  //
+  // The bounds are the material's own two thresholds, not free numbers, so the
+  // ramp *is* the recipe window rather than merely overlapping it: at `min` the
+  // cell has just set (cool toffee, and the niter will no longer take), at `max`
+  // it is one degree from charring (full hot amber). Slag pins its ramp to its
+  // own set point the same way. Retune either threshold and the readout follows
+  // on its own — which is the only reason the header is allowed to claim the
+  // colour tells you whether the mix will take.
+  glow: { min: SET_TEMP, max: CARBONIZE_TEMP, cool: rgb(96, 46, 20) },
   // Hard toffee below the set point: stops flowing and acts solid, and denser
   // material can no longer sink through the slab.
   freeze: { temp: SET_TEMP },

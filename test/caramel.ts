@@ -199,9 +199,11 @@ function spread(grid: Grid, id: number): number {
     hottest < 120,
     `hottest cell ${hottest.toFixed(1)}°`,
   );
+  sim.step();
+  const afterOneMore = cellsOf(grid, CARAMEL.id);
   check(
     '…굳은 뒤에는 한 칸도 움직이지 않는다',
-    settled.size === cells && sameCells(settled, (sim.step(), cellsOf(grid, CARAMEL.id))),
+    settled.size === cells && sameCells(settled, afterOneMore),
     `${settled.size}/${cells} cells`,
   );
   for (let t = 0; t < 200; t++) sim.step();
