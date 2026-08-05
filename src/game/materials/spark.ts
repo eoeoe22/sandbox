@@ -89,6 +89,28 @@ import { ALUMINUM } from './aluminum';
 // it, rather than a special-cased touch-and-seed on first contact.
 const REFRACTORY_TICKS = 3;
 
+// --- Speed: how fast does a pulse travel? --------------------------------------
+// A hop is one cell. What changed is how many hops fit in a tick, and that knob
+// lives in config.SPARK_STEPS_PER_TICK rather than here, because it is the
+// engine's business (Simulation.step runs the extra passes) rather than this
+// material's.
+//
+// The old answer was "one", welded to the CA scan: `energize` calls `spawn`, which
+// marks the cell moved, so a freshly energized conductor could not take its own
+// turn until the next tick. At the ×1 pace that is 30 cells/s — a wire lighting up
+// like a burning fuse rather than like a wire. Now `energize` also appends to the
+// wavefront queue (SimContext.sparkFrontier*) and `stepSparkFrontier` below drains
+// it, so the scan takes the first hop and the engine takes the rest.
+//
+// Nothing about a pulse's *effect* moves with that knob, and the reason is the
+// refractory stamp: a spark writes it the instant it reverts (see the bottom of
+// updateSpark), so within a tick the front cannot double back into cells it has
+// already crossed. Every conductor cell is therefore energized exactly once per
+// pulse at any speed, which is what pins Joule heating, electrolysis, Slime
+// dissolve seeding and appliance floods to the pulse rather than to the clock.
+// The one thing that genuinely was per-tick — the 감전 roll memo — moved onto the
+// hop clock (`SimContext.electricStep`) so it keeps counting exposures, not ticks.
+
 // --- Electricity strength -----------------------------------------------------
 // Class + strength split the 16-bit `aux` word (Grid.aux) evenly, one byte each:
 // classes 1..255 in the low byte (0 = "none"), strength 0..255 in the high byte.
@@ -232,12 +254,54 @@ export function packSpark(strength: number, cls: number): number {
 
 /** Energize one conductor cell: replace it with a Spark that remembers the
  *  conductor (class) and its remaining strength in aux, and preserves the
- *  conductor's heat in temp. */
+ *  conductor's heat in temp.
+ *
+ *  Also appends the new Spark to the wavefront queue (SimContext.sparkFrontier*),
+ *  which is what lets a pulse cross more than one cell per tick: `spawn` marks
+ *  the cell moved so the CA scan will not pick it up again this tick, and the
+ *  extra propagation passes in Simulation.step drain this queue instead (see
+ *  config.SPARK_STEPS_PER_TICK). Every pulse source reaches this one function, so
+ *  none of them had to learn about the queue. */
 function energize(sim: SimContext, nx: number, ny: number, cls: number, strength: number): void {
   const heat = sim.getTemp(nx, ny);
   sim.spawn(nx, ny, SPARK.id); // marks moved (won't be re-processed this tick)
   sim.setTemp(nx, ny, heat); // carry the wire's heat through the spark
   sim.setAux(nx, ny, packSpark(strength, cls)); // remember conductor + strength
+  sim.sparkFrontierX.push(nx);
+  sim.sparkFrontierY.push(ny);
+}
+
+/**
+ * Advance the electric wavefront by ONE hop: drain the cells energized since the
+ * last pass and give each its ordinary Spark turn, which in turn energizes the
+ * next ring into the (now empty) queue. Returns how many cells were processed, so
+ * the caller can spend a work budget and stop early.
+ *
+ * This is the whole of "electricity moves faster": `updateSpark` is unchanged and
+ * runs exactly once per Spark either way, so a pulse deposits the same Joule heat,
+ * rolls the same electrolysis and seeds the same Slime dissolve as it did at one
+ * cell per tick — it just gets where it is going sooner. Called only from
+ * Simulation.step, after the CA scan has taken the tick's first hop.
+ *
+ * A queued cell is re-checked against the grid before being run: between being
+ * energized and being drained it may have stopped being a Spark (an adjacent
+ * electric charge detonating flashes it to Blast, a beam or a reaction overwrites
+ * it), and running `updateSpark` on whatever took its place would revert a cell
+ * that never held a pulse.
+ */
+export function stepSparkFrontier(sim: SimContext): number {
+  const n = sim.sparkFrontierX.length;
+  if (n === 0) return 0;
+  // Snapshot and clear: the hops below push the *next* ring onto the same queue.
+  const xs = sim.sparkFrontierX.slice(0, n);
+  const ys = sim.sparkFrontierY.slice(0, n);
+  sim.sparkFrontierX.length = 0;
+  sim.sparkFrontierY.length = 0;
+  for (let i = 0; i < n; i++) {
+    if (sim.get(xs[i], ys[i]) !== SPARK.id) continue;
+    updateSpark(xs[i], ys[i], sim);
+  }
+  return n;
 }
 
 /** Seat a lick of Fire in an open cell touching (nx,ny), so Fire's own rules
@@ -277,11 +341,12 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
 /** 감전 — roll the current's kill on a living neighbour that declares
  *  `Material.sparkDeathChance`, leaving its `blastDeathId` corpse.
  *
- *  Rolled at most ONCE per cell per tick (`SimContext.sparkRolled`), for the same
- *  reason `shockKill` memoizes its shockwave roll: a spreading current is many
- *  Sparks, not one, so a fish with two charged neighbours in a tick would be
- *  rolled twice and "50% on exposure" would come out at 66%. See the memo's own
- *  doc comment.
+ *  Rolled at most ONCE per cell per propagation *hop* (`SimContext.sparkRolled`,
+ *  keyed on `electricStep`), for the same reason `shockKill` memoizes its
+ *  shockwave roll: a spreading current is many Sparks, not one, so a fish with two
+ *  charged neighbours in the same hop would be rolled twice and "50% on exposure"
+ *  would come out at 66%. Per hop rather than per tick because a tick now carries
+ *  SPARK_STEPS_PER_TICK hops — see the memo's own doc comment.
  *
  *  `spawn`, not `set`: this is a write to a neighbour cell that isn't Empty, so
  *  the corpse has to be marked moved or it gets updated *again* this same tick by
@@ -290,12 +355,12 @@ export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: nu
  *  up. Same primitive `radiationDeath` and `shockKill` use, for the same reason;
  *  it also zeroes the aux the dead fish must not inherit from the live one. */
 function electrocute(sim: SimContext, x: number, y: number, chance: number, deathId: number): void {
-  if (sim.tick !== sim.sparkRollTick) {
-    sim.sparkRollTick = sim.tick;
+  if (sim.electricStep !== sim.sparkRollStep) {
+    sim.sparkRollStep = sim.electricStep;
     sim.sparkRolled.clear();
   }
   const k = y * sim.width + x;
-  if (sim.sparkRolled.has(k)) return; // already exposed this tick — one roll only
+  if (sim.sparkRolled.has(k)) return; // already exposed this hop — one roll only
   sim.sparkRolled.add(k);
   if (!sim.chance(chance)) return;
   sim.spawn(x, y, deathId);
@@ -423,6 +488,41 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   const myConductorId = myClass === 0 ? EMPTY : classToId(myClass);
   const insulated = myClass !== 0 && getMaterial(myConductorId).insulated === true;
 
+  // A Spark lives two turns, and the split is what makes a fast pulse *visible*.
+  //
+  //   • strength > 0 — the LIVE turn (below): arc, electrocute, power appliances,
+  //     hand the pulse to the next ring, then mark itself spent and stay lit.
+  //   • strength === 0 — the SPENT turn (the collapse further down): revert to the
+  //     conductor, with the electrolysis / Slime-dissolve / Joule-heat / refractory
+  //     bookkeeping that goes with it.
+  //
+  // They used to be one turn, which was fine at one cell per tick — the pulse was
+  // one bright dot and the dot was on screen for the whole tick it owned. At ten
+  // cells per tick that collapses into invisibility: the front hops and reverts
+  // inside the same tick, so a rendered frame catches nothing but the last ring,
+  // strobing ten cells at a time. Deferring the collapse to the next tick's scan
+  // leaves the entire stretch the pulse crossed this tick lit as Spark — the pulse
+  // reads as a bright streak racing down the wire rather than a dot teleporting
+  // along it.
+  //
+  // Nothing about a pulse's power moves with this. Everything that *delivers*
+  // power — the appliance flood, the 감전 roll, the detonator arc, the hand-off
+  // itself — is in the live turn and still happens the instant the current
+  // arrives. What the spent turn defers by one tick is only the cell's own
+  // bookkeeping, and each of those is once-per-pulse either way (the conductor is
+  // simply unavailable for one tick longer than the 3-tick refractory, against a
+  // PULSE_PERIOD of 12).
+  //
+  // Back-propagation can't exploit the delay: a spent Spark is still a Spark, and
+  // Spark is not `conductive`, so the hand-off gate below refuses it exactly as
+  // the refractory stamp would have. `strength === 0` would fail the `next > 0`
+  // test anyway — the explicit split is here so the *arc* phase doesn't run twice
+  // (two appliance floods, two 감전 rolls per pulse) on the second visit.
+  if (strength === 0) {
+    collapseSpark(x, y, sim, myClass);
+    return;
+  }
+
   let arced = false;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -482,13 +582,28 @@ function updateSpark(x: number, y: number, sim: SimContext): void {
   // above), that blast may have flashed this very cell to BLAST — in which case
   // it was craterized and must NOT be revived. Bail out and leave the flash,
   // exactly as tnt/gunpowder return straight after they detonate. When the cell
-  // wasn't reached it's still a Spark and collapses normally below.
+  // wasn't reached it's still a Spark and is marked spent below.
   if (sim.get(x, y) !== SPARK.id) return;
 
-  // Collapse back to the conductor (or fizzle if there was none). A spark that
-  // was travelling through water/brine may instead electrolyse that cell into
-  // gas; otherwise it reverts and leaves a brief refractory mark so the pulse
-  // can't immediately double back.
+  // The live turn is done. Stay a Spark — lit, so the stretch this pulse crossed
+  // is on screen as a streak — with the strength zeroed to say "already hopped".
+  // The next tick's scan sees strength 0 and takes the spent turn (collapseSpark),
+  // which is where the conductor and its refractory come back.
+  sim.setAux(x, y, packSpark(0, myClass));
+}
+
+/**
+ * The spent turn: collapse a Spark that has already had its hop back into the
+ * conductor it was riding (or fizzle, if it had none).
+ *
+ * All of a pulse's per-cell bookkeeping lives here — the electrolysis roll on
+ * water/brine/acid, the Slime dissolve-front seeding, Nichrome's Joule heat, and
+ * the refractory stamp that stops the wave doubling back once the cell is a plain
+ * conductor again. Each is once per pulse per cell, unchanged by how fast the
+ * pulse travels; what the two-turn split changed is only that they land on the
+ * tick *after* the current passed rather than on the same one.
+ */
+function collapseSpark(x: number, y: number, sim: SimContext, myClass: number): void {
   if (myClass === 0) {
     sim.set(x, y, EMPTY);
     return;

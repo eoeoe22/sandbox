@@ -401,6 +401,18 @@ const TICKS = 600;
   grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
   const rolled = Math.random;
   Math.random = () => 0;
+  // Two steps, because a Spark's life is two turns: the first is its LIVE turn
+  // (hand the pulse on, arc, power appliances) and the collapse back to Slime — the
+  // bare write this check is about — happens on the second (see spark.ts's two-turn
+  // note). The hazard itself is unchanged: the collapse is still a bare mid-tick
+  // write of a reaction partner, with the acid scanned later in that same tick
+  // (rows run bottom-to-top, so row 10 collapses before row 9 acts).
+  //
+  // NOTE: this check does not currently fail if the `markMoved` it describes is
+  // removed — measured, and measured on the pre-change code too, so it is a gap
+  // this scene always had rather than one the two-turn split introduced. Test 7
+  // above (the rinse case) is the one carrying real weight on this invariant.
+  sim.step();
   sim.step();
   Math.random = rolled;
   check('a spark collapsing back to slime is not acidified in the same tick',

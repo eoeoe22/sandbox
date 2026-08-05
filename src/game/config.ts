@@ -65,6 +65,44 @@ export const SIM_SPEED_DEFAULT: SimSpeed = 1;
 export const SIM_HZ_AT_1X = TICK_HZ / 2;
 
 /**
+ * How many cells an electric pulse advances per simulation tick (전기의 즉시성).
+ *
+ * A Spark hop used to be welded to the CA scan: a spark energized its neighbours
+ * with `spawn()`, which marks them moved, so the wavefront advanced exactly one
+ * cell per tick — 30 cells/s at the ×1 pace. A 100-cell wire took 3.3 seconds to
+ * light up, which reads as a fuse burning, not as electricity. The scan still
+ * drives the first hop; `Simulation.step` then runs `SPARK_STEPS_PER_TICK - 1`
+ * extra propagation passes over the cells energized so far (the wavefront queue
+ * in `SimContext.sparkFrontier*`), so a pulse now crosses the board in about a
+ * second while every other clock in the world keeps its own pace.
+ *
+ * **This is a speed knob, not a power knob.** Each conductor cell still becomes a
+ * Spark exactly once per pulse (the refractory stamp is written the moment a
+ * spark reverts, so the front can't double back within a tick), so per pulse the
+ * Joule heat deposited in Nichrome, the electrolysis rolls in water, the Slime
+ * dissolve seeding and the number of appliance floods are all *unchanged* — the
+ * same journey, compressed in time. Raising this makes electricity feel snappier;
+ * it never makes a battery stronger.
+ */
+export const SPARK_STEPS_PER_TICK = 10;
+
+/**
+ * Safety budget for the extra propagation passes above: the most spark cells
+ * `Simulation.step` will process across all of one tick's substeps before it
+ * stops early and leaves the rest of the front for the next tick.
+ *
+ * Total work per pulse is unchanged by the substeps (every cell is energized
+ * once either way) — what changes is that a front which used to be spread over
+ * ten ticks is now paid for in one. For a wire that is nothing; for a bare
+ * terminal dropped in a large brine tank the front is a growing perimeter, and
+ * this bounds that spike. Degrading here is graceful and invisible: the leftover
+ * front is still sitting on the grid as Spark cells and the next tick's scan
+ * picks it straight up, so an over-budget pulse just travels at the old speed
+ * instead of stalling or vanishing.
+ */
+export const SPARK_STEP_BUDGET = 8192;
+
+/**
  * Gravity direction — which way "down" points for every falling/rising material.
  * Movement in SimContext is expressed relative to this vector, so flipping it
  * turns the whole sandbox upside-down (or sideways) without touching a single

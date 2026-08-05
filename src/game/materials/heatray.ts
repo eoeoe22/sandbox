@@ -69,10 +69,35 @@ import { DIAMOND } from './diamond';
 // As with the Nuclear Ray / Ember / Blast, the packed per-cell state (remaining
 // life + flight direction) lives in `temp` with conductivity 0 so the heat pass
 // leaves it alone: packed = life·16 + (vx+1)·3 + (vy+1), with vx,vy ∈ {-1,0,1}.
-const SPEED_ORTH = 3; // cells per tick along an axis…
-const SPEED_DIAG = 2; // …and per diagonal step (≈ 3/√2, so speed reads uniform)
-const LIFE_MIN = 90;
-const LIFE_VAR = 40; // 90..129 ticks — a couple of screen-crossings' worth
+//
+// ## Speed and the afterimage tail (레이저다운 즉시성)
+//
+// A beam used to crawl: 3 cells a tick, which at the ×1 pace is 90 cells/s, so a
+// shot took the better part of four seconds to cross the board and read as a slow
+// bullet rather than as light. It now flies at SPEED_ORTH below — fast enough that
+// a shot lands almost as soon as you fire it.
+//
+// Speed alone would have made it *less* visible, not more: one bright cell hopping
+// ten at a time is a strobing dot with nine dark cells behind it. So the walk
+// leaves an AFTERIMAGE (잔상) in every open-air cell it crosses — an ordinary Heat
+// Ray cell whose packed life is 0, which does nothing but sit there and expire on
+// its next turn. The line from muzzle to impact is drawn out of the cells the beam
+// genuinely travelled through, so it reads as a continuous beam while remaining,
+// physically, the single travelling particle it always was.
+//
+// Neither change touches how much a laser heats. Life is now a DISTANCE budget
+// (cells of open travel) rather than a countdown of ticks, so the beam reaches
+// exactly as far as it used to — it just gets there sooner. And the emitter still
+// fires one beam per tick, each of which still crosses its path exactly once and
+// deposits exactly one IMPACT_HEAT where it lands, so a wall under a steady beam
+// cooks at precisely the rate it did before.
+const SPEED_ORTH = 10; // cells per tick along an axis…
+const SPEED_DIAG = 7; // …and per diagonal step (≈ 10/√2, so speed reads uniform)
+// Life is a budget of CELLS TRAVELLED, not of ticks (it used to be the latter,
+// which meant every change to SPEED silently rescaled every beam's range). At the
+// old 90..129 ticks × 3 cells a tick this is the same 270..389 cells of reach.
+const LIFE_MIN = 270;
+const LIFE_VAR = 120;
 // Heat dumped into a solid the beam strikes (파괴 없이 가열), and the smaller
 // splash into each non-empty neighbour of that impact so a near-miss warms too.
 const IMPACT_HEAT = 140;
@@ -94,7 +119,7 @@ const SOLID_REFLECT_CHANCE = 0.18;
 // gem-to-gem and can't grow without bound. Below DIFFUSE_LIFE_MIN the beam is too
 // weak to sparkle and simply exits straight instead.
 const DIFFUSE_LIFE_FRACTION = 0.45;
-const DIFFUSE_LIFE_MIN = 3;
+const DIFFUSE_LIFE_MIN = 9; // in cells (was 3 ticks × 3 cells a tick)
 // The forward fan the exit spray fills: dead-ahead (seeded at the exit cell) plus
 // these flanking directions, each a whole number of 45° ring steps off the beam's
 // heading. The ±45° flanks always fire; the ±90° edges only sometimes, so the
@@ -106,17 +131,18 @@ const FAN_SIDE_STEPS: ReadonlyArray<readonly [number, number]> = [
   [-2, FAN_EDGE_CHANCE], // −90°, sometimes
   [2, FAN_EDGE_CHANCE], // +90°, sometimes
 ];
-// Extra life a beam burns each time it reflects, on top of the −1 every ray pays
-// per tick — so a beam trapped ricocheting in a pocket drains fast instead of
-// lingering its whole life (mirrors nuclearray.ts's BOUNCE_LIFE_COST).
-const BOUNCE_LIFE_COST = 10;
+// Extra life a beam burns each time it reflects, on top of the 1 it pays per cell
+// travelled — so a beam trapped ricocheting in a pocket drains fast instead of
+// lingering its whole life (mirrors nuclearray.ts's BOUNCE_LIFE_COST). In cells,
+// like the life budget itself: the old 10 ticks bought 30 cells of travel.
+const BOUNCE_LIFE_COST = 30;
 // Hard cap on cells walked in one tick, so a beam crossing a very wide medium (see
 // the walk loop) can't loop unbounded. Air, glass and diamond travel spend the
 // SPEED budget (a beam moves through them at a fixed speed, no teleport); passing
 // through the still-"free" media — gas, liquid, sibling beams — doesn't spend the
 // budget, so light crosses a whole pool/cloud within the tick rather than stalling
 // a cell in. This bounds that free traversal. Above any ordinary medium's width.
-const MAX_STEPS = 64;
+const MAX_STEPS = 96;
 // Pins the beam white-hot in the heat-overlay thermal camera (its `temp` holds
 // packed flight state, not a real reading) — same trick the Nuclear Ray uses.
 const OVERLAY_TEMP = 1600;
@@ -149,10 +175,40 @@ function encodeRay(life: number, vx: number, vy: number): number {
   return life * 16 + (vx + 1) * 3 + (vy + 1);
 }
 
+/**
+ * Is (x,y) an AFTERIMAGE — one of the spent trail cells the walk leaves behind to
+ * draw the beam line (see the header)? Encoded as a Heat Ray cell whose packed
+ * life is 0, which `updateHeatRay` already treats as "expired, vacate quietly", so
+ * the tail costs no new material id and no new state machine.
+ *
+ * Afterimages are laid ONLY over cells that were open air, so one always means
+ * exactly "air that happens to be glowing" — never a glass pane in disguise. That
+ * is what lets every reader below treat it as air without also having to carry a
+ * host material around: the walk lands on it, a mirror aims through it, and
+ * `restoreCell` clears it to EMPTY. The visible cost is a one- or two-cell gap in
+ * the drawn line where the beam crosses a pane, which reads as refraction rather
+ * than as a bug.
+ */
+export function isHeatRayAfterimage(sim: SimContext, x: number, y: number): boolean {
+  if (!sim.inBounds(x, y) || sim.get(x, y) !== HEAT_RAY.id) return false;
+  return ((sim.getTemp(x, y) | 0) >> 4) === 0;
+}
+
+/** Leave an afterimage in the open-air cell (x,y), heading (vx,vy) so the object
+ *  layer can follow the line it belongs to (see absorbHeatRayCell). `spawn` marks
+ *  it moved, so it survives the tick it is laid in and expires on its next turn. */
+function layAfterimage(sim: SimContext, x: number, y: number, vx: number, vy: number): void {
+  sim.spawn(x, y, HEAT_RAY.id);
+  sim.setTemp(x, y, encodeRay(0, vx, vy));
+  sim.setAux(x, y, 0);
+}
+
 /** True if the ray could fly into (x,y) — used to pick which axis a mirror bounce
- *  flips and to keep a gas scatter pointed at open space. */
+ *  flips and to keep a gas scatter pointed at open space. An afterimage counts as
+ *  open: it is this beam's own tail, and a mirror that refused to aim through it
+ *  would bounce differently depending on where the last shot happened to be. */
 function isOpen(sim: SimContext, x: number, y: number): boolean {
-  return sim.inBounds(x, y) && sim.isEmpty(x, y);
+  return sim.inBounds(x, y) && (sim.isEmpty(x, y) || isHeatRayAfterimage(sim, x, y));
 }
 
 /** A glass pane the beam sees straight through (유리·깨진유리 투과). */
@@ -279,6 +335,41 @@ function diamondForwardScatter(
   }
 }
 
+/**
+ * The beam is gone from (x,y) — either it moved on or it died here. Draw
+ * everything it crossed this tick as afterimages (the beam line), then vacate the
+ * cell it was sitting in: an open-air one becomes the tail's last link, a
+ * transparent pane is simply put back.
+ *
+ * `cx,cy` is the last landable cell the walk reached. On a death it is passed so
+ * the line runs all the way to where the beam actually stopped; on a move the
+ * caller passes the origin for it, because that cell is about to hold the live
+ * beam head rather than a spent afterimage.
+ */
+function endBeamAt(
+  sim: SimContext,
+  x: number,
+  y: number,
+  hostId: number,
+  cx: number,
+  cy: number,
+  cHost: number,
+  trailX: number[],
+  trailY: number[],
+  vx: number,
+  vy: number,
+): void {
+  if ((cx !== x || cy !== y) && cHost === 0) {
+    trailX.push(cx);
+    trailY.push(cy);
+  }
+  for (let i = 0; i < trailX.length; i++) layAfterimage(sim, trailX[i], trailY[i], vx, vy);
+  // The origin is never in `trailX/Y` (the first push happens while the landing
+  // cursor still sits on it, and is guarded out), so it is laid exactly once here.
+  if (hostId === 0) layAfterimage(sim, x, y, vx, vy);
+  else restoreCell(sim, x, y, hostId);
+}
+
 /** Vacate the cell a beam is leaving. A beam that was riding over open air clears
  *  to EMPTY; one that was resting inside a transparent pane (glass/broken glass/
  *  diamond, carried in its `aux`) puts that pane back — resetting the cell to
@@ -334,8 +425,90 @@ function heatImpact(sim: SimContext, x: number, y: number): void {
  */
 export function absorbHeatRayCell(sim: SimContext, x: number, y: number): number {
   if (!sim.inBounds(x, y) || sim.get(x, y) !== HEAT_RAY.id) return 0;
-  restoreCell(sim, x, y, sim.getAux(x, y));
+  // Wipe the whole beam LINE through this cell, not just the cell: walk out both
+  // ways along its heading, clearing the run of beam cells (head and afterimages
+  // alike) that the body is standing in the middle of.
+  //
+  // Both halves of that matter. Forward, it is what makes a body block the beam
+  // again now that a shot covers SPEED_ORTH cells a tick: the walk can't see
+  // objects (they don't live on the grid), so it lays its line straight through a
+  // crate, and without this the laser would visibly shine out of the far side.
+  // Backward, it is what keeps the STRENGTH honest — `footprintHazards` sums this
+  // function over every cell of the footprint, so a body lying across eight cells
+  // of beam would otherwise collect eight strikes' worth of heat per tick where it
+  // used to collect one. Clearing the run means the first cell found reports the
+  // strike and the rest of the footprint finds nothing left to report.
+  const [vx, vy] = decodeRayDir(sim.getTemp(x, y) | 0);
+  eraseBeamRun(sim, x, y, vx, vy);
   return IMPACT_HEAT;
+}
+
+/** Unpack a packed ray's flight direction (see encodeRay). */
+function decodeRayDir(packed: number): [number, number] {
+  const code = packed & 15;
+  return [((code / 3) | 0) - 1, (code % 3) - 1];
+}
+
+/**
+ * Clear exactly ONE beam — the one occupying (x,y) — putting back any transparent
+ * pane each of its cells was resting in.
+ *
+ * "Exactly one" is the whole difficulty, because a firing Laser puts a beam on the
+ * line every tick and each of them is a run of afterimages led by a live head, so
+ * the cells from muzzle to target are one unbroken stretch of Heat Ray with no gap
+ * to separate them by. The packing does separate them, though: within a beam the
+ * head is at the FRONT of its own tail, so walking backwards along the flight
+ * direction, the first live cell (life > 0) met is the head of the beam *behind*
+ * this one. That is the boundary.
+ *
+ *   • backwards — erase afterimages, and stop *at* a live head without taking it.
+ *   • forwards — erase through, and stop *after* taking the first live head, which
+ *     is this beam's own.
+ *
+ * Getting that boundary right is not cosmetic, it is conservation. Every beam this
+ * erases is one the emitter already paid for, and the caller charges the body for
+ * exactly one strike, so over-erasing silently throws away heat that was in
+ * flight: an earlier draft cleared the entire stretch in both directions, which
+ * emptied the pipeline on every hit and dropped a held beam's heating to one
+ * strike per flight-time instead of one per tick (a drum that used to melt open
+ * stalled at 791°). Under-erasing is the opposite failure — leftover cells past
+ * the body let the beam shine out of its far side, and leftovers inside the
+ * footprint each bill the body for another strike.
+ *
+ * Bounded by MAX_RUN so a pathological line can't make one absorption walk the
+ * whole board. A direction-less packing (a hand-placed beam) clears just its cell.
+ */
+const MAX_RUN = 512;
+function eraseBeamRun(sim: SimContext, x: number, y: number, vx: number, vy: number): void {
+  const live = (cx: number, cy: number): boolean => ((sim.getTemp(cx, cy) | 0) >> 4) > 0;
+  const hitLive = live(x, y);
+  restoreCell(sim, x, y, sim.getAux(x, y));
+  if (vx === 0 && vy === 0) return;
+  // Forwards: through this beam's remaining tail and its head, then stop. If the
+  // cell we were handed WAS the head, there is nothing of this beam ahead of it.
+  if (!hitLive) {
+    let cx = x;
+    let cy = y;
+    for (let n = 0; n < MAX_RUN; n++) {
+      cx += vx;
+      cy += vy;
+      if (!sim.inBounds(cx, cy) || sim.get(cx, cy) !== HEAT_RAY.id) break;
+      const wasHead = live(cx, cy);
+      restoreCell(sim, cx, cy, sim.getAux(cx, cy));
+      if (wasHead) break;
+    }
+  }
+  // Backwards: this beam's own tail only — a live cell there belongs to the next
+  // beam down the line, which is still in flight and must be left alone.
+  let bx = x;
+  let by = y;
+  for (let n = 0; n < MAX_RUN; n++) {
+    bx -= vx;
+    by -= vy;
+    if (!sim.inBounds(bx, by) || sim.get(bx, by) !== HEAT_RAY.id) break;
+    if (live(bx, by)) break;
+    restoreCell(sim, bx, by, sim.getAux(bx, by));
+  }
 }
 
 /** Spawn a Heat Ray beam cell at (x,y) flying along the unit direction
@@ -386,11 +559,22 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   let wy = y;
   let cx = x;
   let cy = y;
+  // Open-air cells the landing cursor passed THROUGH on its way to the cell it
+  // finally rests in — the beam's drawn tail (see the header's afterimage note).
+  // Collected rather than stamped as we go because the walk may still turn out to
+  // die mid-flight (absorbed in a liquid, swallowed by a Solar Panel, fanned out
+  // of a Diamond), and in those cases the tail has to stop where the beam did
+  // instead of running on to wherever the cursor had reached.
+  const trailX: number[] = [];
+  const trailY: number[] = [];
   // The transparent pane at the current landing cell (0 = open air), stamped onto
   // the beam's aux when it finally comes to rest there.
   let cHost = hostId;
   let inDiamond = hostId === DIAMOND.id;
-  let lifeCost = 1;
+  // Life is spent per CELL TRAVELLED, not per tick (see LIFE_MIN): each budgeted
+  // step costs 1 and each reflection costs BOUNCE_LIFE_COST, so a beam's range in
+  // cells is the same number whatever SPEED is set to.
+  let lifeCost = 0;
   let iter = 0;
   while (airSteps > 0 && iter < MAX_STEPS) {
     iter++;
@@ -407,7 +591,13 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     }
     const nid = sim.get(nx, ny);
 
-    if (nid === EMPTY) {
+    // An afterimage is this beam family's own spent tail, and to the walk it is
+    // simply air: landable, budget-spending, and overwritten when landed on. It
+    // must NOT fall through to the sibling-beam branch below — that one passes for
+    // free without advancing the landing cursor, so a beam following the line a
+    // moment behind another would ride its predecessor's tail at no cost and
+    // overshoot by the whole length of it.
+    if (nid === EMPTY || isHeatRayAfterimage(sim, nx, ny)) {
       if (inDiamond) {
         // Leaving the gem into open air — scatter forward into a fan (전방 부채꼴
         // 난반사), provided there's enough life left to make a worthwhile sparkle.
@@ -415,10 +605,14 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
         const childLife = Math.floor(Math.max(0, life - lifeCost) * DIFFUSE_LIFE_FRACTION);
         if (childLife >= DIFFUSE_LIFE_MIN) {
           diamondForwardScatter(sim, nx, ny, vx, vy, childLife);
-          restoreCell(sim, x, y, hostId);
+          endBeamAt(sim, x, y, hostId, cx, cy, cHost, trailX, trailY, vx, vy);
           return;
         }
         // Too weak to sparkle — fall through and just exit straight.
+      }
+      if (cx !== x || cy !== y) {
+        trailX.push(cx);
+        trailY.push(cy);
       }
       wx = nx;
       wy = ny;
@@ -426,6 +620,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       cy = ny;
       cHost = 0;
       airSteps--;
+      lifeCost++;
       continue;
     }
 
@@ -447,6 +642,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       cy = ny;
       cHost = DIAMOND.id;
       airSteps--;
+      lifeCost++;
       continue;
     }
 
@@ -460,6 +656,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       cy = ny;
       cHost = nid;
       airSteps--;
+      lifeCost++;
       continue;
     }
 
@@ -491,7 +688,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       // low chance to jink one step (산란); otherwise it passes untouched.
       if (sim.chance(LIQUID_VANISH_CHANCE)) {
         sim.setTemp(nx, ny, sim.getTemp(nx, ny) + VANISH_HEAT);
-        restoreCell(sim, x, y, hostId);
+        endBeamAt(sim, x, y, hostId, cx, cy, cHost, trailX, trailY, vx, vy);
         return;
       }
       if (sim.chance(LIQUID_SCATTER_CHANCE)) [vx, vy] = gasScatter(sim, wx, wy, vx, vy);
@@ -507,7 +704,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
     // panel that can sit in a laser without cooking.
     if (m.lightPulse) {
       m.lightPulse(sim, nx, ny);
-      restoreCell(sim, x, y, hostId);
+      endBeamAt(sim, x, y, hostId, cx, cy, cHost, trailX, trailY, vx, vy);
       return;
     }
 
@@ -521,7 +718,7 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
       lifeCost += BOUNCE_LIFE_COST;
       continue;
     }
-    restoreCell(sim, x, y, hostId);
+    endBeamAt(sim, x, y, hostId, cx, cy, cHost, trailX, trailY, vx, vy);
     return;
   }
 
@@ -529,19 +726,31 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
   // free media (gas/liquid/sibling beams) and never found a landing — a body wider
   // than MAX_STEPS — advances its walk cursor yet leaves (cx,cy) unmoved. Drain it
   // like a reflection so it can't hang in place shedding only 1 life/tick.
-  if (cx === x && cy === y && lifeCost === 1 && (wx !== x || wy !== y)) {
+  if (cx === x && cy === y && lifeCost === 0 && (wx !== x || wy !== y)) {
     lifeCost += BOUNCE_LIFE_COST;
   }
+  // Floor: life is spent per cell travelled, so a beam that found nowhere to go at
+  // all this tick would otherwise pay nothing and hang forever. One cell a tick is
+  // the same slow bleed the old per-tick accounting gave it.
+  if (lifeCost === 0) lifeCost = 1;
 
   const newTemp = encodeRay(Math.max(0, life - lifeCost), vx, vy);
   if (cx !== x || cy !== y) {
     // Move: put back whatever pane the beam was resting on at the old cell, then
     // spawn the beam at the landing cell, stamping the pane it now rests inside (if
     // any) into its aux so it can be restored on the next move.
-    restoreCell(sim, x, y, hostId);
+    // The beam's own cell and every open-air cell it passed through become the
+    // drawn line; the landing cell takes the live head. `cx,cy` is passed as the
+    // origin so endBeamAt doesn't also lay an afterimage there — it is about to be
+    // overwritten by the head one line down either way, but laying it would push a
+    // spawn the head then has to undo.
+    endBeamAt(sim, x, y, hostId, x, y, cHost, trailX, trailY, vx, vy);
     sim.spawn(cx, cy, HEAT_RAY.id);
     sim.setTemp(cx, cy, newTemp);
-    if (cHost !== 0) sim.setAux(cx, cy, cHost);
+    // Always written, not only for a pane: the landing cell may have held an
+    // afterimage (aux 0) or plain air carrying a stale aux from an older occupant,
+    // and a live beam must not inherit either as a phantom host to "restore".
+    sim.setAux(cx, cy, cHost);
   } else {
     // Stayed put — the pane under it (aux) is unchanged; just re-encode its state.
     sim.setTemp(cx, cy, newTemp);

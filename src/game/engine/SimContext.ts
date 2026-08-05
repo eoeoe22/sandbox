@@ -280,9 +280,54 @@ export class SimContext {
    * different exposures, and a fish that survives the shockwave of an explosion
    * should still be at risk from the current it throws. Sharing one memo would
    * let whichever landed first silently cancel the other.
+   *
+   * Keyed on `electricStep`, NOT on `tick`. The two were the same number while a
+   * pulse advanced one cell per tick; now a tick carries SPARK_STEPS_PER_TICK
+   * hops (see config), and keying on the tick would quietly *lower* 감전 치사율 —
+   * a front that used to wash over a fish across three ticks (three exposures,
+   * three rolls) now crosses it inside one. The hop is the exposure, so the hop
+   * counter is the key, and the measured per-pulse death rate stays at its
+   * designed 50%.
    */
-  sparkRollTick = -1;
+  sparkRollStep = -1;
   sparkRolled: Set<number> = new Set();
+
+  /**
+   * Monotonic counter of electric propagation *hops* — the electricity
+   * subsystem's own clock, ticking SPARK_STEPS_PER_TICK times per simulation
+   * tick (once for the CA scan's hop, once per extra pass in Simulation.step).
+   * Never reset, so nothing keyed on it can collide across ticks the way a
+   * per-tick stamp compared with `!==` can.
+   *
+   * Only per-*hop* bookkeeping belongs here — currently just `sparkRolled`
+   * above. The device-body flood memos (`fanFlood`, `laserFlood`, …) stay on the
+   * tick clock deliberately: re-flooding a body is idempotent (it refreshes the
+   * same countdown to the same value), so keeping them per-tick is a pure cost
+   * saving with no behavioural difference.
+   */
+  electricStep = 0;
+
+  /**
+   * The electric wavefront: cells energized since the last propagation pass,
+   * waiting to take their hop. `materials/spark.ts`'s `energize` appends to it
+   * (so every source feeds it — battery terminal, turbine face, solar panel,
+   * 전기 브러시, and a travelling Spark's own hand-off), and
+   * `Simulation.step` drains it once per extra substep (see
+   * config.SPARK_STEPS_PER_TICK).
+   *
+   * Parallel x/y arrays rather than flat indices so a drain doesn't have to
+   * divide, and plain arrays rather than a Set because the queue is a *sequence*
+   * of hops: a cell is pushed exactly once, at the moment it becomes a Spark, so
+   * there is nothing to deduplicate.
+   *
+   * Cleared at the top of every step: sparks injected between ticks (the
+   * 전기 브러시 acts through this same seam outside a step) are handled by the
+   * ordinary scan, and clearing here is also what keeps the tail of an
+   * over-budget front from being processed twice — once by the leftover queue and
+   * once by the next scan.
+   */
+  readonly sparkFrontierX: number[] = [];
+  readonly sparkFrontierY: number[] = [];
 
   /**
    * Per-tick memo for the Fan's body-flood (materials/fan.ts) — same shape as
