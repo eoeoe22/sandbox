@@ -77,6 +77,8 @@ export const materialCodexEn: Record<number, string> = {
   26: 'A classic solid fuel. Burns easily and is eaten by termites.',
   27: 'Powder fuel produced when wood breaks down. Light and easily ignited.',
   94: 'Spontaneously ignites in air. Must be stored in water to remain stable.',
+  125: 'Low ignition point fuel that spontaneously ignites at 250°C, used as gunpowder ingredient.',
+  126: 'An oxidizer that decomposes above 400°C to release oxygen, used in various explosives.',
 
   // Smelting
   67: 'Reddish-brown ore powder. Melts above 850°C and solidifies into slag if cooled without coal.',
@@ -101,8 +103,6 @@ export const materialCodexEn: Record<number, string> = {
 
   // Explosives
   12: 'Black powder. Can be made by combining sulfur, niter, and coal powder. Low destructive power.',
-  125: 'Low ignition point fuel that spontaneously ignites at 250°C, used as gunpowder ingredient.',
-  126: 'An oxidizer that decomposes above 400°C to release oxygen, used in various explosives.',
   13: 'Liquid explosive nitroglycerin.',
   20: 'Explosive flammable gas.',
   52: 'Powerful solid explosive.',

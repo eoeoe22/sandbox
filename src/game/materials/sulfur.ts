@@ -50,9 +50,10 @@ export const SULFUR = register({
     autoIgniteTemp: 250, // the lowest in the game — radiant heat alone lights it
     burnTemp: 600, // cool flame: spreads well, melts nothing
   },
-  // Grouped with the explosives rather than the plain powders so both new
-  // black-powder ingredients sit right beside the Gunpowder they make.
-  category: 'explosive',
+  // Filed under 불・열 rather than 폭발 — sulfur isn't itself an explosive,
+  // it's a fuel (the easiest-lighting one in the game), so it sits with the
+  // other fire/heat materials alongside Saltpeter.
+  category: 'fire',
   // Fine, slightly cohesive crystalline dust — piles a bit steeper than Salt (마찰).
   friction: 0.42,
   thermal: { conductivity: 0.25 },
