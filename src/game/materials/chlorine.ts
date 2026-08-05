@@ -124,6 +124,11 @@ export function chlorineMetalBurn(probability: number, tempMin?: number): Reacti
   };
 }
 
+/** 확률적으로(매 틱 KILL_CHANCE) 흔적 없이 지워지는 생명 물질 목록. **Fish는 여기 없다**
+ *  — 물고기도 염소가스에 닿으면 죽지만, 확률이 아니라 접촉 즉시이고 사체(Dead Fish)를
+ *  남긴다(fish.ts의 `touchingChlorine`). 물고기는 이미 죽는 방식이 예외 없이 사체를
+ *  남기도록 설계돼 있어(고온·충격파·감전·피폭 등), 이 목록에 끼워 넣어 흔적 없이
+ *  지우면 그 관례가 깨진다. */
 function isLiving(id: number): boolean {
   return (
     id === PLANT.id ||

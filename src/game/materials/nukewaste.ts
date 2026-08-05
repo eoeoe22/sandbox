@@ -21,8 +21,8 @@ import type { SimContext } from '../engine/SimContext';
 // Void survive it (antimatter.ts).
 // Otherwise it's an ordinary powder that falls and piles — something to
 // bury, store, or dump.
-const WARM_TEMP = 160; // decay-heat set point the waste keeps topping itself to
-const WARM_RATE = 4; // per-tick nudge back toward WARM_TEMP (a slow, weak source)
+const WARM_TEMP = 80; // decay-heat set point the waste keeps topping itself to
+const WARM_RATE = 2; // per-tick nudge back toward WARM_TEMP (a slow, weak source)
 
 function updateNukeWaste(x: number, y: number, sim: SimContext): void {
   // Weak decay heat: creep the cell's own temperature back up toward WARM_TEMP
