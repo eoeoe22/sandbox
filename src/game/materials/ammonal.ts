@@ -78,8 +78,15 @@ function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;
 }
 
+function isWater(id: number): boolean {
+  return id === WATER.id || id === SALTWATER.id;
+}
+
 function updateAmmonal(x: number, y: number, sim: SimContext): void {
-  let wet = false;
+  // Water soaked into the grain counts, not just water beside it: an ordinary
+  // powder hosts any liquid, so the inside of a rained-on heap would otherwise
+  // read bone dry and go off (see ammoniumnitrate.ts, which shares the check).
+  let wet = isWater(sim.getOverlay(x, y));
   let trigger = sim.getTemp(x, y) >= DECOMP_TEMP;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
@@ -88,7 +95,7 @@ function updateAmmonal(x: number, y: number, sim: SimContext): void {
     const nid = sim.get(nx, ny);
     // Id-based trigger detection rather than the `flammable` tag, the same
     // scan-order-independent discipline every other charge here uses.
-    if (nid === WATER.id || nid === SALTWATER.id) wet = true;
+    if (isWater(nid)) wet = true;
     else if (isTrigger(nid)) trigger = true;
   }
 

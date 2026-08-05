@@ -28,6 +28,7 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { EMPTY } from '../src/game/engine/types';
 import { STONE } from '../src/game/materials/stone';
+import { DEBRIS } from '../src/game/materials/debris';
 import { WATER } from '../src/game/materials/water';
 import { FIRE } from '../src/game/materials/fire';
 import { DIESEL } from '../src/game/materials/diesel';
@@ -85,6 +86,19 @@ function countSoakedInto(grid: Grid, host: number, fluid: number): number {
     if (grid.overlay[i] === fluid && grid.cells[i] === host) n++;
   return n;
 }
+/** Every cell of `fluid` in the world, wherever it currently lives: a primary
+ *  cell, an overlap occupant, or the payload of a Debris fragment in flight.
+ *  Conservation is phrased in this so "it drained away" and "it was consumed"
+ *  can't be confused for one another (borrowed from test/overlap.ts). */
+function fluidTotal(grid: Grid, fluid: number): number {
+  let n = 0;
+  for (let i = 0; i < grid.cells.length; i++) {
+    if (grid.cells[i] === fluid) n++;
+    else if (grid.cells[i] === DEBRIS.id && grid.aux[i] === fluid) n++;
+    if (grid.overlay[i] === fluid) n++;
+  }
+  return n;
+}
 function paintHot(grid: Grid, x: number, y: number, id: number, temp: number): void {
   grid.set(x, y, id);
   grid.setTemp(x, y, temp);
@@ -108,31 +122,49 @@ function soakedBed(
     }
 }
 
-// 1. The soak converts, and eats the fuel doing it.
+// 1. The soak converts — gradually — and eats the fuel doing it.
 {
   for (const fuel of [DIESEL, KEROSENE]) {
     const { grid, sim } = makeWorld(40, 40);
     floor(grid, 36);
     soakedBed(grid, 10, 30, 30, 36, fuel.id);
     const prills = count(grid, AMMONIUM_NITRATE.id);
-    for (let t = 0; t < 20; t++) sim.step();
+
+    // Gradual, not a flip: a bed soaked through and through must still be mostly
+    // bare prill a handful of ticks in. This is the pin on MIX_CHANCE actually
+    // gating anything — remove the gate and this is 100% on tick one.
+    for (let t = 0; t < 5; t++) sim.step();
+    const early = count(grid, ANFO.id);
+    check(
+      `${fuel.name}: 전환은 서서히 일어난다 (몇 틱 만에 다 바뀌지 않는다)`,
+      early < prills * 0.5,
+      `${early}/${prills} after 5 ticks`,
+    );
+
+    for (let t = 0; t < 400; t++) sim.step();
     const made = count(grid, ANFO.id);
     check(
-      `${fuel.name}에 젖은 프릴은 ANFO가 된다`,
-      made === prills && count(grid, AMMONIUM_NITRATE.id) === 0,
+      `${fuel.name}: 시간이 지나면 젖은 프릴이 ANFO가 된다`,
+      made > prills * 0.5,
       `${made}/${prills} converted`,
     );
+    // One drop makes one grain: every fuel cell either still exists somewhere
+    // (soaked, or drained back out as a primary cell) or was drunk by exactly
+    // one conversion. This is what makes "부은 만큼만 만들어진다" true.
     check(
-      `…그리고 마신 ${fuel.name}는 소비된다`,
-      countOverlay(grid, fuel.id) === 0 && count(grid, fuel.id) === 0,
-      `${countOverlay(grid, fuel.id)} soaked / ${count(grid, fuel.id)} loose left`,
+      `${fuel.name}: 마신 만큼만 소비된다 (전환 1칸당 연료 1칸)`,
+      made + fluidTotal(grid, fuel.id) === prills,
+      `${made} made + ${fluidTotal(grid, fuel.id)} left vs ${prills} poured`,
     );
   }
 }
 
-// 2. Water is not a fuel: it stays outside the grain (the `overlapFluids`
-//    allowlist) so the cold pack and the wet-misfire check keep seeing it, and
-//    it must never produce ANFO.
+// 2. Water. The prill is an ordinary powder now — no `overlapFluids` allowlist —
+//    so water soaks into it like water into sand. Two things must hold: it is
+//    not a fuel (never makes ANFO), and a grain wet on the *inside* must still
+//    count as wet. That second one is the whole reason the misfire check reads
+//    the 겹침 slot: a scene that only ever puts water beside the charge passes
+//    either way and proves nothing.
 {
   const { grid, sim } = makeWorld(40, 40);
   floor(grid, 36);
@@ -145,10 +177,44 @@ function soakedBed(
     `${count(grid, ANFO.id)} cells`,
   );
   check(
-    '…그리고 프릴 안으로 스며들지도 않는다 (겹침 화이트리스트 밖)',
-    countSoakedInto(grid, AMMONIUM_NITRATE.id, WATER.id) === 0,
-    `${countSoakedInto(grid, AMMONIUM_NITRATE.id, WATER.id)} soaked into prills`,
+    '…하지만 보통 가루처럼 스며들기는 한다',
+    countSoakedInto(grid, AMMONIUM_NITRATE.id, WATER.id) > 0,
+    `${countSoakedInto(grid, AMMONIUM_NITRATE.id, WATER.id)} grains soaked`,
   );
+}
+
+// 2b. …and a grain wet on the INSIDE is a dud, with no water anywhere near it as
+//     a primary cell. This is the exact hole the soaked read closes: before it,
+//     a charge whose own slot was full of water detonated happily, because the
+//     misfire scan only ever looked at its neighbors.
+//
+//     Water is written straight into the slot rather than poured, for two
+//     reasons: a pour only wets a fraction of the grains (so the dry majority
+//     would chain and the scene would prove nothing about the wet ones), and
+//     this way the charge's neighbors are all bone-dry charge — the *only*
+//     signal available is the slot. Held at 500°, which is over the 300°
+//     decomposition point and also over the cold pack's 80° tempMax, so the
+//     dissolution rule can't quietly remove the grains instead.
+{
+  for (const charge of [AMMONIUM_NITRATE, AMMONAL]) {
+    const { grid, sim } = makeWorld(40, 40);
+    floor(grid, 36);
+    for (let y = 30; y < 36; y++)
+      for (let x = 10; x < 30; x++) {
+        grid.set(x, y, charge.id);
+        grid.setOverlay(x, y, WATER.id);
+        grid.setTemp(x, y, 500);
+      }
+    const before = count(grid, charge.id);
+    const soakedGrains = countSoakedInto(grid, charge.id, WATER.id);
+    sim.step();
+    const after = count(grid, charge.id);
+    check(
+      `${charge.name}: 속이 젖은 장약은 500°에도 불발 (이웃엔 물이 없다)`,
+      soakedGrains === before && after === before,
+      `${after}/${before} left, ${soakedGrains} internally wet`,
+    );
+  }
 }
 
 // 3+4. The power order, at two charge sizes. Same scene, same ignition, only the
@@ -185,14 +251,31 @@ function soakedBed(
   }
 }
 
-// 5. ANFO inherits the prill's wet misfire — the palette-wide "적시면 무력화".
+// 5. ANFO is the family's exception: wet, it still goes off — pitifully. The
+//    fuel coating means the grain never dissolves, so there is always something
+//    left to fire, unlike the prill and Ammonal (scene 2b). Both halves matter:
+//    it must NOT be a dud, and it must be drastically weaker.
 {
-  const { grid, sim } = makeWorld(60, 60);
-  floor(grid, 50);
-  for (let x = 28; x < 32; x++) paintHot(grid, x, 49, ANFO.id, 500);
-  for (let x = 28; x < 32; x++) grid.set(x, 48, WATER.id);
-  sim.step();
-  check('젖은 ANFO는 불발', count(grid, ANFO.id) > 0, `${count(grid, ANFO.id)} left`);
+  function crater(soak: boolean): { fired: boolean; stone: number } {
+    const { grid, sim } = makeWorld(160, 160);
+    floor(grid, 120);
+    const before = count(grid, STONE.id);
+    for (let x = 68; x < 92; x++) grid.set(x, 119, ANFO.id);
+    // Water written straight into the 겹침 slot: the drowned-magazine state,
+    // reached deterministically instead of waiting on a pour to percolate.
+    if (soak) for (let x = 68; x < 92; x++) grid.setOverlay(x, 119, WATER.id);
+    for (let x = 68; x < 92; x++) grid.setTemp(x, 119, 500);
+    for (let t = 0; t < 24; t++) sim.step();
+    return { fired: count(grid, ANFO.id) === 0, stone: before - count(grid, STONE.id) };
+  }
+  const dry = crater(false);
+  const wet = crater(true);
+  check('젖은 ANFO도 터지기는 한다 (불발이 아니다)', wet.fired, `${wet.stone} stone cells`);
+  check(
+    '…하지만 위력이 대폭 줄어든다',
+    wet.stone * 4 < dry.stone,
+    `${wet.stone} vs ${dry.stone} stone cells (마른 장약 대비)`,
+  );
 }
 
 // 6. …and it goes off on a flame alone, no radiant heat needed. A column of Fire

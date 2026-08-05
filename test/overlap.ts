@@ -654,13 +654,20 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
 }
 
 // ── 6. ANFO ────────────────────────────────────────────────────────────────
-// The soak that *consumes itself*. Ammonium Nitrate hosts Diesel on purpose, and
-// a grain that has taken a drop turns into ANFO and drinks it
+// The soak that *consumes itself*. Ammonium Nitrate hosts Diesel like any powder
+// hosts a liquid, and a grain holding a drop may take it up as ANFO, drinking it
 // (ammoniumnitrate.ts) — the palette's one recipe driven by the overlap layer
 // rather than by primary-cell contact, so it is this file's pin on the seam
-// being readable at all. Sealed in a Wall pocket with no primary liquid
-// anywhere: the fuel can only have arrived through the overlap slot, so a
+// being readable and writable at all. Sealed in a Wall pocket with no primary
+// liquid anywhere: the fuel can only have arrived through the overlap slot, so a
 // conversion here cannot be a stray puddle touching the heap from outside.
+//
+// Conversion is probabilistic (MIX_CHANCE), so this asserts the invariant rather
+// than a count: **one drop makes one grain, and no diesel is created or
+// destroyed otherwise.** Some fuel is expected to survive — a drop that
+// percolates into an already-converted ANFO grain has nothing left to react
+// with and just sits there. The yield-vs-charge-size behaviour is
+// test/anfo.ts's business, not this file's.
 {
   const { grid, sim } = makeWorld(30, 30);
   for (let y = 0; y < 30; y++)
@@ -669,12 +676,12 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
   bed(grid, 8, 22, 8, 22, AMMONIUM_NITRATE.id, DIESEL.id); // packed solid — see acidPocket
   const prills = count(grid, AMMONIUM_NITRATE.id);
   for (let t = 0; t < 200; t++) sim.step();
+  const made = count(grid, ANFO.id);
+  const left = fluidTotal(grid, DIESEL.id);
   check(
-    'ANFO: 프릴에 스민 경유는 프릴을 ANFO로 바꾸고 소비된다',
-    count(grid, ANFO.id) === prills &&
-      count(grid, AMMONIUM_NITRATE.id) === 0 &&
-      fluidTotal(grid, DIESEL.id) === 0,
-    `${count(grid, ANFO.id)}/${prills} converted, ${fluidTotal(grid, DIESEL.id)} diesel left`,
+    'ANFO: 프릴에 스민 경유는 프릴을 ANFO로 바꾸고, 쓴 만큼만 소비된다',
+    made > 0 && made + count(grid, AMMONIUM_NITRATE.id) === prills && made + left === prills,
+    `${made}/${prills} converted, ${left} diesel left`,
   );
 }
 

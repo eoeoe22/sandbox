@@ -42,14 +42,33 @@ import { ANFO } from './anfo';
 //  • **Aluminum Powder → Ammonal** (ammonal.ts), the contact-mix recipe declared
 //    in aluminumpowder.ts alongside Thermite and Flash Powder.
 //  • **Diesel/Kerosene → ANFO** (anfo.ts), handled here: the fuel soaks down into
-//    the heap through the 겹침 (overlap) layer (see `overlapFluids` below) and each
-//    grain that admits a drop converts on the spot, drinking the fuel. Pouring is
-//    the whole interface — no mixing ratio to get right, just wet the pile.
+//    the heap through the 겹침 (overlap) layer and a grain holding a drop turns
+//    into ANFO — but only slowly (MIX_CHANCE below), so the fuel keeps
+//    percolating while it works. Pouring is the whole interface; there is no
+//    mixing ratio to get right, just keep the fuel coming.
+//
+// **It is an ordinary powder, and that is deliberate.** No `overlapFluids`
+// allowlist: every liquid soaks into it the way water soaks into sand. An
+// earlier design narrowed the allowlist to the two fuels so that water would
+// stay outside as a primary cell where the cold-pack rule and the wet/misfire
+// check could see it — but that made the prill the one powder in the palette
+// that rain ran off. It isn't needed either: soaked water reacts across the
+// seam on its own (`reactions.ts` `tryReactSoaked` runs this table against the
+// 겹침 occupant), and the misfire check below simply reads the slot.
 const DECOMP_TEMP = 300; // dry grain this hot decomposes explosively
 const BLAST_RADIUS = 6; // a lone grain's pop; a packed mass reaches much farther
 // A powerful high explosive: above a solid's default durability (200), so a proper
 // charge craters stone/metal, unlike Gunpowder's loose-matter-only concussion.
 const DESTRUCTIVE_POWER = 210;
+// Per-tick chance that a grain holding a drop of fuel actually takes it up as
+// ANFO. Deliberately far below the contact recipes' 0.25 (Thermite, Flash
+// Powder, Ammonal): those are two powders ground together and finish in a few
+// ticks, whereas this is a liquid draining through a bed. A low chance means
+// the drop is usually still travelling when it converts something, so a poured
+// heap goes over as a speckled, deepening patch instead of flipping wholesale
+// the instant it gets damp — and since the drop is consumed by the grain that
+// takes it, **how much fuel you pour is the size of the charge you get**.
+const MIX_CHANCE = 0.04;
 
 function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;
@@ -59,28 +78,37 @@ function isFuelLiquid(id: number): boolean {
   return id === DIESEL.id || id === KEROSENE.id;
 }
 
+function isWater(id: number): boolean {
+  return id === WATER.id || id === SALTWATER.id;
+}
+
 function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
   // (The endothermic cold-pack dissolution is handled by the declarative reaction
   // table before this update runs; if it fired, this cell is already Water.)
 
-  // A grain that has taken Diesel/Kerosene into its 겹침 slot *becomes* ANFO right
-  // there, consuming the drop it drank (anfo.ts). Checked before the ignition scan
-  // below, so a heap being wetted while already alight simply detonates one tick
-  // later as the stronger charge it just turned into.
-  if (isFuelLiquid(sim.getOverlay(x, y))) {
+  // A grain holding Diesel/Kerosene in its 겹침 slot may take it up as ANFO,
+  // consuming the drop it drank (anfo.ts). Only MIX_CHANCE of the time, so the
+  // drop usually drains on to another grain first — see the constant. Checked
+  // before the ignition scan below, so a heap being fuelled while already alight
+  // simply detonates a tick later as the stronger charge it just turned into.
+  const soak = sim.getOverlay(x, y);
+  if (isFuelLiquid(soak) && sim.chance(MIX_CHANCE)) {
     sim.clearOverlay(x, y);
     sim.set(x, y, ANFO.id);
     return;
   }
 
-  let wet = false;
+  // Water soaked INTO the grain counts as wet too, not just water beside it: the
+  // prill hosts any liquid (no allowlist — see the header), so the inside of a
+  // rained-on heap would otherwise read bone dry and detonate.
+  let wet = isWater(soak);
   let trigger = sim.getTemp(x, y) >= DECOMP_TEMP;
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     const nid = sim.get(nx, ny);
-    if (nid === WATER.id || nid === SALTWATER.id) wet = true;
+    if (isWater(nid)) wet = true;
     else if (isTrigger(nid)) trigger = true;
   }
 
@@ -109,15 +137,11 @@ export const AMMONIUM_NITRATE = register({
   destructivePower: DESTRUCTIVE_POWER,
   // Crystalline prills grip and pile fairly steeply (마찰).
   friction: 0.4,
-  // 겹침 (overlap) is restricted to just Diesel/Kerosene (the ANFO soak, see
-  // above) via overlapFluids — Water is deliberately left OUT of that allowlist
-  // so it keeps pooling against the prills as an ordinary primary neighbor cell
-  // instead of soaking away invisibly; otherwise the cold-pack reaction and the
-  // wet/misfire check above (both of which only look at primary cells) would
-  // stop seeing it. liquidOverlap left at its default coefficient — the soak is
-  // grain-by-grain (not every grain admits) like any other powder's, which is
-  // what makes a partly poured heap come out part ANFO and part bare prill.
-  overlapFluids: [DIESEL.id, KEROSENE.id],
+  // No `overlapFluids` allowlist and `liquidOverlap` left at its default: an
+  // ordinary porous powder that drinks whatever you pour on it, grain by grain
+  // (not every grain admits) — which is what makes a fuelled heap come out part
+  // ANFO and part bare prill. See the header for why the old two-fuel allowlist
+  // went away.
   // Filed under 폭발 (explosive), next to the two charges it is the base of — it
   // detonates on its own and its whole role in the palette is being the front of
   // that family. The endothermic cold pack (pour water on a pile and it frosts

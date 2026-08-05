@@ -115,7 +115,7 @@ export const materialCodexEn: Record<number, string> = {
   127: 'Directional penetration explosive. Forms a focused penetration wave in the direction of placement drag.',
   137: 'Flash charge made from aluminum powder and niter.',
   99: 'Causes an endothermic reaction upon contact with water, producing a cooling effect, and is an explosive in its own right. Mixing it with aluminum powder or with diesel/kerosene makes a far more powerful explosive.',
-  148: 'Explosive mixed from ammonium nitrate and diesel/kerosene.',
+  148: 'Explosive mixed from ammonium nitrate and diesel/kerosene. Rather than misfiring when wet, it detonates far more weakly.',
   145: 'Powerful explosive mixed from ammonium nitrate and aluminum powder. Stronger than TNT.',
   129: 'Firework explosive creating colorful sparks.',
 
