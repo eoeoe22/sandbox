@@ -427,8 +427,10 @@ export interface SimFlashbang {
   /** The can's own heat reservoir (°) — see SimObject.temp. The 가열 brush writes
    *  it, so heating one (even in mid-air) sets it off early. */
   temp: number;
-  /** Ticks left before it flashes. Counts down every tick from creation; there is
-   *  no way to pause or restart it (see the interface header). */
+  /** Ticks left before it flashes. Counts down every tick from creation — there is
+   *  no fuse to snuff or re-light, so nothing about the charge itself touches this
+   *  (see the interface header). The one thing that stops it is `held`, which stops
+   *  every body's every judgement, not this timer in particular. */
   fuseTicks: number;
   /** True while the pointer is dragging this body (see SimObject.held): its
    *  physics and its countdown alike are suspended so it tracks the cursor. */
