@@ -148,6 +148,11 @@ export const AMMONIUM_NITRATE = register({
   // the puddle toward freezing) is still its other half; the category is only a
   // palette grouping, not a claim about what it does.
   category: 'explosive',
+  // Also shelved under 냉각 (cooling): the cold-pack dissolution above is a real
+  // half of this material, and someone opening 냉각 looking for something that
+  // chills a puddle should find it next to Ice/Snow/Liquid N₂/Dry Ice, not just
+  // stumble on it in 폭발.
+  alsoIn: ['cooling'],
   thermal: { conductivity: 0.3 },
   // Endothermic cold-pack dissolution (흡열): a grain touching Water dissolves into
   // it, pulling heat out of both cells (heat < 0). Only while cool — once hot the
