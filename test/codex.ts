@@ -15,6 +15,7 @@
 //
 // Run: `node test/run-codex.mjs`.
 import { allMaterials, getMaterial } from '../src/game/materials/registry';
+import type { Material } from '../src/game/engine/types';
 import { MATERIALS } from '../src/game/materials';
 import { OBJECT_KINDS } from '../src/state/store';
 import { STAT_SPECS } from '../src/game/codex/stats';
@@ -374,17 +375,48 @@ function check(name: string, ok: boolean, detail = ''): void {
 
   // Both surfaces have to agree on where a material lives, or the codex tab and
   // the palette tab of the same name show different rosters.
+  //
+  // Read the palette side out of `buildCategories`'s actual output rather than
+  // asking `categoriesOf` a second time. Both surfaces are fed by that one
+  // function, so comparing two of its answers to each other passes no matter
+  // what the palette does with them — an early version of this check did
+  // exactly that, and gutting `buildCategories`'s multi-bucket insert (the one
+  // line that puts a material in its extra tabs) still went green. Walking the
+  // built tabs is what makes the claim about placement rather than declaration.
+  const declared = new Map<number, Set<string>>();
+  for (const cat of buildCategories(MATERIALS)) {
+    for (const m of cat.materials) {
+      const seen = declared.get(m.id) ?? new Set<string>();
+      seen.add(cat.key);
+      declared.set(m.id, seen);
+    }
+  }
+  const sorted = (keys: Iterable<string>): string => [...keys].sort().join('|');
   const entries = buildCodexEntries();
   const mismatched = entries
-    .filter((e) => {
-      const m = getMaterial(e.id);
-      return m === undefined || e.categories.join('|') !== categoriesOf(m).join('|');
-    })
-    .map((e) => e.name);
+    .filter((e) => sorted(declared.get(e.id) ?? []) !== sorted(e.categories))
+    .map((e) => `${e.name} — 팔레트 [${sorted(declared.get(e.id) ?? [])}] vs 도감 [${sorted(e.categories)}]`);
   check(
-    "…and each codex entry's categories are the palette's own",
+    "…and each codex entry's categories are the tabs the palette really built",
     mismatched.length === 0,
     mismatched.length ? mismatched.join(', ') : `${entries.length} entries agree`,
+  );
+
+  // …and the tabs are what the materials asked for. Same reason again, one step
+  // further back: the pair above would still agree if both surfaces dropped the
+  // same extra tab, because the codex reads `categoriesOf` too. So this side
+  // reads the declaration off the raw fields — `alsoIn` as written in the
+  // material's own file — and never calls `categoriesOf`, which puts the one
+  // function everything else trusts under test instead of in the answer.
+  const asWritten = (m: Material): Set<string> =>
+    new Set([categoryOf(m), ...(m.alsoIn ?? [])]);
+  const unplaced = MATERIALS.filter(
+    (m) => sorted(declared.get(m.id) ?? []) !== sorted(asWritten(m)),
+  ).map((m) => `${m.name} — 탭 [${sorted(declared.get(m.id) ?? [])}] vs 선언 [${sorted(asWritten(m))}]`);
+  check(
+    '…and every material lands in exactly the tabs it declares',
+    unplaced.length === 0,
+    unplaced.length ? unplaced.join(', ') : `${MATERIALS.length} materials placed`,
   );
 }
 
