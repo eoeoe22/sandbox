@@ -91,6 +91,13 @@ function tryHydrate(x: number, y: number, sim: SimContext): boolean {
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     if (sim.get(nx, ny) !== WATER.id) continue;
+    // A partner already written or moved this tick is ineligible until the next
+    // one — the same guard `reactions.ts` puts ahead of every table rule, kept
+    // here because moving a rule out of the table must not quietly drop the
+    // table's discipline with it. A droplet that flowed into place on its own
+    // turn this tick (swap marks both cells moved) waits a tick before it can
+    // become dough, so the recipe stays scan-order independent.
+    if (sim.hasMoved(nx, ny)) continue;
     if (!sim.chance(HYDRATE_CHANCE)) continue;
     // `set` (not `spawn`) on both, so the dough keeps the temperature of the
     // flour and water that made it — a cold mix stays cold, and a mix made with
