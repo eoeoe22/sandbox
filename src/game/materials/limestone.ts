@@ -63,6 +63,7 @@ export const LIMESTONE = register({
   // Molten Iron (see updateLimestone) — Slag and Molten Iron Ore hold it in.
   density: 5,
   category: 'smelt',
+  alsoIn: ['powder'],
   thermal: { conductivity: 0.35 },
   update: updateLimestone,
 });

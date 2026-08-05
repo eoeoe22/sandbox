@@ -36,6 +36,12 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: 'liquid', icon: 'bi-droplet-fill' },
   { key: 'gas', icon: 'bi-cloud-fill' },
   { key: 'fire', icon: 'bi-fire' },
+  // 금속. The one tab whose whole roster arrives through `alsoIn` — every metal
+  // is already filed somewhere by what it *is* (Iron is a solid, Iron Powder a
+  // powder, Molten Iron a 불·열 liquid), and that spread is exactly the problem:
+  // "the metals" was the one question the palette couldn't answer. Sits next to
+  // 제련 because that's where most of them are going.
+  { key: 'metal', icon: 'bi-nut-fill' },
   { key: 'smelt', icon: 'bi-hammer' },
   { key: 'oil', icon: 'bi-fuel-pump-fill' },
   { key: 'polymer', icon: 'bi-hexagon-fill' },

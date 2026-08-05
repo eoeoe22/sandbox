@@ -49,6 +49,7 @@ export const GALLIUM = register({
   // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
   wiring: true,
   category: 'solid',
+  alsoIn: ['metal'],
   // A bright silvery metal surface: a Heat Ray beam reflects cleanly off it
   // (정반사) — see heatray.ts.
   laserReflective: true,

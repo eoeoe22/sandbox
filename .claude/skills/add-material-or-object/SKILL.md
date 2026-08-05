@@ -75,7 +75,7 @@ export const SAND = register({
 `category:` 에 다음 안정 키 중 하나를 준다(`materials/categories.ts` `CATEGORY_META`):
 
 ```
-solid powder liquid gas fire smelt oil polymer explosive cooling electric life radioactive exotic
+solid powder liquid gas fire metal smelt oil polymer explosive cooling electric life radioactive exotic
 ```
 
 생략하면 phase에서 유도된 탭으로 떨어진다. **새 카테고리를 만든다면**

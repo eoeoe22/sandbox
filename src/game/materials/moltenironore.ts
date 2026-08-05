@@ -206,6 +206,7 @@ export const MOLTEN_IRON_ORE = register({
   color: rgb(255, 140, 60),
   density: 6.5,
   category: 'smelt',
+  alsoIn: ['metal'],
   // Placed hot; conducts a little worse than stone.
   thermal: { init: 1000, conductivity: 0.35 },
   glow: { min: SOLIDIFY_TEMP, max: 1150, cool: rgb(62, 56, 66) },

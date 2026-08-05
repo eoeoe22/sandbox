@@ -90,6 +90,7 @@ export const MOLTEN_IRON = register({
   color: rgb(255, 150, 50),
   density: 8,
   category: 'fire',
+  alsoIn: ['metal'],
   thermal: { init: MOLTEN_IRON_TEMP, conductivity: 0.85 },
   // Glows blazing yellow-white when fully molten and darkens to a dull ember as
   // conduction cools it toward setting, so the cooling front is visible before

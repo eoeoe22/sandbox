@@ -99,6 +99,7 @@ export const SODIUM = register({
   blastRadius: BLAST_RADIUS,
   destructivePower: DESTRUCTIVE_POWER,
   category: 'powder',
+  alsoIn: ['fire', 'metal'],
   thermal: { conductivity: 0.4 },
   update: updateSodium,
 });

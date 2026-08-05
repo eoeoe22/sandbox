@@ -30,6 +30,7 @@ export const RUST = register({
   colorVary: 7,
   density: 900,
   category: 'solid',
+  alsoIn: ['metal'],
   thermal: { conductivity: 0.3 },
   update: updateRust,
 });

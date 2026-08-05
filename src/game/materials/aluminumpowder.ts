@@ -219,6 +219,7 @@ export const ALUMINUM_POWDER = register({
   // there. Here Rust Powder is anchored in 가루 by its corrosion role, and
   // splitting a two-ingredient recipe across two tabs would hide it.)
   category: 'powder',
+  alsoIn: ['fire', 'metal'],
   // Flaky, slightly cohesive dust — piles steeply, a touch more than Sulfur
   // (0.42), less than angular coal dust (0.48) (마찰).
   friction: 0.45,

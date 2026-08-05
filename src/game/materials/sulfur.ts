@@ -54,6 +54,7 @@ export const SULFUR = register({
   // it's a fuel (the easiest-lighting one in the game), so it sits with the
   // other fire/heat materials alongside Saltpeter.
   category: 'fire',
+  alsoIn: ['powder'],
   // Fine, slightly cohesive crystalline dust — piles a bit steeper than Salt (마찰).
   friction: 0.42,
   thermal: { conductivity: 0.25 },

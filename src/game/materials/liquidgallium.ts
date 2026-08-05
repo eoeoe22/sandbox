@@ -96,6 +96,7 @@ export const LIQUID_GALLIUM = register({
   // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
   wiring: true,
   category: 'liquid',
+  alsoIn: ['metal'],
   // Beads up like Mercury (표면장력) — scattered drops round into shiny balls.
   surfaceTension: 0.5,
   // A smooth mirror-like metal, so it renders as a flat single colour rather

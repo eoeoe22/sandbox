@@ -102,6 +102,7 @@ export const ALUMINUM = register({
   // spark.ts's PulseGate) will feed it. Zero-loss, as all wiring is.
   wiring: true,
   category: 'solid',
+  alsoIn: ['metal'],
   // The real-world mirror metal: a Heat Ray reflects off it cleanly (정반사).
   laserReflective: true,
   // Better than Iron (0.85), short of Diamond (0.95) — the honest ordering for
