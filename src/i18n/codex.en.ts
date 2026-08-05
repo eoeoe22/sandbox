@@ -114,7 +114,9 @@ export const materialCodexEn: Record<number, string> = {
   79: 'Military explosive detonated by electricity. Will not explode when ignited with fire.',
   127: 'Directional penetration explosive. Forms a focused penetration wave in the direction of placement drag.',
   137: 'Flash charge made from aluminum powder and niter.',
-  145: 'Explosive mixed from ammonium nitrate and aluminum powder.',
+  99: 'Causes an endothermic reaction upon contact with water, producing a cooling effect, and is an explosive in its own right. Mixing it with aluminum powder or with diesel/kerosene makes a far more powerful explosive.',
+  148: 'Explosive mixed from ammonium nitrate and diesel/kerosene.',
+  145: 'Powerful explosive mixed from ammonium nitrate and aluminum powder. Stronger than TNT.',
   129: 'Firework explosive creating colorful sparks.',
 
   // Cooling
@@ -122,7 +124,6 @@ export const materialCodexEn: Record<number, string> = {
   22: 'Light freezing powder. Turns into water when melted and freezes into ice upon further cooling.',
   33: 'Cryogenic coolant at -196°C.',
   34: 'Solid CO₂ at -78°C. Emits cold CO₂ gas as it sublimates.',
-  99: 'Causes a powerful endothermic reaction upon contact with water, producing a cooling effect. Ingredient in various explosives.',
 
   // Electricity
   39: 'Power supply unit emitting electricity. Explodes when exposed to high heat.',

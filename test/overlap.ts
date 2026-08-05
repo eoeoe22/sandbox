@@ -20,8 +20,8 @@
 // The controls matter as much as the positives here, so each scene has one: a dry
 // bed beside the wet one, an acid-resistant powder beside the corrodible one, a
 // sealed pocket with no primary liquid anywhere (so a reaction can only have come
-// through the seam), and ANFO's diesel soak — which must go on being an inert
-// soak, since that is the whole mechanism ammoniumnitrate.ts is built on.
+// through the seam), and ANFO's diesel soak — the palette's one recipe that fires
+// off the overlap slot rather than off primary-cell contact.
 //
 // Run: `node test/run-overlap.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -54,6 +54,7 @@ import { HYDROGEN_PEROXIDE } from '../src/game/materials/hydrogenperoxide';
 import { CEMENT } from '../src/game/materials/cement';
 import { CONCRETE } from '../src/game/materials/concrete';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
+import { ANFO } from '../src/game/materials/anfo';
 import { DIESEL } from '../src/game/materials/diesel';
 import { SAWDUST } from '../src/game/materials/sawdust';
 import '../src/game/materials';
@@ -652,11 +653,14 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
   );
 }
 
-// ── 6. ANFO 무회귀 ──────────────────────────────────────────────────────────
-// The soak that is *supposed* to be inert. Ammonium Nitrate hosts Diesel on
-// purpose (ANFO), and neither side declares a reaction with the other — so the
-// new pass must leave both exactly as it found them. This is the pin that catches
-// "the soaked fluid now reacts" turning into "the soaked fluid now disappears".
+// ── 6. ANFO ────────────────────────────────────────────────────────────────
+// The soak that *consumes itself*. Ammonium Nitrate hosts Diesel on purpose, and
+// a grain that has taken a drop turns into ANFO and drinks it
+// (ammoniumnitrate.ts) — the palette's one recipe driven by the overlap layer
+// rather than by primary-cell contact, so it is this file's pin on the seam
+// being readable at all. Sealed in a Wall pocket with no primary liquid
+// anywhere: the fuel can only have arrived through the overlap slot, so a
+// conversion here cannot be a stray puddle touching the heap from outside.
 {
   const { grid, sim } = makeWorld(30, 30);
   for (let y = 0; y < 30; y++)
@@ -664,13 +668,13 @@ function soakedPair(hostId: number, fluidId: number, ticks = 200): Grid {
       if (x < 8 || x >= 22 || y < 8 || y >= 22) grid.set(x, y, WALL.id);
   bed(grid, 8, 22, 8, 22, AMMONIUM_NITRATE.id, DIESEL.id); // packed solid — see acidPocket
   const prills = count(grid, AMMONIUM_NITRATE.id);
-  const soaked = countOverlay(grid, DIESEL.id);
   for (let t = 0; t < 200; t++) sim.step();
   check(
-    'ANFO: 프릴에 스민 경유는 그대로 남는다 (반응 상대가 없다)',
-    count(grid, AMMONIUM_NITRATE.id) === prills &&
-      countOverlay(grid, DIESEL.id) + count(grid, DIESEL.id) === soaked,
-    `${prills} prills, ${countOverlay(grid, DIESEL.id)}/${soaked} still soaked`,
+    'ANFO: 프릴에 스민 경유는 프릴을 ANFO로 바꾸고 소비된다',
+    count(grid, ANFO.id) === prills &&
+      count(grid, AMMONIUM_NITRATE.id) === 0 &&
+      fluidTotal(grid, DIESEL.id) === 0,
+    `${count(grid, ANFO.id)}/${prills} converted, ${fluidTotal(grid, DIESEL.id)} diesel left`,
   );
 }
 

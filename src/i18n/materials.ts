@@ -227,4 +227,5 @@ export const materialNamesKo: Record<number, string> = {
   145: '암모날',
   146: '물고기',
   147: '죽은 물고기',
+  148: 'ANFO',
 };

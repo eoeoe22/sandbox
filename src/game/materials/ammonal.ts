@@ -19,17 +19,19 @@ import { BLAST, detonate, type DetonateOptions } from './blast';
 // ones — ammonal genuinely is AN plus aluminum powder, a mining and shell
 // filling from the First World War on.
 //
-// It sits directly beside ANFO, which is the same prill fed a *liquid* fuel
-// (Diesel/Kerosene soaked in through the 겹침 layer — see ammoniumnitrate.ts),
-// and the comparison is the whole point of it:
+// It sits directly beside ANFO (anfo.ts), which is the same prill fed a *liquid*
+// fuel (Diesel/Kerosene soaked in through the 겹침 layer — see
+// ammoniumnitrate.ts), and the comparison is the whole point of it:
 //
-//  • **It hits harder.** Fixed reach 14.4 and 90% of TNT's power, against
-//    ANFO's 12.8 / 80%. That ordering is the real one (ammonal's aluminum
-//    raises the heat of explosion well past a fuel-oil mix), and the price for
-//    it is paid in ingredients, not in the blast: Aluminum Powder is the most
-//    contested powder in the game — Thermite, Flash Powder and the entire
-//    casting line all want the same grains — whereas the diesel ANFO drinks is
-//    a bulk product of the petroleum line.
+//  • **It hits harder — harder than anything else in the palette.** Reach 17.5
+//    against TNT's 16 and ANFO's 14, and it is the only charge whose destructive
+//    power goes over the 100,000 default. That ordering is the real one
+//    (ammonal's aluminum raises the heat of explosion past both a fuel-oil mix
+//    and a cast military charge), and the price for it is paid in ingredients,
+//    not in the blast: Aluminum Powder is the most contested powder in the game
+//    — Thermite, Flash Powder and the entire casting line all want the same
+//    grains — whereas the diesel ANFO drinks is a bulk product of the petroleum
+//    line. Cheap-and-nearly-as-good vs. expensive-and-best.
 //  • **It burns the crater.** A metal-fuelled explosion throws out far more
 //    incandescent debris than a hydrocarbon one, so instead of the usual
 //    shockwave flash most of the open air inside the reach takes a lick of
@@ -42,11 +44,14 @@ import { BLAST, detonate, type DetonateOptions } from './blast';
 // convention (Gunpowder, Flash Powder, ammonium nitrate itself), and true of
 // real ammonal, whose oxidizer simply dissolves away.
 const DECOMP_TEMP = 300;
-// 90% of TNT's own BLAST_RADIUS/power (see tnt.ts), the same fixed-override
-// shape ANFO uses at 80% — a charge whose yield comes from its chemistry rather
-// than from how much of it you happened to pile up.
-const BLAST_RADIUS = 16 * 0.9;
-const DESTRUCTIVE_POWER = 100_000 * 0.9;
+// Just over TNT's own BLAST_RADIUS/power (16 / an unset 100,000 — see tnt.ts).
+// Declared on the material rather than forced through DetonateOptions, the same
+// as TNT and ANFO: every charge in the family is scaled by the one surveyed
+// √-law on the connected mass (blast.ts `computeReach`), so this ordering holds
+// at a single grain and at a wall of the stuff alike, instead of a fixed reach
+// being overtaken by a big enough pile of something nominally weaker.
+const BLAST_RADIUS = 17.5;
+const DESTRUCTIVE_POWER = 110_000;
 // Per open-air cell inside the reach, the chance the front leaves Fire there
 // rather than the default shockwave flash. High — this is the material's visual
 // signature — but short of 1 so the disc still reads as an explosion with a
@@ -65,11 +70,9 @@ function paintFireball(sim: SimContext, x: number, y: number, prevId: number): b
   return true;
 }
 
-const AMMONAL_OPTS: DetonateOptions = {
-  reach: BLAST_RADIUS,
-  power: DESTRUCTIVE_POWER,
-  onCell: paintFireball,
-};
+// Only the repaint — reach and power come from the material fields above via the
+// ordinary mass survey, exactly like TNT's.
+const AMMONAL_OPTS: DetonateOptions = { onCell: paintFireball };
 
 function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;

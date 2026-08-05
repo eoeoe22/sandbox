@@ -9,9 +9,10 @@ import { SALTWATER } from './saltwater';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
 import { BLUE_FLAME } from './blueflame';
-import { BLAST, detonate, type DetonateOptions } from './blast';
+import { BLAST, detonate } from './blast';
 import { DIESEL } from './diesel';
 import { KEROSENE } from './kerosene';
+import { ANFO } from './anfo';
 
 // Ammonium Nitrate (질산암모늄, NH₄NO₃) — the poster child for the reaction table's
 // heat term, because it demonstrates BOTH ends of it:
@@ -28,27 +29,27 @@ import { KEROSENE } from './kerosene';
 //    dry grain past its decomposition temperature (or lit by a flame/blast) sets
 //    off the whole connected mass as one shockwave that scales with how much you
 //    piled up (it's tagged `explosive`, so blast surveys the mass — see blast.ts).
+//    On its own it is the *weakest* of the family by a wide margin (reach 6
+//    against TNT's 16) — the prill is an oxidizer looking for a fuel, and the two
+//    fuels it can be given are what turn it into a real charge.
 //
 // Water is the switch between the two: wet ammonium nitrate does the cold pack and
 // *cannot* detonate (a misfire, like wet gunpowder), so it has to be dry to go off.
+//
+// **The two recipes.** Both take the prill somewhere much stronger, and both are
+// separate materials rather than a buffed state of this one:
+//
+//  • **Aluminum Powder → Ammonal** (ammonal.ts), the contact-mix recipe declared
+//    in aluminumpowder.ts alongside Thermite and Flash Powder.
+//  • **Diesel/Kerosene → ANFO** (anfo.ts), handled here: the fuel soaks down into
+//    the heap through the 겹침 (overlap) layer (see `overlapFluids` below) and each
+//    grain that admits a drop converts on the spot, drinking the fuel. Pouring is
+//    the whole interface — no mixing ratio to get right, just wet the pile.
 const DECOMP_TEMP = 300; // dry grain this hot decomposes explosively
 const BLAST_RADIUS = 6; // a lone grain's pop; a packed mass reaches much farther
 // A powerful high explosive: above a solid's default durability (200), so a proper
 // charge craters stone/metal, unlike Gunpowder's loose-matter-only concussion.
 const DESTRUCTIVE_POWER = 210;
-
-// ANFO (Ammonium Nitrate/Fuel Oil): a grain that's soaked up Diesel or Kerosene
-// through the shared 겹침 (overlap) layer (see `overlapFluids` on the material
-// below — Diesel/Kerosene poured over a pile soak down into it exactly like
-// water soaks into sand) is a vastly more potent charge than the dry prills
-// alone — real ANFO is a workhorse mining/demolition explosive on par with
-// military high explosives. Ignited while soaked, it goes off at a fixed 80% of
-// TNT's own blast reach/power (see tnt.ts) instead of the dry grain's modest
-// survey-scaled pop, the same fixed-reach-override pattern Napalm/Cluster use
-// (blast.ts).
-const ANFO_BLAST_RADIUS = 16 * 0.8; // 80% of TNT's BLAST_RADIUS (tnt.ts)
-const ANFO_DESTRUCTIVE_POWER = 100_000 * 0.8; // 80% of TNT's (unset ⇒ default) power
-const ANFO_OPTS: DetonateOptions = { reach: ANFO_BLAST_RADIUS, power: ANFO_DESTRUCTIVE_POWER };
 
 function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;
@@ -61,7 +62,17 @@ function isFuelLiquid(id: number): boolean {
 function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
   // (The endothermic cold-pack dissolution is handled by the declarative reaction
   // table before this update runs; if it fired, this cell is already Water.)
-  const soaked = isFuelLiquid(sim.getOverlay(x, y));
+
+  // A grain that has taken Diesel/Kerosene into its 겹침 slot *becomes* ANFO right
+  // there, consuming the drop it drank (anfo.ts). Checked before the ignition scan
+  // below, so a heap being wetted while already alight simply detonates one tick
+  // later as the stronger charge it just turned into.
+  if (isFuelLiquid(sim.getOverlay(x, y))) {
+    sim.clearOverlay(x, y);
+    sim.set(x, y, ANFO.id);
+    return;
+  }
+
   let wet = false;
   let trigger = sim.getTemp(x, y) >= DECOMP_TEMP;
   for (const [dx, dy] of DIR8) {
@@ -75,9 +86,8 @@ function updateAmmoniumNitrate(x: number, y: number, sim: SimContext): void {
 
   // Dry + triggered → explosive decomposition. Wet grains never detonate (they
   // dissolve/cold-pack instead), matching real ammonium nitrate's need to be dry.
-  // A fuel-soaked grain detonates as ANFO instead of the weaker dry pop.
   if (trigger && !wet) {
-    detonate(sim, x, y, 0, soaked ? ANFO_OPTS : undefined);
+    detonate(sim, x, y, 0);
     return;
   }
   updatePowder(x, y, sim);
@@ -99,18 +109,21 @@ export const AMMONIUM_NITRATE = register({
   destructivePower: DESTRUCTIVE_POWER,
   // Crystalline prills grip and pile fairly steeply (마찰).
   friction: 0.4,
-  // 겹침 (overlap) is restricted to just Diesel/Kerosene (ANFO soaking, see
+  // 겹침 (overlap) is restricted to just Diesel/Kerosene (the ANFO soak, see
   // above) via overlapFluids — Water is deliberately left OUT of that allowlist
   // so it keeps pooling against the prills as an ordinary primary neighbor cell
   // instead of soaking away invisibly; otherwise the cold-pack reaction and the
-  // wet/misfire check below (both of which only look at primary cells) would
-  // stop seeing it. liquidOverlap left at its default coefficient — same texture
-  // (not every grain admits) as any other powder's soak.
+  // wet/misfire check above (both of which only look at primary cells) would
+  // stop seeing it. liquidOverlap left at its default coefficient — the soak is
+  // grain-by-grain (not every grain admits) like any other powder's, which is
+  // what makes a partly poured heap come out part ANFO and part bare prill.
   overlapFluids: [DIESEL.id, KEROSENE.id],
-  // Filed under 냉각 (cooling): its signature toy is the endothermic cold pack —
-  // pour water on a pile and it frosts the puddle toward freezing. (It's still an
-  // `explosive` and detonates dry; the category is only a palette grouping.)
-  category: 'cooling',
+  // Filed under 폭발 (explosive), next to the two charges it is the base of — it
+  // detonates on its own and its whole role in the palette is being the front of
+  // that family. The endothermic cold pack (pour water on a pile and it frosts
+  // the puddle toward freezing) is still its other half; the category is only a
+  // palette grouping, not a claim about what it does.
+  category: 'explosive',
   thermal: { conductivity: 0.3 },
   // Endothermic cold-pack dissolution (흡열): a grain touching Water dissolves into
   // it, pulling heat out of both cells (heat < 0). Only while cool — once hot the
