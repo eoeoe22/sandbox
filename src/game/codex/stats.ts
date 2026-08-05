@@ -101,8 +101,15 @@ export const STAT_SPECS: readonly StatSpec[] = [
   {
     key: 'autoIgniteTemp',
     unit: 'temp',
-    fields: ['combustion.autoIgniteTemp'],
-    read: (m) => (m.combustion === undefined ? undefined : { value: m.combustion.autoIgniteTemp }),
+    fields: ['combustion.autoIgniteTemp', 'combustion.flameOnly'],
+    // Hidden for a 직화 전용 fuel: there the number is not a 발화점 (nothing lights
+    // it without flame contact) but an internal "still alight" floor, and showing
+    // it under that label would tell the player something false. The trait card
+    // says what actually happens instead (see traits.ts `flameOnly`).
+    read: (m) =>
+      m.combustion === undefined || m.combustion.flameOnly === true
+        ? undefined
+        : { value: m.combustion.autoIgniteTemp },
   },
   {
     key: 'burnChance',

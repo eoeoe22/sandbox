@@ -32,7 +32,16 @@ const GROUPS: readonly { key: string; traits: readonly string[] }[] = [
   { key: 'light', traits: ['laserReflective'] },
   {
     key: 'fire',
-    traits: ['flammable', 'fuel', 'fireClass', 'douses', 'easyDouse', 'petroleum', 'fuse'],
+    traits: [
+      'flammable',
+      'fuel',
+      'fireClass',
+      'flameOnly',
+      'douses',
+      'easyDouse',
+      'petroleum',
+      'fuse',
+    ],
   },
   { key: 'acid', traits: ['acidResistant', 'acidHydrogen', 'acidSoluble'] },
   { key: 'radiation', traits: ['radiationDeath', 'radiationHit'] },

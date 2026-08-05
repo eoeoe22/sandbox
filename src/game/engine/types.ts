@@ -44,8 +44,28 @@ export interface Combustible {
   /** Per-tick chance to catch from an adjacent flame, and — once burning — to
    *  light each adjacent fuel cell. Also sets the fuel's relative burn speed. */
   burnChance: number;
-  /** 발화점 — self temperature at/above which it ignites with no flame contact. */
+  /** 발화점 — self temperature at/above which it ignites with no flame contact.
+   *  A `flameOnly` fuel is the exception: for it this number is not an ignition
+   *  point at all but the floor below which an already-lit cell counts as out
+   *  (the codex hides it there, since it would be a lie to show it as 발화점). */
   autoIgniteTemp: number;
+  /**
+   * 직화 전용 — radiant heat NEVER lights this fuel, however fierce; only a flame
+   * actually touching it does (Fire/Lava/Blue Flame, or a neighbour of the same
+   * fuel already alight). Bread is the one that needs it, and the reason is that
+   * an oven cannot be cooler than the fire heating it: iron conducts so well that
+   * an insulated iron box over a coal bed sits at ~880°, so *any* autoignition
+   * point under the heat source's own temperature is crossed and a loaf can never
+   * finish baking. Making it a flame-contact rule instead is both the playable
+   * answer and the honest one — bread in a hot oven browns, bread in a fire
+   * burns.
+   *
+   * The behaviour is implemented by the declaring material's own `update` (it
+   * needs a per-cell "lit" bit, and only that material knows where its `aux` has
+   * room), the way several tags here are; this flag is the data half, so the
+   * codex can say so and the 발화점 stat can be suppressed.
+   */
+  flameOnly?: boolean;
   /** Temperature this fuel's burning cells pin at (and collapse-to-Fire at),
    *  overriding the shared `FUEL_BURN_TEMP` (800°). Oxygen's forced-draught boost
    *  still stacks on top, capped at `OXY_MAX_PIN`. Coal uses this to run its

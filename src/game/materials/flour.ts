@@ -1,6 +1,7 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
+import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryDustExplosion, type DustFlash } from './dustexplosion';
@@ -63,6 +64,49 @@ const CHAR_CHANCE = 0.06;
  *  itself into dough from the interface outward rather than flashing over. */
 const HYDRATE_CHANCE = 0.14;
 
+/**
+ * 밀가루 + 물 → 반죽. One cell of each becomes two cells of Batter, so the dough
+ * conserves exactly what went into it.
+ *
+ * This is a plain two-body swap and it *was* a `reactions` table row, which is
+ * where a rule this shape belongs — but the table cannot do the one thing this
+ * one needs. `applyReaction` transforms both cells with `sim.set`, and `set`
+ * deliberately **keeps a cell's `aux`** (see SimContext.set). Water is a
+ * conductor and parks its post-spark refractory countdown in exactly that byte
+ * while still being Water (water.ts), so a pool that has had a Spark through it
+ * hands 1-3 straight to the fresh dough — and Batter reads its low three aux bits
+ * as the leaven level. Dough next to a live wire came out **pre-risen**, at up to
+ * the very level baking soda gives, with nothing having been added to it
+ * (measured: 17 of 34 cells born at level 2-3).
+ *
+ * Nothing in the engine is wrong here — two materials simply disagree about what
+ * that byte means, and the reaction table has no way to say "and the product
+ * starts with no state of its own". So the rule lives in `update`, where the aux
+ * of both cells is cleared explicitly. Both are marked moved for the same reason
+ * `applyReaction` marks them: neither may be reprocessed or re-paired this tick.
+ */
+function tryHydrate(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (sim.get(nx, ny) !== WATER.id) continue;
+    if (!sim.chance(HYDRATE_CHANCE)) continue;
+    // `set` (not `spawn`) on both, so the dough keeps the temperature of the
+    // flour and water that made it — a cold mix stays cold, and a mix made with
+    // hot water arrives warm. The aux each cell was carrying is not ours to
+    // inherit, so both start at 0: unleavened, uncultured, no soda.
+    sim.set(x, y, BATTER.id);
+    sim.setAux(x, y, 0);
+    sim.markMoved(x, y);
+    sim.set(nx, ny, BATTER.id);
+    sim.setAux(nx, ny, 0);
+    sim.markMoved(nx, ny);
+    return true;
+  }
+  return false;
+}
+
 function updateFlour(x: number, y: number, sim: SimContext): void {
   // Airborne and lit → the cloud goes off. Checked first, and before anything
   // heat-related, because a suspended grain must flash rather than char.
@@ -76,6 +120,10 @@ function updateFlour(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, ASH.id);
     return;
   }
+
+  // Touching water → dough. The cell is Batter now, so it must not be moved as a
+  // powder afterwards.
+  if (tryHydrate(x, y, sim)) return;
 
   updatePowder(x, y, sim);
 }
@@ -117,17 +165,8 @@ export const FLOUR = register({
   overlapFluids: [],
   liquidOverlap: 0,
   thermal: { conductivity: 0.25 },
-  // 밀가루 + 물 → 반죽. One cell of each makes two cells of Batter, so the dough
-  // conserves the cells that went into it — no mass appears and none is lost.
-  // Declared here rather than on Batter because flour is the thing being changed
-  // by the water, and a rule fires from the cell that declares it.
-  reactions: [
-    {
-      with: WATER.id,
-      produce: BATTER.id,
-      otherBecomes: BATTER.id,
-      probability: HYDRATE_CHANCE,
-    },
-  ],
+  // 밀가루 + 물 → 반죽 lives in `update` (`tryHydrate`) rather than in a
+  // `reactions` row, because the product needs its `aux` cleared and the
+  // reaction table has no way to say that. See the note on `tryHydrate`.
   update: updateFlour,
 });

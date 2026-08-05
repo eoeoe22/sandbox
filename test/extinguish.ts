@@ -534,6 +534,10 @@ function pourOn(
     // is why they are absent here). Flour is the pointed absence — it is a fuel
     // in every intuitive sense and deliberately has no spec, because a heap of
     // it must not burn; its cloud goes off through dustexplosion.ts instead.
+    // Bread's 300 is NOT a 발화점 — it is `flameOnly`, so nothing lights it by
+    // heat alone and that number is the floor below which an already-lit cell
+    // counts as out (see bread.ts). It stays in this table because the class and
+    // the burn rate still mean exactly what they say once a flame reaches it.
     Bread: ['A', 0.05, 300],
     'Burnt Meat': ['A', 0.04, 350],
     Popcorn: ['A', 0.1, 250],

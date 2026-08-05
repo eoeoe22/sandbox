@@ -68,6 +68,11 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
     fields: ['combustion.easyDouse'],
     read: (m) => (m.combustion?.easyDouse === true ? {} : undefined),
   },
+  {
+    key: 'flameOnly',
+    fields: ['combustion.flameOnly'],
+    read: (m) => (m.combustion?.flameOnly === true ? {} : undefined),
+  },
   { key: 'petroleum', fields: ['petroleum'], read: flag('petroleum') },
 
   // --- 산 -----------------------------------------------------------------

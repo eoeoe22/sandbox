@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
+import { launchDebris } from './debris';
 import { STEAM } from './steam';
 import { POPCORN } from './popcorn';
 
@@ -12,17 +13,28 @@ import { POPCORN } from './popcorn';
 //
 // A kernel is a sealed hull with a drop of water inside it. Heat it past 180°
 // and the water flashes: the hull bursts, the starch turns inside out, and what
-// was one heavy grain is suddenly two cells of light, fluffy Popcorn — one of
-// them thrown clear of where the kernel was sitting. So a bowl of kernels on a
-// hot plate does not simply change colour, it *erupts*: the pile roughly doubles
-// in volume, overflows whatever was holding it, and rains puffs over the
-// surroundings, with steam hissing out of it the whole time.
+// was one heavy grain becomes two cells of light, fluffy Popcorn — **launched**,
+// not merely placed. So a bowl of kernels on a hot plate does not change colour,
+// it *erupts*: puffs fire upward out of the pan, ricochet off whatever is above
+// them, rain back down over the surroundings, and steam hisses out the whole
+// time while the pile roughly doubles in volume and overflows its container.
 //
-// The jump is what sells it. A popping kernel looks straight up (against
-// gravity) for open air within POP_HOP cells and puts the popcorn *there*,
-// leaving a second puff behind in its own cell. Blocked overhead — buried in a
-// pile, under a lid — it simply puffs in place and gets no expansion, so a
-// covered pot fills and stops rather than exploding out of a sealed box.
+// The launch is what sells it, and it is not new machinery: a popping kernel
+// hands its puff to the same ballistic carrier a blast uses to fling grains
+// (`launchDebris`, debris.ts). A fragment carries the material it will become in
+// `aux`, flies a real arc under the world's gravity, swaps *through* loose matter
+// (so a pan full of popping kernels churns instead of jamming), bounces off
+// solids, and deposits its Popcorn when the flight expires. Mass is conserved by
+// the carrier itself — every fragment becomes exactly one grain again.
+//
+// The first version just teleported the puff up to three cells and it read as
+// limp: nothing moved, things merely appeared. This is the same event with the
+// engine's own projectile behind it.
+//
+// Blocked overhead — buried in a pile, under a lid — a kernel gets no *second*
+// puff (there is nowhere to put it), so a sealed pot stays exactly 1:1 and fills
+// rather than exploding out of a closed box. The launched fragment is still
+// launched; it simply rattles around inside and settles.
 //
 // The kernel itself never burns. Its pop point (180°) is far below any fuel's
 // autoignition, so heat always bursts it before anything could light it: you
@@ -35,47 +47,50 @@ const POP_TEMP = 180;
 /** Per-tick chance a hot kernel goes off, so a pan full of them pops as a
  *  scattered rattle over a second or two rather than all in one frame. */
 const POP_CHANCE = 0.22;
-/** How far up a popping kernel throws its puff, in cells. Three is enough to
- *  clear the lip of a pan and to look like a jump, and short enough that a
- *  popping pile stays a pile rather than a fountain. */
-const POP_HOP = 3;
-/** Per-pop chance of a hiss of Steam — the moisture that did the work leaving. */
-const STEAM_CHANCE = 0.35;
+/** The "outward budget" handed to `launchDebris`, which sets the launch speed
+ *  (its BASE_SPEED_Q + this × GAIN_Q, in quarter-cells/tick, with a ×1.5 boost
+ *  and an extra loft on the ~70% of fragments that go straight up). 2 puts a puff
+ *  a good handful of cells into the air — a real hop out of the pan — without
+ *  turning a bowl of corn into a fountain that clears the screen. */
+const POP_FORCE = 2;
+/** Per-pop chance of a hiss of Steam — the moisture that did the work leaving.
+ *  Raised from the original 0.35: the steam is most of what makes the burst read
+ *  as a burst, and at a third of the pops the pan barely smoked. */
+const STEAM_CHANCE = 0.8;
 
-/**
- * The farthest open cell straight "up" (against gravity) within POP_HOP, or -1
- * if the very first step is blocked. Scanning outward and stopping at the first
- * obstruction means a kernel never teleports *through* a lid or through the
- * grains above it — it only ever reaches air it has a clear path to.
- */
-function hopTarget(x: number, y: number, sim: SimContext): number {
-  const ux = -sim.gravityX;
-  const uy = -sim.gravityY;
-  let best = -1;
-  for (let step = 1; step <= POP_HOP; step++) {
-    const nx = x + ux * step;
-    const ny = y + uy * step;
-    if (!sim.inBounds(nx, ny) || !sim.isEmpty(nx, ny)) break;
-    best = step;
+/** Somewhere a second puff can be launched from: open air only. It has to be
+ *  EMPTY rather than merely passable, because `launchDebris` spawns over
+ *  whatever is there and this is the one cell of the pop that is not the
+ *  kernel's own — writing it over a neighbour would destroy that neighbour. */
+function burstCell(x: number, y: number, sim: SimContext): [number, number] | null {
+  // Prefer straight up (against gravity), then the rest of the neighbourhood, so
+  // the pair reads as one puff following another out of the pan.
+  const ux = x - sim.gravityX;
+  const uy = y - sim.gravityY;
+  if (sim.inBounds(ux, uy) && sim.isEmpty(ux, uy)) return [ux, uy];
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) return [nx, ny];
   }
-  return best;
+  return null;
 }
 
 function updateCornKernel(x: number, y: number, sim: SimContext): void {
   if (sim.getTemp(x, y) >= POP_TEMP && sim.chance(POP_CHANCE)) {
-    const step = hopTarget(x, y, sim);
-    if (step > 0) {
-      // Clear air overhead: the puff is thrown up there, and a second one is
-      // left in the kernel's own cell — the volume increase, and the reason a
-      // popping pile overflows its pan.
-      sim.spawn(x - sim.gravityX * step, y - sim.gravityY * step, POPCORN.id);
+    // The volume increase: a second puff fired from the open air beside the
+    // kernel. Done *first*, while that cell is still known to be empty, and
+    // skipped entirely when there is nowhere for it to go — which is what keeps
+    // a sealed pot at exactly 1:1.
+    const burst = burstCell(x, y, sim);
+    if (burst !== null) {
+      launchDebris(sim, burst[0], burst[1], POPCORN.id, 0, 0, POP_FORCE);
     }
-    // Boxed in (or after the hop): the kernel's own cell becomes popcorn. `spawn`
-    // rather than `set`, so the fresh puff starts at ambient instead of holding
-    // the 180° that popped it — otherwise a popped pile would sit at its own
-    // pop temperature and keep bursting the kernels it is resting on long after
-    // the heat source was taken away.
-    sim.spawn(x, y, POPCORN.id);
+    // …and the kernel's own cell becomes the first puff, launched the same way.
+    // The carrier deposits Popcorn at ambient when the flight expires, so a
+    // landed puff never holds the 180° that popped it and cannot go on bursting
+    // the kernels it lands among after the heat is taken away.
+    launchDebris(sim, x, y, POPCORN.id, 0, 0, POP_FORCE);
     if (sim.chance(STEAM_CHANCE)) {
       for (const [dx, dy] of DIR8) {
         const nx = x + dx;

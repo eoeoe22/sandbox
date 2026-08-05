@@ -33,6 +33,8 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { STONE } from '../src/game/materials/stone';
 import { WALL } from '../src/game/materials/wall';
+import { IRON } from '../src/game/materials/iron';
+import { COAL } from '../src/game/materials/coal';
 import { WATER } from '../src/game/materials/water';
 import { FIRE } from '../src/game/materials/fire';
 import { ASH } from '../src/game/materials/ash';
@@ -217,6 +219,36 @@ console.log('— 반죽 · 빵 (Batter / Bread) —');
   );
 }
 
+// 3b. …and the dough never inherits state from the water it was made of. Water is
+//     a conductor and parks its post-spark refractory countdown in `aux` while
+//     still being Water (water.ts); Batter reads that same byte's low three bits
+//     as its leaven level. While the recipe was a `reactions` row this collided
+//     silently — `applyReaction` transforms with `sim.set`, which keeps `aux` —
+//     and dough mixed beside a live wire came out pre-risen at up to soda's own
+//     level with nothing added to it (17 of 34 cells at level 2-3). The symptom
+//     is invisible in every other check: the dough looks right, bakes right, and
+//     simply rises when it should not.
+{
+  const { grid, sim } = makeWorld(30, 30);
+  floor(grid, 26);
+  block(grid, 10, 20, 22, 24, FLOUR.id, 20);
+  block(grid, 10, 20, 24, 26, WATER.id, 20);
+  for (let t = 0; t < 200; t++) {
+    // Re-stamp the refractory every tick, as a wire live in the pool would.
+    for (let y = 0; y < 30; y++)
+      for (let x = 0; x < 30; x++) if (grid.get(x, y) === WATER.id) grid.setAux(x, y, 3);
+    sim.step();
+  }
+  const leavened = [...auxHistogram(grid, BATTER.id)]
+    .filter(([a]) => (a & 0b111) > 0)
+    .reduce((n, [, c]) => n + c, 0);
+  check(
+    '전기가 흐르던 물로 반죽해도 저절로 부풀지 않는다',
+    leavened === 0,
+    `${leavened} cells born pre-leavened of ${count(grid, BATTER.id)}`,
+  );
+}
+
 // 4. 굽기, and the crust/crumb split. A deep body of dough on a hot floor: the
 //    faces that met air while baking must be crust (aux 0) and the middle, walled
 //    in by dough the whole time, must be crumb (aux 1). An all-crust loaf would
@@ -326,6 +358,67 @@ function bakeLoaf(kind: 'plain' | 'soda' | 'yeast'): { bread: number; leaven: nu
   );
 }
 
+// 6b. 오븐. The scene that sent the whole rule back to the drawing board: a loaf
+//     baking in an insulated iron box over a coal bed, with no flame touching it.
+//     Iron conducts so well that the box interior settles at ~880° — far over any
+//     autoignition point a bread could plausibly declare — so the original
+//     `autoIgniteTemp: 300` meant the loaf was ash by t=400 no matter how well
+//     the fire was walled off. There is no number that fixes that, which is why
+//     bread ignites on flame *contact* only now (`combustion.flameOnly`).
+//
+//     The assertion is deliberately "zero ash, and the bread is genuinely that
+//     hot": a bread that survived because the oven turned out to be cool would
+//     pass a bread-count check and prove nothing.
+{
+  const { grid, sim } = makeWorld(50, 50);
+  floor(grid, 44);
+  block(grid, 14, 36, 41, 44, COAL.id, 900);
+  for (let x = 15; x < 35; x++) {
+    grid.set(x, 40, IRON.id);
+    grid.set(x, 32, IRON.id);
+  }
+  for (let y = 33; y < 40; y++) {
+    grid.set(15, y, IRON.id);
+    grid.set(34, y, IRON.id);
+  }
+  block(grid, 16, 34, 36, 40, BATTER.id, 20);
+  for (let t = 0; t < 900; t++) {
+    hold(grid, [COAL.id], 900);
+    sim.step();
+  }
+  let hottest = -Infinity;
+  for (let y = 0; y < 50; y++)
+    for (let x = 0; x < 50; x++)
+      if (grid.get(x, y) === BREAD.id) hottest = Math.max(hottest, grid.getTemp(x, y));
+  check(
+    '불이 닿지 않는 오븐 안에서는 빵이 타지 않는다',
+    count(grid, BREAD.id) > 0 && count(grid, ASH.id) === 0,
+    `${count(grid, BREAD.id)} bread, ${count(grid, ASH.id)} ash`,
+  );
+  check(
+    '…그 오븐이 실제로 빵을 태우고도 남을 만큼 뜨거운데도 그렇다',
+    hottest > 600,
+    `hottest loaf cell ${hottest.toFixed(0)}°`,
+  );
+}
+
+// 6c. …and the other half of the same rule, which is what stops "빵은 안 탄다"
+//     from being the new bug: a flame actually touching the loaf still eats it.
+{
+  const { grid, sim } = makeWorld(40, 40);
+  floor(grid, 34);
+  const loaf = block(grid, 12, 28, 30, 34, BREAD.id, 20);
+  for (let t = 0; t < 500; t++) {
+    for (let x = 12; x < 28; x++) if (grid.get(x, 29) === 0) grid.set(x, 29, FIRE.id);
+    sim.step();
+  }
+  check(
+    '불을 직접 대면 빵은 타서 재가 된다',
+    count(grid, BREAD.id) < loaf * 0.2 && count(grid, ASH.id) > 0,
+    `${count(grid, BREAD.id)}/${loaf} left, ${count(grid, ASH.id)} ash`,
+  );
+}
+
 console.log('— 고기 (Meat) —');
 
 // 7. The grill, as three temperature bands off one axis: under 70° nothing
@@ -395,6 +488,44 @@ console.log('— 팝콘 (Popcorn) —');
     '…그리고 부피가 눈에 띄게 불어난다',
     count(grid, POPCORN.id) > kernels * 1.4,
     `${count(grid, POPCORN.id)} popcorn from ${kernels} kernels`,
+  );
+}
+
+// 9b. …and the puffs are genuinely *launched*, not placed. The pop hands its
+//     popcorn to the blast's own ballistic carrier (`launchDebris`), so a pan of
+//     kernels erupts instead of quietly changing colour. Measured against the
+//     pan's own footprint: the puffs must clear it vertically and scatter wider
+//     than it. The first version teleported the puff up to 3 cells and read as
+//     limp — a height/spread check is the only thing that can tell the two apart,
+//     since the *counts* were identical.
+{
+  const { grid, sim } = makeWorld(60, 60);
+  floor(grid, 50);
+  block(grid, 20, 40, 48, 50, CORN_KERNEL.id, 250);
+  let apexY = 60;
+  let minX = 60;
+  let maxX = -1;
+  for (let t = 0; t < 200; t++) {
+    hold(grid, [CORN_KERNEL.id], 250);
+    sim.step();
+    for (let y = 0; y < 60; y++)
+      for (let x = 0; x < 60; x++)
+        if (grid.get(x, y) === POPCORN.id) {
+          if (y < apexY) apexY = y;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+  }
+  // The pan's top row is y=48, so anything above that is airborne popcorn.
+  check(
+    '팝콘은 팬 위로 실제로 튀어오른다',
+    48 - apexY >= 8,
+    `${48 - apexY} cells above the pan`,
+  );
+  check(
+    '…그리고 팬보다 넓게 흩어진다',
+    maxX - minX + 1 > 20 * 1.5,
+    `${maxX - minX + 1} cells wide, from a 20-cell pan`,
   );
 }
 

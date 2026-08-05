@@ -80,6 +80,16 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
 
   // Stats — combustion
+  flameOnly: {
+    ko: {
+      label: '직화 전용',
+      desc: '아무리 뜨거워도 열만으로는 불이 붙지 않고, 불꽃이 직접 닿아야 탑니다.',
+    },
+    en: {
+      label: 'Flame-contact only',
+      desc: 'Heat alone never lights it, however fierce — only a flame actually touching it does.',
+    },
+  },
   autoIgniteTemp: {
     ko: { label: '발화점', desc: '불씨 없이도 이 온도에 이르면 스스로 불이 붙습니다.' },
     en: { label: 'Autoignition point', desc: 'At this temperature it catches by itself, with no flame needed.' },
