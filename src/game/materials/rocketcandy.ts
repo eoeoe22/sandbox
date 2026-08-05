@@ -11,13 +11,16 @@ import { SMOKE } from './smoke';
 // Rocket Candy (로켓 캔디, KNO₃ + 설탕) — the fastest-burning matter in the game
 // that isn't an explosive.
 //
-// It is made, not painted: cold Saltpeter poured against cold Sugar grinds
-// together into this (the rule lives on Sugar's `reactions` table — see
-// sugar.ts). That makes it the palette's second craftable propellant, and the
-// deliberate counterpart to the black-powder recipe: Sulfur + Saltpeter + Coal
-// Powder gives you Gunpowder, which *detonates*, while Saltpeter + Sugar gives
-// you this, which *burns* — very fast, and hugely dirty. Two recipes, one shared
-// oxidizer, opposite payoffs.
+// It is made, not painted, and it is *cooked*: heat Sugar until it caramelises
+// and pour Saltpeter into the melt (the rule lives on Caramel's `reactions`
+// table — see caramel.ts). That makes it the palette's second craftable
+// propellant, and the deliberate counterpart to the black-powder recipe: Sulfur +
+// Saltpeter + Coal Powder gives you Gunpowder, which *detonates*, while molten
+// Caramel + Saltpeter gives you this, which *burns* — very fast, and hugely
+// dirty. Two recipes, one shared oxidizer, opposite payoffs — and opposite
+// processes too, one a dry grind at room temperature and one a melt-cast that
+// only takes inside a temperature window (120–250°), which is how the real
+// article is made.
 //
 // The single thing that makes it worth its own material is the FRONT SPEED. Real
 // candy propellant deflagrates: it carries its own oxygen (that's the saltpeter),

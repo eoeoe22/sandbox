@@ -38,7 +38,7 @@ export const materialCodexEn: Record<number, string> = {
   144: 'State where liquid gallium has stripped the oxide film off aluminum powder. Immediately generates hydrogen bubbles upon contact with water, and melts back into regular aluminum at 660°C. Lacking an oxide layer, it burns twice as fast as normal aluminum powder in chlorine gas.',
   114: 'Rusted metal powder. Can be returned to iron through smelting.',
   86: 'Reacts violently with flames and hydrogen discharge upon contact with water or acid, causing an explosion. Reacts with chlorine gas to produce salt.',
-  95: 'Water-soluble sugar. Caramelizes and then carbonizes (ashes) when heated above 200°C, and ferments into alcohol and CO₂ when contacting yeast.',
+  95: 'Water-soluble sugar. Melts into caramel when heated above 160°C, and ferments into alcohol and CO₂ when contacting yeast.',
 
   // Liquids
   3: 'Evaporates into steam at 100°C and turns into snow/ice below zero. Decomposes into hydrogen and oxygen when electricity flows through it.',
@@ -48,6 +48,7 @@ export const materialCodexEn: Record<number, string> = {
   40: 'Liquid metal at room temperature. Becomes mercury vapor when heated. Being less reactive than hydrogen, it does not produce hydrogen when dissolving in acid.',
   117: 'Molten gallium. Activates aluminum by stripping its oxide film, and solidifies into solid gallium below 28°C.',
   41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C.',
+  150: 'Hot syrup made by heating sugar above 160°C. It oozes even more thickly than honey, then sets hard where it stopped once it cools below 120°C — reheat it and it runs again. It darkens as it sets, so you can see at a glance whether it is still workable. Pour niter into it while it is still molten (120-250°C) and you get rocket candy; take it past 250°C and it chars to ash.',
   42: 'Light liquid fuel. Highly flammable, freezing at -80°C. Eradicates viruses.',
   102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel).',
   44: 'Wet soil. Hardens into dirt when dried, and freezes at -3°C.',
@@ -118,7 +119,7 @@ export const materialCodexEn: Record<number, string> = {
   148: 'Explosive mixed from ammonium nitrate and diesel/kerosene. Rather than misfiring when wet, it detonates far more weakly.',
   145: 'Powerful explosive mixed from ammonium nitrate and aluminum powder. Stronger than TNT.',
   129: 'Firework explosive creating colorful sparks.',
-  149: 'Solid propellant made by laying cold niter against cold sugar. It carries its own oxidizer, so once lit the flame front jumps to every touching grain each tick and the whole pile is gone in an instant, pouring out enormous amounts of smoke as it goes. It does not explode, but it is the fastest fuse in the game — and water will not put it out.',
+  149: 'Solid propellant made by pouring niter into caramel while the melt is still molten (120-250°C). It carries its own oxidizer, so once lit the flame front jumps to every touching grain each tick and the whole pile is gone in an instant, pouring out enormous amounts of smoke as it goes. It does not explode, but it is the fastest fuse in the game — and water will not put it out.',
 
   // Cooling
   21: 'Solid ice. Turns into water when melted.',

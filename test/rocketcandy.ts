@@ -1,14 +1,16 @@
-// Headless behavioural harness for 로켓 캔디 (Rocket Candy) — the 초석 + 설탕
+// Headless behavioural harness for 로켓 캔디 (Rocket Candy) — the 초석 + 캐러멜
 // propellant.
 //
 // Two halves, and each fails silently without the other noticing:
 //
-//   • **The recipe.** A 2-body row in the declarative table (sugar.ts's
-//     `reactions`), which means it is data — a fat-fingered `tempMax`, or the
-//     rule quietly losing its `otherBecomes`, changes nothing that throws. The
-//     checks below pin that cold ingredients do convert 1:1, that hot ones
-//     don't (they burn/char/decompose instead, which is the whole point of the
-//     gate), and that the recipe never fires on either ingredient alone.
+//   • **The recipe.** A 2-body row in the declarative table (caramel.ts's
+//     `reactions`), which means it is data — a fat-fingered `tempMin`/`tempMax`,
+//     or the rule quietly losing its `otherBecomes`, changes nothing that throws.
+//     It is a melt-cast: niter poured into caramel takes only while the caramel
+//     is *molten but not yet ruined*, so the gate is a window with a floor as
+//     well as a ceiling, and both edges are checked below — set toffee is as
+//     inert as a burning pile is. Plus that ingredients convert 1:1 inside the
+//     window, and that the recipe never fires on either ingredient alone.
 //
 //   • **The front speed**, which is the entire reason this is a material rather
 //     than "sugar, but faster". The claim is specific and measurable: a burning
@@ -31,6 +33,7 @@ import { WATER } from '../src/game/materials/water';
 import { FIRE } from '../src/game/materials/fire';
 import { SMOKE } from '../src/game/materials/smoke';
 import { SUGAR } from '../src/game/materials/sugar';
+import { CARAMEL } from '../src/game/materials/caramel';
 import { SALTPETER } from '../src/game/materials/saltpeter';
 import { GUNPOWDER } from '../src/game/materials/gunpowder';
 import { ROCKET_CANDY } from '../src/game/materials/rocketcandy';
@@ -68,30 +71,57 @@ function count(grid: Grid, id: number): number {
   for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === id) n++;
   return n;
 }
+/** Cells of `id` riding in some host's 겹침 (overlap) slot. A liquid poured over a
+ *  powder bed soaks into a fraction of the grains and stops being a primary cell,
+ *  so a census that reads `grid.cells` alone reports the melt as *gone* — which is
+ *  exactly the false alarm the mass check below would otherwise raise. */
+function countSoaked(grid: Grid, id: number): number {
+  let n = 0;
+  for (let i = 0; i < grid.overlay.length; i++) if (grid.overlay[i] === id) n++;
+  return n;
+}
 /** A horizontal run of `id` at row `y`, resting on the floor so nothing falls
  *  out from under the measurement. */
 function line(grid: Grid, x0: number, x1: number, y: number, id: number): void {
   for (let x = x0; x < x1; x++) grid.set(x, y, id);
 }
-/** Alternating 초석/설탕 grains — the shape a player gets by drawing one over the
- *  other, and the only shape where every grain has a partner to react with. */
-function mixedBed(grid: Grid, x0: number, x1: number, y0: number, y1: number): number {
+/** Alternating 초석/캐러멜 cells at `temp` — a niter grain in every hollow of the
+ *  melt, which is the shape a player gets by drawing one over the other and the
+ *  only shape where every cell has a partner to react with. */
+function mixedBed(
+  grid: Grid,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+  temp: number,
+): number {
   let n = 0;
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
-      grid.set(x, y, (x + y) % 2 === 0 ? SUGAR.id : SALTPETER.id);
+      grid.set(x, y, (x + y) % 2 === 0 ? CARAMEL.id : SALTPETER.id);
+      grid.setTemp(x, y, temp);
       n++;
     }
   return n;
 }
 
-// 1. The recipe. Cold 초석 + 설탕 in contact becomes Rocket Candy, and does so
+/** Hold every cell of the bed that is still caramel at `temp` — the pan the melt
+ *  is sitting in. Without it the pour gives its heat to the floor and drops out
+ *  of the recipe's window mid-measurement, which is real behaviour but not what
+ *  these two scenes are about. */
+function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, temp: number): void {
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) if (grid.get(x, y) === CARAMEL.id) grid.setTemp(x, y, temp);
+}
+
+// 1. The recipe. 초석 stirred into molten 캐러멜 becomes Rocket Candy, and does so
 //    gradually rather than flipping the whole bed on tick one (the pin on
 //    CANDY_MIX_CHANCE actually gating anything).
 {
   const { grid, sim } = makeWorld(40, 40);
   floor(grid, 36);
-  const grains = mixedBed(grid, 10, 30, 30, 36);
+  const grains = mixedBed(grid, 10, 30, 30, 36, 180);
 
   for (let t = 0; t < 2; t++) sim.step();
   const early = count(grid, ROCKET_CANDY.id);
@@ -101,41 +131,74 @@ function mixedBed(grid: Grid, x0: number, x1: number, y0: number, y1: number): n
     `${early}/${grains} after 2 ticks`,
   );
 
-  for (let t = 0; t < 120; t++) sim.step();
+  for (let t = 0; t < 120; t++) {
+    holdMelt(grid, 10, 30, 28, 36, 180);
+    sim.step();
+  }
   const made = count(grid, ROCKET_CANDY.id);
   check(
-    '차가운 초석 + 설탕은 로켓 캔디가 된다',
+    '녹아 있는 캐러멜 + 초석은 로켓 캔디가 된다',
     made > grains * 0.8,
     `${made}/${grains} converted`,
   );
-  // 1:1, both cells at once — nothing is created or destroyed by mixing.
+  // 1:1, both cells at once — the mix creates nothing out of nothing, which is
+  // what would break if the rule ever lost its `otherBecomes` (one ingredient
+  // would start converting the other for free).
+  //
+  // Not phrased as an exact equality, and the slack is a known bargain rather
+  // than sloppiness: molten caramel soaks into a fraction of the grains it is
+  // poured over, and the declarative pass runs across that seam too
+  // (reactions.ts's applySoakedReaction). There the caramel's own half of the
+  // reaction is a *powder*, which an overlap slot cannot hold, so it has to
+  // surface — and a grain deep inside a packed bed occasionally has nowhere to
+  // surface into. Measured at one cell in 120 over this scene; the bound is set
+  // just wide enough to say "a rounding error", not "a leak".
+  const soaked = countSoaked(grid, CARAMEL.id);
+  const left = made + count(grid, CARAMEL.id) + soaked + count(grid, SALTPETER.id);
   check(
     '재료 두 칸이 캔디 두 칸이 된다 (질량 보존)',
-    made + count(grid, SUGAR.id) + count(grid, SALTPETER.id) === grains,
-    `${made} candy + ${count(grid, SUGAR.id)} sugar + ${count(grid, SALTPETER.id)} niter vs ${grains}`,
+    left <= grains && left >= grains - 3,
+    `${made} candy + ${count(grid, CARAMEL.id)}+${soaked} caramel + ${count(grid, SALTPETER.id)} niter = ${left} vs ${grains}`,
   );
 }
 
-// 2. …and only in contact, and only cold. Either ingredient alone is inert, and
-//    a bed started hot burns/chars/decomposes instead of quietly cooking itself
-//    into propellant mid-flame (the tempMax gate, shared with the black-powder
-//    recipe).
+// 2. …and only in contact, and only inside the melt window. Either ingredient
+//    alone is inert; a bed that has set hard (below 120°) no longer takes the
+//    niter; and a bed started hot burns/chars/decomposes instead of quietly
+//    cooking itself into propellant mid-flame. The two temperature checks are the
+//    floor and the ceiling of the same window and fail in opposite directions.
 {
-  for (const solo of [SUGAR, SALTPETER]) {
+  for (const solo of [CARAMEL, SALTPETER]) {
     const { grid, sim } = makeWorld(40, 40);
     floor(grid, 36);
-    for (let y = 30; y < 36; y++) for (let x = 10; x < 30; x++) grid.set(x, y, solo.id);
+    for (let y = 30; y < 36; y++)
+      for (let x = 10; x < 30; x++) {
+        grid.set(x, y, solo.id);
+        grid.setTemp(x, y, 180);
+      }
     for (let t = 0; t < 60; t++) sim.step();
     check(`${solo.name} 혼자서는 캔디가 되지 않는다`, count(grid, ROCKET_CANDY.id) === 0);
   }
 
+  {
+    // Set toffee: the caramel is there, the niter is there, and nothing happens.
+    const { grid, sim } = makeWorld(40, 40);
+    floor(grid, 36);
+    mixedBed(grid, 10, 30, 30, 36, 20);
+    for (let t = 0; t < 60; t++) sim.step();
+    check(
+      '굳은 캐러멜은 배합되지 않는다 (120° 미만에서 게이트가 닫힌다)',
+      count(grid, ROCKET_CANDY.id) === 0,
+      `${count(grid, ROCKET_CANDY.id)} made at 20°`,
+    );
+  }
+
   const { grid, sim } = makeWorld(40, 40);
   floor(grid, 36);
-  mixedBed(grid, 10, 30, 30, 36);
-  for (let y = 30; y < 36; y++) for (let x = 10; x < 30; x++) grid.setTemp(x, y, 500);
+  mixedBed(grid, 10, 30, 30, 36, 500);
   for (let t = 0; t < 60; t++) sim.step();
   check(
-    '뜨거운 재료는 배합되지 않는다 (150° 초과에서 게이트가 닫힌다)',
+    '태워 먹은 캐러멜은 배합되지 않는다 (250° 초과에서 게이트가 닫힌다)',
     count(grid, ROCKET_CANDY.id) === 0,
     `${count(grid, ROCKET_CANDY.id)} made at 500°`,
   );

@@ -516,6 +516,10 @@ function pourOn(
     Alcohol: ['A', 0.15, 250],
     Honey: ['A', 0.05, 360],
     Sugar: ['A', 0.09, 300],
+    // Cooked sugar. Burns like Honey (the other sugar liquid) rather than like
+    // the loose grain it came from — far less surface per unit of fuel — and
+    // keeps Sugar's own 발화점, since it is the same molecule either way.
+    Caramel: ['A', 0.05, 300],
     Sulfur: ['A', 0.08, 250],
     Resin: ['A', 0.017, 400],
     Amber: ['A', 0.03, 400],
