@@ -175,6 +175,7 @@ export const ETHYLENE = register({
   // gas cut still races above it and the raw fume still settles below it.
   density: 1.0,
   category: 'polymer',
+  alsoIn: ['gas'],
   // Starts inside the polymerization window so a palette-painted cloud reacts on
   // a catalyst immediately (see the note above); conducts a little better than
   // the other petroleum gases so a cracked charge can actually be quenched

@@ -43,6 +43,7 @@ export const IRON_ORE = register({
   // floor — this just changes how it gets there before it melts.
   density: 7,
   category: 'smelt',
+  alsoIn: ['metal'],
   // Magnetite: an Electromagnet lifts raw ore straight out of a mixed dig, which
   // is exactly how real ore is beneficiated — so the 자력 선별기 feeds the smelting
   // line rather than only cleaning up after it (see materials/electromagnet.ts).

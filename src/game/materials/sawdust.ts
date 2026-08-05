@@ -31,6 +31,7 @@ export const SAWDUST = register({
   density: 2,
   combustion: { burnChance: 0.08, autoIgniteTemp: 450, ashChance: 0.15 },
   category: 'fire',
+  alsoIn: ['powder'],
   thermal: { conductivity: 0.2 },
   update: updateSawdust,
 });

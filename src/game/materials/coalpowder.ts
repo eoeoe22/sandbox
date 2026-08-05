@@ -165,6 +165,7 @@ export const COAL_POWDER = register({
   density: 7.5,
   combustion: { burnChance: 0.035, autoIgniteTemp: 580, burnTemp: 1300 },
   category: 'smelt',
+  alsoIn: ['powder'],
   // Angular, dusty grains grip hard — a coal-dust heap piles steeply (마찰).
   friction: 0.48,
   thermal: { conductivity: 0.2 },

@@ -133,6 +133,7 @@ export const ACTIVATED_ALUMINUM = register({
   // Filed with the plain powders beside the Aluminum Powder it comes from,
   // rather than in 폭발 — it is not a charge, it is a gas generator.
   category: 'powder',
+  alsoIn: ['fire', 'metal'],
   // Slightly stickier than the plain powder (0.45): the gallium alloyed into
   // the grain surfaces makes the dust clump (마찰).
   friction: 0.47,

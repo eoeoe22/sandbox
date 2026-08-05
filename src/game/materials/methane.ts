@@ -57,6 +57,7 @@ export const METHANE = register({
   explosive: true,
   blastRadius: BLAST_RADIUS,
   category: 'explosive',
+  alsoIn: ['gas'],
   // A gas: conducts poorly, so autoignition by conduction takes real sustained
   // heat rather than a single brief brush of it.
   thermal: { conductivity: 0.07 },

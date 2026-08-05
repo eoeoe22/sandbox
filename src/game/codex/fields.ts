@@ -22,6 +22,7 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   phase: 'the codex renders it as the 상태 chip and filter (CodexEntry.phase)',
   color: 'the codex renders it as the icon',
   category: 'the codex renders it as the filter tab',
+  alsoIn: 'the codex renders it as the filter tab (extra tabs, CodexEntry.categories)',
   update: 'the per-tick rule itself — prose, not a tag; the description covers it',
   reactions: 'rendered as its own 반응 section (see CodexReaction)',
 

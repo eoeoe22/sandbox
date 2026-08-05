@@ -106,6 +106,7 @@ export const SALTPETER = register({
   // fire's own oxygen supply — so it's filed under 불・열 alongside Sulfur
   // rather than the finished explosives it's an ingredient of.
   category: 'fire',
+  alsoIn: ['powder'],
   // Interlocking crystals, like Salt (마찰).
   friction: 0.38,
   thermal: { conductivity: 0.3 },

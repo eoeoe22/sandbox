@@ -97,6 +97,7 @@ export const IRON_POWDER = register({
   color: rgb(158, 162, 172),
   density: 7,
   category: 'powder',
+  alsoIn: ['metal'],
   // Rounded, tumbling grains slide more freely than angular coal dust, so an iron
   // heap spreads to a shallower angle of repose (마찰 lower than Coal Powder).
   friction: 0.32,

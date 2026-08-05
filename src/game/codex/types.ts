@@ -72,8 +72,15 @@ export interface CodexEntry {
   /** English name, straight off `Material.name` — the fallback when a locale
    *  table has no entry for this id (the same contract `materialName` uses). */
   name: string;
-  /** Stable category key (see materials/categories.ts), for the filter tabs. */
+  /** Stable canonical category key (see materials/categories.ts) — the single
+   *  shelf the card's chip names. */
   category: string;
+  /** Every category key this material files under, canonical first — what the
+   *  category filter matches. Usually just `[category]`; longer when the
+   *  material declares `alsoIn`, so the codex's shelves hold exactly what the
+   *  palette's tabs do. The chip still shows `category` alone: "which tabs can
+   *  I find this under" is a filtering question, not something a card says. */
+  categories: string[];
   /** Stable phase key — 'solid' | 'powder' | 'liquid' | 'gas'. Separate from
    *  `category` because a thematic tab says nothing about state of matter:
    *  Molten Iron files under 제련 and Acid under 액체, and a player looking for

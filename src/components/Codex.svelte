@@ -66,8 +66,15 @@
     /** Sprite reference for the grid thumbnail — the same `<symbol>` the card's
      *  `iconHtml` points `<use>` at, without the wrapper. */
     symbol: string;
-    /** Stable category key, for the tabs. */
+    /** Stable canonical category key — what the card's chip names. */
     category: string;
+    /** Every category key this card files under, canonical first — what the
+     *  tabs match. Longer than one only for a material declaring `alsoIn`. */
+    categories: string[];
+    /** Those same categories as localized labels, for the search half — typing a
+     *  tab's name has to find what clicking that tab shows. `categoryName` is the
+     *  canonical one alone, because that's what the card displays. */
+    categoryNames: string[];
     /** Stable phase key, or null for an object — see CodexEntry.phase. */
     phase: string | null;
     /** This card's tag ids, for the 태그 필터. Same strings the panel offers. */
@@ -88,6 +95,8 @@
       name: materialName(e.id, e.name),
       sub: e.name,
       category: e.category,
+      categories: e.categories,
+      categoryNames: e.categories.map(categoryLabel),
       categoryName: categoryLabel(e.category),
       phase: e.phase,
       // The four phase keys double as the first four category keys, so the
@@ -106,6 +115,8 @@
       name: objectLabel(o.kind as ObjectKind),
       sub: '',
       category: OBJECTS,
+      categories: [OBJECTS],
+      categoryNames: [t('codex.objects')],
       categoryName: t('codex.objects'),
       phase: null,
       phaseName: null,
@@ -160,7 +171,7 @@
   /** The tabs, in the palette's own thematic order, with the objects tab last. */
   const tabs = $derived.by(() => {
     void $locale;
-    const present = new Set(cards.map((c) => c.category));
+    const present = new Set(cards.flatMap((c) => c.categories));
     const keys = [
       ...CATEGORY_META.map((c) => c.key).filter((k) => present.has(k)),
       ...[...present].filter(
@@ -180,21 +191,23 @@
     ];
   });
 
-  // The search half is name and category only — a "like" match on what the chip
-  // actually says, the same rule the in-game palette search uses, so the two
-  // behave alike. An object has no phase, so a 상태 selection excludes objects
-  // rather than pretending they are solids.
+  // The search half is name and category only — a "like" match, the same rule
+  // the in-game palette search uses, so the two behave alike. It reads every
+  // category the card files under, not just the one its chip shows, so typing a
+  // tab's name and clicking that tab return the same set. An object has no
+  // phase, so a 상태 selection excludes objects rather than pretending they are
+  // solids.
   const visible = $derived.by(() => {
     const q = query.trim().toLowerCase();
     return cards.filter((c) => {
-      if (activeCategory !== 'all' && c.category !== activeCategory) return false;
+      if (activeCategory !== 'all' && !c.categories.includes(activeCategory)) return false;
       if (activePhases.length > 0 && (c.phase === null || !activePhases.includes(c.phase))) return false;
       if (activeTags.length > 0 && !activeTags.every((tag) => c.tags.includes(tag))) return false;
       if (q === '') return true;
       return (
         c.name.toLowerCase().includes(q) ||
         c.sub.toLowerCase().includes(q) ||
-        c.categoryName.toLowerCase().includes(q)
+        c.categoryNames.some((n) => n.toLowerCase().includes(q))
       );
     });
   });

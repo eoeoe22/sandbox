@@ -82,6 +82,7 @@ export const MOLTEN_ALUMINUM = register({
   // Water (3), so it sinks in a quench instead of skating on it.
   density: 4.4,
   category: 'fire',
+  alsoIn: ['metal'],
   // No `viscosity`: runs as freely as water (real molten aluminum is a thin,
   // fluid melt, not a sluggish one like lava or slag), so a pour fills a mold
   // right out to its corners — see the note in the update above.

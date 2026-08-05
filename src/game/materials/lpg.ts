@@ -46,6 +46,7 @@ export const LPG = register({
   color: rgb(210, 215, 170),
   density: 0.8,
   category: 'oil',
+  alsoIn: ['gas'],
   thermal: { init: 60, conductivity: 0.08 },
   update: updateLPG,
 });

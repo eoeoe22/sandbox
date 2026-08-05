@@ -4,6 +4,19 @@
 // "add a material = one file" rule is preserved). The simulation ignores
 // `category` — it's purely a UI grouping.
 //
+// A material may also list extra tabs in `alsoIn`, and then appears under each
+// of them as well — the same material object, in more than one bucket. Two
+// levels to keep straight:
+//
+//   categoryOf(m)   → the one canonical shelf. What the codex chip says, what
+//                     `m.category === 'life'` style checks mean. Single, always.
+//   categoriesOf(m) → every tab it shows up under, canonical first. What the
+//                     palette buckets by and what the codex filter matches.
+//
+// Only the two *placement* surfaces (palette tabs, codex category filter) use
+// the plural form; everything else keeps reading the canonical one, which is why
+// making a material multi-homed can't change its identity anywhere else.
+//
 // Both the main material palette (MaterialPalette.svelte) and the blend brush's
 // custom material picker (MaterialPicker.svelte) build their category > material
 // UI from these helpers, so the two selectors always group and order materials
@@ -23,6 +36,12 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: 'liquid', icon: 'bi-droplet-fill' },
   { key: 'gas', icon: 'bi-cloud-fill' },
   { key: 'fire', icon: 'bi-fire' },
+  // 금속. The one tab whose whole roster arrives through `alsoIn` — every metal
+  // is already filed somewhere by what it *is* (Iron is a solid, Iron Powder a
+  // powder, Molten Iron a 불·열 liquid), and that spread is exactly the problem:
+  // "the metals" was the one question the palette couldn't answer. Sits next to
+  // 제련 because that's where most of them are going.
+  { key: 'metal', icon: 'bi-nut-fill' },
   { key: 'smelt', icon: 'bi-hammer' },
   { key: 'oil', icon: 'bi-fuel-pump-fill' },
   { key: 'polymer', icon: 'bi-hexagon-fill' },
@@ -54,7 +73,22 @@ export const PHASE_KEYS: readonly string[] = ['solid', 'powder', 'liquid', 'gas'
  *  thematic tab it was filed under (Molten Iron is a liquid in 제련). */
 export const phaseKeyOf = (m: Material): string => PHASE_KEY[m.phase];
 
+/** The material's canonical category — the single shelf it "is" filed under. */
 export const categoryOf = (m: Material): string => m.category ?? PHASE_KEY[m.phase];
+
+/**
+ * Every category tab a material appears under: its canonical one first, then any
+ * `alsoIn` extras, deduped (declaring the canonical key again is harmless). The
+ * canonical-first order is what makes the palette's leading tabs keep their
+ * usual members — an extra listing appends to a later tab, it never reorders.
+ */
+export function categoriesOf(m: Material): string[] {
+  const canonical = categoryOf(m);
+  if (!m.alsoIn || m.alsoIn.length === 0) return [canonical];
+  const out = [canonical];
+  for (const key of m.alsoIn) if (!out.includes(key)) out.push(key);
+  return out;
+}
 
 export const iconFor = (key: string): string =>
   CATEGORY_META.find((c) => c.key === key)?.icon ?? 'bi-tag-fill';
@@ -72,14 +106,22 @@ export interface PaletteCategory {
  * known categories (in CATEGORY_META order) that actually have members, followed
  * by any not-yet-known category present (future materials can introduce a new tab
  * just by naming it — nothing here needs editing).
+ *
+ * A material with `alsoIn` lands in several buckets, so the tab counts sum to
+ * more than the registry size. That's the point: the counts say "how many things
+ * are on this shelf", not "how many exist", and a material that belongs on three
+ * shelves is worth finding three times. Each bucket holds the same `Material`
+ * object; nothing downstream mutates it, and the palette renders one tab's
+ * flyout at a time so keying chips by `m.id` stays unique per list.
  */
 export function buildCategories(materials: readonly Material[]): PaletteCategory[] {
   const grouped = new Map<string, Material[]>();
   for (const m of materials) {
-    const key = categoryOf(m);
-    const bucket = grouped.get(key);
-    if (bucket) bucket.push(m);
-    else grouped.set(key, [m]);
+    for (const key of categoriesOf(m)) {
+      const bucket = grouped.get(key);
+      if (bucket) bucket.push(m);
+      else grouped.set(key, [m]);
+    }
   }
   const orderedKeys = [
     ...CATEGORY_META.map((c) => c.key).filter((k) => grouped.has(k)),
