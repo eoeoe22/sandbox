@@ -141,14 +141,14 @@ export const materialCodexEn: Record<number, string> = {
 
   // Life
   47: 'Absorbs water to grow and burns easily.',
-  48: 'Spreads by eroding surrounding flammable materials. Sterilized by alcohol, soapy water, and radiation.',
+  48: 'Spreads by eroding surrounding flammable materials. Oozes downhill like a thick goo and pools in low ground without levelling out flat, so a wall or a pit still contains an outbreak. A colony that seeps into a powder bed survives and infects it from within, out of reach of the chemical disinfectants — only heat or acid clears it. Contact with acid, acid vapor or acid slime kills a cell on the spot — and acid slime neither drains away nor levels flat, so a line of it painted across a corridor is a quarantine wall you never have to re-pour. Plain slime has no effect on it at all. Sterilized by alcohol, soapy water, and radiation.',
   89: 'Ferments sugars (sugar water, honey) to generate CO₂ and alcohol.',
   90: 'Germinates into plants on wet soil.',
   91: 'Viscous fluid that absorbs water to multiply. Radiation resistant and can be decomposed with electricity.',
-  115: 'A variant formed when slime absorbs acid instead of water, having the same corrosive power as acid. Can be diluted by pouring water. Decomposes more easily with electricity.',
+  115: 'A variant formed when slime absorbs acid instead of water, having the same corrosive power as acid. Like acid, it kills any virus it touches — and since it neither drains away nor levels flat, a line of it works as a standing quarantine wall (something plain slime cannot do). Can be diluted by pouring water. Decomposes more easily with electricity.',
   110: 'Biological unit that gnaws on wood. Leaves sawdust when killed.',
   111: 'Gnaws on metal. Immune to radiation.',
-  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water.',
+  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water. Above 500°, it burns away into smoke, leaving no corpse.',
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
   135: 'Calcareous skeleton left when coral dies. Regenerates in saltwater at an appropriate temperature.',
 

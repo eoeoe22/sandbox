@@ -2,9 +2,11 @@ import { register, getMaterial } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
+import { updateLiquid, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ACID } from './acid';
 import { ACID_VAPOR } from './acidvapor';
+import { ACID_SLIME } from './acidslime';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { DIRT } from './dirt';
@@ -19,12 +21,41 @@ import { MUD } from './mud';
 // the gases, and the explosives are all immune, so a virus outbreak is contained
 // by a stone or glass wall.
 //
+// 액체처럼 흐른다 — it is a `Phase.Liquid` goo, not a static solid: a colony runs
+// downhill, drips off a ledge and pools in the low ground instead of hanging in
+// mid-air wherever it grew. The two throttles below (`FLOW_CHANCE` and
+// `viscosity`) are what keep that from turning into a map-wide flood the first
+// time one cell touches a puddle — it creeps and holds a mound rather than
+// levelling flat, so a wall, a pit or a container still contains an outbreak.
+// Being a fluid rather than structure also costs it two things it used to get
+// for free as a Solid, both deliberate: it no longer shields what's behind it
+// from 방사선 (radiation.ts blocks on `Phase.Solid`), so a 방사능 source now
+// sterilises a whole colony rather than only its near face; and an object or a
+// blast shoves it aside like any other liquid instead of treating it as a wall.
+//
 // The cure is heat and chemistry: it's tagged `flammable`, so Fire and Lava burn
-// it out; and an adjacent Acid/Acid Vapor cell, or being heated to boiling,
-// kills a cell outright. So the counters are exactly what you'd reach for —
-// torch it, douse it in acid, or steam it.
+// it out; and contact with anything acidic (see `isAcidic`), or being heated to
+// boiling, kills a cell outright. So the counters are exactly what you'd reach
+// for — torch it, douse it in acid, or steam it.
 const INFECT_CHANCE = 0.05;
 const CURE_TEMP = 100;
+
+// Thick goo doesn't drop like water: the whole movement step (fall + spread) only
+// runs on this fraction of ticks, so a colony oozes downhill instead of splashing
+// (the same throttle Slime and Lava use, at a looser value — see
+// slime.ts's SLIME_FLOW_CHANCE, 0.15). `viscosity` below throttles only the
+// LATERAL spread (updateLiquid reads it after the straight fall), so this gate is
+// what actually slows the drop, and the two together place the virus between Mud
+// (viscosity, no gate — falls at full speed) and Slime (both, at magma pace).
+// Measured on test/virusflow.ts's spread scale (120 ticks, one column on a
+// 40-wide floor): Water 31 columns, Virus 20, Slime 12 — so about two thirds of
+// water's reach and around 1.6× slime's, NOT the 3.3× the two gate constants
+// alone would suggest (`viscosity` does most of the holding here, and the gate
+// throttles the fall this never gets to spread from). Deliberate
+// rather than cosmetic — a flowing plague that levelled out like water would
+// reach every corner of the map within seconds of the first splash, and the whole
+// point of the material is that you can still wall it off and burn it out.
+const FLOW_CHANCE = 0.5;
 
 // A virus cell reached by a chemical disinfectant (H₂O₂) becomes a *corrosion
 // front*, and its `aux` byte carries a small "reach" budget (1..CURE_SEED_BUDGET).
@@ -40,6 +71,32 @@ const CURE_TEMP = 100;
 // kill the touched cell outright and seed no front. Virus otherwise never uses
 // aux, so any healthy cell reads 0 here.
 export const CURE_SEED_BUDGET = 10;
+
+/**
+ * 산성 물질 — everything whose touch kills a virus cell outright.
+ *
+ * All three corrosive materials, so 산성 슬라임 sterilises exactly as its liquid
+ * does. That is a *contact* rule and not corrosion.ts's `tryCorrode`: the pass in
+ * that file eats Solids and Powders only, and the virus has been a Liquid since it
+ * started flowing, so no corroder's own turn can ever reach it. Killing it here,
+ * on the virus's turn, is what keeps 산 = 방역 true after the phase change.
+ *
+ * The corroder is NOT spent doing this, matching what liquid Acid has always done
+ * to a virus. It reads differently for the goo, and deliberately so: Acid Slime
+ * neither drains away nor levels flat, so a line of it painted across a corridor is
+ * a permanent 방역선 the plague can't cross — the one containment that doesn't need
+ * re-pouring. Making that costs the player something real, since the only way to
+ * get Acid Slime is to pour Acid on Slime (acid.ts's recipe).
+ *
+ * 일반 슬라임은 여기 없다 — plain Slime and the virus ignore each other completely,
+ * and that is the whole difference between the two goos here. Slime is not
+ * infectable either (it is neither flammable nor `combustion`, and not one of the
+ * named earth/water exceptions in `isInfectable`), so the pair genuinely has no
+ * interaction in either direction. Acidify it and it becomes a wall.
+ */
+function isAcidic(id: number): boolean {
+  return id === ACID.id || id === ACID_VAPOR.id || id === ACID_SLIME.id;
+}
 
 function isInfectable(id: number): boolean {
   if (id === EMPTY || id === VIRUS.id) return false;
@@ -60,8 +117,7 @@ function updateVirus(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (nid === ACID.id || nid === ACID_VAPOR.id) {
+    if (isAcidic(sim.get(nx, ny))) {
       sim.set(x, y, EMPTY); // dissolved by acid
       return;
     }
@@ -106,14 +162,97 @@ function updateVirus(x: number, y: number, sim: SimContext): void {
       return;
     }
   }
+
+  // An enclosed hole inside the goo collapses at once, outside the flow gate —
+  // otherwise the gate and `viscosity` together leave a settling colony pitted
+  // with empty cells that render as bare background (see collapseVoidBelow in
+  // behaviors.ts for the measurements, and slime.ts for the same call).
+  if (collapseVoidBelow(x, y, sim)) return;
+
+  // Flow. Everything above — curing, corroding, infecting — still runs every
+  // tick; only the movement is gated, so a stalled cell keeps infecting and
+  // keeps dying to whatever is touching it.
+  if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
+}
+
+/**
+ * 스며든 바이러스 — the turn a cell takes once it has soaked into a powder bed
+ * through the 겹침 layer (SimContext.soakDown, or a falling grain swallowing it in
+ * tryMove). `(x, y)` is the HOST cell; the virus is its overlay occupant.
+ *
+ * This exists because an overlay occupant does NOT run its material's `update`
+ * (see Simulation's per-cell step: a soaked fluid gets `updateSoaked` +
+ * `updateOverlay` only). Without it a virus that seeped into a sand or ash bed
+ * would go completely inert — invisible, unable to infect, and unable to be cured
+ * by heat or acid, i.e. an immortal reservoir sitting under a pile the player has
+ * no way to see or clear. That is the one genuinely new failure mode a liquid
+ * virus has that a solid one couldn't, so it is answered here rather than by
+ * forbidding the soak: a plague percolating down through the ground and eating it
+ * from the inside is the more interesting version anyway.
+ *
+ * Its three rules are exactly the ones a surfaced cell keeps: die in heat, die
+ * against acid, and infect. Infecting the host is what resolves the situation —
+ * `set` cannot leave the virus in the slot (a Liquid hosts no overlay), so the
+ * grain and the droplet inside it become one ordinary virus cell that then
+ * behaves normally. The chemical cures (H₂O₂, Alcohol, Soapy Water) all scan for
+ * a *primary* Virus cell and so can't reach a soaked one — deliberate, and the
+ * reason heat and acid are kept here: 땅속에 숨은 바이러스는 태우거나 녹여야 한다.
+ * 방사선 likewise only doses primary cells (radiation.ts).
+ */
+function updateSoakedVirus(x: number, y: number, sim: SimContext): void {
+  if (sim.getTemp(x, y) >= CURE_TEMP) {
+    sim.clearOverlay(x, y);
+    return;
+  }
+
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (isAcidic(sim.get(nx, ny))) {
+      sim.clearOverlay(x, y);
+      return;
+    }
+  }
+
+  // Infect the grain holding it. `set` on the host destroys an overlay the new
+  // material can't hold, so the pair collapses into a single Virus cell — the
+  // mirror of the two-cells-become-one absorb that put the virus in there.
+  if (isInfectable(sim.get(x, y)) && sim.chance(INFECT_CHANCE)) {
+    sim.set(x, y, VIRUS.id);
+    // Fresh material carries no leftover per-cell state — the contract `spawn`
+    // states, and the one every in-place transform in the roster honours by hand
+    // (`set` deliberately KEEPS aux on a non-EMPTY write, so an in-place
+    // transform has to clear it itself). Load-bearing here rather than tidy:
+    // virus reads aux as a corrosion-front budget, so a host grain that kept its
+    // own bookkeeping in that byte would hand the new cell a phantom front and it
+    // would eat itself away with no disinfectant anywhere near it. Nothing that is
+    // both infectable and aux-using ships today — this is for the first one that
+    // does (test/virusflow.ts stamps a bed by hand to hold the line).
+    sim.setAux(x, y, 0);
+  }
 }
 
 export const VIRUS = register({
   id: 48,
   name: 'Virus',
-  phase: Phase.Solid,
+  phase: Phase.Liquid,
   color: rgb(158, 66, 176),
-  density: 1000,
+  // Just denser than Water (3) and than H₂O₂ (3.4), so a colony dropped into a
+  // pool sinks and creeps along the bottom while it infects, and a splash of the
+  // disinfectant poured on top floats and eats its way down rather than sliding
+  // underneath. It was 1000 before — a placeholder, since a Solid's density is
+  // never read by the movement code.
+  density: 3.6,
+  // Thick, gooey ooze — holds a slumping mound instead of spreading flat. The
+  // lateral half of the throttle; FLOW_CHANCE above is the half that slows the
+  // fall. On this field alone it is the roster's SECOND thickest, a hair under
+  // Slime/Acid Slime (0.86) and above Mud (0.82) and Honey (0.80) — what makes it
+  // the livelier goo in play is the other half: its gate is 0.5 against Slime's
+  // 0.15 and Honey's 0.18, so it holds its shape as stubbornly as they do but gets
+  // to act three times as often. (Mud, with a `viscosity` and no gate at all, is
+  // still the quickest of the four.)
+  viscosity: 0.85,
   flammable: true,
   category: 'life',
   // 피폭사 — 방사선 멸균, and a fourth counter to an outbreak alongside fire, acid
@@ -123,4 +262,7 @@ export const VIRUS = register({
   radiationDeath: EMPTY,
   thermal: { conductivity: 0.3 },
   update: updateVirus,
+  // 스며든 바이러스도 살아 있다 — keeps a cell that soaked into a powder bed
+  // infecting and curable instead of inert (see updateSoakedVirus).
+  overlapUpdate: updateSoakedVirus,
 });
