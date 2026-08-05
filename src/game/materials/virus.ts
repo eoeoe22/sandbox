@@ -22,7 +22,7 @@ import { MUD } from './mud';
 //
 // 액체처럼 흐른다 — it is a `Phase.Liquid` goo, not a static solid: a colony runs
 // downhill, drips off a ledge and pools in the low ground instead of hanging in
-// mid-air wherever it grew. The two throttles below (VIRUS_FLOW_CHANCE and
+// mid-air wherever it grew. The two throttles below (`FLOW_CHANCE` and
 // `viscosity`) are what keep that from turning into a map-wide flood the first
 // time one cell touches a puddle — it creeps and holds a mound rather than
 // levelling flat, so a wall, a pit or a container still contains an outbreak.
