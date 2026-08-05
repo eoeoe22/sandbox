@@ -118,6 +118,7 @@ export const materialCodexEn: Record<number, string> = {
   148: 'Explosive mixed from ammonium nitrate and diesel/kerosene. Rather than misfiring when wet, it detonates far more weakly.',
   145: 'Powerful explosive mixed from ammonium nitrate and aluminum powder. Stronger than TNT.',
   129: 'Firework explosive creating colorful sparks.',
+  149: 'Solid propellant made by laying cold niter against cold sugar. It carries its own oxidizer, so once lit the flame front jumps to every touching grain each tick and the whole pile is gone in an instant, pouring out enormous amounts of smoke as it goes. It does not explode, but it is the fastest fuse in the game — and water will not put it out.',
 
   // Cooling
   21: 'Solid ice. Turns into water when melted.',

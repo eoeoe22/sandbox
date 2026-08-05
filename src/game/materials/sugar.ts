@@ -8,6 +8,8 @@ import { tryBurn } from './combustion';
 import { ASH } from './ash';
 import { WATER } from './water';
 import { SUGAR_WATER } from './sugarwater';
+import { SALTPETER } from './saltpeter';
+import { ROCKET_CANDY } from './rocketcandy';
 
 // Sugar (설탕) — a fine white powder that falls and piles like salt, with three
 // fates. Touch a flame and it catches and burns like a light fuel (see
@@ -31,6 +33,35 @@ const CARBONIZE_CHANCE = 0.08;
 // Its own 발화점, named because the carbonise window above is capped by it — a
 // grain hot enough to burn must burn, not short-circuit to inert Ash.
 const AUTO_IGNITE_TEMP = 300;
+
+// 로켓 캔디 조합 — the *fourth* fate, and the only one that isn't about heat or
+// water: a cold grain touching cold Saltpeter grinds together with it into Rocket
+// Candy, both cells at once (see rocketcandy.ts for what the product does).
+//
+// Unlike black powder (three ingredients, hence gunpowdermix.ts's hand-rolled
+// helper) this one is a plain 2-body contact reaction, so it is a row in the
+// declarative table (engine/reactions.ts) rather than any code — the 편의성
+// payoff that table exists for. It is declared on Sugar's side, not Saltpeter's,
+// because Saltpeter never imports Sugar: reading `SALTPETER.id` eagerly in this
+// register literal is safe in that direction and would be a live circular-import
+// hazard in the other (the trap gunpowdermix.ts documents).
+//
+// Ratio is one grain to one, the same 편의성 concession the black-powder recipe
+// makes — the real mix is ~65:35 KNO₃:sugar, which is not something anyone wants
+// to meter out with a pixel brush.
+const CANDY_MIX_CHANCE = 0.25; // ~4 ticks from contact — quick, not instant
+// Grinding, not cooking. Set to gunpowdermix.ts's own MIX_MAX_TEMP so the two
+// recipes gate identically, and so a pile that has caught fire burns instead of
+// quietly turning into propellant mid-flame: above this, Sugar is busy
+// carbonising (200°) or burning (300°) and Saltpeter decomposing (400°).
+//
+// Same asymmetry the flash-powder recipe documents (aluminumpowder.ts):
+// reactions.ts checks `tempMax` against the *declaring* cell only, so this gates
+// the sugar grain and never its saltpeter partner — a hot saltpeter grain can
+// pull a still-cold sugar grain into candy. It is self-closing, because the side
+// that is checked is the side being heated: conduction lifts the sugar past 150°
+// within a few ticks of meeting a hot neighbour and the rule stops firing.
+const CANDY_MIX_MAX_TEMP = 150;
 
 // Dissolving (mirrors salt.ts). A Water neighbour dissolves the grain each tick;
 // the grain vanishes and its water pocket turns to Sugar Water. Sugar is more
@@ -121,6 +152,17 @@ export const SUGAR = register({
   // but floats clear of denser liquids salt sinks straight through.
   density: 3.65,
   combustion: { burnChance: 0.09, autoIgniteTemp: AUTO_IGNITE_TEMP },
+  // 초석 + 설탕 → 로켓 캔디. Runs before `update` (Simulation.updateCell), so a
+  // grain that mixes this tick doesn't also try to burn, char or dissolve.
+  reactions: [
+    {
+      with: SALTPETER.id,
+      produce: ROCKET_CANDY.id,
+      otherBecomes: ROCKET_CANDY.id,
+      probability: CANDY_MIX_CHANCE,
+      tempMax: CANDY_MIX_MAX_TEMP,
+    },
+  ],
   category: 'powder',
   thermal: { conductivity: 0.3 },
   update: updateSugar,

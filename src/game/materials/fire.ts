@@ -97,6 +97,13 @@ export const FIRE = register({
   color: rgb(255, 120, 40),
   density: 1,
   category: 'fire',
+  // …and on the 폭발 shelf as well. Nearly everything filed there is inert until
+  // something sets it off, and the thing that sets it off is almost always a
+  // Fire cell — so the tab you open to build a charge is the tab that was missing
+  // its detonator. It lands *first* in that tab because MATERIALS lists Fire well
+  // ahead of every explosive (buildCategories keeps array order within a tab),
+  // which is exactly where a trigger belongs; test/codex.ts pins that position.
+  alsoIn: ['explosive'],
   // Burns hot, so it heats what it touches. Heat exchange across any interface is
   // gated by min(두 전도도), so Fire's own conductivity is the ceiling on how fast
   // it warms *anything* — at the old 0.1 it was the shared bottleneck that made

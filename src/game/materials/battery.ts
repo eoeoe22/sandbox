@@ -122,6 +122,11 @@ export const BATTERY = register({
   batteryPattern: true,
   density: 1000,
   category: 'electric',
+  // Canonically a power source, but a heated one is a bomb with a fuse built in
+  // (thermal runaway: burns, then detonates — see above), so it is also on the
+  // 폭발 shelf next to the charges it behaves like. The safe chemistry is not:
+  // LFP Battery has no runaway at all and stays purely 전기.
+  alsoIn: ['explosive'],
   thermal: { conductivity: 0.3 },
   update: updateBattery,
 });
