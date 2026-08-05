@@ -380,5 +380,96 @@ function soak(
   );
 }
 
+// --- 8. 산성 슬라임은 죽이고, 일반 슬라임은 아무 상관이 없다 --------------------
+// The two goos are the same material at two acidities (acidslime.ts), and against
+// the virus they are meant to be opposites. Both halves need pinning, and the
+// negative half more than the positive one: the acid bite lives in a shared
+// `isAcidic` in virus.ts, so a future edit that reaches for something broader —
+// "anything in the 생명 tab", "anything named *Slime*", a `corrosive` flag on the
+// material — would silently make plain Slime a disinfectant too and quietly delete
+// a whole containment toy.
+//
+// The kill is a contact rule on the virus's own turn, NOT corrosion.ts's
+// `tryCorrode`: that pass eats Solids and Powders only, and the virus is a Liquid,
+// so an acid slime blob's own turn can never touch it. If the rule were ever moved
+// into the corroder's side it would stop working entirely — which is exactly what
+// 8a would catch.
+{
+  reseed();
+  const acidGoo = cure('Acid Slime', 200);
+  check(
+    'Acid Slime eats a flowing colony',
+    acidGoo.end < acidGoo.start / 4,
+    `${acidGoo.start} → ${acidGoo.end} virus cells`,
+  );
+}
+{
+  // Same scene, plain Slime instead. Nothing may happen in EITHER direction:
+  // Slime is not infectable (not flammable, no `combustion`, not one of the named
+  // earth/water exceptions), and it is not acidic, so both counts are conserved
+  // exactly — there is no roll anywhere in the pair that could nibble at either.
+  reseed();
+  const W = 30;
+  const H = 24;
+  const SLIME = ID('Slime');
+  const grid = new Grid(W, H);
+  const sim = new Simulation(grid);
+  box(grid);
+  for (let y = 16; y < H - 1; y++)
+    for (let x = 1; x < W - 1; x++) grid.cells[grid.idx(x, y)] = VIRUS;
+  for (let y = 12; y < 16; y++)
+    for (let x = 10; x < 20; x++) grid.cells[grid.idx(x, y)] = SLIME;
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const v0 = countOf(grid, VIRUS);
+  const s0 = countOf(grid, SLIME);
+  for (let t = 0; t < 200; t++) sim.step();
+  const v1 = countOf(grid, VIRUS) + countOverlay(grid, VIRUS);
+  const s1 = countOf(grid, SLIME) + countOverlay(grid, SLIME);
+  check('plain Slime does not touch a colony', v1 === v0, `${v0} → ${v1} virus cells`);
+  check('…and the colony does not infect plain Slime', s1 === s0, `${s0} → ${s1} slime cells`);
+}
+{
+  // 스며든 바이러스 too. Built by hand rather than by pouring, because the point is
+  // to put the acid beside a colony that is already in the overlap layer: a soaked
+  // cell runs `updateSoakedVirus`, a completely separate turn from the surface one,
+  // and its acid check is the same shared predicate. (Stamping `grid.overlay`
+  // directly is the harness pattern the other overlap tests use.)
+  const SALT = ID('Salt');
+  /** A salt bed with a soaked virus colony in it and a `goo` puddle sitting on
+   *  top; returns the virus left (primary + soaked) after `ticks`. */
+  function soakedBeside(goo: number, ticks: number): { start: number; end: number } {
+    const W = 24;
+    const H = 20;
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    box(grid);
+    for (let y = 14; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        grid.cells[grid.idx(x, y)] = SALT;
+        if (x >= 8 && x < 16) grid.overlay[grid.idx(x, y)] = VIRUS;
+      }
+    for (let y = 11; y < 14; y++)
+      for (let x = 8; x < 16; x++) grid.cells[grid.idx(x, y)] = goo;
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    const start = countOverlay(grid, VIRUS);
+    for (let t = 0; t < ticks; t++) sim.step();
+    return { start, end: countOf(grid, VIRUS) + countOverlay(grid, VIRUS) };
+  }
+  reseed();
+  const acidGoo = soakedBeside(ID('Acid Slime'), 300);
+  check(
+    'Acid Slime reaches a colony hiding in a powder bed',
+    acidGoo.start > 0 && acidGoo.end < acidGoo.start / 4,
+    `${acidGoo.start} → ${acidGoo.end} virus cells`,
+  );
+  reseed();
+  const plain = soakedBeside(ID('Slime'), 300);
+  check(
+    '…and plain Slime leaves it alone',
+    plain.end === plain.start,
+    `${plain.start} → ${plain.end} virus cells`,
+  );
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

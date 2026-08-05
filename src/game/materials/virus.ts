@@ -6,6 +6,7 @@ import { updateLiquid, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { ACID } from './acid';
 import { ACID_VAPOR } from './acidvapor';
+import { ACID_SLIME } from './acidslime';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { DIRT } from './dirt';
@@ -33,9 +34,9 @@ import { MUD } from './mud';
 // blast shoves it aside like any other liquid instead of treating it as a wall.
 //
 // The cure is heat and chemistry: it's tagged `flammable`, so Fire and Lava burn
-// it out; and an adjacent Acid/Acid Vapor cell, or being heated to boiling,
-// kills a cell outright. So the counters are exactly what you'd reach for —
-// torch it, douse it in acid, or steam it.
+// it out; and contact with anything acidic (see `isAcidic`), or being heated to
+// boiling, kills a cell outright. So the counters are exactly what you'd reach
+// for — torch it, douse it in acid, or steam it.
 const INFECT_CHANCE = 0.05;
 const CURE_TEMP = 100;
 
@@ -71,6 +72,32 @@ const FLOW_CHANCE = 0.5;
 // aux, so any healthy cell reads 0 here.
 export const CURE_SEED_BUDGET = 10;
 
+/**
+ * 산성 물질 — everything whose touch kills a virus cell outright.
+ *
+ * All three corrosive materials, so 산성 슬라임 sterilises exactly as its liquid
+ * does. That is a *contact* rule and not corrosion.ts's `tryCorrode`: the pass in
+ * that file eats Solids and Powders only, and the virus has been a Liquid since it
+ * started flowing, so no corroder's own turn can ever reach it. Killing it here,
+ * on the virus's turn, is what keeps 산 = 방역 true after the phase change.
+ *
+ * The corroder is NOT spent doing this, matching what liquid Acid has always done
+ * to a virus. It reads differently for the goo, and deliberately so: Acid Slime
+ * neither drains away nor levels flat, so a line of it painted across a corridor is
+ * a permanent 방역선 the plague can't cross — the one containment that doesn't need
+ * re-pouring. Making that costs the player something real, since the only way to
+ * get Acid Slime is to pour Acid on Slime (acid.ts's recipe).
+ *
+ * 일반 슬라임은 여기 없다 — plain Slime and the virus ignore each other completely,
+ * and that is the whole difference between the two goos here. Slime is not
+ * infectable either (it is neither flammable nor `combustion`, and not one of the
+ * named earth/water exceptions in `isInfectable`), so the pair genuinely has no
+ * interaction in either direction. Acidify it and it becomes a wall.
+ */
+function isAcidic(id: number): boolean {
+  return id === ACID.id || id === ACID_VAPOR.id || id === ACID_SLIME.id;
+}
+
 function isInfectable(id: number): boolean {
   if (id === EMPTY || id === VIRUS.id) return false;
   if (id === WATER.id || id === SALTWATER.id || id === DIRT.id || id === SAND.id || id === MUD.id) {
@@ -90,8 +117,7 @@ function updateVirus(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (nid === ACID.id || nid === ACID_VAPOR.id) {
+    if (isAcidic(sim.get(nx, ny))) {
       sim.set(x, y, EMPTY); // dissolved by acid
       return;
     }
@@ -183,8 +209,7 @@ function updateSoakedVirus(x: number, y: number, sim: SimContext): void {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (nid === ACID.id || nid === ACID_VAPOR.id) {
+    if (isAcidic(sim.get(nx, ny))) {
       sim.clearOverlay(x, y);
       return;
     }
