@@ -140,7 +140,7 @@ export const materialCodexEn: Record<number, string> = {
 
   // Life
   47: 'Absorbs water to grow and burns easily.',
-  48: 'Spreads by eroding surrounding flammable materials. Sterilized by alcohol, soapy water, and radiation.',
+  48: 'Spreads by eroding surrounding flammable materials. Oozes downhill like a thick goo and pools in low ground without levelling out flat, so a wall or a pit still contains an outbreak. A colony that seeps into a powder bed survives and infects it from within, out of reach of the chemical disinfectants — only heat or acid clears it. Sterilized by alcohol, soapy water, and radiation.',
   89: 'Ferments sugars (sugar water, honey) to generate CO₂ and alcohol.',
   90: 'Germinates into plants on wet soil.',
   91: 'Viscous fluid that absorbs water to multiply. Radiation resistant and can be decomposed with electricity.',
