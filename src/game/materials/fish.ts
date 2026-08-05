@@ -8,6 +8,7 @@ import { touchingBlast } from './crawler';
 import { DEAD_FISH } from './deadfish';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
+import { SMOKE } from './smoke';
 
 // Fish (물고기) — the first *swimming* life in the sandbox. One cell is one fish
 // (엔진 판정은 1픽셀); the grey tail that trails it is drawn by the renderer and
@@ -70,7 +71,7 @@ import { SALTWATER } from './saltwater';
 // stranded one is an ordinary opaque body dripping a puddle at its feet.
 //
 // It dies six ways, all of them leaving a Dead Fish (deadfish.ts) that floats
-// belly-up to the surface: 고온, 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
+// belly-up to the surface: 고온(45°+), 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
 // 감전, 물 밖 질식, 오염수 접촉. A weaker shockwave — a Woofer's thump — kills it
 // half the time and merely throws it the rest (`shockLoose` + `shockDeathChance`,
 // the Termite's exact pattern; see blast.ts). Electricity is the same 50%, and
@@ -78,12 +79,23 @@ import { SALTWATER } from './saltwater';
 // dipped in a tank electrifies the whole pool at once (`sparkDeathChance`, driven
 // from spark.ts).
 //
+// 고온 쪽엔 문턱이 하나 더 있다 — VAPORIZE_TEMP(500°) 이상은 몸이 통째로 타 버려
+// **사체조차 남기지 않는다**: die() 대신 곧장 Smoke(smoke.ts)로 전환된다(용암에 빠지거나
+// 화염 한복판에 놓인 경우처럼, 45°를 거치지 않고 한 틱만에 500°+를 보는 경우도 포함).
+// updateFish에서 이 검사를 먼저 하는 이유가 그것이다 — 순서를 뒤집으면 500°+에서도
+// DEATH_TEMP 쪽 die()가 먼저 걸려 늘 Dead Fish를 남긴다.
+//
 // 잡아먹거나 번식하지 않는다. 개체 수는 유저가 찍은 만큼이 전부다 — a tank doesn't
 // silently fill up with fish while you look away.
 
 /** 사망 온도 — a fish is far more fragile than a termite (70°): water this warm is
  *  already lethal long before it would boil. */
 const DEATH_TEMP = 45;
+/** 소사(燒死) 온도 — 살이 다 타 버릴 정도의 초고열. DEATH_TEMP를 훌쩍 넘는 값이라
+ *  실제로는 항상 이미 죽어 있는 몸(Dead Fish)이 이 온도를 보게 되지만, 화염이나 용암에
+ *  곧장 떨어져 45°를 건너뛰고 한 틱만에 500°+를 보는 산 물고기도 있다 — 그 경우엔
+ *  updateFish가 DEATH_TEMP 검사보다 먼저 이쪽을 걸러 사체 없이 곧장 Smoke가 된다. */
+const VAPORIZE_TEMP = 500;
 /** 물 밖에서 버티는 시간(틱) — the MEDIAN, ~12초 at ×1 speed, not a deadline. Long
  *  enough that a fish flung onto the bank by a blast has a real chance to flop
  *  back in. */
@@ -497,8 +509,22 @@ function die(x: number, y: number, sim: SimContext): void {
   sim.setAux(x, y, faces);
 }
 
+/** 소사 — die()와 달리 사체를 남기지 않는다. 살이 다 타 버릴 온도라 Dead Fish 대신
+ *  곧장 Smoke가 되고, `set`이라 겹침 슬롯에 품고 있던 물도 함께 넘어간다(수증기가 되어
+ *  같이 흩어졌다고 봐도 무방하다 — 어차피 Smoke는 아무것도 호스트하지 않는 기체다). */
+function vaporize(x: number, y: number, sim: SimContext): void {
+  sim.set(x, y, SMOKE.id);
+}
+
 function updateFish(x: number, y: number, sim: SimContext): void {
-  if (sim.getTemp(x, y) >= DEATH_TEMP || touchingBlast(x, y, sim)) {
+  const temp = sim.getTemp(x, y);
+  // 소사 — DEATH_TEMP보다 먼저 검사한다. 순서를 바꾸면 500°+에서도 die()가 먼저 걸려
+  // VAPORIZE_TEMP가 죽은 뒤에는 절대 못 볼 값이 되어 버린다.
+  if (temp >= VAPORIZE_TEMP) {
+    vaporize(x, y, sim);
+    return;
+  }
+  if (temp >= DEATH_TEMP || touchingBlast(x, y, sim)) {
     die(x, y, sim);
     return;
   }

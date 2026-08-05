@@ -16,6 +16,9 @@
 //     the same Dead Fish. 감전 is measured two ways: a battery dropped in a tank
 //     kills through the water itself, and a single hand-fired pulse lands on the
 //     designed 50%.
+//   • 고온 has a second threshold above it (VAPORIZE_TEMP, 500°): past that the body
+//     burns away entirely — Smoke, never Dead Fish — and the check for it has to
+//     run before the DEATH_TEMP one or the higher threshold is unreachable.
 //   • 사체. It floats up through water to the surface on its own buoyancy, and it
 //     eventually rots away instead of piling up forever.
 //   • 개인 공간, and specifically NOT schooling. A pile spreads out, but the fish
@@ -77,6 +80,7 @@ const CO2 = ID('CO2');
 const BATTERY = ID('Lithium Battery');
 const OIL = ID('Crude Oil'); // 도체가 아닌 액체 — 감전 경로를 직접 접촉만 남기고 자른다
 const SPARK = ID('Spark');
+const SMOKE = ID('Smoke');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
  *  expectations (12초 질식) in seconds and converts here. */
@@ -360,6 +364,62 @@ function tank(grid: Grid, surface = 8): void {
     if (count(rad.grid, FISH) === 0) died = true;
   }
   check('radiation kills a fish and leaves the same corpse', died && count(rad.grid, DEAD) >= 1, `dead=${died}`);
+}
+
+// ── 5b. 500°↑ 초고열: 사체 없이 연기로 소멸 ──────────────────────────────────
+// fish.ts의 VAPORIZE_TEMP. DEATH_TEMP(45°)보다 먼저 검사돼야 하므로, 45°와 500°
+// 사이에서는 그대로 Dead Fish가 남고(회귀 방지 — 문턱이 사라지면 이 판이 걸린다) 500°를
+// 넘는 순간부터는 Dead Fish를 단 한 번도 거치지 않고 Smoke가 된다는 것을 같이 잰다.
+// 마른 돌상자 + 초고열 공기를 쓴다(물탱크가 아니다) — 물을 끼우면 이 장면과 무관한
+// 잡음이 섞인다. `vaporize`의 `sim.set(x, y, SMOKE.id)`는 다른 모든 반응 연기(Fire·
+// Slime 등)와 같은 관문(SimContext.applySmokeLevel)을 지난다 — 기본값 'medium'은
+// 35%만 통과시키고 나머지는 EMPTY가 되므로, 이 장면은 `setSmokeLevel('high')`로
+// 전량 통과시켜야 확정적으로 Smoke를 관측할 수 있다.
+{
+  reseed();
+  const scorched = makeWorld(20, 20);
+  fill(scorched.grid, 0, 0, 19, 19, STONE);
+  fill(scorched.grid, 2, 2, 17, 17, EMPTY);
+  scorched.grid.temp.fill(600);
+  put(scorched.grid, 10, 10, FISH);
+  scorched.sim.setSmokeLevel('high');
+  let sawDead = false;
+  let vaporized = false;
+  for (let t = 0; t < 5 * HZ && !vaporized; t++) {
+    scorched.sim.step();
+    if (count(scorched.grid, DEAD) > 0) sawDead = true;
+    vaporized = count(scorched.grid, FISH) === 0 && count(scorched.grid, SMOKE) > 0;
+  }
+  check(
+    '600° 열은 물고기를 사체 없이 연기로 태워 없앤다',
+    vaporized && count(scorched.grid, DEAD) === 0,
+    `smoke=${count(scorched.grid, SMOKE)}, dead=${count(scorched.grid, DEAD)}, fish=${count(scorched.grid, FISH)}`,
+  );
+  check(
+    '…Dead Fish를 거쳐 가지 않는다 (VAPORIZE_TEMP가 DEATH_TEMP보다 먼저 걸린다)',
+    !sawDead,
+    sawDead ? '중간에 Dead Fish가 관측됐다' : 'Dead Fish 없이 곧장 소멸',
+  );
+
+  // 문턱 바로 아래 — 45°와 500° 사이는 여전히 옛 경로(Dead Fish)를 타야 한다. 이게
+  // 없으면 VAPORIZE_TEMP를 0으로 낮춰도(모든 열사가 연기가 돼도) 위 항목만으론 못 잡는다.
+  // 200°는 물의 끓는점(100°)을 넘기므로 여기서도 물탱크 대신 마른 돌상자를 쓴다.
+  reseed();
+  const warm = makeWorld(20, 20);
+  fill(warm.grid, 0, 0, 19, 19, STONE);
+  fill(warm.grid, 2, 2, 17, 17, EMPTY);
+  warm.grid.temp.fill(200);
+  put(warm.grid, 10, 10, FISH);
+  let cooked2 = false;
+  for (let t = 0; t < 5 * HZ && !cooked2; t++) {
+    warm.sim.step();
+    cooked2 = count(warm.grid, FISH) === 0;
+  }
+  check(
+    '문턱 아래(200°)에서는 그대로 Dead Fish를 남긴다 (연기 문턱이 낮은 열까지 삼키지 않는다)',
+    cooked2 && count(warm.grid, DEAD) >= 1 && count(warm.grid, SMOKE) === 0,
+    `dead=${count(warm.grid, DEAD)}, smoke=${count(warm.grid, SMOKE)}`,
+  );
 }
 
 // ── 6. 사체: 배가 하얗게 떠오르고, 언젠가 삭는다 ──────────────────────────────
