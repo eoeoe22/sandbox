@@ -128,6 +128,7 @@ import { PUMP } from './pump';
 import { ELECTROMAGNET } from './electromagnet';
 import { SULFUR } from './sulfur';
 import { SALTPETER } from './saltpeter';
+import { ROCKET_CANDY } from './rocketcandy';
 import { ALUMINUM_POWDER } from './aluminumpowder';
 import { FIREWORKS } from './fireworks';
 import { FIREWORK_STAR } from './fireworkstar';
@@ -271,6 +272,7 @@ export {
   ELECTROMAGNET,
   SULFUR,
   SALTPETER,
+  ROCKET_CANDY,
   ALUMINUM_POWDER,
   FIREWORKS,
   FIREWORK_STAR,
@@ -360,6 +362,10 @@ export const MATERIALS = [
   FIREWORKS,
   SULFUR,
   SALTPETER,
+  // Sits right after its oxidizer: in 불·열 next to the Saltpeter it is half
+  // made of, and in 폭발 between the fireworks and the high explosives, which
+  // is what it is — a propellant, not a charge.
+  ROCKET_CANDY,
   NITRO,
   BLAST,
   BLUE_FLAME,

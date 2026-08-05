@@ -418,6 +418,23 @@ function check(name: string, ok: boolean, detail = ''): void {
     unplaced.length === 0,
     unplaced.length ? unplaced.join(', ') : `${MATERIALS.length} materials placed`,
   );
+
+  // 폭발 탭의 첫 자리는 불. Nearly everything on that shelf is inert until a Fire
+  // cell reaches it, so Fire is listed there too (fire.ts's `alsoIn`) and belongs
+  // at the front of it — the trigger before the things it triggers.
+  //
+  // Nothing declares that position: a tab holds its materials in MATERIALS array
+  // order, so Fire leads the 폭발 tab only because the array lists it ahead of
+  // every explosive. That is one careless insertion away from silently changing,
+  // which is exactly why it is pinned here rather than left to the array.
+  const explosive = buildCategories(MATERIALS).find((c) => c.key === 'explosive');
+  check(
+    '폭발 탭의 첫 칩은 불이다',
+    explosive?.materials[0]?.name === 'Fire',
+    explosive === undefined
+      ? 'there is no 폭발 tab'
+      : `first is ${explosive.materials[0]?.name}, ${explosive.materials.length} chips`,
+  );
 }
 
 // ── 10. The 태그 필터 panel offers every tag the codex shows ────────────────
