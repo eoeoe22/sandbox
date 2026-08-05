@@ -12,13 +12,23 @@
 // pairs entirely (see Simulation.step / Game.frame).
 
 /** The tick/frame passes we break the frame budget into. Order = display order. */
-export type PassName = 'heat' | 'ca' | 'objects' | 'drift' | 'render';
+export type PassName = 'heat' | 'ca' | 'spark' | 'objects' | 'drift' | 'render';
 
-export const PASS_NAMES: readonly PassName[] = ['heat', 'ca', 'objects', 'drift', 'render'];
+export const PASS_NAMES: readonly PassName[] = [
+  'heat',
+  'ca',
+  'spark',
+  'objects',
+  'drift',
+  'render',
+];
 
 /** Averaged pass times (ms) over the last window, plus how many ticks/frames
- *  each average is drawn from. `heat`/`ca`/`objects`/`drift` are per sim tick;
- *  `render` is per rendered frame. */
+ *  each average is drawn from. `heat`/`ca`/`spark`/`objects`/`drift` are per sim
+ *  tick; `render` is per rendered frame. `spark` is the electric wavefront's extra
+ *  propagation passes (see config.SPARK_STEPS_PER_TICK) — 0 in a world with no
+ *  live pulse, which is why it earns a bucket of its own rather than hiding
+ *  inside `ca`. */
 export interface PassStats {
   ms: Record<PassName, number>;
   /** Sim ticks accumulated in this window (the sim passes' sample count). */
@@ -31,7 +41,14 @@ class Profiler {
   /** Master switch. When false the whole thing is inert; set once at startup. */
   enabled = false;
 
-  private total: Record<PassName, number> = { heat: 0, ca: 0, objects: 0, drift: 0, render: 0 };
+  private total: Record<PassName, number> = {
+    heat: 0,
+    ca: 0,
+    spark: 0,
+    objects: 0,
+    drift: 0,
+    render: 0,
+  };
   private ticks = 0;
   private frames = 0;
 
@@ -60,12 +77,19 @@ class Profiler {
     const ms: Record<PassName, number> = {
       heat: this.total.heat / t,
       ca: this.total.ca / t,
+      spark: this.total.spark / t,
       objects: this.total.objects / t,
       drift: this.total.drift / t,
       render: this.total.render / f,
     };
     const out: PassStats = { ms, ticks: this.ticks, frames: this.frames };
-    this.total.heat = this.total.ca = this.total.objects = this.total.drift = this.total.render = 0;
+    this.total.heat =
+      this.total.ca =
+      this.total.spark =
+      this.total.objects =
+      this.total.drift =
+      this.total.render =
+        0;
     this.ticks = 0;
     this.frames = 0;
     return out;

@@ -17,7 +17,12 @@ import {
   WOOD_BOX_IGNITE_TEMP,
 } from '../src/game/engine/objects';
 import type { SimBody, SimCapsule } from '../src/game/engine/objects';
-import { absorbHeatRayCell, emitHeatRay, HEAT_RAY } from '../src/game/materials/heatray';
+import {
+  absorbHeatRayCell,
+  emitHeatRay,
+  HEAT_RAY,
+  isHeatRayAfterimage,
+} from '../src/game/materials/heatray';
 import { getMaterial } from '../src/game/materials/registry';
 import '../src/game/materials';
 
@@ -91,9 +96,15 @@ function place(w: World, body: SimBody): SimBody {
  *  the emitter dark, the control every heating test is judged against. */
 function run(w: World, ticks: number, aimY: number, fire = true): void {
   for (let i = 0; i < ticks; i++) {
-    if (fire && w.grid.cells[w.grid.idx(MUZZLE_X, aimY)] === 0) {
-      emitHeatRay(w.sim.context, MUZZLE_X, aimY, 1, 0);
-    }
+    // Same muzzle rule the real emitter uses (laser.ts): clear means EMPTY *or* the
+    // spent afterimage the last shot left on its way out, which is glowing air, not
+    // an obstruction. Gating on EMPTY alone silently drops every other shot — the
+    // emitter's own tail blocks it — and every heating figure in this file then
+    // reads about half of what a real Laser delivers.
+    const i0 = w.grid.idx(MUZZLE_X, aimY);
+    const clear =
+      w.grid.cells[i0] === 0 || isHeatRayAfterimage(w.sim.context, MUZZLE_X, aimY);
+    if (fire && clear) emitHeatRay(w.sim.context, MUZZLE_X, aimY, 1, 0);
     w.sim.step();
   }
 }
@@ -119,9 +130,11 @@ function beamsBeyond(grid: Grid, x0: number): number {
   return n;
 }
 
-/** Ticks a beam needs to fly the lane from the muzzle to the target (3 cells per
- *  tick along an axis — heatray.ts SPEED_ORTH), plus a little slack. Nothing can
- *  be measured on the target before this many ticks have passed. */
+/** Ticks a beam needs to fly the lane from the muzzle to the target, plus slack —
+ *  nothing can be measured on the target before this many have passed. Kept at the
+ *  old 3-cells-per-tick figure deliberately: heatray.ts's SPEED_ORTH is now well
+ *  above that, so this stays a safe *upper* bound without the harness having to
+ *  track the constant. */
 const FLIGHT_TICKS = Math.ceil((TARGET_X - MUZZLE_X) / 3) + 4;
 
 /** Hottest cell in the column at `x` above the floor — how hard the backstop was
@@ -251,26 +264,106 @@ function columnHeat(grid: Grid, x: number): number {
 //    yet the beam's `aux` is exactly the state a careless absorption would drop.
 {
   const w = makeWorld();
-  const PANE_X = 40;
-  for (let y = 20; y < FLOOR_Y; y++) w.grid.cells[w.grid.idx(PANE_X, y)] = GLASS;
+  // A BLOCK of glass, not a single pane. The beam only comes to rest on its
+  // landing cells, which are one SPEED_ORTH stride apart, so a one-cell pane is
+  // only ever landed in if the stride happens to divide the distance to it — the
+  // scene used to rely on exactly that ("landings are every 3 cells, and the pane
+  // is on one of them") and stopped staging its own case the moment the beam got
+  // faster. A block wider than any plausible stride always contains a landing,
+  // whatever SPEED_ORTH is set to, so the harness stops tracking the constant.
+  const PANE_X0 = 40;
+  const PANE_W = 24;
+  for (let y = 20; y < FLOOR_Y; y++)
+    for (let dx = 0; dx < PANE_W; dx++) w.grid.cells[w.grid.idx(PANE_X0 + dx, y)] = GLASS;
   w.grid.dirty.rebuild(w.grid.cells, w.grid.overlay, w.grid.width, w.grid.height);
   const panes = count(w.grid, GLASS);
   const aim = 40;
-  // Fly one beam until it comes to rest inside the pane (landings are every 3
-  // cells from the muzzle, and the pane is on one of them).
-  let rested = false;
+  // Fly one beam until it comes to rest somewhere inside the block.
+  let restX = -1;
   emitHeatRay(w.sim.context, MUZZLE_X, aim, 1, 0);
-  for (let i = 0; i < 30 && !rested; i++) {
+  for (let i = 0; i < 30 && restX < 0; i++) {
     w.sim.step();
-    rested =
-      w.grid.cells[w.grid.idx(PANE_X, aim)] === HEAT_RAY.id &&
-      w.grid.aux[w.grid.idx(PANE_X, aim)] === GLASS;
+    for (let dx = 0; dx < PANE_W; dx++) {
+      const gi = w.grid.idx(PANE_X0 + dx, aim);
+      if (w.grid.cells[gi] === HEAT_RAY.id && w.grid.aux[gi] === GLASS) {
+        restX = PANE_X0 + dx;
+        break;
+      }
+    }
   }
-  check('a beam comes to rest inside a glass pane, carrying it in aux', rested);
-  const heat = absorbHeatRayCell(w.sim.context, PANE_X, aim);
+  check('a beam comes to rest inside a glass pane, carrying it in aux', restX >= 0);
+  const heat = absorbHeatRayCell(w.sim.context, restX < 0 ? PANE_X0 : restX, aim);
   check('absorbing it yields the strike heat', heat > 0, `${heat}°`);
-  check('and puts the pane back', w.grid.cells[w.grid.idx(PANE_X, aim)] === GLASS && count(w.grid, GLASS) === panes, `${panes} → ${count(w.grid, GLASS)} panes`);
-  check('probing a cell with no beam does nothing', absorbHeatRayCell(w.sim.context, PANE_X, aim) === 0 && count(w.grid, GLASS) === panes);
+  check(
+    'and puts the pane back',
+    restX >= 0 && w.grid.cells[w.grid.idx(restX, aim)] === GLASS && count(w.grid, GLASS) === panes,
+    `${panes} → ${count(w.grid, GLASS)} panes`,
+  );
+  check(
+    'probing a cell with no beam does nothing',
+    restX >= 0 &&
+      absorbHeatRayCell(w.sim.context, restX, aim) === 0 &&
+      count(w.grid, GLASS) === panes,
+  );
+}
+
+// 5b. The beam as the player sees it: one shot per tick, drawn as an unbroken
+//     line. Both halves are things the afterimage tail can quietly break, and
+//     neither shows up in any heat reading until it has already halved the damage.
+{
+  const w = makeWorld();
+  const aim = 30;
+  // Measure the per-tick stride empirically rather than importing SPEED_ORTH — the
+  // point is to check the emitter against the beam's real speed, whatever that is
+  // set to, not to restate the constant.
+  emitHeatRay(w.sim.context, MUZZLE_X, aim, 1, 0);
+  w.sim.step();
+  let stride = 0;
+  for (let x = MUZZLE_X; x < W; x++) {
+    const gi = w.grid.idx(x, aim);
+    if (w.grid.cells[gi] === HEAT_RAY.id && (w.grid.temp[gi] | 0) >> 4 > 0) stride = x - MUZZLE_X;
+  }
+  check('a beam covers several cells a tick (레이저답게)', stride >= 5, `${stride} cells/tick`);
+
+  // Now fire continuously down a clear lane and count the live heads in flight.
+  // One emission per tick means one head per tick, all still airborne — an emitter
+  // that stalls on its own tail every other tick shows half of them, which is
+  // exactly the bug that made a Laser heat at half rate.
+  //
+  // Measured over a window short enough that the leading beam has not yet reached
+  // the far edge: the sandbox border mirrors, so a longer run fills the lane with
+  // returning beams and neither count below means anything any more.
+  const w2 = makeWorld();
+  const TICKS = Math.floor(((W - MUZZLE_X) / stride) * 0.75);
+  run(w2, TICKS, aim);
+  let heads = 0;
+  let lastBeam = -1;
+  for (let x = MUZZLE_X; x < W; x++) {
+    const gi = w2.grid.idx(x, aim);
+    if (w2.grid.cells[gi] !== HEAT_RAY.id) continue;
+    lastBeam = x;
+    if ((w2.grid.temp[gi] | 0) >> 4 > 0) heads++;
+  }
+  check(
+    'a firing Laser emits one beam per tick (its own tail never gates the muzzle)',
+    heads >= TICKS - 1,
+    `${heads} beams in flight after ${TICKS} ticks of firing`,
+  );
+
+  // …and the cells between them are the drawn tail, so the lane reads as a beam
+  // rather than as a row of dots. Everything from the muzzle to the leading beam
+  // cell must be Heat Ray, with no dark gaps in between.
+  let gaps = 0;
+  let lit = 0;
+  for (let x = MUZZLE_X; x <= lastBeam; x++) {
+    if (w2.grid.cells[w2.grid.idx(x, aim)] === HEAT_RAY.id) lit++;
+    else gaps++;
+  }
+  check(
+    'the beam is drawn as an unbroken line, not a row of dots (잔상 꼬리)',
+    gaps === 0 && lit > stride,
+    `${lit} lit cells, ${gaps} dark gaps between muzzle and leading beam`,
+  );
 }
 
 // 6. A body being dragged is shielded from its whole physics phase, beams

@@ -7,6 +7,8 @@ import { EMPTY, type BorderMode } from './types';
 import {
   HEAT_DIFFUSION_RATE,
   HEAT_DIFFUSION_SUBSTEPS,
+  SPARK_STEPS_PER_TICK,
+  SPARK_STEP_BUDGET,
   DEFAULT_CONDUCTIVITY,
   effectiveConductivity,
   USE_WASM_HEAT,
@@ -20,6 +22,7 @@ import { DIR8 } from './directions';
 import { TILE, TILE_BITS } from './dirtyTiles';
 import { BG_DRIFT_DECAY, BG_DRIFT_KICK, BG_DRIFT_STRIDE, TINT_NEUTRAL } from '../tint';
 import { stepObjects } from './objects';
+import { stepSparkFrontier } from '../materials/spark';
 import { heatWasmReady, diffuseHeatWasm } from './heatWasm';
 import { profiler } from './profiler';
 
@@ -182,6 +185,16 @@ export class Simulation {
     }
     g.tick = this.tick;
     this.ctx.tick = this.tick;
+    // Drop any wavefront left over from last tick before the scan below refills
+    // it. Two things end up here and both want the same treatment — the tail of a
+    // front that ran out of this tick's work budget, and sparks the 전기 브러시
+    // injected *between* ticks (it acts through the same SimContext seam material
+    // rules do). Either way the cells are still Sparks sitting on the grid, and
+    // the scan is about to give them their hop; leaving them queued as well would
+    // run each of them twice in one tick.
+    this.ctx.sparkFrontierX.length = 0;
+    this.ctx.sparkFrontierY.length = 0;
+    this.ctx.electricStep++;
     // Clear the transient wind field from last tick before the fans repaint it in
     // the scan below (a Fan stamps the empty cells of its beam via ctx.setWind).
     // Lazy: only fill when a fan actually wrote last tick, so a world with no fans
@@ -226,6 +239,40 @@ export class Simulation {
       const n = performance.now();
       profiler.add('ca', n - t);
       t = n;
+    }
+
+    // 전기의 즉시성: the scan above carried every live pulse exactly one cell, the
+    // way it always did. Now carry it the rest of the way — SPARK_STEPS_PER_TICK−1
+    // more hops over the wavefront queue the scan just filled (see
+    // materials/spark.ts stepSparkFrontier), so a pulse crosses ~10 cells a tick
+    // instead of one and a wire reads as a wire rather than as a fuse.
+    //
+    // Deliberately a pass of its own rather than a knob inside the scan: the hops
+    // have to happen in wavefront order (ring by ring), which is exactly what the
+    // scan's raster order is not, and folding them in would also hand every *other*
+    // material a tenfold clock it never asked for.
+    //
+    // Placed after the CA scan and before the object pass so a pulse that arrives
+    // this tick has already powered its appliances (a Laser's fire countdown, a
+    // Fan's wind field) by the time the objects read the world — the same ordering
+    // a pulse that arrived during the scan itself gets.
+    //
+    // The budget is a spike limiter, not a reach limit: an over-budget front is
+    // left sitting on the grid as Spark cells and the next tick's scan picks it
+    // straight up, so it travels at the old speed rather than dying.
+    if (this.ctx.sparkFrontierX.length > 0) {
+      let spent = 0;
+      for (let s = 1; s < SPARK_STEPS_PER_TICK && spent < SPARK_STEP_BUDGET; s++) {
+        this.ctx.electricStep++;
+        const did = stepSparkFrontier(this.ctx);
+        if (did === 0) break; // front died out (or hit a refractory wall) — done
+        spent += did;
+      }
+      if (prof) {
+        const n = performance.now();
+        profiler.add('spark', n - t);
+        t = n;
+      }
     }
 
     // Free rigid objects (the 독립 오브젝트 layer) advance in their own pass,

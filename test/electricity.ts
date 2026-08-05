@@ -21,6 +21,7 @@ import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { serializeWorld, deserializeWorld } from '../src/state/persistence';
 import { FULL_STRENGTH, packSpark, conductorClass, SPARK } from '../src/game/materials/spark';
+import { SPARK_STEPS_PER_TICK } from '../src/game/config';
 import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import type { Material } from '../src/game/engine/types';
 import { WALL } from '../src/game/materials/wall';
@@ -122,6 +123,68 @@ check(
 );
 check('acid matches saltwater', acidReach === brineReach, `${acidReach} vs ${brineReach}`);
 check('iron runs the whole wire (zero loss)', ironReach > 150, `${ironReach} cells`);
+
+// --- 1b. speed: a pulse is fast, and speed is not power ------------------------
+// The two halves of 전기의 즉시성 (config.SPARK_STEPS_PER_TICK), which pull in
+// opposite directions and so have to be pinned together:
+//
+//   • the front really does cover ~SPARK_STEPS_PER_TICK cells per tick, and
+//   • it still energizes each conductor cell exactly ONCE per pulse.
+//
+// The second is the load-bearing one. Everything a pulse *does* to the wire it
+// runs down — Nichrome's Joule heat, the electrolysis roll on water, Slime's
+// dissolve seeding — is driven from a cell's own collapse (collapseSpark), so
+// "once per cell per pulse" is precisely the statement that making electricity
+// faster did not make a battery stronger. Losing the refractory stamp, or letting
+// the wavefront queue hand a cell out twice, shows up here as a cell energized 2+
+// times by a single pulse and would multiply all three effects by the same factor.
+{
+  const len = 140;
+  const grid = new Grid(len + 4, 5);
+  const sim = new Simulation(grid);
+  const y = 2;
+  for (let x = 0; x < len; x++) grid.set(x, y, IRON.id);
+  grid.set(0, y, SPARK.id);
+  grid.setAux(0, y, packSpark(FULL_STRENGTH, conductorClass(IRON.id)));
+
+  // A cell is counted the tick it is SPENT (a Spark whose strength has been
+  // zeroed by its live turn — see spark.ts's two-turn split). That state lasts
+  // exactly one tick per energization, which is what makes it a clean counter:
+  // sampling "is a Spark" instead would double-count the leading ring, which sits
+  // on the grid for one tick before it gets its own hop.
+  const energized = new Array<number>(len).fill(0);
+  let reachedTick = -1;
+  const MARK = 100; // how far down the wire we time the front to
+  const ticks = 200;
+  for (let t = 0; t < ticks; t++) {
+    sim.step();
+    for (let x = 0; x < len; x++) {
+      if (grid.get(x, y) !== SPARK.id) continue;
+      if (grid.getAux(x, y) >> 8 !== 0) continue; // still live — not yet spent
+      energized[x]++;
+      if (x >= MARK && reachedTick < 0) reachedTick = t + 1;
+    }
+  }
+
+  const expected = Math.ceil(MARK / SPARK_STEPS_PER_TICK);
+  check(
+    `a pulse covers ~SPARK_STEPS_PER_TICK (${SPARK_STEPS_PER_TICK}) cells a tick`,
+    reachedTick > 0 && reachedTick <= expected + 2,
+    `${MARK} cells in ${reachedTick} ticks (one cell per tick would be ${MARK})`,
+  );
+  check(
+    '…which is the whole point — it used to be one cell per tick (the check can fail)',
+    reachedTick > 0 && reachedTick < MARK / 2,
+    `${reachedTick} ticks vs ${MARK} before`,
+  );
+  const visited = energized.filter((n) => n > 0).length;
+  const doubled = energized.filter((n) => n > 1).length;
+  check(
+    'one pulse energizes each cell it reaches exactly once (속도는 세기가 아니다)',
+    visited > MARK && doubled === 0,
+    `${visited}/${len} cells carried the pulse, ${doubled} carried it more than once`,
+  );
+}
 
 // --- 2. every conductor round-trips through the class field -------------------
 // The failure this guards against is silent: a class that overflows the field
@@ -807,14 +870,25 @@ function leakScene(coreId: number, len = 60): { coreReach: number; leaked: boole
   }
   grid.set(2, 2, SPARK.id);
   grid.setAux(2, 2, packSpark(FULL_STRENGTH, conductorClass(WIRE.id)));
-  for (let t = 0; t < len + 10; t++) sim.step();
-  let fanCells = 0;
+  const fanCells = 16;
+  // Sample the body *every* tick and keep the best reading, rather than reading it
+  // once at the end. This is a single hand-placed pulse with no battery behind it,
+  // so the fan's POWERED_TICKS countdown starts running down the moment the pulse
+  // lands — and since a pulse now covers SPARK_STEPS_PER_TICK cells a tick, it
+  // lands around tick 5 rather than tick 40, long enough before a fixed
+  // end-of-run reading for the countdown to have lapsed. Reading the peak asks the
+  // question this check is actually about (does the pulse get *out* of the jacket
+  // and into the machine) instead of a question about arrival timing.
   let powered = 0;
-  for (let dy = 0; dy < 4; dy++) {
-    for (let dx = 0; dx < 4; dx++) {
-      fanCells++;
-      if (grid.getAux(2 + len + dx, 1 + dy) >> 2 > 0) powered++;
+  for (let t = 0; t < len + 10; t++) {
+    sim.step();
+    let lit = 0;
+    for (let dy = 0; dy < 4; dy++) {
+      for (let dx = 0; dx < 4; dx++) {
+        if (grid.getAux(2 + len + dx, 1 + dy) >> 2 > 0) lit++;
+      }
     }
+    if (lit > powered) powered = lit;
   }
   check(
     'a Wire run still powers the device at its far end',

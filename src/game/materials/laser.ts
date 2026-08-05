@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { floodDeviceBody } from '../engine/deviceBody';
-import { emitHeatRay } from './heatray';
+import { emitHeatRay, isHeatRayAfterimage } from './heatray';
 
 // Laser (레이저) — an electric emitter that turns power into a beam of Heat Rays
 // (see heatray.ts). Which way it fires is chosen at placement time by the
@@ -65,9 +65,17 @@ function updateLaser(x: number, y: number, sim: SimContext): void {
   const [dx, dy] = DIRV[aux & DIR_MASK];
   // Fire a beam from the muzzle (the cell straight ahead) when it's clear, so the
   // emitter doesn't overwrite whatever is pressed against its face.
+  //
+  // An afterimage counts as clear. The previous shot leaves its drawn tail
+  // starting at the muzzle (see heatray.ts), and that tail is air with a glow on
+  // it, not an obstruction — treating it as one would gate the emitter to a beam
+  // every *other* tick and quietly halve how fast a laser heats what it is aimed
+  // at, which is exactly what this whole change is not allowed to do.
   const mx = x + dx;
   const my = y + dy;
-  if (sim.inBounds(mx, my) && sim.isEmpty(mx, my)) emitHeatRay(sim, mx, my, dx, dy);
+  if (sim.inBounds(mx, my) && (sim.isEmpty(mx, my) || isHeatRayAfterimage(sim, mx, my))) {
+    emitHeatRay(sim, mx, my, dx, dy);
+  }
   // Spin the countdown down one tick, preserving the direction bits.
   sim.setAux(x, y, ((timer - 1) << 2) | (aux & DIR_MASK));
 }
