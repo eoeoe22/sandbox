@@ -4,6 +4,7 @@ import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updateFloatyPowder } from '../engine/behaviors';
 import { SIM_HZ_AT_1X } from '../config';
+import { SMOKE } from './smoke';
 
 // Dead Fish (죽은 물고기) — what a Fish leaves behind, every way it can die (see
 // fish.ts). Not in the palette: 사체는 만들어 놓는 것이 아니라 *생기는* 것이라,
@@ -40,12 +41,26 @@ import { SIM_HZ_AT_1X } from '../config';
 // the fish's own aux word as a decay count from the declarative death hooks, which
 // don't clear it. That inheritance is now load-bearing for the facing bit above,
 // which is another reason not to spend aux on a timer here.)
+//
+// 소사 — checked before the decay roll, for the same reason fish.ts checks it before
+// DEATH_TEMP: a corpse is not exempt just because it already died once. A raft of
+// Dead Fish drifting into a lava flow (or a tank that's since been set ablaze)
+// burns away into Smoke on the spot rather than waiting out its ordinary rot timer.
 const DECAY_SECONDS = 45;
 /** 부패 확률/틱 — mean lifetime DECAY_SECONDS at ×1 speed. Exponential rather than
  *  fixed, so corpses fade out staggered instead of all at once. */
 const DECAY_CHANCE = 1 / (DECAY_SECONDS * SIM_HZ_AT_1X);
 
+/** 소사(燒死) 온도 — fish.ts의 VAPORIZE_TEMP와 같은 값. 산 물고기가 이 온도에서
+ *  사체도 없이 곧장 Smoke가 되는 것과 같은 이유로, 이미 떠 있는 사체도 예외가 아니다
+ *  — 용암에 뜬 채 흘러든 사체가 부패를 기다리며 멀쩡히 떠 있으면 어색하다. */
+const VAPORIZE_TEMP = 500;
+
 function updateDeadFish(x: number, y: number, sim: SimContext): void {
+  if (sim.getTemp(x, y) >= VAPORIZE_TEMP) {
+    sim.set(x, y, SMOKE.id);
+    return;
+  }
   if (sim.chance(DECAY_CHANCE)) {
     sim.set(x, y, EMPTY);
     return;

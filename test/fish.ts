@@ -462,6 +462,29 @@ function tank(grid: Grid, surface = 8): void {
     at45 > 0 && at45 < before,
     `${at45} of ${before} still there at the 45s mean`,
   );
+
+  // ── 6b. 사체도 500°↑에서는 연기로 소멸 ────────────────────────────────────
+  // deadfish.ts의 VAPORIZE_TEMP(fish.ts와 같은 값) — 이미 죽은 몸도 부패를 기다리지
+  // 않고 곧장 Smoke가 된다. 마른 돌상자를 쓰는 이유와 setSmokeLevel('high')를 쓰는
+  // 이유는 5b와 동일(SimContext.applySmokeLevel이 기본 'medium'에서 쓰기의 65%를
+  // EMPTY로 거른다).
+  reseed();
+  const scorchedCorpse = makeWorld(20, 20);
+  fill(scorchedCorpse.grid, 0, 0, 19, 19, STONE);
+  fill(scorchedCorpse.grid, 2, 2, 17, 17, EMPTY);
+  scorchedCorpse.grid.temp.fill(600);
+  put(scorchedCorpse.grid, 10, 10, DEAD);
+  scorchedCorpse.sim.setSmokeLevel('high');
+  let corpseVaporized = false;
+  for (let t = 0; t < 5 * HZ && !corpseVaporized; t++) {
+    scorchedCorpse.sim.step();
+    corpseVaporized = count(scorchedCorpse.grid, DEAD) === 0 && count(scorchedCorpse.grid, SMOKE) > 0;
+  }
+  check(
+    '600° 열은 사체도 연기로 태워 없앤다 (부패를 기다리지 않는다)',
+    corpseVaporized,
+    `smoke=${count(scorchedCorpse.grid, SMOKE)}, dead=${count(scorchedCorpse.grid, DEAD)}`,
+  );
 }
 
 // ── 7. 개인 공간 + 느슨한 모임 ────────────────────────────────────────────────
