@@ -147,7 +147,7 @@ export const materialCodexEn: Record<number, string> = {
   115: 'A variant formed when slime absorbs acid instead of water, having the same corrosive power as acid. Like acid, it kills any virus it touches — and since it neither drains away nor levels flat, a line of it works as a standing quarantine wall (something plain slime cannot do). Can be diluted by pouring water. Decomposes more easily with electricity.',
   110: 'Biological unit that gnaws on wood. Leaves sawdust when killed.',
   111: 'Gnaws on metal. Immune to radiation.',
-  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water.',
+  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water. Above 500°, it burns away into smoke, leaving no corpse.',
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
   135: 'Calcareous skeleton left when coral dies. Regenerates in saltwater at an appropriate temperature.',
 
