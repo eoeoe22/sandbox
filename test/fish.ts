@@ -20,7 +20,9 @@
 //     burns away entirely — Smoke, never Dead Fish — and the check for it has to
 //     run before the DEATH_TEMP one or the higher threshold is unreachable.
 //   • 사체. It floats up through water to the surface on its own buoyancy, and it
-//     eventually rots away instead of piling up forever.
+//     eventually rots away instead of piling up forever — unless it, too, crosses
+//     VAPORIZE_TEMP first (deadfish.ts's own copy of the same threshold), in which
+//     case it burns away into Smoke without waiting on the decay roll.
 //   • 개인 공간, and specifically NOT schooling. A pile spreads out, but the fish
 //     end up no tighter than a random scatter — measured against a Monte Carlo
 //     null the harness computes itself, not against a hand-picked number.
