@@ -221,8 +221,12 @@ export const VIRUS = register({
   density: 3.6,
   // Thick, gooey ooze — holds a slumping mound instead of spreading flat. The
   // lateral half of the throttle; FLOW_CHANCE above is the half that slows the
-  // fall. Just under the roster's thickest goos (Slime/Acid Slime 0.86, Mud 0.82,
-  // Honey 0.8), so it is the runniest of the goos while still nothing like water.
+  // fall. On this field alone it is the roster's SECOND thickest, a hair under
+  // Slime/Acid Slime (0.86) and above Mud (0.82) and Honey (0.80) — what makes it
+  // the livelier goo in play is the other half: its gate is 0.5 against Slime's
+  // 0.15 and Honey's 0.18, so it holds its shape as stubbornly as they do but gets
+  // to act three times as often. (Mud, with a `viscosity` and no gate at all, is
+  // still the quickest of the four.)
   viscosity: 0.85,
   flammable: true,
   category: 'life',
