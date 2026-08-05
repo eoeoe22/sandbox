@@ -102,9 +102,10 @@ export const SALTPETER = register({
   // the Sand/Salt mineral powders (5) — so a poured mix layers Coal Powder at the
   // bottom, then saltpeter, then sulfur, and all three sink in fresh water (3).
   density: 4.3,
-  // Not an explosive by itself — an oxidizer — but filed under 폭발 alongside
-  // Sulfur so both black-powder ingredients sit beside the Gunpowder they make.
-  category: 'explosive',
+  // Not an explosive by itself — an oxidizer, and the one that decomposes into
+  // fire's own oxygen supply — so it's filed under 불・열 alongside Sulfur
+  // rather than the finished explosives it's an ingredient of.
+  category: 'fire',
   // Interlocking crystals, like Salt (마찰).
   friction: 0.38,
   thermal: { conductivity: 0.3 },
