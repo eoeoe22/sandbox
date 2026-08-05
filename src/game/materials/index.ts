@@ -104,6 +104,7 @@ import { RESIN } from './resin';
 import { AMBER } from './amber';
 import { WHITE_PHOSPHORUS } from './whitephosphorus';
 import { SUGAR } from './sugar';
+import { CARAMEL } from './caramel';
 import { SUGAR_WATER } from './sugarwater';
 import { CHLORINE } from './chlorine';
 import { HELIUM } from './helium';
@@ -248,6 +249,7 @@ export {
   AMBER,
   WHITE_PHOSPHORUS,
   SUGAR,
+  CARAMEL,
   SUGAR_WATER,
   CHLORINE,
   HELIUM,
@@ -454,6 +456,11 @@ export const MATERIALS = [
   MESH,
   SODIUM,
   SUGAR,
+  // Straight after the Sugar it is cooked out of, which is where it has to be in
+  // 가루 (`alsoIn`) — someone looking for it is looking for "what happened to my
+  // sugar". In 액체 that lands it after Honey, its only sibling made of the same
+  // stuff, which reads just as well.
+  CARAMEL,
   HYDROGEN_PEROXIDE,
   RESIN,
   CO2,

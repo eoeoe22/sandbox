@@ -5,18 +5,19 @@ import { DIR4 } from '../engine/directions';
 import { updatePowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryBurn } from './combustion';
-import { ASH } from './ash';
 import { WATER } from './water';
 import { SUGAR_WATER } from './sugarwater';
-import { SALTPETER } from './saltpeter';
-import { ROCKET_CANDY } from './rocketcandy';
+import { CARAMEL } from './caramel';
 
 // Sugar (설탕) — a fine white powder that falls and piles like salt, with three
 // fates. Touch a flame and it catches and burns like a light fuel (see
 // combustion.ts). Merely *heat* it — on hot stone, near lava, under the heat
-// brush — and before it reaches its ignition point it caramelises and then chars:
-// past CARBONIZE_TEMP a grain blackens into Ash without ever bursting into flame,
-// the burnt-sugar smell made literal.
+// brush — and before it reaches its ignition point it melts and browns: past
+// CARAMELIZE_TEMP the grain stops being a powder at all and becomes Caramel, a
+// hot syrup that runs downhill and sets hard (caramel.ts). Cook that too far and
+// it chars on to Ash, the burnt-sugar smell made literal — but the charring is
+// caramel's step now, not sugar's, so the two halves of "caramelises and then
+// chars" are two materials and two thresholds instead of one jump to soot.
 //
 // Its third fate is to DISSOLVE: a grain touching fresh Water melts into it and
 // turns it into Sugar Water (설탕물), the same way Salt makes Saltwater — except
@@ -26,42 +27,24 @@ import { ROCKET_CANDY } from './rocketcandy';
 // Water turns the pair into Alcohol + CO₂ (see yeast.ts) — but now the usual path
 // is that the sugar dissolves first and the Yeast ferments the resulting Sugar
 // Water directly (sugarwater.ts handles that fermentation in its update).
-// Below the ignition point: heat alone caramelises then carbonises the grain into
-// char (Ash) instead of open flame.
-const CARBONIZE_TEMP = 200;
-const CARBONIZE_CHANCE = 0.08;
-// Its own 발화점, named because the carbonise window above is capped by it — a
-// grain hot enough to burn must burn, not short-circuit to inert Ash.
-const AUTO_IGNITE_TEMP = 300;
+//
+// 로켓 캔디 used to be a fourth fate declared right here — a cold grain grinding
+// together with cold Saltpeter. It is caramel's now, and made by melt-casting
+// rather than grinding: heat the sugar until it runs, then pour the niter into
+// the melt (caramel.ts's `reactions`). Sugar reaches the propellant through the
+// pan, which is how the real thing is made and one more reason for the middle
+// state to exist.
 
-// 로켓 캔디 조합 — the *fourth* fate, and the only one that isn't about heat or
-// water: a cold grain touching cold Saltpeter grinds together with it into Rocket
-// Candy, both cells at once (see rocketcandy.ts for what the product does).
-//
-// Unlike black powder (three ingredients, hence gunpowdermix.ts's hand-rolled
-// helper) this one is a plain 2-body contact reaction, so it is a row in the
-// declarative table (engine/reactions.ts) rather than any code — the 편의성
-// payoff that table exists for. It is declared on Sugar's side, not Saltpeter's,
-// because Saltpeter never imports Sugar: reading `SALTPETER.id` eagerly in this
-// register literal is safe in that direction and would be a live circular-import
-// hazard in the other (the trap gunpowdermix.ts documents).
-//
-// Ratio is one grain to one, the same 편의성 concession the black-powder recipe
-// makes — the real mix is ~65:35 KNO₃:sugar, which is not something anyone wants
-// to meter out with a pixel brush.
-const CANDY_MIX_CHANCE = 0.25; // ~4 ticks from contact — quick, not instant
-// Grinding, not cooking. Set to gunpowdermix.ts's own MIX_MAX_TEMP so the two
-// recipes gate identically, and so a pile that has caught fire burns instead of
-// quietly turning into propellant mid-flame: above this, Sugar is busy
-// carbonising (200°) or burning (300°) and Saltpeter decomposing (400°).
-//
-// Same asymmetry the flash-powder recipe documents (aluminumpowder.ts):
-// reactions.ts checks `tempMax` against the *declaring* cell only, so this gates
-// the sugar grain and never its saltpeter partner — a hot saltpeter grain can
-// pull a still-cold sugar grain into candy. It is self-closing, because the side
-// that is checked is the side being heated: conduction lifts the sugar past 150°
-// within a few ticks of meeting a hot neighbour and the rule stops firing.
-const CANDY_MIX_MAX_TEMP = 150;
+// Below the ignition point, heat alone melts and browns the grain into Caramel.
+// Named 캐러멜화 rather than "carbonise" because the charring step moved with it:
+// the grain no longer jumps to Ash, it goes to syrup first and Ash is caramel's
+// own 250° threshold.
+const CARAMELIZE_TEMP = 160;
+const CARAMELIZE_CHANCE = 0.08;
+// Its own 발화점, named because the caramelise window above is capped by it — a
+// grain hot enough to burn must burn as a fuel, not short-circuit into syrup that
+// would then have to catch all over again.
+const AUTO_IGNITE_TEMP = 300;
 
 // Dissolving (mirrors salt.ts). A Water neighbour dissolves the grain each tick;
 // the grain vanishes and its water pocket turns to Sugar Water. Sugar is more
@@ -80,14 +63,16 @@ export const SUGAR_WATER_RATIO = 12;
 function updateSugar(x: number, y: number, sim: SimContext): void {
   // Direct flame (or self-ignition past 300°) → burns as a fuel.
   if (tryBurn(x, y, sim)) return;
-  // Heated but not yet burning → caramelise/carbonise to Ash. Gated *below* the
-  // ignition point: an actually-burning grain is pinned at combustion's 800°, so
-  // without this upper bound it would keep short-circuiting to inert Ash instead
-  // of burning as a fuel (Ash isn't combustible, so the flame front would die).
-  // Keeps the cell's temperature so the fresh char reads as hot.
+  // Heated but not yet burning → caramelise into molten Caramel. Gated *below*
+  // the ignition point: an actually-burning grain is pinned at combustion's 800°,
+  // so without this upper bound a lit pile would keep melting itself out from
+  // under its own flame front instead of burning as a fuel. An in-place `set`
+  // keeps the cell's temperature, which is what makes the fresh caramel arrive
+  // hot enough to actually flow (and to be inside the propellant recipe's window
+  // — see caramel.ts).
   const t = sim.getTemp(x, y);
-  if (t >= CARBONIZE_TEMP && t < AUTO_IGNITE_TEMP && sim.chance(CARBONIZE_CHANCE)) {
-    sim.set(x, y, ASH.id);
+  if (t >= CARAMELIZE_TEMP && t < AUTO_IGNITE_TEMP && sim.chance(CARAMELIZE_CHANCE)) {
+    sim.set(x, y, CARAMEL.id);
     return;
   }
 
@@ -152,17 +137,20 @@ export const SUGAR = register({
   // but floats clear of denser liquids salt sinks straight through.
   density: 3.65,
   combustion: { burnChance: 0.09, autoIgniteTemp: AUTO_IGNITE_TEMP },
-  // 초석 + 설탕 → 로켓 캔디. Runs before `update` (Simulation.updateCell), so a
-  // grain that mixes this tick doesn't also try to burn, char or dissolve.
-  reactions: [
-    {
-      with: SALTPETER.id,
-      produce: ROCKET_CANDY.id,
-      otherBecomes: ROCKET_CANDY.id,
-      probability: CANDY_MIX_CHANCE,
-      tempMax: CANDY_MIX_MAX_TEMP,
-    },
-  ],
+  // 겹침 불가: a grain never swallows the liquid it is standing in. Soap's tag
+  // for Soap's reason — the dissolve branch above scans for *primary* Water
+  // neighbours, so water that soaked invisibly into a grain neither dissolved it
+  // nor became Sugar Water. Now it pools against the grains and the reaction
+  // actually sees it.
+  //
+  // Caramelising made the same seam start losing mass outright. Molten Caramel
+  // percolated down into the grains under it, and the moment one of those grains
+  // melted the write turned its host into a *liquid* — which cannot hold an
+  // occupant, so the caramel soaked into it was deleted by the very step that was
+  // supposed to add to it (스며든 액체 삭제, the loss Debris's `overlapCarrier`
+  // exists to dodge). A third of a melting bed went that way. Two grains of the
+  // same sugar meeting should fuse, not swallow each other.
+  liquidOverlap: 0,
   category: 'powder',
   thermal: { conductivity: 0.3 },
   update: updateSugar,
