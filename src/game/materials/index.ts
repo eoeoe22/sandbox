@@ -143,6 +143,7 @@ import { CATALYST } from './catalyst';
 import { POLYETHYLENE } from './polyethylene';
 import { ACTIVATED_ALUMINUM } from './activatedaluminum';
 import { AMMONAL } from './ammonal';
+import { ANFO } from './anfo';
 
 export {
   EMPTY_MAT,
@@ -285,6 +286,7 @@ export {
   POLYETHYLENE,
   ACTIVATED_ALUMINUM,
   AMMONAL,
+  ANFO,
 };
 
 /** Palette order (also drives the toolbar). Several materials are deliberately
@@ -350,6 +352,10 @@ export const MATERIALS = [
   ACID_VAPOR,
   GUNPOWDER,
   FLASH_POWDER,
+  // The ammonium nitrate family, in ascending power: the bare prill, then its
+  // two fuelled forms (see ammoniumnitrate.ts).
+  AMMONIUM_NITRATE,
+  ANFO,
   AMMONAL,
   FIREWORKS,
   SULFUR,
@@ -384,7 +390,6 @@ export const MATERIALS = [
   GLASS,
   LIQUID_NITROGEN,
   DRY_ICE,
-  AMMONIUM_NITRATE,
   OXYGEN,
   HYDROGEN,
   BATTERY,
