@@ -9,6 +9,7 @@ import { DEAD_FISH } from './deadfish';
 import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { SMOKE } from './smoke';
+import { CHLORINE } from './chlorine';
 
 // Fish (물고기) — the first *swimming* life in the sandbox. One cell is one fish
 // (엔진 판정은 1픽셀); the grey tail that trails it is drawn by the renderer and
@@ -70,14 +71,21 @@ import { SMOKE } from './smoke';
 // never destroyed. Out of water the fish sheds it again (`shedWater`), so a
 // stranded one is an ordinary opaque body dripping a puddle at its feet.
 //
-// It dies six ways, all of them leaving a Dead Fish (deadfish.ts) that floats
+// It dies seven ways, all of them leaving a Dead Fish (deadfish.ts) that floats
 // belly-up to the surface: 고온(45°+), 폭발 충격파(인접 Blast 섬광은 즉사), 방사능 피폭,
-// 감전, 물 밖 질식, 오염수 접촉. A weaker shockwave — a Woofer's thump — kills it
-// half the time and merely throws it the rest (`shockLoose` + `shockDeathChance`,
-// the Termite's exact pattern; see blast.ts). Electricity is the same 50%, and
-// reaches much further than you'd expect: water is a conductor, so a live wire
-// dipped in a tank electrifies the whole pool at once (`sparkDeathChance`, driven
-// from spark.ts).
+// 감전, 물 밖 질식, 오염수 접촉, 염소가스 접촉(즉사). A weaker shockwave — a Woofer's
+// thump — kills it half the time and merely throws it the rest (`shockLoose` +
+// `shockDeathChance`, the Termite's exact pattern; see blast.ts). Electricity is
+// the same 50%, and reaches much further than you'd expect: water is a
+// conductor, so a live wire dipped in a tank electrifies the whole pool at once
+// (`sparkDeathChance`, driven from spark.ts).
+//
+// 염소가스는 확률이 아니라 접촉 즉시다 — `touchingBlast`와 같은 결(結)로,
+// `touchingPoison`(POISON_HAZARD, 매 틱 굴리는 확률)과는 다르다. chlorine.ts가
+// Plant·Virus·Slime 같은 다른 생명 물질을 죽일 때 쓰는 `isLiving()` 목록(매 틱 30%
+// 확률로 흔적 없이 지움)에는 물고기를 넣지 않았다 — 물고기는 이미 자기 사체
+// 관례(예외 없이 Dead Fish를 남긴다)가 있고, 그 관례를 깨느니 이 파일에서 직접 판정해
+// 사체를 남기는 쪽이 일관적이다.
 //
 // 고온 쪽엔 문턱이 하나 더 있다 — VAPORIZE_TEMP(500°) 이상은 몸이 통째로 타 버려
 // **사체조차 남기지 않는다**: die() 대신 곧장 Smoke(smoke.ts)로 전환된다(용암에 빠지거나
@@ -292,6 +300,21 @@ function touchingPoison(x: number, y: number, sim: SimContext): boolean {
     const id = sim.get(nx, ny);
     if (id === EMPTY || isBreathable(id)) continue;
     if (getMaterial(id).phase === Phase.Liquid && !sim.isFrozen(nx, ny)) return true;
+  }
+  return false;
+}
+
+/** 염소가스 접촉 — 인접 칸에 Chlorine이 있으면 참. `touchingBlast`처럼 확률이
+ *  아니라 접촉 여부만 보는데, 이건 회귀 방지가 아니라 원래 그렇게 설계된 것이다:
+ *  아가미로 유독가스를 들이켜는 것은 다치는 일이 아니라 죽는 일이라 즉발이 맞다.
+ *  가스가 물 위를 덮어 물속의 물고기까지 접촉하는 그림이므로 물 안팎을 가리지
+ *  않고 매 틱 검사한다(swim/flop으로 갈라지기 전, updateFish 맨 앞에서). */
+function touchingChlorine(x: number, y: number, sim: SimContext): boolean {
+  for (const [dx, dy] of DIR4) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (sim.get(nx, ny) === CHLORINE.id) return true;
   }
   return false;
 }
@@ -529,7 +552,7 @@ function updateFish(x: number, y: number, sim: SimContext): void {
     vaporize(x, y, sim);
     return;
   }
-  if (temp >= DEATH_TEMP || touchingBlast(x, y, sim)) {
+  if (temp >= DEATH_TEMP || touchingBlast(x, y, sim) || touchingChlorine(x, y, sim)) {
     die(x, y, sim);
     return;
   }

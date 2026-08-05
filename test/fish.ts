@@ -83,6 +83,7 @@ const BATTERY = ID('Lithium Battery');
 const OIL = ID('Crude Oil'); // 도체가 아닌 액체 — 감전 경로를 직접 접촉만 남기고 자른다
 const SPARK = ID('Spark');
 const SMOKE = ID('Smoke');
+const CHLORINE = ID('Chlorine');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
  *  expectations (12초 질식) in seconds and converts here. */
@@ -421,6 +422,97 @@ function tank(grid: Grid, surface = 8): void {
     '문턱 아래(200°)에서는 그대로 Dead Fish를 남긴다 (연기 문턱이 낮은 열까지 삼키지 않는다)',
     cooked2 && count(warm.grid, DEAD) >= 1 && count(warm.grid, SMOKE) === 0,
     `dead=${count(warm.grid, DEAD)}, smoke=${count(warm.grid, SMOKE)}`,
+  );
+}
+
+// ── 5c. 염소가스 접촉: 확률이 아니라 접촉 즉시 ────────────────────────────────
+// touchingPoison(오염수)은 매 틱 확률(POISON_HAZARD)로 죽이지만, 염소가스는
+// touchingBlast와 같은 결로 접촉한 바로 그 틱에 죽는다. chlorine.ts가 다른 생명
+// 물질(Plant·Slime 등)을 죽일 때 쓰는 isLiving() 목록에는 물고기가 없고(그쪽은
+// 매 틱 30% 확률로 흔적 없이 지운다), 물고기는 fish.ts 자신의 touchingChlorine이
+// 판정해 다른 사망 원인과 똑같이 Dead Fish를 남긴다는 것도 함께 잰다.
+// 염소는 무거운 기체라 매 틱 아래·옆으로 움직이려 든다(updateHeavyGas), 그리고
+// 자기 자신이 DISSIPATE_CHANCE(0.4%/틱)로 사라지기도 한다. 스캔 순서(가로 방향은
+// 틱마다 번갈아 바뀐다)에 따라 물고기 차례가 오기 전에 가스가 먼저 처리될 수
+// 있으므로, 물고기 **양옆**을 가스로 채우고 나머지는 전부 돌로 막는다:
+//   - 물고기 위아래·양옆 중 물고기 자리를 뺀 나머지는 가스의 이동 후보(아래·
+//     대각선 아래·좌우)이므로 돌로 막아 그 틱엔 아예 움직일 데가 없게 가둔다
+//     (중력 강도가 항상 1이라 위쪽 대각선·랜덤 확산은 애초에 시도되지 않는다).
+//   - 가스를 하나가 아니라 **둘**(좌우) 두는 것은 결정성 자체를 위해서다 —
+//     0.4% 소멸조차 두 소스가 같은 틱에 동시에 걸릴 확률은 무시할 수준으로
+//     떨어진다.
+// 물고기의 위쪽 한 칸만은 건드리지 않는다 — 물 장면에서 "여전히 물에 닿아 있다"
+// (touchingWater)를 유지하면서 죽는지 보려면 헤엄칠 물이 최소 한 칸은 남아야 한다.
+const pinFishBetweenChlorine = (grid: Grid, fx: number, fy: number): void => {
+  put(grid, fx - 1, fy, CHLORINE); // 왼쪽 가스
+  put(grid, fx + 1, fy, CHLORINE); // 오른쪽 가스
+  put(grid, fx, fy, FISH);
+  put(grid, fx, fy + 1, STONE); // 아래 — 양쪽 가스의 대각선 아래 이동을 동시에 막는다
+  put(grid, fx - 1, fy + 1, STONE); // 왼쪽 가스의 아래
+  put(grid, fx + 1, fy + 1, STONE); // 오른쪽 가스의 아래
+  put(grid, fx - 2, fy + 1, STONE); // 왼쪽 가스의 대각선 아래(바깥쪽)
+  put(grid, fx + 2, fy + 1, STONE); // 오른쪽 가스의 대각선 아래(바깥쪽)
+  put(grid, fx - 2, fy, STONE); // 왼쪽 가스의 옆이동(바깥쪽)
+  put(grid, fx + 2, fy, STONE); // 오른쪽 가스의 옆이동(바깥쪽)
+};
+
+{
+  reseed();
+  const dry = makeWorld(20, 20);
+  fill(dry.grid, 0, 0, 19, 19, STONE);
+  fill(dry.grid, 2, 2, 17, 17, EMPTY);
+  pinFishBetweenChlorine(dry.grid, 10, 10);
+  dry.sim.step();
+  check(
+    '염소가스에 닿으면 한 틱 만에 죽는다 (확률이 아니라 접촉 즉시)',
+    count(dry.grid, FISH) === 0 && count(dry.grid, DEAD) === 1,
+    `${count(dry.grid, FISH)} live, ${count(dry.grid, DEAD)} dead`,
+  );
+
+  // 물속에서도 마찬가지다 — 오염수처럼 몇 틱 버티는 게 아니라 여기서도 즉발이다.
+  // 물고기 위쪽 한 칸은 그대로 물로 남겨 둬(pinFishBetweenChlorine 참고),
+  // 헤엄치는 도중에도 죽는지를 잰다(touchingWater가 참인 채로 죽어야 한다).
+  reseed();
+  const wet = makeWorld(20, 20);
+  tank(wet.grid, 4);
+  pinFishBetweenChlorine(wet.grid, 10, 10);
+  wet.sim.step();
+  check(
+    '수조 안에서도 염소가스 접촉은 즉사다 (오염수처럼 버티지 않는다)',
+    count(wet.grid, FISH) === 0 && count(wet.grid, DEAD) === 1,
+    `${count(wet.grid, FISH)} live, ${count(wet.grid, DEAD)} dead`,
+  );
+
+  // 여러 시드로 반복해 정말 결정적인지(확률이 섞여 있지 않은지) 확인한다.
+  let allDead = true;
+  const TRIALS = 20;
+  for (let k = 0; k < TRIALS; k++) {
+    reseed();
+    const t = makeWorld(20, 20);
+    fill(t.grid, 0, 0, 19, 19, STONE);
+    fill(t.grid, 2, 2, 17, 17, EMPTY);
+    pinFishBetweenChlorine(t.grid, 10, 10);
+    t.sim.step();
+    if (count(t.grid, FISH) !== 0) allDead = false;
+  }
+  check(
+    '20판 전부 첫 틱에 죽는다 (KILL_CHANCE 같은 확률이 아니다)',
+    allDead,
+    allDead ? '20/20 즉사' : '확률이 섞여 있다',
+  );
+
+  // 인접하지 않으면 안 죽는다 — 사거리 없이 아무 염소가스에나 반응하는 버그를 잡는다.
+  reseed();
+  const far = makeWorld(20, 20);
+  fill(far.grid, 0, 0, 19, 19, STONE);
+  fill(far.grid, 2, 2, 17, 17, EMPTY);
+  put(far.grid, 10, 10, FISH);
+  put(far.grid, 13, 10, CHLORINE); // 3칸 떨어짐 — DIR4 접촉이 아니다
+  far.sim.step();
+  check(
+    '떨어져 있는 염소가스는 닿지 않은 것 — 죽지 않는다',
+    count(far.grid, FISH) === 1 && count(far.grid, DEAD) === 0,
+    `${count(far.grid, FISH)} live, ${count(far.grid, DEAD)} dead`,
   );
 }
 
