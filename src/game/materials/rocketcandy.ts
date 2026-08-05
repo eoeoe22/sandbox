@@ -146,6 +146,14 @@ function burnInPlace(x: number, y: number, sim: SimContext, timer: number): void
     // Spent. The grain leaves as the exhaust it turned into, still hot: hot smoke
     // rises off the burn instead of the cell simply blinking out, and Smoke's own
     // ~37-tick life clears it without accumulating (see smoke.ts).
+    //
+    // Clear the countdown by hand first. `set` only scrubs aux on a transform to
+    // EMPTY, so without this the fresh Smoke cell inherits this grain's leftover
+    // `1`. Smoke reads no aux today, so nothing observes it — but a stale byte
+    // riding a material change is the shape of bug this codebase keeps paying
+    // for (Debris renders *by* aux, Clone stores a target id in it), and it is
+    // one line to not leave one behind.
+    sim.setAux(x, y, AUX_UNLIT);
     sim.set(x, y, SMOKE.id);
     sim.setTemp(x, y, BURN_TEMP);
     return;
