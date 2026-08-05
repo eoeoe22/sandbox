@@ -390,7 +390,9 @@ export interface SimSmokeBomb {
  * trickles a marker wisp for its whole first stage. This can just sits there,
  * inert-looking, and then it is over. So there is no `lit` flag either: nothing
  * can put out a fuse that was never burning, and the countdown has no pause
- * state to keep — it is the sole timer, always running.
+ * state to keep. The one thing that does suspend it is the pointer holding the
+ * body (`held`), and that suspends every body's everything, not this one's timer
+ * in particular.
  *
  * It is still set off *early* by the things that set off any charge (열·폭발·끼임):
  * a sustained bath at Flash Powder's own 200° autoignition point cooks it off

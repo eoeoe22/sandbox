@@ -167,11 +167,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   armTicks: {
     ko: {
       label: '기폭 시간',
-      desc: '만들어진 순간부터 터질 때까지의 시간입니다. 도화선이 없어 끄거나 멈출 방법이 없습니다.',
+      desc: '만들어진 순간부터 터질 때까지의 시간입니다. 도화선이 아니라서 물을 끼얹거나 불을 다시 붙이는 식으로는 손댈 수 없습니다.',
     },
     en: {
       label: 'Arming time',
-      desc: 'How long from being created to going off. There is no fuse to snuff, so there is no stopping it.',
+      desc: 'How long from being created to going off. It is not a fuse, so it cannot be doused or relit the way one can.',
     },
   },
   ventTicks: {
