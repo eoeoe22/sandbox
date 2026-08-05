@@ -29,6 +29,7 @@ import {
   createDrumPiece,
   createDynamite,
   createSmokeBomb,
+  createFlashbang,
   createWoodBox,
   createMolotov,
 } from '../src/game/engine/objects';
@@ -124,6 +125,7 @@ function check(name: string, ok: boolean, detail = ''): void {
     aciddrum: () => createDrum(5, 5, 'acid'),
     dynamite: () => createDynamite(5, 5),
     smokebomb: () => createSmokeBomb(5, 5),
+    flashbang: () => createFlashbang(5, 5),
     crate: () => createWoodBox(5, 5),
     molotov: () => createMolotov(5, 5),
   };

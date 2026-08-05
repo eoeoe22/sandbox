@@ -12,6 +12,11 @@ import {
   SMOKE_BOMB_SPRITE_W,
   SMOKE_BOMB_SPRITE_H,
 } from './smokeBombSprite';
+import {
+  FLASHBANG_SPRITE,
+  FLASHBANG_SPRITE_W,
+  FLASHBANG_SPRITE_H,
+} from './flashbangSprite';
 import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from './molotovSprite';
 import { TNT_N, buildTntTile } from './tntTile';
@@ -2022,6 +2027,13 @@ export class CanvasRenderer implements Renderer {
         this.rasterizeSprite(
           buf, w, h, s, o, o.radius, o.halfLength + o.radius,
           SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H, heatColor,
+        );
+      else if (o.kind === 'flashbang')
+        // Nothing is drawn around it: the can has no fuse and emits nothing until
+        // it flashes (see engine/objects.ts stepFlashbang).
+        this.rasterizeSprite(
+          buf, w, h, s, o, o.radius, o.halfLength + o.radius,
+          FLASHBANG_SPRITE, FLASHBANG_SPRITE_W, FLASHBANG_SPRITE_H, heatColor,
         );
       else this.rasterizeDrum(buf, w, h, s, o, heatColor);
     }

@@ -31,6 +31,7 @@
 | [`npm run test:magnetobjects`](#전자석--오브젝트-인력) | 전자석이 강철 바디만 당김 |
 | [`npm run test:heatrayobjects`](#열선--오브젝트-가열) | 열선이 오브젝트를 데우고 멈춤 |
 | [`npm run test:smokebomb`](#연막탄-수중-연기) | 잠긴 연막탄의 연기·액체 보존 |
+| [`npm run test:flashbang`](#섬광탄-오브젝트) | 섬광탄의 무음 카운트다운·섬광폭발·조기 기폭 |
 | [`npm run test:acidmetal`](#산--금속-수소-발생) | `acidHydrogen` 태그 명단·반응성 서열·내산 전기 물질 명단 |
 | [`npm run test:radiation`](#방사선-피폭) | 방사능 전 물질의 살상·차폐·사거리 |
 | [`npm run test:chlorinesodium`](#염소--나트륨) | 2Na + Cl₂ → 2NaCl·`stirShock` |
@@ -318,6 +319,19 @@ Saltpeter → Flash Powder** 레시피와 150° 찬 가루 게이트, 테르밋 
 무회귀를 지킨다.
 
 `objects.ts`의 `puffSmoke`/`displaceLiquidUp`을 건드리면 이걸 돌릴 것.
+
+## 섬광탄 오브젝트
+
+`npm run test:flashbang` (`test/flashbang.ts`). 섬광탄이 **터지기 전까지 아무것도 내지
+않는 것**(카운트다운 전 틱에서 Flash/Blast/Fire/Smoke 셀 0 — 이 오브젝트의 정체성이고
+엔진의 다른 어떤 규칙도 이걸 강제하지 않는다), 3초 뒤 **BLAST가 아니라 Flash 셀로**
+터지고 빛이 스스로 꺼지며 불을 남기지 않는 것, 파괴력 6이 **돌·나무를 못 부수되 모래는
+질량 보존으로 밀어내는** 것, 열·폭발·끼임 셋이 전부 조기 기폭시키는 것, 그리고
+**스프라이트와 충돌 박스의 종횡비가 일치**하는 것을 지킨다.
+
+`objects.ts`의 `stepFlashbang`/`detonateFlashbang`/`FLASHBANG_*` 상수, `flash.ts`,
+`flashbangSprite.ts`를 건드리면 이걸 돌릴 것. 섬광 자체의 연출 규칙을 바꾸면
+`test:aluminum`(섬광화약 계통)도 같이 볼 것.
 
 ## 산 + 금속 수소 발생
 
