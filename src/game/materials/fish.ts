@@ -510,8 +510,13 @@ function die(x: number, y: number, sim: SimContext): void {
 }
 
 /** 소사 — die()와 달리 사체를 남기지 않는다. 살이 다 타 버릴 온도라 Dead Fish 대신
- *  곧장 Smoke가 되고, `set`이라 겹침 슬롯에 품고 있던 물도 함께 넘어간다(수증기가 되어
- *  같이 흩어졌다고 봐도 무방하다 — 어차피 Smoke는 아무것도 호스트하지 않는 기체다). */
+ *  곧장 Smoke가 된다. `sim.set`은 `SimContext.applySmokeLevel`을 거치므로 실제 결과는
+ *  연기 설정('high'가 아니면 일부만 통과)에 따라 갈린다: 쓰기가 그대로 Smoke로
+ *  들어가면 겹침 슬롯에 품고 있던 물은 (Smoke는 아무것도 호스트 못 하는 기체라)
+ *  같이 사라지지만, 설정이 걸러 EMPTY로 낮아지면 `set`의 겹침 해제 경로를 타 오히려
+ *  품고 있던 물이 그대로 드러난 Water/Saltwater 칸으로 남는다 — 헤엄치던 물고기가
+ *  그 자리에서 증발해도 몸에 지니고 있던 물 자체는 물로 남는 셈이라, 어느 쪽이든
+ *  세계가 깨지진 않는다. */
 function vaporize(x: number, y: number, sim: SimContext): void {
   sim.set(x, y, SMOKE.id);
 }
