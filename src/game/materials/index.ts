@@ -362,9 +362,9 @@ export const MATERIALS = [
   FIREWORKS,
   SULFUR,
   SALTPETER,
-  // Sits right after its oxidizer: in 가루 next to both ingredients, and in 폭발
-  // between the fireworks and the high explosives, which is what it is —
-  // a propellant, not a charge.
+  // Sits right after its oxidizer: in 불·열 next to the Saltpeter it is half
+  // made of, and in 폭발 between the fireworks and the high explosives, which
+  // is what it is — a propellant, not a charge.
   ROCKET_CANDY,
   NITRO,
   BLAST,

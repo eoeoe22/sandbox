@@ -182,10 +182,12 @@ export const ROCKET_CANDY = register({
   friction: 0.45,
   // Filed with the propellants and charges — the shelf you go to when you want
   // something to go off — next to Fuse, which is the slow answer to the same
-  // question. Also listed under 가루, where both of its ingredients live and
-  // where anyone who just made a pile of it will look.
+  // question. Also listed under 불·열, because what it actually *does* is burn:
+  // someone looking for something to set alight is looking for this, and that is
+  // the shelf its oxidizer half (Saltpeter) sits on too. Deliberately NOT in
+  // 가루 — being a powder is the least interesting thing about it.
   category: 'explosive',
-  alsoIn: ['powder'],
+  alsoIn: ['fire'],
   thermal: { conductivity: 0.3 },
   update: updateRocketCandy,
 });
