@@ -256,7 +256,11 @@ function soakedBed(
 //    left to fire, unlike the prill and Ammonal (scene 2b). Both halves matter:
 //    it must NOT be a dud, and it must be drastically weaker.
 {
-  function crater(soak: boolean): { fired: boolean; stone: number } {
+  // "It fired" is measured as damage done, not as every grain being gone: a wet
+  // charge is `soloSource` (see anfo.ts), so it chains grain by grain rather
+  // than going up as one surveyed mass, and a fixed tick budget can end with
+  // some of it still burning down. A genuine dud craters zero.
+  function crater(soak: boolean): { stone: number } {
     const { grid, sim } = makeWorld(160, 160);
     floor(grid, 120);
     const before = count(grid, STONE.id);
@@ -266,16 +270,46 @@ function soakedBed(
     if (soak) for (let x = 68; x < 92; x++) grid.setOverlay(x, 119, WATER.id);
     for (let x = 68; x < 92; x++) grid.setTemp(x, 119, 500);
     for (let t = 0; t < 24; t++) sim.step();
-    return { fired: count(grid, ANFO.id) === 0, stone: before - count(grid, STONE.id) };
+    return { stone: before - count(grid, STONE.id) };
   }
   const dry = crater(false);
   const wet = crater(true);
-  check('젖은 ANFO도 터지기는 한다 (불발이 아니다)', wet.fired, `${wet.stone} stone cells`);
+  check('젖은 ANFO도 터지기는 한다 (불발이 아니다)', wet.stone > 0, `${wet.stone} stone cells`);
   check(
     '…하지만 위력이 대폭 줄어든다',
     wet.stone * 4 < dry.stone,
     `${wet.stone} vs ${dry.stone} stone cells (마른 장약 대비)`,
   );
+}
+
+// 5b. …and that weakening stays on the wet grain. A detonation's options apply
+//     to the whole mass the survey sweeps up, not to the cell that triggered it,
+//     so without `soloSource` one damp grain anywhere in a dry magazine drags
+//     the entire charge down to the fizzle — and *which* grain reaches its
+//     update first decides the yield, which is a scan-order lottery, not a rule.
+//     Measured before the fix: 1003 stone dry, 238 with one wet grain at the
+//     head of the scan order, 1004 with the same grain at the tail. Both ends
+//     are checked here because a fix that only helps one position isn't one.
+{
+  function crater(wetX: number | null): number {
+    const { grid, sim } = makeWorld(200, 200);
+    floor(grid, 150);
+    const before = count(grid, STONE.id);
+    for (let x = 60; x < 140; x++) grid.set(x, 149, ANFO.id);
+    if (wetX !== null) grid.setOverlay(wetX, 149, WATER.id);
+    for (let x = 60; x < 140; x++) grid.setTemp(x, 149, 500);
+    for (let t = 0; t < 30; t++) sim.step();
+    return before - count(grid, STONE.id);
+  }
+  const dry = crater(null);
+  for (const [where, x] of [['맨 앞', 60], ['맨 뒤', 139]] as const) {
+    const one = crater(x);
+    check(
+      `마른 장약 속 젖은 알갱이 한 칸(${where})은 전체를 무력화하지 않는다`,
+      one > dry * 0.8,
+      `${one} vs ${dry} stone cells`,
+    );
+  }
 }
 
 // 6. …and it goes off on a flame alone, no radiant heat needed. A column of Fire

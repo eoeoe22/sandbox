@@ -153,6 +153,17 @@ export const AMMONIUM_NITRATE = register({
   // it, pulling heat out of both cells (heat < 0). Only while cool — once hot the
   // explosive decomposition path (update) takes over instead. Gradual (probability)
   // so a pile chills its puddle over time rather than flashing it cold at once.
+  // Now that water can soak in, this table also runs across the 겹침 seam
+  // (reactions.ts `tryReactSoaked`), which is what keeps the cold pack working
+  // for a buried grain. One wrinkle worth knowing: when a *soaked* grain
+  // dissolves, the cell holds two things (the grain and the drop) and can only
+  // produce one, so the drop merges into the Water the grain becomes instead of
+  // surviving as its own cell (SimContext.set's "transformed into a non-host"
+  // rule). In practice it barely shows — a soaked drop normally percolates back
+  // out of the heap and reacts as an ordinary neighbour long before this fires,
+  // so it only bites in a bed packed too tight to drain (measured: 4 cells of
+  // 120). Venting the drop instead was tried and made conservation *worse*
+  // (102/120) by perturbing the drainage it depends on.
   reactions: [
     { with: WATER.id, produce: WATER.id, probability: 0.06, heat: -18, tempMax: 80 },
     { with: SALTWATER.id, produce: SALTWATER.id, probability: 0.06, heat: -18, tempMax: 80 },

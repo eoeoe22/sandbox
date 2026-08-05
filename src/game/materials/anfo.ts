@@ -62,9 +62,23 @@ const DESTRUCTIVE_POWER = 80_000;
 // than surveyed on purpose: a spoiled charge shouldn't get *stronger* because
 // you piled more spoiled charge next to it, so a whole drowned magazine coughs
 // exactly as weakly as one grain (the same fixed-reach seam napalm uses).
+//
+// `soloSource` is what keeps that promise honest, and it is not optional. A
+// detonation's options apply to the whole connected mass the survey sweeps up,
+// not to the grain that happened to trigger it — so without it a single damp
+// grain anywhere in a dry magazine would drag the *entire* charge down to this
+// pop, and which grain reached its update first would decide the yield. Measured
+// before the fix: an 80-cell dry column cratered 1003 stone cells, 238 with one
+// wet grain at the head of the scan order, 1004 with that same wet grain at the
+// tail. With `soloSource` the wet grain is its own one-cell blast and the dry
+// remainder surveys normally, chaining off the Blast it leaves behind.
 const WET_BLAST_RADIUS = 4;
 const WET_DESTRUCTIVE_POWER = 210;
-const WET_OPTS: DetonateOptions = { reach: WET_BLAST_RADIUS, power: WET_DESTRUCTIVE_POWER };
+const WET_OPTS: DetonateOptions = {
+  reach: WET_BLAST_RADIUS,
+  power: WET_DESTRUCTIVE_POWER,
+  soloSource: true,
+};
 
 function isTrigger(id: number): boolean {
   return id === FIRE.id || id === LAVA.id || id === BLUE_FLAME.id || id === BLAST.id;
