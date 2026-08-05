@@ -24,9 +24,14 @@
 //     entirely inside that box after a long run: Stone is not infectable, and a
 //     liquid can't move through a solid.
 //   • **The cures still work.** Acid on contact, and each of the three chemical
-//     disinfectants (H₂O₂'s corrosion front, Alcohol, Soapy Water) still eats a
-//     colony down — the corrosion front in particular now rides on cells that
-//     move, so its `aux` budget has to travel with them.
+//     disinfectants (H₂O₂, Alcohol, Soapy Water) still eats a colony down. All
+//     four scan for a *primary* Virus cell, so a mobile colony is a colony that
+//     can walk out from under its own disinfectant between ticks — and H₂O₂'s
+//     corrosion front in particular now hands its `aux` budget on through a
+//     neighbourhood that reshuffles under it. (The front cell itself never moves:
+//     it self-destructs on its own turn, before the movement step. What moves is
+//     everything it is trying to reach.) Counted as primary + soaked, so a colony
+//     that merely sank into the floor isn't scored as cured.
 //   • **It still infects.** A seed dropped on a wood bed converts the bed.
 //   • **A soaked cell is not an immortal reservoir.** An overlay occupant does
 //     not run its material's `update` (see Simulation's per-cell step), so a virus
@@ -288,7 +293,12 @@ for (const name of ['Acid', 'H2O2', 'Alcohol', 'Soapy Water']) {
 // --- 7. a soaked cell is not an immortal reservoir ---------------------------
 /** Pour a blob onto a powder bed and let it soak in through the 겹침 layer.
  *  `hot` holds the whole scene past the 100° cure point every tick. */
-function soak(bedName: string, ticks: number, hot: boolean): { prim: number; ov: number } {
+function soak(
+  bedName: string,
+  ticks: number,
+  hot: boolean,
+  bedAux = 0,
+): { prim: number; ov: number; auxSeen: number } {
   const W = 24;
   const H = 24;
   const grid = new Grid(W, H);
@@ -296,15 +306,26 @@ function soak(bedName: string, ticks: number, hot: boolean): { prim: number; ov:
   const bed = ID(bedName);
   box(grid);
   for (let y = 14; y < H - 1; y++)
-    for (let x = 1; x < W - 1; x++) grid.cells[grid.idx(x, y)] = bed;
+    for (let x = 1; x < W - 1; x++) {
+      grid.cells[grid.idx(x, y)] = bed;
+      // Stand-in for a host that keeps its own per-cell state in the aux byte
+      // (Cement's cure countdown, Seed's sprout progress). See the caller.
+      if (bedAux !== 0) grid.aux[grid.idx(x, y)] = bedAux;
+    }
   for (let y = 10; y < 14; y++)
     for (let x = 8; x < 16; x++) grid.cells[grid.idx(x, y)] = VIRUS;
   grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  // Sampled EVERY tick, not just at the end: a virus cell handed a phantom
+  // corrosion budget destroys itself within a tick or two, so the final frame is
+  // exactly the one frame where the evidence is already gone.
+  let auxSeen = 0;
   for (let t = 0; t < ticks; t++) {
     if (hot) grid.temp.fill(300);
     sim.step();
+    for (let i = 0; i < grid.cells.length; i++)
+      if (grid.cells[i] === VIRUS && grid.aux[i] !== 0) auxSeen++;
   }
-  return { prim: countOf(grid, VIRUS), ov: countOverlay(grid, VIRUS) };
+  return { prim: countOf(grid, VIRUS), ov: countOverlay(grid, VIRUS), auxSeen };
 }
 {
   // Salt is not infectable, so a virus poured on a salt bed soaks in and stays
@@ -334,6 +355,28 @@ function soak(bedName: string, ticks: number, hot: boolean): { prim: number; ov:
     'virus soaked into an infectable bed eats its way back out',
     sand.prim > 0 && sand.ov === 0,
     `${sand.prim} primary, ${sand.ov} soaked`,
+  );
+  // …and the cell it comes back out as is FRESH. `SimContext.set` deliberately
+  // keeps a cell's aux on a non-EMPTY write, so the in-place infect in
+  // `updateSoakedVirus` has to clear it by hand (as `spawn` does for the ordinary
+  // infect, and as every other in-place transform in the roster does). Virus
+  // reads aux as a corrosion-front budget, so a host that kept its own state in
+  // that byte would hand each infected cell a phantom front and the colony would
+  // eat itself away with no disinfectant anywhere near it. No powder that is both
+  // infectable and aux-using ships today, so this stamps the bed by hand rather
+  // than waiting for the first one that does — dropping the `setAux` collapses
+  // both of these.
+  reseed();
+  const stamped = soak('Sand', 200, false, 200);
+  check(
+    'a cell infected out of a soaked bed carries no leftover host state',
+    stamped.auxSeen === 0,
+    `${stamped.auxSeen} virus cell-ticks carrying aux`,
+  );
+  check(
+    '…so a colony in an aux-using bed survives as well as in a plain one',
+    stamped.prim > sand.prim / 2,
+    `${stamped.prim} vs ${sand.prim} on a plain bed`,
   );
 }
 

@@ -45,8 +45,12 @@ const CURE_TEMP = 100;
 // slime.ts's SLIME_FLOW_CHANCE, 0.15). `viscosity` below throttles only the
 // LATERAL spread (updateLiquid reads it after the straight fall), so this gate is
 // what actually slows the drop, and the two together place the virus between Mud
-// (viscosity, no gate — falls at full speed) and Slime (both, at magma pace):
-// noticeably slower than mud, roughly three times livelier than slime. Deliberate
+// (viscosity, no gate — falls at full speed) and Slime (both, at magma pace).
+// Measured on test/virusflow.ts's spread scale (120 ticks, one column on a
+// 40-wide floor): Water 31 columns, Virus 20, Slime 12 — so about two thirds of
+// water's reach and around 1.6× slime's, NOT the 3.3× the two gate constants
+// alone would suggest (`viscosity` does most of the holding here, and the gate
+// throttles the fall this never gets to spread from). Deliberate
 // rather than cosmetic — a flowing plague that levelled out like water would
 // reach every corner of the map within seconds of the first splash, and the whole
 // point of the material is that you can still wall it off and burn it out.
@@ -191,6 +195,16 @@ function updateSoakedVirus(x: number, y: number, sim: SimContext): void {
   // mirror of the two-cells-become-one absorb that put the virus in there.
   if (isInfectable(sim.get(x, y)) && sim.chance(INFECT_CHANCE)) {
     sim.set(x, y, VIRUS.id);
+    // Fresh material carries no leftover per-cell state — the contract `spawn`
+    // states, and the one every in-place transform in the roster honours by hand
+    // (`set` deliberately KEEPS aux on a non-EMPTY write, so an in-place
+    // transform has to clear it itself). Load-bearing here rather than tidy:
+    // virus reads aux as a corrosion-front budget, so a host grain that kept its
+    // own bookkeeping in that byte would hand the new cell a phantom front and it
+    // would eat itself away with no disinfectant anywhere near it. Nothing that is
+    // both infectable and aux-using ships today — this is for the first one that
+    // does (test/virusflow.ts stamps a bed by hand to hold the line).
+    sim.setAux(x, y, 0);
   }
 }
 
