@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR8 } from '../engine/directions';
-import { updatePowder } from '../engine/behaviors';
+import { updateFloatyPowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryDustExplosion, type DustFlash } from './dustexplosion';
 import { ASH } from './ash';
@@ -34,10 +34,25 @@ import { BATTER } from './batter';
 // each making two cells of dough (batter.ts). That is the branch the whole
 // baking chain hangs off — 밀가루 + 물 → 반죽 → 빵.
 //
-// Flour floats (density 2.6, under Water's 3): tip it into a pool and it rafts
-// on the surface and turns to dough there, rather than sinking out of reach the
-// way Sugar and Salt do. It is also the lightest thing in the palette that a Fan
-// can loft into a real cloud, which is the point.
+// It moves like Ash, and that is not decoration — it is the same rule doing two
+// jobs. Milled flour is the lightest ordinary powder here after Ash itself, so it
+// shares Ash and Snow's drifting descent (`updateFloatyPowder`): it stalls in
+// mid-air, sways sideways, and settles slowly instead of dropping in a column,
+// while a supported grain still piles like any other powder. The second job is
+// the interesting one — **a drifting grain is a suspended grain**. The dust
+// explosion's gate is "nothing underneath it, open air around it"
+// (dustexplosion.ts `isSuspended`), and a grain that hangs and sways satisfies it
+// for many more ticks than one that falls straight through. So flour tipped from
+// a height hangs as a real cloud that a single spark can take, and a Fan does not
+// merely scatter it, it keeps it up. Measured against Sugar as a control — the
+// same 4-wide column dropped from the same height — flour takes **134 ticks to
+// settle against sugar's 38** and ends up **28 cells wide against sugar's 10**.
+//
+// It also floats (density 2.6, under Water's 3), and `updateFloatyPowder` makes
+// that active rather than incidental: a grain that ends up submerged bubbles back
+// up to the surface instead of sitting pinned on the bottom, so flour tipped into
+// a pool rafts on top and turns to dough where you can see it, rather than
+// sinking out of reach the way Sugar and Salt do.
 
 /** Flour dust's flash numbers (see DustFlash). It lights cooler than aluminum
  *  dust (350° vs 400°) — organic dust has no oxide skin to break through — and
@@ -132,7 +147,9 @@ function updateFlour(x: number, y: number, sim: SimContext): void {
   // powder afterwards.
   if (tryHydrate(x, y, sim)) return;
 
-  updatePowder(x, y, sim);
+  // Drifts down like Ash rather than dropping like Sand — and stays suspended,
+  // and so explosive, for far longer as a result. See the module note.
+  updateFloatyPowder(x, y, sim);
 }
 
 export const FLOUR = register({
@@ -144,8 +161,9 @@ export const FLOUR = register({
   // the world.
   color: rgb(236, 228, 206),
   // Milled grain (~0.55 g/cm³ loose) is the lightest ordinary powder here after
-  // Ash (1.5). Under Water's 3, so it rafts on a pool instead of sinking — a
-  // pour of flour onto water hydrates at the surface where you can see it.
+  // Ash (1.5) — which is also why it shares Ash's drifting descent (see the
+  // module note). Under Water's 3, so it rafts on a pool instead of sinking, and
+  // `updateFloatyPowder`'s buoyancy actively pushes a submerged grain back up.
   density: 2.6,
   category: 'food',
   // Also on the 가루 shelf: someone hunting for a dust explosive opens 가루 and

@@ -40,6 +40,7 @@ import { FIRE } from '../src/game/materials/fire';
 import { ASH } from '../src/game/materials/ash';
 import { SODA } from '../src/game/materials/soda';
 import { YEAST } from '../src/game/materials/yeast';
+import { SUGAR } from '../src/game/materials/sugar';
 import { FLOUR } from '../src/game/materials/flour';
 import { BATTER } from '../src/game/materials/batter';
 import { BREAD } from '../src/game/materials/bread';
@@ -178,6 +179,60 @@ console.log('— 밀가루 (Flour) —');
     '…그리고 터진 자리에 재를 조금 남긴다',
     count(grid, ASH.id) > 0,
     `${count(grid, ASH.id)} ash from ${cloud} grains`,
+  );
+}
+
+// 2b. …and the reason that cloud is so easy to make: flour DRIFTS like Ash
+//     rather than dropping like Sand (`updateFloatyPowder`). That is one change
+//     doing two jobs — a grain that stalls and sways is a grain with open air
+//     under it, which is exactly the dust explosion's own suspension test, so the
+//     drift is what keeps a poured cloud explosive instead of it landing into a
+//     safe heap within a few ticks.
+//
+//     Measured against Sugar as a control, because "does it drift" has no
+//     absolute scale — the same column, the same height, one floaty powder and
+//     one ordinary one. Worth its own scene because a revert to `updatePowder`
+//     breaks nothing else: scene 2 would still pass (a lattice hand-placed in
+//     mid-air is suspended however it falls), just far less of it would go off.
+function settleProfile(id: number): { settledAt: number; width: number } {
+  const { grid, sim } = makeWorld(60, 60);
+  floor(grid, 55);
+  block(grid, 28, 32, 4, 10, id, 20);
+  let settledAt = -1;
+  for (let t = 1; t <= 400; t++) {
+    sim.step();
+    let airborne = 0;
+    for (let y = 0; y < 55; y++)
+      for (let x = 0; x < 60; x++)
+        if (grid.get(x, y) === id && grid.get(x, y + 1) === 0) airborne++;
+    if (airborne === 0 && settledAt < 0) settledAt = t;
+  }
+  let lo = 60;
+  let hi = -1;
+  for (let y = 0; y < 60; y++)
+    for (let x = 0; x < 60; x++)
+      if (grid.get(x, y) === id) {
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+      }
+  return { settledAt, width: hi - lo + 1 };
+}
+{
+  const shared = Math.random;
+  Math.random = mulberry32(11);
+  const flour = settleProfile(FLOUR.id);
+  Math.random = mulberry32(11);
+  const sugar = settleProfile(SUGAR.id);
+  Math.random = shared;
+  check(
+    '밀가루는 재처럼 흩날리며 내려앉는다 (같은 기둥의 설탕보다 오래 떠 있다)',
+    flour.settledAt > sugar.settledAt * 2,
+    `flour settles at t=${flour.settledAt} vs sugar t=${sugar.settledAt}`,
+  );
+  check(
+    '…그리고 훨씬 넓게 퍼진다',
+    flour.width > sugar.width * 2,
+    `flour ${flour.width} cells wide vs sugar ${sugar.width} (poured 4 wide)`,
   );
 }
 
