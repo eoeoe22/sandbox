@@ -325,6 +325,14 @@ export class SimContext {
    * ordinary scan, and clearing here is also what keeps the tail of an
    * over-budget front from being processed twice — once by the leftover queue and
    * once by the next scan.
+   *
+   * Runtime-only, and deliberately not persisted: a save holds the Spark cells
+   * themselves, so a world reloaded mid-pulse rebuilds the queue the moment those
+   * sparks take their scan hop and hand off. The one visible consequence is that
+   * the very first tick after a load carries the front a single cell instead of
+   * SPARK_STEPS_PER_TICK. Nothing is lost or double-counted by that — it is still
+   * exactly one hop — so it is left alone rather than paid for with a save format
+   * that has to serialize a mid-tick wavefront.
    */
   readonly sparkFrontierX: number[] = [];
   readonly sparkFrontierY: number[] = [];

@@ -87,9 +87,16 @@ export const SIM_HZ_AT_1X = TICK_HZ / 2;
 export const SPARK_STEPS_PER_TICK = 10;
 
 /**
- * Safety budget for the extra propagation passes above: the most spark cells
- * `Simulation.step` will process across all of one tick's substeps before it
- * stops early and leaves the rest of the front for the next tick.
+ * Safety budget for the extra propagation passes above: once a tick's substeps
+ * have processed this many spark cells, `Simulation.step` stops early and leaves
+ * the rest of the front for the next tick.
+ *
+ * Approximate by construction — it is checked BETWEEN whole rings, never inside
+ * one, so a single enormous ring (the perimeter of a front spreading through a
+ * very large tank) can overshoot it in one pass. That is deliberate: a ring is
+ * one wavefront generation and splitting one across ticks would let a pulse
+ * arrive at half a tank a tick before the other half. A soft spike limiter is
+ * what is wanted here, not a hard cap.
  *
  * Total work per pulse is unchanged by the substeps (every cell is energized
  * once either way) — what changes is that a front which used to be spread over
