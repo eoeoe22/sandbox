@@ -27,8 +27,8 @@ import { FIRE } from './fire';
 //
 // This lived inside aluminumdust.ts while aluminum dust was the only material
 // that did it. Flour is the second, and it is not aluminum: its cloud lights
-// cooler, its fireball is an organic 800°-band flame rather than a 1700° metal
-// one, and a flashed grain leaves scorched residue behind. Those three numbers
+// cooler (350° vs 400°), its fireball is an ordinary 900° flame rather than a
+// 1700° metal one, and a flashed grain leaves scorched residue behind. Those three numbers
 // are what `DustFlash` carries; everything else — what counts as suspended, how
 // far the front reaches, how the fireball is thrown — is the same rule and lives
 // here once.
