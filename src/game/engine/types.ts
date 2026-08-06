@@ -698,6 +698,30 @@ export interface Material {
    */
   packedTemp?: boolean;
   /**
+   * A cell of this material may be STANDING IN for another one: a non-zero `aux`
+   * holds the id of a host cell the particle is temporarily occupying and will put
+   * back the moment it leaves. Only the Heat Ray declares it today — a laser beam
+   * travels through a glass/diamond pane at air speed and can come to rest inside
+   * it, carrying the pane along in `aux` so the glass is never disturbed (see
+   * materials/heatray.ts).
+   *
+   * The engine has to know, because such a cell is a Gas by phase and would
+   * otherwise be shoved around like one: a grain of sand landing on a glass roof
+   * would sink into the beam cell resting in its top course, swapping the beam —
+   * host id and all — up into the grain's place. The pane then reappears wherever
+   * the beam ended up and the grain that pushed it is gone: glass duplicated, sand
+   * eaten. So while `aux` is non-zero the cell blocks movement exactly like the
+   * host it is hiding; with `aux` 0 (a beam over open air, and every afterimage)
+   * it stays as displaceable as any other gas, so a beam is never an obstacle to
+   * anything falling through it. Read by SimContext's displacement test.
+   *
+   * Distinct from `packedTemp`, which several fliers set and which says only that
+   * `temp` is packed state. Debris and Firework Star also keep something in `aux`,
+   * but it is their own state (a colour index, the material to rain back down) —
+   * not a cell they are covering for — so neither declares this.
+   */
+  auxHost?: boolean;
+  /**
    * For a `packedTemp` material only: the fixed apparent temperature (°) the
    * heat-overlay thermal camera should paint the cell at, since its real `temp`
    * is unusable there (see `packedTemp`). Default (unset) keeps the overlay's

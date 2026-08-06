@@ -188,9 +188,19 @@ function encodeRay(life: number, vx: number, vy: number): number {
  * `restoreCell` clears it to EMPTY. The visible cost is a one- or two-cell gap in
  * the drawn line where the beam crosses a pane, which reads as refraction rather
  * than as a bug.
+ *
+ * Life 0 alone is NOT enough to recognise one, which is the subtle half. A live
+ * head that comes to rest inside a pane and spends the last of its life there is
+ * written back as a life-0 cell that still carries the pane in `aux`, waiting for
+ * its own next turn to put the glass back — by packing alone it is identical to an
+ * afterimage. Reading it as one hands a following beam a cell it believes is air,
+ * which it lands on with `cHost` 0 and thereby deletes the pane. So the aux check
+ * is what actually enforces "afterimage ⇒ air": aux 0 means no pane is being held
+ * here, and `layAfterimage` writes that 0 explicitly for exactly this reason.
  */
 export function isHeatRayAfterimage(sim: SimContext, x: number, y: number): boolean {
   if (!sim.inBounds(x, y) || sim.get(x, y) !== HEAT_RAY.id) return false;
+  if (sim.getAux(x, y) !== 0) return false; // an expiring head still holding a pane
   return ((sim.getTemp(x, y) | 0) >> 4) === 0;
 }
 
@@ -610,7 +620,17 @@ function updateHeatRay(x: number, y: number, sim: SimContext): void {
         }
         // Too weak to sparkle — fall through and just exit straight.
       }
-      if (cx !== x || cy !== y) {
+      // Only an OPEN-AIR landing cell joins the drawn tail. `cHost !== 0` means the
+      // cursor is standing inside a transparent pane (glass/broken glass/diamond),
+      // and an afterimage there would overwrite the pane with a cell whose aux is 0
+      // — i.e. delete it. That is not hypothetical: it is precisely how a beam
+      // crossing a window used to eat the whole row it passed through, since the
+      // pane is *never* the cell the walk started on and so nothing else put it
+      // back. Skipping the push leaves the pane exactly as it was (the walk only
+      // reads the cells it crosses) at the cost of a short gap in the drawn line
+      // where the beam is inside glass — the refraction-looking gap the header
+      // describes, and the reason the "afterimage ⇒ air" invariant holds.
+      if ((cx !== x || cy !== y) && cHost === 0) {
         trailX.push(cx);
         trailY.push(cy);
       }
@@ -769,6 +789,12 @@ export const HEAT_RAY = register({
   // decodes to a dead ray, so one placed by hand dies quietly on its first turn.
   thermal: { init: 0, conductivity: 0 },
   packedTemp: true,
+  // A beam cell may be RESTING INSIDE a glass/broken-glass/diamond pane, carrying
+  // it in `aux` (see updateHeatRay/restoreCell). While it does, the movement layer
+  // must treat it as the solid it is covering for rather than as the gas its phase
+  // says it is — otherwise a grain landing on a glass roof sinks into the beam and
+  // carries the pane off with it. See Material.auxHost.
+  auxHost: true,
   overlayTemp: OVERLAY_TEMP,
   update: updateHeatRay,
 });
