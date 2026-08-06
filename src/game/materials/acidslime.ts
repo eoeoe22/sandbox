@@ -206,7 +206,8 @@ export const ACID_SLIME = register({
   elasticity: 0.92,
   // Conducts at the maximum: spark.ts lists it at zero strength loss (전기전도성
   // 최대치), so current runs full length through a blob, and a pulse passing
-  // *through* a cell seeds the same electric-dissolve-to-Water front Slime has.
+  // *through* a cell seeds the same electric-dissolve front Slime has — the one
+  // that splits the goo into Hydrogen rather than dropping it back as Water.
   conductive: true,
   // 방사선 내성 — no `radiationDeath`, exactly like plain Slime and for the same
   // reasons (see slime.ts, and engine/radiation.ts for the pass).

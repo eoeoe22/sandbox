@@ -632,10 +632,10 @@ function collapseSpark(x: number, y: number, sim: SimContext, myClass: number): 
     // ticks down as a refractory (unlike Iron/Water/…). So a reverting slime spark
     // must NOT carry the ordinary REFRACTORY_TICKS stamp: updateSlime would misread
     // that 3 as a reach-3 dissolve budget and eat the blob on EVERY hop, defeating
-    // the "poor conductor, sustained current needed" design. Instead a low-chance
-    // shock seeds a real bounded dissolve front (aux = budget, updateSlime reverts
-    // this cell to Water next tick and frays outward); every other hop reverts to
-    // inert Slime (aux 0). Slime therefore has no anti-doubleback refractory, but
+    // the "poor conductor, sustained current needed" design. Instead a shock seeds
+    // a real bounded dissolve front (aux = budget, so updateSlime splits this cell
+    // into Hydrogen next tick and frays outward); a hop that doesn't roll it reverts
+    // to inert Slime (aux 0). Slime therefore has no anti-doubleback refractory, but
     // its heavy per-cell strength loss (CONDUCTOR_LOSS) already bounds how far a
     // pulse can spread through a blob.
     sim.set(x, y, SLIME.id);
@@ -659,10 +659,10 @@ function collapseSpark(x: number, y: number, sim: SimContext, myClass: number): 
   if (conductorId === ACID_SLIME.id) {
     // Acid Slime carries Slime's identical electric-dissolve weakness (its aux is
     // the very same dissolve-front budget, read by acidslime.ts's own updateAcidSlime
-    // — "any non-zero aux ⇒ dissolve to Water next tick"), so it reverts exactly like
+    // — "any non-zero aux ⇒ split into gas next tick"), so it reverts exactly like
     // Slime above: no REFRACTORY_TICKS stamp (that 3 would be misread as a reach-3
-    // budget and eat the blob every hop), just a low-chance shock that seeds a real
-    // bounded dissolve front, every other hop reverting to inert Acid Slime (aux 0).
+    // budget and eat the blob every hop), just a shock roll that seeds a real bounded
+    // dissolve front, every other hop reverting to inert Acid Slime (aux 0).
     // Unlike Slime it's a zero-loss conductor, so range is bounded by SLIME_SHOCK_CHANCE
     // needing a sustained pulse train, not by the medium's strength loss.
     sim.set(x, y, ACID_SLIME.id);
