@@ -33,11 +33,16 @@ import { STEAM } from './steam';
 // plateau claws it back, so the fire's ferocity still matters even though the
 // meat's own temperature does not move: a cut in open flame reads several
 // hundred degrees each tick and its face is char in about five seconds, while a
-// gentler source takes tens of seconds to run the counter out (measured on a
-// burner pinned straight onto the meat: order of 13s at 250°, 21s at 150°, 32s
-// at 90°, and a couple of minutes and up under the cook point. Those are
-// single-seed samples of a per-cell random counter, so they move by a few seconds
-// run to run — read them as the shape, not as constants).
+// gentler source takes far longer to run the counter out.
+//
+// The honest unit for that is **one cell**, because the counter is rolled per
+// cell: DRY_MAX / rate ticks on average, which at 30Hz is 4.7s at 400°, 7.4s at
+// 250°, 11.9s at 150°, 18.8s at 90°, and about a minute and a half under the cook
+// point. A whole *cut* always takes longer than any of those and there is no
+// single number for it — "the cut is dry" means the slowest of N independent
+// counters finished, so it grows with how big the cut is. (Two measurements of
+// the same thing at different sizes is exactly how the figures here first came
+// out wrong: 48 cells and 96 cells do not agree, and neither is the constant.)
 //
 // Drying out is *not* the same as charring, and a slow grill is safe for the
 // other reason: charring needs the counter empty **and** 200°, so a cut on a 150°
@@ -84,8 +89,10 @@ export const DRY_MASK = 0b111;
 /** Per-tick drying chance at the cook point, plus what each 100° above it adds.
  *  Tuned off the pre-plateau temperature (see the module note). The first number
  *  sets the floor — how long a barely-warm cut lingers — and the second how much
- *  a fiercer heat source is worth: at the cook point the counter needs ~800 ticks
- *  to run out, and every 100° above it buys a bit more than another 1% per tick. */
+ *  a fiercer heat source is worth: at the cook point a single cell's counter takes
+ *  700 ticks on average to run out, and every 100° above it buys a bit more than
+ *  another 1% per tick. Per *cell* — a whole cut finishes when its slowest cell
+ *  does, which is longer and depends on how many cells it has. */
 const DRY_BASE = 0.01;
 const DRY_PER_100 = 0.012;
 
