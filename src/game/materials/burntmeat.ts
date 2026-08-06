@@ -23,12 +23,24 @@ import { tryFlameOnlyBurn } from './combustion';
 // cell that is already alight must stay above to still count as alight, not an
 // ignition point; see `tryFlameOnlyBurn`.
 
-/** This material's `aux` bit for "alight". Bit 3, because bits 0-2 arrive
- *  already occupied: `sim.set` preserves aux, so a cut that charred out of 익은
- *  고기 brings that material's dryness counter (0-7) along with it. Nothing here
- *  reads the counter any more — char has no moisture left to model — but writing
- *  over it would be writing over state this material does not own. */
-const LIT_BIT = 0b1000;
+/**
+ * This material's `aux` bit for "alight". Bit 3, because the bits around it
+ * arrive already occupied: `sim.set` preserves aux, so a cut that charred out of
+ * 익은 고기 brings that material's whole word along with it — the dryness counter
+ * in bits 0-2 and, since the 부패 계통 landed, a spoilage counter in bits 4-6.
+ * Nothing here reads either of them (char has no moisture left to model and does
+ * not rot), but writing over them would be writing over state this material does
+ * not own.
+ *
+ * **This bit is load-bearing from the other side of the chain**, which is not
+ * obvious from here: a lit cell skips `tryFlameOnlyBurn`'s adjacent-flame gate
+ * entirely, so anything upstream that leaves this bit set hands over char that
+ * ignites on radiant heat alone. The full three-material layout, and the bug that
+ * came of getting it wrong, are documented in meat.ts (`SPOIL_SHIFT`).
+ * Exported so `test/spoil.ts` can hold the two apart.
+ */
+export const BURNT_LIT_BIT = 0b1000;
+const LIT_BIT = BURNT_LIT_BIT;
 
 function updateBurntMeat(x: number, y: number, sim: SimContext): void {
   // Solid: no fall/flow, so combustion is the only behaviour and there is

@@ -7,6 +7,8 @@ import type { SimContext } from '../engine/SimContext';
 import { launchDebris } from './debris';
 import { STEAM } from './steam';
 import { POPCORN } from './popcorn';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Corn Kernel (옥수수 알갱이) — a dense, inert little powder with exactly one
 // trick, and it is the loudest thing in the 요리 tab.
@@ -77,6 +79,11 @@ function burstCell(x: number, y: number, sim: SimContext): [number, number] | nu
 }
 
 function updateCornKernel(x: number, y: number, sim: SimContext): void {
+  // 부패 — before the pop, since a kernel that has gone over is no longer a
+  // kernel. It never competes with popping in practice: 180° is far above the
+  // 60° at which spoiling stops (spoil.ts), so a kernel in a pan is popping and a
+  // kernel in a sack is rotting, never both.
+  if (spoilStep(x, y, sim, CORN_KERNEL.spoil!)) return;
   if (sim.getTemp(x, y) >= POP_TEMP && sim.chance(POP_CHANCE)) {
     // The volume increase: a second puff fired from the open air beside the
     // kernel. Done *first*, while that cell is still known to be empty, and
@@ -121,6 +128,16 @@ export const CORN_KERNEL = register({
   density: 3.7,
   category: 'food',
   alsoIn: ['powder'],
+  // 부패 — the slowest thing on the roster by a wide margin, which is what a
+  // dried grain should be: a sack of kernels is the one food you can leave in a
+  // corner and mostly forget about. Still finite, so a store room is a thing you
+  // maintain rather than a thing you fill once.
+  //
+  // Bits 0-2: this material keeps nothing else in aux. The counter does not
+  // survive popping — `launchDebris` overwrites the cell to carry the puff, and
+  // the Popcorn it deposits starts fresh. That is the right reading anyway:
+  // 튀긴 것은 새 것이다.
+  spoil: { seconds: 1200, auxShift: 0, into: () => SPOILED_FOOD.id },
   thermal: { conductivity: 0.25 },
   update: updateCornKernel,
 });

@@ -90,4 +90,17 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   // 않고 지나간다" — that the pane rides in a byte while the beam sits on it is the
   // implementation of that sentence, not a second thing a player can act on.
   auxHost: 'engine: `aux` may hold a host cell this one is standing in for',
+  // Where 부패 keeps its counter inside the declaring material's own aux word. It
+  // exists because every food's aux was already spoken for and there is no safe
+  // default (see SpoilSpec), which makes it a bit-layout fact about that one
+  // material's implementation — the pace (`spoil.seconds`) and the rules that
+  // pause it (the `perishable`/`driedKeeps` cards) are the parts a player acts on,
+  // and those are shown.
+  'spoil.auxShift': 'engine: which bits of this material’s aux hold the 부패 counter',
+  // 반죽's "발효 중에는 안 썩는다" is a real rule a player acts on, but it is not a
+  // *field* they can read off a card — it is a predicate only the declaring
+  // material can evaluate, and its one holder states it in prose the player
+  // actually gets, in that material's codex entry. Showing the callback itself
+  // would say "이 물질은 특별한 조건에서 보존됩니다" and name none of them.
+  'spoil.keptWhile': 'engine: a pause condition only the declaring material can evaluate',
 };

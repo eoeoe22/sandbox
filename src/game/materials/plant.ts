@@ -8,7 +8,7 @@ import { MUD } from './mud';
 import { DIRT } from './dirt';
 import { SEED } from './seed';
 import { ASH } from './ash';
-import { findMoisture, moistDrinkable, ROOT_REACH } from './soil';
+import { findMoisture, moistDrinkable, moistFertile, ROOT_REACH } from './soil';
 import { tryBurn } from './combustion';
 
 // Plant — a living green growth that drinks water and *climbs*. It grows the way
@@ -138,6 +138,15 @@ const THIRST = 63; // roots only drink once they're down to about half — a pla
 const MUD_DRINK_CHANCE = 0.12; // damp earth gives its moisture up more slowly
 const SOIL_MOISTURE = 76; // what damp ground alone sustains — enough for a modest
 //                           plant, well short of what standing water gives
+/** 걸어진 땅이 주는 것 — what damp ground sustains when the root path runs through
+ *  퇴비 (soil.ts's `moistFertile`, compost.ts). This one number is the entire
+ *  payoff of the 부패 chain, and it is deliberately a *ceiling* rather than a
+ *  growth bonus: fertile ground doesn't make a plant grow by different rules, it
+ *  keeps it topped up nearer what standing water would give, so the same watering
+ *  buys a fuller crown, more forks and enough spare vigour to set seed. Kept under
+ *  MAX_MOISTURE (127) so a pond is still the best thing a root can find — compost
+ *  improves a bed, it doesn't replace irrigation. */
+const FERTILE_MOISTURE = 110;
 // Moisture lost per cell as it wicks up the stem. This single number decides how
 // bushy a plant can get, because a fork needs BRANCH_COST *at the tip*: at a
 // steep 7 per cell only the bottom four cells could ever afford one, so a plant
@@ -427,7 +436,11 @@ function drink(x: number, y: number, sim: SimContext, a: number): number {
     swallow(x, wy, sim);
     return withMoist(a, MAX_MOISTURE);
   }
-  return moistOf(a) < SOIL_MOISTURE ? withMoist(a, SOIL_MOISTURE) : a;
+  // Damp ground is a trickle rather than a puddle, so it only tops the cell up to
+  // a ceiling and is left where it is. 퇴비를 지난 뿌리는 그 천장이 높다 — the
+  // whole of what fertility means here (see FERTILE_MOISTURE and soil.ts).
+  const ceiling = moistFertile ? FERTILE_MOISTURE : SOIL_MOISTURE;
+  return moistOf(a) < ceiling ? withMoist(a, ceiling) : a;
 }
 
 /** Wick: pull moisture up from the wettest plant neighbour, losing WICK_STEP per

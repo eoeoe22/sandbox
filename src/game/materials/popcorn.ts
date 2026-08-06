@@ -4,6 +4,8 @@ import { rgb } from '../render/color';
 import { updateFloatyPowder } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { tryFlameOnlyBurn } from './combustion';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Popcorn (팝콘) — what a Corn Kernel becomes when it goes off (cornkernel.ts).
 //
@@ -30,11 +32,19 @@ import { tryFlameOnlyBurn } from './combustion';
 // it (see combustion.ts). So heat alone only ever pops and toasts; a flame cell
 // touching the popcorn is the one thing that lights it.
 
-/** This material's `aux` bit for "alight" (`tryFlameOnlyBurn`). Bit 0 — popcorn
- *  keeps nothing else in aux, and has no `auxPalette` for the flag to disturb. */
+/** This material's `aux` bit for "alight" (`tryFlameOnlyBurn`). Bit 0, and the
+ *  부패 counter sits at bits 1-3 deliberately clear of it — the meat chain shipped
+ *  a spoilage counter overlapping exactly this flag once, and the result was
+ *  탄 고기 self-igniting with no flame anywhere on the grid (see meat.ts). No
+ *  `auxPalette` here, so neither field touches the colour. */
 const LIT_BIT = 0b1;
+const SPOIL_SHIFT = 1;
 
 function updatePopcorn(x: number, y: number, sim: SimContext): void {
+  // 부패 — first, so a puff that has gone over does not also take a turn as
+  // popcorn. Stops well below any temperature that could light it, so 눅눅해지는
+  // 것 and 타는 것 never contend for the same cell.
+  if (spoilStep(x, y, sim, POPCORN.spoil!)) return;
   // Consumed into flame this tick → stop; it is Fire now, not a powder to move.
   if (tryFlameOnlyBurn(x, y, sim, LIT_BIT)) return;
   updateFloatyPowder(x, y, sim);
@@ -60,6 +70,11 @@ export const POPCORN = register({
   // clear of any plausible cooking temperature and only a burning cell is ever
   // above it.
   combustion: { burnChance: 0.1, autoIgniteTemp: 400, ashChance: 0.3, flameOnly: true },
+  // 부패 — 눅눅해지는 것. Slow, because puffed starch is dry and keeps for a long
+  // while, but faster than the kernel it came from (1200s): popping is what takes
+  // a grain built to survive a winter and turns it into something with a shelf
+  // life. Bits 1-3, clear of LIT_BIT.
+  spoil: { seconds: 900, auxShift: SPOIL_SHIFT, into: () => SPOILED_FOOD.id },
   thermal: { conductivity: 0.15 },
   update: updatePopcorn,
 });

@@ -44,6 +44,8 @@ export function statValue(s: CodexStat, t: Translate): string {
       return `${trim(s.value)}${t('codex.unit.cells')}`;
     case 'ticks':
       return `${trim(s.value)}${t('codex.unit.ticks')}`;
+    case 'seconds':
+      return `${trim(s.value)}${t('codex.unit.seconds')}`;
     default:
       return trim(s.value);
   }

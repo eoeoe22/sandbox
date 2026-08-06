@@ -27,6 +27,15 @@ export type StatUnit =
   | 'cells'
   /** A duration in simulation ticks. */
   | 'ticks'
+  /**
+   * A duration in seconds of play at ×1 speed.
+   *
+   * Distinct from `ticks` because it is for numbers a player is meant to *plan*
+   * around rather than compare — "이 고기는 1분쯤 간다" is actionable, "1650틱" is
+   * not. Only durations authored in seconds use it (see `SpoilSpec.seconds`);
+   * anything the engine actually counts in ticks stays in ticks.
+   */
+  | 'seconds'
   /** A bare number with no unit (density, yield). */
   | 'number';
 

@@ -417,6 +417,7 @@ export const en = {
       radiation: 'Radiation',
       blast: 'Blast & destruction',
       mix: 'Mixing',
+      spoil: 'Spoilage',
       overlap: 'Soaking',
       body: 'Object motion',
     },
@@ -440,7 +441,7 @@ export const en = {
     toSandbox: 'Open the sandbox',
     toHome: 'Back to the start page',
     objectNote: 'Objects are rigid bodies that roll around above the grid rather than living in it.',
-    unit: { temp: '°C', cells: ' cells', ticks: ' ticks' },
+    unit: { temp: '°C', cells: ' cells', ticks: ' ticks', seconds: 's' },
     reaction: {
       unchanged: 'unchanged',
       byproduct: 'by-product',

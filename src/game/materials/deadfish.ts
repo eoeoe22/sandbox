@@ -1,10 +1,11 @@
 import { register } from './registry';
-import { EMPTY, Phase } from '../engine/types';
+import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { updateFloatyPowder } from '../engine/behaviors';
-import { SIM_HZ_AT_1X } from '../config';
 import { SMOKE } from './smoke';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Dead Fish (죽은 물고기) — what a Fish leaves behind, every way it can die (see
 // fish.ts). Not in the palette: 사체는 만들어 놓는 것이 아니라 *생기는* 것이라,
@@ -33,23 +34,33 @@ import { SMOKE } from './smoke';
 // nothing below reads aux. A corpse from one of the paths that zeroes it simply
 // faces left. 죽은 물고기는 방향을 바꾸지 않는다 — it drifts as it is pushed.
 //
-// 부패 — a corpse doesn't pile up forever. Instead of a countdown in `aux` it just
-// rolls DECAY_CHANCE every tick, which costs no state at all and comes out better:
-// a shoal that died together doesn't blink out together, it thins away one fish at
-// a time over about DECAY_SECONDS. (A counter would have needed care anyway — `set`
-// keeps the old cell's aux on a non-empty write, so a corpse would have inherited
-// the fish's own aux word as a decay count from the declarative death hooks, which
-// don't clear it. That inheritance is now load-bearing for the facing bit above,
-// which is another reason not to spend aux on a timer here.)
+// 부패 — a corpse doesn't pile up forever, and since the 부패 계통 exists it does
+// not merely *stop existing* either: it rots into 부패물 on the same shared
+// machinery every food in the palette uses (spoil.ts), and from there into 퇴비.
+// 어항 바닥에 쌓인 것이 결국 밭이 된다.
 //
-// 소사 — checked before the decay roll, for the same reason fish.ts checks it before
+// That replaced a flat DECAY_CHANCE roll — no state at all, and for a corpse that
+// only had to disappear it was the right trade. Two things made it the wrong one
+// once preservation existed. A memoryless roll cannot be *paused*, so a frozen
+// tank would have gone on quietly deleting its dead; and a corpse that vanishes
+// is mass leaving the world, which is precisely what the compost loop is for. The
+// counter costs three aux bits — 1-3, above the facing bit the renderer reads.
+//
+// Spending aux here needed checking against every way a corpse is made, because a
+// living fish's word is *full* — facing in bit 0, heading in 1-4, a time-out-of-
+// water counter in 5-14 (fish.ts) — and bits 1-3 landing on the spoilage counter
+// would mean a fish that happened to be swimming north-east arriving pre-rotten.
+// Every path is already safe, for two different reasons worth keeping written
+// down. fish.ts's own `die` uses `set` (which preserves aux by contract) and so
+// masks the word down to the facing bit by hand. The declarative hooks
+// (`radiationDeath`, `blastDeathId`, `shockDeathChance`) go through `spawn`
+// instead, which clears aux as part of its contract — so those corpses start at
+// zero and simply face left, which deadfish's own note already recorded.
+//
+// 소사 — checked before the rot step, for the same reason fish.ts checks it before
 // DEATH_TEMP: a corpse is not exempt just because it already died once. A raft of
 // Dead Fish drifting into a lava flow (or a tank that's since been set ablaze)
 // burns away into Smoke on the spot rather than waiting out its ordinary rot timer.
-const DECAY_SECONDS = 45;
-/** 부패 확률/틱 — mean lifetime DECAY_SECONDS at ×1 speed. Exponential rather than
- *  fixed, so corpses fade out staggered instead of all at once. */
-const DECAY_CHANCE = 1 / (DECAY_SECONDS * SIM_HZ_AT_1X);
 
 /** 소사(燒死) 온도 — fish.ts의 VAPORIZE_TEMP와 같은 값. 산 물고기가 이 온도에서
  *  사체도 없이 곧장 Smoke가 되는 것과 같은 이유로, 이미 떠 있는 사체도 예외가 아니다
@@ -61,10 +72,8 @@ function updateDeadFish(x: number, y: number, sim: SimContext): void {
     sim.set(x, y, SMOKE.id);
     return;
   }
-  if (sim.chance(DECAY_CHANCE)) {
-    sim.set(x, y, EMPTY);
-    return;
-  }
+  // 부패 — into 부패물, on the shared counter. Freeze the tank and the raft keeps.
+  if (spoilStep(x, y, sim, DEAD_FISH.spoil!)) return;
   updateFloatyPowder(x, y, sim);
 }
 
@@ -85,6 +94,11 @@ export const DEAD_FISH = register({
   // against water, but well short of the living fish's slate grey, so a floating
   // corpse never reads as a fish that is still swimming.
   tailPixel: rgb(0x93, 0x8b, 0x79),
+  // 부패 — fast, like the raw meat it essentially is. `auxShift: 1` clears the
+  // facing bit at 0 that the renderer draws the tail pixel from (see above), and
+  // there is no `dryMask` because a corpse keeps no moisture counter: a dead fish
+  // cannot be turned into 육포, it has to be salted or frozen like anything else.
+  spoil: { seconds: 140, auxShift: 1, into: () => SPOILED_FOOD.id },
   // Organic and poorly conductive, like the live fish and the Termite.
   thermal: { conductivity: 0.2 },
   update: updateDeadFish,

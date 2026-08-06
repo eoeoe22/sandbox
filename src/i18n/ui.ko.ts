@@ -413,6 +413,7 @@ export const ko = {
       radiation: '방사선',
       blast: '폭발·파괴',
       mix: '섞임',
+      spoil: '부패',
       overlap: '겹침',
       body: '오브젝트 거동',
     },
@@ -436,7 +437,7 @@ export const ko = {
     toSandbox: '샌드박스로 가기',
     toHome: '시작 페이지로',
     objectNote: '오브젝트는 격자 위가 아니라 그 위를 굴러다니는 강체입니다.',
-    unit: { temp: '℃', cells: '칸', ticks: '틱' },
+    unit: { temp: '℃', cells: '칸', ticks: '틱', seconds: '초' },
     reaction: {
       unchanged: '그대로',
       byproduct: '부산물',

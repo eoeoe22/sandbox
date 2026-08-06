@@ -75,6 +75,17 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
   },
   { key: 'petroleum', fields: ['petroleum'], read: flag('petroleum') },
 
+  // --- 부패 ---------------------------------------------------------------
+  // The number is a stat row; these two are the rules around it that no number
+  // can say — what stops the clock at all, and the one exemption a material can
+  // earn by being dry.
+  { key: 'perishable', fields: ['spoil'], read: present('spoil') },
+  {
+    key: 'driedKeeps',
+    fields: ['spoil.dryMask'],
+    read: (m) => (m.spoil?.dryMask === undefined ? undefined : {}),
+  },
+
   // --- 산 -----------------------------------------------------------------
   { key: 'acidResistant', fields: ['acidResistant'], read: flag('acidResistant') },
   { key: 'acidHydrogen', fields: ['acidHydrogen'], read: present('acidHydrogen') },

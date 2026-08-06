@@ -119,6 +119,9 @@ import { TERMITE } from './termite';
 import { NANOBOT } from './nanobot';
 import { FISH } from './fish';
 import { DEAD_FISH } from './deadfish';
+import { MOLD } from './mold';
+import { SPOILED_FOOD } from './spoiledfood';
+import { COMPOST } from './compost';
 import { FAN } from './fan';
 import { RUST } from './rust';
 import { RUST_POWDER } from './rustpowder';
@@ -272,6 +275,9 @@ export {
   NANOBOT,
   FISH,
   DEAD_FISH,
+  MOLD,
+  SPOILED_FOOD,
+  COMPOST,
   FAN,
   RUST,
   RUST_POWDER,
@@ -494,6 +500,12 @@ export const MATERIALS = [
   TERMITE,
   NANOBOT,
   FISH,
+  // 곰팡이 — the visible half of 부패 (mold.ts). Sits with the living things
+  // rather than with the food it grows on, because that is what it is; the two
+  // materials at the end of its chain are down with the 요리 line for the same
+  // reason in reverse (they are what food turns into, so they read as the tail
+  // of that recipe).
+  MOLD,
   // 요리. Ordered as the three chains actually run, because the tab is a set of
   // recipes rather than a shelf of unrelated things: 밀가루 → 반죽 → 빵, then the
   // grill's 생고기 → 익은 고기 → 탄 고기, then 옥수수 알갱이 → 팝콘. The tab also
@@ -508,6 +520,13 @@ export const MATERIALS = [
   BURNT_MEAT,
   CORN_KERNEL,
   POPCORN,
+  // 부패 — the tail of every food chain above, in the order it runs. Placed last
+  // rather than beside the 생명 tab's other members because array position is tab
+  // position everywhere at once: here it puts 부패물 at the end of 요리 (where the
+  // chain that produces it ends), and it puts the pair in chain order in 생명 and
+  // 가루 as well, which no other placement manages for all three tabs.
+  SPOILED_FOOD,
+  COMPOST,
 ];
 
 // `MATERIALS` as a lookup instead of a list. Built once at module load, because

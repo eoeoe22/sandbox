@@ -3,8 +3,10 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { tryPhaseChange } from './phasechange';
-import { COOK_TEMP, dryStep } from './meat';
+import { COOK_TEMP, DRY_MASK, SPOIL_SHIFT, dryStep } from './meat';
 import { COOKED_MEAT } from './cookedmeat';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Raw Meat (생고기) — the first of the three grilling states, and the material
 // that turns "how hot is this fire, actually" into something you can read off a
@@ -40,6 +42,10 @@ import { COOKED_MEAT } from './cookedmeat';
 // directly and skip the entire chain.
 
 function updateRawMeat(x: number, y: number, sim: SimContext): void {
+  // 부패 — before anything else, since a cut that has gone over is no longer a
+  // cut. Only runs under 60°, so meat anywhere near a grill is cooking rather
+  // than rotting and the two clocks never compete (spoil.ts).
+  if (spoilStep(x, y, sim, RAW_MEAT.spoil!)) return;
   // Steam, dry, and hold at the boiling plateau. First, so a cell that cooks
   // this tick has still wisped on its way there rather than turning silently —
   // and so the plateau is in place before the threshold below is consulted.
@@ -64,5 +70,24 @@ export const RAW_MEAT = register({
   // visible layers instead of all at once.
   thermal: { conductivity: 0.3 },
   phaseChange: { at: () => COOK_TEMP, when: 'atOrAbove', into: () => COOKED_MEAT.id },
+  // 부패 — among the fastest on the roster, second only to a corpse (죽은 물고기,
+  // 140s), which is what raw meat should be. The shift is the meat chain's shared
+  // one (meat.ts `SPOIL_SHIFT`, which documents the whole three-material word and
+  // why bit 3 is not ours to take).
+  //
+  // **`dryMask` is declared here and nowhere else**, and that is what makes 육포 a
+  // choice. It points at the dryness counter, so a cut dried right out stops
+  // rotting — and the only heat that can dry this material without ending it is
+  // STEAM_TEMP(45°) up to COOK_TEMP(70°), because at 70° it is 익은 고기 instead.
+  // A dehydrator, in other words, not a grill. 익은 고기 carries the counter
+  // across but pointedly does not declare the exemption: cooking fills that same
+  // counter on its own, so honouring it there made every grilled cut immortal
+  // (cookedmeat.ts).
+  spoil: {
+    seconds: 150,
+    auxShift: SPOIL_SHIFT,
+    dryMask: DRY_MASK,
+    into: () => SPOILED_FOOD.id,
+  },
   update: updateRawMeat,
 });

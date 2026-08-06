@@ -2,8 +2,10 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { CHAR_TEMP, DRY_MAX, dryStep } from './meat';
+import { CHAR_TEMP, DRY_MAX, SPOIL_SHIFT, dryStep } from './meat';
 import { BURNT_MEAT } from './burntmeat';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Cooked Meat (익은 고기) — the middle of the grilling line (see rawmeat.ts for
 // the whole chain), and the state you are actually trying to stop in. Raw Meat
@@ -54,6 +56,10 @@ const DRY_RAMP = [
 ] as const;
 
 function updateCookedMeat(x: number, y: number, sim: SimContext): void {
+  // 부패 — first, and only under 60°: a steak resting on the counter goes over,
+  // a steak on the grill does not (spoil.ts). Cooking bought it time, not
+  // immunity.
+  if (spoilStep(x, y, sim, COOKED_MEAT.spoil!)) return;
   // Steam, dry, and hold at the plateau — and hand back the dryness *after* this
   // tick, so a cut that finished drying just now can char on the same turn
   // rather than waiting for the next.
@@ -78,6 +84,30 @@ export const COOKED_MEAT = register({
   auxPalette: DRY_RAMP,
   density: 1000,
   category: 'food',
+  // 부패 — slower than raw, which is the point of cooking something you mean to
+  // keep. Same shift as 생고기 on purpose: the cook transition preserves aux, so
+  // the counter carries over rather than resetting.
+  //
+  // The shift is shared from meat.ts rather than written here because this
+  // material is the one that hands the word on to 탄 고기, and that material's
+  // "alight" bit has to stay clear of it — see the layout note there for what
+  // happened when it did not.
+  //
+  // **No `dryMask` here, unlike 생고기, and that asymmetry is the whole point.**
+  // Declaring it made 웰던 고기 immortal: this material dries at the *cooking*
+  // rate (DRY_BASE + DRY_PER_100, meat.ts — 4.7s at 400°), and 탄 고기 gates its
+  // char on the counter being full, so **anything grilled past medium reaches
+  // DRY_MAX by construction**. Every cut that came off a fire was then permanently
+  // preserved and the 260s declared above never once fired. 육포 has to be
+  // something you *choose*, and on the raw side it is: 생고기 turns at 70° the
+  // instant it is hot enough to cook, so the only window in which it can dry is
+  // STEAM_TEMP(45°)~70° — a dehydrator, not a grill. Cooking dries meat too; it
+  // just is not what drying meat to keep it means.
+  spoil: {
+    seconds: 260,
+    auxShift: SPOIL_SHIFT,
+    into: () => SPOILED_FOOD.id,
+  },
   // Drier than raw, so it conducts a touch less — a cooked shell genuinely does
   // slow the heat reaching the middle.
   thermal: { conductivity: 0.25 },

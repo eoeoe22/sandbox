@@ -20,9 +20,10 @@
 //     burns away entirely — Smoke, never Dead Fish — and the check for it has to
 //     run before the DEATH_TEMP one or the higher threshold is unreachable.
 //   • 사체. It floats up through water to the surface on its own buoyancy, and it
-//     eventually rots away instead of piling up forever — unless it, too, crosses
-//     VAPORIZE_TEMP first (deadfish.ts's own copy of the same threshold), in which
-//     case it burns away into Smoke without waiting on the decay roll.
+//     eventually rots away instead of piling up forever — into 부패물 rather than
+//     into nothing, since the 부패 계통 landed (materials/spoil.ts) — unless it,
+//     too, crosses VAPORIZE_TEMP first (deadfish.ts's own copy of the same
+//     threshold), in which case it burns away into Smoke without waiting on rot.
 //   • 개인 공간, and specifically NOT schooling. A pile spreads out, but the fish
 //     end up no tighter than a random scatter — measured against a Monte Carlo
 //     null the harness computes itself, not against a hand-picked number.
@@ -35,6 +36,7 @@ import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial } from '../src/game/materials/registry';
 import { flashCell } from '../src/game/materials/blast';
 import { packSpark, conductorClass, FULL_STRENGTH } from '../src/game/materials/spark';
+import { MOLD_ATE_BIT } from '../src/game/materials/mold';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -84,6 +86,9 @@ const OIL = ID('Crude Oil'); // 도체가 아닌 액체 — 감전 경로를 직
 const SPARK = ID('Spark');
 const SMOKE = ID('Smoke');
 const CHLORINE = ID('Chlorine');
+const SPOILED = ID('Spoiled Food');
+const COMPOST = ID('Compost');
+const MOLD = ID('Mold');
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states real-time
  *  expectations (12초 질식) in seconds and converts here. */
@@ -535,26 +540,52 @@ const pinFishBetweenChlorine = (grid: Grid, fx: number, fy: number): void => {
       : `${risen.length} left, deepest at y=${Math.max(...risen.map((c) => c.y))} (surface y=8)`,
   );
 
-  // Decay is a per-tick roll, not a countdown (see deadfish.ts), so the corpses go
-  // out staggered — which is the point. That makes it an exponential with a ~45s
-  // mean: about a third should still be there at 45s, and effectively none at 600s.
+  // 부패 — a corpse no longer merely vanishes. It rots into 부패물 on the shared
+  // spoilage counter (materials/spoil.ts) and from there into 퇴비, so what is
+  // checked here is that the raft clears *and* that its mass stayed in the world.
+  // The staggering is still the point and is measured directly: the first corpse
+  // to go and the last must be well apart, rather than a shoal blinking out
+  // together. (This used to be a flat per-tick roll with a 45s mean, sampled at
+  // 45s. The counter that replaced it is what lets a frozen tank *hold* its dead
+  // instead of quietly deleting them — see deadfish.ts.)
   reseed();
   const rot = makeWorld(40, 20);
   tank(rot.grid, 4);
   for (let x = 5; x < 35; x++) put(rot.grid, x, 10, DEAD);
   const before = count(rot.grid, DEAD);
-  for (let t = 0; t < 45 * HZ; t++) rot.sim.step();
-  const at45 = count(rot.grid, DEAD);
-  for (let t = 0; t < 555 * HZ; t++) rot.sim.step();
+  let firstGone = -1;
+  let allGone = -1;
+  for (let t = 0; t < 600 * HZ && allGone < 0; t++) {
+    rot.sim.step();
+    const left = count(rot.grid, DEAD);
+    if (firstGone < 0 && left < before) firstGone = t;
+    if (left === 0) allGone = t;
+  }
   check(
     'corpses rot away instead of collecting forever',
-    count(rot.grid, DEAD) === 0,
-    `${before} → ${at45} at 45s → ${count(rot.grid, DEAD)} at 600s`,
+    allGone >= 0,
+    `${before} corpses, last one gone at ${(allGone / HZ).toFixed(1)}s`,
   );
   check(
     '…and they go one at a time, not all at once',
-    at45 > 0 && at45 < before,
-    `${at45} of ${before} still there at the 45s mean`,
+    firstGone >= 0 && allGone - firstGone > 5 * HZ,
+    `first at ${(firstGone / HZ).toFixed(1)}s, last at ${(allGone / HZ).toFixed(1)}s`,
+  );
+  // 곰팡이 is a stage of the chain, not a decoration on it: it eats a corpse cell
+  // and carries that cell's mass until it decays into 부패물 (materials/mold.ts).
+  // So the count has to include mold that ate — and only that mold, which is what
+  // MOLD_ATE_BIT is for. Film mold, grown into empty space, was never corpse.
+  let onChain = 0;
+  for (let i = 0; i < rot.grid.cells.length; i++) {
+    const id = rot.grid.cells[i];
+    if (id === SPOILED || id === COMPOST) onChain++;
+    else if (id === MOLD && (rot.grid.aux[i] & MOLD_ATE_BIT) !== 0) onChain++;
+  }
+  check(
+    '…and the mass stays in the world as 곰팡이/부패물/퇴비, it is not deleted',
+    onChain === before,
+    `${onChain} of ${before} still on the chain ` +
+      `(${count(rot.grid, SPOILED)} 부패물, ${count(rot.grid, COMPOST)} 퇴비)`,
   );
 
   // ── 6b. 사체도 500°↑에서는 연기로 소멸 ────────────────────────────────────
