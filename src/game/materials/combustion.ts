@@ -329,3 +329,88 @@ export function tryBurn(x: number, y: number, sim: SimContext): boolean {
   }
   return false;
 }
+
+// ── 직화 전용 (Combustible.flameOnly) ────────────────────────────────────────
+//
+// `tryBurn` above lights a fuel two ways: a flame touches it, or its own
+// temperature passes `autoIgniteTemp`. The second one is right for everything
+// that came out of the ground and wrong for everything you eat. An oven is a box
+// held at several hundred degrees on purpose — Iron conducts so well that the
+// inside of a sealed firebox measures ~880° — so any food with an ordinary
+// autoignition point spontaneously combusts in the appliance built to cook it,
+// and there is no number that fixes it: `burnTemp` (800°) has to stay at or
+// above `autoIgniteTemp` for `combustion.ts` to read a burning cell as burning,
+// which caps the threshold below the temperature an oven actually reaches.
+//
+// So the food line answers the question with a different rule instead of a
+// bigger number: **열만으로는 절대 불이 붙지 않는다. 불꽃이 직접 닿아야 한다.**
+// Radiant heat, however fierce, only ever cooks; a flame cell touching the food
+// is the sole ignition path. The oven works, the campfire still ruins dinner.
+//
+// The bookkeeping is the bit that has to be shared. "Is this cell burning?" is
+// read off temperature everywhere else in this file, and a flameOnly fuel sits
+// far above its own threshold all day without being alight, so it has to
+// remember. It does that in one `aux` bit, chosen per material to dodge whatever
+// that material already keeps there (Bread's crust, Burnt Meat's dryness), and
+// the ramps those materials draw themselves with are sized so the bit falls out
+// of `aux % length` and never shows up as a colour.
+
+/** True if a touching cell of the *same* material is already alight — how the
+ *  front crosses the inside of a body, where there is no air for a flame cell to
+ *  stand in. Without it a burning loaf would only be eaten from the faces its
+ *  wreathing flames could reach and the middle would never go. */
+function litNeighbor(x: number, y: number, sim: SimContext, litBit: number): boolean {
+  const id = sim.get(x, y);
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (sim.get(nx, ny) !== id) continue;
+    if ((sim.getAux(nx, ny) & litBit) !== 0) return true;
+  }
+  return false;
+}
+
+/**
+ * `tryBurn` for a fuel that declares `combustion.flameOnly`: identical once
+ * alight, but reachable only by flame contact (or by a neighbour of the same
+ * material that is already alight). Returns true only if the cell was consumed
+ * into flame this tick, exactly like `tryBurn`, so a powder caller still knows
+ * whether it has anything left to move.
+ *
+ * `litBit` is the material's own free `aux` bit. Its `combustion` spec supplies
+ * the rest: `burnChance` doubles as the per-tick chance of catching from contact
+ * (so lighting the body feels the same whether it started at the flame or two
+ * cells in), and `autoIgniteTemp` is read not as an ignition point — nothing here
+ * ever reaches it by being heated — but as the floor an already-lit cell must
+ * stay above to still count as alight. That is the other end of the same number:
+ * `combustion.ts` writes AMBIENT_TEMP into a cell water has smothered, so a cell
+ * that has fallen under the floor is a cell whose fire is out, and the lit bit
+ * has to go with it or the fuel would re-light itself out of the water every
+ * tick. The codex hides the 발화점 stat for these and shows 직화 전용 instead.
+ */
+export function tryFlameOnlyBurn(
+  x: number,
+  y: number,
+  sim: SimContext,
+  litBit: number,
+): boolean {
+  const spec = getMaterial(sim.get(x, y)).combustion;
+  if (spec === undefined) return false;
+  const aux = sim.getAux(x, y);
+  if ((aux & litBit) !== 0) {
+    if (sim.getTemp(x, y) < spec.autoIgniteTemp) {
+      sim.setAux(x, y, aux & ~litBit);
+      return false;
+    }
+    return tryBurn(x, y, sim);
+  }
+  if (!flameAdjacent(x, y, sim) && !litNeighbor(x, y, sim, litBit)) return false;
+  if (!sim.chance(spec.burnChance)) return false;
+  sim.setAux(x, y, aux | litBit);
+  // Pin it into the burning band so `tryBurn` reads it as alight on its next
+  // turn; from then on `burnStep` re-pins it itself each tick.
+  const burnTemp = spec.burnTemp ?? FUEL_BURN_TEMP;
+  if (sim.getTemp(x, y) < burnTemp) sim.setTemp(x, y, burnTemp);
+  return false;
+}

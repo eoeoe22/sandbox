@@ -2,33 +2,70 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { tryPhaseChange } from './phasechange';
+import { CHAR_TEMP, DRY_MAX, dryStep } from './meat';
 import { BURNT_MEAT } from './burntmeat';
 
 // Cooked Meat (익은 고기) — the middle of the grilling line (see rawmeat.ts for
 // the whole chain), and the state you are actually trying to stop in. Raw Meat
-// arrives here at 70°; hold it anywhere under 200° and it stays, indefinitely,
-// even as it cools. Cooking is one-way: a steak that cools down does not go back
-// to red.
+// arrives here at 70°; cooking is one-way, so a steak that cools down does not
+// go back to red.
 //
-// Push it past 200° and it chars to Burnt Meat, which is the point of the
-// material — the band between the two thresholds is wide enough to hit
-// deliberately and narrow enough to overshoot if you just throw the thing on a
-// bonfire.
+// This is where the grill's whole margin for error lives, and it is a *timer*
+// rather than a thermometer. Charring needs two things at once: past 200°, and
+// bone dry (`DRY_MAX`, meat.ts). The second one is the real gate — a cut still
+// holding water pins itself at 110° no matter what is around it, so it cannot be
+// over 200° until it has finished boiling off, and that takes about five seconds
+// in open flame and nearer nine on a 250° plate. A steak thrown into a fire has
+// that long to be *taken back out*, which is the point: the material used to run
+// raw → cooked → char in under a second and 직화구이 simply did not exist.
 //
-// Like raw meat it carries no `combustion` spec: it is still moist enough not to
-// burn as a fuel, so the only route onward is the char threshold below. It is
-// drier than raw meat though, so it conducts a little less and a cooked outer
-// layer slightly insulates the red middle behind it.
+// Under 200° it never chars at all, however long you leave it. A hot plate held
+// anywhere in the band still holds a steak there forever — the moisture drains
+// away and nothing happens, because the other condition is never met.
+//
+// Because the char is no longer a plain temperature threshold, this material
+// does **not** declare `phaseChange`: a two-condition transition is not a phase
+// change and pretending it is would make the declaration lie to the palette, to
+// the codex and to test/phasechange.ts (which heats every declaration and
+// demands it fire). The threshold it *does* still respect is exported from
+// meat.ts and stated in the codex entry instead.
+//
+// It carries no `combustion` spec either: it is still moist enough not to burn as
+// a fuel, so the only route onward is the char. It is drier than raw meat though,
+// so it conducts a little less and a cooked outer layer slightly insulates the
+// red middle behind it.
 
-/** 타는 온도. Comfortably above the 70° cook point, so the "cooked, not burnt"
- *  band is a wide, aimable target — an oven or hot plate anywhere in between
- *  holds a steak there forever. */
-export const CHAR_TEMP = 200;
+/** 익은 고기 spends its moisture visibly. `Material.auxPalette` is indexed
+ *  `aux % 8` and the dryness counter *is* the low three bits (meat.ts), so these
+ *  eight entries are a direct readout of how much water the cut has left: fresh
+ *  brown at 0, most of the way to char at DRY_MAX. The steps are small on
+ *  purpose — this is a countdown you should notice out of the corner of your eye
+ *  and be able to act on, not a second material. A hand-placed steak out of the
+ *  palette is aux 0 and so draws the fresh end, which is what it should be. */
+const DRY_RAMP = [
+  rgb(150, 94, 58),
+  rgb(146, 90, 55),
+  rgb(140, 85, 52),
+  rgb(130, 78, 48),
+  rgb(118, 70, 44),
+  rgb(104, 62, 40),
+  rgb(90, 55, 38),
+  rgb(74, 48, 36),
+] as const;
 
 function updateCookedMeat(x: number, y: number, sim: SimContext): void {
-  // 200° → 탄 고기. Solid otherwise: nothing else to do.
-  tryPhaseChange(x, y, sim);
+  // Steam, dry, and hold at the plateau — and hand back the dryness *after* this
+  // tick, so a cut that finished drying just now can char on the same turn
+  // rather than waiting for the next.
+  const dry = dryStep(x, y, sim);
+  // 바싹 마른 뒤 200° → 탄 고기. In-place `set` rather than `spawn`, so the char
+  // keeps the heat that made it (and the dryness bits with it — `set` preserves
+  // aux, which is what lets Burnt Meat park its lit flag in the bit above them).
+  if (dry >= DRY_MAX && sim.getTemp(x, y) >= CHAR_TEMP) {
+    sim.set(x, y, BURNT_MEAT.id);
+    return;
+  }
+  // Solid: nothing else to do.
 }
 
 export const COOKED_MEAT = register({
@@ -37,11 +74,12 @@ export const COOKED_MEAT = register({
   phase: Phase.Solid,
   color: rgb(148, 90, 54),
   colorVary: 16,
+  // 수분이 빠지는 정도 — see DRY_RAMP.
+  auxPalette: DRY_RAMP,
   density: 1000,
   category: 'food',
   // Drier than raw, so it conducts a touch less — a cooked shell genuinely does
   // slow the heat reaching the middle.
   thermal: { conductivity: 0.25 },
-  phaseChange: { at: () => CHAR_TEMP, when: 'atOrAbove', into: () => BURNT_MEAT.id },
   update: updateCookedMeat,
 });

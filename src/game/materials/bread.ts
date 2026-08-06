@@ -1,9 +1,8 @@
 import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR8 } from '../engine/directions';
 import type { SimContext } from '../engine/SimContext';
-import { tryBurn, flameAdjacent, FUEL_BURN_TEMP } from './combustion';
+import { tryFlameOnlyBurn } from './combustion';
 
 // Bread (빵) — what Batter becomes in an oven (batter.ts), and the end of the
 // 밀가루 → 반죽 → 빵 line. A rigid Solid like Wood: it just sits there, holds a
@@ -45,14 +44,9 @@ const LIT_BIT = 0b10;
 
 /**
  * The temperature an already-lit loaf must stay at or above to still count as
- * alight. It is declared as this material's `combustion.autoIgniteTemp` because
- * that is the number `combustion.ts` compares against to decide "is this cell
- * burning?", but for a `flameOnly` fuel it is **not** a 발화점 — nothing here ever
- * reaches it by being heated, since `updateBread` refuses to light the cell at
- * all without flame contact. Its real job is the other end: `combustion.ts`
- * writes AMBIENT_TEMP into a cell water has smothered, so a cell that has fallen
- * under this floor is a cell whose fire is out. The codex hides the 발화점 stat
- * for exactly this reason and shows the 직화 전용 trait instead.
+ * alight — the `flameOnly` floor, not a 발화점. Nothing here ever reaches it by
+ * being heated; see `tryFlameOnlyBurn` in combustion.ts for what the number is
+ * actually doing and why the codex hides the 발화점 stat for these materials.
  *
  * Kept well under FUEL_BURN_TEMP (800°) so a burning cell is comfortably above
  * it, and well over anything a doused loaf sits at.
@@ -64,52 +58,13 @@ const ALIGHT_FLOOR = 300;
  *  apart that a cut-open loaf reads as bread at a glance, at any zoom. */
 const CRUST_RAMP = [rgb(166, 106, 50), rgb(238, 223, 189)] as const;
 
-/** Per-tick chance a loaf in contact with flame (or with a loaf already alight)
- *  catches. Matches the `combustion.burnChance` the front then spreads at, so
- *  lighting a loaf feels the same whether it started at the flame or two cells
- *  in. */
-const CATCH_CHANCE = 0.05;
-
-/** True if a touching Bread cell is already alight — how the front crosses the
- *  inside of a loaf, where there is no air for a flame to stand in. Without it a
- *  burning loaf would only be eaten from the faces its wreathing flames could
- *  reach and the middle would never go. */
-function litNeighbor(x: number, y: number, sim: SimContext): boolean {
-  for (const [dx, dy] of DIR8) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    if (sim.get(nx, ny) !== BREAD.id) continue;
-    if ((sim.getAux(nx, ny) & LIT_BIT) !== 0) return true;
-  }
-  return false;
-}
-
 function updateBread(x: number, y: number, sim: SimContext): void {
-  const aux = sim.getAux(x, y);
-  if ((aux & LIT_BIT) !== 0) {
-    // Alight. `combustion.ts` reads "is this cell burning?" off its temperature,
-    // and it also writes AMBIENT_TEMP into a cell that water just smothered — so
-    // a cell that has fallen back under its own floor is a cell whose fire went
-    // out, and the lit bit has to go with it or the loaf would re-light itself
-    // out of the water every tick.
-    if (sim.getTemp(x, y) < ALIGHT_FLOOR) {
-      sim.setAux(x, y, aux & ~LIT_BIT);
-      return;
-    }
-    tryBurn(x, y, sim);
-    return;
-  }
-  // Not alight — and radiant heat alone never lights it, however fierce the
-  // oven. Only a flame actually touching the loaf, or a neighbouring loaf that
-  // is already burning, does. This is the whole reason an oven works at all:
-  // see `combustion.flameOnly` in engine/types.ts.
-  if (!flameAdjacent(x, y, sim) && !litNeighbor(x, y, sim)) return;
-  if (!sim.chance(CATCH_CHANCE)) return;
-  sim.setAux(x, y, aux | LIT_BIT);
-  // Pin it into the burning band so `tryBurn` reads it as alight on its next
-  // turn; from then on `burnStep` re-pins it itself each tick.
-  if (sim.getTemp(x, y) < FUEL_BURN_TEMP) sim.setTemp(x, y, FUEL_BURN_TEMP);
+  // Radiant heat alone never lights it, however fierce the oven — only a flame
+  // actually touching the loaf, or a neighbouring loaf already burning, does.
+  // That rule is the whole reason an oven works at all, and it is shared with
+  // the rest of the food line (`tryFlameOnlyBurn`, combustion.ts). A Solid, so
+  // there is nothing to move afterwards either way.
+  tryFlameOnlyBurn(x, y, sim, LIT_BIT);
 }
 
 export const BREAD = register({

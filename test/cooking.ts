@@ -22,11 +22,26 @@
 //     fully-proofed dough from one recipe and demands the three come out in
 //     order.
 //
-// The meat and popcorn scenes are ordinary threshold checks by comparison, with
-// one exception worth its own run: a kernel with something directly overhead
-// must puff *in place* rather than expanding, because the expansion is the only
-// place in this line that creates cells and "a sealed pot cannot double" is what
-// keeps that bounded.
+//   • **직화 전용 is invisible until it isn't.** Bread, Burnt Meat and Popcorn
+//     all refuse to light from radiant heat (`tryFlameOnlyBurn`, combustion.ts),
+//     and every one of those rules was written *because* the material had
+//     quietly stopped being usable in the appliance it exists for — a loaf that
+//     is ash before it finishes baking, popcorn that burns in the pot that made
+//     it. None of that shows up in a count of the material; it shows up as the
+//     player being unable to do the obvious thing. So each gets an oven scene
+//     that asserts the pair: nothing burned, *and* the oven was provably hot
+//     enough that the old rule would have burned all of it.
+//   • **고기의 굽는 시간은 온도가 아니다.** Charring is gated on the cut having
+//     boiled its water off (meat.ts), not on a thermometer, and that gate is the
+//     only thing making 직화구이 possible. Scene 7b measures the mechanism rather
+//     than the outcome — the meat must be sitting at 110° *inside an 800° fire* —
+//     because "it is cooked and not burnt" would also pass if the meat had simply
+//     stopped taking heat at all.
+//
+// The popcorn scenes are ordinary by comparison, with one exception worth its
+// own run: a kernel with something directly overhead must puff *in place* rather
+// than expanding, because the expansion is the only place in this line that
+// creates cells and "a sealed pot cannot double" is what keeps that bounded.
 //
 // Run: `node test/run-cooking.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -480,26 +495,101 @@ console.log('— 고기 (Meat) —');
 //    happens, 70-200° cooks and *stops*, over 200° chars. The middle band is the
 //    one that matters — a steak held at 150° that kept going to burnt would make
 //    the whole material a countdown instead of a choice.
+//
+//    `hold` re-pins every meat cell before every step, which deliberately
+//    overrides the moisture plateau (meat.ts) each tick — an infinite reservoir
+//    is exactly what the meat cannot fight, and that is the honest model of a
+//    heat brush. So this scene measures the *thresholds* with the plateau taken
+//    out of the argument; the plateau itself is scene 7b's job.
 {
   const bands: Array<[number, number, string]> = [
     [50, RAW_MEAT.id, '50°에서는 생고기 그대로다'],
     [150, COOKED_MEAT.id, '70~200° 사이에서는 익은 고기가 되고 거기서 멈춘다'],
-    // 250°, not 400°: the char that comes out of this is a *fuel* (autoignition
-    // 350°), so a burner held above that point would light it and the scene
-    // would measure the burn instead of the char. That the char burns is scene
-    // 8's job.
+    // 250°, not 400°: the char that comes out of this is a *fuel*, so a burner
+    // hot enough to matter would light it and the scene would measure the burn
+    // instead of the char. That the char burns is scene 8's job.
     [250, BURNT_MEAT.id, '200°를 넘기면 탄 고기가 된다'],
   ];
   for (const [temp, want, label] of bands) {
     const { grid, sim } = makeWorld(40, 40);
     floor(grid, 34);
     const cut = block(grid, 12, 28, 28, 34, RAW_MEAT.id, temp);
-    for (let t = 0; t < 300; t++) {
+    // 900 rather than the original 300: charring is a *timer* now, gated on the
+    // cut having boiled off all its water (meat.ts), so the 250° band needs long
+    // enough for 96 cells to each run their drying counter out.
+    for (let t = 0; t < 900; t++) {
       hold(grid, [RAW_MEAT.id, COOKED_MEAT.id, BURNT_MEAT.id], temp);
       sim.step();
     }
     check(label, count(grid, want) > cut * 0.9, `${count(grid, want)}/${cut} cells`);
   }
+}
+
+// 7b. 직화구이 — the scene the moisture model was written for, and the one that
+//     would have caught the original bug. A raw cut laid straight into open
+//     flame used to be half char in ten ticks and gone in thirty, having never
+//     once looked cooked; direct-flame grilling is the most obvious thing anyone
+//     does with meat and fire, and the material made it impossible.
+//
+//     Both halves are asserted, because either alone is passable for the wrong
+//     reason. "It is cooked and not burnt" would also pass if the meat had
+//     simply stopped taking heat, so the temperature is checked too: the cut has
+//     to be sitting at its boiling plateau (110°) *in an 800° fire*, which is
+//     the mechanism rather than the symptom.
+{
+  const { grid, sim } = makeWorld(40, 40);
+  floor(grid, 34);
+  const cut = block(grid, 12, 28, 30, 34, RAW_MEAT.id, 20);
+  // 150 ticks = five seconds at the default sim speed — long enough that the old
+  // material would have been ash several times over. The flame is fed at its own
+  // `thermal.init` (1000°) rather than by bare `set`, which would leave it at
+  // room temperature: the scenes that only need *ignition* get away with that,
+  // because catching is decided by adjacency, but this one is about heat.
+  for (let t = 0; t < 150; t++) {
+    for (let x = 12; x < 28; x++)
+      if (grid.get(x, 29) === 0) {
+        grid.set(x, 29, FIRE.id);
+        grid.setTemp(x, 29, 1000);
+      }
+    sim.step();
+  }
+  let hottest = -Infinity;
+  for (let y = 0; y < 40; y++)
+    for (let x = 0; x < 40; x++)
+      if (grid.get(x, y) === COOKED_MEAT.id) hottest = Math.max(hottest, grid.getTemp(x, y));
+  check(
+    '불 속에 5초를 둬도 고기는 익고, 타는 건 가장자리뿐이다 (직화구이)',
+    count(grid, COOKED_MEAT.id) > cut * 0.9 && count(grid, BURNT_MEAT.id) <= cut * 0.05,
+    `${count(grid, COOKED_MEAT.id)}/${cut} cooked, ${count(grid, BURNT_MEAT.id)} burnt`,
+  );
+  check(
+    '…수분이 끓으면서 고기를 110°에 붙잡아 두기 때문이다',
+    Number.isFinite(hottest) && hottest <= 130,
+    `hottest cooked cell ${hottest.toFixed(0)}° in an 800° fire`,
+  );
+}
+
+// 7c. …and the other half, which is what stops "고기는 안 탄다" from being the
+//     new bug: the water runs out. Left in the same fire long enough the cut
+//     dries, chars, and is eventually eaten — the consequence still lands, it
+//     just takes a grill's worth of inattention rather than half a second.
+{
+  const { grid, sim } = makeWorld(40, 40);
+  floor(grid, 34);
+  const cut = block(grid, 12, 28, 30, 34, RAW_MEAT.id, 20);
+  for (let t = 0; t < 900; t++) {
+    for (let x = 12; x < 28; x++)
+      if (grid.get(x, 29) === 0) {
+        grid.set(x, 29, FIRE.id);
+        grid.setTemp(x, 29, 1000);
+      }
+    sim.step();
+  }
+  check(
+    '그대로 계속 두면 결국 수분이 다 날아가 탄다',
+    count(grid, BURNT_MEAT.id) + count(grid, ASH.id) > cut * 0.5,
+    `${count(grid, BURNT_MEAT.id)} burnt + ${count(grid, ASH.id)} ash of ${cut}`,
+  );
 }
 
 // 8. …and the char is the only state that burns. Wet meat in a fire has to cook
@@ -518,6 +608,39 @@ console.log('— 고기 (Meat) —');
     '탄 고기는 불에 타서 재가 된다',
     count(grid, BURNT_MEAT.id) < cut * 0.5 && count(grid, ASH.id) > 0,
     `${count(grid, BURNT_MEAT.id)}/${cut} left, ${count(grid, ASH.id)} ash`,
+  );
+}
+
+// 8b. …but only from a flame that reaches it. Burnt Meat is 직화 전용 like Bread
+//     and Popcorn, so a steak ruined in a sealed oven stays a ruined steak
+//     instead of being deleted. Same box as the bread oven (scene 6b) — the one
+//     that runs at ~880° inside — because the claim is the same one and it is
+//     worth being able to compare the two numbers directly.
+{
+  const { grid, sim } = makeWorld(50, 50);
+  floor(grid, 44);
+  block(grid, 14, 36, 41, 44, COAL.id, 900);
+  for (let x = 15; x < 35; x++) {
+    grid.set(x, 40, IRON.id);
+    grid.set(x, 32, IRON.id);
+  }
+  for (let y = 33; y < 40; y++) {
+    grid.set(15, y, IRON.id);
+    grid.set(34, y, IRON.id);
+  }
+  const cut = block(grid, 16, 34, 36, 40, BURNT_MEAT.id, 20);
+  for (let t = 0; t < 900; t++) {
+    hold(grid, [COAL.id], 900);
+    sim.step();
+  }
+  let hottest = -Infinity;
+  for (let y = 0; y < 50; y++)
+    for (let x = 0; x < 50; x++)
+      if (grid.get(x, y) === BURNT_MEAT.id) hottest = Math.max(hottest, grid.getTemp(x, y));
+  check(
+    '불이 닿지 않는 오븐 안에서는 탄 고기도 불붙지 않는다',
+    count(grid, BURNT_MEAT.id) > cut * 0.9 && count(grid, ASH.id) === 0,
+    `${count(grid, BURNT_MEAT.id)}/${cut} left, ${count(grid, ASH.id)} ash, hottest ${hottest.toFixed(0)}°`,
   );
 }
 
@@ -606,6 +729,56 @@ console.log('— 팝콘 (Popcorn) —');
     '위가 막혀 있으면 알갱이는 제자리에서만 부푼다 (부피가 늘지 않는다)',
     count(grid, POPCORN.id) === kernels,
     `${count(grid, POPCORN.id)} popcorn from ${kernels} kernels`,
+  );
+}
+
+// 10b. 실제 불로 튀기기. Every popcorn scene above heats the kernels with a
+//      magic burner, which is the one thing a player cannot build — the real way
+//      to reach the 180° pop point is a metal pot over a coal bed, and a metal
+//      pot over a coal bed runs at several hundred degrees. With Popcorn's
+//      original 250° autoignition that meant the puffs caught fire in the pot
+//      that had just made them, every time, and the material's own headline
+//      ("팬에 올려 튀긴다") was the thing it could not survive. It is 직화 전용
+//      now for the same reason Bread is, so the assertion is the pair: the corn
+//      pops, and none of it burns, while the pot is provably hot enough that the
+//      old rule would have burned all of it.
+{
+  const { grid, sim } = makeWorld(50, 50);
+  floor(grid, 44);
+  block(grid, 14, 36, 41, 44, COAL.id, 900);
+  for (let x = 15; x < 35; x++) {
+    grid.set(x, 40, IRON.id);
+    grid.set(x, 32, IRON.id);
+  }
+  for (let y = 33; y < 40; y++) {
+    grid.set(15, y, IRON.id);
+    grid.set(34, y, IRON.id);
+  }
+  const kernels = block(grid, 16, 34, 38, 40, CORN_KERNEL.id, 20);
+  // Sampled every tick rather than at the end, because the puffs drift: the
+  // hottest one at any given instant is wherever the wander happens to have put
+  // it, while the peak over the whole run is what the pot actually did to the
+  // popcorn in it.
+  let hottest = -Infinity;
+  for (let t = 0; t < 900; t++) {
+    hold(grid, [COAL.id], 900);
+    sim.step();
+    for (let y = 0; y < 50; y++)
+      for (let x = 0; x < 50; x++)
+        if (grid.get(x, y) === POPCORN.id) hottest = Math.max(hottest, grid.getTemp(x, y));
+  }
+  check(
+    '숯불에 올린 무쇠솥 안에서 옥수수가 팝콘이 된다',
+    count(grid, CORN_KERNEL.id) === 0 && count(grid, POPCORN.id) >= kernels,
+    `${count(grid, POPCORN.id)} popcorn from ${kernels} kernels`,
+  );
+  check(
+    // 250° is not an arbitrary bar: it is the autoignition point Popcorn used to
+    // declare. Clearing it is the statement that this scene would have failed
+    // before the rule changed, rather than merely passing now.
+    '…그리고 솥이 아무리 뜨거워도 그 팝콘이 타지 않는다',
+    count(grid, ASH.id) === 0 && hottest > 250,
+    `${count(grid, ASH.id)} ash, hottest puff reached ${hottest.toFixed(0)}° (old 발화점 250°)`,
   );
 }
 
