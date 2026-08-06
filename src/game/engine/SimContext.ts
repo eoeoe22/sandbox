@@ -1179,6 +1179,13 @@ export class SimContext {
    *  away with it. While it holds a host it blocks like that host; over open air
    *  (aux 0, which is every afterimage) it is an ordinary displaceable gas, so the
    *  drawn beam never obstructs anything falling through it. */
+  private isDisplaceable(x: number, y: number, id: number): boolean {
+    if (id === EMPTY) return true;
+    const m = getMaterial(id);
+    if (m.phase !== Phase.Liquid && m.phase !== Phase.Gas) return false;
+    return !(m.auxHost === true && this.getAux(x, y) !== 0);
+  }
+
   /**
    * Hand back the host an `auxHost` cell is standing in for, if it is standing in
    * for one: a Heat Ray beam resting inside a glass/diamond pane carries that pane
@@ -1199,22 +1206,22 @@ export class SimContext {
    * The movement layer answers the same problem the other way (`isDisplaceable`
    * blocks instead of releasing) because there the cell is being *moved*, not
    * removed: the beam can simply stay put and keep holding its pane.
+   *
+   * A host id that names no registered material is treated as "nothing held" — the
+   * same defensive stance heatray.ts's `restoreCell` takes with its own whitelist,
+   * so a corrupt or legacy `aux` falls through instead of spawning junk onto the
+   * grid. The *authoritative* list of what a given `auxHost` material may park in
+   * `aux` stays with that material (for the Heat Ray: glass, broken glass, diamond);
+   * this is the engine-side floor under it, not a second copy of it.
    */
   releaseAuxHost(x: number, y: number, id: number): number {
     if (id === EMPTY || getMaterial(id).auxHost !== true) return id;
     const host = this.getAux(x, y);
-    if (host === EMPTY) return id;
+    if (host === EMPTY || getMaterial(host) === undefined) return id;
     this.set(x, y, host);
     this.setTemp(x, y, AMBIENT_TEMP);
     this.setAux(x, y, 0);
     return host;
-  }
-
-  private isDisplaceable(x: number, y: number, id: number): boolean {
-    if (id === EMPTY) return true;
-    const m = getMaterial(id);
-    if (m.phase !== Phase.Liquid && m.phase !== Phase.Gas) return false;
-    return !(m.auxHost === true && this.getAux(x, y) !== 0);
   }
 
   /** True if (px,py) is an in-bounds EMPTY cell a displaced fluid can be shoved

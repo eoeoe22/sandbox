@@ -19,8 +19,10 @@
 //   4. A blast judged the cell by the BEAM's durability (a Gas, 15) instead of the
 //      pane's (a Solid, 200), so a charge far too weak to crack a window took the
 //      pane a beam was parked in — and took it with no shatter residue, since
-//      nothing in blast.ts restores an `aux` it never knew about. Fixed by handing
-//      the pane back (SimContext.releaseAuxHost) before the front judges the cell.
+//      nothing in blast.ts restores an `aux` it never knew about. Reachable by
+//      ordinary building: a one-cell window strip does not shield its own cells.
+//      Fixed by handing the pane back (SimContext.releaseAuxHost) before the front
+//      judges the cell.
 //
 // Run: `node test/run-heatrayglass.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -338,8 +340,58 @@ function fireAndDrain(grid: Grid, sim: Simulation, mx: number, my: number, dx: n
       const after = glassFamily(grid);
       check(
         withBeam
-          ? `유리를 못 깨는 폭발(power ${power})이 빔이 앉은 칸의 유리도 못 가져간다`
+          ? `유리를 못 깨는 폭발(power ${power})이 빔이 앉은 칸의 유리도 못 가져간다 (씨앗 칸)`
           : `대조군 — 같은 폭발(power ${power})은 맨 유리를 온전히 남긴다`,
+        after === before && parked,
+        `유리족 ${before} → ${after}${parked ? '' : ' (빔이 판에 자리 잡지 못함)'}`,
+      );
+    }
+  }
+
+  // …and the same thing reached the way a PLAYER reaches it, which is the case that
+  // says whether this bug was ever more than an API curiosity. A one-cell glass strip
+  // — an ordinary window laid flat, air above and below every cell — has no
+  // self-shielding: a charge sitting in the open air one cell above it reaches the
+  // beam through the ordinary neighbour scan, as a plain propagation step and not as
+  // the detonation's seed. (A THICK glass block does shield its own interior, which is
+  // why the block scene above has to seed at the beam's own cell; that shielding is
+  // itself correct behaviour.) The two together cover both places blast.ts releases.
+  for (const power of [6, 50]) {
+    for (const withBeam of [false, true]) {
+      Math.random = mulberry32(11);
+      const grid = new Grid(W, H);
+      const sim = new Simulation(grid);
+      const ROW = 20;
+      const X0 = 15;
+      const LEN = 50;
+      for (let d = 0; d < LEN; d++) grid.cells[grid.idx(X0 + d, ROW)] = GLASS;
+      grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+      const before = glassFamily(grid);
+      let tx = 40;
+      let parked = true;
+      if (withBeam) {
+        emitHeatRay(sim.context, 2, ROW, 1, 0);
+        let restX = -1;
+        for (let i = 0; i < 30 && restX < 0; i++) {
+          sim.step();
+          for (let d = 0; d < LEN; d++) {
+            const gi = grid.idx(X0 + d, ROW);
+            if (grid.cells[gi] === HEAT_RAY.id && grid.aux[gi] === GLASS) {
+              restX = X0 + d;
+              break;
+            }
+          }
+        }
+        parked = restX >= 0;
+        if (parked) tx = restX;
+      }
+      // Charge in OPEN AIR one cell above the strip — never the beam's own cell.
+      detonate(sim.context, tx, ROW - 1, 1, { soloSource: true, reach: 3, power });
+      const after = glassFamily(grid);
+      check(
+        withBeam
+          ? `…그리고 얇은 유리판 위에서 터져도(power ${power}) 빔이 앉은 칸을 못 가져간다 (전파 칸)`
+          : `대조군 — 얇은 유리판 위의 같은 폭발(power ${power})은 판을 온전히 남긴다`,
         after === before && parked,
         `유리족 ${before} → ${after}${parked ? '' : ' (빔이 판에 자리 잡지 못함)'}`,
       );
