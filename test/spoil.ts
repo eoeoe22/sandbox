@@ -34,8 +34,9 @@
 //   • 곰팡이는 한 겹이다. It films a surface rather than filling a room — measured
 //     as "no mold cell is surrounded only by mold and air", i.e. every colony cell
 //     still touches something real.
-//   • 물속에는 안 핀다, with no rule of its own: a submerged surface has no empty
-//     cells against it.
+//   • 젖으면 곰팡이가 저절로 핀다, 마른 자리에서는 안 핀다. 물에 잠긴 빵에서도 난다
+//     (자연발생은 물을 밀어낸다) — 그런데 **이미 있는 곰팡이는 물속으로 안 번진다**,
+//     so one grain dropped in a tank still does not fill the tank.
 //   • 전염 경로. Mold against food is what makes a stack go over together — a
 //     stack seeded with one rotting cell finishes markedly sooner than the same
 //     stack with mold suppressed.
@@ -840,11 +841,13 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   );
 }
 
-// ── 9. 물속에는 안 핀다 ──────────────────────────────────────────────────────
-// Mostly no rule of its own — a submerged surface has no empty cells against it,
-// so the film rule keeps mold out of the water for free — plus `isDrowned`
-// (mold.ts) for the one hole that leaves, which is that rot rising through a
-// liquid leaves bubbles behind it.
+// ── 9. 물은 방어다 — 잠기면 곰팡이가 훨씬 덜 핀다 ────────────────────────────
+// Not a prohibition (section 19 has submerged food growing its own mold, on
+// purpose) but still a strong defence, and it is worth measuring as one because it
+// falls out of two rules rather than being stated anywhere: a colony **cannot creep
+// through water** (`isDrowned`, and a water cell is not empty either), so under
+// water mold has to be seeded cell by cell instead of sweeping — and seeding is
+// bounded by the food, one spore per roll.
 //
 // Measured as flooding-versus-not on the same box, because two stricter drafts
 // both failed by measuring the wrong thing and the pair is worth recording. An
@@ -886,8 +889,8 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
 // ── 10. 곰팡이가 전염 경로다 — 그리고 안 닿은 것은 안 상한다 ─────────────────
 // "창고에 하나 썩으면 다 썩는다" is not a food-to-food rule; it is mold creeping
 // along a stack and *starting each cell's clock by touching it* (spoil.ts
-// `isRotting`). Since 곰팡이 has exactly one origin in the world (생고기, the only
-// material declaring `spores`), that contact is the entire transmission path.
+// `rotSources`). Nothing in this scene is wet, so nothing in it can seed a colony of
+// its own — mold contact is the entire transmission path here.
 //
 // So the two halves of the claim are measured on the same row of bread in the same
 // open air, differing only by whether one grain of mold was put on it:
@@ -1174,15 +1177,22 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   // empty cell anywhere. Two things have to be true at once and this one setup buys
   // both:
   //   • **젖어 있다.** Nothing but 생고기 rots unattended any more (spoil.ts
-  //     `isRotting`), so a dry sealed row is a scene in which every clock is
-  //     stopped and the three foods are indistinguishable. Water is the trigger
-  //     that is *not* mold, which is what lets this measure the declared clock.
-  //   • **곰팡이가 낄 빈칸이 없다.** In an open pile 침식 compounds — every eaten
+  //     `rotSources`), so a dry sealed row is a scene in which every clock is
+  //     stopped and the three foods are indistinguishable.
+  //   • **곰팡이가 자랄 자리가 최소다.** In an open pile 침식 compounds — every eaten
   //     cell becomes another eater — so the survivor count is a fat-tailed function
   //     of *when the first cell crossed the mold stage*, and it swung 9~26 of 32
   //     across seeds. Thresholding that would have meant tuning against noise.
-  //     Packed solid, each cell is an independent counter and the spread is
-  //     ordinary binomial.
+  //     Packed brim-full, a colony has nowhere to creep to and has to be seeded
+  //     cell by cell, so the spread stays narrow.
+  //
+  // **이 장면은 이제 곰팡이가 없는 장면이 아니다.** 젖은 식품이 스스로 곰팡이를 피우게
+  // 되면서(`SporeMode` 기본값 `'damp'`), 자연발생 경로가 인접한 물 칸을 밀어내고 자리를
+  // 잡는다 — 그래서 잠긴 더미도 침식을 겪는다. 절대 개수가 옛날보다 낮은 것은 회귀가
+  // 아니라 그 규칙이 도는 증거이고, 이 절이 재려는 것(선언된 시계의 **차이**)은 그대로
+  // 잰다: 곰팡이 관문(`MOLD_AT`)이 시계의 **하류**에 있어서 시계가 3배 느린 쪽은
+  // 곰팡이가 붙기 시작하는 시점도 그만큼 늦다. 7개 시드 실측: 빵 0~3칸, 옥수수 20~24칸,
+  // 팝콘 11~20칸 (모두 32칸 중).
   // 옥수수(3.7)는 물(3)보다 무거워 가라앉고 팝콘(1.8)은 뜨지만, 어느 쪽이든 사방이
   // 물이라 젖은 것은 그대로다 — 재배열은 개수를 안 바꾼다.
   const SLAB = { x0: 4, y0: 26, x1: 35, y1: 26 } as const;
@@ -1201,7 +1211,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   };
   const bread = sealedFor(BREAD);
   check(
-    '밀폐한 빵은 420초에 절반쯤 넘어간다 (아래 비교의 기준선)',
+    '밀폐한 빵은 420초에 대부분 넘어간다 (아래 비교의 기준선)',
     bread.kept < bread.before * 0.75,
     `${bread.kept} of ${bread.before} left after 420s (선언 420초)`,
   );
@@ -1213,15 +1223,15 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     const { kept, before } = sealedFor(id);
     check(
       `${topic} 같은 조건에서 빵보다 훨씬 많이 남는다`,
-      kept > bread.kept && kept >= before * 0.75,
+      kept > bread.kept && kept >= before * 0.25,
       `${kept} of ${before} left after 420s vs 빵 ${bread.kept}칸 (선언 ${clock}초)`,
     );
   }
 
   // …but it is a clock, not an exemption. The same sealed-in-water case, left for
-  // **four times** the food's own declared time — 4× rather than 3× because there is
-  // no mold in the scene to pull the tail forward (nothing here declares `spores`),
-  // so the last of 32 independent draws has to land on its own.
+  // **four times** the food's own declared time — 4× rather than 3× because a packed
+  // slab gives a colony nowhere to creep, so the tail is still mostly 32 independent
+  // draws landing on their own rather than a front sweeping through.
   //
   // **거의 다, 이지 전부는 아니다 — 그리고 그 차이가 규칙이 도는 증거다.** 알갱이가
   // 썩어 만든 퇴비는 옥수수(3.7)보다 무거워(5) 가라앉으면서 더미를 헤집고, 그러다
@@ -1243,36 +1253,59 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   }
 }
 
-// ── 15. 곰팡이 자연발생은 생고기 하나뿐이다 (레지스트리) ─────────────────────
+// ── 15. 마른 데서 곰팡이가 피는 건 생고기뿐, 안 피는 건 부패물뿐 (레지스트리) ─
 // New blocks go at the *end* of the file on purpose: each block draws its own
 // stream from a counter of `reseed()` calls, so inserting one in the middle
 // re-rolls every scene after it (a previous round shifted the 전염 check onto a
 // stream where it barely failed). Appending leaves every stream above untouched.
 //
-// The same discipline section 1 uses, for the two flags this round added. Both are
-// safety properties rather than gameplay ones, and both fail silently: a `spores`
-// tag on a second material means a pantry starts greying over from the inside
-// again, and a stray `spontaneous` means a food a player is storing dissolves on
-// its own shelf. Checked at the registry so a future declaration fails here by
-// name rather than in someone's world.
+// The same discipline section 1 uses, for the two declarations that shape the
+// 계통. Both are safety properties rather than gameplay ones, and both fail
+// silently: a second `spores: 'always'` means a *dry* pantry starts greying over
+// from the inside again, a missing `spores: 'never'` on 부패물 means the chain's own
+// output seeds the shelves it came from, and a stray `spontaneous` means a food a
+// player is storing dissolves on its own shelf. Checked at the registry so a future
+// declaration fails here by name rather than in someone's world.
 {
-  const declaring = (pick: (s: NonNullable<ReturnType<typeof getMaterial>>['spoil']) => unknown) =>
+  const declaring = (pick: (s: NonNullable<ReturnType<typeof getMaterial>>['spoil']) => boolean) =>
     allMaterials()
-      .filter((m) => m.spoil !== undefined && pick(m.spoil) === true)
+      .filter((m) => m.spoil !== undefined && pick(m.spoil))
       .map((m) => m.name)
       .sort();
 
-  const spores = declaring((s) => s!.spores);
+  const always = declaring((s) => s!.spores === 'always');
   check(
-    '곰팡이를 스스로 피우는 물질은 생고기 하나뿐이다',
-    spores.length === 1 && spores[0] === 'Raw Meat',
-    spores.join(', ') || '(none)',
+    '마른 자리에서도 곰팡이를 피우는 물질은 생고기 하나뿐이다',
+    always.length === 1 && always[0] === 'Raw Meat',
+    always.join(', ') || '(none)',
   );
 
-  // 부패물 is the second `spontaneous` and must never be the second `spores` — a
-  // heap of it becomes 퇴비, not a colony. Stated as an exact roster for the same
-  // reason the 썩는 것 list is.
-  const alone = declaring((s) => s!.spontaneous);
+  // 부패물 is the second `spontaneous` and the only `'never'` — a heap of it becomes
+  // 퇴비, not a colony. Stated as an exact roster for the same reason the 썩는 것
+  // list is, and stated *positively* (the declaration is explicit, never derived
+  // from `spontaneous`) because the default is 'damp' and silence would opt a heap
+  // of sludge into seeding the moment it got wet.
+  const never = declaring((s) => s!.spores === 'never');
+  check(
+    '곰팡이를 절대 안 피우는 물질은 부패물 하나뿐이다',
+    never.length === 1 && never[0] === 'Spoiled Food',
+    never.join(', ') || '(none)',
+  );
+
+  // Everything else takes the default, and the default has to *be* the default —
+  // an ordinary food that had to declare anything to mold when wet would be one
+  // more thing to forget when a material is added.
+  const damp = allMaterials()
+    .filter((m) => m.spoil !== undefined && m.spoil.spores === undefined)
+    .map((m) => m.name)
+    .sort();
+  check(
+    '나머지 식품은 아무것도 선언하지 않고 「젖으면 핀다」를 물려받는다',
+    damp.length >= 6 && !damp.includes('Raw Meat') && !damp.includes('Spoiled Food'),
+    `${damp.length}종: ${damp.join(', ')}`,
+  );
+
+  const alone = declaring((s) => s!.spontaneous === true);
   check(
     '방치만으로 썩는 물질은 생고기와 부패물 둘뿐이다',
     alone.length === 2 && alone[0] === 'Raw Meat' && alone[1] === 'Spoiled Food',
@@ -1321,9 +1354,9 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   );
 }
 
-// ── 17. 부패물은 곰팡이 농장이 아니다 ───────────────────────────────────────
-// 부패물 declares `spontaneous` (it has to finish becoming 퇴비 on its own) but
-// pointedly not `spores`. Without that split a heap of sludge in the corner of a
+// ── 17. 부패물은 곰팡이 농장이 아니다 (마른 방) ─────────────────────────────
+// 부패물 declares `spontaneous` (it has to finish becoming 퇴비 on its own) and
+// `spores: 'never'`. Without that split a heap of sludge in the corner of a
 // store room would seed its own colony, that colony would creep onto the shelves,
 // and mold contact starts *those* clocks — i.e. the exact failure the round
 // removed would come back in through the chain's own output.
@@ -1374,6 +1407,134 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     '부패물 더미는 10초에 절반쯤 퇴비가 된다',
     before === 300 && turned > before * 0.4 && turned < before * 0.6,
     `${turned} of ${before} → 퇴비 in 10s (${((turned / before) * 100).toFixed(1)}%)`,
+  );
+}
+
+// ── 19. 젖으면 곰팡이가 저절로 핀다 — 마른 자리에서는 안 핀다 ────────────────
+// The round's headline change, and it exists because a play test found the hole:
+// steam and water were held against a loaf at ×4 speed and **no mold ever
+// appeared.** The loaf's clock ran (section 16 already measured that) and it went
+// straight to 부패물 with nothing to see on the way, because seeding was a single
+// boolean only 생고기 declared.
+//
+// Three scenes, because the rule has three parts a player can actually meet:
+//   • 마른 무더기 — 곰팡이 0, 부패 0. The property the gate bought, unchanged, and
+//     stated first so the two below cannot pass by making everything mold.
+//   • 젖은 빵 — a loaf at the waterline, air above and water below. 곰팡이가 난다.
+//   • 잠긴 빵 — a loaf with water on all eight sides, i.e. no empty cell anywhere
+//     for a spore to land in. 그래도 난다: seeding pushes the water aside
+//     (mold.ts `seedMold`), which is the only reason a tank scene can work at all.
+//
+// Bread throughout, deliberately: it is the slowest of the ordinary foods (420초),
+// so anything faster is comfortably covered by the same run length, and it is the
+// exact material the play test used.
+{
+  // A stone case with a water floor and a loaf resting on the surface of it: wet
+  // from below, open air above. 600초 is a little over one declared 부패 시간, so a
+  // cell that got past MOLD_AT has had a long while to roll SPORE_CHANCE.
+  reseed();
+  const waterline = makeWorld();
+  fill(waterline.grid, 2, 20, 37, 28, STONE); // a stone case
+  fill(waterline.grid, 3, 21, 36, 27, EMPTY); // hollowed out: interior y = 21..27
+  fill(waterline.grid, 3, 25, 36, 27, WATER); // a pool filling the bottom three rows
+  fill(waterline.grid, 4, 24, 35, 24, BREAD); // the loaf, resting on the surface
+  const waterlineBefore = count(waterline.grid, BREAD);
+  run(waterline.sim, waterline.grid, 600 * HZ);
+  check(
+    '물이 닿은 빵에서 곰팡이가 핀다 — 젖으면 스스로 핀다',
+    count(waterline.grid, MOLD) > 0,
+    `${count(waterline.grid, MOLD)} 곰팡이, 빵 ${count(waterline.grid, BREAD)} of ${waterlineBefore} left after 600s`,
+  );
+
+  // The same loaf with water on every side. Before this round `seedMold` only wrote
+  // into empty cells and skipped drowned ones, so this scene had literally nowhere
+  // to put a spore — the most obvious way to wet food was the one way it could not
+  // mold.
+  reseed();
+  const sunk = makeWorld();
+  fill(sunk.grid, 8, 10, 31, 29, STONE); // a sealed tank
+  fill(sunk.grid, 9, 11, 30, 28, WATER); // brim full — no air in it anywhere
+  fill(sunk.grid, 14, 18, 25, 21, BREAD); // a block of loaf in the middle of it
+  const sunkBefore = count(sunk.grid, BREAD);
+  run(sunk.sim, sunk.grid, 600 * HZ);
+  check(
+    '물에 완전히 잠긴 빵에서도 곰팡이가 핀다 — 물을 밀어내고 핀다',
+    count(sunk.grid, MOLD) > 0,
+    `${count(sunk.grid, MOLD)} 곰팡이, 빵 ${count(sunk.grid, BREAD)} of ${sunkBefore} left after 600s`,
+  );
+
+  // And the half that must not move: the identical loaf on a dry shelf. Longer than
+  // both scenes above, because "안 핀다" is only worth checking at a length where
+  // "핀다" would have been obvious.
+  reseed();
+  const shelf = makeWorld();
+  fill(shelf.grid, 2, 20, 37, 28, STONE); // the identical case
+  fill(shelf.grid, 3, 21, 36, 27, EMPTY); // …filled with air instead of a pool
+  fill(shelf.grid, 4, 24, 35, 24, BREAD); // the identical loaf
+  const shelfBefore = count(shelf.grid, BREAD);
+  run(shelf.sim, shelf.grid, 900 * HZ);
+  check(
+    '…그런데 마른 무더기는 900초를 둬도 곰팡이 0, 부패 0',
+    count(shelf.grid, MOLD) === 0 && count(shelf.grid, BREAD) === shelfBefore,
+    `${count(shelf.grid, BREAD)} of ${shelfBefore} 빵 남음, 곰팡이 ${count(shelf.grid, MOLD)}칸`,
+  );
+}
+
+// ── 20. 부패물은 젖어도 곰팡이 농장이 되지 않는다 ────────────────────────────
+// Section 17 already checks a *dry* heap. This is the version that matters now that
+// 「젖으면 핀다」 is the default: 부패물 has to say `spores: 'never'` out loud, or a
+// puddle in the corner of a store room turns the chain's own output into a source,
+// the colony creeps onto the shelves, and mold contact starts *those* clocks — the
+// failure mode this whole system exists to remove, coming back in a circle.
+//
+// Every tick is sampled rather than only the end state, because a heap becomes 퇴비
+// in ~10초 and a colony that appeared and then starved would be invisible at the
+// finish line.
+{
+  reseed();
+  const { grid, sim } = makeWorld();
+  box(grid, 12, 12, 14, STONE); // a sealed room
+  fill(grid, 14, 22, 23, 24, SPOILED); // a heap on the floor
+  fill(grid, 13, 20, 24, 21, WATER); // and it is soaking wet
+  const before = count(grid, SPOILED);
+  let everMolded = 0;
+  for (let i = 0; i < 120 * HZ; i++) {
+    sim.step();
+    everMolded = Math.max(everMolded, count(grid, MOLD));
+  }
+  check(
+    '젖은 부패물 더미도 곰팡이를 한 칸도 안 피운다',
+    everMolded === 0,
+    `${before} 부패물 (젖은 채로) → 퇴비 ${count(grid, COMPOST)}칸, 곰팡이 최대 ${everMolded}칸`,
+  );
+}
+
+// ── 21. 곰팡이 한 알은 수조를 채우지 않는다 (번짐의 물속 금지) ───────────────
+// The regression guard for the asymmetry section 19 introduced. Seeding may push
+// water aside; **creeping may not**, and the two live in different functions on
+// purpose (mold.ts `seedMold` vs `supportChance` → `isDrowned`).
+//
+// If the creep path ever picked up the seeding path's permission, one grain dropped
+// in a tank would walk through every cell of it — and a tank is exactly where a
+// player puts mold by accident, because rot floats and sinks through water all the
+// time. No food in the scene at all, so nothing can seed and the only thing under
+// test is whether an existing colony spreads.
+{
+  reseed();
+  const { grid, sim } = makeWorld();
+  fill(grid, 6, 6, 33, 29, STONE); // a sealed tank
+  fill(grid, 7, 7, 32, 28, WATER); // brim full
+  const tank = count(grid, WATER);
+  put(grid, 19, 20, MOLD); // one grain, in the middle of it
+  let peak = 1;
+  for (let i = 0; i < 600 * HZ; i++) {
+    sim.step();
+    peak = Math.max(peak, count(grid, MOLD));
+  }
+  check(
+    '물속에 넣은 곰팡이 한 알은 수조를 채우지 않는다 — 번짐의 물속 금지는 그대로다',
+    peak * 20 < tank,
+    `1 → 최대 ${peak}칸 after 600s in a ${tank}칸 sealed tank`,
   );
 }
 

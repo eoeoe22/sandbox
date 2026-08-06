@@ -85,11 +85,16 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
     fields: ['spoil.dryMask'],
     read: (m) => (m.spoil?.dryMask === undefined ? undefined : {}),
   },
-  // 방치만으로 시계가 도는가. The `perishable` card states the default — 물·수증기가
-  // 닿거나 곰팡이가 붙어야 시계가 돈다 — so these two are the exemptions to it, and
-  // they are cards rather than exclusions because they are exactly what a player
-  // has to know before deciding what a store room may hold. Two flags rather than
-  // one because 부패물 needs the first and must not have the second (spoil.ts).
+  // 방치만으로 시계가 도는가, 그리고 곰팡이는 언제 저절로 피는가. The `perishable`
+  // card states the defaults for both — 젖거나 곰팡이가 붙으면 시계가 돌고, 젖으면
+  // 곰팡이까지 저절로 핀다 — so these three cards are the *departures* from it, and
+  // they are cards rather than exclusions because they are exactly what a player has
+  // to know before deciding what a store room may hold.
+  //
+  // `spores` is a three-way declaration (engine/types.ts `SporeMode`), so it needs
+  // two cards rather than one flag's worth: the default 젖었을 때만 is on every food
+  // and therefore belongs in `perishable`'s prose, while 마른 데서도 (생고기) and
+  // 절대 (부패물) are the two things worth a chip of their own.
   {
     key: 'rotsUnattended',
     fields: ['spoil.spontaneous'],
@@ -98,7 +103,12 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
   {
     key: 'moldsItself',
     fields: ['spoil.spores'],
-    read: (m) => (m.spoil?.spores === true ? {} : undefined),
+    read: (m) => (m.spoil?.spores === 'always' ? {} : undefined),
+  },
+  {
+    key: 'neverMolds',
+    fields: ['spoil.spores'],
+    read: (m) => (m.spoil?.spores === 'never' ? {} : undefined),
   },
 
   // --- 산 -----------------------------------------------------------------

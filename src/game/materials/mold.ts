@@ -13,6 +13,8 @@ import { ACID_SLIME } from './acidslime';
 import { ALCOHOL } from './alcohol';
 import { HYDROGEN_PEROXIDE } from './hydrogenperoxide';
 import { SOAPY_WATER } from './soapywater';
+import { WATER } from './water';
+import { STEAM } from './steam';
 import { WALL } from './wall';
 
 // Mold (곰팡이) — 포자 가루. The visible half of the 부패 line (spoil.ts), and the
@@ -22,6 +24,15 @@ import { WALL } from './wall';
 // **roots** where it lands on something, and where what it landed on is food it
 // **eats it**. 식품 → 곰팡이 → 부패물 → 퇴비 — mold is a stage of the chain, not a
 // decoration on it.
+//
+// ## 어디서 시작하는가
+//
+// From food, never from itself (`seedMold` is called by spoil.ts, not from here),
+// and the food decides: **생고기는 마른 자리에서도, 대부분의 일반 식품은 젖었을 때,
+// 부패물은 절대** (engine/types.ts `SporeMode`). So the ordinary way a world gets
+// mold is either a cut left on the counter or something edible left in the wet, and
+// 부패물 — the thing this material *leaves behind* — is pointedly not a source, or
+// the chain would feed its own input.
 //
 // ## 흩날리는 가루 — 그런데 자라는 건 중력과 무관하다
 //
@@ -164,10 +175,14 @@ function isSupport(id: number): boolean {
  * the world. It reads the gravity vector rather than assuming down is +y, so a
  * tank in flipped gravity behaves the same way its occupants do.
  *
- * Sinking rot leaves bubbles behind it (a Powder rising through a liquid absorbs
- * a cell of it and leaves an empty), and those sit against exactly the cells most
- * likely to be seeding spores — so without this a drowned corpse furs over on the
- * bottom of the tank, which is the one thing "물속에는 안 핀다" was supposed to mean.
+ * **Read by the creep path only** (`supportChance`), and that is the whole of what
+ * "물속에는 안 핀다" means now: 이미 있는 곰팡이는 물로 번지지 않는다. Sinking rot
+ * leaves bubbles behind it (a Powder rising through a liquid absorbs a cell of it
+ * and leaves an empty), and a tank is full of such pockets, so without this one
+ * grain dropped in the water walks through every bubble in it and fills the tank.
+ *
+ * 자연발생(`seedMold`)은 이 규칙을 따르지 않는다 — 물에 담근 식품에서는 곰팡이가
+ * 물을 밀어내고 핀다. See `seedMold` for why the two paths must differ.
  */
 function isDrowned(x: number, y: number, sim: SimContext): boolean {
   const ux = -Math.sign(sim.gravityX);
@@ -215,29 +230,72 @@ function isRooted(x: number, y: number, sim: SimContext): boolean {
 }
 
 /**
- * 포자 — puff a spore into one empty neighbour of (x,y). Called by rotting food
+ * 포자 — puff a spore into one neighbour of (x,y). Called by rotting food
  * (spoil.ts) rather than by mold itself, because a colony has to *start* on
- * something that has gone over.
- *
- * **In practice that means 생고기 and nothing else.** `spoilStep` only reaches here
- * for a material declaring `SpoilSpec.spores`, and 생고기 is the only one — so the
- * world has a single origin for mold and every other furred surface in it was
- * reached by the creep below. 부패물 is pointedly not on that list: a heap of it
- * becomes 퇴비, not a colony (spoiledfood.ts).
+ * something that has gone over. Which foods may call it, and when, is
+ * `SpoilSpec.spores` — 생고기 always, most foods while wet, 부패물 never.
  *
  * Deliberately does NOT require the target to have a support: a spore is a thing
  * that gets thrown into the air. If it lands against something it roots and films;
  * if not it drifts and settles somewhere else, which is the whole reason the
  * material is a powder. `spawn` clears aux, so it starts as film with no mass debt.
+ *
+ * ## 물을 밀어내고 핀다 — and **only on this path**
+ *
+ * Two passes, air first: 공기든 물속 기포든 빈칸이 있으면 거기에 앉고, 자리가 하나도
+ * 없을 때만 인접한 물·수증기 칸을 차지한다.
+ *
+ * The second pass exists because the most obvious way a player wets food is to drop
+ * it in a tank, and a submerged loaf has **no empty neighbour at all** — so the
+ * rule 「젖으면 곰팡이가 핀다」 was silently unreachable in exactly the scene that
+ * demonstrates it. 물에 담근 빵에서도 곰팡이는 나야 한다.
+ *
+ * **The creep path keeps the opposite rule** (`supportChance` → `isDrowned`): a
+ * grain that is already there never advances into water. That asymmetry is
+ * load-bearing, not an oversight. Seeding is bounded by the food — one spore per
+ * roll, from a cell that must itself still be wet and past MOLD_AT — so at worst a
+ * submerged loaf gets a rind of mold around it. Creep is bounded by nothing but the
+ * space available, so letting *it* into water would mean one grain dropped in a
+ * tank fills the tank.
+ *
+ * ## 밀어낸 물은 어디로 가는가
+ *
+ * Into the new grain's 겹침 slot: mold is a Powder, so it can host a liquid the way
+ * wet sand does, and the water stays in the world and percolates back out into the
+ * body it came from. 질량은 그대로 보존된다 — 곰팡이가 물을 머금는 것이지 물을
+ * 없애는 것이 아니다.
+ *
+ * 수증기는 다르다: a Powder cannot host a gas (`canHostOverlap`), so a steam cell
+ * taken this way is **destroyed** — one cell of gas, gone. That is the honest cost
+ * of this rule and it is accepted rather than hidden: steam is the one material in
+ * the sim whose census already moves freely (every boil creates it, every
+ * condensation destroys it), a food surrounded by nothing but steam is a rare
+ * geometry, and the alternative — refusing to seed there — would put back the hole
+ * this pass exists to close for a 찜통에 갇힌 빵.
  */
 export function seedMold(x: number, y: number, sim: SimContext): void {
+  // 1차: 빈칸. Nothing has to be moved out of the way, so it is always preferred —
+  // including a drowned bubble, which is empty space like any other now that this
+  // path is allowed under water at all.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
     if (!sim.isEmpty(nx, ny)) continue;
-    if (isDrowned(nx, ny, sim)) continue;
     sim.spawn(nx, ny, MOLD.id);
+    return;
+  }
+  // 2차: 물·수증기를 밀어내고. Only reached when the cell is walled in by fluid.
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    const id = sim.get(nx, ny);
+    if (id !== WATER.id && id !== STEAM.id) continue;
+    sim.spawn(nx, ny, MOLD.id);
+    // The water goes on living inside the grain (see the note above); steam cannot
+    // be held and `setOverlay` refuses it, leaving the slot empty.
+    if (id === WATER.id) sim.setOverlay(nx, ny, WATER.id);
     return;
   }
 }

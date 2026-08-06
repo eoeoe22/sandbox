@@ -289,11 +289,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   perishable: {
     ko: {
       label: '썩는 것',
-      desc: '상하면 부패물이 됩니다. 다만 젖어 있거나(물·수증기가 닿아 있다) 곰팡이가 붙어 있어야 시계가 돌아, 마른 자리에 둔 것은 상하지 않습니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
+      desc: '상하면 부패물이 됩니다. 다만 젖어 있거나(물·수증기가 닿아 있다) 곰팡이가 붙어 있어야 시계가 돌아, 마른 자리에 둔 것은 상하지 않습니다. 젖은 채로 어느 정도 상하면 그 자리에서 곰팡이가 피어나며, 물에 완전히 잠겨 있어도 물을 밀어내고 핍니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
     },
     en: {
       label: 'Perishable',
-      desc: 'Goes over into spoiled food. The clock only runs while it is wet (water or steam against it) or while mold is touching it, so something kept somewhere dry does not spoil. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
+      desc: 'Goes over into spoiled food. The clock only runs while it is wet (water or steam against it) or while mold is touching it, so something kept somewhere dry does not spoil. Once it is part-spoiled and still wet it grows mold of its own — even fully submerged, where the mold pushes the water aside. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
     },
   },
   rotsUnattended: {
@@ -308,12 +308,22 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   moldsItself: {
     ko: {
-      label: '곰팡이가 저절로 핌',
-      desc: '충분히 상하면 그 자리에서 곰팡이가 피어 포자를 날립니다. 세상의 모든 곰팡이가 여기서 시작하고, 나머지 물질에는 곰팡이가 기어가서 닿아야 생깁니다.',
+      label: '마른 데서도 곰팡이가 핌',
+      desc: '충분히 상하면 그 자리에서 곰팡이가 피어 포자를 날립니다 — 젖지 않아도 그렇습니다. 다른 식품도 곰팡이는 피지만 그건 젖었을 때 얘기라, 마른 창고 안에서 곰팡이가 시작될 수 있는 것은 이것뿐입니다.',
     },
     en: {
-      label: 'Grows its own mold',
-      desc: 'Once far enough gone it grows a colony on itself and puffs spores. Every mold in the world starts here — everything else has to be reached by mold creeping onto it.',
+      label: 'Molds even when dry',
+      desc: 'Once far enough gone it grows a colony on itself and puffs spores — with nothing wet against it. Other foods grow their own mold too, but only once they are wet, so this is the only thing that can start an outbreak inside a dry store room.',
+    },
+  },
+  neverMolds: {
+    ko: {
+      label: '곰팡이가 안 핌',
+      desc: '아무리 젖어도 여기서 곰팡이가 피어나지는 않습니다. 그냥 놔두면 알아서 다음 단계로 넘어가는 종착점이라, 곰팡이밭이 되는 대신 흙이 됩니다. (밖에서 기어 들어온 곰팡이가 표면에 앉는 것은 별개입니다.)',
+    },
+    en: {
+      label: 'Never grows mold',
+      desc: 'No colony ever starts here, however wet it gets. It is the end of the chain and moves on by itself, so it turns into soil rather than becoming a mold farm. (Mold creeping in from elsewhere can still settle on it — that is a different thing.)',
     },
   },
   driedKeeps: {

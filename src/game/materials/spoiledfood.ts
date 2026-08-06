@@ -110,22 +110,25 @@ export const SPOILED_FOOD = register({
   // aux word; it is the one link in the chain that gets the low bits.
   //
   // `spontaneous: true` — 부패물은 아무것도 안 닿아도 분해된다. Every other food
-  // needs 물·수증기·곰팡이 to start its clock (spoil.ts `isRotting`), but this step
+  // needs 물·수증기·곰팡이 to start its clock (spoil.ts `rotSources`), but this step
   // is 분해 rather than 부패 and the chain has to be able to *finish*: a heap that
   // sat forever unless you watered it would leave the loop open at its last link,
   // and 퇴비 — the reason the whole 부패 계통 exists — would be something you could
   // only make by accident.
   //
-  // **`spores` is deliberately absent, and that is the point of the pair.** 부패물이
-  // 곰팡이를 피우면 더미가 스스로 곰팡이밭이 되고, 그 곰팡이는 옆에 있는 멀쩡한 식품의
-  // 시계까지 돌린다 — 창고 한구석의 찌꺼기 한 무더기가 창고 전체를 상하게 하는, 정확히
-  // 이 라운드가 없앤 실패 모드다. 부패물 더미는 퇴비가 되지 곰팡이 농장이 되지 않는다.
+  // **`spores: 'never'` — 이 라운드에서 유일한 명시적 거부이고, 그게 이 쌍의 요점이다.**
+  // 일반 식품의 기본값은 `'damp'`(젖으면 곰팡이가 저절로 핀다)이므로, 부패물은 아무
+  // 말도 안 하면 젖었을 때 곰팡이를 피우게 된다 — 그러면 더미가 스스로 곰팡이밭이 되고,
+  // 그 곰팡이는 옆에 있는 멀쩡한 식품의 시계까지 돌린다. 창고 한구석의 찌꺼기 한 무더기가
+  // 창고 전체를 상하게 하는, 정확히 이 라운드가 없앤 실패 모드가 사슬 자신의 출력을 타고
+  // 되돌아오는 것이다. 부패물 더미는 10.4초 뒤 퇴비가 되는 종착점이지 곰팡이 농장이 아니다.
   // (곰팡이가 밖에서 기어 들어와 표면에 앉는 것은 그대로 둔다 — 그건 자연발생이 아니고,
   // `tryErode` 는 애초에 부패물을 먹지 않는다.)
   spoil: {
     seconds: BREAKDOWN_SECONDS,
     auxShift: 0,
     spontaneous: true,
+    spores: 'never',
     into: () => COMPOST.id,
   },
   // Wet organic matter — poor conductor, like the meat and the fish it came from.
