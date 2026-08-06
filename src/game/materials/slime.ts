@@ -1,11 +1,13 @@
 import { register } from './registry';
-import { Phase } from '../engine/types';
+import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import { DIR4, DIR8 } from '../engine/directions';
 import { updateLiquid, collapseVoidBelow } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { isFlame } from './combustion';
 import { WATER } from './water';
+import { HYDROGEN } from './hydrogen';
+import { OXYGEN } from './oxygen';
 import { SMOKE } from './smoke';
 import { tryPhaseChange } from './phasechange';
 
@@ -23,14 +25,31 @@ import { tryPhaseChange } from './phasechange';
 // eats a Virus (virus.ts), just with a bigger bite. A Spark reaching the blob
 // (from an electrified conductor, or the very Water it's drinking) seeds a
 // single *electric-dissolve front* on one touched cell, carrying a "reach"
-// budget in aux (SLIME_DISSOLVE_BUDGET, twice the Virus front's; spark.ts
-// stamps exactly one cell per pulse). On its turn
-// a front cell reverts itself to Water and, if any reach is left, hands budget-1 to
-// ONE randomly-chosen still-healthy slime neighbour. That one random step per tick
-// makes the eaten edge ragged and organic, and the decrementing budget hard-caps
-// how much a single spark can dissolve — so one lone spark takes only a small bite,
-// and it takes *sustained* current (a battery pulsing spark after spark into the
-// blob) to erode the whole thing back to a puddle (전기에 닿으면 물로 회귀).
+// budget in aux (SLIME_DISSOLVE_BUDGET; spark.ts stamps exactly one cell per
+// pulse). On its turn a front cell electrolyses itself away and, if any reach is
+// left, hands budget-1 to ONE randomly-chosen still-healthy slime neighbour. That
+// one random step per tick makes the eaten edge ragged and organic, and the
+// decrementing budget hard-caps how much a single spark can dissolve — so one lone
+// spark takes only a small bite, and it takes *sustained* current (a battery
+// pulsing spark after spark into the blob) to erode a whole blob away.
+//
+// **What a dissolved cell becomes is the whole design**, and it is the second
+// answer to that question. It used to revert to Water, on the reading that the goo
+// is water-based and electricity merely undoes it — and that quietly made the
+// counter unwinnable. Slime *drinks water and grows without bound*, so every cell
+// the current dissolved was handed straight back as feedstock: a 전기 브러시 swept
+// across a whole puddle left it 97% cleared and the survivors rebuilt all of it
+// within a few seconds. Measured, repeatedly, at every setting of every knob —
+// 한 칸이라도 남으면 웅덩이는 반드시 100% 복구된다. Tuning cannot fix that, because
+// the loop is a conversion between two things that are both still on the board.
+//
+// So the goo now goes where its water actually goes under a current: it splits
+// into Hydrogen (and, half the time, a bubble of Oxygen), exactly as the passing
+// spark already does to plain water/brine/acid (spark.ts's `electrolyse`). The
+// mass leaves the world as gas instead of settling into a puddle, so a sweep is
+// permanent and there is nothing left to grow back from — 전기분해된 슬라임은 물로
+// 돌아가지 않고 수소로 날아간다. The gas is flammable, which is the price: clear a
+// big blob in a sealed room and you have filled it with H₂.
 const ABSORB_CHANCE = 0.05; // drinks an adjacent water cell into more slime
 const MELT_CHANCE = 0.3; // per-tick chance a flame beside it melts it
 const MELT_TEMP = 130; // …or enough ambient heat does the same
@@ -47,29 +66,47 @@ export const SLIME_FLOW_CHANCE = 0.15;
 
 // Reach budget a Spark stamps on the one slime cell it seeds (see spark.ts), and
 // the whole aux state slime uses: a healthy cell reads 0, a front cell holds its
-// remaining reach (1..BUDGET). Twice the Virus corrosion front's CURE_SEED_BUDGET
-// (10) — slime's electric weakness bites harder per shock than the virus's H₂O₂
-// counter does, so a single spark still dissolves at most about this many cells
-// (never the whole blob), but the bite is bigger.
-export const SLIME_DISSOLVE_BUDGET = 20;
+// remaining reach (1..BUDGET). Well past the Virus corrosion front's
+// CURE_SEED_BUDGET (10) — slime's electric weakness bites harder per shock than
+// the virus's H₂O₂ counter does, so a single spark still dissolves at most about
+// this many cells (never the whole blob), but the bite is bigger. Measured: one
+// front seeded in the middle of a 722-cell pool takes 24 cells and stops, 3% of
+// the blob, so 지속적인 전류가 필요하다 survives the change above.
+export const SLIME_DISSOLVE_BUDGET = 24;
 
-// The catch with "slime → Water" (vs the Virus front's "→ Empty"): slime *drinks*
-// water, so it would just re-absorb its own dissolved puddle and heal — the electric
-// counter would do nothing. So freshly-dissolved Water is stamped with a short
-// "recently electrolysed" countdown in its aux, and slime refuses to drink water
-// whose aux is non-zero. Water's own update already ticks any aux down each turn
-// (its post-spark refractory bookkeeping), so the mark clears itself after a short
-// while — deliberately long enough for the puddle to actually drain/rise clear of
-// the blob before it can be eaten back. A big blob's freshly-dissolved water needs
-// a real beat to escape, so this runs well past a couple of ticks; too short and
-// the goo just re-drinks its own puddle and heals faster than the current can eat
-// it. (A minor, in-theme side effect: for that window the spent water also won't
-// carry a spark — it reads as briefly "used up".) This is what makes a sustained
-// current actually eat a blob down rather than fight a losing tug-of-war with it.
-const DISSOLVE_WATER_GRACE = 40;
+// …and, half the time, a free neighbour gets the Oxygen that goes with it
+// (2H₂O → 2H₂ + O₂). The twin of spark.ts's ELECTROLYSIS_OXYGEN_CHANCE, spelled
+// again rather than imported because spark.ts imports *this* module — naming it
+// back would close a cycle for one number. Keep the two in step: the goo splitting
+// and the water it is made of splitting should not read as different chemistry.
+const ELECTROLYSIS_OXYGEN_CHANCE = 0.5;
+
+/** Split one cell of goo into gas: it becomes Hydrogen, and about half the time a
+ *  free open neighbour gets an Oxygen bubble. The same shape as spark.ts's
+ *  `electrolyse` (which does this to plain water/brine/acid), and shared with
+ *  Acid Slime so both goos come apart identically.
+ *
+ *  `set` rather than `spawn`, again matching `electrolyse`: the gas keeps the
+ *  cell's heat instead of resetting to ambient, so electrolysing hot goo gives hot
+ *  hydrogen. The aux is cleared explicitly because `set` leaves it untouched on a
+ *  non-EMPTY write and this cell is holding a front's leftover reach. */
+export function electrolyseGoo(x: number, y: number, sim: SimContext): void {
+  sim.set(x, y, HYDROGEN.id);
+  sim.setAux(x, y, 0);
+  if (!sim.chance(ELECTROLYSIS_OXYGEN_CHANCE)) return;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (sim.get(nx, ny) === EMPTY) {
+      sim.spawn(nx, ny, OXYGEN.id);
+      return;
+    }
+  }
+}
 
 // One dissolve-front step (aux = remaining reach), mirroring virus.ts's corrosion
-// front: revert this cell to Water and, while reach is left, hand budget-1 to ONE
+// front: electrolyse this cell away and, while reach is left, hand budget-1 to ONE
 // random still-healthy slime neighbour via `spawn` (which flags it moved, so it acts
 // only next tick — one random step per tick, no same-tick runaway). The decrementing
 // budget bounds a single seed's total reach, giving a frayed bite rather than a
@@ -94,17 +131,12 @@ function dissolveFront(x: number, y: number, sim: SimContext): void {
       sim.setAux(cxs[k], cys[k], budget - 1);
     }
   }
-  sim.set(x, y, WATER.id); // this cell has reverted to water…
-  // …carrying a brief "recently electrolysed" grace so the slime around it can't
-  // instantly drink it back (see DISSOLVE_WATER_GRACE and the absorb guard below).
-  // set() leaves aux untouched on a non-EMPTY write, so we stamp it explicitly
-  // rather than inheriting the leftover reach byte.
-  sim.setAux(x, y, DISSOLVE_WATER_GRACE);
+  electrolyseGoo(x, y, sim); // …and this cell splits into gas and is gone for good
 }
 
 function updateSlime(x: number, y: number, sim: SimContext): void {
   // Electric-dissolve front (aux = remaining reach, seeded by an adjacent Spark):
-  // revert to Water and pass the bounded front on. Checked first so a caught cell
+  // split into gas and pass the bounded front on. Checked first so a caught cell
   // always dissolves, whatever else is around it.
   if (sim.getAux(x, y) !== 0) {
     dissolveFront(x, y, sim);
@@ -123,9 +155,10 @@ function updateSlime(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  // Feed: absorb an adjacent Water cell, growing the blob by one cell — but NOT
-  // water that's still marked as freshly electrolysed (aux !== 0), so a blob can't
-  // heal itself off its own electric-dissolve puddle before that water drains away.
+  // Feed: absorb an adjacent Water cell, growing the blob by one cell. Water still
+  // carrying per-cell state (aux !== 0 — a post-spark refractory) is skipped: it
+  // reads as briefly spent, and `spawn` would clear the byte anyway, which on this
+  // material means "no dissolve front".
   for (const [dx, dy] of DIR4) {
     const nx = x + dx;
     const ny = y + dy;
@@ -166,10 +199,11 @@ export const SLIME = register({
   elasticity: 0.92,
   // Conducts (see spark.ts CONDUCTOR_IDS/CONDUCTOR_LOSS): the poorest conductor
   // in the roster in spirit (its acidic cousin Acid Slime aside, which conducts at
-  // the max), but current still carries a good stretch into a blob (on par with
-  // fresh Water, ~7 cells) instead of dying within a cell or two — and current that
-  // actually passes through it is what seeds the blob's own electric-dissolve
-  // front, with a bigger bite per shock (SLIME_DISSOLVE_BUDGET) too.
+  // the max), but current still carries a good stretch into a blob (~31 cells,
+  // on par with fresh Water) instead of dying within a cell or two. That reach is
+  // why the 전기 브러시 works as a weapon at all: painting the surface of a pool
+  // sends pulses deep enough to seed fronts through the whole body of it, rather
+  // than only skinning the top row.
   conductive: true,
   // The worst conductor on the roster in spirit — a thick, non-ionic goo — but only
   // as lossy as fresh water (2 of 63, ~31 cells), so current has room to punch

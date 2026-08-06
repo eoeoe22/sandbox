@@ -84,9 +84,10 @@ import { ALUMINUM } from './aluminum';
 // moves forward. Sparks travelling through Water/Saltwater/Acid also, at a low
 // rate, electrolyse that cell into Hydrogen and Oxygen (2H₂O → 2H₂ + O₂), leaving
 // no residue behind; a spark reverting on Slime instead has a chance to seed the
-// blob's own electric-dissolve front (a bounded, ragged bite back to Water — see
-// slime.ts), so current that actually passes *through* the goo is what damages
-// it, rather than a special-cased touch-and-seed on first contact.
+// blob's own electric-dissolve front (a bounded, ragged bite that splits the goo
+// into the same gases, leaving no residue either — see slime.ts), so current that
+// actually passes *through* the goo is what damages it, rather than a
+// special-cased touch-and-seed on first contact.
 const REFRACTORY_TICKS = 3;
 
 // --- Speed: how fast does a pulse travel? --------------------------------------
@@ -217,14 +218,21 @@ CONDUCTOR_IDS.forEach((id, i) => {
 const ELECTROLYSIS_CHANCE = 0.02;
 const ELECTROLYSIS_OXYGEN_CHANCE = 0.5;
 
-// Slime's own weakness to electricity (see slime.ts): rarer than every hop
-// simply reverting to plain Slime, a pulse that just travelled through a cell
-// instead reverts it to Water and seeds a single bounded dissolve front (the
-// same SLIME_DISSOLVE_BUDGET-limited, ragged corrosion slime.ts already carries
-// through the blob). Deliberately low, like ELECTROLYSIS_CHANCE, so one lone
-// spark still only takes a small bite; a battery pulsing spark after spark
-// through the goo is what erodes a whole blob (지속적인 전류가 필요).
-const SLIME_SHOCK_CHANCE = 0.05;
+// Slime's own weakness to electricity (see slime.ts): a minority of hops, where a
+// pulse that just travelled through a cell seeds a single bounded dissolve front
+// on it (the same SLIME_DISSOLVE_BUDGET-limited, ragged corrosion slime.ts carries
+// through the blob) instead of simply reverting to inert goo.
+//
+// This is the knob a 전기 브러시 sweep is *made* of — one roll per covered cell —
+// so it decides whether painting across a puddle reads as an attack or as
+// pitting. At the 0.05 it was copied from ELECTROLYSIS_CHANCE a sweep seeded
+// barely one front per twenty cells and left a fifth of the goo standing;
+// measured over a 722-cell pool, 0.2 clears ~95% in one pass and leaves specks.
+// It is still a minority of hops, and it is emphatically not what makes a *lone*
+// spark dangerous: one seeded front takes 24 cells and stops (3% of that pool), so
+// a battery pulsing spark after spark through the goo is what takes a blob apart
+// (지속적인 전류가 필요) exactly as before.
+const SLIME_SHOCK_CHANCE = 0.2;
 
 /** Conductor material id → 1-based class, or 0 if it can't carry a spark. */
 export function conductorClass(id: number): number {
