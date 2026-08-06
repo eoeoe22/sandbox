@@ -35,6 +35,23 @@ export function canAdopt(id: number): boolean {
   return !getMaterial(id).isWall;
 }
 
+/**
+ * 방출 밀도 — chance that one open orthogonal neighbor receives a copy on any
+ * given tick. Clone used to fill *every* open neighbor every tick, which made a
+ * single block a firehose: a Clone latched onto water flooded a room faster than
+ * the liquid could spread out of the way, so the emitter was always buried in
+ * its own output and there was nothing to watch. Metering it turns the same
+ * block into a spring — the output has room to flow, fall and react before the
+ * next copy lands on top of it.
+ *
+ * It only changes the *rate*, never the reach: the source is still infinite and
+ * still fills the same space given time, and a Clone walled in by its own
+ * material still tops it up as fast as it drains. Per-neighbor rather than
+ * per-cell so a Clone with one open side isn't throttled the same as one
+ * standing in open air.
+ */
+const EMIT_CHANCE = 0.25;
+
 function updateClone(x: number, y: number, sim: SimContext): void {
   let adopted = sim.getAux(x, y);
 
@@ -53,8 +70,11 @@ function updateClone(x: number, y: number, sim: SimContext): void {
     if (adopted === EMPTY) return; // nothing to copy yet
   }
 
-  // Emit a copy of the adopted material into each open orthogonal neighbor.
+  // Emit a copy of the adopted material into each open orthogonal neighbor —
+  // metered, so a source pours at a watchable rate instead of instantly (see
+  // EMIT_CHANCE).
   for (const [dx, dy] of DIR4) {
+    if (Math.random() >= EMIT_CHANCE) continue;
     const nx = x + dx;
     const ny = y + dy;
     if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
