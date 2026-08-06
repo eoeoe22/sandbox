@@ -7,11 +7,12 @@ import { STEAM } from './steam';
 //
 // The grill started life as two bare temperature thresholds: 70° made a steak
 // cooked, 200° made it char. That reads fine on a hot plate and is completely
-// wrong on a fire. Flame runs at 800°, meat conducts at 0.3, so a cut laid in
-// the flames crossed *both* thresholds inside about ten ticks — measured: a 48
-// cell cut was half char after 0.3 seconds and entirely char after one second,
-// having never once looked cooked. Direct-flame grilling is the most familiar
-// thing anyone does with meat and fire, and the material made it impossible.
+// wrong on a fire. Fire runs at 1000° and a burning fuel pins at 800°, meat
+// conducts at 0.3, so a cut laid in the flames crossed *both* thresholds inside
+// about ten ticks — measured: a 48 cell cut was half char after 0.3 seconds and
+// entirely char after one second, having never once looked cooked. Direct-flame
+// grilling is the most familiar thing anyone does with meat and fire, and the
+// material made it impossible.
 //
 // The fix is the same thing that makes it possible in a real fire pit: **the
 // water in the meat has to boil off before the meat itself can get hot.** A cut

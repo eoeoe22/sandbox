@@ -33,7 +33,7 @@
 //   • **고기의 굽는 시간은 온도가 아니다.** Charring is gated on the cut having
 //     boiled its water off (meat.ts), not on a thermometer, and that gate is the
 //     only thing making 직화구이 possible. Scene 7b measures the mechanism rather
-//     than the outcome — the meat must be sitting at 110° *inside an 800° fire* —
+//     than the outcome — the meat must be sitting at 110° *inside a 1000° fire* —
 //     because "it is cooked and not burnt" would also pass if the meat had simply
 //     stopped taking heat at all.
 //
@@ -535,7 +535,7 @@ console.log('— 고기 (Meat) —');
 //     Both halves are asserted, because either alone is passable for the wrong
 //     reason. "It is cooked and not burnt" would also pass if the meat had
 //     simply stopped taking heat, so the temperature is checked too: the cut has
-//     to be sitting at its boiling plateau (110°) *in an 800° fire*, which is
+//     to be sitting at its boiling plateau (110°) *in a 1000° fire*, which is
 //     the mechanism rather than the symptom.
 {
   const { grid, sim } = makeWorld(40, 40);
@@ -581,7 +581,7 @@ console.log('— 고기 (Meat) —');
   check(
     '…수분이 끓으면서 고기를 110°에 붙잡아 두기 때문이다',
     Number.isFinite(hottest) && hottest <= 130,
-    `hottest still-moist cell ${hottest.toFixed(0)}° in an 800° fire`,
+    `hottest still-moist cell ${hottest.toFixed(0)}° in a 1000° fire`,
   );
 }
 
