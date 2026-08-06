@@ -8,6 +8,8 @@ import { SODA } from './soda';
 import { YEAST } from './yeast';
 import { CO2 } from './co2';
 import { BREAD, CRUST_AUX, CRUMB_AUX } from './bread';
+import { spoilStep, SPOIL_MASK } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Batter (반죽) — Flour hydrated by Water (flour.ts declares the reaction: one
 // cell of each makes two cells of dough, so nothing is created or lost). A
@@ -67,6 +69,12 @@ const BAKE_CHANCE = 0.08;
 const LEAVEN_MASK = 0b111;
 const CULTURED_BIT = 0b1000;
 const SODA_BIT = 0b10000;
+/** 부패 카운터는 그 위 셋(비트 5-7)이다 — the only thing in this material's aux
+ *  word that this file does not itself maintain (spoil.ts does). Named here as
+ *  well as in the `spoil` declaration because the aux rebuild at the bottom of
+ *  `updateBatter` has to know to carry it across; it did not, once, and silently
+ *  zeroed the counter every tick. */
+const SPOIL_SHIFT = 5;
 /** Fully proofed. 7 is the largest value the three low bits hold, and the ramp
  *  below has exactly that many steps above plain. */
 const LEAVEN_MAX = 7;
@@ -233,7 +241,32 @@ function tryRise(x: number, y: number, sim: SimContext, leaven: number, temp: nu
   }
 }
 
+/**
+ * 발효가 진행 중인가 — exactly the condition under which the ferment block below
+ * climbs a step: a live colony, under the heat that kills it, with room left to
+ * rise. Declared to `spoil` as `keptWhile`, so dough that is working is not also
+ * rotting.
+ *
+ * The three ways out of it are the three honest ones, and each is a dough that
+ * genuinely *has* stopped: plain dough with nothing in it, dough the culture has
+ * carried all the way to LEAVEN_MAX, and soda dough (chemical leavening is
+ * instant and never climbs, so it is "finished" from the moment it is mixed).
+ * Each of those starts rotting on its own clock, which is the whole ask —
+ * 방치한 반죽은 상하고, 부풀고 있는 반죽은 상하지 않는다.
+ */
+function isFermenting(x: number, y: number, sim: SimContext): boolean {
+  const aux = sim.getAux(x, y);
+  if ((aux & CULTURED_BIT) === 0) return false;
+  if ((aux & LEAVEN_MASK) >= LEAVEN_MAX) return false;
+  return sim.getTemp(x, y) < CULTURE_DIE_TEMP;
+}
+
 function updateBatter(x: number, y: number, sim: SimContext): void {
+  // 부패 — wet flour goes over. Before `aux` is read below, not merely first:
+  // `spoilStep` writes the cell's aux when it advances the counter, so reading
+  // the word before it runs would hand the rest of this function a stale one and
+  // the rebuild at the bottom would put the old counter straight back.
+  if (spoilStep(x, y, sim, BATTER.spoil!)) return;
   const aux = sim.getAux(x, y);
   const leaven = aux & LEAVEN_MASK;
   const t = sim.getTemp(x, y);
@@ -247,7 +280,11 @@ function updateBatter(x: number, y: number, sim: SimContext): void {
     if (leaven > 0) {
       tryRise(x, y, sim, leaven, t);
       // Spent, landed or not (see tryRise). Clears the culture flag with it: at
-      // baking temperature the colony is long dead anyway.
+      // baking temperature the colony is long dead anyway — and the 부패 counter,
+      // which is deliberate rather than incidental. A loaf is a new thing, the
+      // oven is well past the temperature spoilage stops at, and 빵 keeps its own
+      // clock from 0 (bread.ts writes the crust value over this word a tick
+      // later regardless). 반쯤 상한 반죽을 구우면 멀쩡한 빵이 나온다.
       sim.setAux(x, y, 0);
       return;
     }
@@ -329,10 +366,12 @@ function updateBatter(x: number, y: number, sim: SimContext): void {
 
   // Rebuilt from the three things this function owns — and therefore the one
   // place in the file that would silently erase anything else living in the word.
-  // Nothing else does today; 부패 briefly did (bits 5-7) and this line dropped it
-  // every tick until it was carried across by hand. Worth knowing about before
-  // adding a fourth field here.
-  const nextAux = level | (cultured ? CULTURED_BIT : 0) | (soda ? SODA_BIT : 0);
+  // 부패 (bits 5-7) is maintained by spoil.ts, so it is carried across by hand;
+  // when it was not, this line zeroed the counter every tick and 반죽 simply never
+  // rotted. Anything added to this word from now on has to be carried here too.
+  const keptSpoil = (aux >> SPOIL_SHIFT) & SPOIL_MASK;
+  const nextAux =
+    level | (cultured ? CULTURED_BIT : 0) | (soda ? SODA_BIT : 0) | (keptSpoil << SPOIL_SHIFT);
   if (nextAux !== aux) sim.setAux(x, y, nextAux);
 
   // Thick and sluggish: `viscosity` holds a soft mound rather than levelling out.
@@ -365,6 +404,22 @@ export const BATTER = register({
   colorVary: 10,
   // 발효 진행도를 보여 주는 색 — see PROOF_RAMP.
   auxPalette: PROOF_RAMP,
+  // 부패 — wet flour, so it goes over faster than the loaf it becomes (420s) and
+  // not far behind raw meat (150s). Bits 5-7, clear of the leaven level and both
+  // agent flags, and clear of PROOF_RAMP's `aux % 8` so the counter never shifts
+  // the dough's colour.
+  //
+  // `keptWhile` is what makes this material able to rot at all: 발효 pauses the
+  // clock (see `isFermenting`). Without it the two processes raced and proofing
+  // lost, which is why 반죽 had to be dropped from the roster the first time 부패
+  // shipped. A dough being proofed is safe for as long as it is rising; a dough
+  // left plain, finished, or soda-mixed is on the clock like everything else.
+  spoil: {
+    seconds: 200,
+    auxShift: SPOIL_SHIFT,
+    keptWhile: isFermenting,
+    into: () => SPOILED_FOOD.id,
+  },
   thermal: { conductivity: 0.3 },
   update: updateBatter,
 });

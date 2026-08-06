@@ -65,6 +65,8 @@ import { DRY_MAX, DRY_MASK } from '../src/game/materials/meat';
 import { STEAM } from '../src/game/materials/steam';
 import { CORN_KERNEL } from '../src/game/materials/cornkernel';
 import { POPCORN } from '../src/game/materials/popcorn';
+import { SPOILED_FOOD } from '../src/game/materials/spoiledfood';
+import { MOLD } from '../src/game/materials/mold';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -357,10 +359,15 @@ console.log('— 반죽 · 빵 (Batter / Bread) —');
 //    three recipes: plain, sprinkled with soda, and left to proof with yeast
 //    first. The bake must come out plain < soda < proofed, because that ordering
 //    is the entire reason there are two leaveners.
-function bakeLoaf(kind: 'plain' | 'soda' | 'yeast'): { bread: number; leaven: number } {
+function bakeLoaf(kind: 'plain' | 'soda' | 'yeast'): {
+  bread: number;
+  leaven: number;
+  dough: number;
+  rotted: number;
+} {
   const { grid, sim } = makeWorld(60, 60);
   floor(grid, 50);
-  block(grid, 20, 40, 40, 50, BATTER.id, 20);
+  const dough = block(grid, 20, 40, 40, 50, BATTER.id, 20);
   if (kind === 'soda') block(grid, 20, 40, 38, 40, SODA.id, 20);
   if (kind === 'yeast') block(grid, 20, 40, 38, 40, YEAST.id, 20);
   // Proof at room temperature. Soda needs none of this and is unaffected by it;
@@ -372,7 +379,13 @@ function bakeLoaf(kind: 'plain' | 'soda' | 'yeast'): { bread: number; leaven: nu
     hold(grid, [BATTER.id, BREAD.id], 200);
     sim.step();
   }
-  return { bread: count(grid, BREAD.id), leaven };
+  // 반죽 is perishable (batter.ts), so a dough left standing can in principle
+  // lose cells to 부패 before it ever reaches the oven. Reported so the rise
+  // measurements below can say whether that happened rather than assume it
+  // didn't — 30초 proof is far inside the 200초 clock, and a fermenting dough is
+  // held anyway, so this should read 0.
+  const rotted = count(grid, SPOILED_FOOD.id) + count(grid, MOLD.id);
+  return { bread: count(grid, BREAD.id), leaven, dough, rotted };
 }
 {
   const plain = bakeLoaf('plain');
@@ -397,10 +410,37 @@ function bakeLoaf(kind: 'plain' | 'soda' | 'yeast'): { bread: number; leaven: nu
   // leaven whether or not it landed. Without that a cell would re-roll every tick
   // until it succeeded and a loaf would grow until it ran out of room. A fully
   // proofed dough must land on *exactly* double and nothing may exceed it.
+  //
+  // Measured against the dough that was *laid down*, and with a few cells of
+  // slack — both changes forced by 반죽 becoming perishable (batter.ts).
+  //
+  // It used to read `yeast.bread === plain.bread * 2` exactly, and that was only
+  // available while nothing could remove a cell of dough. Now the 30초 proof is a
+  // real, if small, slice of the 200초 clock: the counter is rolled per cell per
+  // tick, so with 200 cells the tail is fat enough that a few reach the 곰팡이
+  // stage early, and mold takes a neighbour or two with it (measured: 3 of 200 on
+  // the plain loaf). That is the material behaving correctly, not the rise
+  // failing, so the ceiling is checked as "double, minus what rotted" rather than
+  // pinned to the cell.
+  //
+  // The slack does not cost the check its teeth. The bug it exists to catch — a
+  // proofing dough smothering itself in its own CO₂ — came out at 232 against an
+  // expected 400, which is nowhere near this bound.
+  const SPOIL_SLACK = 10;
   check(
     '아무리 부풀어도 최대 두 배까지다',
-    yeast.bread === plain.bread * 2 && soda.bread <= plain.bread * 2,
-    `plain ${plain.bread} → soda ${soda.bread} → yeast ${yeast.bread}`,
+    yeast.bread <= yeast.dough * 2 &&
+      yeast.bread >= yeast.dough * 2 - SPOIL_SLACK &&
+      soda.bread <= soda.dough * 2,
+    `dough ${plain.dough} → plain ${plain.bread} / soda ${soda.bread} / yeast ${yeast.bread}`,
+  );
+  // …and the slack really is only rot, not a rise quietly falling short. Small on
+  // every recipe, which is the practical form of 「부패가 빵 굽기를 망치지 않는다」:
+  // a dough you are actually working with reaches the oven.
+  check(
+    '반죽이 썩어도 빵 굽기를 망치진 않는다 — 굽기 전 손실은 미미하다',
+    [plain, soda, yeast].every((l) => l.rotted <= l.dough * 0.05),
+    `부패물+곰팡이 plain ${plain.rotted} / soda ${soda.rotted} / yeast ${yeast.rotted} of ${plain.dough}칸`,
   );
   // The bug this scene could not see on its own: a proofing dough buries itself
   // in the CO₂ it burps out, and a rise that only accepted an EMPTY cell was

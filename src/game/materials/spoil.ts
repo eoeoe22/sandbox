@@ -39,13 +39,19 @@ import { seedMold } from './mold';
 //   • 고온 — at or over SPOIL_STOP_TEMP. Food being cooked is not also rotting,
 //     which matters more than it sounds: without it a steak on a grill would be
 //     racing two clocks and the fun one would lose.
-//   • 건조 — 고기 사슬 only, and it is free: the dryness counter that makes
-//     직화구이 work (meat.ts) already says whether a cut is bone dry, so 육포 is
-//     a rule this system reads rather than a rule it adds. A material declares
-//     `dryMask` to opt in.
+//   • 건조 — 생고기 only, and it is free: the dryness counter that makes 직화구이
+//     work (meat.ts) already says whether a cut is bone dry, so 육포 is a rule
+//     this system reads rather than a rule it adds. A material declares `dryMask`
+//     to opt in. 익은 고기 pointedly does not: grilling drives that same counter
+//     to full on its own, so declaring it there made every cooked cut immortal
+//     (cookedmeat.ts).
 //   • 염장 · 담금 — Salt, Alcohol or Honey touching the cell. All three are
 //     ordinary palette materials doing a new job; this is the whole reason the
 //     round adds three materials and not eight.
+//   • 물질만 아는 조건 (`keptWhile`) — an escape hatch for a pause only the
+//     declaring material can evaluate. One user: 반죽 is kept while it is actively
+//     fermenting (batter.ts), because 발효 and 부패 are the same kind of process
+//     and running both at once means the rise always loses.
 //
 // Note what is deliberately *not* here: 훈연 and 밀폐. Smoke lives ~0.6s, so
 // smoking would need a soak-time model of its own, and airtightness would make
@@ -159,10 +165,14 @@ export function isPreserved(x: number, y: number, sim: SimContext, spec: SpoilSp
   const t = sim.getTemp(x, y);
   if (t < SPOIL_MIN_TEMP || t >= SPOIL_STOP_TEMP) return true;
 
-  // 건조 — 육포. Free for the meat chain, which already tracks this (meat.ts);
-  // everything else omits `dryMask` and skips the test.
+  // 건조 — 육포. Free for 생고기, which already tracks this (meat.ts); everything
+  // else omits `dryMask` and skips the test.
   const aux = sim.getAux(x, y);
   if (spec.dryMask !== undefined && (aux & spec.dryMask) === spec.dryMask) return true;
+
+  // 물질만 아는 조건 — 반죽's "발효 중" (batter.ts). Declared rather than special-
+  // cased here so this file stays the four shared routes and nothing else.
+  if (spec.keptWhile !== undefined && spec.keptWhile(x, y, sim)) return true;
 
   // 염장·담금.
   for (const [dx, dy] of DIR8) {

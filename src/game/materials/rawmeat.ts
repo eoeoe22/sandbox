@@ -70,12 +70,19 @@ export const RAW_MEAT = register({
   // visible layers instead of all at once.
   thermal: { conductivity: 0.3 },
   phaseChange: { at: () => COOK_TEMP, when: 'atOrAbove', into: () => COOKED_MEAT.id },
-  // 부패 — the fastest-spoiling thing in the palette, which is what raw meat
-  // should be. The shift is the meat chain's shared one (meat.ts `SPOIL_SHIFT`,
-  // which documents the whole three-material word and why bit 3 is not ours to
-  // take), and `dryMask` points at the dryness counter so a cut that has been
-  // dried out stops rotting: 육포. Cooking is the other way out — 익은 고기 rots
-  // slower, and carries this counter across with it.
+  // 부패 — among the fastest on the roster, second only to a corpse (죽은 물고기,
+  // 140s), which is what raw meat should be. The shift is the meat chain's shared
+  // one (meat.ts `SPOIL_SHIFT`, which documents the whole three-material word and
+  // why bit 3 is not ours to take).
+  //
+  // **`dryMask` is declared here and nowhere else**, and that is what makes 육포 a
+  // choice. It points at the dryness counter, so a cut dried right out stops
+  // rotting — and the only heat that can dry this material without ending it is
+  // STEAM_TEMP(45°) up to COOK_TEMP(70°), because at 70° it is 익은 고기 instead.
+  // A dehydrator, in other words, not a grill. 익은 고기 carries the counter
+  // across but pointedly does not declare the exemption: cooking fills that same
+  // counter on its own, so honouring it there made every grilled cut immortal
+  // (cookedmeat.ts).
   spoil: {
     seconds: 150,
     auxShift: SPOIL_SHIFT,

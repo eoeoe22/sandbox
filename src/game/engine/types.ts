@@ -167,12 +167,33 @@ export interface SpoilSpec {
    * in the same `aux` word, the mask of it. A cell whose masked bits are all set
    * is bone dry and does not rot: 육포.
    *
-   * Only the meat chain declares it, and it costs nothing there because the
-   * counter already exists for a different reason (meat.ts's moisture model, the
-   * thing that makes 직화구이 possible). This field reads that work rather than
+   * Only 생고기 declares it, and it costs nothing there because the counter
+   * already exists for a different reason (meat.ts's moisture model, the thing
+   * that makes 직화구이 possible). This field reads that work rather than
    * duplicating it.
+   *
+   * 익은 고기 deliberately does **not** — see the note on its `spoil` block for
+   * why "dried" has to mean something you chose rather than something grilling
+   * does to every cut on its way past medium.
    */
   dryMask?: number;
+  /**
+   * 이 물질만 아는 보존 조건 — an extra "is this cell being kept right now?" test,
+   * on top of the shared 온도·건조·염장 routes in spoil.ts. Return `true` while the
+   * cell must not advance.
+   *
+   * 반죽 is why it exists: dough that is *actively fermenting* is not also
+   * rotting. 발효 and 부패 are the same kind of process, and letting both run made
+   * them eat each other — the round that first shipped 부패 had to drop 반죽 from
+   * the roster entirely because the rising loaf always lost. Expressing it as a
+   * pause rather than as a second clock keeps 「빵을 굽는다」 unharmed while a
+   * dough nobody is proofing still goes over.
+   *
+   * Consulted by `isPreserved`, which means **곰팡이 침식 honours it too** — the
+   * same single definition of "preserved" both readers already share, so a
+   * fermenting dough cannot be eaten out from under a rule that says it is kept.
+   */
+  keptWhile?: (x: number, y: number, sim: SimContext) => boolean;
 }
 
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */

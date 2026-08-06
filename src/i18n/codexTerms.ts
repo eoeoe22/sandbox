@@ -299,11 +299,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   driedKeeps: {
     ko: {
       label: '말리면 안 썩음',
-      desc: '수분이 다 날아간 칸은 썩지 않습니다. 낮은 불에 오래 두어 바싹 말리면 그대로 보관할 수 있습니다 — 육포가 이것입니다.',
+      desc: '수분이 다 날아간 칸은 썩지 않습니다 — 육포가 이것입니다. 다만 익히지 않을 만큼 낮은 온도(45~70℃)에서 말려야 합니다. 그보다 뜨거우면 마르기 전에 익어 버리고, 익은 고기는 아무리 바싹 말라도 그냥 썩습니다 — 굽는 것은 말려서 보관하는 것과 다릅니다.',
     },
     en: {
       label: 'Keeps when dried',
-      desc: 'A cell with all its moisture boiled off does not rot. Hold it over a low heat until it is bone dry and it keeps as it is — this is what jerky is.',
+      desc: 'A cell with all its moisture boiled off does not rot — this is what jerky is. It has to be dried below cooking heat (45–70°C), though: any hotter and it cooks before it dries, and cooked meat rots however bone dry it gets. Grilling is not the same thing as drying something to keep it.',
     },
   },
 

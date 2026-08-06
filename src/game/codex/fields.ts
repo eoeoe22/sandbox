@@ -97,4 +97,10 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   // pause it (the `perishable`/`driedKeeps` cards) are the parts a player acts on,
   // and those are shown.
   'spoil.auxShift': 'engine: which bits of this material’s aux hold the 부패 counter',
+  // 반죽's "발효 중에는 안 썩는다" is a real rule a player acts on, but it is not a
+  // *field* they can read off a card — it is a predicate only the declaring
+  // material can evaluate, and its one holder states it in prose the player
+  // actually gets, in that material's codex entry. Showing the callback itself
+  // would say "이 물질은 특별한 조건에서 보존됩니다" and name none of them.
+  'spoil.keptWhile': 'engine: a pause condition only the declaring material can evaluate',
 };

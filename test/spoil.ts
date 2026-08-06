@@ -4,18 +4,29 @@
 // (soil.ts / plant.ts).
 //
 // What it pins down:
-//   • 무엇이 썩고 무엇이 안 썩는가. The five foods rot; 나무·톱밥·식물·밀가루·
-//     옥수수·팝콘·탄 고기 do not, and that boundary is the whole safety property
-//     of the round — a build must never decay out from under its owner. The
-//     negative half is checked against the *registry*, so a `spoil` tag added to
-//     a structural material in future fails here by name rather than in someone's
-//     save file.
+//   • 무엇이 썩고 무엇이 안 썩는가. The eight foods rot; 나무·톱밥·식물·밀가루·
+//     탄 고기 do not, and that boundary is the whole safety property of the round
+//     — a build must never decay out from under its owner. The negative half is
+//     checked against the *registry*, so a `spoil` tag added to a structural
+//     material in future fails here by name rather than in someone's save file.
+//   • aux 충돌은 세 방향 다 본다. A spoilage counter must clear the material's own
+//     dryness counter, the bits its *transform target* claims, and the bits the
+//     material itself parks there. All three have or could have shipped a silent
+//     bug; each is a structural check rather than a scene.
 //   • 보존 넷. 저온·고온·염장·담금 each hold a cut indefinitely, and all four are
 //     a *pause*: unsalt it and it carries on from where it stopped rather than
 //     restarting or completing. That is the difference between this and a
 //     memoryless decay roll, so it is measured rather than asserted.
-//   • 육포. A cut dried out by a low heat keeps forever, off the dryness counter
-//     meat.ts already maintains — and a cut that is merely cooked does not.
+//   • 육포 대 웰던. A cut dried *below* cooking heat keeps forever, off the dryness
+//     counter meat.ts already maintains — and a cut grilled to well-done, which
+//     ends up every bit as dry, does not. That pair is the section: 건조 보존 once
+//     applied to 익은 고기 too, and since grilling drives the same counter to full
+//     on its own, every cooked cut was quietly immortal.
+//   • 반죽은 발효가 멈춘 것만 썩는다. 발효 and 부패 are the same kind of process, so
+//     the dough is *kept* while it is rising (`SpoilSpec.keptWhile`) and on the
+//     clock once it stops. Measured as aux progress, not cell counts.
+//   • 마른 식품은 느리지만 면제는 아니다. 옥수수·팝콘 outlast a loaf of bread on the
+//     same shelf by a wide margin, and still end up as 부패물 in the end.
 //   • 곰팡이는 아무것도 파괴하지 않는다. A stone/glass/iron/wood box with rotting
 //     food inside comes out with every wall cell intact, however long it runs.
 //     This is the requirement the design was built around and the one that would
@@ -81,6 +92,9 @@ const RAW_MEAT = ID('Raw Meat');
 const COOKED_MEAT = ID('Cooked Meat');
 const BURNT_MEAT = ID('Burnt Meat');
 const BREAD = ID('Bread');
+const BATTER = ID('Batter');
+const CORN_KERNEL = ID('Corn Kernel');
+const POPCORN = ID('Popcorn');
 const DEAD_FISH = ID('Dead Fish');
 const SPOILED = ID('Spoiled Food');
 const COMPOST = ID('Compost');
@@ -189,16 +203,25 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
       .filter((m) => m.spoil !== undefined)
       .map((m) => m.name),
   );
-  const expected = ['Raw Meat', 'Cooked Meat', 'Bread', 'Dead Fish', 'Spoiled Food'];
+  const expected = [
+    'Raw Meat',
+    'Cooked Meat',
+    'Bread',
+    'Dead Fish',
+    'Spoiled Food',
+    'Batter',
+    'Corn Kernel',
+    'Popcorn',
+  ];
   check(
-    '썩는 것은 식품과 사체뿐 — 다섯, 이름까지',
+    '썩는 것은 식품과 사체뿐 — 여덟, 이름까지',
     rots.size === expected.length && expected.every((n) => rots.has(n)),
     [...rots].sort().join(', '),
   );
 
   // The negative half, named one by one. Structural organics are the dangerous
-  // ones (a decaying wall is the failure the design exists to prevent); the dry
-  // foods are the honest ones (마른 것은 안 썩는다).
+  // ones — a decaying wall is the failure this whole design exists to prevent —
+  // and they are the reason the list is spelled out rather than derived.
   const mustNotRot = [
     'Wood',
     'Sawdust',
@@ -208,22 +231,18 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     'Amber',
     'Resin',
     'Coal',
-    'Flour',
-    'Corn Kernel',
-    'Popcorn',
     'Burnt Meat',
     'Compost',
-    // 반죽 — 살아 있는 배양체가 이미 들어 있는 공정 중간물이다. 발효와 부패는
-    // 같은 종류의 과정이라 한 물질에 둘 다 얹으면 서로 잡아먹고, 재미있는 쪽
-    // (두 배로 부푸는 것)이 진다. 자세히는 MATERIAL-SYSTEMS.md.
-    'Batter',
+    // 밀가루 — 마른 가루는 안 썩는다. 물을 만나 반죽이 되는 순간부터 시계가 돈다
+    // (batter.ts), 그러니 「젖은 것이 상한다」가 여기서도 성립한다.
+    'Flour',
     'Sugar',
     'Honey',
     'Slime',
   ];
   const leaked = mustNotRot.filter((n) => rots.has(n));
   check(
-    '나무·식물·마른 식품은 썩지 않는다 — 지어 둔 것이 삭지 않는다',
+    '나무·식물·마른 가루는 썩지 않는다 — 지어 둔 것이 삭지 않는다',
     leaked.length === 0,
     leaked.length ? `LEAKED: ${leaked.join(', ')}` : `${mustNotRot.length} materials checked`,
   );
@@ -275,6 +294,37 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     crossOverlaps.length
       ? `OVERLAP: ${crossOverlaps.map((e) => `${getMaterial(e.from).name} → ${e.why}`).join(', ')}`
       : `${AUX_PRESERVING_EDGES.length} aux-preserving transforms checked`,
+  );
+
+  // …and clear of everything the material *itself* keeps in that word, which is
+  // the third face of the same problem and the one neither check above sees.
+  //
+  // `dryMask` is the only such field SpoilSpec knows about, so every other one is
+  // private to its material: 빵's crust and lit bits, 반죽's leaven level and two
+  // agent flags, 죽은 물고기's facing bit (which the *renderer* reads), 팝콘's own
+  // lit bit. A collision here is exactly the shipped 탄 고기 bug one level down —
+  // silent, and expressed as the material doing something it has no code for.
+  //
+  // Listed by hand for the same reason the edges above are: there is no registry
+  // of claimed bits, and writing the number down next to the material is the
+  // moment someone has to look at the layout.
+  const OWN_AUX_USERS: Array<{ id: number; bits: number; why: string }> = [
+    { id: BREAD, bits: 0b11, why: '빵 껍질 비트 + 점화 비트' },
+    { id: BATTER, bits: 0b11111, why: '반죽 발효도(0-2) + 배양·소다 플래그' },
+    { id: DEAD_FISH, bits: 0b1, why: '죽은 물고기 방향 비트(렌더러가 읽는다)' },
+    { id: POPCORN, bits: 0b1, why: '팝콘 점화 비트' },
+    { id: CORN_KERNEL, bits: 0b0, why: '옥수수는 aux 를 안 쓴다' },
+  ];
+  const selfOverlaps = OWN_AUX_USERS.filter((e) => {
+    const spec = getMaterial(e.id).spoil;
+    return spec !== undefined && (e.bits & (SPOIL_FIELD << spec.auxShift)) !== 0;
+  });
+  check(
+    '부패 카운터가 **같은 물질이** 그 워드에 둔 것과도 안 겹친다',
+    selfOverlaps.length === 0,
+    selfOverlaps.length
+      ? `OVERLAP: ${selfOverlaps.map((e) => `${getMaterial(e.id).name} → ${e.why}`).join(', ')}`
+      : `${OWN_AUX_USERS.length} materials checked`,
   );
 }
 
@@ -508,44 +558,70 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   );
 }
 
-// ── 6. 육포 — 바싹 말린 고기는 안 썩는다 ─────────────────────────────────────
-// Free off meat.ts's own dryness counter. The control matters as much as the
-// case: a cut that was merely *cooked* is not dry and does rot, so the exemption
-// has to be earned by actually drying it out.
+// ── 6. 육포 — 말려서 보존한 고기, 그리고 굽기만 한 고기 ──────────────────────
+// 건조 보존 belongs to 생고기 alone, and the control is the whole point of the
+// section rather than a formality.
+//
+// It shipped on 익은 고기 too, and that made every grilled cut immortal: cooking
+// drives the very same dryness counter (fast — meat.ts quotes 4.7s at 400°), and
+// 탄 고기 gates its char on that counter being full, so **anything cooked past
+// medium reaches DRY_MAX by construction**. 웰던 스테이크가 영원히 안 썩었고,
+// 익은 고기가 선언한 260초는 한 번도 발동하지 않았다.
+//
+// So the two scenes below are the same cut taken two ways. 육포 has to be a thing
+// you *chose*: 생고기 turns at 70° the instant it is hot enough to cook, so the
+// only window it can dry in is STEAM_TEMP(45°)~70° — a dehydrator, not a grill.
 {
+  /** Cells of `id` whose dryness counter is full (meat.ts). */
+  const boneDry = (grid: Grid, id: number): number => {
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++)
+      if (grid.cells[i] === id && (grid.aux[i] & DRY_MASK) === DRY_MASK) n++;
+    return n;
+  };
+
   reseed();
   const { grid, sim } = makeWorld();
   fill(grid, 10, 20, 19, 21, RAW_MEAT);
   const before = count(grid, RAW_MEAT);
-  // A low plate: over the cook point, well under the char point, held long enough
-  // to run every cell's moisture counter out. 150° is the figure meat.ts quotes
-  // as "bone dry in about half a minute and then safe forever".
-  run(sim, grid, 90 * HZ, { x0: 9, y0: 19, x1: 20, y1: 22, t: 150 });
-  const jerky = count(grid, COOKED_MEAT);
+  // 건조기: over the steam point, under the cook point. Nothing cooks, and above
+  // 60° nothing rots either, so the only clock running is the moisture counter.
+  run(sim, grid, 240 * HZ, { x0: 9, y0: 19, x1: 20, y1: 22, t: 65 });
+  const jerky = boneDry(grid, RAW_MEAT);
   check(
-    '낮은 불에 오래 두면 바싹 마른 익은 고기가 된다',
-    jerky === before && count(grid, BURNT_MEAT) === 0,
-    `${jerky} 익은 고기, ${count(grid, BURNT_MEAT)} 탄 고기`,
+    '45~70°에 오래 두면 익지 않고 바싹 마른 생고기가 된다',
+    jerky === before && count(grid, COOKED_MEAT) === 0,
+    `${jerky}/${before} 바싹 마름, ${count(grid, COOKED_MEAT)} 익은 고기`,
   );
-  // Off the heat, at room temperature, for four times its spoil time.
+  // Off the heat, at room temperature, for nearly three times its spoil time.
   setTemp(grid, 0, 0, 39, 29, ROOM);
   run(sim, grid, 440 * HZ);
   check(
-    '육포 — 바싹 말린 고기는 상온에 두어도 안 썩는다',
-    count(grid, COOKED_MEAT) === jerky,
-    `${count(grid, COOKED_MEAT)} of ${jerky} left after 440s at room temperature`,
+    '육포 — 말린 생고기는 상온에 두어도 안 썩는다',
+    count(grid, RAW_MEAT) === before,
+    `${count(grid, RAW_MEAT)} of ${before} left after 440s at room temperature`,
   );
 
-  // Control: cooked but still moist. Same material, same shelf, same clock.
+  // 대조군, and the regression test for the bug above: grilled to well-done, bone
+  // dry by the same counter, and it must still rot like any other cooked meat.
   reseed();
-  const wet = makeWorld();
-  fill(wet.grid, 10, 20, 19, 21, COOKED_MEAT); // aux 0 = 촉촉 (meat.ts)
-  const wetBefore = count(wet.grid, COOKED_MEAT);
-  run(wet.sim, wet.grid, 440 * HZ);
+  const done = makeWorld();
+  fill(done.grid, 10, 20, 19, 21, RAW_MEAT);
+  const doneBefore = count(done.grid, RAW_MEAT);
+  // 150°: past the cook point, under the 200° char point.
+  run(done.sim, done.grid, 90 * HZ, { x0: 9, y0: 19, x1: 20, y1: 22, t: 150 });
+  const welldone = boneDry(done.grid, COOKED_MEAT);
   check(
-    '…그냥 익히기만 한 고기는 그대로 썩는다 (대조군)',
-    count(wet.grid, COOKED_MEAT) === 0,
-    `${wetBefore} → ${count(wet.grid, COOKED_MEAT)} 익은 고기`,
+    '웰던으로 구우면 바싹 마른 익은 고기가 된다 (대조군의 전제)',
+    welldone === doneBefore && count(done.grid, BURNT_MEAT) === 0,
+    `${welldone}/${doneBefore} 바싹 마른 익은 고기, ${count(done.grid, BURNT_MEAT)} 탄 고기`,
+  );
+  setTemp(done.grid, 0, 0, 39, 29, ROOM);
+  run(done.sim, done.grid, 440 * HZ);
+  check(
+    '…그런데 웰던 고기는 말랐어도 썩는다 — 굽는 것은 말려서 보존하는 것이 아니다',
+    count(done.grid, COOKED_MEAT) === 0,
+    `${doneBefore} → ${count(done.grid, COOKED_MEAT)} 익은 고기`,
   );
 }
 
@@ -937,6 +1013,149 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     onCompost > onDirt,
     `퇴비 ${onCompost}칸 vs 흙 ${onDirt}칸 after 600s (6 plants each)`,
   );
+}
+
+// ── 6b. 반죽 — 발효가 멈춘 것만 썩는다 ───────────────────────────────────────
+// 발효 and 부패 are the same kind of process, and the first round that shipped
+// 부패 had to drop 반죽 from the roster because running both at once meant the
+// rise always lost (a 200-cell dough that should have doubled proofed 0 of 200 —
+// see test/cooking.ts, which owns that measurement).
+//
+// `keptWhile` (batter.ts `isFermenting`) is what lets the material have both: a
+// dough that is actively working is *kept*, exactly the way a salted one is, and
+// starts its clock when it stops. So the two claims are 방치한 반죽은 상한다 and
+// 부풀고 있는 반죽은 상하지 않는다, and neither is worth much without the other.
+{
+  // Read off the declaration rather than copied, so a change to the layout moves
+  // this scene with it instead of quietly measuring the wrong three bits.
+  const BATTER_SPOIL_SHIFT = getMaterial(BATTER).spoil!.auxShift;
+  // These are private to batter.ts (nothing outside it has any business reading
+  // a leaven level), so they are restated here. The aux check in section 1 is
+  // what holds them and the spoil counter apart.
+  const LEAVEN_MASK = 0b111;
+  const CULTURED_BIT = 0b1000;
+  const LEAVEN_MAX = 7;
+  /** Total 부패 진행도 over batter cells matching `want` — progress rather than
+   *  cell count, so a pause is visible long before anything turns. */
+  const doughProgress = (grid: Grid, want: (aux: number) => boolean): number => {
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] !== BATTER) continue;
+      const aux = grid.aux[i];
+      if (want(aux)) n += (aux >> BATTER_SPOIL_SHIFT) & SPOIL_MASK;
+    }
+    return n;
+  };
+  const fermenting = (aux: number): boolean =>
+    (aux & CULTURED_BIT) !== 0 && (aux & LEAVEN_MASK) < LEAVEN_MAX;
+
+  // Plain dough, nothing worked into it: not fermenting, so it is on the clock
+  // from the first tick.
+  reseed();
+  const plain = makeWorld();
+  fill(plain.grid, 10, 18, 29, 22, BATTER);
+  const plainBefore = count(plain.grid, BATTER);
+  run(plain.sim, plain.grid, 5 * HZ);
+  const plainMoved = doughProgress(plain.grid, () => true);
+  check(
+    '맨 반죽은 놔두면 바로 시계가 돈다 (아래 비교의 전제)',
+    plainMoved > 0,
+    `${plainMoved} 진행도 over ${plainBefore}칸 after 5s`,
+  );
+
+  // The same dough with a live culture in every cell. While it is climbing toward
+  // LEAVEN_MAX it must not advance at all.
+  reseed();
+  const proofing = makeWorld();
+  fill(proofing.grid, 10, 18, 29, 22, BATTER);
+  for (let y = 18; y <= 22; y++)
+    for (let x = 10; x <= 29; x++) proofing.grid.aux[proofing.grid.idx(x, y)] = CULTURED_BIT;
+  run(proofing.sim, proofing.grid, 5 * HZ);
+  const stillRising = doughProgress(proofing.grid, fermenting);
+  let risingCells = 0;
+  for (let i = 0; i < proofing.grid.cells.length; i++)
+    if (proofing.grid.cells[i] === BATTER && fermenting(proofing.grid.aux[i])) risingCells++;
+  check(
+    '부풀고 있는 반죽은 한 칸도 안 썩는다 — 발효가 시계를 잡는다',
+    stillRising === 0 && risingCells > 0,
+    `${stillRising} 진행도 over ${risingCells} 발효 중인 칸`,
+  );
+
+  // …and it is a pause, not an exemption: once the rise finishes, the dough is
+  // food like any other.
+  run(plain.sim, plain.grid, 400 * HZ);
+  check(
+    '방치한 반죽은 결국 전부 썩는다',
+    count(plain.grid, BATTER) === 0,
+    `${plainBefore} → ${count(plain.grid, BATTER)} 반죽`,
+  );
+}
+
+// ── 6c. 마른 식품 — 썩기는 하는데 아주 느리다 ────────────────────────────────
+// 옥수수(1200초) and 팝콘(900초) are the slow end of the roster on purpose: a
+// sack of grain is the one food you can leave in a corner and mostly forget
+// about. "Mostly" is the point — a store room is something you maintain, not
+// something you fill once — so both halves are measured: still there when a loaf
+// of bread (420초) would be long gone, and gone in the end.
+{
+  // The comparison runs **packed in stone**, with no empty cell anywhere against
+  // the food, so mold cannot grow and the only thing running is the declared
+  // clock. That is the whole reason for the setup: in an open pile 침식 compounds
+  // — every eaten cell becomes another eater — so the survivor count is a
+  // fat-tailed function of *when the first cell crossed the mold stage*, and it
+  // swung 9~26 of 32 across seeds. Thresholding that would have meant tuning
+  // against noise. Sealed, each cell is an independent counter and the spread is
+  // ordinary binomial.
+  const SLAB = { x0: 4, y0: 26, x1: 35, y1: 26 } as const;
+  /** One row of `id` with stone laid tight against every face, run for 420s — the
+   *  bread clock, i.e. long enough that the fastest spoiler on the shelf is
+   *  mostly gone. */
+  const sealedFor = (id: number): { kept: number; before: number } => {
+    reseed();
+    const { grid, sim } = makeWorld();
+    fill(grid, SLAB.x0 - 1, SLAB.y0 - 1, SLAB.x1 + 1, SLAB.y1 + 1, STONE);
+    fill(grid, SLAB.x0, SLAB.y0, SLAB.x1, SLAB.y1, id);
+    const before = count(grid, id);
+    run(sim, grid, 420 * HZ);
+    return { kept: count(grid, id), before };
+  };
+  const bread = sealedFor(BREAD);
+  check(
+    '밀폐한 빵은 420초에 절반쯤 넘어간다 (아래 비교의 기준선)',
+    bread.kept < bread.before * 0.75,
+    `${bread.kept} of ${bread.before} left after 420s (선언 420초)`,
+  );
+
+  for (const { id, topic, clock } of [
+    { id: CORN_KERNEL, topic: '옥수수는', clock: 1200 },
+    { id: POPCORN, topic: '팝콘은', clock: 900 },
+  ] as const) {
+    const { kept, before } = sealedFor(id);
+    check(
+      `${topic} 같은 조건에서 빵보다 훨씬 많이 남는다`,
+      kept > bread.kept && kept >= before * 0.75,
+      `${kept} of ${before} left after 420s vs 빵 ${bread.kept}칸 (선언 ${clock}초)`,
+    );
+  }
+
+  // …but it is a clock, not an exemption. Run in the open, where mold is allowed
+  // to pull the tail forward the way it does for everything else — the claim here
+  // is only that a dry food does eventually leave the shelf.
+  for (const { id, topic, clock } of [
+    { id: CORN_KERNEL, topic: '옥수수도', clock: 1200 },
+    { id: POPCORN, topic: '팝콘도', clock: 900 },
+  ] as const) {
+    reseed();
+    const { grid, sim } = makeWorld();
+    fill(grid, 12, 24, 27, 25, id);
+    const before = count(grid, id);
+    run(sim, grid, clock * 3 * HZ);
+    check(
+      `…그래도 ${topic} 끝내 썩는다 — 마른 것도 영원하진 않다`,
+      count(grid, id) === 0,
+      `${before} → ${count(grid, id)} after ${clock * 3}s`,
+    );
+  }
 }
 
 console.log(failures === 0 ? '\nAll 부패 checks passed.' : `\n${failures} check(s) FAILED.`);
