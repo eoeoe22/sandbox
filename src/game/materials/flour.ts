@@ -7,6 +7,8 @@ import type { SimContext } from '../engine/SimContext';
 import { tryDustExplosion, type DustFlash } from './dustexplosion';
 import { ASH } from './ash';
 import { WATER } from './water';
+import { SALTWATER } from './saltwater';
+import { SUGAR_WATER } from './sugarwater';
 import { BATTER } from './batter';
 
 // Flour (밀가루) — the front of the 요리 line, and the game's second dust
@@ -32,7 +34,11 @@ import { BATTER } from './batter';
 //
 // Its fifth fate is water: a grain touching Water becomes Batter, one cell of
 // each making two cells of dough (batter.ts). That is the branch the whole
-// baking chain hangs off — 밀가루 + 물 → 반죽 → 빵.
+// baking chain hangs off — 밀가루 + 물 → 반죽 → 빵. Saltwater and Sugar Water
+// hydrate it exactly the same way (HYDRATING_LIQUIDS below) — both are just
+// Water with something dissolved in it, and the dissolved solute is not
+// tracked into the dough any more than the leaven byte is (see `tryHydrate`),
+// so all three liquids make the same plain 반죽.
 //
 // It moves like Ash, and that is not decoration — it is the same rule doing two
 // jobs. Milled flour is the lightest ordinary powder here after Ash itself, so it
@@ -74,25 +80,38 @@ const CHAR_TEMP = 260;
  *  visible moment instead of vanishing in one frame. */
 const CHAR_CHANCE = 0.06;
 
-/** Per-tick, per-contact chance a grain and the Water cell it touches turn into
- *  two cells of Batter. Low enough that a bowl of flour and water visibly works
- *  itself into dough from the interface outward rather than flashing over. */
+/** Per-tick, per-contact chance a grain and the hydrating liquid cell it touches
+ *  turn into two cells of Batter. Low enough that a bowl of flour and water
+ *  visibly works itself into dough from the interface outward rather than
+ *  flashing over. */
 const HYDRATE_CHANCE = 0.14;
 
+/** The three liquids that hydrate flour into dough: plain Water, and Saltwater
+ *  and Sugar Water, which are just Water with a solute dissolved in — see the
+ *  module note. All three produce the same plain Batter (see `tryHydrate`); the
+ *  dissolved salt or sugar goes wherever the rest of the liquid cell goes and is
+ *  not carried into the dough. */
+const HYDRATING_LIQUIDS: ReadonlySet<number> = new Set([WATER.id, SALTWATER.id, SUGAR_WATER.id]);
+
 /**
- * 밀가루 + 물 → 반죽. One cell of each becomes two cells of Batter, so the dough
- * conserves exactly what went into it.
+ * 밀가루 + 물/소금물/설탕물 → 반죽. One cell of a hydrating liquid becomes two
+ * cells of Batter along with the flour grain, so the dough conserves exactly
+ * what went into it.
  *
  * This is a plain two-body swap and it *was* a `reactions` table row, which is
  * where a rule this shape belongs — but the table cannot do the one thing this
  * one needs. `applyReaction` transforms both cells with `sim.set`, and `set`
- * deliberately **keeps a cell's `aux`** (see SimContext.set). Water is a
- * conductor and parks its post-spark refractory countdown in exactly that byte
- * while still being Water (water.ts), so a pool that has had a Spark through it
- * hands 1-3 straight to the fresh dough — and Batter reads its low three aux bits
- * as the leaven level. Dough next to a live wire came out **pre-risen**, at up to
- * the very level baking soda gives, with nothing having been added to it
- * (measured: 17 of 34 cells born at level 2-3).
+ * deliberately **keeps a cell's `aux`** (see SimContext.set). Water and
+ * Saltwater are both conductors and park their post-spark refractory countdown
+ * in exactly that byte while still being themselves (water.ts, saltwater.ts),
+ * so a pool that has had a Spark through it hands 1-3 straight to the fresh
+ * dough — and Batter reads its low three aux bits as the leaven level. Dough
+ * next to a live wire came out **pre-risen**, at up to the very level baking
+ * soda gives, with nothing having been added to it (measured: 17 of 34 cells
+ * born at level 2-3). Sugar Water is not conductive, so it never carried this
+ * particular problem, but the same clear-aux fix is applied uniformly to all
+ * three liquids rather than singled out by whether the source happens to be a
+ * conductor today.
  *
  * Nothing in the engine is wrong here — two materials simply disagree about what
  * that byte means, and the reaction table has no way to say "and the product
@@ -105,7 +124,7 @@ function tryHydrate(x: number, y: number, sim: SimContext): boolean {
     const nx = x + dx;
     const ny = y + dy;
     if (!sim.inBounds(nx, ny)) continue;
-    if (sim.get(nx, ny) !== WATER.id) continue;
+    if (!HYDRATING_LIQUIDS.has(sim.get(nx, ny))) continue;
     // A partner already written or moved this tick is ineligible until the next
     // one — the same guard `reactions.ts` puts ahead of every table rule, kept
     // here because moving a rule out of the table must not quietly drop the
@@ -190,8 +209,8 @@ export const FLOUR = register({
   overlapFluids: [],
   liquidOverlap: 0,
   thermal: { conductivity: 0.25 },
-  // 밀가루 + 물 → 반죽 lives in `update` (`tryHydrate`) rather than in a
-  // `reactions` row, because the product needs its `aux` cleared and the
+  // 밀가루 + 물/소금물/설탕물 → 반죽 lives in `update` (`tryHydrate`) rather than
+  // in a `reactions` row, because the product needs its `aux` cleared and the
   // reaction table has no way to say that. See the note on `tryHydrate`.
   update: updateFlour,
 });
