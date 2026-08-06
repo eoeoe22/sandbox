@@ -571,9 +571,9 @@ console.log('— 고기 (Meat) —');
     // slack is deliberate: three scenes were inserted ahead of this one, and this
     // file shares one seeded RNG stream, so a scene added or retuned anywhere
     // above here shifts every roll below it. A check whose margin is one cell
-    // would then fail for a reason that has nothing to do with the meat. (Actual
-    // at this seed: 2 of 64, all of them corner cells the flame wraps around on
-    // two sides — which is what a steak in a fire should look like.)
+    // would then fail for a reason that has nothing to do with the meat. Any
+    // number quoted here would itself go stale for the same reason, so there
+    // isn't one — run the file if you want to know where it currently sits.
     '불 속에 5초를 둬도 고기는 익고, 타는 건 가장자리뿐이다 (직화구이)',
     count(grid, COOKED_MEAT.id) > cut * 0.8 && count(grid, BURNT_MEAT.id) < cut * 0.15,
     `${count(grid, COOKED_MEAT.id)}/${cut} cooked, ${count(grid, BURNT_MEAT.id)} burnt`,
