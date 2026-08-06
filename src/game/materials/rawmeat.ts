@@ -3,7 +3,7 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { tryPhaseChange } from './phasechange';
-import { COOK_TEMP, DRY_MASK, dryStep } from './meat';
+import { COOK_TEMP, DRY_MASK, SPOIL_SHIFT, dryStep } from './meat';
 import { COOKED_MEAT } from './cookedmeat';
 import { spoilStep } from './spoil';
 import { SPOILED_FOOD } from './spoiledfood';
@@ -71,12 +71,14 @@ export const RAW_MEAT = register({
   thermal: { conductivity: 0.3 },
   phaseChange: { at: () => COOK_TEMP, when: 'atOrAbove', into: () => COOKED_MEAT.id },
   // 부패 — the fastest-spoiling thing in the palette, which is what raw meat
-  // should be. `auxShift: 3` clears the dryness counter in bits 0-2 (meat.ts),
-  // and `dryMask` points at that same counter so a cut that has been dried out
-  // stops rotting: 육포. Cooking is the other way out — 익은 고기 rots slower.
+  // should be. The shift is the meat chain's shared one (meat.ts `SPOIL_SHIFT`,
+  // which documents the whole three-material word and why bit 3 is not ours to
+  // take), and `dryMask` points at the dryness counter so a cut that has been
+  // dried out stops rotting: 육포. Cooking is the other way out — 익은 고기 rots
+  // slower, and carries this counter across with it.
   spoil: {
     seconds: 60,
-    auxShift: 3,
+    auxShift: SPOIL_SHIFT,
     dryMask: DRY_MASK,
     into: () => SPOILED_FOOD.id,
   },

@@ -86,6 +86,38 @@ export const BOIL_PLATEAU = 110;
 export const DRY_MAX = 7;
 export const DRY_MASK = 0b111;
 
+/**
+ * 고기 사슬의 `aux` 워드 — **세 물질이 한 워드를 나눠 쓴다**, and this is the only
+ * place that says so.
+ *
+ *   bits 0-2  건조 카운터 (DRY_MASK, above) — 생고기·익은 고기가 쓰고,
+ *             탄 고기는 물려받되 읽지 않는다.
+ *   bit  3    탄 고기의 "붙었음" 비트 (burntmeat.ts `LIT_BIT`).
+ *   bits 4-6  부패 카운터 (SPOIL_SHIFT, below) — 생고기·익은 고기.
+ *
+ * The chain hands the whole word down twice, both times through `sim.set`, which
+ * preserves aux by contract: 생고기 → 익은 고기 (`tryPhaseChange`) and 익은 고기 →
+ * 탄 고기 (cookedmeat.ts). So a bit is not free just because *this* material does
+ * not use it — it has to be free in every material downstream too.
+ *
+ * That is not hypothetical. The spoilage counter first went in at shift 3, which
+ * is clean against everything 생고기 and 익은 고기 themselves own (the ramp reads
+ * `aux % 8`, so bits ≥3 are invisible to it) — and it landed exactly on 탄 고기's
+ * `LIT_BIT`. A cut that had rotted to any *odd* stage before being charred
+ * arrived pre-lit, and `tryFlameOnlyBurn` treats a lit cell as already burning:
+ * past 350° it goes straight to `burnStep` without ever checking for an adjacent
+ * flame. Measured: such a cell in a 900° box with **no flame anywhere on the
+ * grid** burned itself to nothing in 73 ticks, while the same cell with the bit
+ * clear sat there indefinitely. That is precisely the failure `flameOnly` exists
+ * to prevent (see combustion.ts) — reintroduced from the far side of the chain by
+ * a field that never touches that material.
+ *
+ * 생고기 and 익은 고기 deliberately share this shift. The cook transition is
+ * aux-preserving, and a steak does not become fresh again by being cooked — the
+ * counter carrying over is the same continuity the dryness counter already has.
+ */
+export const SPOIL_SHIFT = 4;
+
 /** Per-tick drying chance at the cook point, plus what each 100° above it adds.
  *  Tuned off the pre-plateau temperature (see the module note). The first number
  *  sets the floor — how long a barely-warm cut lingers — and the second how much

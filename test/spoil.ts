@@ -37,6 +37,9 @@
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { getMaterial, allMaterials } from '../src/game/materials/registry';
+import { SPOIL_MASK } from '../src/game/materials/spoil';
+import { DRY_MASK } from '../src/game/materials/meat';
+import { BURNT_LIT_BIT } from '../src/game/materials/burntmeat';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -94,6 +97,9 @@ const DIRT = ID('Dirt');
 const SEED = ID('Seed');
 const PLANT = ID('Plant');
 const ASH = ID('Ash');
+
+/** The three bits a spoilage counter occupies, before it is shifted into place. */
+const SPOIL_FIELD = SPOIL_MASK;
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states its
  *  expectations in seconds and converts here. */
@@ -198,12 +204,77 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   // flickers — and the shifts are the one thing SpoilSpec can't derive.
   const overlaps = allMaterials()
     .filter((m) => m.spoil !== undefined && m.spoil.dryMask !== undefined)
-    .filter((m) => (m.spoil!.dryMask! & (0b111 << m.spoil!.auxShift)) !== 0)
+    .filter((m) => (m.spoil!.dryMask! & (SPOIL_FIELD << m.spoil!.auxShift)) !== 0)
     .map((m) => m.name);
   check(
     '부패 카운터가 같은 물질의 건조 카운터와 안 겹친다',
     overlaps.length === 0,
     overlaps.length ? `OVERLAP: ${overlaps.join(', ')}` : 'meat chain checked',
+  );
+
+  // …and clear of what the material it turns into parks there, which is the half
+  // the check above cannot see and the half that actually shipped a bug.
+  //
+  // `sim.set` preserves aux, so an aux-preserving transform hands the whole word
+  // to a material with its own conventions — and "bit 3 is free" can be true of
+  // 익은 고기 and false of the 탄 고기 it becomes. It was: the spoilage counter
+  // first went in at shift 3, landing on 탄 고기's alight bit, so a cut that had
+  // rotted to any odd stage arrived pre-lit and `tryFlameOnlyBurn` let it burn on
+  // radiant heat with no flame anywhere near it — the exact failure `flameOnly`
+  // exists to prevent, arriving from a material that never touches that code.
+  //
+  // There is no registry of "which bits does this material claim", so the edges
+  // are listed by hand. That is the honest form: each entry is a transform that
+  // preserves aux, and adding one is the moment to think about this.
+  const AUX_PRESERVING_EDGES: Array<{ from: number; to: number; bits: number; why: string }> = [
+    // 익은 고기 --(200° + 바싹 마름)--> 탄 고기, cookedmeat.ts's own `sim.set`.
+    { from: COOKED_MEAT, to: BURNT_MEAT, bits: BURNT_LIT_BIT, why: '탄 고기 alight 비트' },
+    // 생고기 --(70°)--> 익은 고기, via `tryPhaseChange`. The target's only aux
+    // users are the dryness counter and its own spoilage counter, and sharing the
+    // latter is deliberate (a steak is not made fresh by cooking), so what is
+    // checked is that the dryness counter is still clear.
+    { from: RAW_MEAT, to: COOKED_MEAT, bits: DRY_MASK, why: '익은 고기 건조 카운터' },
+  ];
+  const crossOverlaps = AUX_PRESERVING_EDGES.filter((e) => {
+    const spec = getMaterial(e.from).spoil;
+    return spec !== undefined && (e.bits & (SPOIL_FIELD << spec.auxShift)) !== 0;
+  });
+  check(
+    '부패 카운터가 **변한 뒤의** 물질이 쓰는 비트와도 안 겹친다',
+    crossOverlaps.length === 0,
+    crossOverlaps.length
+      ? `OVERLAP: ${crossOverlaps.map((e) => `${getMaterial(e.from).name} → ${e.why}`).join(', ')}`
+      : `${AUX_PRESERVING_EDGES.length} aux-preserving transforms checked`,
+  );
+}
+
+// ── 1b. 썩다 만 고기를 태워도 불이 붙지는 않는다 ─────────────────────────────
+// The behavioural half of the cross-material aux check above, and the scene that
+// would have caught the bug on its own.
+//
+// 탄 고기 is 직화 전용: radiant heat must never light it, however fierce, because
+// an oven cannot be cooler than the fire heating it (combustion.ts). A lit cell
+// skips that gate entirely, so a spoilage counter overlapping 탄 고기's alight bit
+// silently converted "rotted a bit first" into "ignites with no flame present".
+// Measured before the fix: gone in 73 ticks. The scene has no Fire cell in it at
+// all, which is what makes it an honest test of the gate.
+{
+  reseed();
+  const { grid, sim } = makeWorld();
+  fill(grid, 0, 24, 39, 26, STONE);
+  fill(grid, 12, 22, 27, 23, COOKED_MEAT);
+  // Bone dry (so it chars at once) and part-rotten — the odd stage is the point:
+  // at the old shift that single bit *was* 탄 고기's alight flag.
+  const spec = getMaterial(COOKED_MEAT).spoil!;
+  for (let y = 22; y <= 23; y++)
+    for (let x = 12; x <= 27; x++) grid.aux[grid.idx(x, y)] = DRY_MASK | (1 << spec.auxShift);
+  const before = count(grid, COOKED_MEAT);
+  run(sim, grid, 200, { x0: 11, y0: 21, x1: 28, y1: 24, t: 900 });
+  check(
+    '썩다 만 고기가 탄 고기가 돼도 불꽃 없이는 안 붙는다 (직화 전용 유지)',
+    count(grid, BURNT_MEAT) === before && count(grid, ASH) === 0,
+    `${count(grid, BURNT_MEAT)}/${before} 탄 고기 left at 900° with no flame, ` +
+      `${count(grid, ASH)} 재`,
   );
 }
 

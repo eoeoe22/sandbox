@@ -2,7 +2,7 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { CHAR_TEMP, DRY_MASK, DRY_MAX, dryStep } from './meat';
+import { CHAR_TEMP, DRY_MASK, DRY_MAX, SPOIL_SHIFT, dryStep } from './meat';
 import { BURNT_MEAT } from './burntmeat';
 import { spoilStep } from './spoil';
 import { SPOILED_FOOD } from './spoiledfood';
@@ -85,12 +85,17 @@ export const COOKED_MEAT = register({
   density: 1000,
   category: 'food',
   // 부패 — slower than raw, which is the point of cooking something you mean to
-  // keep. Same aux arrangement as 생고기 (bits 0-2 are the dryness counter it
-  // inherited, so the spoilage counter sits above it at 3-5) and the same 육포
-  // exemption, so a cut that dried out on a warm plate keeps indefinitely.
+  // keep, and the same 육포 exemption, so a cut that dried out on a warm plate
+  // keeps indefinitely. Same shift as 생고기 on purpose: the cook transition
+  // preserves aux, so the counter carries over rather than resetting.
+  //
+  // The shift is shared from meat.ts rather than written here because this
+  // material is the one that hands the word on to 탄 고기, and that material's
+  // "alight" bit has to stay clear of it — see the layout note there for what
+  // happened when it did not.
   spoil: {
     seconds: 110,
-    auxShift: 3,
+    auxShift: SPOIL_SHIFT,
     dryMask: DRY_MASK,
     into: () => SPOILED_FOOD.id,
   },
