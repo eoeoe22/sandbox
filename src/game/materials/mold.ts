@@ -356,9 +356,6 @@ export const MOLD = register({
   // material actually needs from this number.
   density: 1.9,
   category: 'life',
-  // 가루 shelf too: it is one, and someone looking for something to scatter finds
-  // it there.
-  alsoIn: ['powder'],
   // 흩뿌리기 — spores are scattered, not poured. A hand-painted patch reads as a
   // dusting rather than a solid green slab (see Material.placementDensity).
   placementDensity: 0.15,
