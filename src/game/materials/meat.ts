@@ -16,8 +16,8 @@ import { STEAM } from './steam';
 // The fix is the same thing that makes it possible in a real fire pit: **the
 // water in the meat has to boil off before the meat itself can get hot.** A cut
 // that still holds moisture pins its own temperature at a boiling plateau
-// (BOIL_PLATEAU) no matter how fierce the fire around it is, and vents the heat
-// it is being given as Steam. 110° is inside the 70-200° cooked band and nowhere
+// (BOIL_PLATEAU) no matter how fierce the fire around it is, and vents what it is
+// being given as Steam. 110° is inside the 70-200° cooked band and nowhere
 // near the char point, so a steak thrown straight into a bonfire sears, goes
 // brown, and then *sits there steaming* — cooked and holding — until it has
 // actually dried out.
@@ -34,7 +34,10 @@ import { STEAM } from './steam';
 // meat's own temperature does not move: a cut in open flame reads several
 // hundred degrees each tick and its face is char in about five seconds, while a
 // gentler source takes tens of seconds to run the counter out (measured on a
-// burner pinned straight onto the meat: 12s at 250°, 27s at 150°, 39s at 90°).
+// burner pinned straight onto the meat: order of 13s at 250°, 21s at 150°, 32s
+// at 90°, and a couple of minutes and up under the cook point. Those are
+// single-seed samples of a per-cell random counter, so they move by a few seconds
+// run to run — read them as the shape, not as constants).
 //
 // Drying out is *not* the same as charring, and a slow grill is safe for the
 // other reason: charring needs the counter empty **and** 200°, so a cut on a 150°
@@ -51,6 +54,10 @@ import { STEAM } from './steam';
 // 익은 고기 spends the rest of the counter visibly (see its `auxPalette`): it
 // darkens step by step from fresh brown toward char, so "이거 곧 탄다" is
 // something you can see coming rather than something that happens.
+//
+// The steam rides on the same counter and that is the point, not a shortcut: a
+// puff is *one unit of moisture leaving*, so what a cut can give off is bounded
+// by what it started with. Playtest caught this the hard way — see PUFF_CHANCE.
 
 /** 익는 온도. The real "cooked through" mark rather than boiling, so an ordinary
  *  hot plate — anything you can hold in the 70-200° band — is a working grill. */
@@ -83,15 +90,32 @@ const DRY_BASE = 0.01;
 const DRY_PER_100 = 0.012;
 
 /** 김이 오르기 시작하는 온도 — well under the cook point, so the steam starts
- *  before the colour turns and reads as a warning rather than an afterthought. */
+ *  before the colour turns and reads as a warning rather than an afterthought.
+ *  Below the cook point the counter still creeps, at DRY_BASE × WARM_DRY_SCALE —
+ *  meat left somewhere merely warm does dry out, it just takes a minute and a
+ *  half rather than a few seconds. That is what keeps the pre-cook wisp on the
+ *  same bounded budget as everything else (see `vent`). */
 const STEAM_TEMP = 45;
-/** Per-tick puff chance when merely warm. Low: a steak should wisp, not fog the
- *  room. */
-const WARM_STEAM_CHANCE = 0.04;
-/** …and when the moisture is actually boiling off at the plateau. Much higher,
- *  because this is the visible tell that the cut is spending the thing keeping
- *  it from burning — the hiss is the clock. */
-const BOIL_STEAM_CHANCE = 0.14;
+const WARM_DRY_SCALE = 0.25;
+
+/** Chance that a unit of moisture leaving actually shows up as a visible puff.
+ *
+ *  The important word is *a unit*: steam is emitted only when the dryness counter
+ *  advances, never per tick. That is the whole shape of this — a steak contains a
+ *  fixed amount of water, so the steam it can give off is `DRY_MAX` puffs per
+ *  cell and not one more, however long it sits there.
+ *
+ *  It did not start that way, and the bug is worth keeping written down because
+ *  it looked like a tuning number. Venting per tick while boiling made the total
+ *  proportional to **time** instead of to moisture, so a cut on a grill just kept
+ *  producing: a 48-cell steak reached **194 cells of water — four times its own
+ *  volume** — and was still climbing when the measurement stopped. No value of a
+ *  per-tick chance fixes that, because the quantity being unbounded is the
+ *  problem, not the rate. Tying the puff to the counter caps it by construction,
+ *  and it also makes the *rate* come out right for free: a fierce fire advances
+ *  the counter fast and hisses hard, a warm plate ticks it over now and then and
+ *  wisps. Same rule, both readings. */
+const PUFF_CHANCE = 0.15;
 
 /** Throw off a puff of Steam into any open neighbour. */
 function vent(x: number, y: number, sim: SimContext): void {
@@ -115,35 +139,41 @@ function vent(x: number, y: number, sim: SimContext): void {
  */
 export function dryStep(x: number, y: number, sim: SimContext): number {
   const aux = sim.getAux(x, y);
-  const dry = aux & DRY_MASK;
+  let dry = aux & DRY_MASK;
   const t = sim.getTemp(x, y);
-  if (t < STEAM_TEMP) return dry;
+  if (t < STEAM_TEMP || dry >= DRY_MAX) return dry;
 
-  // Is the cell actually boiling off water this tick? Both halves matter: below
-  // the plateau there is not enough heat to drive it, and at DRY_MAX there is
-  // nothing left to drive.
-  const boiling = t >= BOIL_PLATEAU && dry < DRY_MAX;
-  if (sim.chance(boiling ? BOIL_STEAM_CHANCE : WARM_STEAM_CHANCE)) vent(x, y, sim);
-
-  if (dry < DRY_MAX && t >= COOK_TEMP) {
-    // Read off the *pre-plateau* temperature — the one the fire is pushing this
-    // cell to, which the clamp below is about to take back. This is the only
-    // place the strength of the heat source still shows through, and it is what
-    // makes a bonfire faster than a warm plate and an outer cell faster than an
-    // inner one.
-    if (sim.chance(DRY_BASE + (DRY_PER_100 * (t - COOK_TEMP)) / 100)) {
-      const next = dry + 1;
-      sim.setAux(x, y, (aux & ~DRY_MASK) | next);
-      // Bone dry as of this tick: the plateau is over, and the cell keeps the
-      // heat it was already given so the char it is about to become arrives hot.
-      return next;
-    }
+  // Read off the *pre-plateau* temperature — the one the fire is pushing this
+  // cell to, which the clamp below is about to take back. This is the only place
+  // the strength of the heat source still shows through, and it is what makes a
+  // bonfire faster than a warm plate and an outer cell faster than an inner one.
+  // Under the cook point it only creeps: warm meat dries, slowly.
+  const rate =
+    t >= COOK_TEMP
+      ? DRY_BASE + (DRY_PER_100 * (t - COOK_TEMP)) / 100
+      : DRY_BASE * WARM_DRY_SCALE;
+  if (sim.chance(rate)) {
+    dry += 1;
+    sim.setAux(x, y, (aux & ~DRY_MASK) | dry);
+    // The one place steam comes from: a puff *is* a unit of moisture leaving, so
+    // the total a cut can give off is bounded by what it started with. See
+    // PUFF_CHANCE for what this replaced.
+    if (sim.chance(PUFF_CHANCE)) vent(x, y, sim);
+    // Bone dry as of this tick: the plateau is over, and the cell keeps the heat
+    // it was already given so the char it is about to become arrives hot. Note
+    // this is the ONLY path that skips the clamp below — a cell that merely
+    // advanced its counter is still wet and must still be held down. Returning
+    // early on every advance instead was a real regression while this was being
+    // written: the cell kept its full pre-clamp temperature for that tick, so a
+    // cut in a fire spiked to several hundred degrees on each drying tick and
+    // radiated that into its neighbours.
+    if (dry >= DRY_MAX) return dry;
   }
 
   // Latent heat: everything the fire put into this cell above the plateau went
   // into boiling water, not into the meat. Physically a heat sink, and bounded —
   // it only runs while the counter has room, so it can never hold a cut cold
   // forever.
-  if (boiling) sim.setTemp(x, y, BOIL_PLATEAU);
+  if (t >= BOIL_PLATEAU) sim.setTemp(x, y, BOIL_PLATEAU);
   return dry;
 }

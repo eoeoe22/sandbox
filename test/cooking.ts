@@ -61,6 +61,8 @@ import { BREAD } from '../src/game/materials/bread';
 import { RAW_MEAT } from '../src/game/materials/rawmeat';
 import { COOKED_MEAT } from '../src/game/materials/cookedmeat';
 import { BURNT_MEAT } from '../src/game/materials/burntmeat';
+import { DRY_MAX, DRY_MASK } from '../src/game/materials/meat';
+import { STEAM } from '../src/game/materials/steam';
 import { CORN_KERNEL } from '../src/game/materials/cornkernel';
 import { POPCORN } from '../src/game/materials/popcorn';
 import '../src/game/materials';
@@ -552,10 +554,16 @@ console.log('— 고기 (Meat) —');
       }
     sim.step();
   }
+  // Only cells that still hold water — those are the ones the plateau is holding.
+  // A cell that has finished drying is *supposed* to climb toward the fire, and
+  // sampling it here would make the mechanism working look like the mechanism
+  // failing (it did: an early version of this check caught a bone-dry cell at
+  // 193° and reported it as a plateau failure).
   let hottest = -Infinity;
   for (let y = 0; y < 40; y++)
     for (let x = 0; x < 40; x++)
-      if (grid.get(x, y) === COOKED_MEAT.id) hottest = Math.max(hottest, grid.getTemp(x, y));
+      if (grid.get(x, y) === COOKED_MEAT.id && (grid.getAux(x, y) & DRY_MASK) < DRY_MAX)
+        hottest = Math.max(hottest, grid.getTemp(x, y));
   check(
     // The char bound is 15% rather than something tight, and that is not the bar
     // being lowered — the material this replaced was **100% char by t=30**, so
@@ -573,7 +581,7 @@ console.log('— 고기 (Meat) —');
   check(
     '…수분이 끓으면서 고기를 110°에 붙잡아 두기 때문이다',
     Number.isFinite(hottest) && hottest <= 130,
-    `hottest cooked cell ${hottest.toFixed(0)}° in an 800° fire`,
+    `hottest still-moist cell ${hottest.toFixed(0)}° in an 800° fire`,
   );
 }
 
@@ -598,6 +606,48 @@ console.log('— 고기 (Meat) —');
     count(grid, BURNT_MEAT.id) + count(grid, ASH.id) > cut * 0.5,
     `${count(grid, BURNT_MEAT.id)} burnt + ${count(grid, ASH.id)} ash of ${cut}`,
   );
+}
+
+// 7d. 김은 고기가 가진 만큼만 나온다. A cut grilling inside a closed box, with
+//     every drop it gives off counted — nothing can drift off-screen and hide.
+//
+//     This is the scene for a bug that looked exactly like a tuning number and
+//     was not one. Steam used to be a per-tick chance while the cell was boiling,
+//     which made the total proportional to *how long it sat on the grill* rather
+//     than to how much water was in it — so a steak on a fire simply kept
+//     producing: 48 cells of meat made **194 cells of water, four times their own
+//     volume**, and were still climbing when the run ended. Lowering the chance
+//     would only have made it take longer to flood. A puff is one unit of the
+//     dryness counter now (meat.ts), so the ceiling is `DRY_MAX` puffs per cell
+//     by construction.
+//
+//     The assertion is therefore a *ratio against the meat*, not an absolute
+//     count: it fails for any rule whose output is unbounded in time, however
+//     gently it is tuned, and it cannot be satisfied by making the steam
+//     invisible either — the other half demands the cut visibly steamed at all.
+{
+  const { grid, sim } = makeWorld(60, 60);
+  floor(grid, 50);
+  const cut = block(grid, 22, 34, 46, 50, RAW_MEAT.id, 20);
+  let peakWet = 0;
+  let everSteamed = false;
+  for (let t = 0; t < 600; t++) {
+    for (let x = 20; x < 36; x++)
+      if (grid.get(x, 45) === 0) {
+        grid.set(x, 45, FIRE.id);
+        grid.setTemp(x, 45, 1000);
+      }
+    sim.step();
+    const wet = count(grid, STEAM.id) + count(grid, WATER.id);
+    if (count(grid, STEAM.id) > 0) everSteamed = true;
+    if (wet > peakWet) peakWet = wet;
+  }
+  check(
+    '고기를 구워도 제 부피만큼 물이 쏟아지지는 않는다',
+    peakWet < cut * 0.5,
+    `peak steam+water ${peakWet} from a ${cut}-cell cut (${(peakWet / cut).toFixed(2)}×)`,
+  );
+  check('…그래도 굽는 동안 김은 오른다', everSteamed);
 }
 
 // 8. …and the char is the only state that burns. Wet meat in a fire has to cook
