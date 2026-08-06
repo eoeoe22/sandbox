@@ -194,6 +194,38 @@ export interface SpoilSpec {
    * fermenting dough cannot be eaten out from under a rule that says it is kept.
    */
   keptWhile?: (x: number, y: number, sim: SimContext) => boolean;
+  /**
+   * 방치만으로 시계가 도는가 — whether this material rots with nothing at all
+   * beside it.
+   *
+   * The default is **no**: an ordinary food cell only advances while it is damp
+   * (물·수증기가 닿아 있다) or while 곰팡이 is touching it (spoil.ts `isRotting`).
+   * A loaf on a dry shelf keeps; the same loaf in a puddle, or with one spore on
+   * it, does not. That is the line the palette needed — 「썩는 것」이 곧 「가만히
+   * 둬도 사라지는 것」이면, 창고를 짓는 놀이가 성립하지 않는다.
+   *
+   * Two materials opt out of the gate, for two different reasons:
+   *   • **생고기** — the one food the player is *meant* to be unable to store. It
+   *     is where every colony in the world starts, so it also declares `spores`.
+   *   • **부패물** — its `spoil` step is 분해 into 퇴비, not rot: a heap has to
+   *     finish becoming soil on its own or the chain never terminates. It does
+   *     **not** declare `spores`.
+   */
+  spontaneous?: boolean;
+  /**
+   * 곰팡이 자연발생 — whether a cell past the spore stage grows a colony on itself
+   * (spoil.ts `MOLD_AT`, mold.ts `seedMold`).
+   *
+   * **생고기 alone declares it**, and that is the whole shape of the 부패 계통:
+   * 곰팡이 has exactly one origin in the world, and everything else it reaches, it
+   * reaches by creeping there. Without a single origin every food was its own
+   * outbreak and a pantry greyed over from the inside with nothing to blame.
+   *
+   * Deliberately separate from `spontaneous`: 부패물 needs the clock and must not
+   * seed spores (a 부패물 더미 becomes 퇴비, it does not become a mold farm), so
+   * one flag could not have said both.
+   */
+  spores?: boolean;
 }
 
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */

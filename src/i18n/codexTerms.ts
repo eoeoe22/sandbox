@@ -289,11 +289,31 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   perishable: {
     ko: {
       label: '썩는 것',
-      desc: '두고 보면 상해서 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
+      desc: '상하면 부패물이 됩니다. 다만 젖어 있거나(물·수증기가 닿아 있다) 곰팡이가 붙어 있어야 시계가 돌아, 마른 자리에 둔 것은 상하지 않습니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
     },
     en: {
       label: 'Perishable',
-      desc: 'Left alone it goes over and becomes spoiled food. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
+      desc: 'Goes over into spoiled food. The clock only runs while it is wet (water or steam against it) or while mold is touching it, so something kept somewhere dry does not spoil. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
+    },
+  },
+  rotsUnattended: {
+    ko: {
+      label: '그냥 둬도 썩음',
+      desc: '젖지 않아도, 곰팡이가 없어도 혼자 상합니다. 「썩는 것」의 예외라, 이것만은 마른 선반에 둬도 보관되지 않습니다.',
+    },
+    en: {
+      label: 'Rots unattended',
+      desc: 'Goes over on its own, with nothing wet against it and no mold on it. It is the exception to Perishable — a dry shelf will not keep this one.',
+    },
+  },
+  moldsItself: {
+    ko: {
+      label: '곰팡이가 저절로 핌',
+      desc: '충분히 상하면 그 자리에서 곰팡이가 피어 포자를 날립니다. 세상의 모든 곰팡이가 여기서 시작하고, 나머지 물질에는 곰팡이가 기어가서 닿아야 생깁니다.',
+    },
+    en: {
+      label: 'Grows its own mold',
+      desc: 'Once far enough gone it grows a colony on itself and puffs spores. Every mold in the world starts here — everything else has to be reached by mold creeping onto it.',
     },
   },
   driedKeeps: {

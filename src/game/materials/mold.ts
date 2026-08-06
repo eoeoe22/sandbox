@@ -219,6 +219,12 @@ function isRooted(x: number, y: number, sim: SimContext): boolean {
  * (spoil.ts) rather than by mold itself, because a colony has to *start* on
  * something that has gone over.
  *
+ * **In practice that means 생고기 and nothing else.** `spoilStep` only reaches here
+ * for a material declaring `SpoilSpec.spores`, and 생고기 is the only one — so the
+ * world has a single origin for mold and every other furred surface in it was
+ * reached by the creep below. 부패물 is pointedly not on that list: a heap of it
+ * becomes 퇴비, not a colony (spoiledfood.ts).
+ *
  * Deliberately does NOT require the target to have a support: a spore is a thing
  * that gets thrown into the air. If it lands against something it roots and films;
  * if not it drifts and settles somewhere else, which is the whole reason the

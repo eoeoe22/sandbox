@@ -85,6 +85,21 @@ export const TRAIT_SPECS: readonly TraitSpec[] = [
     fields: ['spoil.dryMask'],
     read: (m) => (m.spoil?.dryMask === undefined ? undefined : {}),
   },
+  // 방치만으로 시계가 도는가. The `perishable` card states the default — 물·수증기가
+  // 닿거나 곰팡이가 붙어야 시계가 돈다 — so these two are the exemptions to it, and
+  // they are cards rather than exclusions because they are exactly what a player
+  // has to know before deciding what a store room may hold. Two flags rather than
+  // one because 부패물 needs the first and must not have the second (spoil.ts).
+  {
+    key: 'rotsUnattended',
+    fields: ['spoil.spontaneous'],
+    read: (m) => (m.spoil?.spontaneous === true ? {} : undefined),
+  },
+  {
+    key: 'moldsItself',
+    fields: ['spoil.spores'],
+    read: (m) => (m.spoil?.spores === true ? {} : undefined),
+  },
 
   // --- 산 -----------------------------------------------------------------
   { key: 'acidResistant', fields: ['acidResistant'], read: flag('acidResistant') },
