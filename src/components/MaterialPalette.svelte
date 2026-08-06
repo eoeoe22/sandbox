@@ -614,9 +614,9 @@
     selected.set(CLONE.id);
     cloneTarget.set(id);
     tool.set('material');
-    // Supersedes the pending entry the two clicks under this double click left
-    // behind (one slot, latest wins — see recordRecentPickSoon): the gesture
-    // asked for a Clone, so a Clone is what the recent list should remember.
+    // Queues behind the two clicks that got here (see recordRecentPickSoon), so
+    // the whole gesture lands as one settled write: the double-clicked material
+    // *and* the Clone it asked for, in that order, with Clone most recent.
     recordRecentPickSoon(CLONE.id);
     closeFlyoutNow();
   }

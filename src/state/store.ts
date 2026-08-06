@@ -390,13 +390,25 @@ export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1)
 /** Advance the simulation by exactly one tick (used while paused). */
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
 
-/** Move a pick to the front of the recent list (deduped, capped). The single
- *  writer behind both `recordRecentPick` and `recordRecentPickSoon`. */
-const commitRecentPick = (pick: RecentPick): void => {
+/**
+ * Move each pick, oldest first, to the front of the recent list (deduped,
+ * capped) in **one** store write. The single writer behind both
+ * `recordRecentPick` and `recordRecentPickSoon`.
+ *
+ * Applying a run of picks in order is exactly equivalent to having applied them
+ * one at a time as they were made — that equivalence is the point, because it is
+ * what lets `recordRecentPickSoon` delay the write without changing what gets
+ * written (see there).
+ */
+const commitRecentPicks = (picks: readonly RecentPick[]): void => {
   const prev = $recentPicks.get();
-  if (prev[0] === pick) return; // already most-recent — no churn
-  const next = [pick, ...prev.filter((p) => p !== pick)].slice(0, RECENT_MATERIALS_MAX);
-  $recentPicks.set(next);
+  let next = prev;
+  for (const pick of picks) {
+    if (next[0] === pick) continue; // already most-recent — no churn
+    next = [pick, ...next.filter((p) => p !== pick)];
+  }
+  if (next === prev) return; // nothing moved
+  $recentPicks.set(next.slice(0, RECENT_MATERIALS_MAX));
 };
 
 /**
@@ -414,32 +426,54 @@ const commitRecentPick = (pick: RecentPick): void => {
  */
 export const RECENT_PICK_SETTLE_MS = 600;
 
-/** The pick waiting out `RECENT_PICK_SETTLE_MS`, and its timer. One slot, not a
- *  queue: a later pick during the window supersedes the earlier one rather than
- *  stacking behind it — a double click is *one* decision, and its second half
- *  (Clone) is the half that should land in the recent list. */
-let pendingPick: RecentPick | null = null;
+/**
+ * Picks waiting out `RECENT_PICK_SETTLE_MS`, oldest first, and the timer that
+ * lands them.
+ *
+ * A queue rather than a single latest-wins slot, because the window is a
+ * *stretch of time*, not a gesture: it catches a double click's own clicks
+ * (A, A, Clone — which is what it exists for), but it just as readily catches
+ * two unrelated picks made in quick succession while browsing the palette. A
+ * one-slot design silently dropped the earlier of those — pick Sand, pick Water
+ * within 600ms, and Sand never reached the recent list at all even though it was
+ * selected and paintable. Queueing keeps the list exactly what it would have
+ * been without the delay; only *when* it is written changes.
+ *
+ * Flushing on a newly-arrived *different* pick would be the other way to fix
+ * that, and it is wrong: the flush would reorder the strip under a pointer that
+ * is by then resting on the chip it just clicked — the original bug, one chip
+ * over.
+ */
+let pendingPicks: RecentPick[] = [];
 let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
-function flushPendingPick(): void {
+/**
+ * Land any queued picks now instead of when their timer comes due.
+ *
+ * Exported for the one caller that can't wait: settings persistence flushes
+ * before writing on `pagehide`/`visibilitychange`, since a tab closed inside the
+ * settle window would otherwise save a `$recentPicks` that never heard about the
+ * pick the user just made, and it would be gone on reload.
+ */
+export function flushRecentPicks(): void {
   if (pendingTimer === undefined) return;
   clearTimeout(pendingTimer);
   pendingTimer = undefined;
-  const p = pendingPick;
-  pendingPick = null;
-  if (p !== null) commitRecentPick(p);
+  const queued = pendingPicks;
+  pendingPicks = [];
+  commitRecentPicks(queued);
 }
 
 /**
  * Record that a material id or an object kind was just picked, moving it to the
  * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX) — right
  * now. Used by the 스포이드 (PointerPainter), which is a single, unambiguous
- * gesture with no double click to protect. Any still-pending debounced pick is
- * flushed first so the two land in the order they were made.
+ * gesture with no double click to protect. Any still-queued deferred picks are
+ * flushed first so everything lands in the order it was made.
  */
 export const recordRecentPick = (pick: RecentPick): void => {
-  flushPendingPick();
-  commitRecentPick(pick);
+  flushRecentPicks();
+  commitRecentPicks([pick]);
 };
 
 /**
@@ -448,9 +482,9 @@ export const recordRecentPick = (pick: RecentPick): void => {
  * Used by every palette chip (material, object, and the 더블클릭 Clone shortcut).
  */
 export const recordRecentPickSoon = (pick: RecentPick): void => {
-  pendingPick = pick;
+  pendingPicks.push(pick);
   clearTimeout(pendingTimer);
-  pendingTimer = setTimeout(flushPendingPick, RECENT_PICK_SETTLE_MS);
+  pendingTimer = setTimeout(flushRecentPicks, RECENT_PICK_SETTLE_MS);
 };
 
 /** Toggle a material id in the favorites list (star / unstar). */

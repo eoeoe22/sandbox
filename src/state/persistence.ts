@@ -18,6 +18,7 @@ import {
   $bottomDeadzone,
   $favorites,
   $recentPicks,
+  flushRecentPicks,
   OBJECT_KINDS,
   $heatRateMode,
   $heatAbsoluteRate,
@@ -371,6 +372,13 @@ export function initSettingsPersistence(): void {
     }, 200);
   };
   const flush = (): void => {
+    // A palette pick sits in a settle queue for RECENT_PICK_SETTLE_MS before it
+    // reaches `$recentPicks` (see store.recordRecentPickSoon) — so land it
+    // *first*, or a tab closed inside that window would save a recent list that
+    // never heard about the pick the user just made. This runs before the
+    // `timer === undefined` bail on purpose: the flush may itself be what puts
+    // a write on the schedule, via the `$recentPicks.listen(schedule)` below.
+    flushRecentPicks();
     if (timer === undefined) return;
     clearTimeout(timer);
     timer = undefined;
