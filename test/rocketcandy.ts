@@ -136,9 +136,17 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
     sim.step();
   }
   const made = count(grid, ROCKET_CANDY.id);
+  // 0.7 rather than "nearly all of it", and the slack is measured rather than
+  // guessed: this bed plateaus — the last stragglers are cells whose partner has
+  // already been taken, plus the melt that soaked into a grain and cooled there —
+  // and over eight seeds it lands anywhere in 89..101 of 120 (the same spread
+  // before and after the 저어 넣기 rule that scene 2.5 below pins). A gate at 0.8
+  // sits on the *mean* of that spread, i.e. it was a coin toss that happened to be
+  // landing heads; this one asks the question the scene is actually for — did the
+  // bulk of the bed convert — with room for the tail.
   check(
     '녹아 있는 캐러멜 + 초석은 로켓 캔디가 된다',
-    made > grains * 0.8,
+    made > grains * 0.7,
     `${made}/${grains} converted`,
   );
   // 1:1, both cells at once — the mix creates nothing out of nothing, which is
@@ -151,13 +159,17 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
   // (reactions.ts's applySoakedReaction). There the caramel's own half of the
   // reaction is a *powder*, which an overlap slot cannot hold, so it has to
   // surface — and a grain deep inside a packed bed occasionally has nowhere to
-  // surface into. Measured at one cell in 120 over this scene; the bound is set
-  // just wide enough to say "a rounding error", not "a leak".
+  // surface into. The half that is exact is the one that matters — `left <=
+  // grains`, nothing is created — and the leak bound below it is measured rather
+  // than aspirational: across nine seeds this scene loses 1..5 cells that way,
+  // both before and after 저어 넣기 (which soaks more of the melt and so sits at
+  // the top of that range). Six is therefore "a rounding error"; the leak this is
+  // really watching for lost 36 cells of 120.
   const soaked = countSoaked(grid, CARAMEL.id);
   const left = made + count(grid, CARAMEL.id) + soaked + count(grid, SALTPETER.id);
   check(
     '재료 두 칸이 캔디 두 칸이 된다 (질량 보존)',
-    left <= grains && left >= grains - 3,
+    left <= grains && left >= grains - 6,
     `${made} candy + ${count(grid, CARAMEL.id)}+${soaked} caramel + ${count(grid, SALTPETER.id)} niter = ${left} vs ${grains}`,
   );
 }
@@ -204,6 +216,72 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
   );
 }
 
+// 2.5. 양방향 — the recipe works whichever ingredient you pour onto which, and it
+//    is not a given, because the two directions are not the same problem. Dropping
+//    초석 into a caramel pool needs nothing from the material: the grain outweighs
+//    the melt (4.3 against 3.4) and a Powder may displace a Liquid, so gravity
+//    rains the grains through the pool and mixes it for free. Pouring the melt onto
+//    a niter *pile* has no such path — `SimContext.isDisplaceable` refuses every
+//    Powder, whatever it weighs, so a liquid can never displace a grain — and for a
+//    while this direction was simply broken: the flat seam converted in the first
+//    few ticks, the fresh candy stood between the two ingredients, and that was the
+//    end of it. caramel.ts's 저어 넣기 (stirIntoBed) is what answers it.
+//
+//    Two things are checked, and each catches a different way of losing it:
+//
+//      • 깊이. Candy exists strictly BELOW the row the two beds originally met on.
+//        This is the one that pins the actual bug rather than a quantity: while it
+//        was broken the deepest candy in the scene was *exactly* the seam row, on
+//        every seed, because nothing ever got any deeper. It is also the check that
+//        cannot be talked down by tuning a rate.
+//      • 대칭. The pour converts at least as much as the mirrored pool scene does.
+//        Before: 34 cells against the pool's 61. Now: 70..88 against 58..64 over
+//        eight seeds, i.e. the harder direction is, if anything, slightly ahead.
+//
+//    Both scenes start at ambient except for the melt, and neither is held at
+//    temperature — the pour has to do its mixing on the heat it arrives with, which
+//    is the whole bargain the material advertises through its colour ramp.
+{
+  const SEAM = 34;
+  /** A 20-wide stone basin: `bottom` filling rows SEAM..40, `top` above it. The
+   *  melt (whichever side it is) starts at 180°, the powder at ambient. */
+  function pour(caramelOnTop: boolean): { grid: Grid; sim: Simulation } {
+    const { grid, sim } = makeWorld(40, 44);
+    floor(grid, 40);
+    for (let y = 28; y < 40; y++) {
+      grid.set(9, y, STONE.id);
+      grid.set(30, y, STONE.id);
+    }
+    for (let y = 28; y < 40; y++)
+      for (let x = 10; x < 30; x++) {
+        const melt = y >= SEAM ? !caramelOnTop : caramelOnTop;
+        grid.set(x, y, melt ? CARAMEL.id : SALTPETER.id);
+        if (melt) grid.setTemp(x, y, 180);
+      }
+    for (let t = 0; t < 200; t++) sim.step();
+    return { grid, sim };
+  }
+
+  const poured = pour(true).grid;
+  let deepest = -1;
+  for (let y = 0; y < poured.height; y++)
+    for (let x = 0; x < poured.width; x++)
+      if (poured.get(x, y) === ROCKET_CANDY.id && y > deepest) deepest = y;
+  check(
+    '초석 더미에 부은 캐러멜은 접촉면 한 겹에서 멈추지 않는다',
+    deepest > SEAM,
+    `deepest candy row ${deepest}, seam ${SEAM}`,
+  );
+
+  const pourMade = count(poured, ROCKET_CANDY.id);
+  const poolMade = count(pour(false).grid, ROCKET_CANDY.id);
+  check(
+    '…그리고 반대 방향(캐러멜 웅덩이에 초석)만큼 배합된다',
+    pourMade >= poolMade * 0.8,
+    `${pourMade} poured-on-pile vs ${poolMade} dropped-in-pool`,
+  );
+}
+
 // 3. The deflagration front, measured. A 40-cell line lit at one end: the far
 //    end must catch in roughly 25-40 ticks — one to two cells per tick — and the
 //    bounds are checked on both sides on purpose.
@@ -219,7 +297,12 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
   const { grid, sim } = makeWorld(60, 40);
   floor(grid, 30);
   line(grid, 10, 10 + LEN, 29, ROCKET_CANDY.id);
-  grid.set(9, 29, FIRE.id);
+  // A small flame rather than one cell, for the reason spelled out in scene 5: a
+  // single Fire cell sometimes expires on its own first turn, before the scan
+  // reaches the grain beside it, and then the line simply never lights and the
+  // travel time reads as "never arrived" — a coin toss in front of the
+  // measurement, not part of it.
+  for (let y = 27; y < 30; y++) grid.set(9, y, FIRE.id);
 
   const farX = 10 + LEN - 1;
   let ticks = -1;
@@ -256,7 +339,7 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
   const s = makeWorld(60, 40);
   floor(s.grid, 30);
   line(s.grid, 10, 10 + LEN, 29, SUGAR.id);
-  s.grid.set(9, 29, FIRE.id);
+  for (let y = 27; y < 30; y++) s.grid.set(9, y, FIRE.id);
   let sugarTicks = -1;
   for (let t = 1; t <= 2000; t++) {
     s.sim.step();
@@ -309,7 +392,15 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
   const SIZE = 12;
   for (let y = 44 - SIZE; y < 44; y++) line(grid, 20, 20 + SIZE, y, ROCKET_CANDY.id);
   const grains = count(grid, ROCKET_CANDY.id);
-  grid.set(19, 43, FIRE.id);
+  // Three cells of flame against the pile's face rather than one, and it is a
+  // reproducibility fix rather than a bigger match: a single Fire cell rolls its
+  // own lifetime, and on an unlucky roll it expires on its very first turn —
+  // before the scan reaches the grain beside it, which therefore never sees an
+  // igniter and the pile just sits there. That is a real coin toss (it lands
+  // tails on ~1 seed in 5) and it made this scene fail or pass on unrelated edits
+  // *elsewhere in this file*, since every scene draws from one shared stream. A
+  // small flame can't all blink out at once: 8 seeds, 8 ignitions.
+  for (let y = 41; y < 44; y++) grid.set(19, y, FIRE.id);
 
   let peak = 0;
   for (let t = 0; t < 120; t++) {
@@ -359,10 +450,19 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
 {
   const { grid, sim } = makeWorld(60, 40);
   floor(grid, 30);
-  line(grid, 10, 30, 29, ROCKET_CANDY.id);
+  // The trail is laid right up against the charge, and lit with a small flame
+  // rather than a single cell — both for the same reason as scene 5's pile: what
+  // this scene is for is that a *burning candy grain* triggers the charge, and
+  // with a one-cell fuse gap and a one-cell match there were two separate coin
+  // tosses in front of that question (the match expiring on its first turn before
+  // the grain beside it is scanned; the flame lick failing to land in the gap
+  // before the front burns out). Both landed tails on 1 seed in 8, on unrelated
+  // edits elsewhere in this file. Abutted and lit properly: 8 seeds, 8 detonations.
+  line(grid, 10, 31, 29, ROCKET_CANDY.id);
+  for (let y = 27; y < 29; y++) grid.set(30, y, ROCKET_CANDY.id); // banked up the charge's face
   for (let y = 27; y < 30; y++) line(grid, 31, 36, y, GUNPOWDER.id);
   const charge = count(grid, GUNPOWDER.id);
-  grid.set(9, 29, FIRE.id);
+  for (let y = 27; y < 30; y++) grid.set(9, y, FIRE.id);
 
   for (let t = 0; t < 120; t++) sim.step();
   check(

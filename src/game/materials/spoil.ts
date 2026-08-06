@@ -5,7 +5,9 @@ import type { SpoilSpec } from '../engine/types';
 import { SALT } from './salt';
 import { ALCOHOL } from './alcohol';
 import { HONEY } from './honey';
-import { seedMold } from './mold';
+import { WATER } from './water';
+import { STEAM } from './steam';
+import { MOLD, seedMold } from './mold';
 
 // 부패 — the one implementation every rotting thing in the palette shares, the
 // way `combustion.ts` is the one implementation every fuel shares. A material
@@ -58,14 +60,69 @@ import { seedMold } from './mold';
 // the inside of any large body preserve itself for free — "큰 덩어리는 겉만
 // 썩는다" is a rule with no way to see it.
 //
+// ## 무엇이 시계를 돌리는가 (`isRotting`) — 방치는 그 자체로 아무것도 아니다
+//
+// 보존 above is the list of things that *stop* the clock. This is the other half,
+// added later and the more important one: **what has to be true for it to run at
+// all.** By default a food cell rots only while
+//
+//   • **젖어 있다** — 물 또는 수증기가 닿아 있거나 그 칸에 스며 있다, or
+//   • **곰팡이가 닿아 있다.**
+//
+// A dry loaf on a dry shelf keeps forever, and that is the point. The first
+// version had every food rot unattended, which made the palette's whole food half
+// an egg timer: anything you built with it dissolved while you were looking at
+// something else, and a store room — the obvious thing to build with food — was
+// a structure that deleted itself. 「썩는다」 has to be something the world does to
+// your food, not something food does.
+//
+// **생고기 is the single exception** (`SpoilSpec.spontaneous`), and 부패물 is the
+// second declaration of it — not an exception to the rule but a terminus: its
+// `spoil` step is 분해 into 퇴비 rather than rot, and a heap has to be able to
+// finish on its own or the chain never terminates.
+//
+// ## 곰팡이 자연발생도 같은 조건을 쓴다 (`SpoilSpec.spores`)
+//
+// 「시계가 도는 조건」 above and 「곰팡이가 피는 조건」 are deliberately the *same*
+// condition seen twice, because the player only has to learn one thing: **젖으면
+// 상하고, 젖으면 곰팡이가 핀다.** Past MOLD_AT a cell puffs spores into a
+// neighbouring cell, and whether it may do that at all is a three-way declaration
+// (engine/types.ts `SporeMode`):
+//
+//   • **젖었을 때만 (`'damp'`, the default)** — 대부분의 일반 식품. 빵·익은 고기·
+//     죽은 물고기·팝콘·옥수수알·반죽. Nothing declares it; it is what you get by
+//     saying nothing, which is right because a wet cell is already the only kind
+//     whose clock runs.
+//   • **마른 자리에서도 (`'always'`)** — 생고기뿐. That is the only thing left that
+//     makes a raw cut special: everything else needs the world to wet it first.
+//   • **절대 (`'never'`)** — 부패물뿐, and stated out loud rather than derived from
+//     `spontaneous`. A heap that puffed spores would send them creeping onto the
+//     next shelf, and mold contact starts *those* clocks — the exact failure this
+//     system removed, returning through the chain's own output. 부패물은 10.4초 뒤
+//     퇴비가 되는 종착점이지 곰팡이 농장이 아니다.
+//
+// An earlier round had `spores` as a boolean that only 생고기 set, so the world had
+// exactly one origin for mold — and the trouble with that, which a play test found
+// immediately, is that **젖은 빵에 곰팡이가 안 폈다.** Soaking a loaf ran its clock
+// and turned it into 부패물 with nothing to see on the way, which is the wrong
+// reading of what water does to bread. Wet food growing its own mold restores the
+// picture without giving up the property the gate bought: 마른 선반은 여전히 안전하다.
+//
 // ## 곰팡이가 전염 경로다
 //
 // The counter is invisible (it shares a word with ramps that are already spoken
-// for), so the warning is 곰팡이: past MOLD_AT a cell starts puffing spores into
-// the empty space around it (mold.ts), and mold **eats food outright** — an
-// adjacent food cell is converted to more mold. That is what makes "창고에 하나
-// 썩으면 다 썩는다" true without any food-to-food infection rule, and it is also
-// why mold drifting onto stone stays harmless: there is nothing there to eat.
+// for), so the warning is 곰팡이: past MOLD_AT a cell allowed to seed starts
+// puffing spores into the space around it (mold.ts), and mold **eats food
+// outright** — an adjacent food cell is converted to more mold. That is what makes
+// "창고에 하나 썩으면 다 썩는다" true without any food-to-food infection rule, and it
+// is also why mold drifting onto stone stays harmless: there is nothing there to
+// eat.
+//
+// Mold contact being a *clock* trigger and an *erosion* trigger is one mechanism
+// seen twice, and the order matters: a colony touching a fresh loaf starts that
+// loaf's counter, and only once the counter has climbed past MOLD_AT may the
+// colony eat it (`moldCanEat`). So mold never outruns the clock it is the visible
+// end of — it starts it.
 //
 // Erosion consults `isPreserved` below rather than doing its own test, so a
 // salted ham or a frozen loaf is not eaten either. 보존 has to mean 보존 against
@@ -127,11 +184,58 @@ function tempScale(t: number): number {
   return RATE_PEAK * Math.max(0, f);
 }
 
-/** 포자 — per-tick chance a sufficiently rotten cell puffs a spore into one of its
- *  empty neighbours. Low, because a *cell* rolls it and a body of food has many: a
- *  loaf furs over in a few seconds of game time while a single dropped crumb takes
- *  a while to grow anything at all. */
+/** 포자 — per-tick chance a sufficiently rotten cell that is allowed to seed
+ *  (`SpoilSpec.spores`) puffs one into a neighbouring cell. Low, because a *cell*
+ *  rolls it and a body of food has many: a cut furs over in a few seconds of game
+ *  time while a single dropped scrap takes a while to grow anything at all. */
 const SPORE_CHANCE = 0.02;
+
+/** `rotSources` bits — 젖었다 / 곰팡이가 닿았다. Returned together because both
+ *  answers come out of one pass over `DIR8` and both are wanted: the first decides
+ *  whether the clock runs *and* whether an ordinary food may seed its own mold,
+ *  the second only ever decides the clock. */
+const ROT_WET = 0b01;
+const ROT_MOLD = 0b10;
+
+/**
+ * 썩을 조건이 갖춰졌는가 — the gate described in the module note, for every
+ * material that does not declare `spontaneous`.
+ *
+ * Two ways in, both contact rules like 염장·담금 above, so the player learns one
+ * geometry for the whole system:
+ *
+ *   • **물·수증기** (`ROT_WET`) — touching the cell, or soaked into it. The 겹침
+ *     slot is checked because a powder buried in wet ground genuinely is wet (an
+ *     ear of corn in damp sand holds the water *in* its own cell, with no water
+ *     cell anywhere in `DIR8`), and "젖었나" must not depend on which of the two
+ *     places the engine happened to park the liquid.
+ *   • **곰팡이** (`ROT_MOLD`) — a colony against the cell. This is the transmission
+ *     path: mold starts somewhere, creeps, and wakes up whatever it reaches.
+ *
+ * The two are returned apart rather than as one boolean because 「젖었나」 is asked a
+ * second time, by the spore gate below: an ordinary food seeds mold **only while
+ * wet**, and a cell that is merely being touched by someone else's colony must not
+ * count as an origin of its own — it already has all the mold it needs next to it.
+ *
+ * `MOLD.id` is read at call time, never at module load, so the `mold ↔ spoil`
+ * import cycle stays safe for the same reason `seedMold` does — the binding is
+ * only dereferenced once both modules have finished evaluating.
+ */
+function rotSources(x: number, y: number, sim: SimContext): number {
+  let flags = 0;
+  const soaked = sim.getOverlay(x, y);
+  if (soaked === WATER.id || soaked === STEAM.id) flags |= ROT_WET;
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    const id = sim.get(nx, ny);
+    if (id === WATER.id || id === STEAM.id) flags |= ROT_WET;
+    else if (id === MOLD.id) flags |= ROT_MOLD;
+    if (flags === (ROT_WET | ROT_MOLD)) break;
+  }
+  return flags;
+}
 
 /** 소금·알콜·꿀 — 염장과 담금. Contact only (`DIR8`), never consumed: a salt
  *  crust or a honey jar is a condition the food is being kept in, not a reagent
@@ -217,15 +321,22 @@ export function moldCanEat(x: number, y: number, sim: SimContext, spec: SpoilSpe
  */
 export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
   if (isPreserved(x, y, sim, spec)) return false;
+  const sources = rotSources(x, y, sim);
+  // 방치는 그 자체로 아무것도 아니다 — 생고기와 부패물만 이 문을 그냥 지난다.
+  if (spec.spontaneous !== true && sources === 0) return false;
 
   const t = sim.getTemp(x, y);
   const aux = sim.getAux(x, y);
   const stage = spoilOf(aux, spec);
 
-  // 포자 — past the halfway mark the cell starts trying to grow a colony on
-  // itself. Before the counter advances, so the last stage before turning still
-  // gets its turn to seed.
-  if (stage >= MOLD_AT && sim.chance(SPORE_CHANCE)) seedMold(x, y, sim);
+  // 포자 — past the halfway mark a cell starts trying to grow a colony on itself,
+  // if its `SporeMode` lets it (engine/types.ts): 'always' for 생고기, 'damp' (the
+  // default, so most foods) only while the cell is actually wet, 'never' for 부패물.
+  // Before the counter advances, so the last stage before turning still gets its
+  // turn to seed.
+  const mode = spec.spores ?? 'damp';
+  const maySeed = mode === 'always' || (mode === 'damp' && (sources & ROT_WET) !== 0);
+  if (maySeed && stage >= MOLD_AT && sim.chance(SPORE_CHANCE)) seedMold(x, y, sim);
 
   // `SPOIL_MAX + 1`, not `SPOIL_MAX`: a cell needs seven successful rolls to climb
   // 0 → SPOIL_MAX and an eighth to actually turn, so dividing the declared time by

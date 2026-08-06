@@ -83,10 +83,21 @@ export const RAW_MEAT = register({
   // across but pointedly does not declare the exemption: cooking fills that same
   // counter on its own, so honouring it there made every grilled cut immortal
   // (cookedmeat.ts).
+  //
+  // **그리고 이 물질만 마른 자리에서 썩고, 이 물질만 마른 자리에서 곰팡이를 피운다.**
+  // Everything else that declares `spoil` needs 물·수증기가 닿거나 곰팡이가 붙어야
+  // 시계가 돈다 (spoil.ts `rotSources`), and every ordinary food seeds its own mold
+  // too — but only once the world has wet it (`spores` defaults to `'damp'`).
+  // 생고기 declares `spontaneous` and `spores: 'always'`, so it needs nothing from
+  // the world at all: a cut on a dry counter in a dry room still rots and still furs
+  // over. 「방치 시 곰팡이가 발생합니다」 is 154's codex line and no other material's,
+  // and these two declarations are the whole reason that is still true.
   spoil: {
     seconds: 150,
     auxShift: SPOIL_SHIFT,
     dryMask: DRY_MASK,
+    spontaneous: true,
+    spores: 'always',
     into: () => SPOILED_FOOD.id,
   },
   update: updateRawMeat,

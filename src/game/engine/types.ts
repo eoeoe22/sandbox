@@ -194,7 +194,61 @@ export interface SpoilSpec {
    * fermenting dough cannot be eaten out from under a rule that says it is kept.
    */
   keptWhile?: (x: number, y: number, sim: SimContext) => boolean;
+  /**
+   * 방치만으로 시계가 도는가 — whether this material rots with nothing at all
+   * beside it.
+   *
+   * The default is **no**: an ordinary food cell only advances while it is damp
+   * (물·수증기가 닿아 있다) or while 곰팡이 is touching it (spoil.ts `isRotting`).
+   * A loaf on a dry shelf keeps; the same loaf in a puddle, or with one spore on
+   * it, does not. That is the line the palette needed — 「썩는 것」이 곧 「가만히
+   * 둬도 사라지는 것」이면, 창고를 짓는 놀이가 성립하지 않는다.
+   *
+   * Two materials opt out of the gate, for two different reasons:
+   *   • **생고기** — the one food the player is *meant* to be unable to store. It
+   *     is also the only thing that furs over on a *dry* shelf, so it declares
+   *     `spores: 'always'`.
+   *   • **부패물** — its `spoil` step is 분해 into 퇴비, not rot: a heap has to
+   *     finish becoming soil on its own or the chain never terminates. It declares
+   *     `spores: 'never'`.
+   */
+  spontaneous?: boolean;
+  /**
+   * 곰팡이 자연발생 — when a cell past the spore stage (spoil.ts `MOLD_AT`) grows a
+   * colony on itself and puffs it into a neighbouring cell (mold.ts `seedMold`).
+   *
+   * Three states, because the answer genuinely has three cases and a boolean could
+   * only say two of them:
+   *
+   *   • **`'damp'` — the default, so an ordinary food gets it without declaring
+   *     anything.** 젖어 있으면(물·수증기가 닿아 있거나 스며 있으면) 곰팡이가 저절로
+   *     핀다. This is the ordinary way a player meets mold: leave bread in the rain,
+   *     drop a fish in a tank, steam a pot of corn and forget it. It costs nothing
+   *     to reach, because a damp cell is already the only kind whose clock runs at
+   *     all (`spontaneous` above), so 「젖으면 시계가 돈다」와 「젖으면 곰팡이가
+   *     핀다」는 같은 조건 하나다.
+   *   • **`'always'` — 마른 자리에서도 핀다. 생고기 alone.** That is the one thing
+   *     that makes raw meat special now: every other food needs the world to wet it
+   *     first, and a cut needs nothing. A dry pantry with a cut of raw meat in it is
+   *     still an outbreak with a single nameable origin.
+   *   • **`'never'` — 절대 안 핀다. 부패물 alone**, and it has to be said out loud
+   *     rather than derived. A 부패물 더미 that puffed spores would send them
+   *     creeping onto the next shelf, and mold contact starts *those* cells' clocks
+   *     — so the failure mode this system exists to remove (a store room that greys
+   *     over from the inside) would come back in through the chain's own output.
+   *     부패물 is a terminus: 10.4초 뒤 퇴비, and nothing else.
+   *
+   * Deliberately separate from `spontaneous`, and not derivable from it in either
+   * direction: 부패물 declares `spontaneous` and must not seed, 생고기 declares both,
+   * and every ordinary food declares neither yet still seeds once it is wet. The two
+   * fields answer different questions — 시계가 도는 조건 and 곰팡이가 피는 조건 — and
+   * the only material where they coincide is the one that opted into both.
+   */
+  spores?: SporeMode;
 }
+
+/** See `SpoilSpec.spores`. `undefined` means `'damp'`. */
+export type SporeMode = 'damp' | 'always' | 'never';
 
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */
 export enum Phase {

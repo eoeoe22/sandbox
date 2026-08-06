@@ -97,6 +97,217 @@ const CANDY_MIX_MAX_TEMP = CARBONIZE_TEMP;
  *  levels. */
 const FLOW_CHANCE = 0.12;
 
+/**
+ * 저어 넣기 — 초석 더미 위에 부은 용융 캐러멜이 더미 속으로 파고든다. This is the half of
+ * the recipe that decides whether it works *both* ways round, and it exists because
+ * the engine only ever handled one of them.
+ *
+ * Poured the easy way — 초석 dropped into a caramel pool — the mix needs no help at
+ * all: niter (4.3) outweighs the melt (3.4), and a Powder is allowed to displace a
+ * Liquid, so the grains rain down through the pool and every one of them ends up
+ * surrounded by caramel within a few ticks. Contact is renewed everywhere, for free,
+ * by ordinary gravity.
+ *
+ * The other way round there is no such path, and what blocks it is a flat engine
+ * rule rather than a density: `SimContext.isDisplaceable` answers **false for every
+ * Powder**, whatever it weighs, so a liquid may never displace a grain. A pour onto a
+ * pile therefore meets it along one flat seam and nowhere else — the seam converts in
+ * the first handful of ticks, the fresh candy stands between the two ingredients, and
+ * the mix is over. Measured before this existed: 38 cells of candy by tick 8 and not
+ * one more in the following 300, with 92 cells of still-molten caramel sitting on top
+ * of 180 cells of untouched niter. That is the whole of the 방향 비대칭 bug.
+ *
+ * The 겹침 (overlap) soak — this codebase's usual answer for a liquid that has to get
+ * into a powder bed (water into sand, water into a cement pile) — cannot carry the
+ * reaction, and it is worth writing down why so nobody re-tries it. A soaked fluid has
+ * **no temperature of its own**: it reads its host's, and `enterOverlay` averages the
+ * two on the way in, so a 180° melt entering a 20° grain is a ~100° pair the instant
+ * it is inside — set toffee, with the recipe's window shut. Tried and measured twice.
+ * Straight into the niter pile: 99 of 120 poured cells wicked all the way down to the
+ * floor and made two cells of candy more than doing nothing at all. Again later, as a
+ * deliberate `drawIntoOverlay` seep into the candy crust below (and once more with the
+ * entry averaging cancelled out, host temperature forced to the melt's, to rule the
+ * cooling out as the cause): the pour converted 340 and 348 cells against this rule's
+ * 618 over the same eight seeds, i.e. barely past the 326 of not getting through the
+ * crust at all. The soak is not merely cold, it is too thin a pipe — one occupant per
+ * cell, gated per grain by the 액체 겹침 계수 — to move a pour's worth of melt.
+ *
+ * So the melt goes in as a *primary cell*, and by a swap, because a swap is exactly
+ * what carries the thing the soak loses — `SimContext.swap` moves each cell's
+ * temperature with it, so the melt arrives deeper still molten and still inside the
+ * window.
+ *
+ * **What it trades with is 초석 and only 초석**, and that is the whole shape of the
+ * rule. The melt is not trying to move the bed; it is trying to reach the one thing in
+ * it it can still react with. 로켓 캔디 is finished goods — it has nothing left to give
+ * the melt — so it is never picked up, never lifted, never sorted. It is passed
+ * *through*: 스며들기 below walks straight down along gravity through up to MAX_SEEP
+ * rows of the candy this pour has already made and trades with the first live grain of
+ * niter under them. The candy does not move at all; what the player sees is the pour
+ * seeping down into the crust it just made and reappearing beneath it.
+ *
+ * (An earlier version of this rule counted 로켓 캔디 as bed too and traded with it like
+ * any grain. It measured well and looked wrong, which is the only way that bug could
+ * have survived: over the eight-seed pour scene it lifted already-made candy 1302
+ * times against just 83 lifts of live niter, so what the player actually watched was
+ * the finished propellant — denser than the melt at 4.0 against 3.4, and so with no
+ * business going anywhere but down — being churned up out of the pour over and over.
+ * Letting it stand still instead costs nothing and pays: 618 cells converted against
+ * 589, and the candy now settles a row *below* the melt on average (mean row 32.5
+ * against the melt's 31.5) where before the two sat level.)
+ *
+ * 접기 (the fold) is what makes the trade more than a one-row dent, and it applies to
+ * the niter grain the melt swapped with. A plain trade leaves that grain resting
+ * directly on the melt that displaced it, and it simply sinks back through on its next
+ * turn: the pair churns in place, the front cools, and the pour stalls two rows in
+ * (measured: 49 cells of candy against the easy direction's 87 in the same scene).
+ * Instead the grain is carried to the TOP of the molten column above and the whole
+ * column slides down one row to fill the gap — one bulk motion, nothing created or
+ * destroyed, the same shape as the engine's own column shifts. From there gravity does
+ * the rest of the work and does it exactly the way the easy direction does: the grain
+ * is denser than the melt, so it sinks back down through the entire pour, warming as
+ * it goes and meeting fresh melt the whole way. The pour's heat gets *used* instead of
+ * being conducted away from a front that has already set, and the harder direction
+ * ends up slightly ahead of the easy one rather than a third of it.
+ *
+ * What the player sees is a pour that sinks into the pile while *niter* grains surface
+ * through it and the candy it has already made stays where it formed — mixing you
+ * watch, not a pile that flips. Same idiom as `diffuseMiscible` (behaviors.ts) and for
+ * the same reason: a pair with business together, stirred by an explicit swap because
+ * the movement layer's blanket density sort refuses to do it for them.
+ */
+const STIR_CHANCE = 0.35;
+/** How far up the fold reaches. A deep pour is stirred from its top; past this the
+ *  column is left alone, so one cell's turn stays O(a few) swaps however deep the
+ *  pour is. Well past the depth at which the melt's own heat runs out anyway. */
+const MAX_FOLD = 16;
+/** 스며들기 — how many rows of already-made 로켓 캔디 the melt may reach down through
+ *  to find live 초석 under them. The crust between a pour and the pile it is eating
+ *  into runs one to three rows thick in practice, so this is what it takes to keep the
+ *  mix going; much past it the melt would not be seeping through a skin any more, it
+ *  would be teleporting through a wall. Measured across the eight-seed pour scene the
+ *  return flattens right about here anyway — 588 cells converted at a reach of 2, 618
+ *  at 3, 645 at 6, 643 at 16. */
+const MAX_SEEP = 3;
+
+/** Either grain that can sit in the bed under a pour: live 초석, and the 로켓 캔디
+ *  already made out of it. Used only for the "am I under a pile rather than on top of
+ *  one?" guard below — what the melt actually trades places with is 초석 alone. */
+function isGrain(id: number): boolean {
+  return id === SALTPETER.id || id === ROCKET_CANDY.id;
+}
+
+/** One stirring step: straight along gravity first (which is the direction that may
+ *  seep through a crust — see seepToNiter), then the two diagonals to either side in
+ *  random order, like every other downward primitive here. Expressed through the
+ *  gravity vector rather than screen coordinates, so a pour mixes into the pile it is
+ *  resting on whichever way the world is tipped. */
+function stirIntoBed(x: number, y: number, sim: SimContext): boolean {
+  if (!sim.chance(STIR_CHANCE)) return false;
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  // Only from the top face of the bed — a cell with melt (or open air) above it. A
+  // melt cell that already has grains overhead is *inside* a mix, where gravity is
+  // stirring correctly on its own: every grain in there outweighs the melt and is
+  // working its way down through it. Digging there fights that instead of helping,
+  // sorting a pool into melt at the bottom with a raft of grains floating on top —
+  // measured as a real loss on the direction that already worked (91 → 77 cells of
+  // candy). So this fires only where the engine has nothing: the seam under a pour.
+  // Both grains count here even though only niter is ever traded with: candy overhead
+  // is just as much "I am buried in a pile" as niter overhead is.
+  if (sim.inBounds(x - gx, y - gy) && isGrain(sim.get(x - gx, y - gy))) return false;
+  // Perpendicular to gravity, sign picked 50/50 — the same "which side first" roll
+  // SimContext's own diagonal primitives make.
+  const s = sim.chance(0.5) ? 1 : -1;
+  const px = -gy * s;
+  const py = gx * s;
+  return (
+    seepToNiter(x, y, sim) ||
+    stirSwap(x, y, sim, x + gx + px, y + gy + py) ||
+    stirSwap(x, y, sim, x + gx - px, y + gy - py)
+  );
+}
+
+/** Straight down along gravity: trade with the first 초석 underneath, seeping past up
+ *  to MAX_SEEP rows of the 로켓 캔디 this pour has already made on the way (see the
+ *  header — the candy is finished goods and is left exactly where it is). Anything
+ *  that is neither ingredient stops the probe, so a set-toffee slab, a stone floor or
+ *  a pocket of air ends the reach rather than being tunnelled under. Only the straight
+ *  direction seeps; the diagonals take live niter or nothing, since a crust the melt
+ *  has to go sideways *and* through is a wall by any other name. */
+function seepToNiter(x: number, y: number, sim: SimContext): boolean {
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  for (let d = 1; d <= MAX_SEEP + 1; d++) {
+    const tx = x + gx * d;
+    const ty = y + gy * d;
+    if (!sim.inBounds(tx, ty)) return false;
+    const id = sim.get(tx, ty);
+    if (id === SALTPETER.id) return stirSwap(x, y, sim, tx, ty);
+    if (id !== ROCKET_CANDY.id) return false;
+  }
+  return false;
+}
+
+/** Trade this melt cell for the 초석 grain at (tx,ty) — which may be several rows down
+ *  if the melt seeped through its own candy to get there — and fold the grain up to
+ *  the top of the molten column above (see the header). A grain already written this
+ *  tick is left alone — the same moved-discipline every 2-body rule keeps. The column
+ *  above is moved without asking, the way the engine's own column shifts do: every
+ *  cell it touches is marked moved by `swap`, so nothing is processed twice after the
+ *  fact. */
+function stirSwap(x: number, y: number, sim: SimContext, tx: number, ty: number): boolean {
+  if (!sim.inBounds(tx, ty)) return false;
+  if (sim.get(tx, ty) !== SALTPETER.id || sim.hasMoved(tx, ty)) return false;
+  sim.swap(x, y, tx, ty); // melt goes into the bed; the grain takes (x,y)
+  // Walk against gravity along the contiguous run of *molten* caramel — a set slab
+  // stops the fold, so a hot pour on top of toffee still can't drag anything
+  // through it.
+  const gx = sim.gravityX;
+  const gy = sim.gravityY;
+  let n = 0;
+  while (
+    n < MAX_FOLD &&
+    sim.inBounds(x - gx * (n + 1), y - gy * (n + 1)) &&
+    sim.get(x - gx * (n + 1), y - gy * (n + 1)) === CARAMEL.id &&
+    sim.getTemp(x - gx * (n + 1), y - gy * (n + 1)) >= SET_TEMP
+  ) {
+    n++;
+  }
+  // Ripple the grain up to the top of that run, sliding every melt cell it passes
+  // one step down along gravity.
+  for (let i = 0; i < n; i++) {
+    sim.swap(x - gx * (i + 1), y - gy * (i + 1), x - gx * i, y - gy * i);
+  }
+  return true;
+}
+
+/**
+ * 스며든 캐러멜의 차례 — and the only thing it has to do is the material's oldest rule:
+ * 굳으면 멈춘다.
+ *
+ * The stirring above spends the melt's life *inside a powder bed*, which is exactly
+ * where the 겹침 (overlap) soak happens — a grain swallows the drop that has nowhere
+ * left to flow. That turned a chunk of every pour into 겹침 occupants (9 cells in the
+ * niter-pile scene before the stir, 21..31 with it — it peaked at 38 back when the
+ * stir also traded with its own candy), and a 겹침 occupant has no temperature of its
+ * own: it reads its host's, which is the cold pile. So the melt was set toffee the
+ * moment it was inside, yet went on percolating, because `SimContext.updateOverlay`
+ * knows nothing about `freeze` — it drained to the floor of the pile and sat there as
+ * invisible, inert, already-set caramel.
+ *
+ * Pinning it (markOverlayMoved — the same hold a powered Pump puts on the pores it
+ * can't lift) stops it exactly where it stopped being molten. Set toffee that a fire
+ * or a fresh pour reheats past SET_TEMP starts moving again on its own, the same way
+ * a set slab out on the grid does.
+ *
+ * Runs only when the declarative pass found nothing (SimContext.updateSoaked), so a
+ * grain of 초석 the melt can still react with is converted first and never held.
+ */
+function updateSoakedCaramel(x: number, y: number, sim: SimContext): void {
+  if (sim.getTemp(x, y) < SET_TEMP) sim.markOverlayMoved(x, y);
+}
+
 function updateCaramel(x: number, y: number, sim: SimContext): void {
   // Direct flame (or self-ignition past 300°) → burns as a sugary fuel.
   if (tryBurn(x, y, sim)) return;
@@ -122,6 +333,15 @@ function updateCaramel(x: number, y: number, sim: SimContext): void {
   // throttle and a high `viscosity`, and it pitted exactly like Slime and Honey
   // did (behaviors.ts's collapseVoidBelow).
   if (collapseVoidBelow(x, y, sim)) return;
+
+  // 초석 더미 속으로 파고들기 (그리고 이미 만든 캔디 사이로 스며들기) — outside the flow
+  // gate, like the void collapse above:
+  // FLOW_CHANCE is how sluggishly the melt *flows*, and this is not flowing, it is
+  // the mix (see stirIntoBed, which carries its own rate). Runs only inside the
+  // recipe's own window, and after the reaction pass has already had its go at
+  // this cell (Simulation.updateCell runs `reactions` before `update`), so a melt
+  // that could react where it stands does that rather than moving on.
+  if (t <= CANDY_MIX_MAX_TEMP && stirIntoBed(x, y, sim)) return;
 
   if (sim.chance(FLOW_CHANCE)) updateLiquid(x, y, sim);
 }
@@ -187,4 +407,7 @@ export const CARAMEL = register({
   // material can no longer sink through the slab.
   freeze: { temp: SET_TEMP },
   update: updateCaramel,
+  // …and the same rule for a cell of melt that has soaked into a grain, which
+  // `freeze` alone doesn't reach (see updateSoakedCaramel).
+  overlapUpdate: updateSoakedCaramel,
 });
