@@ -2,8 +2,10 @@ import { register } from './registry';
 import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
-import { CHAR_TEMP, DRY_MAX, dryStep } from './meat';
+import { CHAR_TEMP, DRY_MASK, DRY_MAX, dryStep } from './meat';
 import { BURNT_MEAT } from './burntmeat';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Cooked Meat (익은 고기) — the middle of the grilling line (see rawmeat.ts for
 // the whole chain), and the state you are actually trying to stop in. Raw Meat
@@ -54,6 +56,10 @@ const DRY_RAMP = [
 ] as const;
 
 function updateCookedMeat(x: number, y: number, sim: SimContext): void {
+  // 부패 — first, and only under 60°: a steak resting on the counter goes over,
+  // a steak on the grill does not (spoil.ts). Cooking bought it time, not
+  // immunity.
+  if (spoilStep(x, y, sim, COOKED_MEAT.spoil!)) return;
   // Steam, dry, and hold at the plateau — and hand back the dryness *after* this
   // tick, so a cut that finished drying just now can char on the same turn
   // rather than waiting for the next.
@@ -78,6 +84,16 @@ export const COOKED_MEAT = register({
   auxPalette: DRY_RAMP,
   density: 1000,
   category: 'food',
+  // 부패 — slower than raw, which is the point of cooking something you mean to
+  // keep. Same aux arrangement as 생고기 (bits 0-2 are the dryness counter it
+  // inherited, so the spoilage counter sits above it at 3-5) and the same 육포
+  // exemption, so a cut that dried out on a warm plate keeps indefinitely.
+  spoil: {
+    seconds: 110,
+    auxShift: 3,
+    dryMask: DRY_MASK,
+    into: () => SPOILED_FOOD.id,
+  },
   // Drier than raw, so it conducts a touch less — a cooked shell genuinely does
   // slow the heat reaching the middle.
   thermal: { conductivity: 0.25 },

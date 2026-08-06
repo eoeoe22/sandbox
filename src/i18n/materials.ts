@@ -244,4 +244,7 @@ export const materialNamesKo: Record<number, string> = {
   156: '탄 고기',
   157: '옥수수 알갱이',
   158: '팝콘',
+  159: '곰팡이',
+  160: '부패물',
+  161: '퇴비',
 };

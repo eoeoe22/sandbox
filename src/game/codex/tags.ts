@@ -63,6 +63,7 @@ const GROUPS: readonly { key: string; traits: readonly string[] }[] = [
       'fragile',
     ],
   },
+  { key: 'spoil', traits: ['perishable', 'driedKeeps'] },
   { key: 'mix', traits: ['miscible'] },
   {
     key: 'overlap',

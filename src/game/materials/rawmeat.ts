@@ -3,8 +3,10 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { tryPhaseChange } from './phasechange';
-import { COOK_TEMP, dryStep } from './meat';
+import { COOK_TEMP, DRY_MASK, dryStep } from './meat';
 import { COOKED_MEAT } from './cookedmeat';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Raw Meat (생고기) — the first of the three grilling states, and the material
 // that turns "how hot is this fire, actually" into something you can read off a
@@ -40,6 +42,10 @@ import { COOKED_MEAT } from './cookedmeat';
 // directly and skip the entire chain.
 
 function updateRawMeat(x: number, y: number, sim: SimContext): void {
+  // 부패 — before anything else, since a cut that has gone over is no longer a
+  // cut. Only runs under 60°, so meat anywhere near a grill is cooking rather
+  // than rotting and the two clocks never compete (spoil.ts).
+  if (spoilStep(x, y, sim, RAW_MEAT.spoil!)) return;
   // Steam, dry, and hold at the boiling plateau. First, so a cell that cooks
   // this tick has still wisped on its way there rather than turning silently —
   // and so the plateau is in place before the threshold below is consulted.
@@ -64,5 +70,15 @@ export const RAW_MEAT = register({
   // visible layers instead of all at once.
   thermal: { conductivity: 0.3 },
   phaseChange: { at: () => COOK_TEMP, when: 'atOrAbove', into: () => COOKED_MEAT.id },
+  // 부패 — the fastest-spoiling thing in the palette, which is what raw meat
+  // should be. `auxShift: 3` clears the dryness counter in bits 0-2 (meat.ts),
+  // and `dryMask` points at that same counter so a cut that has been dried out
+  // stops rotting: 육포. Cooking is the other way out — 익은 고기 rots slower.
+  spoil: {
+    seconds: 60,
+    auxShift: 3,
+    dryMask: DRY_MASK,
+    into: () => SPOILED_FOOD.id,
+  },
   update: updateRawMeat,
 });

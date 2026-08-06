@@ -275,6 +275,38 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Petroleum', desc: 'Part of the crude-oil family. It burns floating on water, and the water below never boils.' },
   },
 
+  // Stats · Traits — 부패
+  spoilTime: {
+    ko: {
+      label: '부패 시간',
+      desc: '상온(20℃)에서 다 썩는 데 걸리는 평균 시간입니다. 35℃ 부근에서 가장 빨라(두 배) 거기서 더 데우면 오히려 느려지다가 60℃에서 멎고, 추우면 느려집니다. 곰팡이가 붙은 자리는 세 배로 빨라집니다. 칸 하나 기준이라 큰 덩어리는 이보다 오래 걸립니다.',
+    },
+    en: {
+      label: 'Spoils in',
+      desc: 'Average time to rot through at room temperature (20°C). Fastest around 35°C (twice as fast); heat it further and it slows again, stopping at 60°C, and cold slows it too. Mold growing against a cell triples it. Measured per cell, so a large body takes longer than this.',
+    },
+  },
+  perishable: {
+    ko: {
+      label: '썩는 것',
+      desc: '두고 보면 상해서 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
+    },
+    en: {
+      label: 'Perishable',
+      desc: 'Left alone it goes over and becomes spoiled food. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
+    },
+  },
+  driedKeeps: {
+    ko: {
+      label: '말리면 안 썩음',
+      desc: '수분이 다 날아간 칸은 썩지 않습니다. 낮은 불에 오래 두어 바싹 말리면 그대로 보관할 수 있습니다 — 육포가 이것입니다.',
+    },
+    en: {
+      label: 'Keeps when dried',
+      desc: 'A cell with all its moisture boiled off does not rot. Hold it over a low heat until it is bone dry and it keeps as it is — this is what jerky is.',
+    },
+  },
+
   // Traits — acid
   acidResistant: {
     ko: { label: '내산성', desc: '어떤 부식성 물질도 이것을 녹이지 못합니다.' },

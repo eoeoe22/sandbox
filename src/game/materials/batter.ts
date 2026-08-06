@@ -8,6 +8,8 @@ import { SODA } from './soda';
 import { YEAST } from './yeast';
 import { CO2 } from './co2';
 import { BREAD, CRUST_AUX, CRUMB_AUX } from './bread';
+import { spoilStep, SPOIL_MASK } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Batter (반죽) — Flour hydrated by Water (flour.ts declares the reaction: one
 // cell of each makes two cells of dough, so nothing is created or lost). A
@@ -67,6 +69,11 @@ const BAKE_CHANCE = 0.08;
 const LEAVEN_MASK = 0b111;
 const CULTURED_BIT = 0b1000;
 const SODA_BIT = 0b10000;
+/** 부패 카운터는 그 위 셋(비트 5-7)이다 — the first thing in this material's aux
+ *  word that this file does not itself maintain (spoil.ts does). Named here as
+ *  well as in the `spoil` declaration because the aux rebuild at the bottom of
+ *  `updateBatter` has to know to carry it across. */
+const SPOIL_SHIFT = 5;
 /** Fully proofed. 7 is the largest value the three low bits hold, and the ramp
  *  below has exactly that many steps above plain. */
 const LEAVEN_MAX = 7;
@@ -234,6 +241,11 @@ function tryRise(x: number, y: number, sim: SimContext, leaven: number, temp: nu
 }
 
 function updateBatter(x: number, y: number, sim: SimContext): void {
+  // 부패 — wet flour goes over fast. Before `aux` is read below, not merely
+  // first: `spoilStep` writes the cell's aux when it advances the counter, so
+  // reading the word before it runs would hand the rest of this function a stale
+  // one and the write at the bottom would put the old counter straight back.
+  if (spoilStep(x, y, sim, BATTER.spoil!)) return;
   const aux = sim.getAux(x, y);
   const leaven = aux & LEAVEN_MASK;
   const t = sim.getTemp(x, y);
@@ -327,7 +339,14 @@ function updateBatter(x: number, y: number, sim: SimContext): void {
     }
   }
 
-  const nextAux = level | (cultured ? CULTURED_BIT : 0) | (soda ? SODA_BIT : 0);
+  // Rebuilt from the three things this function owns — and therefore the one
+  // place in the file that can silently erase anything else living in the word.
+  // The spoilage counter (bits 5-7, see the `spoil` declaration) is carried
+  // across explicitly. A field-by-field rebuild like this is the shape that
+  // breaks when someone adds a fourth thing to an aux word, so the mask is
+  // written in terms of the shift rather than as a literal.
+  const keep = aux & (SPOIL_MASK << SPOIL_SHIFT);
+  const nextAux = level | (cultured ? CULTURED_BIT : 0) | (soda ? SODA_BIT : 0) | keep;
   if (nextAux !== aux) sim.setAux(x, y, nextAux);
 
   // Thick and sluggish: `viscosity` holds a soft mound rather than levelling out.
@@ -360,6 +379,14 @@ export const BATTER = register({
   colorVary: 10,
   // 발효 진행도를 보여 주는 색 — see PROOF_RAMP.
   auxPalette: PROOF_RAMP,
+  // 부패 — wet flour at room temperature is the second-fastest spoiler here, and
+  // the only one where rotting competes with something the player actively wants
+  // (proofing). That is the tension: a long yeast rise doubles the loaf, and a
+  // long yeast rise is also long enough for the dough to be at risk. `auxShift`
+  // is 5 because bits 0-4 are already leaven + two agent flags — the tightest aux
+  // word in the roster, and the reason the rebuild above has to carry this
+  // across by hand.
+  spoil: { seconds: 80, auxShift: SPOIL_SHIFT, into: () => SPOILED_FOOD.id },
   thermal: { conductivity: 0.3 },
   update: updateBatter,
 });

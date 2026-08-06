@@ -126,6 +126,55 @@ export interface PhaseChange {
   into: () => MatId;
 }
 
+/**
+ * 부패 — the data half of the shared spoilage model (materials/spoil.ts). A
+ * material declaring this rots: a counter in its own `aux` word climbs while the
+ * cell is warm, unpreserved and undried, mold starts growing on it past the
+ * halfway mark, and at the top it becomes `into`.
+ *
+ * Only 식품과 사체 declare it, and that boundary is a design constraint rather
+ * than an oversight — see the module note in materials/spoil.ts. Structural
+ * organics (Wood, Sawdust, Plant) deliberately do not, so nothing anyone builds
+ * with can decay out from under them.
+ *
+ * Its presence is also the tag 곰팡이 reads to decide what counts as food
+ * (materials/mold.ts), so this is the single declaration of "이건 썩는 것이다".
+ */
+export interface SpoilSpec {
+  /** 상온(20°)에서 완전히 썩는 데 걸리는 평균 시간(초), at ×1 speed. Warmer is
+   *  proportionally faster and colder slower; see spoil.ts's rate note. Per
+   *  *cell*, like every other counter of this shape in the roster — a large body
+   *  finishes when its slowest cell does. */
+  seconds: number;
+  /**
+   * 이 물질의 `aux` 워드에서 부패 카운터가 차지할 비트 오프셋 (3비트를 쓴다).
+   *
+   * There is no safe default. Every food in the palette already spends the low
+   * bits of that word on something else — 고기 a dryness counter (bits 0-2), 빵 a
+   * crust bit and a lit bit, 반죽 a leaven level plus two agent flags, 죽은
+   * 물고기 a facing bit — and overlapping any of them is silent: the steak turns
+   * a different colour, or the loaf's crust flickers, or the corpse turns
+   * around. So each declaration states the shift explicitly, next to a comment
+   * naming what else lives in that word.
+   */
+  auxShift: number;
+  /** 다 썩으면 무엇이 되는가. A thunk for the reason `PhaseChange.into` is one —
+   *  the chain's links import each other and register literals are built during
+   *  module load. */
+  into: () => MatId;
+  /**
+   * 건조 면제 — if the material keeps a "how dry is this cell" counter elsewhere
+   * in the same `aux` word, the mask of it. A cell whose masked bits are all set
+   * is bone dry and does not rot: 육포.
+   *
+   * Only the meat chain declares it, and it costs nothing there because the
+   * counter already exists for a different reason (meat.ts's moisture model, the
+   * thing that makes 직화구이 possible). This field reads that work rather than
+   * duplicating it.
+   */
+  dryMask?: number;
+}
+
 /** Broad behavior category. Drives the default per-cell update and displacement rules. */
 export enum Phase {
   Empty,
@@ -470,6 +519,17 @@ export interface Material {
    * a second, drifting copy of a rule that lives somewhere else.
    */
   phaseChange?: PhaseChange;
+  /**
+   * 부패 — declares this material as something that rots (see SpoilSpec and
+   * materials/spoil.ts). Like `combustion`, the presence of the tag is half the
+   * meaning: 곰팡이 reads it to tell food from scenery, so this is the one place
+   * "이건 썩는 것이다" is stated.
+   *
+   * The behaviour is driven by the declaring material's own `update` calling
+   * `spoilStep` — it needs to run before that material's other rules and only
+   * that material knows where its `aux` has room.
+   */
+  spoil?: SpoilSpec;
   /** Marks the indestructible boundary material, distinct from ordinary Solids for the brush overwrite gate (see PointerPainter.ts). */
   isWall?: boolean;
   /**

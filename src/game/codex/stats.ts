@@ -130,6 +130,19 @@ export const STAT_SPECS: readonly StatSpec[] = [
     read: (m) => (m.combustion?.ashChance === undefined ? undefined : { value: m.combustion.ashChance }),
   },
 
+  // --- 부패 ---------------------------------------------------------------
+  // Seconds rather than ticks: this is a number the player plans a pantry around.
+  // It is the pace at room temperature and per *cell* — a big body finishes when
+  // its slowest cell does — which the term's own description says rather than the
+  // row, since every counter of this shape in the roster has the same caveat.
+  {
+    key: 'spoilTime',
+    unit: 'seconds',
+    fields: ['spoil.seconds', 'spoil.into'],
+    read: (m) =>
+      m.spoil === undefined ? undefined : { value: m.spoil.seconds, refId: m.spoil.into() },
+  },
+
   // --- 폭발 ---------------------------------------------------------------
   {
     key: 'blastRadius',

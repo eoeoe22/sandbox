@@ -3,6 +3,8 @@ import { Phase } from '../engine/types';
 import { rgb } from '../render/color';
 import type { SimContext } from '../engine/SimContext';
 import { tryFlameOnlyBurn } from './combustion';
+import { spoilStep } from './spoil';
+import { SPOILED_FOOD } from './spoiledfood';
 
 // Bread (빵) — what Batter becomes in an oven (batter.ts), and the end of the
 // 밀가루 → 반죽 → 빵 line. A rigid Solid like Wood: it just sits there, holds a
@@ -59,6 +61,10 @@ const ALIGHT_FLOOR = 300;
 const CRUST_RAMP = [rgb(166, 106, 50), rgb(238, 223, 189)] as const;
 
 function updateBread(x: number, y: number, sim: SimContext): void {
+  // 곰팡이 핀 빵 — the slowest spoiler in the palette, and the one everybody has
+  // actually seen go green. Runs first, and only under 60°, so a loaf in an oven
+  // is baking rather than rotting (spoil.ts).
+  if (spoilStep(x, y, sim, BREAD.spoil!)) return;
   // Radiant heat alone never lights it, however fierce the oven — only a flame
   // actually touching the loaf, or a neighbouring loaf already burning, does.
   // That rule is the whole reason an oven works at all, and it is shared with
@@ -96,6 +102,12 @@ export const BREAD = register({
   // Also on the 고체 shelf: it is a building block like Wood or Stone, and
   // someone stacking things up looks there.
   alsoIn: ['solid'],
+  // 부패 — the slowest of the five, because dry starch is, and because a loaf is
+  // the material most likely to be sitting in someone's build rather than in
+  // their pantry. `auxShift: 2` clears bit 0 (crust/crumb) and bit 1 (alight);
+  // no `dryMask`, since bread keeps no moisture counter — it is the meat chain
+  // alone that gets the 육포 exemption for free.
+  spoil: { seconds: 180, auxShift: 2, into: () => SPOILED_FOOD.id },
   thermal: { conductivity: 0.2 },
   update: updateBread,
 });
