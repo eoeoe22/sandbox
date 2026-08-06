@@ -32,8 +32,16 @@ import { STEAM } from './steam';
 // The rate is read off the temperature the cell is *being pushed to*, before the
 // plateau claws it back, so the fire's ferocity still matters even though the
 // meat's own temperature does not move: a cut in open flame reads several
-// hundred degrees each tick and dries in about five seconds, one on a 250° plate
-// takes closer to nine, and one held at 150° never dries enough to char at all.
+// hundred degrees each tick and its face is char in about five seconds, while a
+// gentler source takes tens of seconds to run the counter out (measured on a
+// burner pinned straight onto the meat: 12s at 250°, 27s at 150°, 39s at 90°).
+//
+// Drying out is *not* the same as charring, and a slow grill is safe for the
+// other reason: charring needs the counter empty **and** 200°, so a cut on a 150°
+// plate goes bone dry after half a minute and then simply sits there cooked,
+// forever. (It has spent its buffer, though — move that same dried cut into a
+// fire and it chars at once, with no plateau left to hold it.)
+//
 // That gradient is also what keeps a thick cut cooking in *layers* — the face
 // against the fire reads hot and dries first, while the cells behind it read
 // only their plateaued neighbours and stay wet — so a badly-grilled steak is
@@ -67,10 +75,10 @@ export const DRY_MAX = 7;
 export const DRY_MASK = 0b111;
 
 /** Per-tick drying chance at the cook point, plus what each 100° above it adds.
- *  Tuned off the pre-plateau temperature (see the module note), which lands at
- *  roughly: open flame ~5s to bone dry, 250° plate ~9s, 150° plate never in
- *  practice. The first number sets how long a barely-warm cut lingers, the
- *  second how much a fiercer fire is worth. */
+ *  Tuned off the pre-plateau temperature (see the module note). The first number
+ *  sets the floor — how long a barely-warm cut lingers — and the second how much
+ *  a fiercer heat source is worth: at the cook point the counter needs ~800 ticks
+ *  to run out, and every 100° above it buys a bit more than another 1% per tick. */
 const DRY_BASE = 0.01;
 const DRY_PER_100 = 0.012;
 

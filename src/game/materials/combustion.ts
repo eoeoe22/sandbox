@@ -388,6 +388,17 @@ function litNeighbor(x: number, y: number, sim: SimContext, litBit: number): boo
  * that has fallen under the floor is a cell whose fire is out, and the lit bit
  * has to go with it or the fuel would re-light itself out of the water every
  * tick. The codex hides the 발화점 stat for these and shows 직화 전용 instead.
+ *
+ * One thing this does NOT do, and cannot from here: `burnStep`'s neighbour pass
+ * above pins any adjacent cell that declares `combustion` to the burning cell's
+ * `burnTemp`, gated on the spec existing rather than on `flameOnly`. So a food
+ * sitting beside a burning (but not flaming) fuel — Coal embers, say — reads
+ * 800°+ on the thermometer while being stone cold as far as this function is
+ * concerned. The 직화 전용 guarantee is unaffected, because ignition here is
+ * decided by the aux bit and never by temperature; only the displayed number
+ * misleads. Left alone deliberately: that pass belongs to every fuel in the
+ * game, and special-casing it would change how ordinary fuels light each other
+ * to fix a cosmetic reading on three.
  */
 export function tryFlameOnlyBurn(
   x: number,
