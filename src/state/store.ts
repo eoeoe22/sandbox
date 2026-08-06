@@ -346,6 +346,23 @@ export const $recentPicks = atom<RecentPick[]>([]);
  */
 export const $snapshotFit = atom<SnapshotFit>(SNAPSHOT_FIT_DEFAULT);
 
+/**
+ * Which way a 방향성 물질 (Conveyor, Fan, Laser, Shaped Charge) would be stamped
+ * right now — the direction the current/last brush drag chose, published by
+ * PointerPainter and shown as a small arrow badge over the top-right of the play
+ * area (PlaceDirBadge). `null` whenever nothing directional is selected, which
+ * is what hides the badge.
+ *
+ * It exists for 영역 선택 mode above all: there the marquee drag is the only
+ * thing that sets the direction, and until the rect is confirmed there is
+ * nothing on the canvas to read it off — so without the badge, aiming a belt or
+ * a shaped charge inside a selection was guesswork. The plain brush shows it too
+ * (nothing is lost by it, and a click that reuses the *last* stroke's direction
+ * is exactly as invisible).
+ */
+export type PlaceDir = 'up' | 'down' | 'left' | 'right';
+export const $placeDir = atom<PlaceDir | null>(null);
+
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
@@ -374,17 +391,100 @@ export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1)
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
 
 /**
+ * Move each pick, oldest first, to the front of the recent list (deduped,
+ * capped) in **one** store write. The single writer behind both
+ * `recordRecentPick` and `recordRecentPickSoon`.
+ *
+ * Applying a run of picks in order is exactly equivalent to having applied them
+ * one at a time as they were made — that equivalence is the point, because it is
+ * what lets `recordRecentPickSoon` delay the write without changing what gets
+ * written (see there).
+ */
+const commitRecentPicks = (picks: readonly RecentPick[]): void => {
+  const prev = $recentPicks.get();
+  let next = prev;
+  for (const pick of picks) {
+    if (next[0] === pick) continue; // already most-recent — no churn
+    next = [pick, ...next.filter((p) => p !== pick)];
+  }
+  if (next === prev) return; // nothing moved
+  $recentPicks.set(next.slice(0, RECENT_MATERIALS_MAX));
+};
+
+/**
+ * How long a palette pick waits before it reorders the 빠른접근 strip.
+ *
+ * The strip is made of the chips you just used, so writing a pick straight
+ * through re-sorted the strip *under the pointer* on the first click of a
+ * double click — the chip moved to slot 1 and the second click landed on
+ * whichever chip was pushed into its place, so 물질 더블클릭 (the pre-latched
+ * Clone shortcut) could never fire from the strip at all. Deferring the reorder
+ * past the browser's own click/dblclick window makes the chip stand still for
+ * the whole gesture; the selection itself is never delayed, only the strip's
+ * re-sort. Comfortably longer than the palette's own PICK_CLOSE_DELAY (400ms)
+ * and than the platform double-click thresholds (~500ms) it has to outlast.
+ */
+export const RECENT_PICK_SETTLE_MS = 600;
+
+/**
+ * Picks waiting out `RECENT_PICK_SETTLE_MS`, oldest first, and the timer that
+ * lands them.
+ *
+ * A queue rather than a single latest-wins slot, because the window is a
+ * *stretch of time*, not a gesture: it catches a double click's own clicks
+ * (A, A, Clone — which is what it exists for), but it just as readily catches
+ * two unrelated picks made in quick succession while browsing the palette. A
+ * one-slot design silently dropped the earlier of those — pick Sand, pick Water
+ * within 600ms, and Sand never reached the recent list at all even though it was
+ * selected and paintable. Queueing keeps the list exactly what it would have
+ * been without the delay; only *when* it is written changes.
+ *
+ * Flushing on a newly-arrived *different* pick would be the other way to fix
+ * that, and it is wrong: the flush would reorder the strip under a pointer that
+ * is by then resting on the chip it just clicked — the original bug, one chip
+ * over.
+ */
+let pendingPicks: RecentPick[] = [];
+let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Land any queued picks now instead of when their timer comes due.
+ *
+ * Exported for the one caller that can't wait: settings persistence flushes
+ * before writing on `pagehide`/`visibilitychange`, since a tab closed inside the
+ * settle window would otherwise save a `$recentPicks` that never heard about the
+ * pick the user just made, and it would be gone on reload.
+ */
+export function flushRecentPicks(): void {
+  if (pendingTimer === undefined) return;
+  clearTimeout(pendingTimer);
+  pendingTimer = undefined;
+  const queued = pendingPicks;
+  pendingPicks = [];
+  commitRecentPicks(queued);
+}
+
+/**
  * Record that a material id or an object kind was just picked, moving it to the
- * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX). Called
- * from every palette pick — material chips and 독립 오브젝트 chips alike — so the
- * quick-access bar tracks everything the user actually paints, not just
- * materials.
+ * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX) — right
+ * now. Used by the 스포이드 (PointerPainter), which is a single, unambiguous
+ * gesture with no double click to protect. Any still-queued deferred picks are
+ * flushed first so everything lands in the order it was made.
  */
 export const recordRecentPick = (pick: RecentPick): void => {
-  const prev = $recentPicks.get();
-  if (prev[0] === pick) return; // already most-recent — no churn
-  const next = [pick, ...prev.filter((p) => p !== pick)].slice(0, RECENT_MATERIALS_MAX);
-  $recentPicks.set(next);
+  flushRecentPicks();
+  commitRecentPicks([pick]);
+};
+
+/**
+ * Same, but deferred by `RECENT_PICK_SETTLE_MS` so the palette's chips hold
+ * still long enough for a double click to complete on the one that was clicked.
+ * Used by every palette chip (material, object, and the 더블클릭 Clone shortcut).
+ */
+export const recordRecentPickSoon = (pick: RecentPick): void => {
+  pendingPicks.push(pick);
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(flushRecentPicks, RECENT_PICK_SETTLE_MS);
 };
 
 /** Toggle a material id in the favorites list (star / unstar). */

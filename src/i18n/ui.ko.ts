@@ -257,6 +257,15 @@ export const ko = {
     add: '물질 추가',
   },
 
+  // --- 배치 방향 배지 (방향성 물질) ---
+  placeDir: {
+    aria: '배치 방향 — {name}: {dir}',
+    up: '위',
+    down: '아래',
+    left: '왼쪽',
+    right: '오른쪽',
+  },
+
   // --- Inspect panel ---
   inspect: {
     brushInfo: '브러시 정보',

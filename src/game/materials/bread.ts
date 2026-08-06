@@ -87,6 +87,11 @@ export const BREAD = register({
   colorVary: 14,
   // Crust vs crumb, stamped once when the cell baked (see batter.ts).
   auxPalette: CRUST_RAMP,
+  // The palette icon draws this as a browned crust band over pale crumb
+  // rather than the generic bottom-to-top progress ramp other auxPalette
+  // materials get (Material.crustPattern, render/materialSvg.ts) — crust vs
+  // crumb is an inside/outside split, not a timeline.
+  crustPattern: true,
   density: 1000,
   // Dry starch: it catches slowly, like Wood, and burns down to a lot of ash —
   // a burnt loaf really is mostly char. `flameOnly` is the important one: see

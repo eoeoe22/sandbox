@@ -17,9 +17,10 @@ import {
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
+  $placeDir,
   recordRecentPick,
 } from '../../state/store';
-import type { ObjectKind } from '../../state/store';
+import type { ObjectKind, PlaceDir } from '../../state/store';
 import {
   BRUSH_MIN,
   BRUSH_MAX,
@@ -229,20 +230,28 @@ export class PointerPainter {
    *  erases, regardless of the selected material or active tool. Latched at
    *  pointerdown so it persists through moves and per-frame re-stamps. */
   private erasing = false;
-  /** Horizontal direction of the current brush drag (+1 right / −1 left), so a
-   *  Conveyor is placed running whichever way the stroke moved (좌우 정렬). Kept
+  /** Horizontal direction of the last pointer movement (+1 right / −1 left), so
+   *  a Conveyor is placed running whichever way the drag went (좌우 정렬). Kept
    *  between events; a pure click (no drag) uses the last direction, defaulting
-   *  right. */
+   *  right. Both the brush stroke and the 영역 marquee measure it against the
+   *  previous move's cell (`px`), never the press point. */
   private beltDirX = 1;
-  /** Grid cell where the current stroke was pressed down, so a Fan can be placed
-   *  blowing whichever of the four ways the stroke has moved from its start
-   *  (컨베이어처럼 배치 방향으로 바람 방향 — 상하좌우). */
+  /** Reference cell `updateFanDir` measures the drag against, so a Fan is placed
+   *  blowing whichever of the four ways the stroke moved (컨베이어처럼 배치 방향으로
+   *  바람 방향 — 상하좌우). A brush stroke leaves this at the press point, making
+   *  the direction the drag's cumulative heading; a 영역 marquee re-anchors it on
+   *  every move (see `onMove`), making the direction the *last* movement — a
+   *  marquee's press point is a corner, not an aim. */
   private fanStartX = 0;
   private fanStartY = 0;
   /** Blow direction the next-placed Fan cell records (FAN_* code). Derived from the
    *  stroke's cumulative drag from its press point; a pure click keeps the last
    *  direction, defaulting right. */
   private fanDir: number = FAN_RIGHT;
+  /** The previous pointer cell of the active gesture — the far end of the
+   *  Bresenham segment a brush stroke paints, and the reference both direction
+   *  readings measure the last movement against (see `beltDirX`). Tracked during
+   *  a 영역 marquee drag too, which paints nothing but still needs the direction. */
   private px = 0;
   private py = 0;
   /** The object currently being dragged in 보기(view) mode, or null. While set,
@@ -348,7 +357,15 @@ export class PointerPainter {
       // marquee's live retint here is the signal: it visibly turns from the
       // heat tint to the material tint before Enter is pressed.
       this.updateRectOverlay();
+      // A 가열/지우개/보기 brush isn't placing the selected material at all, so
+      // the 배치 방향 badge belongs to the material tool alone.
+      this.publishPlaceDir();
     });
+    // Picking a different material is what turns the 배치 방향 badge on and off
+    // (and switches a belt's ←/→ readout for a fan's 상하좌우) — publish the
+    // current direction for whatever is selected now.
+    $selectedMaterial.listen(() => this.publishPlaceDir());
+    this.publishPlaceDir();
     // Toggling 영역 select mode: retint the cursor (crosshair vs brush outline)
     // and cancel any marquee once it turns off — a selection is only
     // meaningful while the mode is active.
@@ -954,16 +971,75 @@ export class PointerPainter {
     this.paintCells(this.cellsInBounds(bounds), false);
   }
 
-  /** Update the Fan blow direction from the stroke's cumulative drag off its press
-   *  point (fanStartX/Y): the dominant axis wins, so a mostly-rightward drag blows
+  /** Update the Fan blow direction from the drag off the reference cell
+   *  (fanStartX/Y): the dominant axis wins, so a mostly-rightward drag blows
    *  right, a mostly-upward one blows up, etc. A zero drag (pure click) leaves the
-   *  last direction as-is. */
+   *  last direction as-is. What the reference *is* differs by gesture — the press
+   *  point for a brush stroke, the previous move for a 영역 marquee (see the
+   *  fanStartX field note) — so the same dominant-axis rule reads as "the drag's
+   *  heading" in one and "the last movement" in the other. */
   private updateFanDir(x: number, y: number): void {
     const dx = x - this.fanStartX;
     const dy = y - this.fanStartY;
     if (dx === 0 && dy === 0) return;
     if (Math.abs(dx) >= Math.abs(dy)) this.fanDir = dx > 0 ? FAN_RIGHT : FAN_LEFT;
     else this.fanDir = dy > 0 ? FAN_DOWN : FAN_UP;
+    this.publishPlaceDir();
+  }
+
+  /**
+   * Publish which way the selected 방향성 물질 would be stamped right now, for the
+   * arrow badge over the play area ($placeDir / PlaceDirBadge).
+   *
+   * Reads exactly what `paintCells` writes into `aux`, so the badge can't drift
+   * from what a stroke actually places: a Conveyor takes its 좌우 from
+   * `beltDirX`, a Fan/Laser/Shaped Charge its 상하좌우 from `fanDir`, and a
+   * Conveyor dragged vertically therefore still reads ← or → because that is
+   * genuinely all a belt records. Anything else — a non-directional material,
+   * the object tool, a 가열/지우개 brush that isn't placing the selection at all —
+   * publishes null, which hides the badge.
+   */
+  private publishPlaceDir(): void {
+    $placeDir.set(this.currentPlaceDir());
+  }
+
+  /**
+   * Whether a placement gesture is live right now — the badge's other gate,
+   * beside "is something directional selected".
+   *
+   * Selecting a Conveyor is not yet placing one, and a badge that sat in the
+   * corner from the moment of selection was just decoration hanging over the
+   * world for as long as the chip stayed picked. It earns the space only while
+   * the direction is being *set*, so it appears on press and leaves on release.
+   *
+   * A pending marquee counts (a deferred right-drag awaiting Enter): its
+   * direction is already decided but nothing is placed yet, which is precisely
+   * the case the badge was built for. A right-button *brush* press does not —
+   * that gesture erases (`erasing`), and an eraser places no direction. The
+   * marquee's right button means "defer", not "erase" (see `onDown`), so the
+   * rect states are checked before `erasing` is consulted at all.
+   */
+  private placingNow(): boolean {
+    if (this.rectDragging || this.rectPending) return true;
+    return this.down && !this.erasing;
+  }
+
+  private currentPlaceDir(): PlaceDir | null {
+    if (!this.placingNow()) return null;
+    if ($tool.get() !== 'material') return null;
+    const id = $selectedMaterial.get();
+    if (id === CONVEYOR.id) return this.beltDirX < 0 ? 'left' : 'right';
+    if (id !== FAN.id && id !== LASER.id && id !== SHAPED_CHARGE.id) return null;
+    switch (this.fanDir) {
+      case FAN_UP:
+        return 'up';
+      case FAN_DOWN:
+        return 'down';
+      case FAN_LEFT:
+        return 'left';
+      default:
+        return 'right';
+    }
   }
 
   /** Bresenham line so a quick drag paints a continuous stroke. */
@@ -1086,6 +1162,9 @@ export class PointerPainter {
       this.rectEY = y;
       this.down = false; // no continuous brush stamping
       this.updateRectOverlay();
+      // The marquee is now live, so the 배치 방향 badge has something to show
+      // (see placingNow) — it stays up until the rect is confirmed or cancelled.
+      this.publishPlaceDir();
       return;
     }
     // Object tool: drop exactly one ball per press (no continuous stroke).
@@ -1112,6 +1191,9 @@ export class PointerPainter {
     }
     this.stamp(x, y);
     this.paintedThisFrame = true;
+    // A brush press is under way — show the 배치 방향 badge for the direction
+    // this very stamp just used (see placingNow).
+    this.publishPlaceDir();
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -1126,8 +1208,24 @@ export class PointerPainter {
       const [x, y] = this.toCell(e);
       this.rectEX = x;
       this.rectEY = y;
-      if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      // 방향은 **마지막으로 움직인 방향**. A marquee's press point is a *corner*,
+      // not an aim: dragging out a wide rectangle means going right-and-down
+      // whatever direction you actually wanted the belt or the charge to face,
+      // so measuring from the corner made the rect's shape decide the
+      // direction. Measuring the last movement instead unties the two — size
+      // the rect however it needs to be, then flick the way you want it aimed
+      // before releasing, watching the badge (see PlaceDirBadge). Advancing the
+      // reference point to here on every move is what makes both readings
+      // per-move rather than cumulative.
+      if (x !== this.px) {
+        this.beltDirX = x > this.px ? 1 : -1;
+        this.publishPlaceDir();
+      }
       this.updateFanDir(x, y);
+      this.fanStartX = x;
+      this.fanStartY = y;
+      this.px = x;
+      this.py = y;
       this.updateRectOverlay();
       return;
     }
@@ -1138,7 +1236,10 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
     // runs the way the brush moved.
-    if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
+    if (x !== this.px) {
+      this.beltDirX = x > this.px ? 1 : -1;
+      this.publishPlaceDir();
+    }
     this.updateFanDir(x, y);
     this.stroke(this.px, this.py, x, y);
     this.paintedThisFrame = true;
@@ -1186,6 +1287,9 @@ export class PointerPainter {
       }
     }
     this.down = false;
+    // The gesture is over, so the 배치 방향 badge goes away — unless the release
+    // left a *pending* marquee behind, which placingNow() still counts.
+    this.publishPlaceDir();
   };
 
   private onEnter = (e: PointerEvent): void => {
@@ -1278,6 +1382,9 @@ export class PointerPainter {
     this.rectDragging = false;
     this.rectPending = false;
     this.rectEl.style.display = 'none';
+    // No marquee left to aim, so the 배치 방향 badge goes with it — this is the
+    // Escape / mode-off / confirmed-and-done path (see placingNow).
+    this.publishPlaceDir();
   }
 
   /** Key handler for 영역 select mode: Enter confirms, Escape cancels. Skips

@@ -1085,6 +1085,18 @@ export interface Material {
    */
   auxPalette?: readonly number[];
   /**
+   * Palette-icon hint for an `auxPalette` material whose aux marks a literal
+   * inside/outside split rather than a progression: draw a band of the
+   * palette's first entry across the top of the chip and fill the rest with
+   * its last entry, instead of the generic ramp-with-height the icon uses for
+   * progress materials (Seed, Cement, Cooked Meat, Batter). Bread is the only
+   * material that sets this — its aux is crust(0)/crumb(1), not a timeline, so
+   * a chip that reads "grows toward the top" would say the wrong thing. Purely
+   * a rendering hint; ignored if `auxPalette` is unset. See
+   * `render/materialSvg.ts`'s `CRUST_TOP_FRACTION`.
+   */
+  crustPattern?: boolean;
+  /**
    * Draw each *particle* in one of a fixed set of colors, picked by its own stable
    * `tint` byte (`tintPalette[tint % tintPalette.length]`) instead of the
    * material's `color` — so a pile of it is a speckle of genuinely different

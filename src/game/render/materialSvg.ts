@@ -111,6 +111,14 @@ const GLOW_ICON_FLOOR = 0.45;
  *  rather than as molten material. */
 const GLOW_ICON_MOTTLE = 0.09;
 
+/** Fraction of a `crustPattern` icon's height, measured down from the top, that
+ *  draws `auxPalette`'s first (outer/dark) entry rather than its last
+ *  (inner/light) one. Bread's crust is a thin browned skin around a pale
+ *  interior, not a progress ramp — so unlike the generic `auxPalette` branch
+ *  below, this is a hard band rather than a curve. 0.2 gives roughly the
+ *  loaf's real crust:crumb split, about 2:8 dark:light (see docs/MATERIAL-ICONS.md). */
+const CRUST_TOP_FRACTION = 0.2;
+
 /**
  * A gas draws as a solid-filled cloud silhouette rather than as a filled square.
  *
@@ -314,12 +322,20 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
     for (let x = 0; x < n; x++) {
       let c: number;
 
-      if (m.auxPalette) {
-        // Seed is the only palette-exposed material here. Its aux is germination
-        // progress (brown → green), and a fresh one is 0 — but a flat brown chip
-        // says "pebble", not "this grows". So the icon runs the ramp up the tile,
-        // squared so the lower two-thirds stay the dormant brown you actually
-        // place and only the crown greens up: a seed with a sprout on it.
+      if (m.crustPattern && m.auxPalette) {
+        // Bread: aux marks a literal inside/outside split (crust vs crumb), not
+        // a progress ramp like the materials below — so instead of climbing the
+        // ramp with tile height, the icon draws a thin browned crust band across
+        // the top and lets the pale crumb fill the rest (CRUST_TOP_FRACTION).
+        const idx = y < n * CRUST_TOP_FRACTION ? 0 : m.auxPalette.length - 1;
+        c = grain(m, m.auxPalette[idx], x, y);
+      } else if (m.auxPalette) {
+        // Seed, Cement, Cooked Meat and Batter land here. Their aux is a
+        // *progress* ramp (germination, curing, drying, proofing) and a fresh
+        // cell is 0 — but a flat chip at index 0 says "raw material", not "this
+        // changes over time". So the icon runs the ramp up the tile, squared so
+        // the lower two-thirds stay the starting tone and only the crown shows
+        // the far end of the ramp (a seed with a sprout on it, say).
         const p = (n - 1 - y) / (n - 1);
         const idx = Math.round(p * p * (m.auxPalette.length - 1));
         c = grain(m, m.auxPalette[idx % m.auxPalette.length], x, y);

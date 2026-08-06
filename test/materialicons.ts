@@ -1356,6 +1356,20 @@ checkThrows('Seed sprouts green at the top, dormant brown at the base', () => {
   check('Seed sprouts green at the top, dormant brown at the base', top > bot + 10, `${top | 0} vs ${bot | 0}`);
 });
 
+checkThrows('Bread caps a pale crumb with a dark crust band on top', () => {
+  const bread = byName('Bread');
+  const { grid: g, n } = raster(generatedSvgFor(bread));
+  const luminance = (c: string) =>
+    parseInt(c.slice(1, 3), 16) + parseInt(c.slice(3, 5), 16) + parseInt(c.slice(5, 7), 16);
+  const top = g.slice(0, n).reduce((a, c) => a + luminance(c), 0) / n;
+  const bot = g.slice(n * (n - 1)).reduce((a, c) => a + luminance(c), 0) / n;
+  check('Bread caps a pale crumb with a dark crust band on top', top < bot - 30, `${top | 0} vs ${bot | 0}`);
+  // Roughly the requested 2:8 dark:light split — loose bounds since CRUST_TOP_FRACTION
+  // rounds to whole cells on the 9-cell patch (2/9 ≈ 22%).
+  const darkFrac = g.filter((c) => luminance(c) < (top + bot) / 2).length / g.length;
+  check('Bread crust covers roughly a fifth of the chip', darkFrac > 0.1 && darkFrac < 0.35, `${(darkFrac * 100) | 0}%`);
+});
+
 Math.random = REAL_RANDOM;
 console.log(failures === 0 ? '\nAll material icon checks passed.' : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);
