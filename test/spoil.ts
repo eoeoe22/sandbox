@@ -1109,7 +1109,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
    *  the clock would otherwise be running. Hence the water, in both scenes.
    *
    *  A single layer, and dough on the *bottom*: 반죽 is a Liquid denser than Water
-   *  (3.2 vs 3), so it settles under the pool and stays put while every cell keeps
+   *  (batter.ts), so it settles under the pool and stays put while every cell keeps
    *  a wet neighbour overhead. A thick block would bury its own middle away from
    *  the water and turn the measurement into a question about geometry. */
   const trough = (): { grid: Grid; sim: Simulation } => {
