@@ -390,10 +390,95 @@ function fireAndDrain(grid: Grid, sim: Simulation, mx: number, my: number, dx: n
       const after = glassFamily(grid);
       check(
         withBeam
-          ? `…그리고 얇은 유리판 위에서 터져도(power ${power}) 빔이 앉은 칸을 못 가져간다 (전파 칸)`
+          ? `…그리고 얇은 유리판 위에서 터져도(power ${power}) 빔이 앉은 칸을 못 가져간다`
           : `대조군 — 얇은 유리판 위의 같은 폭발(power ${power})은 판을 온전히 남긴다`,
         after === before && parked,
         `유리족 ${before} → ${after}${parked ? '' : ' (빔이 판에 자리 잡지 못함)'}`,
+      );
+    }
+  }
+
+  // …and the GRAZING PROFILE, which is the only thing that can see the release the
+  // front does when it *looks at* a cell rather than when it resolves one.
+  //
+  // Counting glass can't: whichever way the front goes, the family total is the same
+  // (유리 → 깨진 유리 is a conversion, not a loss), and the resolve-time release
+  // silently backstops the look-time one for every count-based check. What differs is
+  // HOW DEEP the wall is disturbed. A beam parked in the wall's face course must
+  // shadow exactly like the glass it stands in for; unreleased, its Gas phase is not
+  // a blocker at all, so the front tunnels through that one cell and frosts the
+  // course behind it — the "빔 크기만 한 구멍" the two call sites exist to prevent.
+  //
+  // So the assertion is parity with the bare-glass control, column by column: with a
+  // beam in the face course the wall must come out of the blast in *exactly* the same
+  // state it does without one. That catches both releases — the crater flood's and
+  // the pressure ring's — and it is why the beam is placed by hand here rather than
+  // flown in: the check needs it in the face course specifically, not wherever the
+  // stride happens to put it.
+  {
+    const ROW = 20;
+    const X0 = 30;
+    const WALL_W = 8;
+    const profile = (withBeam: boolean, reach: number, gap: number): string => {
+      Math.random = mulberry32(3);
+      const grid = new Grid(W, H);
+      const sim = new Simulation(grid);
+      for (let y = 8; y < 32; y++)
+        for (let x = X0; x < X0 + WALL_W; x++) grid.cells[grid.idx(x, y)] = GLASS;
+      if (withBeam) {
+        const gi = grid.idx(X0, ROW);
+        grid.cells[gi] = HEAT_RAY.id;
+        grid.temp[gi] = 50 * 16 + (1 + 1) * 3 + (0 + 1); // packed: life 50, heading +x
+        grid.aux[gi] = GLASS; // …resting inside the pane it displaced
+      }
+      grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+      // Reach well past the wall face, so the crater flood genuinely *reaches* the
+      // beam. At a short reach the outward budget runs out at the face and the front
+      // never even looks at it — the cell is skipped as rim before the release, and
+      // the scene silently stops staging its own case.
+      detonate(sim.context, X0 - gap, ROW, 1, { soloSource: true, reach, power: 50 });
+      const cols: string[] = [];
+      for (let x = X0; x < X0 + WALL_W; x++) {
+        let intact = 0;
+        let crazed = 0;
+        for (let y = 8; y < 32; y++) {
+          const gi = grid.idx(x, y);
+          // An escrowed pane counts as the pane it is: otherwise a geometry the wave
+          // never reaches would "differ" merely because the beam is still sitting
+          // there, and the check would fail for the one reason it doesn't care about.
+          const c =
+            grid.cells[gi] === HEAT_RAY.id && grid.aux[gi] !== 0 ? grid.aux[gi] : grid.cells[gi];
+          if (c === GLASS) intact++;
+          else if (c === BROKEN_GLASS) crazed++;
+        }
+        cols.push(`${intact}/${crazed}`);
+      }
+      return cols.join(' ');
+    };
+    // Three geometries, because a detonation has THREE look-time reads that can meet
+    // a wall first, and each is a separate release the others silently cover for:
+    //   • reach 10, close — the CRATER flood arrives with budget to spare and looks
+    //     at the face course itself.
+    //   • reach 4, close — the flood's budget runs out in the air just short of the
+    //     wall (a cell skipped as rim is never even examined), so the PRESSURE RING's
+    //     SEEDING meets the face instead.
+    //   • reach 4, one cell further out — the ring seeds in open air and only reaches
+    //     the wall a step later, through its MAIN LOOP. One cell of extra standoff is
+    //     the whole difference between this and the case above.
+    // A beam parked in the face course has to be indistinguishable from glass to all
+    // three. Verified the hard way: each of the four release call sites in blast.ts
+    // was reverted one at a time, and each makes exactly one of these checks fail.
+    for (const [reach, gap, who] of [
+      [10, 3, '크레이터 전선'],
+      [4, 3, '압력파 씨앗'],
+      [4, 4, '압력파 전파'],
+    ] as ReadonlyArray<readonly [number, number, string]>) {
+      const control = profile(false, reach, gap);
+      const beamed = profile(true, reach, gap);
+      check(
+        `벽면에 앉은 빔은 유리와 똑같이 폭발을 가린다 — ${who} (reach ${reach}, 거리 ${gap})`,
+        beamed === control,
+        `대조군 ${control} / 빔 ${beamed}`,
       );
     }
   }

@@ -1008,7 +1008,13 @@ function pressureRing(
     if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
     const nidx = ny * w + nx;
     if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
-    const nid = sim.get(nx, ny);
+    // Release any pane a beam is standing in for before the shadow test, exactly as
+    // the main loop below does — this is the ring's *other* look-time read, and the
+    // one that matters when a short blast spends its outward budget in the air short
+    // of a wall: the crater front never looks at the face course at all (a cell
+    // skipped as rim is skipped before it is ever examined), so the ring meets it
+    // here first, and a beam left unreleased would let the wave through that one cell.
+    const nid = sim.releaseAuxHost(nx, ny, sim.get(nx, ny));
     if (shadowsPressure(nid)) {
       // Solid or 방폭 matter shadows the wave at once — but a *fragile* solid
       // (Glass) still shatters into Broken Glass under the passing shockwave,
@@ -1067,7 +1073,15 @@ function pressureRing(
       if (outB - cost < 0) continue;
       const nidx = ny * w + nx;
       if (stamp[nidx] === id_p || stamp[nidx] === id_d) continue;
-      const nid = sim.get(nx, ny);
+      // Same pane release the seeding loop above does: a beam resting inside glass
+      // must SHADOW this wave exactly as the glass would. The ring destroys nothing,
+      // so no matter is lost either way — but left unreleased the beam's Gas phase
+      // lets the wave slip through the one cell it occupies and craze the course
+      // behind it, so a laser trained on a window quietly changes how deep a nearby
+      // blast frosts the wall. This is the ring's only stake in `auxHost`: its shove
+      // skips gases entirely, so it can never fling a beam and carry a pane off the
+      // way the crater flood's Debris path could.
+      const nid = sim.releaseAuxHost(nx, ny, sim.get(nx, ny));
       // A solid — or any 방폭 matter — stops the wave and shadows what's behind it;
       // ordinary loose matter and empty air let it flow on through. A *fragile*
       // solid (Glass) shatters into Broken Glass under the passing shockwave as it
