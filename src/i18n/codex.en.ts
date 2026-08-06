@@ -184,8 +184,8 @@ export const materialCodexEn: Record<number, string> = {
   161: 'Black earth left when spoiled food fully decomposes. Left alone, it becomes compost that helps plants grow.',
 
   // Cooking
-  151: 'Fine powder made by grinding wheat. Extremely light, so it drifts as it falls, and ignites instantly when fire touches it while airborne. Turns into dough when mixed with water.',
-  152: 'Thick dough formed when flour meets water. Bakes into bread when heated above 120°C. Sprinkling on baking soda makes it ready to rise immediately, while sprinkling on yeast takes time but rises much more.',
+  151: 'Fine powder made by grinding wheat. Extremely light, so it drifts as it falls, and ignites instantly when fire touches it while airborne. Turns into dough when mixed with water, salt water, or sugar water.',
+  152: 'Thick dough formed when flour meets water, salt water, or sugar water. Bakes into bread when heated above 120°C. Sprinkling on baking soda makes it ready to rise immediately, while sprinkling on yeast takes time but rises much more.',
   153: 'Made by baking dough at 120°C or higher. Faces that were exposed to open air while baking become a dark brown crust.',
   154: 'Becomes cooked meat when heated. Left alone, it grows mold.',
   155: 'Cooked meat. Becomes charred meat when heated further.',

@@ -57,6 +57,8 @@ import { YEAST } from '../src/game/materials/yeast';
 import { SUGAR } from '../src/game/materials/sugar';
 import { FLOUR } from '../src/game/materials/flour';
 import { BATTER } from '../src/game/materials/batter';
+import { SALTWATER } from '../src/game/materials/saltwater';
+import { SUGAR_WATER } from '../src/game/materials/sugarwater';
 import { BREAD } from '../src/game/materials/bread';
 import { RAW_MEAT } from '../src/game/materials/rawmeat';
 import { COOKED_MEAT } from '../src/game/materials/cookedmeat';
@@ -317,6 +319,53 @@ console.log('— 반죽 · 빵 (Batter / Bread) —');
     .reduce((n, [, c]) => n + c, 0);
   check(
     '전기가 흐르던 물로 반죽해도 저절로 부풀지 않는다',
+    leavened === 0,
+    `${leavened} cells born pre-leavened of ${count(grid, BATTER.id)}`,
+  );
+}
+
+// 3c. 소금물·설탕물도 반죽이 된다. The rule was a single `!== WATER.id` compare, so
+//     the two liquids that are *water with something dissolved in it* did nothing
+//     at all — you could dump a pool of brine on a heap of flour and watch it sit
+//     there. They go through `HYDRATING_LIQUIDS` now (flour.ts), and this loops
+//     the same bed over all three so the check is "the liquids behave alike",
+//     which is the actual claim, rather than three copies of case 3.
+//
+//     Mass conservation is re-asserted per liquid and it is not ceremony: the
+//     leak case 3 caught was a *density* interaction (a lighter powder admitted
+//     as an overlap host), and saltwater and sugar water are heavier than plain
+//     water, so they meet `canOverlapAt` on different terms than the liquid the
+//     original bug was found with.
+for (const liquid of [SALTWATER, SUGAR_WATER]) {
+  const { grid, sim } = makeWorld(60, 60);
+  floor(grid, 50);
+  const flour = block(grid, 20, 40, 38, 44, FLOUR.id, 20);
+  const wet = block(grid, 20, 40, 44, 50, liquid.id, 20);
+  for (let t = 0; t < 300; t++) sim.step();
+  check(
+    `밀가루에 ${liquid.name}을 부어도 반죽이 된다`,
+    count(grid, BATTER.id) > (flour + wet) * 0.9,
+    `${count(grid, BATTER.id)}/${flour + wet} cells of dough`,
+  );
+  check(
+    `…그리고 밀가루도 ${liquid.name}도 거의 남지 않는다`,
+    count(grid, FLOUR.id) < flour * 0.1 && count(grid, liquid.id) < wet * 0.1,
+    `${count(grid, FLOUR.id)} flour, ${count(grid, liquid.id)} liquid left`,
+  );
+  const conserved = count(grid, BATTER.id) + count(grid, FLOUR.id) + count(grid, liquid.id);
+  check(
+    `…${liquid.name} 반죽도 질량이 보존된다`,
+    conserved === flour + wet,
+    `${conserved}/${flour + wet} cells accounted for`,
+  );
+  // 맨 반죽 하나뿐 — 짠맛·단맛 갈래는 없다. Batter's low three aux bits are the
+  // leaven level, so a solute smuggled into the product as state would show up
+  // here as dough born already risen, exactly as the electrified water did in 3b.
+  const leavened = [...auxHistogram(grid, BATTER.id)]
+    .filter(([a]) => (a & 0b111) > 0)
+    .reduce((n, c2) => n + c2[1], 0);
+  check(
+    `…${liquid.name} 반죽은 맨 반죽이다 (녹아 있던 것이 따라오지 않는다)`,
     leavened === 0,
     `${leavened} cells born pre-leavened of ${count(grid, BATTER.id)}`,
   );

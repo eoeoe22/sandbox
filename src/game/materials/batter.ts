@@ -388,10 +388,28 @@ export const BATTER = register({
   // itself is what every cell actually draws; this is the palette chip and the
   // honest "this is what you get when you mix it" colour.
   color: rgb(214, 196, 152),
-  // Denser than Water (3), so a dough poured into a pool sinks and sits on the
-  // bottom of the pan instead of rafting on it — but under Yeast (3.3), so a
-  // sprinkled culture settles *into* the dough rather than floating clear of it.
-  density: 3.2,
+  // Denser than every liquid flour can be hydrated with — Water (3), Sugar Water
+  // (3.6) and Saltwater (4) — so a dough poured into a pool sinks and sits on the
+  // bottom of the pan instead of rafting on it.
+  //
+  // That "every" is load-bearing and used to be just "Water (3)". The hydration
+  // rule turns one grain and one liquid cell into two cells of dough *in place*,
+  // so the product is born exactly on the interface the reaction needs. At 3.2
+  // dough sank clear through Water and the interface kept refreshing, but it
+  // *floated* on Saltwater (4) and Sugar Water (3.6) — and flour (2.6) floats on
+  // everything, so the heap stratified flour / dough / brine and the dough became
+  // a permanent wall between the two reagents. A bed of each locked up at 140 of
+  // 240 cells and did not move again through 6000 ticks (mass all accounted for —
+  // nothing leaked, the reaction simply had nowhere left to happen). Sitting above
+  // Saltwater is what keeps the rule "all three liquids make dough" true all the
+  // way to the bottom of the bowl rather than only at first contact.
+  //
+  // It now sits *above* Yeast (3.3) rather than below it, so a sprinkled culture
+  // rafts on the dough instead of settling into it. That costs nothing: leaven
+  // spreads through the body on its own (`updateBatter`), which is the whole
+  // reason a sprinkle on one corner proofs a whole loaf — measured unchanged at
+  // level 7/7 and ×2.00 rise after the change.
+  density: 4.2,
   category: 'food',
   // Also on the 액체 shelf, next to Honey and Caramel — the three thick,
   // slow-flowing liquids behave as a family and are compared as one.
