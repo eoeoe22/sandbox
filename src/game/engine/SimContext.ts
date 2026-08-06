@@ -963,7 +963,7 @@ export class SimContext {
     if (targetId !== EMPTY) {
       if (this.canOverlapAt(targetX, targetY, topId, targetId)) {
         // Can absorb
-      } else if (this.isDisplaceable(targetId) && DISPLACE_SIDE_PUSH) {
+      } else if (this.isDisplaceable(targetX, targetY, targetId) && DISPLACE_SIDE_PUSH) {
         if (!this.pushAside(topX, topY, targetX, targetY)) return false;
       } else {
         return false;
@@ -1051,7 +1051,7 @@ export class SimContext {
     if (targetId !== EMPTY) {
       if (this.canOverlapAt(targetX, targetY, bottomId, targetId)) {
         // Can absorb
-      } else if (this.isDisplaceable(targetId) && DISPLACE_SIDE_PUSH) {
+      } else if (this.isDisplaceable(targetX, targetY, targetId) && DISPLACE_SIDE_PUSH) {
         if (!this.pushAside(bottomX, bottomY, targetX, targetY)) return false;
       } else {
         return false;
@@ -1171,11 +1171,19 @@ export class SimContext {
     g.markActive(x2, y2);
   }
 
-  /** Fluids and gases can be displaced by denser materials; solids and powders block. */
-  private isDisplaceable(id: number): boolean {
+  /** Fluids and gases can be displaced by denser materials; solids and powders block.
+   *  Takes the coordinates as well as the id because one case can't be read off the
+   *  material alone: an `auxHost` cell (a Heat Ray beam resting *inside* a glass or
+   *  diamond pane, carrying it in `aux` — see materials/heatray.ts) is a Gas by
+   *  phase but is standing in for a solid, and shoving it aside would carry the pane
+   *  away with it. While it holds a host it blocks like that host; over open air
+   *  (aux 0, which is every afterimage) it is an ordinary displaceable gas, so the
+   *  drawn beam never obstructs anything falling through it. */
+  private isDisplaceable(x: number, y: number, id: number): boolean {
     if (id === EMPTY) return true;
-    const p = getMaterial(id).phase;
-    return p === Phase.Liquid || p === Phase.Gas;
+    const m = getMaterial(id);
+    if (m.phase !== Phase.Liquid && m.phase !== Phase.Gas) return false;
+    return !(m.auxHost === true && this.getAux(x, y) !== 0);
   }
 
   /** True if (px,py) is an in-bounds EMPTY cell a displaced fluid can be shoved
@@ -1270,7 +1278,7 @@ export class SimContext {
       this.enterOverlay(x, y, tx, ty, srcId);
       return true;
     }
-    if (this.isDisplaceable(targetId) && !this.isFrozen(tx, ty)) {
+    if (this.isDisplaceable(tx, ty, targetId) && !this.isFrozen(tx, ty)) {
       // 가용성 (Material.miscible): two liquids that form a *solution* are never
       // sorted against each other — neither sinks through nor floats past the
       // other, whichever way round they happen to be. Refusing the move here (a

@@ -105,7 +105,7 @@ them" 이라고 적혀 있었다. 아무도 빌드 산출물을 열어 보지 �
 | --- | --- | --- |
 | 숫자 | **수치 표** (`stats.ts`) | `density` `thermal.conductivity` `phaseChange.at` `combustion.burnChance` `blastRadius` `durability` |
 | 그 외 태그 | **특성 카드** (`traits.ts`) | `conductive` `magnetic` `acidResistant` `explosionProof` `porous` `shatterId` |
-| 렌더링·엔진 내부 | **제외** (`fields.ts`) | `lattice` `arrow` `solarPattern` `tintBlock` `glow` `packedTemp` `decorTemp` |
+| 렌더링·엔진 내부 | **제외** (`fields.ts`) | `lattice` `arrow` `solarPattern` `tintBlock` `glow` `packedTemp` `decorTemp` `auxHost` |
 
 렌더링 전용을 뺀 건 판단이다 — 도감을 읽는 사람은 "이걸로 뭘 할 수 있나"를 묻지
 "어떻게 칠해지나"를 묻지 않는다. 제외 목록은 **이유와 함께** 적혀 있어서, 나중에

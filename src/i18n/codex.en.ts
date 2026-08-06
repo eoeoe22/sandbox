@@ -135,7 +135,7 @@ export const materialCodexEn: Record<number, string> = {
   81: 'Heating wire that generates heat between 750–1050°C when power flows. Acid-resistant.',
   109: 'Generates acoustic shockwaves when powered to push nearby particles away.',
   112: 'Creates wind to push gases/particles and cool down heat.',
-  121: 'Device emitting a powerful heat beam.',
+  121: 'Device firing a powerful heat beam in the direction you drag. The beam destroys nothing and only heats — it passes through glass and diamond without disturbing them, reflects cleanly off reflective metals (lay them diagonally to bend it around a corner), and scorches everything else instead of breaking it.',
   122: 'Pumps powders and liquids upward when powered.',
   123: 'Device attracting magnetic substances such as iron powder.',
   100: 'Conveyor belt that runs only when powered. Transports accumulated particles column by column in the drag direction rather than scraping thin layers, and stops immediately when power cut off. Arranging like stairs moves cargo up slopes, and shaping into a U-trough prevents cargo from being trapped and carries it over to the opposite side.',

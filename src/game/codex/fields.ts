@@ -80,4 +80,13 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   packedTemp: 'engine: `temp` holds packed flight state, not degrees',
   overlayTemp: 'engine: apparent temperature for the heat overlay only',
   decorTemp: 'engine: `temp` is real but decorative — not a heat source',
+
+  // --- Engine bookkeeping about how `aux` is stored -----------------------
+  // Same shape of exclusion, one slot over: it says the number in the aux slot may
+  // be a HOST material this cell is covering for, so the movement layer must not
+  // shove the cell around like the gas its phase claims it is. The only holder is
+  // the Heat Ray, whose 유리 투과 the codex already describes as "유리를 흐트러뜨리지
+  // 않고 지나간다" — that the pane rides in a byte while the beam sits on it is the
+  // implementation of that sentence, not a second thing a player can act on.
+  auxHost: 'engine: `aux` may hold a host cell this one is standing in for',
 };
