@@ -78,6 +78,8 @@ Diamond는 `lattice` **이면서** `checker2x2`, Solar Panel은 `lattice` **이�
 | `triArrow` | 8×5 타일, 레인 1~6이 1,2,3,3,2,1칸 |
 | `coilPattern` / `stripePattern` | `y&3 ∈ {1,2}` / `x%3===1` |
 | `glow` | `shade()`가 `cool → color`로 선형 보간 |
+| `auxPalette` (진행형) | Seed·Cement·Cooked Meat·Batter. `p=(n-1-y)/(n-1)`, `idx=round(p²·(len-1))` — 아래 3분의 2는 시작 톤, 꼭대기만 램프 끝 |
+| `auxPalette` + `crustPattern` | Bread 전용. 위 진행형 공식 대신 **고정 밴드**: `y < n·CRUST_TOP_FRACTION(0.2)`이면 `auxPalette[0]`(어두운 껍질), 아니면 `auxPalette[len-1]`(밝은 속살) — 진행이 아니라 안/밖 구분이라 램프가 아니라 띠로 그린다 |
 
 **곱셈 음영(`scaled`)이 왜 따로 있나.** `tinted`는 채널마다 같은 값을 더하므로, 색이 있는
 표면을 어둡게 하면 채널 비가 줄어 **회색 쪽으로 걸어간다**. 로터와 석탄의 그림은 애초에
