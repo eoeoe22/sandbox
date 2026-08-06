@@ -5,7 +5,7 @@ import type { SpoilSpec } from '../engine/types';
 import { SALT } from './salt';
 import { ALCOHOL } from './alcohol';
 import { HONEY } from './honey';
-import { MOLD, seedMold } from './mold';
+import { seedMold } from './mold';
 
 // 부패 — the one implementation every rotting thing in the palette shares, the
 // way `combustion.ts` is the one implementation every fuel shares. A material
@@ -55,13 +55,15 @@ import { MOLD, seedMold } from './mold';
 // ## 곰팡이가 전염 경로다
 //
 // The counter is invisible (it shares a word with ramps that are already spoken
-// for), so the warning is 곰팡이: past MOLD_AT a cell starts throwing spores into
-// the empty space around it (mold.ts), and a cell with mold against it rots
-// MOLD_ACCEL times faster. That is what makes "창고에 하나 썩으면 다 썩는다"
-// true without any food-to-food infection rule — the mold film creeps along the
-// outside of a stack and the stack rots under it. It is also why mold spreading
-// onto stone is harmless in exactly the way the design wants: the acceleration
-// has nothing to act on there.
+// for), so the warning is 곰팡이: past MOLD_AT a cell starts puffing spores into
+// the empty space around it (mold.ts), and mold **eats food outright** — an
+// adjacent food cell is converted to more mold. That is what makes "창고에 하나
+// 썩으면 다 썩는다" true without any food-to-food infection rule, and it is also
+// why mold drifting onto stone stays harmless: there is nothing there to eat.
+//
+// Erosion consults `isPreserved` below rather than doing its own test, so a
+// salted ham or a frozen loaf is not eaten either. 보존 has to mean 보존 against
+// every route or it means nothing.
 
 /** 부패 단계 수. Three bits, so a declaring material gives up exactly three bits
  *  of its `aux` word and the whole counter is `(aux >> shift) & SPOIL_MASK`. */
@@ -70,7 +72,11 @@ export const SPOIL_MASK = 0b111;
 
 /** 곰팡이가 피기 시작하는 단계 — a bit past halfway, so the visible warning
  *  arrives with time left to act on it (salt it, chill it, cook it) rather than
- *  as an obituary. */
+ *  as an obituary.
+ *
+ *  It is also the stage at which a cell can be *eaten* (see `moldCanEat`), and
+ *  those being the same number is the whole reason the two halves stay in
+ *  proportion: mold appears exactly where food has gone far enough to be taken. */
 const MOLD_AT = 4;
 
 /** 부패가 진행되는 온도 구간. Below the first, a freezer; at or above the second,
@@ -115,13 +121,10 @@ function tempScale(t: number): number {
   return RATE_PEAK * Math.max(0, f);
 }
 
-/** 곰팡이가 붙은 칸은 훨씬 빨리 썩는다 — the transmission path, see the note. */
-const MOLD_ACCEL = 3;
-
-/** 포자 — per-tick chance a sufficiently rotten cell tries to start a colony in
- *  one of its empty neighbours. Low, because a *cell* rolls it and a body of food
- *  has many: a loaf furs over in a few seconds of game time while a single
- *  dropped crumb takes a while to grow anything at all. */
+/** 포자 — per-tick chance a sufficiently rotten cell puffs a spore into one of its
+ *  empty neighbours. Low, because a *cell* rolls it and a body of food has many: a
+ *  loaf furs over in a few seconds of game time while a single dropped crumb takes
+ *  a while to grow anything at all. */
 const SPORE_CHANCE = 0.02;
 
 /** 소금·알콜·꿀 — 염장과 담금. Contact only (`DIR8`), never consumed: a salt
@@ -143,6 +146,57 @@ export function withSpoil(aux: number, spec: SpoilSpec, value: number): number {
 }
 
 /**
+ * 보존되고 있는가 — whether anything is currently holding this food cell's clock,
+ * by any of the routes in the module note (온도 · 건조 · 염장 · 담금).
+ *
+ * Exported because **곰팡이 asks the same question** (mold.ts): a spore that lands
+ * on a salted ham or a frozen loaf must not eat it, or 보존 would mean "keeps
+ * until something eats it", which is not keeping. Sharing the predicate is what
+ * makes 보존 one rule rather than two that drift apart — there is exactly one
+ * definition of what a preserved cell is and both readers consult it.
+ */
+export function isPreserved(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
+  const t = sim.getTemp(x, y);
+  if (t < SPOIL_MIN_TEMP || t >= SPOIL_STOP_TEMP) return true;
+
+  // 건조 — 육포. Free for the meat chain, which already tracks this (meat.ts);
+  // everything else omits `dryMask` and skips the test.
+  const aux = sim.getAux(x, y);
+  if (spec.dryMask !== undefined && (aux & spec.dryMask) === spec.dryMask) return true;
+
+  // 염장·담금.
+  for (const [dx, dy] of DIR8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    if (isPreservative(sim.get(nx, ny))) return true;
+  }
+  return false;
+}
+
+/**
+ * 곰팡이가 먹을 수 있는 칸인가 — far enough gone to have lost to it, and not being
+ * kept.
+ *
+ * The stage gate is what keeps 침식 from outrunning the clock it is supposed to
+ * be the visible end of. Without it mold ate *fresh* food the moment a colony
+ * touched it, and since every eaten cell becomes another eater the front ran away
+ * exponentially — which quietly destroyed the things you are supposed to be able
+ * to do with food. `test/cooking.ts` caught both: a 200-cell dough could no longer
+ * be proofed (it was eaten during the rise, so the "효모 반죽은 정확히 두 배"
+ * measurement came back 0 → 2 → 29 of 200), and a raw cut on a 50° plate — a scene
+ * that exists to prove a warm plate leaves meat alone — came back 0 of 96.
+ *
+ * With the gate, mold can only take cells the timer had already brought most of
+ * the way, so it makes the tail of spoilage fast and *visible* without ever
+ * getting ahead of it. 곰팡이는 상하기 시작한 것을 먹지, 멀쩡한 것을 먹지 않는다.
+ */
+export function moldCanEat(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
+  if (spoilOf(sim.getAux(x, y), spec) < MOLD_AT) return false;
+  return !isPreserved(x, y, sim, spec);
+}
+
+/**
  * Run one tick of spoilage on a cell. Returns `true` if the cell turned this
  * tick (it is now `spec.into` and the caller must not touch it again), `false`
  * otherwise.
@@ -152,27 +206,10 @@ export function withSpoil(aux: number, spec: SpoilSpec, value: number): number {
  * material it no longer is.
  */
 export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
+  if (isPreserved(x, y, sim, spec)) return false;
+
   const t = sim.getTemp(x, y);
-  if (t < SPOIL_MIN_TEMP || t >= SPOIL_STOP_TEMP) return false;
-
   const aux = sim.getAux(x, y);
-
-  // 건조 — 육포. Free for the meat chain, which already tracks this (meat.ts);
-  // everything else omits `dryMask` and skips the test.
-  if (spec.dryMask !== undefined && (aux & spec.dryMask) === spec.dryMask) return false;
-
-  // 염장·담금, and the mold that speeds things up — one neighbour walk for both,
-  // since a cell that is preserved doesn't care what else is touching it.
-  let accel = 1;
-  for (const [dx, dy] of DIR8) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (!sim.inBounds(nx, ny)) continue;
-    const nid = sim.get(nx, ny);
-    if (isPreservative(nid)) return false;
-    if (nid === MOLD.id) accel = MOLD_ACCEL;
-  }
-
   const stage = spoilOf(aux, spec);
 
   // 포자 — past the halfway mark the cell starts trying to grow a colony on
@@ -185,7 +222,7 @@ export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec
   // seven makes every material take an eighth longer than it says (measured: a
   // 60s cut converting at 68.4s). The declared number is quoted in the codex and
   // in the docs, so it has to be the number that comes out.
-  const rate = ((SPOIL_MAX + 1) / (spec.seconds * SIM_HZ_AT_1X)) * tempScale(t) * accel;
+  const rate = ((SPOIL_MAX + 1) / (spec.seconds * SIM_HZ_AT_1X)) * tempScale(t);
   if (!sim.chance(rate)) return false;
 
   if (stage < SPOIL_MAX) {

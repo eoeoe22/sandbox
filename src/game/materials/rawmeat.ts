@@ -77,7 +77,7 @@ export const RAW_MEAT = register({
   // dried out stops rotting: 육포. Cooking is the other way out — 익은 고기 rots
   // slower, and carries this counter across with it.
   spoil: {
-    seconds: 60,
+    seconds: 150,
     auxShift: SPOIL_SHIFT,
     dryMask: DRY_MASK,
     into: () => SPOILED_FOOD.id,

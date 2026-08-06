@@ -107,7 +107,7 @@ export const BREAD = register({
   // their pantry. `auxShift: 2` clears bit 0 (crust/crumb) and bit 1 (alight);
   // no `dryMask`, since bread keeps no moisture counter — it is the meat chain
   // alone that gets the 육포 exemption for free.
-  spoil: { seconds: 180, auxShift: 2, into: () => SPOILED_FOOD.id },
+  spoil: { seconds: 420, auxShift: 2, into: () => SPOILED_FOOD.id },
   thermal: { conductivity: 0.2 },
   update: updateBread,
 });

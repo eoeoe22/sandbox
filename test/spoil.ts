@@ -40,6 +40,7 @@ import { getMaterial, allMaterials } from '../src/game/materials/registry';
 import { SPOIL_MASK } from '../src/game/materials/spoil';
 import { DRY_MASK } from '../src/game/materials/meat';
 import { BURNT_LIT_BIT } from '../src/game/materials/burntmeat';
+import { MOLD_ATE_BIT } from '../src/game/materials/mold';
 import '../src/game/materials';
 
 function mulberry32(seed: number): () => number {
@@ -80,7 +81,6 @@ const RAW_MEAT = ID('Raw Meat');
 const COOKED_MEAT = ID('Cooked Meat');
 const BURNT_MEAT = ID('Burnt Meat');
 const BREAD = ID('Bread');
-const BATTER = ID('Batter');
 const DEAD_FISH = ID('Dead Fish');
 const SPOILED = ID('Spoiled Food');
 const COMPOST = ID('Compost');
@@ -100,6 +100,32 @@ const ASH = ID('Ash');
 
 /** The three bits a spoilage counter occupies, before it is shifted into place. */
 const SPOIL_FIELD = SPOIL_MASK;
+
+/**
+ * 사슬 위에 있는 질량 — every cell that entered the chain and has not left it.
+ *
+ * 곰팡이 is a *stage* now, not a decoration: it eats a food cell and carries that
+ * cell's mass until it decays into 부패물 (mold.ts). So a mass-conservation count
+ * has to include the mold that ate — and *only* that mold. Film mold, which grew
+ * into empty space, is mass that was never in the chain and must not be counted,
+ * which is exactly the distinction `MOLD_ATE_BIT` exists to draw.
+ */
+function chainMass(grid: Grid, food: number): number {
+  let n = 0;
+  for (let i = 0; i < grid.cells.length; i++) {
+    const id = grid.cells[i];
+    if (id === food || id === SPOILED || id === COMPOST) n++;
+    else if (id === MOLD && (grid.aux[i] & MOLD_ATE_BIT) !== 0) n++;
+  }
+  return n;
+}
+/** Mold that got here by eating, as opposed to the film that just grew. */
+function ateMold(grid: Grid): number {
+  let n = 0;
+  for (let i = 0; i < grid.cells.length; i++)
+    if (grid.cells[i] === MOLD && (grid.aux[i] & MOLD_ATE_BIT) !== 0) n++;
+  return n;
+}
 
 /** ×1 sim speed, mirroring config.SIM_HZ_AT_1X — the harness states its
  *  expectations in seconds and converts here. */
@@ -163,9 +189,9 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
       .filter((m) => m.spoil !== undefined)
       .map((m) => m.name),
   );
-  const expected = ['Raw Meat', 'Cooked Meat', 'Bread', 'Batter', 'Dead Fish', 'Spoiled Food'];
+  const expected = ['Raw Meat', 'Cooked Meat', 'Bread', 'Dead Fish', 'Spoiled Food'];
   check(
-    '썩는 것은 식품과 사체뿐 — 여섯, 이름까지',
+    '썩는 것은 식품과 사체뿐 — 다섯, 이름까지',
     rots.size === expected.length && expected.every((n) => rots.has(n)),
     [...rots].sort().join(', '),
   );
@@ -187,6 +213,10 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     'Popcorn',
     'Burnt Meat',
     'Compost',
+    // 반죽 — 살아 있는 배양체가 이미 들어 있는 공정 중간물이다. 발효와 부패는
+    // 같은 종류의 과정이라 한 물질에 둘 다 얹으면 서로 잡아먹고, 재미있는 쪽
+    // (두 배로 부푸는 것)이 진다. 자세히는 MATERIAL-SYSTEMS.md.
+    'Batter',
     'Sugar',
     'Honey',
     'Slime',
@@ -284,16 +314,17 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   const { grid, sim } = makeWorld();
   fill(grid, 5, 20, 24, 22, RAW_MEAT); // 60 cells on a shelf
   const before = count(grid, RAW_MEAT);
-  run(sim, grid, 200 * HZ);
+  run(sim, grid, 400 * HZ);
   check(
     '상온에 둔 생고기는 전부 썩는다',
     count(grid, RAW_MEAT) === 0,
-    `${before} → ${count(grid, RAW_MEAT)} 생고기 after 200s`,
+    `${before} → ${count(grid, RAW_MEAT)} 생고기 after 400s`,
   );
   check(
-    '…그리고 사라지는 게 아니라 부패물이 된다',
-    count(grid, SPOILED) + count(grid, COMPOST) === before,
-    `${count(grid, SPOILED)} 부패물 + ${count(grid, COMPOST)} 퇴비 = ${before}`,
+    '…그리고 사라지는 게 아니라 사슬 위에 남는다',
+    chainMass(grid, RAW_MEAT) === before,
+    `${ateMold(grid)} 곰팡이(먹은 것) + ${count(grid, SPOILED)} 부패물 + ` +
+      `${count(grid, COMPOST)} 퇴비 = ${chainMass(grid, RAW_MEAT)} of ${before}`,
   );
 }
 
@@ -303,17 +334,23 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   const { grid, sim } = makeWorld();
   fill(grid, 4, 24, 35, 25, RAW_MEAT); // 64 cells, floor-level so nothing falls out
   const before = count(grid, RAW_MEAT);
-  run(sim, grid, 900 * HZ);
-  const total = count(grid, RAW_MEAT) + count(grid, SPOILED) + count(grid, COMPOST);
+  run(sim, grid, 1800 * HZ);
+  const total = chainMass(grid, RAW_MEAT);
   check(
     '부패 사슬은 칸을 만들지도 잃지도 않는다',
     total === before,
-    `${before} 생고기 → ${count(grid, SPOILED)} 부패물 + ${count(grid, COMPOST)} 퇴비 (합 ${total})`,
+    `${before} 생고기 → ${ateMold(grid)} 곰팡이 + ${count(grid, SPOILED)} 부패물 + ` +
+      `${count(grid, COMPOST)} 퇴비 (합 ${total})`,
   );
+  // The livelock check. 부패물 declares `spoil` too, so an "eat anything that
+  // rots" rule ate it — and mold that ate decays back into 부패물, so the two fed
+  // each other and the chain never terminated (measured: 0 퇴비 at 900s, the whole
+  // mass still cycling). Requiring the *end* of the chain, not merely a conserved
+  // total, is what makes that failure visible here.
   check(
-    '…그리고 끝까지 가면 전부 퇴비다',
+    '…그리고 끝까지 가면 전부 퇴비다 (사슬이 닫힌다)',
     count(grid, COMPOST) === before,
-    `${count(grid, COMPOST)} of ${before} 퇴비 after 900s`,
+    `${count(grid, COMPOST)} of ${before} 퇴비 after 1800s`,
   );
 }
 
@@ -322,7 +359,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
 // block above is what makes these mean anything: the identical scene without the
 // preservation is completely gone by 200s.
 {
-  const KEEP = 240 * HZ;
+  const KEEP = 500 * HZ;
 
   // 4a. 저온 — 냉장고. Held under 0° every tick.
   reseed();
@@ -334,7 +371,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     check(
       '저온 — 얼려 두면 안 썩는다',
       count(grid, RAW_MEAT) === before,
-      `${count(grid, RAW_MEAT)} of ${before} left after 240s at -10°`,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s at -10°`,
     );
   }
 
@@ -349,7 +386,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     check(
       '고온 — 익히는 중에는 썩지 않는다',
       count(grid, RAW_MEAT) === before,
-      `${count(grid, RAW_MEAT)} of ${before} left after 240s at 65°`,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s at 65°`,
     );
   }
 
@@ -365,7 +402,7 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     check(
       '염장 — 소금에 절이면 안 썩는다',
       count(grid, RAW_MEAT) === before,
-      `${count(grid, RAW_MEAT)} of ${before} left after 240s under salt`,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s under salt`,
     );
   }
 
@@ -384,68 +421,90 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     check(
       `담금 — ${label}에 담가 두면 안 썩는다`,
       count(grid, RAW_MEAT) === before,
-      `${count(grid, RAW_MEAT)} of ${before} left after 240s`,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s`,
     );
   }
 }
 
 // ── 5. 보존은 멈추는 것이지 되돌리는 것이 아니다 ─────────────────────────────
-// The reason spoilage is a counter and not a per-tick roll. A cut is left out to
-// go halfway over, frozen for a long while, then thawed: it must finish sooner
-// than a fresh cut thawed at the same moment. A memoryless model would make the
-// two indistinguishable, and a "preservation resets it" model would make the aged
-// one *slower*.
+// The reason spoilage is a counter and not a per-tick roll, measured on the
+// counter itself rather than on a headcount: a cut is left out to part-rot, then
+// frozen, and its *progress* has to still be there afterwards. A memoryless model
+// has no progress to hold, and a "preservation resets it" model would zero it.
+//
+// Reading aux directly is what makes this precise. Counting surviving cells was
+// the first attempt and it stopped working the moment mold could eat them — the
+// aged side simply vanished during the ageing window, and a scene that ends in 0
+// cannot say anything about progress being held.
 {
   reseed();
   const { grid, sim } = makeWorld(40, 30);
   const W = grid.width;
-  /** Meat on the left half (aged first) and on the right half (frozen throughout).
-   *  Two populations in one world so they share a clock exactly. */
-  const sides = (): [number, number] => {
-    let a = 0;
-    let b = 0;
+  const spec = getMaterial(RAW_MEAT).spoil!;
+  /** Total spoilage progress on one half of the world. */
+  const progress = (left: boolean): number => {
+    let n = 0;
     for (let i = 0; i < grid.cells.length; i++) {
       if (grid.cells[i] !== RAW_MEAT) continue;
-      if (i % W < 20) a++;
-      else b++;
+      if (left !== (i % W < 20)) continue;
+      n += (grid.aux[i] >> spec.auxShift) & SPOIL_FIELD;
     }
-    return [a, b];
+    return n;
+  };
+  const cells = (left: boolean): number => {
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++)
+      if (grid.cells[i] === RAW_MEAT && left === (i % W < 20)) n++;
+    return n;
   };
   fill(grid, 5, 20, 14, 21, RAW_MEAT); // A — left, aged at room temperature first
   fill(grid, 25, 20, 34, 21, RAW_MEAT); // B — right, held frozen from the start
 
-  // Phase 1: A ages on the counter while B is kept frozen. A is *meant* to lose
-  // some cells here — the point is only that it gets a head start.
-  run(sim, grid, 30 * HZ, { x0: 24, y0: 19, x1: 35, y1: 22, t: -10 });
-  const [agedA, freshB] = sides();
+  // Phase 1: A ages on the counter while B is kept frozen. Kept short, but the
+  // scene deliberately does NOT require the block to still be whole afterwards —
+  // a 20-cell body has 20 independent counters and the *earliest* of them reaches
+  // the spore stage well before the mean, so some mold and some loss is normal.
+  // What is recorded is whatever state it reached; the freeze has to hold exactly
+  // that.
+  run(sim, grid, 60 * HZ, { x0: 24, y0: 19, x1: 35, y1: 22, t: -10 });
+  const agedA = progress(true);
+  const agedCells = cells(true);
+  const freshB = progress(false);
+  check(
+    '상온에 둔 쪽은 진행도가 실제로 올라간다 (아래 검사의 전제)',
+    agedA > 0 && agedCells > 0 && freshB === 0,
+    `aged progress ${agedA} over ${agedCells} cells, frozen side ${freshB}`,
+  );
 
   // Phase 2: everything frozen. Neither side may move — including the half that
-  // is sitting on a part-finished counter, which is the case a memoryless roll
-  // could not represent at all.
+  // is sitting on part-finished counters, which is the case a memoryless roll
+  // could not represent at all. Both the progress and the headcount are pinned:
+  // at -10° the mold is dead too, so nothing may be eaten either.
   run(sim, grid, 120 * HZ, { x0: 0, y0: 0, x1: W - 1, y1: 29, t: -10 });
-  const [heldA, heldB] = sides();
   check(
     '얼려 두는 동안에는 진행도 그대로 — 절반쯤 썩은 것도 안 넘어간다',
-    heldA === agedA && heldB === freshB,
-    `aged ${agedA} → ${heldA}, fresh ${freshB} → ${heldB} across 120s frozen`,
+    progress(true) === agedA && cells(true) === agedCells && progress(false) === 0,
+    `aged ${agedA}/${agedCells}칸 → ${progress(true)}/${cells(true)}칸, ` +
+      `frozen ${freshB} → ${progress(false)} across 120s`,
   );
 
   // Phase 3: thaw both and watch which finishes first. Temperature has to be put
-  // back by hand — with no heat source in the scene, a frozen world simply stays
-  // frozen (which is itself the freezer working).
+  // back by hand — with no heat source in the scene, a frozen world stays frozen
+  // (which is itself the freezer working).
+  // Phase 3: thaw both for a fixed window and compare what is left. Measured as
+  // survivors rather than as "which hit zero first", which is the maximum of N
+  // independent draws and so mostly noise — it flipped on four seeds out of five
+  // even with the aged side genuinely ahead.
+  // 45s, not longer: run it far enough and *both* sides collapse to nearly zero
+  // and the comparison stops saying anything (measured: 2 vs 2 at 90s on one seed,
+  // with the aged side genuinely ahead the whole way). The window has to end while
+  // the fresh side is still mostly intact.
   setTemp(grid, 0, 0, W - 1, 29, ROOM);
-  let aGone = -1;
-  let bGone = -1;
-  for (let t = 0; t < 400 * HZ && (aGone < 0 || bGone < 0); t++) {
-    sim.step();
-    const [a, b] = sides();
-    if (a === 0 && aGone < 0) aGone = t;
-    if (b === 0 && bGone < 0) bGone = t;
-  }
+  run(sim, grid, 45 * HZ);
   check(
-    '녹이면 멈춘 자리에서 이어진다 — 미리 썩힌 쪽이 확실히 먼저 끝난다',
-    aGone >= 0 && bGone >= 0 && aGone < bGone,
-    `aged gone at ${(aGone / HZ).toFixed(1)}s, fresh at ${(bGone / HZ).toFixed(1)}s`,
+    '녹이면 멈춘 자리에서 이어진다 — 미리 썩힌 쪽이 확실히 더 많이 나갔다',
+    cells(true) < cells(false),
+    `aged ${cells(true)}칸 left vs fresh ${cells(false)}칸 after the same 45s thaw`,
   );
 }
 
@@ -528,40 +587,150 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   );
 }
 
-// ── 8. 곰팡이는 표면 한 겹이다 ───────────────────────────────────────────────
-// It films rather than fills. Stated as an invariant every colony cell must hold:
-// each one touches at least one non-mold solid or powder. If mold ever counted as
-// its own support this fails on the first cell that grew out into open air.
+// ── 8. 곰팡이는 방을 채우지 않는다 · 붙은 것은 안 움직인다 ──────────────────
+// 곰팡이 is a floaty powder now, so "표면 한 겹" is no longer a property of every
+// cell: a loose spore genuinely is unsupported — that is what drifting *is* — and
+// settled spores pile like any powder. The invariant that still matters, and the
+// one that protects the game, is that a colony cannot fill a volume.
+//
+// Two halves, because the material has two behaviours:
+//   • **붙은 것은 안 움직인다.** A grain against a surface has landed; it holds its
+//     place and creeps. Without this, mold on a wall or a ceiling would slide off
+//     the instant it grew and 「곰팡이 슬은 벽」 would not exist at all.
+//   • **방은 안 찬다.** The creep only takes empty cells that touch a *non-mold*
+//     surface, so it cannot scaffold on itself outward.
 {
   reseed();
   const { grid, sim } = makeWorld(50, 36);
   box(grid, 10, 6, 30, STONE);
   fill(grid, 14, 26, 41, 29, RAW_MEAT); // a long shelf of it, lots of open air above
+  const interior = 30 * 30;
   run(sim, grid, 900 * HZ);
-  const molds: { x: number; y: number }[] = [];
-  for (let y = 0; y < grid.height; y++)
-    for (let x = 0; x < grid.width; x++)
-      if (grid.cells[grid.idx(x, y)] === MOLD) molds.push({ x, y });
-  let floating = 0;
-  for (const { x, y } of molds) {
-    let supported = false;
-    for (let dy = -1; dy <= 1 && !supported; dy++)
-      for (let dx = -1; dx <= 1 && !supported; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-        const id = grid.cells[grid.idx(nx, ny)];
-        if (id === EMPTY || id === MOLD) continue;
-        const ph = getMaterial(id).phase;
-        if (ph === 1 || ph === 2) supported = true; // Phase.Solid / Phase.Powder
-      }
-    if (!supported) floating++;
-  }
+  const molds = count(grid, MOLD);
   check(
-    '곰팡이는 붙을 데가 있어야만 자란다 — 공중에 뜬 칸이 없다',
-    molds.length > 0 && floating === 0,
-    `${molds.length} 곰팡이, ${floating} unsupported`,
+    '곰팡이는 방을 채우지 않는다',
+    molds > 0 && molds < interior * 0.35,
+    `${molds} 곰팡이 in a ${interior}-cell room (${((molds / interior) * 100).toFixed(1)}%)`,
+  );
+
+  // 붙은 것은 안 움직인다 — a grain painted onto the underside of the ceiling has a
+  // surface above it and nothing below, so gravity is the only thing that could
+  // move it. It must still be there.
+  reseed();
+  const stick = makeWorld();
+  fill(stick.grid, 0, 8, 39, 9, STONE); // a ceiling slab
+  for (let x = 8; x < 32; x++) put(stick.grid, x, 10, MOLD); // hanging off its underside
+  const hung = count(stick.grid, MOLD);
+  run(stick.sim, stick.grid, 120 * HZ);
+  let stillHanging = 0;
+  for (let x = 8; x < 32; x++) if (stick.grid.cells[stick.grid.idx(x, 10)] === MOLD) stillHanging++;
+  check(
+    '붙은 곰팡이는 안 떨어진다 — 천장에도 슨다',
+    stillHanging === hung,
+    `${stillHanging} of ${hung} still on the ceiling after 120s`,
+  );
+
+  // …and the other half of the same rule: a spore with nothing to cling to falls.
+  reseed();
+  const drift = makeWorld();
+  fill(drift.grid, 0, 26, 39, 28, STONE);
+  for (let x = 10; x < 30; x += 2) put(drift.grid, x, 4, MOLD); // released in mid-air
+  const released = count(drift.grid, MOLD);
+  run(drift.sim, drift.grid, 200 * HZ);
+  let airborne = 0;
+  let landed = 0;
+  for (let y = 0; y < 26; y++)
+    for (let x = 0; x < 40; x++) {
+      if (drift.grid.cells[drift.grid.idx(x, y)] !== MOLD) continue;
+      if (y < 20) airborne++;
+      else landed++;
+    }
+  // Not an equality: a spore that lands roots and starts creeping along the floor,
+  // so the settled count grows past what was released. What is being pinned is
+  // that nothing stayed up in the air.
+  check(
+    '붙을 데 없는 포자는 밀가루처럼 흩날려 내려앉는다',
+    airborne === 0 && landed >= released,
+    `${released} released → ${landed} on the floor, ${airborne} still airborne`,
+  );
+}
+
+// ── 8b. 침식 — 식품만 먹고, 보존된 것은 안 먹는다 ────────────────────────────
+{
+  // 먹는다: mold painted onto a fresh loaf eats it, and the mass becomes mold that
+  // remembers it ate (so it will hand the loaf on as 부패물 rather than deleting it).
+  // 생고기, not 빵: erosion can only take a cell the clock has already brought to
+  // MOLD_AT (spoil.ts `moldCanEat`), so a scene shorter than that stage measures
+  // the gate rather than the eating. Raw meat reaches it soonest.
+  reseed();
+  const eat = makeWorld();
+  fill(eat.grid, 0, 24, 39, 26, STONE);
+  fill(eat.grid, 10, 21, 29, 23, RAW_MEAT);
+  const cut = count(eat.grid, RAW_MEAT);
+  put(eat.grid, 10, 20, MOLD); // one grain, on the corner
+  run(eat.sim, eat.grid, 300 * HZ);
+  check(
+    '곰팡이는 식품을 침식한다 — 한 알이 고기 한 덩이를 먹는다',
+    count(eat.grid, RAW_MEAT) === 0,
+    `${cut} → ${count(eat.grid, RAW_MEAT)} 생고기, ${ateMold(eat.grid)} 곰팡이(먹은 것)`,
+  );
+
+  // 보존된 것은 안 먹는다. Same scene, same single grain, salt laid on the loaf —
+  // and this is the check that keeps 보존 meaning 보존: without it, salting would
+  // stop the clock and change nothing, because the mold would eat it anyway.
+  // A *single row* of loaf with salt laid on it, because 염장 is a contact rule:
+  // salt on top of a three-deep block preserves the row it touches and nothing
+  // below, which is correct behaviour and a useless scene — it measured the block
+  // geometry rather than the rule.
+  reseed();
+  const salted = makeWorld();
+  fill(salted.grid, 0, 24, 39, 26, STONE);
+  fill(salted.grid, 10, 23, 29, 23, BREAD);
+  fill(salted.grid, 10, 22, 29, 22, SALT);
+  const saltedLoaf = count(salted.grid, BREAD);
+  put(salted.grid, 9, 23, MOLD);
+  run(salted.sim, salted.grid, 300 * HZ);
+  check(
+    '…절인 빵은 안 먹는다 (보존이 침식에도 듣는다)',
+    count(salted.grid, BREAD) === saltedLoaf,
+    `${count(salted.grid, BREAD)} of ${saltedLoaf} 빵 left under salt`,
+  );
+
+  // 얼린 것도 마찬가지 — same predicate, other branch.
+  reseed();
+  const frozen = makeWorld();
+  fill(frozen.grid, 0, 24, 39, 26, STONE);
+  fill(frozen.grid, 10, 21, 29, 23, BREAD);
+  const frozenLoaf = count(frozen.grid, BREAD);
+  put(frozen.grid, 10, 20, MOLD);
+  // -10° kills the mold outright as well, which is the honest result of putting a
+  // mouldy loaf in a freezer; the loaf is what is being measured.
+  run(frozen.sim, frozen.grid, 300 * HZ, { x0: 0, y0: 19, x1: 39, y1: 26, t: -10 });
+  check(
+    '…얼린 빵도 안 먹는다',
+    count(frozen.grid, BREAD) === frozenLoaf,
+    `${count(frozen.grid, BREAD)} of ${frozenLoaf} 빵 left frozen`,
+  );
+
+  // 자기가 남길 것은 다시 안 먹는다 — the livelock guard, as a direct statement.
+  // A box of 부패물 with mold in it must still reach 퇴비.
+  reseed();
+  const sludge = makeWorld();
+  fill(sludge.grid, 0, 24, 39, 26, STONE);
+  fill(sludge.grid, 12, 22, 27, 23, SPOILED);
+  const before = count(sludge.grid, SPOILED);
+  fill(sludge.grid, 12, 21, 27, 21, MOLD);
+  run(sludge.sim, sludge.grid, 600 * HZ);
+  // Stated as "none of it was eaten and none of it was lost", not as "it all
+  // finished" — the latter is really a measurement of 부패물's own 300s clock over
+  // 32 cells, which needs a much longer window and adds nothing.
+  check(
+    '곰팡이는 부패물을 다시 안 먹는다 — 사슬이 닫힌다',
+    ateMold(sludge.grid) === 0 &&
+      count(sludge.grid, SPOILED) + count(sludge.grid, COMPOST) === before &&
+      count(sludge.grid, COMPOST) > 0,
+    `${before} 부패물 → ${count(sludge.grid, COMPOST)} 퇴비 + ` +
+      `${count(sludge.grid, SPOILED)} 남음, 먹힌 것 ${ateMold(sludge.grid)}칸`,
   );
 }
 
@@ -636,14 +805,14 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   fill(packed.grid, SLAB.x0, SLAB.y0, SLAB.x1, SLAB.y1, BREAD);
 
   const before = count(open.grid, BREAD);
-  run(open.sim, open.grid, 200 * HZ);
-  run(packed.sim, packed.grid, 200 * HZ);
+  run(open.sim, open.grid, 300 * HZ);
+  run(packed.sim, packed.grid, 300 * HZ);
   const openLeft = count(open.grid, BREAD);
   const packedLeft = count(packed.grid, BREAD);
   check(
     '곰팡이가 핀 쪽이 훨씬 빨리 상한다 — 전염은 곰팡이를 타고 간다',
-    count(open.grid, MOLD) > 0 && openLeft === 0 && packedLeft > 0,
-    `open ${openLeft} vs sealed ${packedLeft} of ${before} left at 200s ` +
+    count(open.grid, MOLD) > 0 && openLeft * 3 < packedLeft,
+    `open ${openLeft} vs sealed ${packedLeft} of ${before} left at 300s ` +
       `(${count(open.grid, MOLD)} 곰팡이 vs ${count(packed.grid, MOLD)})`,
   );
 }
@@ -713,12 +882,12 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
   fill(grid, 0, 26, 39, 29, STONE);
   fill(grid, 8, 24, 31, 25, DEAD_FISH);
   const before = count(grid, DEAD_FISH);
-  run(sim, grid, 600 * HZ);
+  run(sim, grid, 1500 * HZ);
   check(
     '사체는 삭아 없어지는 게 아니라 썩어서 남는다',
-    count(grid, DEAD_FISH) === 0 &&
-      count(grid, SPOILED) + count(grid, COMPOST) === before,
-    `${before} 사체 → ${count(grid, SPOILED)} 부패물 + ${count(grid, COMPOST)} 퇴비`,
+    count(grid, DEAD_FISH) === 0 && chainMass(grid, DEAD_FISH) === before,
+    `${before} 사체 → ${ateMold(grid)} 곰팡이 + ${count(grid, SPOILED)} 부패물 + ` +
+      `${count(grid, COMPOST)} 퇴비 (합 ${chainMass(grid, DEAD_FISH)})`,
   );
 }
 

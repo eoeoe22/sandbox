@@ -43,7 +43,7 @@ const CHAR_TEMP = 250;
  *  anything that rots *into* it, so a store room that has gone over stays gone
  *  over for a while: the mess is a state you have to live with (or burn), not a
  *  loading screen in front of free fertiliser. */
-const BREAKDOWN_SECONDS = 150;
+const BREAKDOWN_SECONDS = 300;
 
 /** 어둡고 눅눅한 갈녹색 — mould-and-mush, kept far from both Dirt's warm brown
  *  and Compost's near-black so all three read apart in a heap. */

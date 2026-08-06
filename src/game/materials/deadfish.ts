@@ -98,7 +98,7 @@ export const DEAD_FISH = register({
   // facing bit at 0 that the renderer draws the tail pixel from (see above), and
   // there is no `dryMask` because a corpse keeps no moisture counter: a dead fish
   // cannot be turned into 육포, it has to be salted or frozen like anything else.
-  spoil: { seconds: 55, auxShift: 1, into: () => SPOILED_FOOD.id },
+  spoil: { seconds: 140, auxShift: 1, into: () => SPOILED_FOOD.id },
   // Organic and poorly conductive, like the live fish and the Termite.
   thermal: { conductivity: 0.2 },
   update: updateDeadFish,

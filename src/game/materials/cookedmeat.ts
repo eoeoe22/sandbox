@@ -94,7 +94,7 @@ export const COOKED_MEAT = register({
   // "alight" bit has to stay clear of it — see the layout note there for what
   // happened when it did not.
   spoil: {
-    seconds: 110,
+    seconds: 260,
     auxShift: SPOIL_SHIFT,
     dryMask: DRY_MASK,
     into: () => SPOILED_FOOD.id,

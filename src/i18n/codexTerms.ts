@@ -279,11 +279,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   spoilTime: {
     ko: {
       label: '부패 시간',
-      desc: '상온(20℃)에서 다 썩는 데 걸리는 평균 시간입니다. 35℃ 부근에서 가장 빨라(두 배) 거기서 더 데우면 오히려 느려지다가 60℃에서 멎고, 추우면 느려집니다. 곰팡이가 붙은 자리는 세 배로 빨라집니다. 칸 하나 기준이라 큰 덩어리는 이보다 오래 걸립니다.',
+      desc: '상온(20℃)에서 다 썩는 데 걸리는 평균 시간입니다. 35℃ 부근에서 가장 빨라(두 배) 거기서 더 데우면 오히려 느려지다가 60℃에서 멎고, 추우면 느려집니다. 다만 곰팡이가 피면 이 시계와 상관없이 먹혀 없어지므로, 실제로 덩어리가 버티는 시간은 이보다 훨씬 짧습니다. 칸 하나 기준이라 큰 덩어리는 이보다 오래 걸립니다.',
     },
     en: {
       label: 'Spoils in',
-      desc: 'Average time to rot through at room temperature (20°C). Fastest around 35°C (twice as fast); heat it further and it slows again, stopping at 60°C, and cold slows it too. Mold growing against a cell triples it. Measured per cell, so a large body takes longer than this.',
+      desc: 'Average time to rot through at room temperature (20°C). Fastest around 35°C (twice as fast); heat it further and it slows again, stopping at 60°C, and cold slows it too. Once mold takes hold it eats the cell outright regardless of this clock, so a body in practice lasts a good deal less than this. Measured per cell, so a large body takes longer than this.',
     },
   },
   perishable: {
