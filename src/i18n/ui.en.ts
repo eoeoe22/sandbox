@@ -260,6 +260,15 @@ export const en = {
     add: 'Add material',
   },
 
+  // --- Placement direction badge (directional materials) ---
+  placeDir: {
+    aria: 'Placement direction — {name}: {dir}',
+    up: 'up',
+    down: 'down',
+    left: 'left',
+    right: 'right',
+  },
+
   // --- Inspect panel ---
   inspect: {
     brushInfo: 'Brush info',

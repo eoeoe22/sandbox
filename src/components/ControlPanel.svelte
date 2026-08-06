@@ -61,6 +61,7 @@
   import HeatCoolSettings from './HeatCoolSettings.svelte';
   import InspectPanel from './InspectPanel.svelte';
   import Modal from './Modal.svelte';
+  import PlaceDirBadge from './PlaceDirBadge.svelte';
   import SaveSlots from './SaveSlots.svelte';
 
   // Name shown on the 재료 (draw) brush button, so the active brush target is
@@ -936,6 +937,10 @@
 <!-- 돋보기 readout, floating over the top of the sandbox (shown only while the
      inspect overlay is on and the pointer is over the canvas). -->
 <InspectPanel />
+
+<!-- 배치 방향 화살표, 재생 영역 우측 상단 (돋보기 반대편). 방향성 물질(컨베이어·팬·
+     레이저·성형작약)을 고른 동안에만 뜬다. -->
+<PlaceDirBadge />
 
 <!-- 영역 선택이 오브젝트 도구에서 거부됐을 때 뜨는 부트스트랩 스타일 팝오버.
      영역 버튼 위에 짧게 떠 있다가 스스로 사라진다 (portal to <body> so it escapes

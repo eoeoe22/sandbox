@@ -124,7 +124,13 @@ export const SEED = register({
   // germinated into a wall of plants). A press always lands at least one
   // grain, and a 영역 fill reads as a sparsely sown bed (see
   // Material.placementDensity / PointerPainter.paintCells).
-  placementDensity: 0.05,
+  //
+  // Lowered 0.05 → 0.02: at the old rate a normal-sized brush still put down
+  // enough kernels that the plot grew in as a thicket, which is the very thing
+  // sowing was introduced to avoid. A plant *spreads* on its own once it takes,
+  // so the brush only has to start it — undersowing costs a second click,
+  // oversowing costs a wall of plants you have to burn back.
+  placementDensity: 0.02,
   category: 'life',
   // 피폭사 — a kernel is alive too, so radiation kills it where it lies and it goes
   // the same way a grown Plant does, to Ash (see engine/radiation.ts). Sowing into

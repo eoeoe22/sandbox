@@ -599,7 +599,12 @@ export const FISH = register({
   // one, since PointerPainter guarantees a press places at least one grain. This
   // is also half the answer to the even-spacing problem: a lattice needs a crowd
   // to be visible, and now you have to work to make a crowd.
-  placementDensity: 0.015,
+  //
+  // Lowered 0.015 → 0.006 alongside Seed's own cut, keeping the "a third of
+  // Seed" relation intact. Fish never breed, so the population is exactly what
+  // the brush laid down — and every extra one costs a per-tick 7×7 crowding
+  // scan (PERSONAL_SPACE), which is the other reason to sow thin.
+  placementDensity: 0.006,
   category: 'life',
   // 수위 — a fish takes up no room in the water it swims in: its cell holds the
   // water too, in the 겹침 (overlap) slot every porous host has (see the header
