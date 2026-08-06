@@ -1179,6 +1179,37 @@ export class SimContext {
    *  away with it. While it holds a host it blocks like that host; over open air
    *  (aux 0, which is every afterimage) it is an ordinary displaceable gas, so the
    *  drawn beam never obstructs anything falling through it. */
+  /**
+   * Hand back the host an `auxHost` cell is standing in for, if it is standing in
+   * for one: a Heat Ray beam resting inside a glass/diamond pane carries that pane
+   * in its `aux` (see materials/heatray.ts), and this puts the pane on the grid and
+   * drops the beam. Returns the id now at the cell — the host when one was
+   * released, else `id` unchanged — so a caller can keep judging without a second
+   * read.
+   *
+   * This is what a system about to DESTROY the cell calls first, so that it meets
+   * the pane rather than the particle hiding it. The blast is the case it exists
+   * for: a beam cell is a Gas (durability 15) where glass is a Solid (200), so a
+   * charge far too weak to crack a window used to punch a hole through one wherever
+   * a laser happened to be parked — and the pane vanished with no shatter residue,
+   * because nothing restores an `aux` the destroying code never knew about.
+   * Releasing first makes every downstream rule — shadowing, crazing, destruction,
+   * residue — apply to the glass exactly as it does to the rest of the pane.
+   *
+   * The movement layer answers the same problem the other way (`isDisplaceable`
+   * blocks instead of releasing) because there the cell is being *moved*, not
+   * removed: the beam can simply stay put and keep holding its pane.
+   */
+  releaseAuxHost(x: number, y: number, id: number): number {
+    if (id === EMPTY || getMaterial(id).auxHost !== true) return id;
+    const host = this.getAux(x, y);
+    if (host === EMPTY) return id;
+    this.set(x, y, host);
+    this.setTemp(x, y, AMBIENT_TEMP);
+    this.setAux(x, y, 0);
+    return host;
+  }
+
   private isDisplaceable(x: number, y: number, id: number): boolean {
     if (id === EMPTY) return true;
     const m = getMaterial(id);

@@ -16,11 +16,17 @@
 //      cell in its top course and swapped the beam — host id and all — up into its own
 //      place. The pane reappeared where the beam ended up and the grain was eaten
 //      (유리 복제 + 모래 삭제). Fixed by Material.auxHost.
+//   4. A blast judged the cell by the BEAM's durability (a Gas, 15) instead of the
+//      pane's (a Solid, 200), so a charge far too weak to crack a window took the
+//      pane a beam was parked in — and took it with no shatter residue, since
+//      nothing in blast.ts restores an `aux` it never knew about. Fixed by handing
+//      the pane back (SimContext.releaseAuxHost) before the front judges the cell.
 //
 // Run: `node test/run-heatrayglass.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
 import { emitHeatRay, isHeatRayAfterimage, HEAT_RAY } from '../src/game/materials/heatray';
+import { detonate } from '../src/game/materials/blast';
 import { getMaterial } from '../src/game/materials/registry';
 import '../src/game/materials';
 
@@ -276,6 +282,69 @@ function fireAndDrain(grid: Grid, sim: Simulation, mx: number, my: number, dx: n
   // Guard the guard: a scene that never puts a beam inside a pane would pass the check
   // above by doing nothing at all.
   check('…그리고 그 검사가 실제로 판을 물어 봤다', staged > 100, `${staged}건 회수`);
+}
+
+// 5. 폭발. A blast judges a cell by its own durability, and a beam is a Gas (15)
+//    where Glass is a Solid (200) — so a charge far too weak to crack a window used
+//    to take the pane a beam happened to be parked inside, and take it with no
+//    shatter residue at all, because nothing in blast.ts restores an `aux` it never
+//    knew about. Both weak regimes are checked, because the beam's Gas durability
+//    sits between them and each reaches the pane by a different route:
+//      • power 6 (Gunpowder / 불꽃놀이 / 섬광 가루) is below 15, so the beam takes the
+//        "too tough to destroy" branch and is FLUNG as Debris — which overwrites
+//        `aux` with the fragment's own origin id, pane and all.
+//      • power 50 is above 15 and below 200, so the beam is simply DESTROYED.
+//    The bare-glass control is what makes either number mean anything: the same
+//    blast against an untouched block conserves the glass family exactly (Glass
+//    crazes to Broken Glass rather than vanishing), so any loss in the beam run is
+//    the escrowed pane and nothing else.
+{
+  const glassFamily = (grid: Grid): number => {
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++) {
+      const c = grid.cells[i];
+      if (c === GLASS || c === BROKEN_GLASS) n++;
+      else if (c === HEAT_RAY.id && (grid.aux[i] === GLASS || grid.aux[i] === BROKEN_GLASS)) n++;
+    }
+    return n;
+  };
+  for (const power of [6, 50]) {
+    for (const withBeam of [false, true]) {
+      Math.random = mulberry32(5);
+      const grid = new Grid(W, H);
+      const sim = new Simulation(grid);
+      for (let y = 15; y < 25; y++) for (let x = 25; x < 35; x++) grid.cells[grid.idx(x, y)] = GLASS;
+      grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+      const before = glassFamily(grid);
+      let tx = 30;
+      let parked = true;
+      if (withBeam) {
+        emitHeatRay(sim.context, 2, 20, 1, 0);
+        let restX = -1;
+        for (let i = 0; i < 30 && restX < 0; i++) {
+          sim.step();
+          for (let x = 25; x < 35; x++) {
+            const gi = grid.idx(x, 20);
+            if (grid.cells[gi] === HEAT_RAY.id && grid.aux[gi] === GLASS) {
+              restX = x;
+              break;
+            }
+          }
+        }
+        parked = restX >= 0;
+        if (parked) tx = restX;
+      }
+      detonate(sim.context, tx, 20, 1, { soloSource: true, reach: 3, power });
+      const after = glassFamily(grid);
+      check(
+        withBeam
+          ? `유리를 못 깨는 폭발(power ${power})이 빔이 앉은 칸의 유리도 못 가져간다`
+          : `대조군 — 같은 폭발(power ${power})은 맨 유리를 온전히 남긴다`,
+        after === before && parked,
+        `유리족 ${before} → ${after}${parked ? '' : ' (빔이 판에 자리 잡지 못함)'}`,
+      );
+    }
+  }
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

@@ -861,7 +861,12 @@ export function detonate(
     // claim it), otherwise the default fate applies (water → steam plume,
     // everything else → the shockwave flash). prevId drives both the handler and
     // the water check, so it's read once here.
-    const prevId = sim.get(x, y);
+    // Release any pane an `auxHost` beam is standing in for before resolving, so
+    // `onCell` and `defaultCell` alike judge the glass and not the beam (see the
+    // neighbour scan below). Belt and braces: the scan below already released every
+    // cell the front *propagated* into, so this one is for the SEED cells, which go
+    // straight into the queue without passing it.
+    const prevId = sim.releaseAuxHost(x, y, sim.get(x, y));
     let handled = false;
     if (onCell) handled = onCell(sim, x, y, prevId, edx, edy, outB) === true;
     if (!handled) defaultCell(sim, x, y, prevId, power, edx, edy, outB);
@@ -901,7 +906,18 @@ export function detonate(
       // solid caught here (Glass) still crazes into its shattered form (Broken
       // Glass) under the shock even as it shadows — see shatterFragile, unless
       // this wave was declared not to craze at all (`shatters: false`).
-      const blockedId = sim.get(nx, ny);
+      // A Heat Ray beam resting inside a pane is standing in for that pane, which
+      // it carries in `aux` (Material.auxHost — see materials/heatray.ts). Hand the
+      // pane back BEFORE judging the cell, so the front meets glass rather than the
+      // Gas-phase beam hiding it. Without this a charge far too weak to crack a
+      // window (power below Glass's 200, but above a Gas's 15) punched a one-cell
+      // hole through one wherever a laser happened to be parked — and the pane went
+      // with no shatter residue, since nothing here restores an `aux` it doesn't
+      // know about. Released here rather than at the pop below because this is also
+      // where the SHADOW is decided: a released pane blocks the front the same way
+      // its neighbours do, instead of leaving a gap in the wall the blast leaks
+      // through. Everything downstream then applies to the glass, unchanged.
+      const blockedId = sim.releaseAuxHost(nx, ny, sim.get(nx, ny));
       if (blocksBlast(blockedId, power, pierceProof)) {
         if (shatters) shatterFragile(sim, nidx, nx, ny, blockedId, stamp, id_d);
         continue;
