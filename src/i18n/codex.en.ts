@@ -181,7 +181,7 @@ export const materialCodexEn: Record<number, string> = {
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
   135: 'The calcareous skeleton left when coral dies. Slowly regenerates in saltwater at an appropriate temperature.',
   159: 'Grows by covering the surface of materials, and spoils food. Cannot spoil food that has been salted, honeyed, steeped in alcohol, or cooled below zero. Dies above 60°C or below 0°C, and dies on contact with alcohol, hydrogen peroxide, soapy water, or acid.',
-  161: 'Black earth left when spoiled food fully decomposes. Left alone, it becomes compost that helps plants grow.',
+  161: 'Black earth left when spoiled food fully decomposes. Plants grown in it come up far fuller.',
 
   // Cooking
   151: 'Fine powder made by grinding wheat. Extremely light, so it drifts as it falls, and ignites instantly when fire touches it while airborne. Turns into dough when mixed with water, salt water, or sugar water.',
