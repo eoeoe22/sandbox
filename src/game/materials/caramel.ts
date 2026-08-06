@@ -162,7 +162,7 @@ export const CARAMEL = register({
   // pour. Also listed under 가루 (설탕's tab), because the thing players will be
   // looking for it under is "what happened to my sugar".
   category: 'liquid',
-  alsoIn: ['powder'],
+  alsoIn: ['powder', 'food'],
   // Very viscous — holds a slumping mound instead of racing flat. A shade past
   // Honey's 0.8, the only other liquid in the game made of the same stuff.
   viscosity: 0.85,

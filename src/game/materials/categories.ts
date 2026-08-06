@@ -49,6 +49,12 @@ export const CATEGORY_META: { key: string; icon: string }[] = [
   { key: 'cooling', icon: 'bi-snow' },
   { key: 'electric', icon: 'bi-lightning-charge-fill' },
   { key: 'life', icon: 'bi-flower1' },
+  // 요리. Sits next to 생명 because the two are the same kind of thing — the
+  // world's organic matter — and because half this tab's chemistry is borrowed
+  // from that one (the Yeast that proofs a dough is the Yeast that ferments a
+  // mash). Like 금속 it is partly an `alsoIn` tab: the sugars, salt and soda that
+  // were already here are as much kitchen materials as the flour is.
+  { key: 'food', icon: 'bi-egg-fried' },
   { key: 'radioactive', icon: 'bi-radioactive' },
   { key: 'exotic', icon: 'bi-stars' },
 ];

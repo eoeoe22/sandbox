@@ -32,6 +32,7 @@ export const categoryLabelsEn: Record<string, string> = {
   cooling: 'Cryo',
   electric: 'Electric',
   life: 'Life',
+  food: 'Cooking',
   radioactive: 'Radioactive',
   exotic: 'Exotic',
 };
@@ -51,6 +52,7 @@ export const categoryLabelsKo: Record<string, string> = {
   cooling: '냉각',
   electric: '전기',
   life: '생명',
+  food: '요리',
   radioactive: '방사성',
   exotic: '특수',
 };
@@ -234,4 +236,12 @@ export const materialNamesKo: Record<number, string> = {
   146: '물고기',
   147: '죽은 물고기',
   148: 'ANFO',
+  151: '밀가루',
+  152: '반죽',
+  153: '빵',
+  154: '생고기',
+  155: '익은 고기',
+  156: '탄 고기',
+  157: '옥수수 알갱이',
+  158: '팝콘',
 };

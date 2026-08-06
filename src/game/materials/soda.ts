@@ -144,5 +144,8 @@ export const SODA = register({
   // Same weight class as Salt: sinks through water and settles.
   density: 5,
   thermal: { conductivity: 0.35 },
+  // Also on the 요리 shelf — it was a kitchen material long before there was a
+  // kitchen tab to put it in.
+  alsoIn: ['food'],
   update: updateSoda,
 });
