@@ -475,10 +475,23 @@ function fireAndDrain(grid: Grid, sim: Simulation, mx: number, my: number, dx: n
     ] as ReadonlyArray<readonly [number, number, string]>) {
       const control = profile(false, reach, gap);
       const beamed = profile(true, reach, gap);
+      // The scene has to actually REACH the wall, or `beamed === control` is true for
+      // the one reason it must never be accepted for: nothing happened. Both profiles
+      // come back pristine and the check passes with all four releases deleted.
+      //
+      // This is not hypothetical. `BLAST_REACH_SCALE` is a single global knob every
+      // blast routes through ("폭발 범위 전체 축소"), and dropping it from 2/3 to 0.3 —
+      // an ordinary rebalance, not an extreme — is enough to make the 압력파 전파 scene
+      // stop touching the wall entirely. So each geometry states its own premise: the
+      // control must show the face course crazed. Re-tune the blast and this says so
+      // out loud instead of quietly testing nothing.
+      const controlCrazed = Number(control.split(' ')[0].split('/')[1]);
       check(
         `벽면에 앉은 빔은 유리와 똑같이 폭발을 가린다 — ${who} (reach ${reach}, 거리 ${gap})`,
-        beamed === control,
-        `대조군 ${control} / 빔 ${beamed}`,
+        beamed === control && controlCrazed > 0,
+        controlCrazed > 0
+          ? `대조군 ${control} / 빔 ${beamed}`
+          : `이 형상이 더 이상 벽에 닿지 않는다 — 폭발 사거리 상수가 바뀐 듯 (대조군 ${control})`,
       );
     }
   }
