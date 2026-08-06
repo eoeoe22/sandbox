@@ -235,7 +235,7 @@ function holdMelt(grid: Grid, x0: number, x1: number, y0: number, y1: number, te
 //        every seed, because nothing ever got any deeper. It is also the check that
 //        cannot be talked down by tuning a rate.
 //      • 대칭. The pour converts at least as much as the mirrored pool scene does.
-//        Before: 34 cells against the pool's 61. Now: 66..82 against 54..68 over
+//        Before: 34 cells against the pool's 61. Now: 70..88 against 58..64 over
 //        eight seeds, i.e. the harder direction is, if anything, slightly ahead.
 //
 //    Both scenes start at ambient except for the melt, and neither is held at

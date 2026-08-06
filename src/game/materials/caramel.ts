@@ -291,11 +291,10 @@ function stirSwap(x: number, y: number, sim: SimContext, tx: number, ty: number)
  * left to flow. That turned a chunk of every pour into 겹침 occupants (9 cells in the
  * niter-pile scene before the stir, 21..31 with it — it peaked at 38 back when the
  * stir also traded with its own candy), and a 겹침 occupant has no temperature of its
- * own: it reads its
- * host's, which is the cold pile. So the melt was set toffee the moment it was
- * inside, yet went on percolating, because `SimContext.updateOverlay` knows nothing
- * about `freeze` — it drained to the floor of the pile and sat there as invisible,
- * inert, already-set caramel.
+ * own: it reads its host's, which is the cold pile. So the melt was set toffee the
+ * moment it was inside, yet went on percolating, because `SimContext.updateOverlay`
+ * knows nothing about `freeze` — it drained to the floor of the pile and sat there as
+ * invisible, inert, already-set caramel.
  *
  * Pinning it (markOverlayMoved — the same hold a powered Pump puts on the pores it
  * can't lift) stops it exactly where it stopped being molten. Set toffee that a fire
