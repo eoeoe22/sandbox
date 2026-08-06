@@ -17,9 +17,10 @@ import {
   $heatRateMode,
   $heatAbsoluteRate,
   $heatRelativeRate,
+  $placeDir,
   recordRecentPick,
 } from '../../state/store';
-import type { ObjectKind } from '../../state/store';
+import type { ObjectKind, PlaceDir } from '../../state/store';
 import {
   BRUSH_MIN,
   BRUSH_MAX,
@@ -348,7 +349,15 @@ export class PointerPainter {
       // marquee's live retint here is the signal: it visibly turns from the
       // heat tint to the material tint before Enter is pressed.
       this.updateRectOverlay();
+      // A 가열/지우개/보기 brush isn't placing the selected material at all, so
+      // the 배치 방향 badge belongs to the material tool alone.
+      this.publishPlaceDir();
     });
+    // Picking a different material is what turns the 배치 방향 badge on and off
+    // (and switches a belt's ←/→ readout for a fan's 상하좌우) — publish the
+    // current direction for whatever is selected now.
+    $selectedMaterial.listen(() => this.publishPlaceDir());
+    this.publishPlaceDir();
     // Toggling 영역 select mode: retint the cursor (crosshair vs brush outline)
     // and cancel any marquee once it turns off — a selection is only
     // meaningful while the mode is active.
@@ -964,6 +973,40 @@ export class PointerPainter {
     if (dx === 0 && dy === 0) return;
     if (Math.abs(dx) >= Math.abs(dy)) this.fanDir = dx > 0 ? FAN_RIGHT : FAN_LEFT;
     else this.fanDir = dy > 0 ? FAN_DOWN : FAN_UP;
+    this.publishPlaceDir();
+  }
+
+  /**
+   * Publish which way the selected 방향성 물질 would be stamped right now, for the
+   * arrow badge over the play area ($placeDir / PlaceDirBadge).
+   *
+   * Reads exactly what `paintCells` writes into `aux`, so the badge can't drift
+   * from what a stroke actually places: a Conveyor takes its 좌우 from
+   * `beltDirX`, a Fan/Laser/Shaped Charge its 상하좌우 from `fanDir`, and a
+   * Conveyor dragged vertically therefore still reads ← or → because that is
+   * genuinely all a belt records. Anything else — a non-directional material,
+   * the object tool, a 가열/지우개 brush that isn't placing the selection at all —
+   * publishes null, which hides the badge.
+   */
+  private publishPlaceDir(): void {
+    $placeDir.set(this.currentPlaceDir());
+  }
+
+  private currentPlaceDir(): PlaceDir | null {
+    if ($tool.get() !== 'material') return null;
+    const id = $selectedMaterial.get();
+    if (id === CONVEYOR.id) return this.beltDirX < 0 ? 'left' : 'right';
+    if (id !== FAN.id && id !== LASER.id && id !== SHAPED_CHARGE.id) return null;
+    switch (this.fanDir) {
+      case FAN_UP:
+        return 'up';
+      case FAN_DOWN:
+        return 'down';
+      case FAN_LEFT:
+        return 'left';
+      default:
+        return 'right';
+    }
   }
 
   /** Bresenham line so a quick drag paints a continuous stroke. */
@@ -1126,7 +1169,10 @@ export class PointerPainter {
       const [x, y] = this.toCell(e);
       this.rectEX = x;
       this.rectEY = y;
-      if (x !== this.rectSX) this.beltDirX = x > this.rectSX ? 1 : -1;
+      if (x !== this.rectSX) {
+        this.beltDirX = x > this.rectSX ? 1 : -1;
+        this.publishPlaceDir();
+      }
       this.updateFanDir(x, y);
       this.updateRectOverlay();
       return;
@@ -1138,7 +1184,10 @@ export class PointerPainter {
     const [x, y] = this.toCell(e);
     // Record the drag's horizontal direction so a Conveyor stamped this stroke
     // runs the way the brush moved.
-    if (x !== this.px) this.beltDirX = x > this.px ? 1 : -1;
+    if (x !== this.px) {
+      this.beltDirX = x > this.px ? 1 : -1;
+      this.publishPlaceDir();
+    }
     this.updateFanDir(x, y);
     this.stroke(this.px, this.py, x, y);
     this.paintedThisFrame = true;

@@ -346,6 +346,23 @@ export const $recentPicks = atom<RecentPick[]>([]);
  */
 export const $snapshotFit = atom<SnapshotFit>(SNAPSHOT_FIT_DEFAULT);
 
+/**
+ * Which way a 방향성 물질 (Conveyor, Fan, Laser, Shaped Charge) would be stamped
+ * right now — the direction the current/last brush drag chose, published by
+ * PointerPainter and shown as a small arrow badge over the top-right of the play
+ * area (PlaceDirBadge). `null` whenever nothing directional is selected, which
+ * is what hides the badge.
+ *
+ * It exists for 영역 선택 mode above all: there the marquee drag is the only
+ * thing that sets the direction, and until the rect is confirmed there is
+ * nothing on the canvas to read it off — so without the badge, aiming a belt or
+ * a shaped charge inside a selection was guesswork. The plain brush shows it too
+ * (nothing is lost by it, and a click that reuses the *last* stroke's direction
+ * is exactly as invisible).
+ */
+export type PlaceDir = 'up' | 'down' | 'left' | 'right';
+export const $placeDir = atom<PlaceDir | null>(null);
+
 /** Current grid resolution in cells (for the HUD). */
 export const $gridDims = atom<{ w: number; h: number }>({ w: GRID_W, h: GRID_H });
 
@@ -373,18 +390,67 @@ export const requestClear = (): void => $clearSignal.set($clearSignal.get() + 1)
 /** Advance the simulation by exactly one tick (used while paused). */
 export const requestStep = (): void => $stepSignal.set($stepSignal.get() + 1);
 
-/**
- * Record that a material id or an object kind was just picked, moving it to the
- * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX). Called
- * from every palette pick — material chips and 독립 오브젝트 chips alike — so the
- * quick-access bar tracks everything the user actually paints, not just
- * materials.
- */
-export const recordRecentPick = (pick: RecentPick): void => {
+/** Move a pick to the front of the recent list (deduped, capped). The single
+ *  writer behind both `recordRecentPick` and `recordRecentPickSoon`. */
+const commitRecentPick = (pick: RecentPick): void => {
   const prev = $recentPicks.get();
   if (prev[0] === pick) return; // already most-recent — no churn
   const next = [pick, ...prev.filter((p) => p !== pick)].slice(0, RECENT_MATERIALS_MAX);
   $recentPicks.set(next);
+};
+
+/**
+ * How long a palette pick waits before it reorders the 빠른접근 strip.
+ *
+ * The strip is made of the chips you just used, so writing a pick straight
+ * through re-sorted the strip *under the pointer* on the first click of a
+ * double click — the chip moved to slot 1 and the second click landed on
+ * whichever chip was pushed into its place, so 물질 더블클릭 (the pre-latched
+ * Clone shortcut) could never fire from the strip at all. Deferring the reorder
+ * past the browser's own click/dblclick window makes the chip stand still for
+ * the whole gesture; the selection itself is never delayed, only the strip's
+ * re-sort. Comfortably longer than the palette's own PICK_CLOSE_DELAY (400ms)
+ * and than the platform double-click thresholds (~500ms) it has to outlast.
+ */
+export const RECENT_PICK_SETTLE_MS = 600;
+
+/** The pick waiting out `RECENT_PICK_SETTLE_MS`, and its timer. One slot, not a
+ *  queue: a later pick during the window supersedes the earlier one rather than
+ *  stacking behind it — a double click is *one* decision, and its second half
+ *  (Clone) is the half that should land in the recent list. */
+let pendingPick: RecentPick | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+
+function flushPendingPick(): void {
+  if (pendingTimer === undefined) return;
+  clearTimeout(pendingTimer);
+  pendingTimer = undefined;
+  const p = pendingPick;
+  pendingPick = null;
+  if (p !== null) commitRecentPick(p);
+}
+
+/**
+ * Record that a material id or an object kind was just picked, moving it to the
+ * front of the recent list (deduped, capped at RECENT_MATERIALS_MAX) — right
+ * now. Used by the 스포이드 (PointerPainter), which is a single, unambiguous
+ * gesture with no double click to protect. Any still-pending debounced pick is
+ * flushed first so the two land in the order they were made.
+ */
+export const recordRecentPick = (pick: RecentPick): void => {
+  flushPendingPick();
+  commitRecentPick(pick);
+};
+
+/**
+ * Same, but deferred by `RECENT_PICK_SETTLE_MS` so the palette's chips hold
+ * still long enough for a double click to complete on the one that was clicked.
+ * Used by every palette chip (material, object, and the 더블클릭 Clone shortcut).
+ */
+export const recordRecentPickSoon = (pick: RecentPick): void => {
+  pendingPick = pick;
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(flushPendingPick, RECENT_PICK_SETTLE_MS);
 };
 
 /** Toggle a material id in the favorites list (star / unstar). */

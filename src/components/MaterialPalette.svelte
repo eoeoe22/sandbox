@@ -10,12 +10,13 @@
     $favorites as favorites,
     $recentPicks as recentPicks,
     OBJECT_KINDS,
-    recordRecentPick,
+    recordRecentPickSoon,
     toggleFavorite,
   } from '../state/store';
   import type { ObjectKind } from '../state/store';
   import { MATERIALS, getMaterial, CLONE } from '../game/materials';
   import { canAdopt } from '../game/materials/clone';
+  import { Phase } from '../game/engine/types';
   import type { Material } from '../game/engine/types';
   import { buildCategories, categoriesOf } from '../game/materials/categories';
   import { objectSvgFor } from '../game/render/objectSvg';
@@ -564,22 +565,47 @@
     // this way latches onto whatever it touches in-world, the normal way.
     cloneTarget.set(null);
     tool.set('material');
-    recordRecentPick(id);
+    // Deferred, not immediate: the recent list is what orders the quick-access
+    // strip, and re-sorting it on the first click of a double click would slide
+    // the chip out from under the second one (see RECENT_PICK_SETTLE_MS). The
+    // *selection* above still happens the instant the click lands.
+    recordRecentPickSoon(id);
     closeFlyoutSoon();
+  }
+
+  /**
+   * Whether 물질 더블클릭 gives a Clone pre-latched onto this material.
+   *
+   * Two separate gates, and they answer different questions:
+   *
+   *  • `canAdopt` — could Clone *ever* latch onto this? Wall/Void/Blast/Ember/
+   *    Spark/Clone itself can't be adopted at all, so pre-seeding one would
+   *    hand back a Clone that never emits anything.
+   *  • Not a 고체. Solids *can* be adopted (the in-world Clone still does it, and
+   *    that behaviour is unchanged — this gate is the palette's alone), but the
+   *    shortcut isn't worth what it costs on them: solid chips are the ones you
+   *    click most while building, an infinite source of a static block that just
+   *    packs the space around it is rarely what anyone wants, and a stray second
+   *    click silently swapping your Wall/Iron/Wood for a Clone is a misfire you
+   *    only notice after painting. Powders, liquids and gases — where an endless
+   *    spring or an hourglass is the whole point — keep it.
+   */
+  function cloneShortcutAllowed(id: number): boolean {
+    return canAdopt(id) && getMaterial(id).phase !== Phase.Solid;
   }
 
   // Double-clicking a material chip is a shortcut for "give me a Clone that's
   // already latched onto this" — selects Clone but pre-seeds $cloneTarget so
   // PointerPainter can seed the painted cell's aux with it directly (see
   // PointerPainter.paintCells), skipping the in-world touch Clone normally
-  // needs before it starts emitting copies. Only materials Clone could ever
-  // organically latch onto (canAdopt) qualify — Wall/Void/Blast/Clone itself
-  // fall back to a normal pick() instead of a target that would never adopt.
+  // needs before it starts emitting copies. Only materials the shortcut applies
+  // to (cloneShortcutAllowed) qualify; everything else — 고체 included — falls
+  // back to a plain pick, so a double click there is just a click twice.
   // The browser's own click→click→dblclick sequence already ran pick(id) twice
   // before this fires (each call re-arming closeFlyoutSoon), so this only needs
   // to override that pending close and finish the job as a Clone selection.
   function pickClone(id: number): void {
-    if (!canAdopt(id)) {
+    if (!cloneShortcutAllowed(id)) {
       pick(id);
       closeFlyoutNow();
       return;
@@ -588,7 +614,10 @@
     selected.set(CLONE.id);
     cloneTarget.set(id);
     tool.set('material');
-    recordRecentPick(CLONE.id);
+    // Supersedes the pending entry the two clicks under this double click left
+    // behind (one slot, latest wins — see recordRecentPickSoon): the gesture
+    // asked for a Clone, so a Clone is what the recent list should remember.
+    recordRecentPickSoon(CLONE.id);
     closeFlyoutNow();
   }
 
@@ -608,7 +637,10 @@
     clearTimeout(closeTimer);
     selectedObject.set(kind);
     tool.set('object');
-    recordRecentPick(kind);
+    // Deferred like a material pick — an object chip has no 더블클릭 shortcut of
+    // its own, but it shares the quick strip with the chips that do, and a
+    // re-sort under a pointer that's mid-gesture on a neighbour is the same bug.
+    recordRecentPickSoon(kind);
     pinned = null;
     hovered = null;
   }
