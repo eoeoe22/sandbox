@@ -2,6 +2,33 @@
 //
 // Names and descriptions of property tags are in codexTerms.ts.
 // Keys are `Material.id` and `ObjectKind`.
+//
+// This file is a faithful translation of codex.ko.ts, which is the source of
+// truth. When Korean changes, retranslate the English to match — do not leave
+// stale English standing next to updated Korean.
+//
+// --- Writing style (mirrors codex.ko.ts's guide, adapted for English) -------
+//
+// 1-2 sentences per material. State observable facts (thresholds, results,
+// conditions) only — never explain the "why" or the underlying mechanism.
+// Plain present-tense, declarative, game-codex voice — not flavour text.
+//
+// 1. Cut mechanism explanations. Keep only the outcome.
+//    "Grains touched by water darken as they wet, then slowly cure into
+//    concrete." — not a paragraph about per-grain cure timing.
+// 2. Don't repeat what another entry already covers (e.g. acid's interaction
+//    with slime lives in the acid-slime entry, not in acid's own entry).
+// 3. No metaphor, em dashes, **bold**, or parenthetical asides — plain
+//    sentences only.
+// 4. List conditions as plain "if X, then Y" facts — no tactical advice, no
+//    justification for why a condition kills or blocks something.
+// 5. Keep numeric thresholds and comparisons to other materials (they're
+//    facts: "660°C", "stronger than TNT"). Cut unsupported superlatives
+//    ("the fastest fuse in the game").
+// 6. Match established English material names from each material's `name`
+//    field and existing i18n — don't invent new ones.
+// 7. End every sentence as a plain statement. No rhetorical questions, no
+//    ellipses.
 
 import type { ObjectKind } from '../state/store';
 
@@ -9,7 +36,7 @@ import type { ObjectKind } from '../state/store';
 
 export const materialCodexEn: Record<number, string> = {
   // Solids
-  1: 'An indestructible wall. It is completely excluded from the thermal conduction system.',
+  1: 'An indestructible wall. Does not interact with any material and does not conduct heat.',
   4: 'Melts into lava at 1100°C or higher.',
   124: 'A black volcanic glass formed when lava directly contacts water. Immune to most explosions, but like stone, it melts back into lava at 1100°C and corrodes in acid.',
   28: 'A metal with high thermal and electrical conductivity. Slowly turns to rust when in contact with saltwater, and releases hydrogen gas when dissolving in acid.',
@@ -31,7 +58,7 @@ export const materialCodexEn: Record<number, string> = {
   119: 'Broken glass powder fragments.',
   80: 'Powder fire extinguisher and acid neutralizer. Immediately extinguishes adjacent fires, and neutralizes acid into saltwater upon contact. Decomposes and vanishes when heated above 150°C.',
   43: 'Turns into mud when mixed with water.',
-  45: 'Grains touched by water get dark and wet, then slowly cure into concrete. The hardening timing varies slightly per grain, so the slab hardens gradually like a spreading wave rather than all at once. It remains powder while curing so water can pass through, and a single block of water wets multiple grains on its way, allowing poured water to seep deep into the heap. Grains that water cannot reach harden alongside neighboring curing grains, leaving no uncured spots in a dry wall.',
+  45: 'Grains touched by water darken as they wet, then slowly cure into concrete.',
   55: 'Combustion residue powder. Extremely light, so it floats on water.',
   105: 'Magnetic, so it is attracted to electromagnets, and slowly corrodes into rust powder in saltwater. When poured into acid, it dissolves and releases hydrogen much faster than solid iron.',
   128: 'Mix with rust powder to make thermite, with niter to make flash powder, or with ammonium nitrate to make ammonal explosive. Burns when directly touched by flames, and melts into molten aluminum at 660°C or higher. Causes a dust explosion when airborne. Burns with flames and white smoke upon contact with chlorine gas even without an ignition source.',
@@ -44,12 +71,12 @@ export const materialCodexEn: Record<number, string> = {
   3: 'Evaporates into steam at 100°C and turns into snow/ice below zero. Decomposes into hydrogen and oxygen when electricity flows through it.',
   5: 'Heavier than water, so it sinks. Boiling precipitates salt, and it freezes at -18°C. Has high electrical conductivity.',
   104: 'Water with dissolved sugar. Non-conductive, and ferments into alcohol and CO₂ upon contact with yeast.',
-  11: 'Corrodes solids and powders. Becomes acid gas when boiled and freezes at -20°C. Releases hydrogen bubbles when corroding metals with high reactivity. Turns slime into acid slime upon contact, consuming acid only occasionally like when corroding solids. Since slime drinks acid just as it drinks water, poured acid eventually turns into acid slime, increasing its volume.',
+  11: 'Corrodes solids and powders. Becomes acid gas when boiled, and freezes at -20°C. Releases hydrogen bubbles when corroding highly reactive metals.',
   40: 'Liquid metal at room temperature. Becomes mercury vapor when heated. Being less reactive than hydrogen, it does not produce hydrogen when dissolving in acid.',
   117: 'Molten gallium. Activates aluminum by stripping its oxide film, and solidifies into solid gallium below 28°C.',
   41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C.',
   150: 'Hot syrup made by heating sugar above 160°C. It oozes even more thickly than honey, then sets hard where it stopped once it cools below 120°C — reheat it and it runs again. It darkens as it sets, so you can see at a glance whether it is still workable. Pour niter into it while it is still molten (120-250°C) and you get rocket candy; take it past 250°C and it chars to ash.',
-  42: 'Light liquid fuel. Highly flammable, freezing at -80°C. Eradicates viruses.',
+  42: 'Light liquid fuel. Extremely flammable, freezing at -80°C. Eradicates viruses.',
   102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel).',
   44: 'Wet soil. Hardens into dirt when dried, and freezes at -3°C.',
   88: 'Releases water and oxygen as it decomposes. Released oxygen feeds nearby fires and strongly sterilizes viruses.',
@@ -61,7 +88,7 @@ export const materialCodexEn: Record<number, string> = {
   16: 'Evaporated acid gas. Corrodes materials it touches and returns to acid upon cooling.',
   36: 'A combustion-supporting gas. Produces an ultra-high temperature blue flame during fires.',
   37: 'Light flammable gas. Reacts with oxygen when ignited to create steam.',
-  118: 'High-temperature toxic vapor from evaporated mercury.',
+  118: 'High-temperature vapor from evaporated mercury.',
   87: 'Heavy gas. Sinks downward and has a fire-extinguishing effect.',
   96: 'Heavy toxic gas. Kills living creatures and reacts with sodium to form salt. Burns aluminum powder.',
   97: 'Ultra-light inert gas. Rises to the top and does not react with other substances.',
@@ -84,7 +111,7 @@ export const materialCodexEn: Record<number, string> = {
   // Smelting
   67: 'Reddish-brown ore powder. Melts above 850°C and solidifies into slag if cooled without coal.',
   71: 'Molten iron ore. Flows easily like water. Reduced to molten iron upon contact with coal, and hardens into slag when cooled below 750°C.',
-  70: 'Powdered coal. Reduces molten iron ore.',
+  70: 'Powdered coal. Burns easily, reduces molten iron ore, and is an ingredient in gunpowder.',
   69: 'Flux that increases smelting yield. Reduces slag formation during iron smelting when added in the proper ratio.',
   68: 'Smelting byproduct waste. Rises to the upper layer inside the blast furnace.',
 
@@ -119,7 +146,7 @@ export const materialCodexEn: Record<number, string> = {
   148: 'Explosive mixed from ammonium nitrate and diesel/kerosene. Rather than misfiring when wet, it detonates far more weakly.',
   145: 'Powerful explosive mixed from ammonium nitrate and aluminum powder. Stronger than TNT.',
   129: 'Firework explosive creating colorful sparks.',
-  149: 'Solid propellant made by pouring niter into caramel while the melt is still molten (120-250°C). It carries its own oxidizer, so once lit the flame front jumps to every touching grain each tick and the whole pile is gone in an instant, pouring out enormous amounts of smoke as it goes. It does not explode, but it is the fastest fuse in the game — and water will not put it out.',
+  149: 'A mixture of caramel and niter. Burns very quickly, producing a large amount of smoke. Keeps burning even underwater.',
 
   // Cooling
   21: 'Solid ice. Turns into water when melted.',
@@ -135,37 +162,37 @@ export const materialCodexEn: Record<number, string> = {
   81: 'Heating wire that generates heat between 750–1050°C when power flows. Acid-resistant.',
   109: 'Generates acoustic shockwaves when powered to push nearby particles away.',
   112: 'Blows wind the way you dragged it, pushing gases/particles and cooling down heat.',
-  121: 'Device firing a powerful heat beam in the direction you drag. The beam destroys nothing and only heats — it passes through glass and diamond without disturbing them, reflects cleanly off reflective metals (lay them diagonally to bend it around a corner), and scorches everything else instead of breaking it.',
+  121: 'A device firing a powerful heat beam in the direction you drag. Whatever it hits gets heated; most metals reflect the beam, glass lets it pass through without interacting, and diamond scatters it.',
   122: 'Pumps powders and liquids upward when powered.',
   123: 'Device attracting magnetic substances such as iron powder.',
-  100: 'Conveyor belt that runs only when powered. Transports accumulated particles column by column in the drag direction rather than scraping thin layers, and stops immediately when power cut off. Arranging like stairs moves cargo up slopes, and shaping into a U-trough prevents cargo from being trapped and carries it over to the opposite side.',
+  100: 'Moves the particles piled on top in the set direction when powered.',
   84: 'Steam turbine that generates electricity when steam passes through.',
 
   // Life
   47: 'Absorbs water to grow and burns easily.',
-  48: 'Spreads by eroding surrounding flammable materials. Oozes downhill like a thick goo and pools in low ground without levelling out flat, so a wall or a pit still contains an outbreak. A colony that seeps into a powder bed survives and infects it from within, out of reach of the chemical disinfectants — only heat or acid clears it. Contact with acid, acid vapor or acid slime kills a cell on the spot — and acid slime neither drains away nor levels flat, so a line of it painted across a corridor is a quarantine wall you never have to re-pour. Plain slime has no effect on it at all. Sterilized by alcohol, soapy water, and radiation.',
-  89: 'Ferments sugars (sugar water, honey) to generate CO₂ and alcohol.',
+  48: 'Erodes surrounding materials. Sterilized by acidic materials, alcohol, soapy water, hydrogen peroxide, radiation, and high heat.',
+  89: 'Ferments sugars (sugar water, honey) to produce CO₂ and alcohol, and makes dough rise.',
   90: 'Germinates into plants on wet soil.',
   91: 'Viscous fluid that absorbs water to multiply. Radiation resistant and can be decomposed with electricity.',
-  115: 'A variant formed when slime absorbs acid instead of water, having the same corrosive power as acid. Like acid, it kills any virus it touches — and since it neither drains away nor levels flat, a line of it works as a standing quarantine wall (something plain slime cannot do). Can be diluted by pouring water. Decomposes more easily with electricity.',
+  115: 'A variant formed when slime absorbs acid instead of water, with the same corrosive power as acid. Can be diluted by pouring water, and decomposes more easily with electricity.',
   110: 'Biological unit that gnaws on wood. Leaves sawdust when killed.',
   111: 'Gnaws on metal. Immune to radiation.',
-  146: 'Fish swimming in water. Can live only in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through water. Dies instantly on contact with chlorine gas. Above 500°, it burns away into smoke, leaving no corpse.',
+  146: 'A fish that swims through water. Can only live in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through the water.',
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
-  135: 'Calcareous skeleton left when coral dies. Regenerates in saltwater at an appropriate temperature.',
-  159: 'The blotchy grey-green fur that comes up on food once it has started to turn — and a drifting spore dust. A spore with nothing to cling to stalls and wanders sideways as it falls, like flour or ash; one that touches something roots there, stops moving entirely, and creeps along that surface, wall or ceiling alike. Where it touches food it **eats the cell outright**, turning it into more mold — and mold that has eaten becomes spoiled food shortly after, so what it ate is not deleted, it goes on to compost. Food is all it eats: a timber wall or a crate is untouched however mouldy it gets, and so is anything salted, honeyed, steeped in alcohol, frozen or dried bone dry. It creeps visibly across food and very slowly across stone or metal, and never blooms underwater. Over 60° or under 0° it dies, and so does touching alcohol, hydrogen peroxide, soapy water or anything acidic.',
-  161: 'The black earth left when spoiled food has broken down completely. It is the end of the rot chain and the reason to rot anything: like dirt, mud, sand and ash it is ground a seed can be planted in, and it is the only one of them that is *rich*. Roots that reach down through compost draw far more from soaked ground than they otherwise could, so the same watering grows a much fuller plant and one with vigour to spare for seed. Water poured on it drains through rather than turning it to mud, and it does not decay any further.',
+  135: 'The calcareous skeleton left when coral dies. Slowly regenerates in saltwater at an appropriate temperature.',
+  159: 'Grows by covering the surface of materials, and spoils food. Cannot spoil food that has been salted, honeyed, steeped in alcohol, or cooled below zero. Dies above 60°C or below 0°C, and dies on contact with alcohol, hydrogen peroxide, soapy water, or acid.',
+  161: 'Black earth left when spoiled food fully decomposes. Left alone, it becomes compost that helps plants grow.',
 
   // Cooking
-  151: 'Finely milled grain. Light as ash, so it does not drop straight down — it stalls in mid-air, sways sideways and settles slowly, and floats back up if pushed under water. That drifting is also what makes it dangerous. Heaped up it will not burn at all, no matter what flame you hold to it — but the same grains suspended in the air go off as a whole cloud the instant a spark or 350° heat reaches them (a dust explosion). Because it drifts, simply pouring it from a height leaves a cloud hanging long enough for one spark to take nearly all of it; a fan keeps it up longer still. A pile merely heated past 260° simply chars to ash, and even a dust explosion leaves a little scorched ash behind. Touch water and it becomes batter.',
-  152: 'Thick dough formed where flour meets water. It creeps even more slowly than mud, so you can shape it before baking, and heating it past 120° bakes it into bread. Sprinkle on baking soda and it is ready to rise at once; sprinkle on yeast instead and it takes time but rises far more. Both work their way through the dough on their own, so a sprinkle on one corner leavens the whole body (soda travels faster), and yeast burps CO₂ and pales the dough as it proofs so you can see how far along it is. Yeast dies above 60°, so proof it first and bake it after. Being wet flour it also goes over — though not while it is rising: fermenting holds the spoilage clock. Once the rise has finished, or if it was only sodaed, or if nothing was worked into it at all, the clock starts, so a dough left standing eventually becomes spoiled food.',
-  153: 'What batter becomes when baked at 120° or above. Whichever faces met open air while baking become dark browned crust, and whatever the dough closed around becomes ivory crumb — so baking a large body of dough gives you a real crusted cross-section. Leavened dough springs the moment it enters the oven — the gas in it expands and pushes extra dough upward, and the enlarged body then bakes as one: about 40% more with baking soda, up to double for a fully proofed yeast dough. A lid or wall overhead blocks the rise and it bakes dense instead. No oven, however fierce, will set a loaf alight by heat alone — only a flame actually touching it does, which is what lets bread survive long enough to finish baking inside a fire-walled oven. Hold a flame to it and it burns slowly like wood, leaving a lot of ash.',
-  154: 'Becomes cooked meat past 70°. Throw it straight into the flames and it is fine — while the water in it is boiling off, the meat itself sits at 110° no matter how fierce the fire around it, so it sears and browns at once but does not char, steaming the whole time. That is what makes grilling over an open fire work. Steam means there is water left; when it stops steaming it can start to burn. A fiercer fire dries it faster, and a thick cut dries from the face against the flame inward, so you still get a black outside and a red middle. Being wet, it will not catch fire on its own.',
-  155: 'Meat cooked at 70° or above. Charring takes more than passing 200° — it also has to be bone dry — so a cut sits here for several seconds even in a fire, which is your window to take it back out. It darkens a shade for every bit of moisture it loses, so going black is the warning that it is about to char. Held under 200° it never chars at all, however long you leave it. Once cooked it never goes back to raw, even as it cools.',
-  156: 'Meat dried out and then cooked past 200° until black. In this state it will finally catch fire, burning slowly like charcoal and leaving mostly ash — but only from a flame that actually touches it, never from heat alone, so a steak ruined in an oven is merely inedible rather than gone.',
-  157: 'A hard, heavy grain. Past 180° the hull bursts and two pieces of popcorn are genuinely launched — they fly a real arc, ricochet off whatever is above them and rain back down, hissing steam as they go. So a bowl of kernels on the heat doubles in volume and erupts out of its container. Blocked overhead there is nowhere for the second puff to go, so it does not gain volume. The kernel itself never burns; popping always wins. Being a bone-dry grain it is the slowest-spoiling thing in the palette — slow, not exempt, so a sack left long enough still ends up as spoiled food.',
-  158: 'What a corn kernel becomes when it bursts. Lighter than anything in the palette but ash, so it rafts on water and drifts sideways as it falls instead of dropping straight. Bone dry, so a flame takes it very readily — but heat alone never will, because popping corn needs 180° and an iron pot on a coal bed runs far hotter than that, which would otherwise burn every puff the moment it was made. Popped, it goes stale — faster than the kernel it came from, so if you mean to keep a harvest, keep it unpopped.',
-  160: 'What food and corpses leave behind once they have gone over. Raw meat, cooked meat, bread and dead fish all arrive here, usually by way of mold, and given long enough this breaks down again into compost you can dress a field with. Just lighter than water, so rot in a tank surfaces as scum. It is still rotting itself, so freezing it or laying salt against it holds it as sludge; past 250° it chars to ash. Wet organic matter does not catch fire on its own.',
+  151: 'Fine powder made by grinding wheat. Extremely light, so it drifts as it falls, and ignites instantly when fire touches it while airborne. Turns into dough when mixed with water.',
+  152: 'Thick dough formed when flour meets water. Bakes into bread when heated above 120°C. Sprinkling on baking soda makes it ready to rise immediately, while sprinkling on yeast takes time but rises much more.',
+  153: 'Made by baking dough at 120°C or higher. Faces that were exposed to open air while baking become a dark brown crust.',
+  154: 'Becomes cooked meat when heated. Left alone, it grows mold.',
+  155: 'Cooked meat. Becomes charred meat when heated further.',
+  156: 'Meat charred from overheating. Catches fire, burning slowly like charcoal and leaving mostly ash.',
+  157: 'A hard, heavy grain kernel. Past 180°C its hull bursts and it becomes popcorn.',
+  158: 'What a corn kernel becomes when it bursts open.',
+  160: 'Byproduct of food and corpses spoiling. Over time it becomes compost that helps plants grow.',
 
   // Radioactive
   63: 'Highly enriched uranium. Generates heat and undergoes meltdown when overheated.',
@@ -177,7 +204,7 @@ export const materialCodexEn: Record<number, string> = {
   // Special
   49: 'Continuously duplicates the first material it touches.',
   50: 'Instantly annihilates all particles it touches.',
-  51: 'Mutually annihilates 1:1 with neighboring materials.'
+  51: 'Mutually annihilates 1:1 with materials it touches.'
 };
 
 // --- Object Codex (English) --------------------------------------------------
