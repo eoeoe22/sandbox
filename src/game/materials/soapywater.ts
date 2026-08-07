@@ -1,16 +1,18 @@
 import { register } from './registry';
 import { EMPTY, Phase } from '../engine/types';
 import { rgb } from '../render/color';
-import { DIR8 } from '../engine/directions';
+import { DIR4, DIR8 } from '../engine/directions';
 import { updateLiquid } from '../engine/behaviors';
 import type { SimContext } from '../engine/SimContext';
 import { VIRUS } from './virus';
 import { BUBBLE } from './bubble';
-import { WATER } from './water';
+import { STEAM } from './steam';
+import { WATER, WATER_BOIL_TEMP, WATER_SURFACE_CAP, burningPetroleumAdjacent } from './water';
 import { OIL } from './oil';
 import { GASOLINE } from './gasoline';
 import { KEROSENE } from './kerosene';
 import { DIESEL } from './diesel';
+import { fightingFire } from './suppress';
 
 // Soapy Water (비눗물) — water with soap dissolved in it (drop Soap into Water, or
 // pour water over a Soap pile). Two things make it special, and it's the ONLY
@@ -32,11 +34,59 @@ import { DIESEL } from './diesel';
 //    what makes a bar of Soap worth fetching.
 //
 // It's plain water otherwise: it flows and levels (and mixes freely with Water,
-// which it mostly is) and beads a little at its edges.
+// which it mostly is), beads a little at its edges, and — like its Saltwater and
+// Sugar Water solution siblings — boils to Steam once the heat system drives it
+// to WATER_BOIL_TEMP, handing the dissolved Soap back via the same running-total
+// trick (SimContext.soapDebt, SOAP_WATER_RATIO below) rather than losing it. A
+// boiling puddle of suds thins out and leaves flakes of Soap behind, same as a
+// pot of brine left on the heat leaves Salt.
 const STERILIZE_CHANCE = 0.4; // per-tick chance to kill a touched Virus cell (알콜 수준)
 const BUBBLE_CHANCE = 0.006; // per-tick chance a submerged cell births a rising bubble
 
+// = Soap's registered id (soap.ts). Deliberately NOT imported: soap.ts's own
+// dissolve reaction rule declares its `produce` field as SOAPY_WATER.id, read at
+// soap.ts's top level, so an `import ... from './soap'` here would make loading
+// this module pull soap.ts in partway through — before this file's own exported
+// SOAPY_WATER constant below has been assigned — and crash reading `.id` off an
+// as-yet-undefined export (confirmed by trying it). Same hazard the
+// coalpowder.ts/limestone.ts comments document, just for a bare id instead of a
+// built array. Material ids are stable (save-format-compatible — see CLAUDE.md),
+// so the literal is safe.
+const SOAP_ID = 101;
+
+// Soap's dissolve reaction (soap.ts) is strictly one-for-one — one grain plus the
+// one Water cell it touches become two Soapy Water cells — not a flood-salinated
+// pocket like Salt/Sugar, so Soapy Water is a far more concentrated solution.
+// Boiling hands 1 grain of Soap back per this many evaporated cells, via the same
+// running-total trick as SALT_WATER_RATIO/SUGAR_WATER_RATIO (SimContext.soapDebt).
+const SOAP_WATER_RATIO = 2;
+
 function updateSoapyWater(x: number, y: number, sim: SimContext): void {
+  if (sim.getTemp(x, y) >= WATER_BOIL_TEMP) {
+    if (burningPetroleumAdjacent(x, y, sim) || fightingFire(x, y, sim)) {
+      // A burning oil layer floats on top, or this cell is mid-firefight: hold
+      // below boiling instead of flashing to Steam (see water.ts).
+      sim.setTemp(x, y, WATER_SURFACE_CAP);
+    } else {
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (sim.inBounds(nx, ny) && sim.isEmpty(nx, ny)) {
+          sim.spawn(nx, ny, STEAM.id);
+          sim.soapDebt += 1 / SOAP_WATER_RATIO;
+          if (sim.soapDebt >= 1) {
+            sim.soapDebt -= 1;
+            sim.set(x, y, SOAP_ID);
+          } else {
+            sim.set(x, y, EMPTY);
+          }
+          return;
+        }
+      }
+      // No room for the Steam: stay Soapy Water and retry next tick.
+    }
+  }
+
   // Antiseptic: scrub an adjacent Virus (EMPTY writes are always safe), like Alcohol.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;

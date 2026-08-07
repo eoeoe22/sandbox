@@ -77,7 +77,7 @@ export const materialCodexEn: Record<number, string> = {
   41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C. It steeps food, so anything left submerged in it keeps.',
   150: 'Hot syrup made by heating sugar above 160°C. It oozes even more thickly than honey, then sets hard where it stopped once it cools below 120°C — reheat it and it runs again. It darkens as it sets, so you can see at a glance whether it is still workable. Pour niter into it while it is still molten (120-250°C) and you get rocket candy; take it past 250°C and it chars to ash.',
   42: 'Light liquid fuel. Extremely flammable, freezing at -80°C. Eradicates viruses. It steeps food, so anything left submerged in it keeps.',
-  102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel).',
+  102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel). Boils off into steam, leaving soap behind.',
   44: 'Wet soil. Hardens into dirt when dried, and freezes at -3°C.',
   88: 'Releases water and oxygen as it decomposes. Released oxygen feeds nearby fires and strongly sterilizes viruses.',
   92: 'Sticky tree sap. Gradually hardens into amber (solid) if left alone.',
