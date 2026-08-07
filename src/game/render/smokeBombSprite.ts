@@ -1,10 +1,19 @@
 import { rgb } from './color';
 
 /**
- * The smoke-bomb sprite — the *display* half of the smoke bomb object, kept apart
- * from its physics (a capsule; see engine/objects.ts SimSmokeBomb), exactly like
- * the drum and dynamite sprites: a flat Uint32 grid of packed 0xAABBGGRR colors
- * with 0 = transparent, sampled by the renderer at OBJECT_SCALE.
+ * RETIRED ASSET — kept as dummy data, referenced by nothing.
+ *
+ * The 연막탄 (smoke bomb) object was removed from the game: its two-stage
+ * trickle→discharge lifecycle was the weakest thing in the object layer, so the
+ * body, its palette entry and its whole smoke-flood machinery went with it (see
+ * docs/OBJECTS.md). Only this art survived, deliberately, so a future smoke-y
+ * object doesn't have to be redrawn from scratch. Nothing imports it — if you
+ * bring it back, wire it into render/objectSvg.ts and CanvasRenderer the way the
+ * flashbang sprite is.
+ *
+ * The sprite itself is what every body's art is: a flat Uint32 grid of packed
+ * 0xAABBGGRR colors with 0 = transparent, sized to be sampled by the renderer at
+ * OBJECT_SCALE.
  *
  * The art is a grenade-style canister: a green body with a white label band, a
  * steel cap and safety lever running down its right side, and the pull-ring
@@ -14,9 +23,9 @@ import { rgb } from './color';
  * 0,0). Draw order matters and matches the reference: the body is painted over
  * the lever, so the steel strip only shows where it clears the can.
  *
- * The *smoke* is not drawn here at all. Like the dynamite's fuse flame, it's real
- * Smoke particles the engine spawns into the grid (see objects.ts) — a trickle
- * from the nozzle while the fuse burns, then the heavy discharge.
+ * The *smoke* was never drawn here: while the object existed, its plume was real
+ * Smoke particles the engine spawned into the grid, the way the dynamite's fuse
+ * flame still is.
  */
 export const SMOKE_BOMB_SPRITE_W = 13;
 export const SMOKE_BOMB_SPRITE_H = 20;

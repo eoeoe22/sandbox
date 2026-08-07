@@ -184,9 +184,15 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
       desc: 'How long from being created to going off. It is not a fuse, so it cannot be doused or relit the way one can.',
     },
   },
-  ventTicks: {
-    ko: { label: '분출 시간', desc: '연기를 뿜어내는 시간입니다.' },
-    en: { label: 'Vent time', desc: 'How long it pours out smoke.' },
+  chillTemp: {
+    ko: {
+      label: '동결 온도',
+      desc: '이 온도 이하로 식으면 기폭 시간이 3분의 1 속도로 느려지고, 더 깊이 얼면(-30°) 아예 멈춥니다. 다시 데워지면 멈춘 지점부터 이어서 흘러갑니다 — 해제가 아니라 지연입니다.',
+    },
+    en: {
+      label: 'Chill point',
+      desc: 'Cooled to or below this, the arming time crawls at a third speed; in a deep freeze (-30°) it stops outright. Warmed up again it resumes from where it paused — a delay, never a defusal.',
+    },
   },
   fuelTicks: {
     ko: { label: '연료 지속 시간', desc: '심지가 다 타서 빈 병이 될 때까지의 시간입니다.' },
@@ -201,8 +207,14 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     en: { label: 'Burn time', desc: 'How long it survives held in fire before it is gone.' },
   },
   burstTemp: {
-    ko: { label: '유폭 온도', desc: '이 온도에 노출되면 그 자리에서 터집니다.' },
-    en: { label: 'Cook-off temperature', desc: 'Exposed to this, it goes off where it stands.' },
+    ko: {
+      label: '용융 온도',
+      desc: '유리의 녹는점입니다. 이 온도에 노출되면 병이 그 자리에서 녹아 열려, 녹은 유리와 알콜을 같은 양씩 남깁니다.',
+    },
+    en: {
+      label: 'Melting point',
+      desc: "Glass's own melting point. Exposed to this the bottle gives way where it stands, leaving equal amounts of Molten Glass and Alcohol.",
+    },
   },
 
   // Traits — electricity

@@ -12,6 +12,7 @@ import {
   MOLOTOV_FUEL_TICKS,
   MOLOTOV_IGNITE_TEMP,
   MOLOTOV_SMASH_SPEED,
+  MOLOTOV_BURST_TEMP,
 } from '../src/game/engine/objects';
 import type { SimDynamite } from '../src/game/engine/objects';
 import { getMaterial } from '../src/game/materials/registry';
@@ -48,6 +49,7 @@ const STONE = ID('Stone');
 const WATER = ID('Water');
 const FIRE = ID('Fire');
 const GLASS = ID('Broken Glass');
+const MOLTEN_GLASS = ID('Molten Glass');
 const ALCOHOL = ID('Alcohol');
 
 function makeWorld(w = 100, h = 100): { grid: Grid; sim: Simulation } {
@@ -290,13 +292,16 @@ const SETTLE_TICKS = 40;
   check('into Broken Glass', count(grid, GLASS) > 0, `${count(grid, GLASS)} cells`);
 }
 
-// 10. Heat far past its own flame bursts the bottle where it stands — the fuel
-//     boils and the glass lets go.
+// 10. Heat at glass's own melting point MELTS the bottle where it stands, and that
+//     is a different ending from every other one: it does NOT throw Broken Glass.
+//     A bottle at GLASS_MELT_TEMP is glass at the temperature glass runs at, so it
+//     leaves MOLTEN GLASS and ALCOHOL in EQUAL amounts (알콜과 녹은 유리를 동일한 양),
+//     poured in place. Shards would only re-melt where they landed anyway.
 //
 //     The control is the point, and getting it to actually PROVE the point took
 //     two goes. What has to be shown is the guarantee MOLOTOV_BURST_TEMP is placed
 //     to give: a bottle sitting in heat *hotter than the Fire its own wick emits*
-//     (fire.ts pins its cells at 1000°) still doesn't burst, so a burning molotov
+//     (fire.ts pins its cells at 1000°) still doesn't give way, so a burning molotov
 //     can never burst itself. A control below 1000° would only show the weaker
 //     "cooler than my own flame is safe".
 //
@@ -313,18 +318,31 @@ const SETTLE_TICKS = 40;
 {
   /** Hold the body in a `deg` bath for `ticks` ticks. Only EMPTY cells are heated
    *  — the stone floor is left alone, since at 1600° it would melt and change the
-   *  scene out from under the measurement. */
+   *  scene out from under the measurement.
+   *
+   *  Byproducts are counted the tick the body goes, NOT after settling: molten
+   *  glass is a liquid that flows and freezes back into panes, and alcohol in a
+   *  1600° bath burns off within a few ticks, so anything measured later is
+   *  measuring the fire, not the bottle. */
   const hold = (
     deg: number,
     ticks: number,
-  ): { survived: boolean; glass: number; reservoir: number } => {
+  ): {
+    survived: boolean;
+    shards: number;
+    molten: number;
+    alcohol: number;
+    reservoir: number;
+  } => {
     const { grid, sim } = makeWorld();
     floor(grid, 70);
     const m = createMolotov(50, 62);
     grid.objects.push(m);
     const BATH = 10; // cells around the body, comfortably past its 7-cell reach
+    let shards = 0;
+    let molten = 0;
+    let alcohol = 0;
     for (let t = 0; t < ticks; t++) {
-      if (grid.objects.length === 0) break;
       for (let y = Math.floor(m.y) - BATH; y <= Math.floor(m.y) + BATH; y++) {
         for (let x = Math.floor(m.x) - BATH; x <= Math.floor(m.x) + BATH; x++) {
           if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
@@ -333,19 +351,39 @@ const SETTLE_TICKS = 40;
         }
       }
       sim.step();
+      if (grid.objects.length === 0) {
+        shards = count(grid, GLASS);
+        molten = count(grid, MOLTEN_GLASS);
+        alcohol = count(grid, ALCOHOL);
+        break;
+      }
     }
-    const reservoir = m.temp;
-    for (let t = 0; t < SETTLE_TICKS; t++) sim.step(); // let any thrown shards land
-    return { survived: grid.objects.length === 1, glass: count(grid, GLASS), reservoir };
+    return { survived: grid.objects.length === 1, shards, molten, alcohol, reservoir: m.temp };
   };
   const hot = hold(1600, 60);
-  check('a sustained 1600° bath bursts the bottle', !hot.survived);
-  check('leaving glass behind', hot.glass > 0, `${hot.glass} cells`);
+  check('a sustained 1600° bath melts the bottle open', !hot.survived);
+  check('leaving molten glass', hot.molten > 0, `${hot.molten} cells`);
+  check('and alcohol', hot.alcohol > 0, `${hot.alcohol} cells`);
+  check(
+    '알콜과 녹은 유리를 동일한 양 — the two come out equal',
+    Math.abs(hot.molten - hot.alcohol) <= 1,
+    `${hot.molten} molten glass vs ${hot.alcohol} alcohol`,
+  );
+  check(
+    'and NOT as flying shards — a melted bottle has no shards to throw',
+    hot.shards === 0,
+    `${hot.shards} Broken Glass cells`,
+  );
+
+  // The control sits above Fire's 1000° and below the melting point, which is now
+  // the same number as glass's own — so this is simultaneously "its own flame can
+  // never do it" and "it gives way exactly when glass does".
   const warm = hold(1050, 200);
-  check('a 1050° bath really does get the bottle past Fire\'s own 1000°',
+  check("a 1050° bath really does get the bottle past Fire's own 1000°",
     warm.reservoir > 1000, `reservoir settled at ${warm.reservoir.toFixed(0)}°`);
-  check('and it still never bursts (대조군)', warm.survived);
-  check('and spills nothing', warm.glass === 0, `${warm.glass} cells`);
+  check('and it still never gives way (대조군)', warm.survived,
+    `melting point is ${MOLOTOV_BURST_TEMP}°`);
+  check('and spills nothing', warm.molten + warm.alcohol + warm.shards === 0);
 }
 
 // 11. A blast直격 destroys it through the shared byproduct path (no special case).

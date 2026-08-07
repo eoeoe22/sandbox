@@ -30,14 +30,10 @@ import {
   DYNAMITE_RESTITUTION,
   DYNAMITE_AUTOIGNITE_TEMP,
   DYNAMITE_FUSE_MIN_TICKS,
-  SMOKE_BOMB_DENSITY,
-  SMOKE_BOMB_RESTITUTION,
-  SMOKE_BOMB_IGNITE_TEMP,
-  SMOKE_BOMB_FUSE_TICKS,
-  SMOKE_BOMB_VENT_TICKS,
   FLASHBANG_DENSITY,
   FLASHBANG_RESTITUTION,
   FLASHBANG_IGNITE_TEMP,
+  FLASHBANG_CHILL_TEMP,
   FLASHBANG_FUSE_TICKS,
   FLASHBANG_REACH,
   FLASHBANG_POWER,
@@ -123,16 +119,6 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
     ],
     traits: [{ key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
   },
-  smokebomb: {
-    stats: [
-      { key: 'density', unit: 'number', value: SMOKE_BOMB_DENSITY },
-      { key: 'elasticity', unit: 'ratio', value: SMOKE_BOMB_RESTITUTION },
-      { key: 'autoIgniteTemp', unit: 'temp', value: SMOKE_BOMB_IGNITE_TEMP },
-      { key: 'fuseTicks', unit: 'ticks', value: SMOKE_BOMB_FUSE_TICKS },
-      { key: 'ventTicks', unit: 'ticks', value: SMOKE_BOMB_VENT_TICKS },
-    ],
-    traits: [{ key: 'magnetic' }, { key: 'fuse', variant: 'waterproof' }],
-  },
   flashbang: {
     stats: [
       { key: 'density', unit: 'number', value: FLASHBANG_DENSITY },
@@ -140,8 +126,9 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: FLASHBANG_IGNITE_TEMP },
       // `armTicks`, not the `fuseTicks` every other charge here uses: that term
       // says "불이 붙고 나서" and this can was never lit. Its timer starts when it
-      // is made and nothing can pause it.
+      // is made and only cold reaches it (see chillTemp below).
       { key: 'armTicks', unit: 'ticks', value: FLASHBANG_FUSE_TICKS },
+      { key: 'chillTemp', unit: 'temp', value: FLASHBANG_CHILL_TEMP },
       { key: 'blastRadius', unit: 'number', value: FLASHBANG_REACH },
       { key: 'destructivePower', unit: 'number', value: FLASHBANG_POWER },
     ],

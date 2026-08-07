@@ -137,3 +137,30 @@ export function shade(g: GlowRamp, t: number): number {
   const b = (g.cb + g.db * f) & 0xff;
   return (0xff000000 | (b << 16) | (gr << 8) | r) >>> 0;
 }
+
+/**
+ * A wash of one colour laid over another surface's own colours — the channels
+ * pre-split and the strength pre-resolved, so the pixel loop that applies it does
+ * three lerps and no unpacking. `f` is how much of the wash shows through, 0..1.
+ *
+ * Built for the object layer's 온도 오버레이 (see thermalTint / CanvasRenderer), which
+ * has to tint sprites whose every pixel is a different colour — a flat replacement
+ * would erase the art, and a per-body pre-blended palette would need one palette
+ * per body per temperature.
+ */
+export interface ColorWash {
+  r: number;
+  g: number;
+  b: number;
+  f: number;
+}
+
+/** Apply a `ColorWash` to one packed 0xAABBGGRR colour, keeping its alpha. */
+export function washed(base: number, w: ColorWash): number {
+  const k = w.f;
+  const j = 1 - k;
+  const r = ((base & 0xff) * j + w.r * k) | 0;
+  const g = (((base >> 8) & 0xff) * j + w.g * k) | 0;
+  const b = (((base >> 16) & 0xff) * j + w.b * k) | 0;
+  return ((base & 0xff000000) | (b << 16) | (g << 8) | r) >>> 0;
+}

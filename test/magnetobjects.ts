@@ -1,6 +1,6 @@
 // Headless behavioural harness for the Electromagnet's grip on the OBJECT layer
 // (engine/objects.ts applyMagnetPull): a powered magnet lifts and HOLDS the steel
-// bodies — 드럼통 (every fill) and the 연막탄 canister — while leaving every
+// bodies — 드럼통 (every fill) and the 섬광탄 can — while leaving every
 // non-ferrous body alone, and both the power switch and a solid shield shut it
 // off. Run: `node test/run-magnetobjects.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -9,7 +9,7 @@ import {
   createDrum,
   createDynamite,
   createRubberBall,
-  createSmokeBomb,
+  createFlashbang,
   createWoodBox,
   bodyReach,
 } from '../src/game/engine/objects';
@@ -127,16 +127,18 @@ for (const fill of ['oil', 'acid'] as const) {
   check(`a ${fill} drum is pulled the same as an empty one`, drum.y < startY - 4, `${startY.toFixed(1)} → ${drum.y.toFixed(1)}`);
 }
 
-// 4. The smoke canister is steel too (전자석이 연막탄을 당김). Its fuse runs 4s, so
-//    90 ticks leaves it well inside the trickle stage — it's still a body.
+// 4. The flashbang can is steel too (전자석이 섬광탄을 당김). Its own countdown is 3s
+//    and this run is longer than that, so the timer is stretched out of the way —
+//    what's under test is the magnet's grip, not the fuse.
 {
-  const CAN_FLOOR = 52; // a slim canister's halo only reaches ~15 cells from its centre
+  const CAN_FLOOR = 52; // a slim can's halo only reaches ~15 cells from its centre
   const w = makeWorld({ floorY: CAN_FLOOR });
-  const bomb = createSmokeBomb(60, 0);
-  const startY = place(w, bomb, CAN_FLOOR);
+  const can = createFlashbang(60, 0);
+  can.fuseTicks = 100000;
+  const startY = place(w, can, CAN_FLOOR);
   run(w, 90);
-  check('a live magnet lifts a smoke canister too', bomb.y < startY - 4, `${startY.toFixed(1)} → ${bomb.y.toFixed(1)}`);
-  check('and holds it against the slab', bomb.y - MAGNET_Y1 < 8, `gap ${(bomb.y - MAGNET_Y1).toFixed(1)} (half-extent ${bodyReach(bomb).toFixed(1)})`);
+  check('a live magnet lifts a flashbang can too', can.y < startY - 4, `${startY.toFixed(1)} → ${can.y.toFixed(1)}`);
+  check('and holds it against the slab', can.y - MAGNET_Y1 < 8, `gap ${(can.y - MAGNET_Y1).toFixed(1)} (half-extent ${bodyReach(can).toFixed(1)})`);
 }
 
 // 5. Selectivity is the toy: rubber, timber and a wax-and-paper stick ignore it.

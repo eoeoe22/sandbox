@@ -709,26 +709,9 @@ export function sanitizeObject(raw: unknown): SimBody | null {
     };
   }
 
-  if (kind === 'smokebomb') {
-    return {
-      kind: 'smokebomb',
-      x,
-      y,
-      vx,
-      vy,
-      angle,
-      angularVelocity,
-      halfLength,
-      radius,
-      mass,
-      momentOfInertia,
-      restitution,
-      heatTicks,
-      temp,
-      fuseTicks: Math.max(0, Math.round(num(o.fuseTicks, 200))),
-      ventTicks: Math.max(0, Math.round(num(o.ventTicks))),
-    };
-  }
+  // No `smokebomb` branch: the 연막탄 was removed from the game, so a body of that
+  // kind in an older save falls through to the `return null` at the bottom and is
+  // dropped like any other unknown kind — the rest of that world loads normally.
 
   if (kind === 'flashbang') {
     return {
@@ -748,8 +731,10 @@ export function sanitizeObject(raw: unknown): SimBody | null {
       temp,
       // A save made mid-countdown reloads still counting. The fallback is a full
       // fresh fuse rather than 0: a corrupt/absent field must not reload as a can
-      // that flashes on the first tick of the restored world.
-      fuseTicks: Math.max(0, Math.round(num(o.fuseTicks, 150))),
+      // that flashes on the first tick of the restored world. NOT rounded, unlike
+      // every other body's timer: a chilled can counts down by a third of a tick
+      // (see engine/objects.ts flashbangTickRate), so the fraction is real state.
+      fuseTicks: Math.max(0, num(o.fuseTicks, 150)),
     };
   }
 

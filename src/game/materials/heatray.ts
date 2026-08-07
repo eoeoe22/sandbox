@@ -52,7 +52,7 @@ import { DIAMOND } from './diamond';
 //     a low chance to scatter one step (산란), or a low chance to be absorbed and
 //     die, dumping its heat there (가열 후 소멸). So a beam mostly bores through
 //     water, warming it here and there, instead of stopping at the surface.
-//   • A free OBJECT body (드럼통·나무 상자·고무공·다이너마이트·연막탄 — the rigid
+//   • A free OBJECT body (드럼통·나무 상자·고무공·다이너마이트·섬광탄 — the rigid
 //     bodies of engine/objects.ts) also ABSORBS it, exactly like an opaque solid:
 //     the beam stops at the body and its heat goes into that body's own reservoir,
 //     so a laser trained on a crate cooks it (녹이거나 태우거나 유폭시킨다) and never
