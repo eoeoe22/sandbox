@@ -8,17 +8,91 @@
   // static, hand-written document rather than a registry extract, because
   // "how the engine works" isn't data any material declares.
   //
-  // Korean only for now (see the codex's i18n split for why bilingual prose
-  // lives in its own module) — this page's chrome (tab labels, nav) goes
-  // through t() like the rest of the app, but the long-form body text below
-  // does not. Translating it is follow-up work, tracked in docs/CODEX.md.
-  //
-  // Prose style follows i18n/codex.ko.ts's editorial guide at the top of that
-  // file: formal endings(~습니다/~합니다), no em dash, no bold-for-emphasis,
-  // no parenthetical asides, conditions stated as "~하면 ~합니다". That guide
-  // was written for one-paragraph material entries; here it's stretched over
-  // longer sections, but the sentence-level rules are the same document's.
-  import { t } from '../i18n';
+  // Bilingual like the codex, but structured differently: all the prose lives
+  // in i18n/guideDoc.ts as one `GuideDocText` object per language (see that
+  // file's header for why it's one file rather than codex.ko.ts/codex.en.ts's
+  // two). This component only picks the current language's object and renders
+  // it — the same object also feeds the Markdown export, so the page and the
+  // clipboard can't say something different.
+  import { $locale as locale, t, categoryLabel } from '../i18n';
+  import { guideDocKo, guideDocEn, type GuideDocText, type ToolKey } from '../i18n/guideDoc';
+  import { iconFor } from '../game/materials/categories';
+  import { copyText } from '../lib/clipboard';
+
+  const doc = $derived<GuideDocText>($locale === 'ko' ? guideDocKo : guideDocEn);
+
+  /** The four state cards, in display order. Titles come from `categoryLabel`
+   *  and icons from `iconFor` — both already the palette's own source of
+   *  truth for these keys, so this page can't drift from what the palette
+   *  tabs actually show. */
+  const PHASE_ORDER = ['solid', 'powder', 'liquid', 'gas'] as const;
+
+  const TOOL_ORDER: ToolKey[] = [
+    'eraser',
+    'blend',
+    'heatCool',
+    'mix',
+    'electric',
+    'shock',
+    'view',
+    'areaSelect',
+    'inspect',
+  ];
+  const TOOL_ICONS: Record<ToolKey, string> = {
+    eraser: 'bi-eraser-fill',
+    blend: 'bi-palette-fill',
+    heatCool: 'bi-fire',
+    mix: 'bi-shuffle',
+    electric: 'bi-lightning-charge-fill',
+    shock: 'bi-broadcast',
+    view: 'bi-eye',
+    areaSelect: 'bi-bounding-box',
+    inspect: 'bi-search',
+  };
+
+  /** One Markdown section: a heading plus its paragraphs/lists, blank-line
+   *  separated — the same shape `codex/format.ts`'s writers produce. */
+  function section(heading: string, blocks: string[]): string {
+    return [`## ${heading}`, ...blocks].join('\n\n');
+  }
+
+  /** The whole document as Markdown, built from the same `GuideDocText` the
+   *  page renders — so what gets copied can never say something the screen
+   *  doesn't. */
+  function toMarkdown(d: GuideDocText, title: string): string {
+    const sections = [
+      d.lede,
+      section(d.grid.title, d.grid.p),
+      section(d.phases.title, [
+        d.phases.intro,
+        PHASE_ORDER.map((k) => `- ${categoryLabel(k)}: ${d.phases.desc[k]}`).join('\n'),
+        d.phases.hint,
+      ]),
+      section(d.overlap.title, d.overlap.p),
+      section(d.heat.title, d.heat.p),
+      section(d.tools.title, [
+        d.tools.intro,
+        TOOL_ORDER.map((k) => `- ${d.tools.items[k].term}: ${d.tools.items[k].desc}`).join('\n'),
+        d.tools.hint,
+      ]),
+      section(d.save.title, [d.save.p]),
+    ];
+    return [`# ${title}`, ...sections].join('\n\n') + '\n';
+  }
+
+  /** Whether the last copy attempt succeeded, or `null` before the first
+   *  press / after the flash expires. */
+  let copied = $state<boolean | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function handleCopy(): Promise<void> {
+    const ok = await copyText(toMarkdown(doc, t('codex.tabBasics')));
+    clearTimeout(copyTimer);
+    copied = ok;
+    copyTimer = setTimeout(() => (copied = null), 2200);
+  }
+
+  const copyLabel = $derived(copied === null ? t('codex.copy') : t(copied ? 'codex.copied' : 'codex.copyFailed'));
 </script>
 
 <div class="guide-doc">
@@ -27,122 +101,66 @@
       <i class="bi bi-arrow-left" aria-hidden="true"></i>
       <span>{t('brand')}</span>
     </a>
-    <h1>게임 가이드</h1>
-    <p class="lede">
-      물질 하나하나의 설명은 물질 도감 탭에 있습니다. 이 탭에서는 물질들이 공유하는
-      규칙인 격자와 상태, 겹침, 열전도, 도구를 다룹니다.
-    </p>
+    <div class="head-row">
+      <h1>{t('codex.tabBasics')}</h1>
+      <button class="copy" class:done={copied !== null} onclick={handleCopy}>
+        <i class={`bi ${copied === true ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
+        <span>{copyLabel}</span>
+      </button>
+    </div>
+    <p class="lede">{doc.lede}</p>
   </header>
 
   <section class="sec">
-    <h2><i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i> 격자와 파티클</h2>
-    <p>
-      샌드박스는 촘촘한 격자입니다. 칸 하나가 파티클 하나이며, 매 틱마다 각 파티클이
-      자기 규칙대로 이웃과 자리를 바꾸거나 반응합니다. 모래가 쌓이고 물이 퍼지고
-      불이 옮겨붙는 움직임은 이 칸 단위 계산이 쌓인 결과입니다.
-    </p>
-    <p>
-      고무공, 드럼통, 다이너마이트 같은 것은 격자 칸이 아니라 격자 위를 떠다니는
-      독립된 물체입니다. 돋보기로 관찰하면 격자 칸의 물질 구성만 집계되며 이런
-      물체는 잡히지 않습니다. 대신 물체 오른쪽 위에 자기 온도가 따로 표시됩니다.
-      물체는 부딪히고 구르고 깨지며, 격자 파티클은 흐르고 쌓이고 서로 반응합니다.
-    </p>
+    <h2><i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i> {doc.grid.title}</h2>
+    {#each doc.grid.p as p (p)}<p>{p}</p>{/each}
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-layers-fill" aria-hidden="true"></i> 네 가지 상태</h2>
-    <p>물질은 넷 중 하나의 상태로 존재하며, 상태가 파티클의 움직임을 결정합니다.</p>
+    <h2><i class="bi bi-layers-fill" aria-hidden="true"></i> {doc.phases.title}</h2>
+    <p>{doc.phases.intro}</p>
     <div class="phase-grid">
-      <div class="phase-card">
-        <i class="bi bi-box-fill" aria-hidden="true"></i>
-        <h3>고체</h3>
-        <p>제자리에 고정됩니다. 스스로 움직이지 않으며, 폭발이나 충격 같은 외력에만 반응합니다.</p>
-      </div>
-      <div class="phase-card">
-        <i class="bi bi-hourglass-split" aria-hidden="true"></i>
-        <h3>가루</h3>
-        <p>중력 방향으로 쌓이고 흘러내립니다. 경사가 지면 옆으로 무너지지만 액체처럼 수평으로 퍼지지는 않습니다.</p>
-      </div>
-      <div class="phase-card">
-        <i class="bi bi-droplet-fill" aria-hidden="true"></i>
-        <h3>액체</h3>
-        <p>중력을 따르며 수평으로도 퍼져 수위를 맞춥니다. 담긴 그릇의 모양대로 고입니다.</p>
-      </div>
-      <div class="phase-card">
-        <i class="bi bi-cloud-fill" aria-hidden="true"></i>
-        <h3>기체</h3>
-        <p>위로 확산하며 흩어집니다. 밀도가 가장 낮아 다른 상태 위로 떠오릅니다.</p>
-      </div>
+      {#each PHASE_ORDER as key (key)}
+        <div class="phase-card">
+          <i class={`bi ${iconFor(key)}`} aria-hidden="true"></i>
+          <h3>{categoryLabel(key)}</h3>
+          <p>{doc.phases.desc[key]}</p>
+        </div>
+      {/each}
     </div>
-    <p class="hint">데스크톱 사이드바와 모바일 하단 바의 팔레트 탭은 이 네 상태를 기본 분류로 씁니다.</p>
+    <p class="hint">{doc.phases.hint}</p>
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-water" aria-hidden="true"></i> 겹침: 스며드는 유체</h2>
-    <p>
-      체나 메쉬 같은 다공성 고체, 또는 헐거운 가루 더미는 액체와 기체를 완전히
-      막지 못합니다. 이런 물질 위로 흐른 유체는 사라지지 않고 같은 칸에 겹쳐서
-      스며듭니다. 젖은 모래가 물기를 머금은 채로 있는 상태가 이 경우입니다.
-      겹친 유체는 자기 중력과 부력을 따라 계속 흐르고, 빈 자리를 만나면 다시
-      표면으로 올라옵니다.
-    </p>
-    <p>
-      스며든 물이 산성이면 계속 부식시키고, 불붙은 기름이 스며든 나무는 속까지
-      서서히 달아오릅니다. 겹침은 숨어 있는 것이 아니라 그 자리에서 계속 반응하는
-      물질입니다. 돋보기로 관찰하면 겹침 칸 수가 겹침 N칸으로 따로 표시됩니다.
-    </p>
+    <h2><i class="bi bi-water" aria-hidden="true"></i> {doc.overlap.title}</h2>
+    {#each doc.overlap.p as p (p)}<p>{p}</p>{/each}
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-thermometer-half" aria-hidden="true"></i> 열전도</h2>
-    <p>
-      칸마다 온도를 가지며, 매 틱 사방 이웃과 온도를 교환합니다. 교환 속도는
-      물질의 전도율이 정합니다. 금속처럼 전도율이 높은 물질은 빠르게 데워지고
-      식으며, 모래나 나무처럼 전도율이 낮은 물질은 열을 오래 붙듭니다. 빈 칸은
-      단열재라 열이 새지 않습니다.
-    </p>
-    <p>
-      온도는 물질의 상태도 바꿉니다. 물은 100℃에서 끓어 수증기가 되고, 용암은
-      충분히 식으면 돌로 굳습니다. 데스크톱은 화면 좌측 상단, 모바일은 설정 안의
-      온도계 아이콘을 누르면 물질 색 대신 온도를 색으로 보여주는 열지도로
-      전환됩니다.
-    </p>
+    <h2><i class="bi bi-thermometer-half" aria-hidden="true"></i> {doc.heat.title}</h2>
+    {#each doc.heat.p as p (p)}<p>{p}</p>{/each}
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-tools" aria-hidden="true"></i> 도구</h2>
-    <p>
-      브러시는 재료를 칠하는 것 외에도 여러 동작을 합니다. 브러시 크기와 모양,
-      채우기 방식은 사이드바에서 항상 조절할 수 있습니다. 아래 도구들은 재료
-      대신 브러시 아래 칸에 직접 작용합니다.
-    </p>
+    <h2><i class="bi bi-tools" aria-hidden="true"></i> {doc.tools.title}</h2>
+    <p>{doc.tools.intro}</p>
     <ul class="tool-list">
-      <li><i class="bi bi-eraser-fill" aria-hidden="true"></i><div><strong>지우개</strong><span>브러시 아래를 빈 칸으로 되돌립니다.</span></div></li>
-      <li><i class="bi bi-palette-fill" aria-hidden="true"></i><div><strong>혼합</strong><span>최대 세 물질을 비율대로 섞어서 칠합니다.</span></div></li>
-      <li><i class="bi bi-fire" aria-hidden="true"></i><div><strong>가열 / 냉각</strong><span>재료를 놓지 않고 브러시 아래 온도만 올리거나 내립니다.</span></div></li>
-      <li><i class="bi bi-shuffle" aria-hidden="true"></i><div><strong>섞기</strong><span>브러시 안의 고체가 아닌 파티클끼리 자리를 뒤섞습니다.</span></div></li>
-      <li><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i><div><strong>전기</strong><span>브러시 아래 도체에 전기 펄스를 직접 흘려보냅니다.</span></div></li>
-      <li><i class="bi bi-broadcast" aria-hidden="true"></i><div><strong>충격파</strong><span>브러시 영역 자체를 발진원으로 삼아 파괴력 없는 충격파를 쏩니다.</span></div></li>
-      <li><i class="bi bi-eye" aria-hidden="true"></i><div><strong>보기</strong><span>아무것도 그리지 않고 화면만 관찰합니다.</span></div></li>
-      <li><i class="bi bi-bounding-box" aria-hidden="true"></i><div><strong>영역 선택</strong><span>드래그로 사각형을 잡으면, 그 순간 선택된 도구를 영역 전체에 한 번에 적용합니다.</span></div></li>
-      <li><i class="bi bi-search" aria-hidden="true"></i><div><strong>돋보기</strong><span>브러시 아래 파티클 종류와 비율, 평균 온도를 카드로 보여줍니다.</span></div></li>
+      {#each TOOL_ORDER as key (key)}
+        <li>
+          <i class={`bi ${TOOL_ICONS[key]}`} aria-hidden="true"></i>
+          <div>
+            <strong>{doc.tools.items[key].term}</strong>
+            <span>{doc.tools.items[key].desc}</span>
+          </div>
+        </li>
+      {/each}
     </ul>
-    <p class="hint">
-      휠(가운데) 클릭은 커서 아래의 물질을 그대로 팔레트 선택으로 집어 옵니다.
-      세상을 건드리지 않는 스포이드입니다. 우클릭은 어떤 도구를 들고 있든 항상
-      지우개로 동작합니다. 물질 칩을 더블클릭하면 그 물질을 끝없이 뿜어내는
-      Clone으로 낙점됩니다.
-    </p>
+    <p class="hint">{doc.tools.hint}</p>
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-save-fill" aria-hidden="true"></i> 저장과 불러오기</h2>
-    <p>
-      진행 상황은 브라우저에 자동 저장되어 새로고침해도 이어서 시작됩니다. 재생
-      제어 그룹의 저장 버튼을 누르면 지금 화면을 이름 붙인 슬롯으로 따로 보관할
-      수 있습니다. 슬롯은 .psbx.json 파일로 내보내거나 다시 가져올 수 있습니다.
-      시작 화면의 불러오기에서도 저장해 둔 슬롯을 바로 열 수 있습니다.
-    </p>
+    <h2><i class="bi bi-save-fill" aria-hidden="true"></i> {doc.save.title}</h2>
+    <p>{doc.save.p}</p>
   </section>
 
   <footer class="page-foot">
@@ -187,6 +205,14 @@
     color: #818cf8;
   }
 
+  .head-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+
   .page-head h1 {
     margin: 0 0 0.6rem;
     font-size: 2.1rem;
@@ -195,6 +221,36 @@
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+  }
+
+  /* --- Copy-as-Markdown button — same shape/palette as Codex.svelte's
+       `.copy`, so the two tabs' toolbars read as one design. --- */
+  .copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.4rem;
+    border: 1px solid #262a33;
+    background: #14161c;
+    color: #9aa4b2;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease,
+      border-color 0.12s ease;
+  }
+
+  .copy:hover {
+    color: #e0e6ed;
+    border-color: #3a4150;
+  }
+
+  .copy.done {
+    border-color: #4f46e5;
+    color: #c7d2fe;
   }
 
   .lede {
