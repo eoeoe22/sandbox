@@ -4803,3 +4803,62 @@ AMMONAL`). 최종 서열은 **질산암모늄(6) ≪ ANFO(14) < TNT(16) < 암모
   "느려졌다"는 결론을 냈다가, 장면마다 새로 세워 5번 재고 최솟값을 쓰도록 고친 뒤에야
   방향이 보였다. 하네스(`npm run bench:spoil`)를 저장소에 남긴 이유가 이것이다 —
   주석과 문서에 적힌 수치가 재현 가능해야 한다.
+
+## 비눗물 증발 — 끓으면 비누가 남는다 (신규 0종)
+
+Soapy Water는 물처럼 흐르고 거품을 내고 바이러스를 죽였지만, Water/Saltwater/Sugar
+Water 세 solution 형제 중 유일하게 **끓지 않았다** — 100°까지 데워도 그냥 액체로 남아
+있었다. 요청은 "비눗물에 증발 추가: 비누고체 + 수증기"였고, Saltwater/Sugar Water가
+이미 깔아 둔 패턴(`WATER_BOIL_TEMP` 이상에서 빈 이웃에 Steam을 스폰하고 원래 칸은
+용질로 되돌리거나 비움)을 그대로 재사용했다.
+
+- **농도가 소금·설탕과 다르다.** Salt/Sugar는 `salinatePocket` 류의 홍수 채움으로
+  알갱이 하나가 연결된 물 웅덩이 최대 8~12칸을 통째로 적신다(`SALT_WATER_RATIO`/
+  `SUGAR_WATER_RATIO`). Soap의 용해 반응(`soap.ts`)은 그런 홍수가 없는 **1:1 접촉
+  반응**이다 — 비누 알갱이가 물 한 칸에 닿으면 그 두 칸이 그대로 비눗물 두 칸이
+  되고 끝난다. 그래서 비눗물은 훨씬 진한 용액이고, 되돌리는 비율도 그만큼 작다:
+  `SOAP_WATER_RATIO = 2`(증발 2칸당 비누 1알), Salt(8)·Sugar(12)보다 훨씬 촘촘하다.
+  나머지 메커니즘은 동일 — `SimContext.soapDebt`가 분수 빚을 누적하다 1을 채우면
+  그 칸이 Soap이 되고, 못 채우면 그냥 비운다(질량은 Steam 스폰으로 이미 나갔다).
+- **불 근처에서는 같은 차폐를 쓴다.** `burningPetroleumAdjacent`(유류 화재가 위에
+  떠 있으면)와 `fightingFire`(소화 작업 중이면) 둘 다 물 계열이 이미 갖고 있던
+  가드를 그대로 재사용해 `WATER_SURFACE_CAP`으로 온도를 붙잡는다 — 비눗물이
+  `douses`를 선언하지 않아 실제 소화제는 아니지만, 근처에 불이 있을 때 온도
+  시스템이 멋대로 증발시켜 버리는 것까지 막을 이유는 물 계열과 다르지 않다.
+- **순환 임포트를 새로 만들어서 걸렸다.** `soapywater.ts`가 증발 산물로 쓰려고
+  `soap.ts`에서 `SOAP`을 그냥 `import`했더니 `test:extinguish`/`test:miscible`
+  번들이 `Cannot read properties of undefined (reading 'id')`로 죽었다. 원인은
+  `soap.ts`의 최상위 `register()` 호출이 `SOAPY_WATER.id`를 즉시 읽는다는 것
+  (반응 표의 `produce` 필드) — 원래는 `index.ts`가 `soapywater.ts`를 `soap.ts`보다
+  먼저 임포트해서 안전했는데, `soapywater.ts`가 `soap.ts`를 역으로 임포트하는 순간
+  ES 모듈 로더가 `soap.ts`를 `soapywater.ts`의 최상위 코드(그 파일 자신의
+  `export const SOAPY_WATER = register(...)`)가 실행되기 **전에** 끼워 넣는다.
+  `coalpowder.ts`/`limestone.ts`가 이미 같은 함정을 문서화해 뒀지만 거긴 배열을
+  지연 생성해서 피했다 — 여기는 스칼라 `id` 하나만 필요해서, `soap.ts`를 아예
+  임포트하지 않고 `SOAP_ID = 101` 리터럴 하나로 대신했다(물질 id는 세이브 호환용
+  안정 식별자라 리터럴이 안전하다는 근거를 주석에 남겼다). `soap.ts` 쪽은 손대지
+  않았다.
+- **id 검사기 정규식에 두 번째로 걸렸다.** 위 회피 사유를 설명하는 주석 안에 예시로
+  ``register({ reactions: ...`` 같은 코드 조각을 그대로 적었더니,
+  `check-material-ids.mjs`가 "첫 `register({` 뒤의 첫 `id:`"를 찾는 정규식 스캔이라
+  그 주석 텍스트를 진짜 `register()` 호출로 오인해 Soapy Water의 id 102가 두 번
+  잡힌 것처럼 보고했다(`soapywater.ts:47`/`:117`). 주석에서 `register(` 뒤에 바로
+  `{`가 오는 코드 인용을 피하는 쪽으로 문구를 바꿔 해결 — 빌드 가드가 텍스트
+  스캐너라는 걸 다시 한번 확인한 사례.
+- **검증**: `npm run check:material-ids`(154종, 충돌 없음), `npm run test:extinguish`
+  (물 계열 비등·소화 회귀 전부 통과 — 새 분기가 같은 헬퍼를 재사용하므로), `npm run
+  test:miscible`(비눗물↔물·기름 유화 회귀 전부 통과), `npm run test:codex`. 전용
+  회귀 시나리오는 따로 추가하지 않았다 — 손으로 만든 확인 스크립트(밀폐 안 된 10×10
+  비눗물 웅덩이를 150°로 고정하고 시드 고정 PRNG로 400틱 굴림, `test:extinguish` 등이
+  쓰는 것과 같은 mulberry32(20260807))로 동작을 검증한 뒤 스크립트는 지웠다 — 시드
+  기준 400틱 뒤 Soap 13알, `SimContext.soapDebt`는 정확히 0(끓은 칸이 정확히 26개 =
+  13×2였다는 뜻, `SOAP_WATER_RATIO`와 어긋남 없이 딱 맞아떨어진다). Soapy Water 칸
+  수 자체는 100→65로 그보다 더 줄었는데, 그 차액 9는 끓음이 아니라 거품(Bubble)
+  왕복 때문이다 — 스냅샷 순간 아직 안 터지고 떠 있는 거품이 있어 셀 카운트가
+  흔들리는 것뿐이고, `soapDebt`와는 무관하다(첫 측정 때 이 차이를 "증발 36칸"으로
+  잘못 뭉뚱그려 리뷰에서 지적받았다 — 재현 안 되는 수치를 문서에 남기지 말 것).
+  끓는 로직 자체가 Saltwater/Sugar Water와 동일한, 이미 검증된 헬퍼(`burningPetroleumAdjacent`/
+  `fightingFire`/`steamHasRoom` 계열)의 재사용이라 새 헬퍼가 없기 때문이다.
+- **도감(ko/en)**: Soapy Water 설명문에 "끓이면 수증기로 증발하고 비누가 남습니다"
+  한 문장을 추가(Saltwater "끓이면 소금이 석출" 문장과 같은 자리). Soap(101) 쪽은
+  Salt/Sugar가 자기 항목에 역반응을 안 적는 것과 대칭으로 그대로 뒀다.
