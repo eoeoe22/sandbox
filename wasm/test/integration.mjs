@@ -1,9 +1,16 @@
 // Integration test for the STATEFUL host plumbing in engine/heatWasm.ts:
-// the persistent conductivity region, the grid-sized buffers that get freed and
-// re-allocated on resize, and running many ticks in a row (as Simulation.step
-// does). Mirrors heatWasm.ts's logic exactly and drives a mini multi-tick sim
-// with mid-run grid resizes, asserting the WASM temperature field stays
-// bit-identical to the JS reference at every tick.
+// the persistent conductivity region, the grid-sized buffers that grow with the
+// cell count, and running many ticks in a row (as Simulation.step does). Mirrors
+// heatWasm.ts's logic exactly and drives a mini multi-tick sim with mid-run grid
+// resizes, asserting the WASM temperature field stays bit-identical to the JS
+// reference at every tick.
+//
+// The buffers are GROW-ONLY (see ensureBuffers in heatWasm.ts for why), which is
+// exactly what the shrink at tick 25 is here to pin: the kernel then runs a small
+// grid inside a region still sized for the large one, and every byte past `w*h`
+// is stale data from the previous size. If anything on either side of the
+// boundary read the region's capacity instead of the grid it was handed, this
+// harness would diverge from the JS reference on that tick.
 //
 // Run: `node wasm/test/integration.mjs`.
 
@@ -64,7 +71,7 @@ let bufCells = 0, cellsPtr = 0, tempPtr = 0, scratchPtr = 0;
 let bufTiles = 0, tilesPtr = 0;
 
 function ensureBuffers(n) {
-  if (n === bufCells) return;
+  if (n <= bufCells) return; // grow-only: a smaller grid reuses the bigger region
   if (bufCells > 0) {
     ex.heat_free(cellsPtr, bufCells);
     ex.heat_free(tempPtr, bufCells * 4);
@@ -77,7 +84,7 @@ function ensureBuffers(n) {
 }
 
 function ensureTiles(n) {
-  if (n === bufTiles) return;
+  if (n <= bufTiles) return; // grow-only, same as ensureBuffers
   if (bufTiles > 0) ex.heat_free(tilesPtr, bufTiles);
   tilesPtr = ex.heat_alloc(n);
   bufTiles = n;
@@ -166,7 +173,8 @@ let jsScratch = new Float32Array(w * h);
 let maxDiff = 0;
 const TICKS = 40;
 for (let tick = 0; tick < TICKS; tick++) {
-  // Resize mid-run to exercise ensureBuffers' free+realloc path (grow, then shrink).
+  // Resize mid-run: tick 15 grows (a real free+realloc), tick 25 shrinks (the
+  // region is kept and the grid now sits inside stale trailing bytes).
   if (tick === 15 || tick === 25) {
     const nw = tick === 15 ? 70 : 40;
     const nh = tick === 15 ? 45 : 22;

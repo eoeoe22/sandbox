@@ -256,6 +256,36 @@ console.log('\n== 열전도: 파이프 한 줄이 한쪽 끝부터 달아오른�
   check(Math.abs(backToAmbient - AMBIENT_TEMP) < 1, '초기화로 온도도 되돌아온다', `${backToAmbient.toFixed(0)}℃`);
 }
 
+// --- 정지 화면 ----------------------------------------------------------------
+console.log('\n== 움직임 최소화: 감아 둔 한 프레임이 빈 화면이 아니다 ==');
+{
+  // 움직임 최소화에서는 대본을 안 돌리고 `windToStill()`로 한 번 감은 결과만
+  // 그린다. 그 한 장이 **초기화 직후**로 떨어지면 데모 자리에 빈 네모가 남는데,
+  // 화면에서는 그냥 "아무것도 없는 칸"으로 보이므로 아무도 눈치채지 못한다.
+  for (const kind of GUIDE_DEMO_KINDS) {
+    const w = make(kind);
+    w.windToStill();
+    check(
+      w.loops === 0 && occupied(w) > 10,
+      `${kind}: 정지 화면에 볼 것이 남아 있다`,
+      `loops=${w.loops}, ${occupied(w)}칸`,
+    );
+  }
+
+  // 액체는 대본 길이가 물줄기의 확률 굴림에 따라 흔들리므로(넘침이 정한다) 고정
+  // 틱으로 감으면 이른 판에서 초기화를 지나친다. 굴림을 여러 번 돌려 **매번**
+  // 가득 찬 그릇에서 멈추는지 본다 — 이 절이 없으면 드물게 빈 그릇이 나온다.
+  let worst = Infinity;
+  for (let trial = 0; trial < 40; trial++) {
+    const w = make('liquid');
+    w.windToStill();
+    const water = count(w, DEMO_WATER.id);
+    if (water < worst) worst = water;
+    if (w.loops !== 0) worst = -1;
+  }
+  check(worst > 100, '액체는 40번 굴려도 늘 가득 찬 그릇에서 멈춘다', `최악의 판 ${worst}칸`);
+}
+
 // --- 리사이즈 -----------------------------------------------------------------
 console.log('\n== 창 크기가 바뀌면 장면을 다시 세운다 ==');
 {

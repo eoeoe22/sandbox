@@ -40,12 +40,16 @@ let mod: HeatExports | null = null;
 let condPtr = 0; // conductivity LUT region (256 f32), allocated once
 let initStarted = false;
 
-// Grid-sized regions, (re)allocated when the cell count changes (resize).
+// Grid-sized regions, grown when the cell count outgrows them (see
+// ensureBuffers). `bufCells` is the region's *capacity*, not the current grid's
+// cell count — the kernel is told the real `w`/`h`, and every view below is
+// sized by that, so trailing capacity is never read or written.
 let bufCells = 0;
 let cellsPtr = 0;
 let tempPtr = 0;
 let scratchPtr = 0;
-// Inert-tile mask region, (re)allocated when the tile count changes.
+// Inert-tile mask region, grown when the tile count outgrows it. Capacity, same
+// as bufCells.
 let bufTiles = 0;
 let tilesPtr = 0;
 
@@ -85,9 +89,24 @@ export async function initHeatWasm(): Promise<void> {
   }
 }
 
-/** (Re)size the grid-buffer regions to `n` cells, freeing the previous set. */
+/**
+ * Make sure the grid-buffer regions hold at least `n` cells, growing (and
+ * freeing the previous set) only when they don't.
+ *
+ * Grow-only rather than exact-fit because these regions are module-global while
+ * the number of live Simulations is not. The sandbox and the start screen each
+ * run exactly one, so exact-fit cost nothing there — but the /guide 데모
+ * (game/guideDemo.ts) puts six on one page in three different sizes, and any two
+ * adjacent ones with different cell counts would otherwise free and re-allocate
+ * all three regions on *every* tick, forever, just by both being on screen.
+ * Growing to the high-water mark makes the alternation free.
+ *
+ * The cost is that a shrink keeps the larger region (a coarser 해상도 setting
+ * doesn't hand memory back). That is bounded by the largest grid the page ever
+ * ran — memory it had already allocated a moment earlier — and is paid once.
+ */
 function ensureBuffers(m: HeatExports, n: number): boolean {
-  if (n === bufCells) return true;
+  if (n <= bufCells) return true;
   if (bufCells > 0) {
     m.heat_free(cellsPtr, bufCells);
     m.heat_free(tempPtr, bufCells * 4);
@@ -114,12 +133,13 @@ function ensureBuffers(m: HeatExports, n: number): boolean {
 }
 
 /**
- * (Re)size the inert-tile mask region to `n` bytes. Unlike the grid buffers a
- * failure here isn't fatal: the caller can pass a null mask and have the kernel
- * run the full grid, which is slower but identical.
+ * Make sure the inert-tile mask region holds at least `n` bytes — grow-only for
+ * the same reason as ensureBuffers. Unlike the grid buffers a failure here isn't
+ * fatal: the caller can pass a null mask and have the kernel run the full grid,
+ * which is slower but identical.
  */
 function ensureTiles(m: HeatExports, n: number): boolean {
-  if (n === bufTiles) return true;
+  if (n <= bufTiles) return true;
   if (bufTiles > 0) {
     m.heat_free(tilesPtr, bufTiles);
     bufTiles = 0;

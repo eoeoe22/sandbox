@@ -24,7 +24,6 @@
   import {
     GuideDemoWorld,
     GUIDE_DEMO_SPECS,
-    GUIDE_DEMO_STILL_TICKS,
     DEMO_STEP_MS,
     type DemoBrush,
     type GuideDemoKind,
@@ -123,20 +122,15 @@
       return rebuilt;
     }
 
-    /** 정지 화면 지점까지 앞으로 감는다(움직임 최소화 전용). */
-    function wind(): void {
-      for (let i = 0; i < GUIDE_DEMO_STILL_TICKS[kind]; i++) world.tick();
-    }
-
     if (calm) {
-      wind();
+      world.windToStill();
       resize();
       const ro = new ResizeObserver(() => {
         // 칸 수가 바뀌었으면 장면이 빈 채로 다시 세워졌으므로 한 번 더 감아 준다.
         // 안 바뀌었으면 캔버스 크기만 맞춘 것이라 그대로 두어야 한다 — 여기서
         // 또 감으면 정지 화면이 대본을 지나쳐 다음 바퀴로 넘어간다.
         if (resize()) {
-          wind();
+          world.windToStill();
           draw();
         }
       });
