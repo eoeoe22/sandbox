@@ -165,15 +165,15 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     },
   },
   shellMeltPoint: {
-    ko: { label: '통 융점', desc: '이 온도에 오래 두면 통이 열려 조각 3개로 무너집니다.' },
-    en: { label: 'Shell melting point', desc: 'Held here long enough, the barrel gives way and collapses into three shards.' },
+    ko: { label: '통 융점', desc: '통 자체의 온도가 이 온도에 닿은 채로 잠시 버티면 통이 열려 조각 3개로 무너집니다.' },
+    en: { label: 'Shell melting point', desc: "The barrel's own temperature: hold it here a moment and the shell gives way, collapsing into three shards." },
   },
   shellMeltTicks: {
     ko: { label: '통 용융 시간', desc: '통 융점 이상에 이만큼 머물러야 열립니다.' },
     en: { label: 'Shell melt time', desc: 'How long it must sit past the shell melting point before it opens.' },
   },
   pieceMeltPoint: {
-    ko: { label: '조각 융점', desc: '조각은 통보다 높은 이 온도에서야 쇳물이 됩니다. 그 사이 온도에서는 조각으로 남습니다.' },
+    ko: { label: '조각 융점', desc: '조각은 자기 온도가 통보다 높은 이 온도에 닿아야 쇳물이 됩니다. 그 사이 온도에서는 조각으로 남습니다.' },
     en: { label: 'Shard melting point', desc: 'A shard only runs as molten iron at this higher temperature. In between, the wreckage just lies there.' },
   },
   pieceMeltTicks: {
@@ -219,22 +219,22 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   burstTemp: {
     ko: {
       label: '용융 온도',
-      desc: '유리의 녹는점입니다. 이 온도에 노출되면 병이 그 자리에서 녹아 열려, 녹은 유리와 알콜을 같은 양씩 남깁니다.',
+      desc: '유리의 녹는점입니다. 병 자체가 이 온도까지 달궈지면 그 자리에서 녹아 열려, 녹은 유리와 알콜을 같은 양씩 남깁니다.',
     },
     en: {
       label: 'Melting point',
-      desc: "Glass's own melting point. Exposed to this the bottle gives way where it stands, leaving equal amounts of Molten Glass and Alcohol.",
+      desc: "Glass's own melting point. Once the bottle itself has been heated this far it gives way where it stands, leaving equal amounts of Molten Glass and Alcohol.",
     },
   },
 
   heatHeld: {
     ko: {
       label: '자체 온도',
-      desc: '오브젝트는 자기 온도를 지닙니다. 뜨겁거나 차가운 것에 직접 닿았을 때만 온도가 오가고, 닿은 쪽에도 자기 열을 나눠 줍니다 — 달군 물체를 모래에 파묻으면 모래가 달아오릅니다. 공기는 열을 옮기지 못하므로 허공에 뜬 물체는 온도를 그대로 유지하고, 식히려면 물이나 찬 바닥에 대거나 선풍기 바람을 쐬어야 합니다. 돋보기를 켜면 각 오브젝트의 온도가 숫자로 보입니다.',
+      desc: '오브젝트는 자기 온도를 지닙니다. 뜨겁거나 차가운 것에 직접 닿았을 때만 온도가 오가고, 닿은 쪽에도 자기 열을 나눠 줍니다 — 달군 물체를 모래에 파묻으면 모래가 달아오릅니다. 공기는 열을 옮기지 못하므로 허공에 뜬 물체는 온도를 그대로 유지하고, 식히려면 물이나 찬 바닥에 대거나 선풍기 바람을 쐬어야 합니다. 녹거나 타거나 유폭하는 판정도 전부 이 자기 온도로 합니다 — 1800°짜리 푸른 불꽃 한가운데 있어도, 몸통이 자기 융점까지 달궈지기 전에는 녹지 않습니다. 돋보기를 켜면 각 오브젝트의 온도가 숫자로 보입니다.',
     },
     en: {
       label: 'Own heat',
-      desc: 'An object carries its own temperature. Heat only moves when it is touching something hotter or colder — and it flows the other way too, so a red-hot object buried in sand heats the sand. Air carries no heat here, so an object in mid-air holds its temperature: to cool it, set it in water or on cold ground, or point a fan at it. Turn on Inspect to read each object\'s temperature as a number.',
+      desc: 'An object carries its own temperature. Heat only moves when it is touching something hotter or colder — and it flows the other way too, so a red-hot object buried in sand heats the sand. Air carries no heat here, so an object in mid-air holds its temperature: to cool it, set it in water or on cold ground, or point a fan at it. Melting, burning and cooking off are all judged on that same number — sitting in an 1800° Blue Flame is not the same as being at 1800°, and nothing gives way until the body itself reaches its own melting point. Turn on Inspect to read each object\'s temperature as a number.',
     },
   },
 

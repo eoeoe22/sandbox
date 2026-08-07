@@ -52,6 +52,7 @@ const WATER = ID('Water');
 const FIRE = ID('Fire');
 const GLASS = ID('Broken Glass');
 const MOLTEN_GLASS = ID('Molten Glass');
+const LAVA = ID('Lava');
 const ALCOHOL = ID('Alcohol');
 
 function makeWorld(w = 100, h = 100): { grid: Grid; sim: Simulation } {
@@ -307,28 +308,27 @@ const SETTLE_TICKS = 40;
 //     can never burst itself. A control below 1000° would only show the weaker
 //     "cooler than my own flame is safe".
 //
-//     The temperature is therefore applied to the SURROUNDING CELLS, not by
-//     assigning the body's `temp` reservoir. Writing the reservoir directly does
-//     not hold: evaluateTriggers relaxes it before it computes the heat it judges
-//     by, so a reservoir stamped at 1050° each tick in ~20° air is compared at
-//     rather less than that — under Fire's 1000°, i.e. not testing the claim at
-//     all. A cell bath enters through `exp.maxTemp`, which is read fresh with no
-//     relaxation.
+//     The bath is made of LAVA, not of hot air, and that is not decoration. Air
+//     conducts nothing in this world — not into a body and not out of one — so a
+//     bottle suspended in 1600° air simply stays at room temperature, and since
+//     every heat trigger now reads the body's own reservoir and nothing else (see
+//     the heat note in evaluateTriggers), an air bath is no longer a heat source at
+//     all. It would leave the control passing for the one reason a control must
+//     never pass for: nothing reached the bottle.
 //
-//     What makes the control *bite* rather than merely pass is the pair of holds
-//     under it. The bath is applied to air, and air no longer conducts into a body
-//     at all (the reservoir only trades with matter it touches — see
-//     scanBodyExposure), so the reservoir is no longer evidence of anything here
-//     and asking it "are you past 1000°?" would now fail for a reason that has
-//     nothing to do with the claim. The claim is about the temperature the bottle
-//     is JUDGED at, so it is tested where it lives: the same bath at
-//     MOLOTOV_BURST_TEMP melts the bottle and at 1050° it does not. That is the
-//     boundary itself, one hundred degrees wide, and it proves both halves at once
-//     — the bath really does reach the bottle, and 1050° really is not enough.
+//     What makes the control bite is the pair of holds under it. The same lava
+//     bath 50° ABOVE the melting point melts the bottle and 100° below it does not,
+//     which proves both halves at once — the bath really does reach the bottle, and
+//     1050° really is not enough. (Just above rather than exactly at: the reservoir
+//     RELAXES toward the bath, so a bath held at exactly MOLOTOV_BURST_TEMP is an
+//     asymptote the bottle approaches from below and never crosses.)
 {
-  /** Hold the body in a `deg` bath for `ticks` ticks. Only EMPTY cells are heated
-   *  — the stone floor is left alone, since at 1600° it would melt and change the
-   *  scene out from under the measurement.
+  /** Hold the body in a LAVA bath pinned at `deg` for `ticks` ticks — real matter
+   *  against the bottle, because that is the only thing a body's reservoir trades
+   *  with. Re-stamped every tick against flow and diffusion, and only over cells
+   *  that are air or already lava, so the stone floor stays put. Lava specifically
+   *  because it stays liquid across this whole range (it freezes at 560°), and a
+   *  liquid never counts as burial the way a solid would.
    *
    *  Byproducts are counted the tick the body goes, NOT after settling: molten
    *  glass is a liquid that flows and freezes back into panes, and alcohol in a
@@ -355,10 +355,13 @@ const SETTLE_TICKS = 40;
       for (let y = Math.floor(m.y) - BATH; y <= Math.floor(m.y) + BATH; y++) {
         for (let x = Math.floor(m.x) - BATH; x <= Math.floor(m.x) + BATH; x++) {
           if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
-          if (grid.cells[grid.idx(x, y)] !== 0) continue; // air only — never the floor
-          grid.setTemp(x, y, deg);
+          const i = grid.idx(x, y);
+          if (grid.cells[i] !== 0 && grid.cells[i] !== LAVA) continue; // never the floor
+          grid.cells[i] = LAVA;
+          grid.temp[i] = deg;
         }
       }
+      grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
       sim.step();
       if (grid.objects.length === 0) {
         shards = count(grid, GLASS);
@@ -404,6 +407,14 @@ const SETTLE_TICKS = 40;
   // no bottle involved, the game's own baseline is 13 of 25 still molten after 10
   // ticks and 1 after 20 — molten glass sets fast here, and that is a property of
   // Molten Glass, not of the bottle.
+  //
+  // Driven by the 가열 브러시 — which is what writing `m.temp` each tick is — rather
+  // than by a bath, because the inheritance can only show itself above Molten
+  // Glass's own 1400° birth temperature, and a BATH can never get there: the bottle
+  // gives way five ticks after its reservoir passes 1150°, long before relaxation
+  // could carry it to 1400. A brush pins the reservoir wherever it likes, so this is
+  // where the branch lives (and it doubles as the check that the brush alone can
+  // melt a bottle hanging in air the cell heat brush cannot touch).
   {
     const { grid, sim } = makeWorld();
     floor(grid, 70);
@@ -414,12 +425,7 @@ const SETTLE_TICKS = 40;
     let glassY = 0;
     let fuelY = 0;
     for (let t = 0; t < 200; t++) {
-      for (let y = Math.floor(m.y) - 10; y <= Math.floor(m.y) + 10; y++)
-        for (let x = Math.floor(m.x) - 10; x <= Math.floor(m.x) + 10; x++) {
-          if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
-          if (grid.cells[grid.idx(x, y)] !== 0) continue;
-          grid.setTemp(x, y, 1600);
-        }
+      m.temp = 1700;
       sim.step();
       if (grid.objects.length === 0) {
         let gn = 0;
@@ -443,7 +449,7 @@ const SETTLE_TICKS = 40;
     check(
       '웅덩이는 자기를 녹인 불의 온도로 태어난다 — the pool inherits the heat that melted it',
       Math.max(...glassTemps) > 1450,
-      `hottest glass cell ${Math.max(...glassTemps).toFixed(0)}° in a 1600° bath (Molten Glass's own birth temperature is 1400°)`,
+      `hottest glass cell ${Math.max(...glassTemps).toFixed(0)}° off a 1700° reservoir (Molten Glass's own birth temperature is 1400°)`,
     );
     check(
       '녹은 유리는 알콜 아래에 고인다 — the denser glass pools under the fuel',
@@ -459,12 +465,12 @@ const SETTLE_TICKS = 40;
   check("a 1050° bath — hotter than Fire's own 1000° — still never gives way (대조군)",
     warm.survived, `melting point is ${MOLOTOV_BURST_TEMP}°`);
   check('and spills nothing', warm.molten + warm.alcohol + warm.shards === 0);
-  // The other side of that same boundary: one hundred degrees up, on the exact
-  // number, the identical bath does melt it. Without this the control above would
-  // pass just as well if the bath never reached the bottle at all.
-  const atPoint = hold(MOLOTOV_BURST_TEMP, 200);
-  check('while the same bath at the melting point itself does melt it',
-    !atPoint.survived, `${MOLOTOV_BURST_TEMP}°`);
+  // The other side of that same boundary: a hundred and fifty degrees up, just past
+  // the melting point, the identical bath does melt it. Without this the control
+  // above would pass just as well if the bath never reached the bottle at all.
+  const atPoint = hold(MOLOTOV_BURST_TEMP + 50, 400);
+  check('while the same bath just past the melting point does melt it',
+    !atPoint.survived, `${MOLOTOV_BURST_TEMP + 50}° vs a ${MOLOTOV_BURST_TEMP}° melting point`);
   check('and that one really does pour (녹은 유리 + 알콜)',
     atPoint.molten > 0 && atPoint.alcohol > 0,
     `${atPoint.molten} molten glass, ${atPoint.alcohol} alcohol`);

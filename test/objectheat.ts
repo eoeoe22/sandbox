@@ -1,6 +1,6 @@
 // Headless behavioural harness for the OBJECT layer's heat model
 // (engine/objects.ts: scanBodyExposure's contact shell, the conduction step in
-// evaluateTriggers, and conductBodyHeatOut). Four claims, none of which the older
+// evaluateTriggers, and conductBodyHeatOut). Six claims, none of which the older
 // object tests could see because they all judge a body by whether it survived:
 //
 //   1. 온도 유지 — a body touching nothing holds its temperature indefinitely. Air
@@ -22,6 +22,10 @@
 //      220° instead of a number chosen only to sit above Fire's 1000°. The other
 //      half of that claim matters just as much and has its own scene: it must
 //      still read every fire that ISN'T its own.
+//   6. 자기 온도로만 죽는다 — and every heat trigger judges that same reservoir and
+//      nothing else. Standing in an 1800° Blue Flame is not being at 1800°: the
+//      barrel melts when the barrel is at its melting point, not when the air
+//      around it is.
 //
 // Run: `node test/run-objectheat.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -34,6 +38,8 @@ import {
   createWoodBox,
   bodyReach,
   DYNAMITE_AUTOIGNITE_TEMP,
+  DRUM_MELT_TEMP,
+  DRUM_MELT_TICKS,
 } from '../src/game/engine/objects';
 import type { SimBody } from '../src/game/engine/objects';
 import { FAN_DOWN, FAN_RIGHT } from '../src/game/materials/fan';
@@ -86,6 +92,10 @@ const FIRE = ID('Fire');
 /** Fire's own `thermal.init` (materials/fire.ts) — what a Fire cell the CA made
  *  actually reads. Stamping the material without it makes a 20° "fire". */
 const FIRE_TEMP = 1000;
+const BLUE_FLAME = ID('Blue Flame');
+/** Blue Flame's own `thermal.init` (materials/blueflame.ts) — 600° past the drum's
+ *  melting point, which is exactly what made the old bug so visible. */
+const BLUE_FLAME_TEMP = 1800;
 
 const W = 100;
 const H = 100;
@@ -517,25 +527,24 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
     if (!grid.objects.includes(stick)) break;
     if (stick.temp > hottest) hottest = stick.temp;
   }
-  // Bounded, not just "eventually": the trigger reads the footprint's 1000°
-  // directly, so a stick lying in fire is gone in a handful of ticks. A version of
+  // Bounded, not just "eventually": lying in a 1000° fire brings a stick's own
+  // reservoir up past its 220° cook-off point in a handful of ticks. A version of
   // the exclusion that swallows this fire still ends up detonating it — Fire burns
   // out into hot Smoke, which is not Fire and is read normally — just far later.
   // So the tick count is the discriminator, and a bare "did it die" is not.
   check(
     '불에 던지면 터진다 — a lit stick in a real fire cooks off at once',
-    !grid.objects.includes(stick) && ticks <= 10,
+    !grid.objects.includes(stick) && ticks <= 20,
     `gone on tick ${ticks} (its own fuse needs at least 90; via leaked smoke alone it takes ~32)`,
   );
-  // The reservoir does NOT get to 220° here, and shouldn't: the trigger reads the
-  // footprint's 1000° directly, so the stick is gone in a handful of ticks — long
-  // before conduction at 0.03/tick could bring a room-temperature body up. What
-  // matters is that the reservoir was climbing at all, which is the difference
-  // between "it registered the fire" and the overlay lie this scene guards.
+  // And it went off because it was actually hot, not because something in its
+  // surroundings was: every heat trigger reads the body's own reservoir and
+  // nothing else (see the heat note in evaluateTriggers), so the stick cannot
+  // detonate until conduction has carried it to its cook-off point.
   check(
-    '…and it read the heat on the way, instead of lying at room temperature',
-    hottest > AMBIENT_TEMP + 50,
-    `reservoir climbing through ${hottest.toFixed(0)}° when it went off`,
+    '…and it was the stick that got hot, not just the air around it',
+    hottest >= DYNAMITE_AUTOIGNITE_TEMP,
+    `reservoir reached ${hottest.toFixed(0)}° (cook-off is ${DYNAMITE_AUTOIGNITE_TEMP}°)`,
   );
 }
 
@@ -889,6 +898,74 @@ function cookOff(bathTemp: number, limit = 500): { gone: boolean; ticks: number 
     '바람은 바닥 마찰을 이기고 상자를 민다 — the gust still slides a non-rolling body',
     grid.objects.includes(crate) && crate.x > x0 + 20,
     `crate drifted ${(crate.x - x0).toFixed(1)} cells`,
+  );
+}
+
+// ── 18. 물체 자체 온도로만 녹는다 ───────────────────────────────────────────────
+//
+// The bug a player found by single-stepping the sim: a drum held in a Blue Flame
+// melted while the inspector was still reading it at about 200°
+// (푸른 불꽃으로 가열 시 약 200도를 넘자마자 녹아버림). The melt trigger used to
+// judge on max(hottest footprint cell, reservoir), and Blue Flame is a GAS at
+// 1800° — it drifts in among the footprint cells on its own, cleared the drum's
+// 1200° bar on the very first tick, and the barrel was gone 24 ticks later having
+// absorbed almost none of it. Lava did the same at 390° to any body that sank into
+// it rather than floating on top; the puddle cases that looked correct only looked
+// correct because the body floated ON them, leaving the footprint full of air.
+//
+// Two checks, and they are one claim from both ends. The first is the bug: 24
+// consecutive ticks of 1800° flame — more than DRUM_MELT_TICKS, so the old code is
+// guaranteed to have destroyed it by here — with the barrel still well short of its
+// own melting point. The second is that this is a delay and not an immunity: keep
+// the flame on it and it does melt, at its melting point, the way the thermite and
+// molten-metal puddles the player called correct always did.
+//
+// The flame is re-stamped every tick because Blue Flame burns out in ~20 ticks and
+// rises; a player holding the brush on a barrel is what this imitates. Stamping the
+// material without its temperature would make a 20° "flame" that proves nothing, so
+// the temp goes in with it.
+{
+  scene(18);
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const drum = createDrum(50, 60);
+  settle(sim, grid, drum);
+  const bx = Math.round(drum.x);
+  const by = Math.round(drum.y);
+  const torch = (): void => {
+    for (let cy = by - 9; cy <= by + 9; cy++)
+      for (let cx = bx - 9; cx <= bx + 9; cx++) {
+        if (!grid.inBounds(cx, cy) || grid.get(cx, cy) !== 0) continue;
+        grid.set(cx, cy, BLUE_FLAME);
+        grid.setTemp(cx, cy, BLUE_FLAME_TEMP);
+      }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  };
+  const HELD = DRUM_MELT_TICKS;
+  for (let t = 0; t < HELD; t++) {
+    torch();
+    sim.step();
+  }
+  check(
+    '푸른 불꽃 속에서도 자기 온도가 녹는점에 닿기 전엔 안 녹는다 — a gas standing in the footprint is not a melt',
+    grid.objects.includes(drum) && drum.temp < DRUM_MELT_TEMP,
+    `still there after ${HELD} ticks of ${BLUE_FLAME_TEMP}° flame, reading ${drum.temp.toFixed(0)}° of ${DRUM_MELT_TEMP}°`,
+  );
+  let meltedAt = -1;
+  let meltedTemp = 0;
+  for (let t = HELD; t < 400; t++) {
+    torch();
+    sim.step();
+    if (!grid.objects.includes(drum)) {
+      meltedAt = t;
+      break;
+    }
+    meltedTemp = drum.temp;
+  }
+  check(
+    '…하지만 계속 대고 있으면 녹는점에서 녹는다 — hold it there and it does melt, at its melting point',
+    meltedAt > 0 && meltedTemp >= DRUM_MELT_TEMP,
+    `gave way on tick ${meltedAt} at ${meltedTemp.toFixed(0)}° (melting point ${DRUM_MELT_TEMP}°)`,
   );
 }
 

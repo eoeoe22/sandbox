@@ -99,9 +99,9 @@ function makeRoom(): { grid: Grid; sim: Simulation } {
  *
  *  The box has to cover the footprint at ANY rotation — the can topples on landing,
  *  so its long 4.5-cell half-extent ends up on whichever axis it came to rest on.
- *  A box sized for the upright can leaves the ends of a fallen one sticking out
- *  into ambient air, and since the trigger takes the MAX, those few warm cells
- *  silently undo the whole chill. */
+ *  A box sized for the upright can leaves the ends of a fallen one lying against
+ *  ambient floor, and the can conducts with every cell it touches: those few warm
+ *  cells are enough to hold the reservoir above the chill point. */
 function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
   for (let y = Math.floor(body.y) - 7; y <= Math.floor(body.y) + 7; y++) {
     for (let x = Math.floor(body.x) - 7; x <= Math.floor(body.x) + 7; x++) {
@@ -208,21 +208,33 @@ function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
   const can = createFlashbang(70, 90);
   grid.objects.push(can);
   let popped = -1;
+  let hottest = -Infinity;
   for (let i = 0; i < FLASHBANG_FUSE_TICKS; i++) {
     // A bath of hot surroundings held around the can, the way a fire under it
     // would: cells the footprint overlaps, re-held each tick against diffusion.
+    // `hold` writes the FLOOR the can is resting on as well as the air, which is
+    // the whole reason this scene still works — the can's reservoir only trades
+    // with matter it touches, and its cook-off is judged on that reservoir alone.
     for (let y = Math.floor(can.y) - 5; y <= Math.floor(can.y) + 5; y++) {
       for (let x = Math.floor(can.x) - 3; x <= Math.floor(can.x) + 3; x++) {
         grid.temp[grid.idx(x, y)] = 800;
       }
     }
     sim.step();
+    if (can.temp > hottest) hottest = can.temp;
     if (grid.objects.length === 0) {
       popped = i;
       break;
     }
   }
-  check('so does a hot bath around it', popped >= 0 && popped < FLASHBANG_FUSE_TICKS / 2, `went off at tick ${popped} of ${FLASHBANG_FUSE_TICKS}`);
+  // Well inside its own fuse, but not instantly: an 800° bath has to carry the
+  // can's reservoir up past its 600° cook-off point first, which is most of the
+  // wait. Paired with the reservoir reading so "it went off early" can't be
+  // satisfied by anything except the can actually getting hot.
+  check('so does a hot bath around it', popped >= 0 && popped < FLASHBANG_FUSE_TICKS * 0.75, `went off at tick ${popped} of ${FLASHBANG_FUSE_TICKS}`);
+  check('…because the can itself got hot, not just its surroundings',
+    hottest >= FLASHBANG_IGNITE_TEMP,
+    `reservoir reached ${hottest.toFixed(0)}° (cook-off is ${FLASHBANG_IGNITE_TEMP}°)`);
 }
 
 // 5. 폭발: a real blast reaching a can sets it off, whatever its timer says. The
@@ -326,17 +338,26 @@ function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
   const can = createFlashbang(70, 90);
   grid.objects.push(can);
   const FROZEN = 400;
+  let midway = -1;
   for (let i = 0; i < FROZEN; i++) {
     hold(grid, can, FLASHBANG_DEEP_CHILL_TEMP - 40);
     sim.step();
+    if (i === FROZEN / 2) midway = can.fuseTicks;
     if (grid.objects.length === 0) break;
   }
   check('a deep-frozen can does not go off', grid.objects.length === 1, `after ${FROZEN} ticks`);
   const left = can.fuseTicks;
+  // STOPPED, not merely slowed — the clock reads exactly the same after 400 frozen
+  // ticks as it did after 200. Stated that way rather than as a fraction of the
+  // fuse because the freeze costs a real handful of ticks to bite: the can is
+  // judged on its own reservoir, so the bath has to conduct it down from room
+  // temperature to -30° before the clock stops, and it runs at full speed on the
+  // way. That ramp-in is the behaviour, and pinning the reading to `midway` measures
+  // the claim (the clock stops) instead of the ramp.
   check(
-    'and its countdown is where it was, not run down',
-    left > FLASHBANG_FUSE_TICKS * 0.8,
-    `${left.toFixed(1)} of ${FLASHBANG_FUSE_TICKS} ticks left after ${FROZEN} frozen ticks`,
+    'and its countdown is stopped, not merely slowed',
+    left === midway && left > FLASHBANG_FUSE_TICKS * 0.7,
+    `${left.toFixed(1)} of ${FLASHBANG_FUSE_TICKS} ticks left, unchanged over the last ${FROZEN / 2} frozen ticks (chilling down from room temperature costs the first ${(FLASHBANG_FUSE_TICKS - left).toFixed(0)})`,
   );
   // Thaw: hold the same cells at room temperature again. Actively, not by simply
   // stopping — this world has no ambient heat source, so cells the freeze drove to
@@ -356,10 +377,10 @@ function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
 
 // 11. 냉각 브러시 alone is enough — the regression this whole pair of readings
 //     exists for. The brush writes ONLY the body's own reservoir; the room around
-//     it stays at 20°. Judging cold off the same max() the cook-off uses made this
-//     case do nothing at all (max(20, -50) = 20 → full speed), which is the first
-//     thing a player would try. It has to be a min: either the surroundings OR the
-//     reservoir being cold chills the can.
+//     it stays at 20°. Cold and cook-off now read that one number, so the brush is
+//     simply believed; there was a spell when the two were resolved differently
+//     (heat as max(surroundings, reservoir), cold as the min) and getting that pair
+//     wrong made this case — the first thing a player tries — do nothing at all.
 //
 //     Deliberately NOT using hold() here — writing the surrounding cells is the
 //     path case 9/10 already cover, and it is precisely the path that masked this.

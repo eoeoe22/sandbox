@@ -1020,10 +1020,9 @@ export const FLASHBANG_DEEP_CHILL_TEMP = -30;
 export const FLASHBANG_CHILL_RATE = 1 / 3;
 
 /** How fast a flashbang's countdown runs this tick, as a fraction of a tick, given
- *  the COLDEST temperature the body resolved to — the cooler of its surroundings and
- *  its own reservoir, so either a bath of liquid nitrogen or a 냉각 브러시 held on it
- *  is enough on its own (see the note in evaluateTriggers on why this is a different
- *  reading from the cook-off's). Full speed when the can is anywhere above freezing,
+ *  the can's own heat reservoir, which is how a bath of liquid nitrogen (by contact)
+ *  and a 냉각 브러시 (which writes the reservoir directly) both reach it. Full speed
+ *  when the can is anywhere above freezing,
  *  a third of speed when it is chilled, and nothing at all in a deep freeze. */
 function flashbangTickRate(chill: number): number {
   if (chill > FLASHBANG_CHILL_TEMP) return 1;
@@ -2715,21 +2714,24 @@ function wickPoint(o: SimBody): { x: number; y: number; halfW: number } | null {
  * beam cell overlapping it (the searing critical-mass beam — see nuclearray.ts —
  * which destroys everything it strikes on the CA grid and is no gentler on a
  * free-floating object it grazes: instant destruction, same as a direct blast),
- * the hottest footprint temperature (heat exposure, judged over time by the
- * caller), and the *fraction of the footprint buried in solid* (a wedged/entombed
- * body is crushed). Works for balls and drums alike via the segment+radius
- * footprint.
+ * and the *fraction of the footprint buried in solid* (a wedged/entombed body is
+ * crushed). Works for balls and drums alike via the segment+radius footprint.
  *
- * It also reports what the body is in thermal *contact* with, which is a strictly
- * narrower thing than `maxTemp`: the cells it is actually touching matter in
- * (`contactCount`, collected into `contactCells`) and the hottest of those
- * (`contactTemp`), plus whether a Fan's wind is blowing through the footprint
- * (`wind`) and how hot that moving air is (`windTemp`). Conduction runs off those
- * rather than off `maxTemp` — see the conduction step in evaluateTriggers for why
- * air alone must not cool a body.
+ * It also reports what the body is in thermal *contact* with: the cells it is
+ * actually touching matter in (`contactCount`, collected into `contactCells`) and
+ * the hottest of those (`contactTemp`), plus whether a Fan's wind is blowing
+ * through the footprint (`wind`) and how hot that moving air is (`windTemp`).
  *
- * A lit body's own wick flame is excluded from every temperature it reports, both
- * `maxTemp` and `contactTemp` — see WICK_PLUME_MARGIN.
+ * It reports NO temperature for the footprint at large, and that omission is the
+ * point: heat reaches a body only through contact, and the melt/burn/cook-off
+ * triggers judge only what the body has absorbed. There used to be a `maxTemp`
+ * here — the hottest footprint cell, whatever it was standing in — and the
+ * triggers took the max of it and the reservoir, which let a Blue Flame drifting
+ * through the footprint melt a barrel that was itself barely warm. See the heat
+ * note in evaluateTriggers.
+ *
+ * A lit body's own wick flame is excluded from `contactTemp` — see
+ * WICK_PLUME_MARGIN.
  */
 function scanBodyExposure(
   o: SimBody,
@@ -2737,7 +2739,6 @@ function scanBodyExposure(
 ): {
   blast: boolean;
   nuclearRay: boolean;
-  maxTemp: number;
   solidFrac: number;
   contactTemp: number;
   contactCount: number;
@@ -2760,7 +2761,6 @@ function scanBodyExposure(
   const y1 = Math.ceil(o.y + spanY + OBJECT_CONTACT_MARGIN);
   let blast = false;
   let nuclearRay = false;
-  let maxTemp = -Infinity;
   let footprint = 0;
   let solid = 0;
   let contactTemp = -Infinity;
@@ -2777,10 +2777,9 @@ function scanBodyExposure(
       const dy = cy + 0.5 - spy;
       const d2 = dx * dx + dy * dy;
       if (d2 > rc2) continue;
-      // Inside the body proper, versus merely in the shell around it. Everything
-      // the body is *destroyed* by — blast, beam, burial, and the `maxTemp` the
-      // heat triggers judge — stays on the strict footprint, unchanged; only the
-      // thermal-contact set uses the grown shell.
+      // Inside the body proper, versus merely in the shell around it. What
+      // destroys a body outright — blast, beam, burial — stays on the strict
+      // footprint; only the thermal-contact set uses the grown shell.
       const inFoot = d2 <= r2;
       if (inFoot) footprint++;
       // Out-of-bounds cells count toward the footprint but NOT as burial: the
@@ -2830,12 +2829,11 @@ function scanBodyExposure(
       // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
       // read as a real degree reading here — a water splash's Debris droplets
       // passing through a floating ball's footprint carry garbage "temperatures"
-      // in the tens of thousands that would otherwise instantly "burn" it away
+      // in the tens of thousands that would otherwise instantly cook the body
       // (물에 빠지면 공이 사라지는 문제). Skip them; a cell holding only such
-      // material contributes nothing to maxTemp, same as an empty footprint cell —
-      // so a footprint that is ALL packed cells yields maxTemp −Infinity, which
-      // evaluateTriggers already handles like an out-of-world body (freeze the
-      // reservoir, no conduction).
+      // material trades nothing, exactly like an empty one — so a footprint that is
+      // ALL packed cells reports no contact at all, which is the out-of-world case
+      // evaluateTriggers already handles (freeze the reservoir, no conduction).
       // A `decorTemp` cell (the Firework Burst flower) is skipped for the
       // opposite reason: its reading is real but purely cosmetic, so a volley
       // bursting over a wooden box must not cook it (see Material.decorTemp).
@@ -2850,8 +2848,6 @@ function scanBodyExposure(
         if (ta > windTemp) windTemp = ta;
       }
       if (ownFlame) continue;
-      const t = ctx.getTemp(cx, cy);
-      if (t > maxTemp) maxTemp = t;
       // Thermal contact. Air is excluded because it has zero conductivity in this
       // world (see config.ts AMBIENT_TEMP: a lava blob with nothing touching it
       // never cools), and Wall is excluded because it is held outside the
@@ -2859,6 +2855,7 @@ function scanBodyExposure(
       // same reason). What's left is real matter, and only real matter trades
       // heat with a body.
       if (m === null || m.isWall === true) continue;
+      const t = ctx.getTemp(cx, cy);
       if (t > contactTemp) contactTemp = t;
       contactCells[contactCount * 2] = cx;
       contactCells[contactCount * 2 + 1] = cy;
@@ -2868,7 +2865,6 @@ function scanBodyExposure(
   return {
     blast,
     nuclearRay,
-    maxTemp,
     solidFrac: footprint > 0 ? solid / footprint : 0,
     contactTemp,
     contactCount,
@@ -4275,9 +4271,9 @@ function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
 
 /**
  * Per-tick lifecycle for a flashbang, after this tick's heat conduction (called
- * from evaluateTriggers with the resolved `heat` and `chill` — the hottest and the
- * coldest of {surroundings, own reservoir}; see the note at that call site for why
- * one number can't serve both). It is the shortest step function in this file,
+ * from evaluateTriggers with the resolved `heat`, which is the can's own reservoir
+ * and serves as both the cook-off reading and the chill one). It is the shortest
+ * step function in this file,
  * which is the point of the object:
  *   1. Sustained external heat (fire, lava, the 가열 brush) cooks it off early.
  *   2. Otherwise the countdown runs — at whatever rate the cold has left it (see
@@ -4290,12 +4286,7 @@ function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
  * it off too, but that arrives through destroyByproduct rather than here. Returns
  * true to keep the can, false once it has gone off.
  */
-function stepFlashbang(
-  o: SimFlashbang,
-  ctx: SimContext,
-  heat: number,
-  chill: number,
-): boolean {
+function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean {
   if (heat >= FLASHBANG_IGNITE_TEMP) {
     o.heatTicks++;
     if (o.heatTicks >= FLASHBANG_HEAT_TICKS) {
@@ -4305,7 +4296,7 @@ function stepFlashbang(
   } else if (o.heatTicks > 0) {
     o.heatTicks--;
   }
-  const rate = flashbangTickRate(chill);
+  const rate = flashbangTickRate(heat);
   if (rate <= 0) return true; // deep-frozen: the clock is stopped, not reset
   o.fuseTicks -= rate;
   if (o.fuseTicks <= 0) {
@@ -4864,21 +4855,17 @@ function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
     const cy = cells[i * 2 + 1];
     if (i < glassCount) {
       ctx.spawn(cx, cy, MOLTEN_GLASS.id);
-      // Born at the temperature of the fire that melted it, not at Molten Glass's
-      // generic 1400° — so a bottle run down by an 1800° Blue Flame leaves an 1800°
-      // pool that stays liquid for a good while, and one that only just gave way
-      // leaves a pool that sets almost at once. The heat that did the work is the
-      // heat the puddle carries off.
+      // A bottle that came out of the fire hotter than Molten Glass's own 1400°
+      // init leaves a correspondingly hotter pool. Only ever *raises* the cell, so
+      // it can never shorten the molten phase below what fresh Molten Glass gets.
       //
-      // `heat`, not `o.temp`, and the difference is the whole thing: the reservoir
-      // only ever rises through *contact*, and a flame is a gas standing in air —
-      // which conducts nothing in this world. A bottle melted by a Blue Flame it is
-      // merely standing in has a reservoir still near room temperature; what melted
-      // it is the footprint's own maxTemp, and `heat` is the max of the two (see
-      // stepMolotov). Reading `o.temp` here measured almost nothing.
-      //
-      // Only ever *raises* the cell, so this can never shorten the molten phase
-      // below what fresh Molten Glass gets.
+      // In the ordinary case it changes nothing, and that is fine: `heat` is the
+      // bottle's reservoir, and the bottle bursts as soon as that has held
+      // MOLOTOV_BURST_TEMP (1150°) for five ticks — short of 1400°. It bites where
+      // it should, on a bottle whose reservoir kept climbing past 1400 anyway: one
+      // sunk in lava, one under a held Heat Ray, one the 가열 브러시 pinned high.
+      // What actually keeps the puddle molten in the common case is the fuel beside
+      // it arriving hot rather than at room temperature — see the next branch.
       if (heat > ctx.getTemp(cx, cy)) ctx.setTemp(cx, cy, heat);
     } else if (fuelled) {
       ctx.spawn(cx, cy, ALCOHOL.id);
@@ -4886,9 +4873,9 @@ function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
       //
       // `spawn` resets a cell to its material's own initial temperature, which for
       // Alcohol is room temperature. That put a 20° cell against every 1400° Molten
-      // Glass cell in the puddle — and because the two halves are deliberately
-      // SHUFFLED together to read as a spatter rather than two bands, the
-      // interleaving maximised exactly that contact. The fuel drained the glass
+      // Glass cell in the puddle — and back when the two halves were shuffled
+      // together rather than sorted bottom-first, the interleaving maximised
+      // exactly that contact. The fuel drained the glass
       // below MOLTEN_GLASS_FREEZE_TEMP in about half a second even with the bottle
       // still sitting in a 1600° bath, so what the player actually saw come out of
       // a Blue Flame was solid glass (녹은 유리가 아니라 고체 유리가 나와버림).
@@ -5010,8 +4997,8 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // temperature indefinitely. That isn't a shortcut, it is the same rule the cell
   // layer already runs on — air has zero conductivity here, which is why a lava
   // blob with no cold sink against it stays molten forever (config.ts
-  // AMBIENT_TEMP). Relaxing toward `maxTemp` instead, as this used to, quietly
-  // made every object the one thing in the world that air could cool, so a
+  // AMBIENT_TEMP). Relaxing toward the hottest footprint cell instead, as this
+  // used to, quietly made every object the one thing in the world air could cool, so a
   // red-hot ball flying through empty space faded on its way. Now it lands still
   // glowing, and putting the heat *out* is something you do — drop it in water,
   // bury it in sand, or point a Fan at it (the one way air carries heat off a
@@ -5041,36 +5028,43 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // air itself (`windTemp`), which is normally ambient but is whatever a
   // brush-heated or LN2-chilled stream happens to be carrying.
   if (exp.wind) o.temp += ((exp.windTemp - o.temp) * OBJECT_WIND_CONVECTION) / heatMass;
-  // Judge heat by the hotter of the surroundings and the body's own reservoir:
-  // ambient heat (lava/fire under the footprint) still triggers instantly as
-  // before — no regression — while the 가열 brush, which writes only `temp`, can
-  // now melt/burn a body floating over empty air the cell heat brush can't warm.
-  // (An out-of-world body has maxTemp −Inf, so this picks its finite reservoir.)
-  const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
+  // Every heat judgement below runs off the body's OWN reservoir, and nothing
+  // else. This used to be `max(footprint cell temperature, o.temp)`, which let the
+  // surroundings condemn a body the surroundings had not actually heated: a Blue
+  // Flame is a *gas*, so it drifts in among the footprint cells on its own, and at
+  // 1800° it cleared the drum's 1200° bar on the first tick. The barrel then melted
+  // 24 ticks later while its own reservoir — the number the inspector shows, and
+  // the number the heat glow is drawn from — was still reading about 460°
+  // (푸른 불꽃으로 가열 시 약 200도를 넘자마자 녹아버림). Lava did the same at 390°
+  // whenever a body sank into it rather than floating on top.
+  //
+  // The conduction step above already stopped reading raw cell temperature, for
+  // the mirror-image reason (air conducts nothing, so it must not cool a body).
+  // Leaving the *trigger* on cell temperature kept exactly half of that rule and
+  // made air the one thing that could still destroy an object without warming it.
+  // Now both halves agree: heat reaches a body only by contact, and what the body
+  // has actually absorbed is what melts, burns, or cooks it off. What you see on
+  // the body is what kills it.
+  //
+  // The cost is deliberate: dropping a drum in lava is no longer instant death, it
+  // is ~2.5 seconds of the barrel visibly glowing its way up to 1200°. The 가열
+  // brush still works the same, because it writes this very reservoir.
+  const heat = o.temp;
   // A dynamite stick has its own terminal logic (fuse countdown + heat cook-off +
   // tip interactions); it never melts or burns away like a drum/ball.
   if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
   // A flashbang runs a bare countdown to its flash (plus a heat cook-off) and
   // emits nothing at all until then. See stepFlashbang.
   //
-  // It is the one body that also judges COLD, and cold needs the OTHER end of the
-  // same pair — the coldest evidence, not the hottest. `heat` is a max because
-  // heat is an OR: the lava under it OR the 가열 브러시 on it should cook it off.
-  // Cold is the same OR, so it has to be a min: the liquid nitrogen it is lying in
-  // OR the 냉각 브러시 held on it should chill it. Reusing `heat` for both looks
-  // tidy and is wrong — `max(...) <= 0` demands that BOTH readings be cold, which
-  // silently makes the cooling brush (which writes only the reservoir) do nothing
-  // at all in an ordinary room, the exact case a player reaches for first.
-  //
-  // The finite guard is not symmetric with `heat`'s: an out-of-world body reads
-  // maxTemp −Infinity, which `heat`'s max discards for free but a min would latch
-  // onto — freezing the can's timer forever the moment it drifts past a void
-  // border. Same hazard the conduction step above guards, same answer.
-  if (o.kind === 'flashbang') {
-    const chill =
-      Number.isFinite(exp.maxTemp) && exp.maxTemp < o.temp ? exp.maxTemp : o.temp;
-    return stepFlashbang(o, ctx, heat, chill);
-  }
+  // It is the one body that also judges COLD, and cold now reads the same single
+  // source heat does: the reservoir. Both used to blend in the footprint's own cell
+  // temperatures — heat taking the max of the pair, cold the min, because a max
+  // would have demanded that BOTH readings be cold and silently killed the 냉각
+  // 브러시 in an ordinary room. With cell temperature out of the judgement
+  // entirely that whole asymmetry, and the −Infinity guard an out-of-world body
+  // needed with it, simply goes away: liquid nitrogen chills the can by contact
+  // like everything else, and the brush writes the reservoir directly.
+  if (o.kind === 'flashbang') return stepFlashbang(o, ctx, heat);
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
   if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);
