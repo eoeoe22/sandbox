@@ -322,11 +322,11 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   perishable: {
     ko: {
       label: '습기로 부패',
-      desc: '물·수증기 또는 곰팡이에 닿으면 상하기 시작해 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열하면 멈추며, 소금·알콜·꿀이 닿아 있어도 멈춥니다.',
+      desc: '물·수증기 또는 곰팡이에 닿으면 상하기 시작해 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열하면 멈추며, 소금·설탕·소금물·설탕물·꿀·알콜에 절여도 멈춥니다. 절임은 닿은 면만이 아닙니다 — 덩어리째 파묻으면 속살까지 멈추고, 반쯤 잠긴 덩어리는 잠긴 쪽만 멈춥니다.',
     },
     en: {
       label: 'Perishable',
-      desc: 'Goes over into spoiled food. The clock only runs while it is wet (water or steam against it) or while mold is touching it, so something kept somewhere dry does not spoil. Once it is part-spoiled and still wet it grows mold of its own — even fully submerged, where the mold pushes the water aside. Below 0°C or at 60°C and up it stops, and so does touching salt, alcohol or honey. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
+      desc: 'Goes over into spoiled food. The clock only runs while it is wet (water or steam against it) or while mold is touching it, so something kept somewhere dry does not spoil. Once it is part-spoiled and still wet it grows mold of its own — even fully submerged, where the mold pushes the water aside. Below 0°C or at 60°C and up it stops, and so does steeping it in salt, sugar, brine, sugar water, honey or alcohol. Steeping reaches past the surface: bury a body of it and the inside stops too, while a body only half under keeps just the submerged part. Preserving pauses the clock rather than turning it back — take the salt away and it carries on from where it was.',
     },
   },
   rotsUnattended: {

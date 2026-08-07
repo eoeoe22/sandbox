@@ -1,8 +1,13 @@
-import { DIR8 } from '../engine/directions';
+import { DIR4, DIR8 } from '../engine/directions';
 import { SIM_HZ_AT_1X } from '../config';
 import type { SimContext } from '../engine/SimContext';
 import type { SpoilSpec } from '../engine/types';
+import { Phase } from '../engine/types';
+import { getMaterial } from './registry';
 import { SALT } from './salt';
+import { SUGAR } from './sugar';
+import { SALTWATER } from './saltwater';
+import { SUGAR_WATER } from './sugarwater';
 import { ALCOHOL } from './alcohol';
 import { HONEY } from './honey';
 import { WATER } from './water';
@@ -34,7 +39,7 @@ import { MOLD, seedMold } from './mold';
 // can't derive, and getting it wrong is silent, so each declaration states it
 // next to a comment naming what else is in that word.
 //
-// ## 무엇이 멈추는가 (four preservation routes, and one that is free)
+// ## 무엇이 멈추는가 (five preservation routes, and one that is free)
 //
 //   • 저온 — under SPOIL_MIN_TEMP. 냉장고를 지어라. Ice, Snow, Dry Ice and
 //     Liquid N₂ all already do this; nothing was added for it.
@@ -47,9 +52,15 @@ import { MOLD, seedMold } from './mold';
 //     to opt in. 익은 고기 pointedly does not: grilling drives that same counter
 //     to full on its own, so declaring it there made every cooked cut immortal
 //     (cookedmeat.ts).
-//   • 염장 · 담금 — Salt, Alcohol or Honey touching the cell. All three are
+//   • 염장 · 당장 · 담금 — one of the six 절임 물질 (`isPreservative`) against the
+//     cell: 소금·설탕 두 가루, 소금물·설탕물 두 절임액, 그리고 꿀·알콜. All six are
 //     ordinary palette materials doing a new job; this is the whole reason the
-//     round adds three materials and not eight.
+//     round adds no materials at all.
+//   • 잠김 — 절임 물질에 파묻힌 덩어리의 **속살** (`isSubmerged`): 사방으로 덩어리를
+//     뚫고 나가 「가장 가까운 소금」이 「가장 가까운 트인 곳」보다 가까우면 절여진 것
+//     이다. 접촉만 보면 소금 더미에 묻은 고기 블록은 닿은 겉껍질 한 겹만 지켜지고
+//     안쪽은 그대로 썩는데, 그건 「절였다」가 아니라 「겉에 소금을 뿌렸다」다.
+//     밀폐는 여전히 보존이 아니다(절임 물질이 없으면 통과할 수 없다). See its note.
 //   • 물질만 아는 조건 (`keptWhile`) — an escape hatch for a pause only the
 //     declaring material can evaluate. One user: 반죽 is kept while it is actively
 //     fermenting (batter.ts), because 발효 and 부패 are the same kind of process
@@ -237,12 +248,190 @@ function rotSources(x: number, y: number, sim: SimContext): number {
   return flags;
 }
 
-/** 소금·알콜·꿀 — 염장과 담금. Contact only (`DIR8`), never consumed: a salt
- *  crust or a honey jar is a condition the food is being kept in, not a reagent
- *  being spent, and food that un-preserved itself by sitting in its own brine
- *  would be a strictly worse version of the same idea. */
+/**
+ * 절임 물질 여섯 — 염장·당장·담금. Never consumed: a salt crust or a honey jar is
+ * a condition the food is being kept in, not a reagent being spent, and food that
+ * un-preserved itself by sitting in its own brine would be a strictly worse
+ * version of the same idea.
+ *
+ * The list is 「높은 삼투압 또는 알콜」 read off the palette, and it is closed under
+ * the reactions the roster already has, which is the point of it being six rather
+ * than three. 소금 가루에 묻어 둔 고기 위에 물을 부으면 소금이 녹아 소금물이 되는데
+ * (salt.ts), 소금물이 명단에 없으면 그 순간 저장고가 통째로 상하기 시작한다 — 현실의
+ * 절임은 정확히 그 반대 방향이다. 같은 이유로 설탕/설탕물이 짝으로 들어오고, 꿀은
+ * 이미 그 자체가 당장액이다.
+ *
+ * 물·수증기는 당연히 여기 없다 — 그쪽은 시계를 *돌리는* 쪽이다(`rotSources`).
+ */
 function isPreservative(id: number): boolean {
-  return id === SALT.id || id === ALCOHOL.id || id === HONEY.id;
+  return (
+    id === SALT.id ||
+    id === SUGAR.id ||
+    id === SALTWATER.id ||
+    id === SUGAR_WATER.id ||
+    id === ALCOHOL.id ||
+    id === HONEY.id
+  );
+}
+
+/** 같은 덩어리인가 — any material that declares `spoil`. 잠김 판정의 광선은 이걸
+ *  뚫고 지나간다: 소금에 파묻힌 것이 빵 한 종류일 이유가 없고, 고기 위에 빵을 쌓아
+ *  같이 절이는 것이 안 되면 「덩어리」라는 말이 무의미해진다. 부패물도 여기 들어오므로
+ *  절임 통 안에서 하나가 넘어가도 나머지의 잠김이 깨지지 않는다. */
+function isSpoilable(id: number): boolean {
+  const m = getMaterial(id);
+  return m !== undefined && m.spoil !== undefined;
+}
+
+/** 광선을 막는 것 — 절임 물질이 아니면서 「뚫려 있지 않다」고 볼 수 있는 것, 즉
+ *  유체가 못 지나는 고체. 유리병 바닥, 돌 선반, 무쇠솥. 가루(모래·흙)와 유체는
+ *  막지 못한다: 그쪽으로는 공기도 물도 드나들므로 「잠겼다」고 할 수 없다. */
+function sealsSubmersion(id: number): boolean {
+  const m = getMaterial(id);
+  return m !== undefined && m.phase === Phase.Solid && m.porous !== true;
+}
+
+/**
+ * 잠김 판정이 한 칸을 보고 내리는 네 가지 답. 광선의 안쪽 루프가 셀마다 이걸 묻는데,
+ * 위 세 술어를 그대로 부르면 셀마다 `getMaterial` 한 번에 속성 조회 두세 번이라 —
+ * 배열 읽기 자체보다 그쪽이 훨씬 비싸다.
+ *
+ * 표는 **위 세 술어에서 파생**한다 — 정의는 여전히 한 곳씩이고, 여기는 그 답을 미리
+ * 적어 둔 것뿐이다. 등록은 모듈 로드 때 끝나고 이 표는 첫 호출 때 만들어지므로,
+ * 「아직 등록 안 된 물질」을 볼 일이 없다.
+ */
+const RAY_OPEN = 0;
+const RAY_CURE = 1;
+const RAY_BODY = 2;
+const RAY_WALL = 3;
+let rayKinds: Uint8Array | null = null;
+function rayKindOf(id: number): number {
+  let table = rayKinds;
+  if (table === null) {
+    table = new Uint8Array(256);
+    for (let i = 0; i < table.length; i++) {
+      table[i] = isPreservative(i)
+        ? RAY_CURE
+        : isSpoilable(i)
+          ? RAY_BODY
+          : sealsSubmersion(i)
+            ? RAY_WALL
+            : RAY_OPEN;
+    }
+    rayKinds = table;
+  }
+  return table[id];
+}
+
+/** 한 방향으로 덩어리를 뚫고 나갈 수 있는 최대 거리. 이보다 두꺼운 덩어리의 정중앙은
+ *  절임 물질을 못 찾아 「안 잠긴」 것이 된다 — 무한 광선은 판 전체가 식품인 장면에서
+ *  매 틱 O(판)이 되고, 그 장면은 실수로 만들기 쉽다.
+ *
+ *  **판(360×203)의 짧은 변보다 작다** — 203의 절반이 101이므로, 판 높이를 꽉 채운
+ *  식품 기둥의 한가운데는 이 규칙이 못 닿는다. 그래도 64인 것은, 잠김이 규칙으로
+ *  의미가 있으려면 **덩어리를 감쌀 절임 물질이 그만큼 더 필요**하기 때문이다: 세로로
+ *  128칸 넘는 식품 덩어리를 소금으로 파묻으려면 판의 세로가 거의 다 든다. 그 크기를
+ *  지원하는 값은 「지원」이 아니라 위의 O(판)을 되살리는 것이다. */
+const SUBMERGE_MAX_DEPTH = 64;
+
+/**
+ * 잠겨 있는가 — 접촉이 못 보는 절반, 즉 **절임 물질에 파묻힌 덩어리의 속살**.
+ *
+ * 접촉 규칙(`DIR8`)만으로는 3층짜리 빵 덩어리에 소금을 얹으면 닿은 한 줄만 지켜졌다.
+ * 그건 규칙이 아니라 장면의 기하를 재는 것이고, 플레이어가 「절인다」로 이해하는 동작
+ * — 통에 붓고 파묻기 — 이 정확히 안 먹히는 유일한 동작이 된다.
+ *
+ * ## 규칙: **소금이 바깥보다 가까우면 절여진다**
+ *
+ * 칸에서 상하좌우 네 방향으로 나가면서 **같은 덩어리(식품)는 뚫고 지나가고**, 처음
+ * 만난 남인 칸까지의 거리를 잰다. 그 남인 칸은 셋 중 하나다:
+ *
+ *   • **절임 물질** → 그 거리를 `cure` 후보로 담는다.
+ *   • **막는 고체 또는 판 경계** → 아무것도 아니다. 유리병 바닥·돌 선반이 여기다.
+ *     벽은 뚫린 곳이 아니라는 유저 결정이고, 안 그러면 「바닥에 놓인 절임통」이라는
+ *     가장 자연스러운 장면이 통째로 실패한다.
+ *   • **그 밖의 무엇이든**(빈칸·물·모래·곰팡이) → 트인 곳. `open` 후보로 담는다.
+ *
+ * 그리고 **가장 가까운 절임 물질이 가장 가까운 트인 곳보다 멀지 않을 때만** 잠긴
+ * 것이다. 두 거리의 비교라는 게 요점이고, 이유는 두 가지다.
+ *
+ *   • **반쯤 잠긴 덩어리가 잠긴 만큼만 지켜진다.** 「네 면이 다 막혔는가」로 물으면
+ *     소금 위로 한 칸이라도 튀어나온 기둥이 위로 뚫린 통로가 되어 **잠겨 있는 아래쪽
+ *     까지 통째로** 보존이 풀린다. 거리로 물으면 소금에 가까운 아래쪽은 절여지고 공기
+ *     쪽에 가까운 윗동만 상한다 — 눈에 보이는 그대로다.
+ *   • **밀폐는 여전히 보존이 아니다.** 절임 물질이 하나도 없으면 `cure` 가 무한이라
+ *     아무리 돌상자로 밀봉해도 통과하지 못한다. 큰 덩어리 속이 공짜로 안 썩는 것은 이
+ *     계통이 처음부터 거절한 규칙이고(모듈 주석), 보존은 **플레이어가 가져다 놓은
+ *     물질**이 하는 일로 남아야 한다.
+ *
+ * **같은 거리는 절여진 쪽으로 끊는다**(`<=`), 그리고 그건 튜닝이 아니라 위 두 번째
+ * 항목을 실제로 성립시키는 조건이다. 반쯤 잠긴 기둥에서 공기 쪽 윗동이 썩어 나가면
+ * 트인 곳이 **아래로 내려온다**. 엄격한 `<` 로 끊으면 그렇게 내려온 개구부가 잠긴
+ * 칸의 소금 거리와 같아지는 순간 그 칸이 풀리고, 풀린 칸이 또 썩어서 개구부를 한 칸
+ * 더 내리는 — 침식 전선이 소금 수면 아래로 기어 들어간다(실측: 잠긴 30칸 중 9칸이
+ * 이렇게 사라졌다). 같은 거리에서 멈춰 세우면 전선이 수면에서 선다.
+ *
+ * 무한대끼리는 같아도 잠긴 것이 아니다 — `cure` 가 유한해야 한다는 조건이 위의
+ * 「밀폐는 보존이 아니다」를 지키는 자리이고, `<=` 로 바꾸면서 명시적으로 적어야 하는
+ * 유일한 곳이다.
+ *
+ * 광선이지 플러드 필이 아니라, 대각선으로만 트인 오목한 덩어리는 잠긴 것으로 본다.
+ * 근사인 걸 알고 쓴다: 정확한 판정은 덩어리마다 플러드 필이고 그건 이 자리에서 낼 수
+ * 있는 비용이 아니다. 틀리는 방향도 관대한 쪽이라 「절였는데 썩었다」는 나오지 않는다.
+ *
+ * 비싸다 — 그래서 방어선이 셋이다. **바로 옆 네 칸만 보는 선행 판정**(아래, 답을 안
+ * 바꾼다)이 첫째이자 제일 크고, 안쪽 루프의 `rayKindOf` 표가 둘째, `spoilStep` 이 이걸
+ * 굴림 성공 뒤에만 부르는 것이 셋째다. 수치는 `spoilStep` 의 그 주석에 있고, 하네스는
+ * `npm run bench:spoil` 이다.
+ */
+function isSubmerged(x: number, y: number, sim: SimContext): boolean {
+  // 바로 옆 네 칸만 보는 선행 판정. **답을 바꾸지 않는다** — 순전히 위의 규칙을 거리
+  // 1에서 미리 접는 것이다:
+  //
+  //   • 절임 물질이 붙어 있으면 `cure === 1` 이고 `open` 은 아무리 작아도 1 이상이라
+  //     `cure <= open` 이 이미 참이다.
+  //   • 트인 곳이 붙어 있고 절임 물질은 아니면 `open === 1` 이고 `cure >= 2` 라 거짓이다.
+  //
+  // 그래서 **공기·물·곰팡이에 닿은 칸은 광선을 아예 안 쏜다.** 이게 없으면 값을 못
+  // 바꾸는 판정에 칸당 최대 4×64회 읽기를 내는데, 그 칸이 정확히 제일 흔한 칸이다 —
+  // 특히 `moldCanEat` 로 들어오는 칸은 곰팡이가 닿아 있어서 거의 전부 여기서 끝난다.
+  let touchesOpening = false;
+  for (const [dx, dy] of DIR4) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    const kind = rayKindOf(sim.get(nx, ny));
+    if (kind === RAY_CURE) return true;
+    if (kind === RAY_OPEN) touchesOpening = true;
+  }
+  if (touchesOpening) return false;
+
+  let open = Infinity;
+  let cure = Infinity;
+  for (const [dx, dy] of DIR4) {
+    // 이미 찾은 가장 가까운 트인 곳보다 멀리 볼 이유가 없다: 그보다 먼 소금은 어차피
+    // 판정을 못 뒤집는다. 공중에 놓인 덩어리에서 이 한 줄이 나머지 세 방향을 몇 칸
+    // 짜리로 줄인다.
+    const reach = Math.min(SUBMERGE_MAX_DEPTH, open);
+    let nx = x + dx;
+    let ny = y + dy;
+    for (let step = 1; step <= reach; step++, nx += dx, ny += dy) {
+      if (!sim.inBounds(nx, ny)) break; // 판 경계 = 벽
+      // 같은 덩어리(`RAY_BODY`)는 뚫고 지나간다. 식품을 고체보다 **먼저** 물어야 하는
+      // 것이 표에도 그대로 들어가 있다: 빵도 고기도 Solid 라, 순서가 뒤집히면 덩어리
+      // 자신이 자기를 막는 벽이 된다.
+      const kind = rayKindOf(sim.get(nx, ny));
+      if (kind === RAY_BODY) continue;
+      if (kind === RAY_CURE) {
+        if (step < cure) cure = step;
+        break;
+      }
+      if (kind === RAY_WALL) break; // 벽 — 트인 것도 절인 것도 아니다
+      if (step < open) open = step;
+      break;
+    }
+  }
+  return cure !== Infinity && cure <= open;
 }
 
 /** Read the spoilage counter out of a cell's `aux` word. */
@@ -257,7 +446,7 @@ export function withSpoil(aux: number, spec: SpoilSpec, value: number): number {
 
 /**
  * 보존되고 있는가 — whether anything is currently holding this food cell's clock,
- * by any of the routes in the module note (온도 · 건조 · 염장 · 담금).
+ * by any of the routes in the module note (온도 · 건조 · 염장·당장·담금 · 잠김).
  *
  * Exported because **곰팡이 asks the same question** (mold.ts): a spore that lands
  * on a salted ham or a frozen loaf must not eat it, or 보존 would mean "keeps
@@ -266,6 +455,19 @@ export function withSpoil(aux: number, spec: SpoilSpec, value: number): number {
  * definition of what a preserved cell is and both readers consult it.
  */
 export function isPreserved(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
+  return keptCheaply(x, y, sim, spec) || isSubmerged(x, y, sim);
+}
+
+/**
+ * 보존 판정의 싼 절반 — 온도·건조·`keptWhile`·접촉. Every one of these is a handful
+ * of array reads on the cell itself or its eight neighbours.
+ *
+ * Split out from `isPreserved` purely so `spoilStep` can put the *expensive* half
+ * (잠김, which walks rays through the body) behind a die roll — see the note
+ * there. Nothing about the meaning is split: 보존은 여전히 한 술어고, 바깥에서
+ * 물어보는 쪽(mold.ts)은 `isPreserved` 하나만 본다.
+ */
+function keptCheaply(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
   const t = sim.getTemp(x, y);
   if (t < SPOIL_MIN_TEMP || t >= SPOIL_STOP_TEMP) return true;
 
@@ -275,10 +477,10 @@ export function isPreserved(x: number, y: number, sim: SimContext, spec: SpoilSp
   if (spec.dryMask !== undefined && (aux & spec.dryMask) === spec.dryMask) return true;
 
   // 물질만 아는 조건 — 반죽's "발효 중" (batter.ts). Declared rather than special-
-  // cased here so this file stays the four shared routes and nothing else.
+  // cased here so this file stays the shared routes and nothing else.
   if (spec.keptWhile !== undefined && spec.keptWhile(x, y, sim)) return true;
 
-  // 염장·담금.
+  // 염장·당장·담금 — 절임 물질이 칸에 닿아 있다.
   for (const [dx, dy] of DIR8) {
     const nx = x + dx;
     const ny = y + dy;
@@ -320,7 +522,7 @@ export function moldCanEat(x: number, y: number, sim: SimContext, spec: SpoilSpe
  * material it no longer is.
  */
 export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec): boolean {
-  if (isPreserved(x, y, sim, spec)) return false;
+  if (keptCheaply(x, y, sim, spec)) return false;
   const sources = rotSources(x, y, sim);
   // 방치는 그 자체로 아무것도 아니다 — 생고기와 부패물만 이 문을 그냥 지난다.
   if (spec.spontaneous !== true && sources === 0) return false;
@@ -336,7 +538,9 @@ export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec
   // turn to seed.
   const mode = spec.spores ?? 'damp';
   const maySeed = mode === 'always' || (mode === 'damp' && (sources & ROT_WET) !== 0);
-  if (maySeed && stage >= MOLD_AT && sim.chance(SPORE_CHANCE)) seedMold(x, y, sim);
+  if (maySeed && stage >= MOLD_AT && sim.chance(SPORE_CHANCE) && !isSubmerged(x, y, sim)) {
+    seedMold(x, y, sim);
+  }
 
   // `SPOIL_MAX + 1`, not `SPOIL_MAX`: a cell needs seven successful rolls to climb
   // 0 → SPOIL_MAX and an eighth to actually turn, so dividing the declared time by
@@ -345,6 +549,27 @@ export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec
   // in the docs, so it has to be the number that comes out.
   const rate = ((SPOIL_MAX + 1) / (spec.seconds * SIM_HZ_AT_1X)) * tempScale(t);
   if (!sim.chance(rate)) return false;
+
+  // 잠김은 **굴림이 성공한 뒤에** 묻는다 — 판정 자체는 순서와 무관하게 같은 답을 주고
+  // (틱 안에서 결정적이다), 비용만 굴림 성공률만큼 떨어진다. 광선 판정은 칸당 최대
+  // 4×64회 읽기라, 매 틱 모든 식품 칸에 돌리면 「판 전체가 생고기」 같은 장면에서
+  // 프레임을 통째로 먹는다. 이 굴림은 생고기 기준 틱당 0.09% 다.
+  //
+  // **비싼 자리는 여기가 아니라 위의 포자 관문이다**(SPORE_CHANCE 2%, 이 굴림의 20배).
+  // 그러니 이 재배치를 방어선으로 믿으면 안 된다 — 진짜 방어선은 `isSubmerged` 안의
+  // 네 칸 선행 판정과 `rayKindOf` 표이고, 이건 그 위에 얹는 것이다.
+  //
+  // 최악 장면 실측(360×203 판 전체가 부패도 만점 생고기 — 트인 곳이 없어 광선이
+  // 가지치기를 못 하는 유일한 배치, best of 5): **잠김 규칙이 없던 시절 48.4 ms/tick ·
+  // 선행 판정과 표 없이 57.4 · 지금 53.9.** 즉 이 장면에서 잠김은 여전히 +11% 다.
+  // 남은 값은 규칙의 정직한 값이라 더 깎지 않았다 — `SUBMERGE_MAX_DEPTH` 를 32 로
+  // 줄여 봤자 1.8 ms 를 벌면서 규칙의 사정거리를 절반으로 잘라먹는다(실측 52.0).
+  // 그리고 이 장면은 **변경 전에 이미 예산(33 ms)의 1.5배**라, 잠김이 못 쓰게 만든
+  // 장면이 아니라 원래 못 쓰던 장면이다.
+  //
+  // 접촉·온도·건조는 반대로 **앞**에 있어야 한다: 싸고, 무엇보다 굴림을 소비하지 않아야
+  // 절인 칸이 난수 흐름에 손을 안 댄다.
+  if (isSubmerged(x, y, sim)) return false;
 
   if (stage < SPOIL_MAX) {
     sim.setAux(x, y, withSpoil(aux, spec, stage + 1));

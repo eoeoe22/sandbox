@@ -258,19 +258,31 @@ function columnHeat(grid: Grid, x: number): number {
   const w = makeWorld();
   const drum = place(w, createDrum(TARGET_X, 0)) as SimCapsule;
   const aim = aimAt(drum);
-  // A few strikes past the beam's flight time — plus the handful still in the air
-  // when the muzzle goes dark, which land regardless and are most of the heat.
+  // The burst length is MEASURED, not counted. It used to be a tick count tuned by
+  // hand, and that number is hostage to things this scene has nothing to do with:
+  // the drum family's heat capacity moved it once (absorbed beam energy is divided
+  // by heat capacity, so the old count landed at 595°), and then an unrelated
+  // change to the spoilage system moved it again simply by consuming more of the
+  // shared PRNG each tick, which shifts how many beams land. Both times the scene
+  // failed for a reason that was not about the Heat Ray at all.
   //
-  // Lengthened from FLIGHT_TICKS − 8 when the drum family gained a thermal mass
-  // (objects.ts DRUM_HEAT_CAPACITY): absorbed beam heat is energy, so it is divided
-  // by heat capacity like every other intake, and the old burst now lands the drum
-  // at 595° — nowhere near the melt point this scene needs it just past. The window
-  // is genuinely narrower at the top too, because the same capacity slows the
-  // cooling: at +8 the drum no longer sheds enough before its melt clock expires
-  // and it melts for real.
-  run(w, FLIGHT_TICKS + 7, aim);
-  const hot = drum.temp;
-  run(w, 80, aim, false);
+  // So: hold the beam until the drum is most of the way to the melt point, then go
+  // dark and let the strikes still in the air carry it the rest of the way over.
+  // BEAM_CUT is below DRUM_MELT_TEMP on purpose — the in-flight beams add a couple
+  // of hundred degrees after the muzzle goes dark, and this scene needs a narrow
+  // band: just doomed, with enough headroom to cool back out before the 24-tick
+  // melt clock expires. Measured, this cut lands the peak at 1275° and the drum
+  // sheds to 619° well inside the clock.
+  const BEAM_CUT = 1100;
+  for (let i = 0; i < 400 && drum.temp < BEAM_CUT; i++) run(w, 1, aim);
+  // `hot` is the PEAK, sampled across the dark run rather than read at the cut: the
+  // strikes still in the air land after the muzzle goes dark and are most of the
+  // heat, so the temperature at the cut is not the one that dooms the drum.
+  let hot = drum.temp;
+  for (let i = 0; i < 80; i++) {
+    run(w, 1, aim, false);
+    if (drum.temp > hot) hot = drum.temp;
+  }
   check('the burst really did doom it — over the melt point, clock running',
     hot > DRUM_MELT_TEMP, `${hot.toFixed(0)}° vs ${DRUM_MELT_TEMP}°`);
   // Stated as "back under the melt point" rather than as a fraction of the peak:
