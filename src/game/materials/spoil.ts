@@ -291,10 +291,47 @@ function sealsSubmersion(id: number): boolean {
   return m !== undefined && m.phase === Phase.Solid && m.porous !== true;
 }
 
+/**
+ * 잠김 판정이 한 칸을 보고 내리는 네 가지 답. 광선의 안쪽 루프가 셀마다 이걸 묻는데,
+ * 위 세 술어를 그대로 부르면 셀마다 `getMaterial` 한 번에 속성 조회 두세 번이라 —
+ * 배열 읽기 자체보다 그쪽이 훨씬 비싸다.
+ *
+ * 표는 **위 세 술어에서 파생**한다 — 정의는 여전히 한 곳씩이고, 여기는 그 답을 미리
+ * 적어 둔 것뿐이다. 등록은 모듈 로드 때 끝나고 이 표는 첫 호출 때 만들어지므로,
+ * 「아직 등록 안 된 물질」을 볼 일이 없다.
+ */
+const RAY_OPEN = 0;
+const RAY_CURE = 1;
+const RAY_BODY = 2;
+const RAY_WALL = 3;
+let rayKinds: Uint8Array | null = null;
+function rayKindOf(id: number): number {
+  let table = rayKinds;
+  if (table === null) {
+    table = new Uint8Array(256);
+    for (let i = 0; i < table.length; i++) {
+      table[i] = isPreservative(i)
+        ? RAY_CURE
+        : isSpoilable(i)
+          ? RAY_BODY
+          : sealsSubmersion(i)
+            ? RAY_WALL
+            : RAY_OPEN;
+    }
+    rayKinds = table;
+  }
+  return table[id];
+}
+
 /** 한 방향으로 덩어리를 뚫고 나갈 수 있는 최대 거리. 이보다 두꺼운 덩어리의 정중앙은
  *  절임 물질을 못 찾아 「안 잠긴」 것이 된다 — 무한 광선은 판 전체가 식품인 장면에서
- *  매 틱 O(판)이 되고, 그 장면은 실수로 만들기 쉽다. 판(360×203)의 짧은 변 절반보다
- *  넉넉해서, 실제로 지어 볼 만한 절임통은 전부 안쪽까지 닿는다. */
+ *  매 틱 O(판)이 되고, 그 장면은 실수로 만들기 쉽다.
+ *
+ *  **판(360×203)의 짧은 변보다 작다** — 203의 절반이 101이므로, 판 높이를 꽉 채운
+ *  식품 기둥의 한가운데는 이 규칙이 못 닿는다. 그래도 64인 것은, 잠김이 규칙으로
+ *  의미가 있으려면 **덩어리를 감쌀 절임 물질이 그만큼 더 필요**하기 때문이다: 세로로
+ *  128칸 넘는 식품 덩어리를 소금으로 파묻으려면 판의 세로가 거의 다 든다. 그 크기를
+ *  지원하는 값은 「지원」이 아니라 위의 O(판)을 되살리는 것이다. */
 const SUBMERGE_MAX_DEPTH = 64;
 
 /**
@@ -342,9 +379,33 @@ const SUBMERGE_MAX_DEPTH = 64;
  * 근사인 걸 알고 쓴다: 정확한 판정은 덩어리마다 플러드 필이고 그건 이 자리에서 낼 수
  * 있는 비용이 아니다. 틀리는 방향도 관대한 쪽이라 「절였는데 썩었다」는 나오지 않는다.
  *
- * 비싸다 — 그래서 `spoilStep` 은 이걸 **굴림이 성공한 뒤에만** 부른다(그 주석 참고).
+ * 비싸다 — 그래서 방어선이 셋이다. **바로 옆 네 칸만 보는 선행 판정**(아래, 답을 안
+ * 바꾼다)이 첫째이자 제일 크고, 안쪽 루프의 `rayKindOf` 표가 둘째, `spoilStep` 이 이걸
+ * 굴림 성공 뒤에만 부르는 것이 셋째다. 수치는 `spoilStep` 의 그 주석에 있고, 하네스는
+ * `npm run bench:spoil` 이다.
  */
 function isSubmerged(x: number, y: number, sim: SimContext): boolean {
+  // 바로 옆 네 칸만 보는 선행 판정. **답을 바꾸지 않는다** — 순전히 위의 규칙을 거리
+  // 1에서 미리 접는 것이다:
+  //
+  //   • 절임 물질이 붙어 있으면 `cure === 1` 이고 `open` 은 아무리 작아도 1 이상이라
+  //     `cure <= open` 이 이미 참이다.
+  //   • 트인 곳이 붙어 있고 절임 물질은 아니면 `open === 1` 이고 `cure >= 2` 라 거짓이다.
+  //
+  // 그래서 **공기·물·곰팡이에 닿은 칸은 광선을 아예 안 쏜다.** 이게 없으면 값을 못
+  // 바꾸는 판정에 칸당 최대 4×64회 읽기를 내는데, 그 칸이 정확히 제일 흔한 칸이다 —
+  // 특히 `moldCanEat` 로 들어오는 칸은 곰팡이가 닿아 있어서 거의 전부 여기서 끝난다.
+  let touchesOpening = false;
+  for (const [dx, dy] of DIR4) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!sim.inBounds(nx, ny)) continue;
+    const kind = rayKindOf(sim.get(nx, ny));
+    if (kind === RAY_CURE) return true;
+    if (kind === RAY_OPEN) touchesOpening = true;
+  }
+  if (touchesOpening) return false;
+
   let open = Infinity;
   let cure = Infinity;
   for (const [dx, dy] of DIR4) {
@@ -356,15 +417,16 @@ function isSubmerged(x: number, y: number, sim: SimContext): boolean {
     let ny = y + dy;
     for (let step = 1; step <= reach; step++, nx += dx, ny += dy) {
       if (!sim.inBounds(nx, ny)) break; // 판 경계 = 벽
-      const id = sim.get(nx, ny);
-      if (isPreservative(id)) {
+      // 같은 덩어리(`RAY_BODY`)는 뚫고 지나간다. 식품을 고체보다 **먼저** 물어야 하는
+      // 것이 표에도 그대로 들어가 있다: 빵도 고기도 Solid 라, 순서가 뒤집히면 덩어리
+      // 자신이 자기를 막는 벽이 된다.
+      const kind = rayKindOf(sim.get(nx, ny));
+      if (kind === RAY_BODY) continue;
+      if (kind === RAY_CURE) {
         if (step < cure) cure = step;
         break;
       }
-      // 같은 덩어리 — 계속 뚫는다. 식품을 고체보다 **먼저** 물어야 한다: 빵도 고기도
-      // Solid 라 순서가 뒤집히면 덩어리 자신이 자기를 막는 벽이 된다.
-      if (isSpoilable(id)) continue;
-      if (sealsSubmersion(id)) break; // 벽 — 트인 것도 절인 것도 아니다
+      if (kind === RAY_WALL) break; // 벽 — 트인 것도 절인 것도 아니다
       if (step < open) open = step;
       break;
     }
@@ -489,9 +551,21 @@ export function spoilStep(x: number, y: number, sim: SimContext, spec: SpoilSpec
   if (!sim.chance(rate)) return false;
 
   // 잠김은 **굴림이 성공한 뒤에** 묻는다 — 판정 자체는 순서와 무관하게 같은 답을 주고
-  // (틱 안에서 결정적이다), 비용만 1/1000 로 떨어진다. 광선 판정은 칸당 최대 4×64 회
-  // 읽기라, 매 틱 모든 식품 칸에 돌리면 「판 전체가 생고기」 같은 장면에서 프레임을
-  // 통째로 먹는다. 굴림 성공률은 생고기 기준 틱당 0.09% 다.
+  // (틱 안에서 결정적이다), 비용만 굴림 성공률만큼 떨어진다. 광선 판정은 칸당 최대
+  // 4×64회 읽기라, 매 틱 모든 식품 칸에 돌리면 「판 전체가 생고기」 같은 장면에서
+  // 프레임을 통째로 먹는다. 이 굴림은 생고기 기준 틱당 0.09% 다.
+  //
+  // **비싼 자리는 여기가 아니라 위의 포자 관문이다**(SPORE_CHANCE 2%, 이 굴림의 20배).
+  // 그러니 이 재배치를 방어선으로 믿으면 안 된다 — 진짜 방어선은 `isSubmerged` 안의
+  // 네 칸 선행 판정과 `rayKindOf` 표이고, 이건 그 위에 얹는 것이다.
+  //
+  // 최악 장면 실측(360×203 판 전체가 부패도 만점 생고기 — 트인 곳이 없어 광선이
+  // 가지치기를 못 하는 유일한 배치, best of 5): **잠김 규칙이 없던 시절 48.4 ms/tick ·
+  // 선행 판정과 표 없이 57.4 · 지금 53.9.** 즉 이 장면에서 잠김은 여전히 +11% 다.
+  // 남은 값은 규칙의 정직한 값이라 더 깎지 않았다 — `SUBMERGE_MAX_DEPTH` 를 32 로
+  // 줄여 봤자 1.8 ms 를 벌면서 규칙의 사정거리를 절반으로 잘라먹는다(실측 52.0).
+  // 그리고 이 장면은 **변경 전에 이미 예산(33 ms)의 1.5배**라, 잠김이 못 쓰게 만든
+  // 장면이 아니라 원래 못 쓰던 장면이다.
   //
   // 접촉·온도·건조는 반대로 **앞**에 있어야 한다: 싸고, 무엇보다 굴림을 소비하지 않아야
   // 절인 칸이 난수 흐름에 손을 안 댄다.
