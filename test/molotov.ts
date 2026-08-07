@@ -17,6 +17,8 @@ import {
 import type { SimDynamite } from '../src/game/engine/objects';
 import { getMaterial } from '../src/game/materials/registry';
 import { detonate } from '../src/game/materials/blast';
+import { FUEL_BURN_TEMP } from '../src/game/materials/combustion';
+import { AMBIENT_TEMP } from '../src/game/config';
 import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from '../src/game/render/molotovSprite';
 import '../src/game/materials';
 
@@ -381,6 +383,68 @@ const SETTLE_TICKS = 40;
     hot.shards === 0,
     `${hot.shards} Broken Glass cells`,
   );
+
+  // Two properties of the puddle the counts above cannot see, both of which a
+  // player hit at once: what came out of a Blue Flame read as 고체 유리, never
+  // 녹은 유리. The counts stayed green through it because they are read on the melt
+  // tick itself, before a single tick of heat diffusion.
+  //
+  // 1. THE FUEL IS BORN ALIGHT. `spawn` resets a cell to its material's own initial
+  //    temperature, which for Alcohol is room temperature — so a 20° sink sat
+  //    against every 1400° Molten Glass cell. Reaching this path means the bottle
+  //    sat at GLASS_MELT_TEMP or above long enough to run, so its contents were in
+  //    that same fire; room-temperature fuel was never right.
+  // 2. THE GLASS POOLS AT THE BOTTOM. The two halves used to be shuffled together,
+  //    which left every glass cell isolated, and a lone hot cell sheds heat far
+  //    faster than a pool. It was backwards physically too: molten glass has
+  //    density 5 against alcohol's 1.9.
+  //
+  // What this scene does NOT claim: that the puddle stays molten for long. Measured
+  // against a plain 25-cell Molten Glass puddle dropped on the same cold floor with
+  // no bottle involved, the game's own baseline is 13 of 25 still molten after 10
+  // ticks and 1 after 20 — molten glass sets fast here, and that is a property of
+  // Molten Glass, not of the bottle.
+  {
+    const { grid, sim } = makeWorld();
+    floor(grid, 70);
+    const m = createMolotov(50, 62);
+    grid.objects.push(m);
+    let fuelTemps: number[] = [];
+    let glassY = 0;
+    let fuelY = 0;
+    for (let t = 0; t < 200; t++) {
+      for (let y = Math.floor(m.y) - 10; y <= Math.floor(m.y) + 10; y++)
+        for (let x = Math.floor(m.x) - 10; x <= Math.floor(m.x) + 10; x++) {
+          if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+          if (grid.cells[grid.idx(x, y)] !== 0) continue;
+          grid.setTemp(x, y, 1600);
+        }
+      sim.step();
+      if (grid.objects.length === 0) {
+        let gn = 0;
+        let fn = 0;
+        for (let y = 0; y < grid.height; y++)
+          for (let x = 0; x < grid.width; x++) {
+            const i = grid.idx(x, y);
+            if (grid.cells[i] === MOLTEN_GLASS) { glassY += y; gn++; }
+            else if (grid.cells[i] === ALCOHOL) { fuelY += y; fn++; fuelTemps.push(grid.temp[i]); }
+          }
+        glassY /= gn || 1;
+        fuelY /= fn || 1;
+        break;
+      }
+    }
+    check(
+      '쏟아진 알콜은 불붙은 채로 나온다 — the fuel a melted bottle spills is already alight',
+      fuelTemps.length > 0 && Math.min(...fuelTemps) >= FUEL_BURN_TEMP - 1,
+      `coldest fuel cell ${Math.min(...fuelTemps).toFixed(0)}° (room temperature would be ${AMBIENT_TEMP}°, and it sat against 1400° glass)`,
+    );
+    check(
+      '녹은 유리는 알콜 아래에 고인다 — the denser glass pools under the fuel',
+      glassY > fuelY,
+      `glass mean y ${glassY.toFixed(1)} vs fuel ${fuelY.toFixed(1)} (density 5 vs 1.9; y grows down)`,
+    );
+  }
 
   // The control sits above Fire's 1000° and below the melting point, which is now
   // the same number as glass's own — so this is simultaneously "its own flame can

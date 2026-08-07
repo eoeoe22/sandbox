@@ -4827,24 +4827,62 @@ function meltMolotov(o: SimMolotov, ctx: SimContext): void {
       cells.push(cx, cy);
     }
   }
-  // Shuffle (Fisher-Yates over the coordinate pairs) so the halves interleave into a
-  // spatter instead of the scan order painting glass across the top of the puddle
-  // and fuel across the bottom.
-  for (let i = cells.length / 2 - 1; i > 0; i--) {
+  // Sort BOTTOM-first, so the glass takes the lowest cells and the fuel the ones
+  // above it. This started as a Fisher-Yates shuffle, to break up the scan order's
+  // banding, and the shuffle was wrong twice over.
+  //
+  // Physically, molten glass has density 5 against alcohol's 1.9 — a band IS the
+  // right answer here, just not the one raw scan order gave (glass on top). The two
+  // would separate that way within a few ticks of flowing anyway.
+  //
+  // And thermally the shuffle was the bug the player hit: interleaving put every
+  // 1400° glass cell on its own, ringed by fuel and air, and a lone hot cell sheds
+  // its heat far faster than a pool that can hold its own. Kept together the glass
+  // reads as molten for a good while before it sets; scattered it flashed and was
+  // solid Glass almost at once (녹은 유리가 아니라 고체 유리가 나와버림).
+  //
+  // Ties are broken randomly so the boundary between the two is a ragged spatter
+  // rather than a ruled line.
+  const order: number[] = [];
+  for (let i = 0; i < cells.length / 2; i++) order.push(i);
+  for (let i = order.length - 1; i > 0; i--) {
     const j = ctx.randInt(i + 1);
-    const a = i * 2;
-    const b = j * 2;
-    [cells[a], cells[b]] = [cells[b], cells[a]];
-    [cells[a + 1], cells[b + 1]] = [cells[b + 1], cells[a + 1]];
+    [order[i], order[j]] = [order[j], order[i]];
   }
+  order.sort((a, b) => cells[b * 2 + 1] - cells[a * 2 + 1]);
+  const sorted: number[] = [];
+  for (const i of order) sorted.push(cells[i * 2], cells[i * 2 + 1]);
+  cells.length = 0;
+  cells.push(...sorted);
   const n = cells.length / 2;
   const glassCount = Math.ceil(n / 2); // the odd cell goes to the glass — the bottle itself
+  // `cells` is bottom-first, so the first glassCount entries are the bottom of the
+  // puddle: glass sinks, fuel floats.
   const fuelled = o.fuelTicks > 0;
   for (let i = 0; i < n; i++) {
     const cx = cells[i * 2];
     const cy = cells[i * 2 + 1];
-    if (i < glassCount) ctx.spawn(cx, cy, MOLTEN_GLASS.id);
-    else if (fuelled) ctx.spawn(cx, cy, ALCOHOL.id);
+    if (i < glassCount) {
+      ctx.spawn(cx, cy, MOLTEN_GLASS.id);
+    } else if (fuelled) {
+      ctx.spawn(cx, cy, ALCOHOL.id);
+      // Alight, unconditionally — and this is load-bearing, not flavour.
+      //
+      // `spawn` resets a cell to its material's own initial temperature, which for
+      // Alcohol is room temperature. That put a 20° cell against every 1400° Molten
+      // Glass cell in the puddle — and because the two halves are deliberately
+      // SHUFFLED together to read as a spatter rather than two bands, the
+      // interleaving maximised exactly that contact. The fuel drained the glass
+      // below MOLTEN_GLASS_FREEZE_TEMP in about half a second even with the bottle
+      // still sitting in a 1600° bath, so what the player actually saw come out of
+      // a Blue Flame was solid glass (녹은 유리가 아니라 고체 유리가 나와버림).
+      //
+      // Room-temperature fuel was never right anyway: reaching this path means the
+      // bottle sat at GLASS_MELT_TEMP or above long enough to run, so its contents
+      // were in that same fire. Hence no `lit` check — unlike the smashed path,
+      // where a doused bottle really can spill cold fuel, nothing arrives here cold.
+      ctx.setTemp(cx, cy, FUEL_BURN_TEMP);
+    }
   }
 }
 
