@@ -410,6 +410,7 @@ const SETTLE_TICKS = 40;
     const m = createMolotov(50, 62);
     grid.objects.push(m);
     let fuelTemps: number[] = [];
+    const glassTemps: number[] = [];
     let glassY = 0;
     let fuelY = 0;
     for (let t = 0; t < 200; t++) {
@@ -426,7 +427,7 @@ const SETTLE_TICKS = 40;
         for (let y = 0; y < grid.height; y++)
           for (let x = 0; x < grid.width; x++) {
             const i = grid.idx(x, y);
-            if (grid.cells[i] === MOLTEN_GLASS) { glassY += y; gn++; }
+            if (grid.cells[i] === MOLTEN_GLASS) { glassY += y; gn++; glassTemps.push(grid.temp[i]); }
             else if (grid.cells[i] === ALCOHOL) { fuelY += y; fn++; fuelTemps.push(grid.temp[i]); }
           }
         glassY /= gn || 1;
@@ -438,6 +439,11 @@ const SETTLE_TICKS = 40;
       '쏟아진 알콜은 불붙은 채로 나온다 — the fuel a melted bottle spills is already alight',
       fuelTemps.length > 0 && Math.min(...fuelTemps) >= FUEL_BURN_TEMP - 1,
       `coldest fuel cell ${Math.min(...fuelTemps).toFixed(0)}° (room temperature would be ${AMBIENT_TEMP}°, and it sat against 1400° glass)`,
+    );
+    check(
+      '웅덩이는 자기를 녹인 불의 온도로 태어난다 — the pool inherits the heat that melted it',
+      Math.max(...glassTemps) > 1450,
+      `hottest glass cell ${Math.max(...glassTemps).toFixed(0)}° in a 1600° bath (Molten Glass's own birth temperature is 1400°)`,
     );
     check(
       '녹은 유리는 알콜 아래에 고인다 — the denser glass pools under the fuel',

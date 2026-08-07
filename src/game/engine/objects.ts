@@ -4802,7 +4802,7 @@ function breakMolotov(o: SimMolotov, ctx: SimContext): void {
  * read-only over terrain it didn't put there), exactly as the spilled drum contents
  * and the smashed bottle's alcohol do.
  */
-function meltMolotov(o: SimMolotov, ctx: SimContext): void {
+function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
   const core = bodyCore(o);
   const r2 = core.r * core.r;
   const [spanX, spanY] = coreHalfSpan(core);
@@ -4864,6 +4864,22 @@ function meltMolotov(o: SimMolotov, ctx: SimContext): void {
     const cy = cells[i * 2 + 1];
     if (i < glassCount) {
       ctx.spawn(cx, cy, MOLTEN_GLASS.id);
+      // Born at the temperature of the fire that melted it, not at Molten Glass's
+      // generic 1400° — so a bottle run down by an 1800° Blue Flame leaves an 1800°
+      // pool that stays liquid for a good while, and one that only just gave way
+      // leaves a pool that sets almost at once. The heat that did the work is the
+      // heat the puddle carries off.
+      //
+      // `heat`, not `o.temp`, and the difference is the whole thing: the reservoir
+      // only ever rises through *contact*, and a flame is a gas standing in air —
+      // which conducts nothing in this world. A bottle melted by a Blue Flame it is
+      // merely standing in has a reservoir still near room temperature; what melted
+      // it is the footprint's own maxTemp, and `heat` is the max of the two (see
+      // stepMolotov). Reading `o.temp` here measured almost nothing.
+      //
+      // Only ever *raises* the cell, so this can never shorten the molten phase
+      // below what fresh Molten Glass gets.
+      if (heat > ctx.getTemp(cx, cy)) ctx.setTemp(cx, cy, heat);
     } else if (fuelled) {
       ctx.spawn(cx, cy, ALCOHOL.id);
       // Alight, unconditionally — and this is load-bearing, not flavour.
@@ -4907,7 +4923,7 @@ function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
   if (heat >= MOLOTOV_BURST_TEMP) {
     o.heatTicks++;
     if (o.heatTicks >= MOLOTOV_BURST_TICKS) {
-      meltMolotov(o, ctx);
+      meltMolotov(o, ctx, heat);
       return false;
     }
   } else if (o.heatTicks > 0) {
