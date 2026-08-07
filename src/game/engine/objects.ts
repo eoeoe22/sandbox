@@ -862,7 +862,7 @@ const FUSE_RELIGHT_TEMP = 200;
  *  far more fun than the old 1100°, which was set that high for one mechanical
  *  reason only — to sit above ordinary Fire's 1000° so a stick could never be
  *  cooked off by its OWN lit fuse. That defence has moved to where it belongs
- *  (WICK_HEAT_RADIUS: a lit body simply doesn't read its own flame as heat), which
+ *  (WICK_PLUME_MARGIN: a lit body simply doesn't read its own flame as heat), which
  *  frees the threshold to be a real material property instead of a workaround.
  *  So: anything genuinely hot — Fire, Lava, molten metal, a lit crate, the 가열
  *  brush — now sets a stick off, and the stick's own fuse still doesn't. */
@@ -906,7 +906,7 @@ const FUSE_SNUFF_TEMP = -20;
  *  warmed cell averages back below boiling before it can steam. Applied to the tip
  *  cell and its four orthogonal neighbours; the cluster's centre keeps its heat
  *  (its neighbours are heated too) and boils, while the arms shed theirs, so the
- *  boil stays a small wisp. Well under the stick's 1100° autoignition (and the tip
+ *  boil stays a small wisp. Well under the stick's autoignition point (and the tip
  *  sits cells away from the body's footprint), so it never cooks the stick itself. */
 const FUSE_BOIL_FLOOR = 130;
 
@@ -1347,7 +1347,7 @@ const MOLOTOV_DOUSE_FRAC = 0.1;
  *  bottle merely sitting in flames doesn't melt — it wants Lava (1500°), a Blue
  *  Flame jet (1800°), the 가열 brush or a held Heat Ray. (The wick's own Fire is a
  *  separate matter and no longer relies on this margin at all: a lit body doesn't
- *  read its own flame as heat — see WICK_HEAT_RADIUS.) */
+ *  read its own flame as heat — see WICK_PLUME_MARGIN.) */
 export const MOLOTOV_BURST_TEMP = GLASS_MELT_TEMP;
 /** Sustained ticks above MOLOTOV_BURST_TEMP before it bursts, so a single hot
  *  splash doesn't pop it. */
@@ -2614,34 +2614,52 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 const contactCells: number[] = [];
 
 /**
- * How far around its own burning wick (in cells) a body stops reading heat at all
- * — 도화선 불이 스스로를 가열하지 않게.
+ * The plume a lit body throws off its own wick, which it is not allowed to read as
+ * heat — 도화선 불이 스스로를 가열하지 않게.
  *
- * A lit stick of dynamite and a lit molotov both throw a *real* 1000° Fire cell
- * off the wick every tick (that is the whole point — the flame has to be able to
- * light the oil slick the bottle is lying in), and that flame lands half a cell
- * past the cap. The old defence against it was purely numeric: keep every
- * heat threshold above Fire's 1000° and the body can't cook itself. Two changes
- * broke that. The contact shell (OBJECT_CONTACT_MARGIN) now reaches exactly far
- * enough to pick the wick flame up as *touching* matter, so a lit body pulled its
- * own flame into its reservoir and sat there glowing red in the inspect overlay;
- * and dynamite's autoignite point has come down to a realistic 220°, well under
- * Fire, so the numeric defence is gone entirely.
+ * A lit stick of dynamite and a lit molotov both throw a *real* 1000° Fire cell off
+ * the wick every tick (that is the whole point — the flame has to be able to light
+ * the oil slick the bottle is lying in), and that flame lands half a cell past the
+ * cap. The old defence against it was purely numeric: keep every heat threshold
+ * above Fire's 1000° and a body can't cook itself. Two changes broke that. The
+ * contact shell (OBJECT_CONTACT_MARGIN) now reaches exactly far enough to pick the
+ * wick flame up as *touching* matter, so a lit body pulled its own flame into its
+ * reservoir and sat there glowing red in the inspect overlay; and dynamite's
+ * autoignite point has come down to a realistic 220°, well under Fire, so the
+ * numeric defence is gone entirely.
  *
- * So the exclusion is geometric instead, and it covers two things: the flame cell
- * itself (skipped wherever it is in the footprint, since fire rises and a stick
- * lying fuse-down would otherwise breathe its own flame straight up into itself),
- * and everything within this radius of the wick — because the flame also *cooks
- * the ground right under it*, and that heated cell is in the contact shell too.
- * Two cells covers the flame and the ring it warms.
+ * So the exclusion is geometric instead — and specifically a *column*, because
+ * Fire is a gas. The cell the wick spawned does not stay where it was put: it
+ * rises and flickers sideways, so within a few ticks the body's own flame is well
+ * outside any radius drawn around the wick, and a body lying fuse-down breathes
+ * its own plume straight up into its own footprint. A Fire cell is therefore taken
+ * to be the body's own when it sits over the wick — within the body's own reach
+ * (plus this margin) horizontally, at or above the wick vertically, with a cell of
+ * slack below for the tick the flame is born on. The width is the body's reach
+ * rather than a fixed number because that is how far a flame can wander and still
+ * be a flame *on it*: a bottle lying on its side is five cells long.
  *
- * It costs nothing in play, because it applies only while the wick is ALREADY
- * lit: a body whose clock is already running has nothing left for an external
- * flame to do to it. An unlit dud is untouched by any of this, so touching fire
- * to a snuffed fuse still re-lights it and leaving a stick in a fire still cooks
- * it off.
+ * The test is on Fire and nothing else. It is emphatically NOT "all Fire while
+ * lit", which is what the first cut did and which is far too blunt: it made a lit
+ * body deaf to fire it had nothing to do with, so a stick thrown into a bonfire
+ * read room temperature the whole way down and quietly finished its countdown —
+ * both the same overlay lie this change set out to kill, and the direct opposite
+ * of why DYNAMITE_AUTOIGNITE_TEMP was allowed down to 220° (불에 던지면 터진다).
+ *
+ * It also does not try to un-read the ground the flame *scorches*, which an
+ * earlier cut did with a disc around the wick. Measured, that path is worth about
+ * three degrees over eighty ticks with the column in place — a resting body holds
+ * its wick in the air, and the little the stone does pick up it sheds again into
+ * the body's whole cold contact patch. Untestable and worth nothing, so it's gone.
+ *
+ * All of it applies only while the wick is ALREADY lit, so an unlit dud is
+ * untouched: touching fire to a snuffed fuse still re-lights it, and leaving a
+ * stick in a fire still cooks it off.
  */
-const WICK_HEAT_RADIUS = 2;
+const WICK_PLUME_MARGIN = 1;
+/** Cells *below* the wick that a rising plume still counts as its own (y grows
+ *  down). One, for the tick the flame is born on and for flicker at the base. */
+const WICK_PLUME_BELOW = 1;
 
 /** Where a lit body's own wick throws its flame — the tip of the long axis, the
  *  same point stepDynamite and emitMolotovFlame spawn Fire from — or null for a
@@ -2649,12 +2667,16 @@ const WICK_HEAT_RADIUS = 2;
  *  deliberately NOT one of these: its flames are seeded across its own footprint
  *  because the crate itself is what is on fire, so reading them as heat is
  *  correct and it should show hot. */
-function wickPoint(o: SimBody): { x: number; y: number } | null {
+function wickPoint(o: SimBody): { x: number; y: number; halfW: number } | null {
   if (o.kind !== 'dynamite' && o.kind !== 'molotov') return null;
   if (!o.lit) return null;
   const [ux, uy] = capsuleAxis(o);
   const reach = o.halfLength + o.radius + 0.5;
-  return { x: o.x - ux * reach, y: o.y - uy * reach };
+  return {
+    x: o.x - ux * reach,
+    y: o.y - uy * reach,
+    halfW: bodyReach(o) + WICK_PLUME_MARGIN,
+  };
 }
 
 /**
@@ -2678,7 +2700,7 @@ function wickPoint(o: SimBody): { x: number; y: number } | null {
  * air alone must not cool a body.
  *
  * A lit body's own wick flame is excluded from every temperature it reports, both
- * `maxTemp` and `contactTemp` — see WICK_HEAT_RADIUS.
+ * `maxTemp` and `contactTemp` — see WICK_PLUME_MARGIN.
  */
 function scanBodyExposure(
   o: SimBody,
@@ -2719,7 +2741,6 @@ function scanBodyExposure(
   // 도화선 불이 스스로를 가열하지 않게 — null for every body that isn't burning its
   // own wick right now, which is the overwhelmingly common case.
   const wick = wickPoint(o);
-  const wickR2 = WICK_HEAT_RADIUS * WICK_HEAT_RADIUS;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
@@ -2739,14 +2760,15 @@ function scanBodyExposure(
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
       const m = id === EMPTY ? null : getMaterial(id);
-      // The body's own wick flame, and the ring of matter that flame is cooking,
-      // are not heat this body is allowed to feel (see WICK_HEAT_RADIUS). The
-      // wind checks below stay outside it — a gust over the fuse is still a gust.
+      // The plume off the body's own wick is not heat this body is allowed to feel
+      // (see WICK_PLUME_MARGIN). Everything else — including Fire that is not in
+      // its own plume — is read normally. The wind checks below stay outside this:
+      // a gust over the fuse is still a gust.
       let ownFlame = false;
-      if (wick !== null) {
+      if (wick !== null && id === FIRE.id) {
         const wx = cx + 0.5 - wick.x;
         const wy = cy + 0.5 - wick.y;
-        ownFlame = id === FIRE.id || wx * wx + wy * wy <= wickR2;
+        ownFlame = wy <= WICK_PLUME_BELOW && wx <= wick.halfW && wx >= -wick.halfW;
       }
       if (!inFoot) {
         // Shell-only cell: it can touch the body and it can blow on it, nothing
@@ -4069,7 +4091,7 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
         // flame): it flickers, rises, and can ignite whatever the fuse leads to —
         // a Gunpowder trail, a charge, a puddle of fuel. It cannot cook the stick
         // off early — the countdown stays the sole authority — because a lit body
-        // doesn't read its own wick as heat at all (see WICK_HEAT_RADIUS). That
+        // doesn't read its own wick as heat at all (see WICK_PLUME_MARGIN). That
         // used to rest on DYNAMITE_AUTOIGNITE_TEMP sitting above Fire's 1000°,
         // which is no longer true now that it is a realistic 220°.
         ctx.spawn(tcx, tcy, FIRE.id);

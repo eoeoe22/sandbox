@@ -17,10 +17,11 @@
 //      hot for seconds rather than snapping to ambient. A Fan is gentler still: it
 //      is air, not a contact patch, so it fans a body down over seconds.
 //   5. 도화선 불이 스스로를 가열하지 않게 — a body burning its own wick throws a real
-//      1000° Fire cell right beside itself every tick, and must not read it (nor
-//      the ground that flame is scorching) as heat. This is what lets dynamite's
-//      cook-off point be a realistic 220° instead of a number chosen only to sit
-//      above Fire's 1000°.
+//      1000° Fire cell right beside itself every tick and must not read its own
+//      plume as heat. This is what lets dynamite's cook-off point be a realistic
+//      220° instead of a number chosen only to sit above Fire's 1000°. The other
+//      half of that claim matters just as much and has its own scene: it must
+//      still read every fire that ISN'T its own.
 //
 // Run: `node test/run-objectheat.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -68,6 +69,9 @@ const SAND = ID('Sand');
 const WATER = ID('Water');
 const FAN = ID('Fan');
 const FIRE = ID('Fire');
+/** Fire's own `thermal.init` (materials/fire.ts) — what a Fire cell the CA made
+ *  actually reads. Stamping the material without it makes a 20° "fire". */
+const FIRE_TEMP = 1000;
 
 const W = 100;
 const H = 100;
@@ -376,6 +380,116 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
   );
 }
 
+// ── 7b. …but only its OWN flame ──────────────────────────────────────────────
+//
+// The exclusion above has an obvious way to go wrong, and the first cut went
+// wrong in exactly it: dropping *every* Fire cell while lit. That is far too
+// broad. A lit stick thrown into a bonfire it had nothing to do with would read
+// room temperature the whole way down and quietly finish its countdown — the same
+// overlay lie this whole change set out to kill, and the direct opposite of why
+// the cook-off point was allowed down to 220° in the first place (불에 던지면
+// 터진다). So the exclusion is a *column* rising off the wick, and everything
+// outside it is ordinary heat.
+//
+// The fire bed is laid directly UNDER the stick and no wider than it — squarely
+// below the wick, which is what "at or above the wick" in the plume test is there
+// to tell apart. A wider bed would spill outside the plume column and let the
+// scene pass on the overspill alone.
+//
+// Deliberately a world with NO floor: the stick rests on the container border,
+// which is out of bounds and therefore not thermal contact at all (scene 1). That
+// isolates the claim to Fire. With a stone floor the bonfire cooks the stone, the
+// stone conducts into the stick, and the scene passes whether or not Fire itself
+// was ever read — which is exactly the laundering that would let the over-broad
+// version of this exclusion slip through.
+{
+  const { grid, sim } = makeWorld();
+  const stick = createDynamite(50, 60);
+  settle(sim, grid, stick, 120);
+  const bx = Math.round(stick.x);
+  const by = Math.round(stick.y);
+  let ticks = 0;
+  let hottest = -Infinity;
+  for (; ticks < 70; ticks++) {
+    // Re-seed the bonfire every tick — Fire burns out on its own, and the claim
+    // is about a body lying IN a fire, not about one flame passing over it. The
+    // temperature has to be stamped along with the material: a Fire cell dropped
+    // into the grid by hand inherits whatever the cell was at (ambient), and a
+    // 20° "fire" heats nothing — which is a way for this scene to pass its
+    // sibling checks while proving nothing.
+    for (let cy = by; cy < grid.height; cy++)
+      for (let cx = bx - 3; cx <= bx + 3; cx++) {
+        if (!grid.inBounds(cx, cy) || grid.get(cx, cy) !== 0) continue;
+        grid.set(cx, cy, FIRE);
+        grid.temp[grid.idx(cx, cy)] = FIRE_TEMP;
+      }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    sim.step();
+    if (!grid.objects.includes(stick)) break;
+    if (stick.temp > hottest) hottest = stick.temp;
+  }
+  // Bounded, not just "eventually": the trigger reads the footprint's 1000°
+  // directly, so a stick lying in fire is gone in a handful of ticks. A version of
+  // the exclusion that swallows this fire still ends up detonating it — Fire burns
+  // out into hot Smoke, which is not Fire and is read normally — just far later.
+  // So the tick count is the discriminator, and a bare "did it die" is not.
+  check(
+    '불에 던지면 터진다 — a lit stick in a real fire cooks off at once',
+    !grid.objects.includes(stick) && ticks <= 10,
+    `gone on tick ${ticks} (its own fuse needs at least 90; via leaked smoke alone it takes ~32)`,
+  );
+  // The reservoir does NOT get to 220° here, and shouldn't: the trigger reads the
+  // footprint's 1000° directly, so the stick is gone in a handful of ticks — long
+  // before conduction at 0.03/tick could bring a room-temperature body up. What
+  // matters is that the reservoir was climbing at all, which is the difference
+  // between "it registered the fire" and the overlay lie this scene guards.
+  check(
+    '…and it read the heat on the way, instead of lying at room temperature',
+    hottest > AMBIENT_TEMP + 50,
+    `reservoir climbing through ${hottest.toFixed(0)}° when it went off`,
+  );
+}
+
+// ── 7c. 눕혀 놓아도 마찬가지 (the plume, in the hard orientation) ──────────────
+//
+// Scene 7 leaves the stick UPRIGHT, fuse in the air, and that is the easy case:
+// the plume goes straight up, away from everything. Laid flat it is much harder —
+// the wick sits at floor level at one end, the body stretches away sideways, and
+// the flame drifts along the length of it. That is the orientation that caught a
+// fixed-width plume column: at a constant half-width of 3 cells the bottle-length
+// drift fell outside it and a lit molotov read 77°. Sizing the column to the
+// body's own reach is what fixes it, and this scene is what says so.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const stick = createDynamite(50, 60);
+  stick.angle = Math.PI / 2; // long axis horizontal; the wick tip rests on the floor
+  stick.angularVelocity = 0;
+  grid.objects.push(stick);
+  let hottest = -Infinity;
+  let ticks = 0;
+  for (; ticks < 80; ticks++) {
+    sim.step();
+    if (!grid.objects.includes(stick)) break;
+    if (ticks > 20 && stick.temp > hottest) hottest = stick.temp; // after it settles
+  }
+  check(
+    '전제: it really did stay flat on the floor',
+    Math.abs(Math.cos(stick.angle)) < 0.4 && stick.y > 60,
+    `angle ${stick.angle.toFixed(2)}, y ${stick.y.toFixed(1)}`,
+  );
+  check(
+    '눕혀 놔도 자기 불꽃에 안 데워진다 — the plume is still its own when it drifts sideways',
+    hottest < AMBIENT_TEMP + 15,
+    `peaked at ${hottest.toFixed(1)}° lying flat on stone`,
+  );
+  check(
+    '…and it is still there, counting down',
+    grid.objects.includes(stick) && stick.lit,
+    `${ticks} ticks`,
+  );
+}
+
 // ── 8. 폭발 온도 220° ────────────────────────────────────────────────────────
 //
 // The other half of the same change. With the self-heating defence moved into
@@ -433,9 +547,12 @@ function cookOff(bathTemp: number, limit = 500): { gone: boolean; ticks: number 
     if (!grid.objects.includes(bottle)) break;
     if (bottle.temp > hottest) hottest = bottle.temp;
   }
+  // A tight margin on purpose. The bottle settles on its side, which is the shape
+  // the plume column has to get right, and a loose bound here lets a column that is
+  // merely *nearly* wide enough slip by.
   check(
     '불붙은 화염병도 스스로를 데우지 않는다 — a lit bottle reads room temperature',
-    hottest < AMBIENT_TEMP + 10,
+    hottest < AMBIENT_TEMP + 3,
     `peaked at ${hottest.toFixed(1)}° with its wick burning`,
   );
   check('…and it is still burning, not shattered', grid.objects.includes(bottle) && bottle.lit);
