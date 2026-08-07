@@ -288,8 +288,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   perishable: {
     ko: {
-      label: '부패',
-      desc: '상하면 부패물이 됩니다. 물 또는 수증기에 노출되면 곰팡이가 피어 상하기 시작합니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열 시 상하지 않으며, 소금·알콜·꿀이 닿아 있어도 상하지 않습니다.',
+      label: '습기로 부패',
+      desc: '물·수증기 또는 곰팡이에 닿으면 상하기 시작해 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열하면 멈추며, 소금·알콜·꿀이 닿아 있어도 멈춥니다.',
     },
     en: {
       label: 'Perishable',
@@ -298,8 +298,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   rotsUnattended: {
     ko: {
-      label: '스스로 부패',
-      desc: '습기에 노출되지 않아도 방치 시 부패합니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열 시 상하지 않으며, 소금·알콜·꿀이 닿아 있어도 상하지 않습니다.',
+      label: '습기 없이도 부패',
+      desc: '습기나 곰팡이 없이도 시간이 지나면 부패합니다.',
     },
     en: {
       label: 'Rots unattended',
@@ -308,7 +308,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   moldsItself: {
     ko: {
-      label: '곰팡이 부패',
+      label: '건조해도 곰팡이 발생',
       desc: '충분히 상하면 젖지 않아도 곰팡이가 피어 포자를 날립니다.',
     },
     en: {
