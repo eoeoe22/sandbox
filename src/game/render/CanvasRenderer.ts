@@ -4,14 +4,12 @@ import type { SandboxLayout } from '../layout';
 import { getMaterial } from '../materials/registry';
 import { EMPTY, Phase, type BorderMode } from '../engine/types';
 import { varyAmplitude, varyCellAmplitude, varyMode, VARY_PARTICLE, TINT_NEUTRAL } from '../tint';
-import { rgb, tinted, frosted, buildGlow, shade, type GlowRamp } from './color';
+import {
+  rgb, tinted, frosted, buildGlow, shade, washed,
+  type GlowRamp, type ColorWash,
+} from './color';
 import { drumSpriteFor, drumPieceSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
-import {
-  SMOKE_BOMB_SPRITE,
-  SMOKE_BOMB_SPRITE_W,
-  SMOKE_BOMB_SPRITE_H,
-} from './smokeBombSprite';
 import {
   FLASHBANG_SPRITE,
   FLASHBANG_SPRITE_W,
@@ -31,7 +29,7 @@ import {
   wooferTileIndex,
 } from './wooferDriver';
 import type { SimCapsule, SimWoodBox } from '../engine/objects';
-import { molotovBottle } from '../engine/objects';
+import { bodyReach, molotovBottle } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -47,6 +45,74 @@ const BALL_BORDER_COLOR = rgb(0x1a, 0x10, 0x12); // near-black rubber outline
  *  Still nearest-neighbor / no anti-aliasing, so it stays crisp pixel art, just
  *  finer. */
 const OBJECT_SCALE = 2;
+
+/** Type size (CSS px, scaled to device pixels at draw time) of the 돋보기 object
+ *  temperature label. Small enough to sit beside a 4-cell can without covering
+ *  it, large enough to read at the default zoom. */
+const OBJECT_TEMP_FONT_PX = 10;
+/** Gap (CSS px) between a body's right edge and its label. */
+const OBJECT_TEMP_GAP = 2;
+
+// ── 오브젝트 온도 오버레이 ────────────────────────────────────────────────────
+// A body carries its own heat reservoir (SimBody.temp — see engine/objects.ts), and
+// until now nothing about it was visible unless you turned the thermal camera on:
+// a drum sitting in lava looked exactly like a drum sitting on grass right up to
+// the tick it melted, and a can you had painstakingly frozen looked untouched. So
+// every body now wears its temperature as a WASH over its own art — icy blue as it
+// chills, red running to orange as it heats — rather than as a recolour. The wash
+// keeps the sprite readable (you can still tell a drum from a crate from a bottle
+// at a glance, which a flat thermal recolour deliberately does not), and it is the
+// only feedback the object layer has for something the engine has always tracked.
+//
+// The ramps are asymmetric on purpose. Heat runs from a threshold well above room
+// temperature (nothing should glow because it was left by a candle) up to the
+// hottest a body survives, and gets STRONG — a red-hot barrel should look red-hot.
+// Cold starts at freezing, reaches full at a depth that takes real work (liquid
+// nitrogen, a held 냉각 브러시), and stays SLIGHT: 얼음색을 약간, a frost on the
+// surface, not a repaint. That the flashbang's countdown slows in exactly this
+// range (FLASHBANG_CHILL_TEMP) is not a coincidence — the frost IS the tell that
+// its timer is dragging.
+const HOT_TINT_MIN = 200; // ° at which the body starts to look warmed
+const HOT_TINT_MAX = 1200; // ° at which it is as hot-looking as it gets
+const HOT_TINT_STRENGTH = 0.8;
+/** The wash colour at HOT_TINT_MIN (dull red) and at HOT_TINT_MAX (bright orange).
+ *  Interpolating between the two is what makes the ramp read as heating rather
+ *  than as one red getting louder. */
+const HOT_TINT_LOW = { r: 0xc8, g: 0x2a, b: 0x18 };
+const HOT_TINT_HIGH = { r: 0xff, g: 0xa8, b: 0x3c };
+const COLD_TINT_MAX = 0; // ° at which frost starts to show (water's freezing point)
+const COLD_TINT_MIN = -60; // ° at which it is as frosted as it gets
+const COLD_TINT_STRENGTH = 0.55;
+/** Frost colour — the pale blue-white `frosted()` washes a frozen liquid with, so a
+ *  chilled body and the ice it is lying in agree on what cold looks like. */
+const COLD_TINT = { r: 0xa8, g: 0xd8, b: 0xf4 };
+
+/**
+ * The temperature wash for a body at `temp`, or null when it is at an ordinary
+ * temperature and should be drawn as its plain self — which is the common case, so
+ * the whole overlay costs one comparison per body until something actually happens
+ * to it.
+ */
+function thermalTint(temp: number): ColorWash | null {
+  if (temp > HOT_TINT_MIN) {
+    let f = (temp - HOT_TINT_MIN) / (HOT_TINT_MAX - HOT_TINT_MIN);
+    if (f > 1) f = 1;
+    return {
+      r: HOT_TINT_LOW.r + (HOT_TINT_HIGH.r - HOT_TINT_LOW.r) * f,
+      g: HOT_TINT_LOW.g + (HOT_TINT_HIGH.g - HOT_TINT_LOW.g) * f,
+      b: HOT_TINT_LOW.b + (HOT_TINT_HIGH.b - HOT_TINT_LOW.b) * f,
+      // Ramped from 0, not applied flat: a body crossing the threshold warms into
+      // the tint instead of snapping into it.
+      f: HOT_TINT_STRENGTH * f,
+    };
+  }
+  if (temp < COLD_TINT_MAX) {
+    let f = (COLD_TINT_MAX - temp) / (COLD_TINT_MAX - COLD_TINT_MIN);
+    if (f > 1) f = 1;
+    return { r: COLD_TINT.r, g: COLD_TINT.g, b: COLD_TINT.b, f: COLD_TINT_STRENGTH * f };
+  }
+  return null;
+}
 
 // ── Fan wind streaks (선풍기 바람 이펙트) ──────────────────────────────────────
 // The wind field (Grid.wind) is drawn as animated low-res *streaks* over the empty
@@ -598,6 +664,10 @@ export class CanvasRenderer implements Renderer {
   /** When true, occupied cells are drawn by temperature (thermal camera) instead
    *  of their material colour (see setHeatOverlay / HEAT_LUT). */
   private heatOverlay = false;
+  /** When true, every free object is labelled with its own temperature (see
+   *  drawObjectTemps). Mirrors the 돋보기 overlay toggle, which reads out the cells
+   *  under the cursor — objects aren't cells, so this is how they get read out. */
+  private inspect = false;
   /** Reference-grid line spacing in cells; 0 = no overlay (see setGridDivision). */
   private gridDivision = 0;
   /** Packed temperature→colour lookup for the heat overlay, spanning
@@ -1504,6 +1574,13 @@ export class CanvasRenderer implements Renderer {
       this.rasterizeObjects(grid, heat);
       this.objCtx.putImageData(this.objImage, 0, 0);
       this.ctx.drawImage(this.objOff, rect.x, rect.y, rect.width, rect.height);
+      // 돋보기: the wash tells you a body is hot, this tells you how hot. Drawn as
+      // real text on the display canvas rather than into the pixel-art overlay —
+      // the overlay is nearest-neighbor upscaled, which would turn any glyph small
+      // enough to fit into mush.
+      if (this.inspect) {
+        this.drawObjectTemps(grid, rect.x, rect.y, rect.width, rect.height, scale);
+      }
     }
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
@@ -2000,10 +2077,16 @@ export class CanvasRenderer implements Renderer {
    *
    * `heat` mirrors the cell layer's thermal-camera mode: when on, every body is
    * still rasterized in its own silhouette (ball disc / wooden-box, drum, dynamite
-   * or smoke-bomb sprite shape) but recolored flat by `heatColor(o.temp)` instead
+   * or flashbang sprite shape) but recolored flat by `heatColor(o.temp)` instead
    * of its normal sprite colors, exactly like an occupied cell is recolored by
    * `temp[i]` — so a body's own heat reservoir (SimBody.temp) reads on the overlay
    * the same way a cell's does.
+   *
+   * With the thermal camera OFF the same reservoir still shows, but as a WASH over
+   * the body's own art rather than instead of it (see thermalTint): frost as it
+   * chills, red→orange as it heats. The two are mutually exclusive by construction —
+   * a flat thermal recolour already *is* the temperature, so washing it again would
+   * say the same thing twice and corrupt the LUT colour while doing it.
    */
   private rasterizeObjects(grid: Grid, heat: boolean): void {
     const buf = this.objBuf32;
@@ -2013,29 +2096,25 @@ export class CanvasRenderer implements Renderer {
     const h = grid.height * s;
     for (const o of grid.objects) {
       const heatColor = heat ? this.heatColor(o.temp) : null;
-      if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor);
-      else if (o.kind === 'woodbox') this.rasterizeWoodBox(buf, w, h, s, o, heatColor);
-      else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor);
+      const tint = heat ? null : thermalTint(o.temp);
+      if (o.kind === 'ball') this.rasterizeBall(buf, w, h, s, o, heatColor, tint);
+      else if (o.kind === 'woodbox') this.rasterizeWoodBox(buf, w, h, s, o, heatColor, tint);
+      else if (o.kind === 'dynamite') this.rasterizeDynamite(buf, w, h, s, o, heatColor, tint);
       else if (o.kind === 'molotov')
         // Full bottle or spent shell — one silhouette, contents swapped (the flame
         // is real Fire particles at the neck, so it isn't drawn here).
         this.rasterizeSprite(
           buf, w, h, s, o, o.radius, o.halfLength + o.radius,
-          MOLOTOV_SPRITES[molotovBottle(o)], MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H, heatColor,
-        );
-      else if (o.kind === 'smokebomb')
-        this.rasterizeSprite(
-          buf, w, h, s, o, o.radius, o.halfLength + o.radius,
-          SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H, heatColor,
+          MOLOTOV_SPRITES[molotovBottle(o)], MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H, heatColor, tint,
         );
       else if (o.kind === 'flashbang')
         // Nothing is drawn around it: the can has no fuse and emits nothing until
         // it flashes (see engine/objects.ts stepFlashbang).
         this.rasterizeSprite(
           buf, w, h, s, o, o.radius, o.halfLength + o.radius,
-          FLASHBANG_SPRITE, FLASHBANG_SPRITE_W, FLASHBANG_SPRITE_H, heatColor,
+          FLASHBANG_SPRITE, FLASHBANG_SPRITE_W, FLASHBANG_SPRITE_H, heatColor, tint,
         );
-      else this.rasterizeDrum(buf, w, h, s, o, heatColor);
+      else this.rasterizeDrum(buf, w, h, s, o, heatColor, tint);
     }
   }
 
@@ -2043,7 +2122,9 @@ export class CanvasRenderer implements Renderer {
    *  (in grid coordinates) falls inside the disc. `w`/`h` are the overlay's
    *  sub-pixel dimensions, `s` the sub-pixels per cell. `heatColor`, when given
    *  (heat overlay on), replaces both the fill and border with one flat color —
-   *  the disc reads as a solid thermal blob rather than a rubber ball. */
+   *  the disc reads as a solid thermal blob rather than a rubber ball. `tint`, when
+   *  given, is the 온도 오버레이 wash; the ball has only two colours, so it is
+   *  applied to both of them once here rather than per sub-pixel. */
   private rasterizeBall(
     buf: Uint32Array,
     w: number,
@@ -2051,6 +2132,7 @@ export class CanvasRenderer implements Renderer {
     s: number,
     o: { x: number; y: number; r: number },
     heatColor: number | null = null,
+    tint: ColorWash | null = null,
   ): void {
     const r = o.r;
     const r2 = r * r;
@@ -2060,8 +2142,9 @@ export class CanvasRenderer implements Renderer {
     const border = Math.max(1 / s, r * 0.12);
     const rin = r - border;
     const rin2 = rin > 0 ? rin * rin : 0;
-    const fillColor = heatColor ?? BALL_COLOR;
-    const borderColor = heatColor ?? BALL_BORDER_COLOR;
+    const fillColor = heatColor ?? (tint ? washed(BALL_COLOR, tint) : BALL_COLOR);
+    const borderColor =
+      heatColor ?? (tint ? washed(BALL_BORDER_COLOR, tint) : BALL_BORDER_COLOR);
     let x0 = Math.floor((o.x - r) * s);
     let x1 = Math.ceil((o.x + r) * s);
     let y0 = Math.floor((o.y - r) * s);
@@ -2096,10 +2179,11 @@ export class CanvasRenderer implements Renderer {
     s: number,
     o: SimWoodBox,
     heatColor: number | null = null,
+    tint: ColorWash | null = null,
   ): void {
     const art = WOOD_BOX_SPRITES[o.part];
     this.rasterizeSprite(
-      buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor,
+      buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor, tint,
     );
   }
 
@@ -2119,12 +2203,16 @@ export class CanvasRenderer implements Renderer {
    *
    * `heatColor`, when given (heat overlay on), replaces every opaque sprite pixel
    * with that one flat color, keeping the body's silhouette (and rotation) but
-   * recoloring it by temperature instead of its own art.
+   * recoloring it by temperature instead of its own art. `tint`, when given, is the
+   * 온도 오버레이 instead: every opaque pixel keeps its own colour and is blended
+   * toward the wash, so the art survives underneath it. They are never both set
+   * (see rasterizeObjects), and the branch is hoisted out of the inner loop — the
+   * ordinary body pays one predictable test per pixel and no arithmetic.
    *
    * Every rotating body draws through this one routine — the drum (which picks its
    * sprite by fill), the dynamite (which then adds a procedural fuse nub), the
-   * smoke bomb and the wooden box — so a new one needs only its sprite, not
-   * another copy of this loop.
+   * flashbang, the molotov and the wooden box — so a new one needs only its sprite,
+   * not another copy of this loop.
    */
   private rasterizeSprite(
     buf: Uint32Array,
@@ -2138,6 +2226,7 @@ export class CanvasRenderer implements Renderer {
     spriteW: number,
     spriteH: number,
     heatColor: number | null = null,
+    tint: ColorWash | null = null,
   ): void {
     // Bounding box that contains the sprite RECTANGLE at any rotation: the circle
     // through its corners, hypot(halfW, halfL) — not halfL, which would clip the
@@ -2170,7 +2259,8 @@ export class CanvasRenderer implements Renderer {
         const spy = spriteH * 0.5 + ly * syScale;
         if (spx < 0 || spx >= spriteW || spy < 0 || spy >= spriteH) continue;
         const color = sprite[(spy | 0) * spriteW + (spx | 0)];
-        if (color !== 0) buf[row + sx] = heatColor ?? color; // 0 = transparent sprite pixel
+        if (color === 0) continue; // 0 = transparent sprite pixel
+        buf[row + sx] = heatColor ?? (tint ? washed(color, tint) : color);
       }
     }
   }
@@ -2188,17 +2278,18 @@ export class CanvasRenderer implements Renderer {
     s: number,
     o: SimCapsule,
     heatColor: number | null = null,
+    tint: ColorWash | null = null,
   ): void {
     if (o.part !== 'drum') {
       const art = drumPieceSpriteFor(o.fill, o.part);
       this.rasterizeSprite(
-        buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor,
+        buf, w, h, s, o, o.halfW, o.halfH, art.pixels, art.w, art.h, heatColor, tint,
       );
       return;
     }
     this.rasterizeSprite(
       buf, w, h, s, o, o.halfW, o.halfH,
-      drumSpriteFor(o.fill), DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor,
+      drumSpriteFor(o.fill), DRUM_SPRITE_W, DRUM_SPRITE_H, heatColor, tint,
     );
   }
 
@@ -2211,7 +2302,8 @@ export class CanvasRenderer implements Renderer {
    * Nearest-neighbor, no anti-aliasing. `heatColor`, when given (heat overlay
    * on), replaces the body sprite and the fuse-cord nub with one flat color, so
    * the stick reads as a solid thermal blob (still shaped/rotated correctly)
-   * instead of its normal red-body-plus-dark-fuse look.
+   * instead of its normal red-body-plus-dark-fuse look. `tint` (the 온도 오버레이)
+   * washes both instead, so a chilled stick frosts over cord and all.
    */
   private rasterizeDynamite(
     buf: Uint32Array,
@@ -2226,11 +2318,12 @@ export class CanvasRenderer implements Renderer {
       radius: number;
     },
     heatColor: number | null = null,
+    tint: ColorWash | null = null,
   ): void {
     const halfL = o.halfLength + o.radius; // half its long (length) extent, in cells
     // Body: the shared rotate-sample pass with the stick sprite.
     this.rasterizeSprite(
-      buf, w, h, s, o, o.radius, halfL, DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, heatColor,
+      buf, w, h, s, o, o.radius, halfL, DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, heatColor, tint,
     );
     // A short dark fuse-cord nub past the top cap, along the stick's (rotated) long
     // axis. angle 0 ⇒ axis (0,1) and the fuse points up (−axis); it rotates with
@@ -2239,7 +2332,9 @@ export class CanvasRenderer implements Renderer {
     const ay = Math.cos(o.angle);
     const capX = o.x - ax * halfL;
     const capY = o.y - ay * halfL;
-    this.fillDisc(buf, w, h, s, capX - ax * 0.7, capY - ay * 0.7, 0.55, heatColor ?? FUSE_CORD_COLOR);
+    const cordColor =
+      heatColor ?? (tint ? washed(FUSE_CORD_COLOR, tint) : FUSE_CORD_COLOR);
+    this.fillDisc(buf, w, h, s, capX - ax * 0.7, capY - ay * 0.7, 0.55, cordColor);
   }
 
   /** Fill overlay sub-pixels whose center (in grid coords) lies within `r` cells of
@@ -2308,6 +2403,59 @@ export class CanvasRenderer implements Renderer {
     ctx.restore();
   }
 
+  /**
+   * 돋보기 오브젝트 온도: label every free body with its own reservoir temperature
+   * (SimBody.temp), small, just off its top-right corner.
+   *
+   * This exists because the 돋보기 overlay surveys *cells* — it reports what is
+   * under the cursor by reading the grid, and an object isn't on the grid, so the
+   * one layer whose temperature you can now see (the 온도 오버레이 wash) was also
+   * the one layer you couldn't get a number for. The wash answers "is this hot",
+   * this answers "how hot", and neither needs the thermal camera on.
+   *
+   * Anchored to the body's covering circle (`bodyReach`) rather than its sprite
+   * box so the label doesn't jitter as a capsule tumbles — the circle is the one
+   * extent that doesn't change with orientation. The number is clamped back
+   * inside the play area, so a drum shoved against the right wall labels itself
+   * inward instead of writing over the page.
+   */
+  private drawObjectTemps(
+    grid: Grid,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    scale: number,
+  ): void {
+    const ctx = this.ctx;
+    const cw = w / grid.width; // device px per cell
+    const ch = h / grid.height;
+    const size = Math.max(8, Math.round(OBJECT_TEMP_FONT_PX * scale));
+    ctx.save();
+    ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    // A dark halo under light text, so the number stays legible over lava, over
+    // snow and over the body's own art alike.
+    ctx.lineWidth = Math.max(2, Math.round(2 * scale));
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(6, 8, 12, 0.85)';
+    ctx.fillStyle = 'rgba(236, 242, 252, 0.96)';
+    for (const o of grid.objects) {
+      const reach = bodyReach(o);
+      const label = `${Math.round(o.temp)}°`;
+      let lx = x + (o.x + reach) * cw + OBJECT_TEMP_GAP * scale;
+      let ly = y + (o.y - reach) * ch;
+      const tw = ctx.measureText(label).width;
+      if (lx + tw > x + w) lx = x + w - tw; // shoved off the right edge
+      if (lx < x) lx = x;
+      if (ly - size < y) ly = y + size; // …or off the top
+      ctx.strokeText(label, lx, ly);
+      ctx.fillText(label, lx, ly);
+    }
+    ctx.restore();
+  }
+
   /** Pick which edge mode to signal in the boundary outline. */
   setBorderMode(mode: BorderMode): void {
     this.borderMode = mode;
@@ -2316,6 +2464,11 @@ export class CanvasRenderer implements Renderer {
   /** Toggle the temperature heat-map overlay (occupied cells drawn by temp). */
   setHeatOverlay(on: boolean): void {
     this.heatOverlay = on;
+  }
+
+  /** Toggle the 돋보기 object readout (each body labelled with its temperature). */
+  setInspect(on: boolean): void {
+    this.inspect = on;
   }
 
   /** Set the reference-grid line spacing in cells (0 = off). */

@@ -49,7 +49,6 @@ import {
   createRubberBall,
   createDrum,
   createDynamite,
-  createSmokeBomb,
   createFlashbang,
   createWoodBox,
   createMolotov,
@@ -77,8 +76,6 @@ export function paletteKindOf(o: SimBody): ObjectKind | null {
       return 'ball';
     case 'dynamite':
       return 'dynamite';
-    case 'smokebomb':
-      return 'smokebomb';
     case 'flashbang':
       return 'flashbang';
     case 'molotov':
@@ -672,9 +669,6 @@ export class PointerPainter {
     } else if (kind === 'dynamite') {
       // 다이너마이트: dropped with its fuse already lit — a live countdown to the blast.
       this.grid.objects.push(createDynamite(cx + 0.5, cy + 0.5));
-    } else if (kind === 'smokebomb') {
-      // 연막탄: dropped already burning — a wisp of smoke now, the dense cloud in four seconds.
-      this.grid.objects.push(createSmokeBomb(cx + 0.5, cy + 0.5));
     } else if (kind === 'flashbang') {
       // 섬광탄: dropped with its countdown already running — and showing nothing
       // for it. Three seconds of looking inert, then the flash.

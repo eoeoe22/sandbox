@@ -233,7 +233,7 @@ function columnHeat(grid: Grid, x: number): number {
   check('a laser burns a rubber ball away', !w.grid.objects.includes(ball));
 }
 {
-  // A stick of dynamite cooks off (DYNAMITE_AUTOIGNITE_TEMP 1100) — 유폭.
+  // A stick of dynamite cooks off (DYNAMITE_AUTOIGNITE_TEMP 220) — 유폭.
   const w = makeWorld();
   const stick = place(w, createDynamite(TARGET_X, 0));
   run(w, 200, aimAt(stick));
@@ -243,15 +243,53 @@ function columnHeat(grid: Grid, x: number): number {
 }
 
 // 4. Pull the beam away and the body cools back down instead of staying doomed —
-//    the reservoir relaxes toward its surroundings as it always did.
+//    the reservoir sheds its heat into the floor the drum is standing on.
+//
+//    The burst is deliberately SHORT, and the length is the whole design of the
+//    scene. A body only cools into what it touches now, at a rate meant to let it
+//    stay visibly glowing for a while (OBJECT_HEAT_CONDUCTION), so a drum roasted
+//    to two thousand degrees no longer has any way back: it will still be past
+//    iron's melting point when its melt clock runs out, and it melts — correctly.
+//    "Doomed" therefore has to mean *just* doomed. This burst puts the drum over
+//    DRUM_MELT_TEMP with its clock already running, which is exactly the state the
+//    scene claims a body can be pulled out of, and the check below asserts it
+//    rather than trusting the tick count to keep landing there.
 {
   const w = makeWorld();
   const drum = place(w, createDrum(TARGET_X, 0)) as SimCapsule;
   const aim = aimAt(drum);
-  run(w, FLIGHT_TICKS + 5, aim);
-  const hot = drum.temp;
-  run(w, 80, aim, false);
-  check('a body cools once the beam moves off it', drum.temp < hot * 0.5, `${hot.toFixed(0)}° → ${drum.temp.toFixed(0)}°`);
+  // The burst length is MEASURED, not counted. It used to be a tick count tuned by
+  // hand, and that number is hostage to things this scene has nothing to do with:
+  // the drum family's heat capacity moved it once (absorbed beam energy is divided
+  // by heat capacity, so the old count landed at 595°), and then an unrelated
+  // change to the spoilage system moved it again simply by consuming more of the
+  // shared PRNG each tick, which shifts how many beams land. Both times the scene
+  // failed for a reason that was not about the Heat Ray at all.
+  //
+  // So: hold the beam until the drum is most of the way to the melt point, then go
+  // dark and let the strikes still in the air carry it the rest of the way over.
+  // BEAM_CUT is below DRUM_MELT_TEMP on purpose — the in-flight beams add a couple
+  // of hundred degrees after the muzzle goes dark, and this scene needs a narrow
+  // band: just doomed, with enough headroom to cool back out before the 24-tick
+  // melt clock expires. Measured, this cut lands the peak at 1275° and the drum
+  // sheds to 619° well inside the clock.
+  const BEAM_CUT = 1100;
+  for (let i = 0; i < 400 && drum.temp < BEAM_CUT; i++) run(w, 1, aim);
+  // `hot` is the PEAK, sampled across the dark run rather than read at the cut: the
+  // strikes still in the air land after the muzzle goes dark and are most of the
+  // heat, so the temperature at the cut is not the one that dooms the drum.
+  let hot = drum.temp;
+  for (let i = 0; i < 80; i++) {
+    run(w, 1, aim, false);
+    if (drum.temp > hot) hot = drum.temp;
+  }
+  check('the burst really did doom it — over the melt point, clock running',
+    hot > DRUM_MELT_TEMP, `${hot.toFixed(0)}° vs ${DRUM_MELT_TEMP}°`);
+  // Stated as "back under the melt point" rather than as a fraction of the peak:
+  // that is the claim the scene is actually about (pulled out in time), and unlike
+  // a fraction it does not need recalibrating every time the conduction rate moves.
+  check('a body cools once the beam moves off it', drum.temp < DRUM_MELT_TEMP,
+    `${hot.toFixed(0)}° → ${drum.temp.toFixed(0)}° (melt point ${DRUM_MELT_TEMP}°)`);
   check('and survives the near miss', w.grid.objects.includes(drum) && drum.state === 'intact');
 }
 

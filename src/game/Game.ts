@@ -24,6 +24,7 @@ import {
   $gravityStrength,
   $cellScale,
   $heatOverlay,
+  $inspect,
   $gridDivision,
   $bottomDeadzone,
   $particleCount,
@@ -218,6 +219,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
   // Temperature heat-map overlay and reference-grid overlay — pure render modes.
   // subscribe fires immediately, seeding the renderer with the restored values.
   $heatOverlay.subscribe((on) => renderer.setHeatOverlay(on));
+  // 돋보기 also labels each free object with its temperature — the object layer's
+  // half of the same readout, since the cell survey can't see bodies.
+  $inspect.subscribe((on) => renderer.setInspect(on));
   $gridDivision.subscribe((cells) => renderer.setGridDivision(cells));
 
   // Cell size / resolution. Changing it re-derives the grid from the current

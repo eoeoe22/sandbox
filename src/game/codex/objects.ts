@@ -23,6 +23,7 @@ import {
   DRUM_RESTITUTION,
   DRUM_FRICTION,
   DRUM_MELT_TEMP,
+  DRUM_HEAT_CAPACITY,
   DRUM_MELT_TICKS,
   DRUM_PIECE_MELT_TEMP,
   DRUM_PIECE_MELT_TICKS,
@@ -30,14 +31,10 @@ import {
   DYNAMITE_RESTITUTION,
   DYNAMITE_AUTOIGNITE_TEMP,
   DYNAMITE_FUSE_MIN_TICKS,
-  SMOKE_BOMB_DENSITY,
-  SMOKE_BOMB_RESTITUTION,
-  SMOKE_BOMB_IGNITE_TEMP,
-  SMOKE_BOMB_FUSE_TICKS,
-  SMOKE_BOMB_VENT_TICKS,
   FLASHBANG_DENSITY,
   FLASHBANG_RESTITUTION,
   FLASHBANG_IGNITE_TEMP,
+  FLASHBANG_CHILL_TEMP,
   FLASHBANG_FUSE_TICKS,
   FLASHBANG_REACH,
   FLASHBANG_POWER,
@@ -86,6 +83,10 @@ const drumStats = (): CodexStat[] => [
   { key: 'density', unit: 'number', value: DRUM_DENSITY },
   { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
   { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
+  // The one stat here that is about how the drum *feels* to heat rather than what
+  // heat does to it, and the only body in the layer that has it — a multiplier of 1
+  // is the layer's baseline, so listing it anywhere else would be noise.
+  { key: 'heatCapacity', unit: 'number', value: DRUM_HEAT_CAPACITY },
   { key: 'shellMeltPoint', unit: 'temp', value: DRUM_MELT_TEMP },
   { key: 'shellMeltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
   { key: 'pieceMeltPoint', unit: 'temp', value: DRUM_PIECE_MELT_TEMP, refId: MOLTEN_IRON.id },
@@ -100,19 +101,19 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: BALL_BURN_TEMP },
       { key: 'burnTicks', unit: 'ticks', value: BALL_BURN_TICKS },
     ],
-    traits: [{ key: 'bouncy' }, { key: 'flammable' }],
+    traits: [{ key: 'heatHeld' }, { key: 'bouncy' }, { key: 'flammable' }],
   },
   drum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }],
   },
   oildrum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: OIL.id }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: OIL.id }],
   },
   aciddrum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: ACID.id }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: ACID.id }],
   },
   dynamite: {
     stats: [
@@ -121,17 +122,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: DYNAMITE_AUTOIGNITE_TEMP },
       { key: 'fuseTicks', unit: 'ticks', value: DYNAMITE_FUSE_MIN_TICKS },
     ],
-    traits: [{ key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
-  },
-  smokebomb: {
-    stats: [
-      { key: 'density', unit: 'number', value: SMOKE_BOMB_DENSITY },
-      { key: 'elasticity', unit: 'ratio', value: SMOKE_BOMB_RESTITUTION },
-      { key: 'autoIgniteTemp', unit: 'temp', value: SMOKE_BOMB_IGNITE_TEMP },
-      { key: 'fuseTicks', unit: 'ticks', value: SMOKE_BOMB_FUSE_TICKS },
-      { key: 'ventTicks', unit: 'ticks', value: SMOKE_BOMB_VENT_TICKS },
-    ],
-    traits: [{ key: 'magnetic' }, { key: 'fuse', variant: 'waterproof' }],
+    traits: [{ key: 'heatHeld' }, { key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
   },
   flashbang: {
     stats: [
@@ -140,12 +131,13 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: FLASHBANG_IGNITE_TEMP },
       // `armTicks`, not the `fuseTicks` every other charge here uses: that term
       // says "불이 붙고 나서" and this can was never lit. Its timer starts when it
-      // is made and nothing can pause it.
+      // is made and only cold reaches it (see chillTemp below).
       { key: 'armTicks', unit: 'ticks', value: FLASHBANG_FUSE_TICKS },
+      { key: 'chillTemp', unit: 'temp', value: FLASHBANG_CHILL_TEMP },
       { key: 'blastRadius', unit: 'number', value: FLASHBANG_REACH },
       { key: 'destructivePower', unit: 'number', value: FLASHBANG_POWER },
     ],
-    traits: [{ key: 'magnetic' }, { key: 'explosive' }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'explosive' }],
   },
   crate: {
     stats: [
@@ -154,7 +146,12 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: WOOD_BOX_IGNITE_TEMP },
       { key: 'smashSpeed', unit: 'number', value: WOOD_BOX_SMASH_SPEED },
     ],
-    traits: [{ key: 'flammable' }, { key: 'smashable', refId: SAWDUST.id }, { key: 'acidSoluble' }],
+    traits: [
+      { key: 'heatHeld' },
+      { key: 'flammable' },
+      { key: 'smashable', refId: SAWDUST.id },
+      { key: 'acidSoluble' },
+    ],
   },
   molotov: {
     stats: [
@@ -166,6 +163,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'burstTemp', unit: 'temp', value: MOLOTOV_BURST_TEMP },
     ],
     traits: [
+      { key: 'heatHeld' },
       { key: 'fuse', variant: 'quenchable' },
       { key: 'smashable', refId: ALCOHOL.id },
       { key: 'fragile' },

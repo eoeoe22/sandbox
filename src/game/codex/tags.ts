@@ -72,7 +72,7 @@ const GROUPS: readonly { key: string; traits: readonly string[] }[] = [
     key: 'overlap',
     traits: ['porous', 'porousPowder', 'latticeFilter', 'overlapCarrier', 'overlapFluids'],
   },
-  { key: 'body', traits: ['floats', 'bouncy', 'spills'] },
+  { key: 'body', traits: ['floats', 'bouncy', 'spills', 'heatHeld'] },
 ];
 
 /** Every trait key this file files somewhere — what test/codex.ts checks the

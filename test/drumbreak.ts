@@ -51,6 +51,7 @@ const WATER = ID('Water');
 const IRON_POWDER = ID('Iron Powder');
 const MOLTEN_IRON = ID('Molten Iron');
 const CRUDE_OIL = ID('Crude Oil');
+const LAVA = ID('Lava');
 const ACID = ID('Acid');
 
 function makeWorld(w = 100, h = 100): { grid: Grid; sim: Simulation } {
@@ -72,18 +73,30 @@ const drums = (grid: Grid): SimCapsule[] =>
   grid.objects.filter((o): o is SimCapsule => o.kind === 'drum');
 const partsOf = (grid: Grid): string => JSON.stringify(drums(grid).map((d) => d.part).sort());
 const THREE_SHARDS = JSON.stringify(['piece1', 'piece2', 'piece3']);
-/** Hold a square block of AIR at `t`° around (cx,cy). Empty cells are perfect
- *  insulators in the heat kernel (conductivity 0 — Simulation.diffuseHeat), so
- *  this heats exactly the bodies standing in it and leaks into nothing else: no
- *  lava pool melting the stone floor out from under the scene, and the reading a
- *  body takes is the number written here rather than that number minus whatever
- *  its reservoir bled off toward a cold room. */
-function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): void {
+/** Hold a square LAVA bath at `t`° around (cx,cy), re-stamped every tick against
+ *  flow and diffusion — a furnace a body can actually feel.
+ *
+ *  This used to hold plain AIR at `t`, which was tidier (empty cells are perfect
+ *  insulators in the heat kernel, so nothing leaked into the stone floor) and is
+ *  now useless: air conducts nothing to a body either. A drum suspended in 1600°
+ *  air holds room temperature forever and never melts, which is the whole point of
+ *  the heat rule the melt trigger was moved onto (see the heat note in
+ *  evaluateTriggers). Real matter against the body is the only furnace there is.
+ *
+ *  Lava specifically because it is a liquid: it fills in around the barrel and
+ *  under it without ever counting as burial (the crush check is Solid-phase only),
+ *  and pinning its temperature each tick stops it freezing back to Stone — which
+ *  WOULD read as burial. It is also not Molten Iron, so the puddle these scenes
+ *  count for is still unambiguously the drum's own. */
+function holdFurnace(grid: Grid, cx: number, cy: number, r: number, t: number): void {
   for (let y = Math.max(0, cy - r); y <= Math.min(grid.height - 1, cy + r); y++)
     for (let x = Math.max(0, cx - r); x <= Math.min(grid.width - 1, cx + r); x++) {
       const i = grid.idx(x, y);
-      if (grid.cells[i] === 0) grid.temp[i] = t;
+      if (grid.cells[i] !== 0 && grid.cells[i] !== LAVA) continue;
+      grid.cells[i] = LAVA;
+      grid.temp[i] = t;
     }
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
 }
 
 // ─────────────────────────── 1. Blown open ────────────────────────────────────
@@ -242,7 +255,7 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
   let moltenPeak = 0;
   let shardsSeen = '';
   for (let t = 1; t <= 400; t++) {
-    holdAirHeat(grid, 50, 60, 14, 1600); // a furnace around whatever is left of it
+    holdFurnace(grid, 50, 60, 14, 1600); // a bath around whatever is left of it
     sim.step();
     moltenPeak = Math.max(moltenPeak, count(grid, MOLTEN_IRON));
     if (shardsAt < 0 && !grid.objects.includes(drum as SimBody)) {
@@ -315,7 +328,7 @@ function holdAirHeat(grid: Grid, cx: number, cy: number, r: number, t: number): 
   let shardsAt = -1;
   let moltenPeak = 0;
   for (let t = 1; t <= 400; t++) {
-    holdAirHeat(grid, 50, 60, 14, BAND);
+    holdFurnace(grid, 50, 60, 14, BAND);
     sim.step();
     moltenPeak = Math.max(moltenPeak, count(grid, MOLTEN_IRON));
     if (shardsAt < 0 && !grid.objects.includes(drum as SimBody)) shardsAt = t;

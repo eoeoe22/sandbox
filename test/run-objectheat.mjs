@@ -1,12 +1,12 @@
-// Bundles and runs the smoke-bomb underwater harness (test/smokebomb.ts) under
+// Bundles and runs the object heat-model harness (test/objectheat.ts) under
 // Node, stubbing the browser-only `?url` wasm import exactly like
-// run-active-tiles.mjs does. Run: `node test/run-smokebomb.mjs`.
+// run-active-tiles.mjs does. Run: `node test/run-objectheat.mjs`.
 import { build } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const out = join(__dirname, '..', 'node_modules', '.cache', 'smokebomb.bundle.mjs');
+const out = join(__dirname, '..', 'node_modules', '.cache', 'objectheat.bundle.mjs');
 
 const wasmUrlStub = {
   name: 'wasm-url-stub',
@@ -20,7 +20,7 @@ const wasmUrlStub = {
 };
 
 await build({
-  entryPoints: [join(__dirname, 'smokebomb.ts')],
+  entryPoints: [join(__dirname, 'objectheat.ts')],
   bundle: true,
   platform: 'node',
   format: 'esm',

@@ -220,7 +220,6 @@ function resampleObjects(
       o.momentOfInertia = o.momentOfInertia * s * s * s * s;
     } else if (
       o.kind === 'dynamite' ||
-      o.kind === 'smokebomb' ||
       o.kind === 'flashbang' ||
       o.kind === 'molotov'
     ) {

@@ -16,10 +16,10 @@ import { SPARK } from '../materials/spark';
 import { CO2 } from '../materials/co2';
 import { LIQUID_NITROGEN } from '../materials/liquidnitrogen';
 import { FIRE } from '../materials/fire';
-import { SMOKE } from '../materials/smoke';
 import { SAWDUST } from '../materials/sawdust';
 import { ALCOHOL } from '../materials/alcohol';
 import { BROKEN_GLASS } from '../materials/brokenglass';
+import { MOLTEN_GLASS, GLASS_MELT_TEMP } from '../materials/moltenglass';
 import { FUEL_BURN_TEMP } from '../materials/combustion';
 import { VOID } from '../materials/void';
 import { TERMITE } from '../materials/termite';
@@ -67,10 +67,13 @@ export interface SimObject {
    *  destruction is time-gated (like the drum's melt) so a stray hot pixel
    *  doesn't pop the ball — only sustained exposure does. */
   heatTicks: number;
-  /** The body's own heat reservoir (°). Relaxes toward the surrounding footprint
-   *  temperature each tick and is what the 가열/냉각 brush writes, so heat/cool
+  /** The body's own heat reservoir (°). Trades heat both ways with the matter the
+   *  footprint is *touching* — and only with that, so a body in still air holds
+   *  its temperature the way an uncooled lava blob does (see the conduction step
+   *  in evaluateTriggers). It is also what the 가열/냉각 brush writes, so heat/cool
    *  reaches a body even where it floats over empty air (which the cell heat brush
-   *  can't warm). The burn trigger judges by max(surroundings, this). */
+   *  can't warm), and it is what the 온도 오버레이 wash and the 돋보기 readout show.
+   *  The burn trigger judges by max(surroundings, this). */
   temp: number;
   /** Orientation (rad) of the 1-axis spin. The disc looks the same at every
    *  angle, so unlike a capsule this never changes what's drawn — it only lives
@@ -324,61 +327,8 @@ export interface SimDynamite {
 }
 
 /**
- * A smoke bomb — a capsule body (it shares the drum/dynamite segment+radius
- * physics and 1-axis rotation, so it tumbles and rolls) that is a *smoke source*
- * rather than an explosive. Thrown, it immediately starts trickling a wisp of
- * Smoke from around itself; four seconds later the canister lets go and pours out a
- * dense cloud for two and a half seconds, and then it is spent and gone (소환 시
- * 소량의 연기를 뿜다가 4초 후 대량의 연기를 2.5초간 발산 → 소멸).
- *
- * That's the whole lifecycle, and the two counters below are all the state it
- * takes: `fuseTicks` runs the quiet trickle down, then `ventTicks` runs the
- * discharge down, then the body is dropped. Nothing about it detonates — it
- * carries no blast at all, which is exactly what distinguishes it from the
- * dynamite it otherwise resembles structurally.
- */
-export interface SimSmokeBomb {
-  kind: 'smokebomb';
-  /** Center position (float, grid coordinates). */
-  x: number;
-  y: number;
-  /** Velocity (cells/tick). */
-  vx: number;
-  vy: number;
-  /** Orientation of the long axis in radians (0 = upright, nozzle pointing up). */
-  angle: number;
-  /** Spin rate in radians/tick, integrated from contact torque. */
-  angularVelocity: number;
-  /** Half the straight segment between the two round caps (cells). */
-  halfLength: number;
-  /** Cap radius (cells). */
-  radius: number;
-  /** Mass — buoyancy and collision response. */
-  mass: number;
-  /** Rotational inertia (see SimCapsule). */
-  momentOfInertia: number;
-  /** Coefficient of restitution (0..1) — a steel canister barely bounces. */
-  restitution: number;
-  /** Consecutive ticks the footprint has sampled above the cook-off threshold, so
-   *  a stray hot pixel doesn't pop it early — only sustained heat does. */
-  heatTicks: number;
-  /** The canister's own heat reservoir (°) — see SimObject.temp. The 가열 brush
-   *  writes it, so heating one (even in mid-air) sets the charge off early. */
-  temp: number;
-  /** Ticks left of the quiet trickle before the heavy discharge starts. Reaching
-   *  0 — or a sustained bath of heat — opens the vent. */
-  fuseTicks: number;
-  /** Ticks left of the heavy discharge. 0 while still on the fuse; set the moment
-   *  the vent opens, and the body is dropped when it runs back down to 0. */
-  ventTicks: number;
-  /** True while the pointer is dragging this body (see SimObject.held): its physics
-   *  and its countdown alike are suspended so it tracks the cursor. */
-  held?: boolean;
-}
-
-/**
- * A flashbang — a capsule body (it shares the drum/dynamite/smoke-bomb
- * segment+radius physics and 1-axis rotation, so it tumbles and rolls) that is a
+ * A flashbang — a capsule body (it shares the drum/dynamite segment+radius
+ * physics and 1-axis rotation, so it tumbles and rolls) that is a
  * *timer* and nothing else: `fuseTicks` runs down from the moment it's created
  * and at zero the can goes off in the same blinding white flash a Flash Powder
  * charge makes (섬광폭발 — see detonateFlashbang and materials/flash.ts).
@@ -386,18 +336,22 @@ export interface SimSmokeBomb {
  * What separates it from the dynamite it otherwise resembles structurally is
  * what it does *before* that, which is nothing at all (기획: 터지기 전까지 도화선
  * 효과 없음). The dynamite has a lit fuse that throws real Fire, boils the water
- * it's dropped into, and can be snuffed to a dud and re-lit; the smoke bomb
- * trickles a marker wisp for its whole first stage. This can just sits there,
- * inert-looking, and then it is over. So there is no `lit` flag either: nothing
- * can put out a fuse that was never burning, and the countdown has no pause
- * state to keep. The one thing that does suspend it is the pointer holding the
- * body (`held`), and that suspends every body's everything, not this one's timer
- * in particular.
+ * it's dropped into, and can be snuffed to a dud and re-lit. This can just sits
+ * there, inert-looking, and then it is over. So there is no `lit` flag either:
+ * nothing can put out a fuse that was never burning.
+ *
+ * The one thing that reaches the countdown itself is COLD (냉각하면 폭발이 늦어진다).
+ * Chilled below freezing the can's clockwork drags — the timer runs at a third
+ * speed — and in a genuinely deep freeze it stops outright, resuming from where it
+ * paused when the can thaws. It is a delay, never a defusal: nothing about being
+ * frozen shortens the timer or empties the charge, so a can iced down is a can
+ * that goes off later, which is the whole toy (see FLASHBANG_CHILL_TEMP and
+ * stepFlashbang). The other suspender is the pointer holding the body (`held`),
+ * and that suspends every body's everything, not this one's timer in particular.
  *
  * It is still set off *early* by the things that set off any charge (열·폭발·끼임):
- * a sustained bath at Flash Powder's own 200° autoignition point cooks it off
- * (FLASHBANG_IGNITE_TEMP), and a blast or being crushed detonates it through
- * destroyByproduct, so a pile of them chains.
+ * a sustained bath above FLASHBANG_IGNITE_TEMP cooks it off, and a blast or being
+ * crushed detonates it through destroyByproduct, so a pile of them chains.
  */
 export interface SimFlashbang {
   kind: 'flashbang';
@@ -424,13 +378,17 @@ export interface SimFlashbang {
   /** Consecutive ticks the footprint has sampled above the cook-off threshold, so
    *  a stray hot pixel doesn't pop it early — only sustained heat does. */
   heatTicks: number;
-  /** The can's own heat reservoir (°) — see SimObject.temp. The 가열 brush writes
-   *  it, so heating one (even in mid-air) sets it off early. */
+  /** The can's own heat reservoir (°) — see SimObject.temp. The 가열/냉각 brushes
+   *  write it, so heating one (even in mid-air) sets it off early and chilling one
+   *  drags its countdown out. */
   temp: number;
-  /** Ticks left before it flashes. Counts down every tick from creation — there is
-   *  no fuse to snuff or re-light, so nothing about the charge itself touches this
-   *  (see the interface header). The one thing that stops it is `held`, which stops
-   *  every body's every judgement, not this timer in particular. */
+  /** Ticks left before it flashes. Counts down from creation — there is no fuse to
+   *  snuff or re-light, so nothing about the charge itself touches this (see the
+   *  interface header). Held as a FLOAT rather than an integer because cold slows
+   *  the countdown to a fractional rate (see flashbangTickRate): a chilled can
+   *  spends a third of a tick per tick, and the leftover has to live somewhere.
+   *  The other thing that stops it is `held`, which stops every body's every
+   *  judgement, not this timer in particular. */
   fuseTicks: number;
   /** True while the pointer is dragging this body (see SimObject.held): its
    *  physics and its countdown alike are suspended so it tracks the cursor. */
@@ -450,7 +408,7 @@ export type WoodBoxPart = 'crate' | 'piece1' | 'piece2' | 'piece3';
 
 /**
  * A wooden box — the crate, or one of the three shards it breaks into. Like the
- * drum, the dynamite and the smoke bomb it is a **body with 1-axis rotation**, so
+ * drum and the dynamite it is a **body with 1-axis rotation**, so
  * contact torque (r × J) spins it: a crate shoved along the ground tips and
  * tumbles, one landing on a slope runs down it, a blast sends the shards spinning
  * off.
@@ -544,8 +502,8 @@ export interface SimWoodBox {
 export type MolotovBottle = 'full' | 'empty';
 
 /**
- * A Molotov cocktail — a capsule body (it shares the drum/dynamite/smoke-bomb
- * segment+radius physics and 1-axis rotation, so it tumbles and rolls) that is
+ * A Molotov cocktail — a capsule body (it shares the drum/dynamite segment+radius
+ * physics and 1-axis rotation, so it tumbles and rolls) that is
  * defined by being FRAGILE and by being ALIGHT. It is the first body meant to be
  * broken: where a wooden crate needs a genuine hurl to burst (WOOD_BOX_SMASH_SPEED
  * 9), a glass bottle gives way at a fraction of that (MOLOTOV_SMASH_SPEED), so
@@ -605,13 +563,12 @@ export interface SimMolotov {
 }
 
 /** Anything in the object layer: circles (balls) and capsules (drums, dynamite,
- *  smoke bombs, flashbangs, wooden boxes, molotovs) share one array on the Grid,
- *  discriminated by `kind`. */
+ *  flashbangs, wooden boxes, molotovs) share one array on the Grid, discriminated
+ *  by `kind`. */
 export type SimBody =
   | SimObject
   | SimCapsule
   | SimDynamite
-  | SimSmokeBomb
   | SimFlashbang
   | SimWoodBox
   | SimMolotov;
@@ -621,14 +578,14 @@ export type SimBody =
  * rotation. The collision / buoyancy / integration routines
  * (gridContacts, resolveCapsuleCollision, sampleMediumCapsule,
  * stepCapsule) operate through this structural type, so the drum, the dynamite,
- * the smoke bomb, the crate and the molotov all reuse them with no per-kind
+ * the flashbang, the crate and the molotov all reuse them with no per-kind
  * branch — only the sprite and the destroy/trigger rules differ by kind.
  *
  * The shape those routines actually read is the body's CORE (see bodyCore), and
  * the last three fields are what pick it: a body carrying `halfW`/`halfH`/
  * `cornerRadius` is boxy (flat faces — the drums and the crate), one without them
  * falls back to the stadium its `halfLength`/`radius` describe (the dynamite, the
- * smoke bomb, the molotov). Structural, like the rest of this type: nothing here
+ * flashbang, the molotov). Structural, like the rest of this type: nothing here
  * branches on `kind`.
  */
 type CapsuleBody = {
@@ -650,14 +607,26 @@ type CapsuleBody = {
 
 /**
  * Blue-drum defaults (the 빈 파란 드럼통). As an *empty* (hollow) drum its
- * effective density is well under Water (3) so it floats; restitution is low so
+ * effective density stays under Water (3) so it floats — low in the water, see
+ * DRUM_DENSITY; restitution is low so
  * it thuds rather than bounces, and contact friction is high enough to convert
  * sliding into rolling. Size follows the 24×32 sprite's aspect (2·radius wide by
  * 2·(halfLength+radius) tall ⇒ 12×16 cells at these values), medium in the world.
  */
 export const DRUM_RADIUS = 6;
 export const DRUM_HALF_LENGTH = 2;
-export const DRUM_DENSITY = 1.6;
+/** Raised 1.6 → 2.2 (더 무겁게). At 1.6 the biggest body in the world massed only
+ *  five rubber balls and less than a stick of dynamite, which read wrong the
+ *  moment anything pushed on it — a Fan sent the drum skating faster than the
+ *  crate beside it. Mass is density × footprint area, and it now divides both the
+ *  wind push and the magnet's grip, so this number is what makes a drum feel like
+ *  a drum rather than a prop.
+ *
+ *  Still under Water's 3 — an empty steel barrel has to float — but no longer
+ *  "well under": the float equilibrium is where the submerged fraction equals
+ *  density/3, so it rides at 53% submerged before and ~73% now. It floats low,
+ *  with its top quarter out, instead of bobbing like a beach ball. */
+export const DRUM_DENSITY = 2.2;
 export const DRUM_RESTITUTION = 0.26;
 /** Contact friction coefficient (μ): the tangential impulse cap as a fraction of
  *  the normal impulse. High enough that a landing drum grabs and rolls instead
@@ -893,17 +862,23 @@ export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * SIM_HZ_AT_1X);
 /** Tip temperature (°) at/above which a snuffed (dud) fuse catches again and the
  *  countdown resumes — a flame/ember/hot surface touched to the fuse re-lights it.
  *  Above ambient/boiling so warmth alone won't, but any real flame (Fire 1000°,
- *  embers, molten iron) or hotter will; below the autoignite temp, so re-lighting
- *  resumes the timer rather than detonating outright. */
+ *  embers, molten iron) or hotter will. It now sits just *under* the autoignite
+ *  temp rather than far below it, and the two are told apart by time instead of by
+ *  degrees: re-lighting is instant, while autoignition needs DYNAMITE_HEAT_TICKS
+ *  of sustained heat. So a flame brushed across the fuse re-lights a dud, and a
+ *  flame it is left lying in detonates it. */
 const FUSE_RELIGHT_TEMP = 200;
 /** Footprint temperature (°) at/above which an external heat source cooks the
- *  stick off (autoignition). Set deliberately *above ordinary Fire's 1000°* so the
- *  lit fuse's OWN emitted Fire (which sits right beside a resting stick) can never
- *  self-detonate it — the fuse countdown stays the sole timer — while a genuinely
- *  hotter bath (Lava 1500°, Blue Flame 1800°) or the 가열 brush (up to 2000°) still
- *  cooks it off. This also reads true: real dynamite burns rather than detonates
- *  in an open flame; it wants a blasting cap (here: the fuse, a blast, or a crush). */
-export const DYNAMITE_AUTOIGNITE_TEMP = 1100;
+ *  stick off (autoignition). Real nitroglycerin dynamite goes off somewhere around
+ *  200°, and that is now the number the sim uses: 불에 던지면 터진다 is both truer and
+ *  far more fun than the old 1100°, which was set that high for one mechanical
+ *  reason only — to sit above ordinary Fire's 1000° so a stick could never be
+ *  cooked off by its OWN lit fuse. That defence has moved to where it belongs
+ *  (WICK_PLUME_MARGIN: a lit body simply doesn't read its own flame as heat), which
+ *  frees the threshold to be a real material property instead of a workaround.
+ *  So: anything genuinely hot — Fire, Lava, molten metal, a lit crate, the 가열
+ *  brush — now sets a stick off, and the stick's own fuse still doesn't. */
+export const DYNAMITE_AUTOIGNITE_TEMP = 220;
 /** Sustained ticks above the autoignite temp before it goes off, so a single hot
  *  splash (a fleck of flung lava) doesn't instant-pop it — only a sustained bath
  *  does. Short enough that Lava still detonates it promptly. */
@@ -943,7 +918,7 @@ const FUSE_SNUFF_TEMP = -20;
  *  warmed cell averages back below boiling before it can steam. Applied to the tip
  *  cell and its four orthogonal neighbours; the cluster's centre keeps its heat
  *  (its neighbours are heated too) and boils, while the arms shed theirs, so the
- *  boil stays a small wisp. Well under the stick's 1100° autoignition (and the tip
+ *  boil stays a small wisp. Well under the stick's autoignition point (and the tip
  *  sits cells away from the body's footprint), so it never cooks the stick itself. */
 const FUSE_BOIL_FLOOR = 130;
 
@@ -988,109 +963,13 @@ export function createDynamite(
 }
 
 /**
- * Smoke-bomb defaults. A small steel canister — denser than Water (3) so it sinks,
- * barely bouncy. Its capsule box (2·radius wide × 2·(halfLength+radius) tall =
- * 6.5 × 10 cells) matches the 13×20 sprite's aspect, so display and collision
- * agree exactly as they do for the drum and the dynamite.
- */
-export const SMOKE_BOMB_RADIUS = 3.25;
-export const SMOKE_BOMB_HALF_LENGTH = 1.75;
-export const SMOKE_BOMB_DENSITY = 3.2;
-export const SMOKE_BOMB_RESTITUTION = 0.25;
-/** Max magnitude (rad/tick) of the small random spin a freshly-placed canister
- *  spawns with, so it topples off its cap to one side instead of balancing —
- *  the same gentle nudge the dynamite gets (see DYNAMITE_SPAWN_SPIN). */
-export const SMOKE_BOMB_SPAWN_SPIN = 0.06;
-/** How long the quiet trickle lasts before the canister lets go (기획: 4초). Sized
- *  in *seconds* at the default sim rate, like the dynamite's fuse, so a faster or
- *  slower sandbox scales the wall-clock delay along with everything else. */
-export const SMOKE_BOMB_FUSE_TICKS = Math.round(4 * SIM_HZ_AT_1X);
-/** How long the heavy discharge lasts before the spent canister vanishes (기획:
- *  연기 생성 시간 2.5초). Sized in seconds like the fuse, so the sandbox's speed
- *  dial scales it too. */
-export const SMOKE_BOMB_VENT_TICKS = Math.round(2.5 * SIM_HZ_AT_1X);
-// Both stages seed Smoke over a disc (see puffDisc); they differ only in where
-// that disc sits, how wide it is and how densely it fills. The numbers are sized
-// so the two stages read as different *events*, not as one turned up: the fuse
-// wisp is a marker, the discharge is a wall of smoke.
-/** How far the fuse-stage wisp reaches from the canister. Small and fixed — it
- *  should read as a thin plume seeping off the can, not as a cloud. Sized a little
- *  past the body's own half-height so the wisp clears the sprite instead of being
- *  drawn entirely behind it. */
-const SMOKE_BOMB_TRICKLE_RADIUS = 6.5;
-/** Per-cell, per-tick fill chance of that wisp — a couple of new cells a tick. The first four seconds are meant to be a thin plume
- *  marking where the canister landed (소량의 연기), so the discharge that follows
- *  is a clear step change rather than more of the same. */
-const SMOKE_BOMB_TRICKLE_DENSITY = 0.1;
-/** Per-cell, per-tick chance the open vent seeds a Smoke cell somewhere in its
- *  cloud radius, and it keeps that up for 2.5 seconds while the cloud rises and
- *  spreads well past the area it was seeded into — a canister genuinely blankets
- *  its surroundings (대량의 연기). Only cells the front can actually REACH are
- *  seeded (see puffDisc), so a bomb wedged in a crevice vents through the gaps it
- *  has and a bomb behind a wall doesn't smoke through it. */
-const SMOKE_BOMB_VENT_DENSITY = 0.22;
-/** How far the discharge's front travels, as a multiple of the body's own reach
- *  (≈5 cells) — so ~30 cells of travel, a cloud tens of cells across before the gas
- *  starts drifting on its own. It erupts around the whole canister rather than
- *  a thin plume the way the fuse-stage wisp does. */
-const SMOKE_BOMB_VENT_SPREAD = 6;
-/** Footprint/reservoir temperature (°) at/above which external heat cooks the
- *  charge off early, cutting the fuse short and opening the vent now. Set at the
- *  rubber ball's scorch point (300°) rather than the dynamite's 1100°: a smoke
- *  composition is meant to be *lit*, so any real fire should set one off, and
- *  there's no blast for an early trigger to make dangerous. */
-export const SMOKE_BOMB_IGNITE_TEMP = 300;
-/** Sustained ticks above SMOKE_BOMB_IGNITE_TEMP before the early trigger fires, so
- *  a single hot splash doesn't pop it. */
-const SMOKE_BOMB_HEAT_TICKS = 5;
-
-/**
- * Build a smoke bomb centered at (x,y), at rest and upright with its fuse already
- * running, plus the same weak random spin the dynamite spawns with so it topples
- * to one side. Mass and moment of inertia follow the shared capsule formulas.
- */
-export function createSmokeBomb(
-  x: number,
-  y: number,
-  radius = SMOKE_BOMB_RADIUS,
-  halfLength = SMOKE_BOMB_HALF_LENGTH,
-): SimSmokeBomb {
-  const r = radius > 1 ? radius : 1;
-  const l = halfLength > 0 ? halfLength : 0;
-  const area = 4 * r * l + Math.PI * r * r;
-  const mass = SMOKE_BOMB_DENSITY * area;
-  const w = 2 * r;
-  const h = 2 * (l + r);
-  const momentOfInertia = (mass * (w * w + h * h)) / 12;
-  return {
-    kind: 'smokebomb',
-    x,
-    y,
-    vx: 0,
-    vy: 0,
-    angle: 0,
-    angularVelocity: (Math.random() * 2 - 1) * SMOKE_BOMB_SPAWN_SPIN,
-    halfLength: l,
-    radius: r,
-    mass,
-    momentOfInertia,
-    restitution: SMOKE_BOMB_RESTITUTION,
-    heatTicks: 0,
-    temp: AMBIENT_TEMP,
-    fuseTicks: SMOKE_BOMB_FUSE_TICKS,
-    ventTicks: 0,
-  };
-}
-
-/**
  * Flashbang defaults. A small steel can — denser than Water (3) so it sinks (and
  * keeps its countdown down there: there is no flame for a pond to put out), barely
  * bouncy. Its capsule box (2·radius wide × 2·(halfLength+radius) tall = 4 × 9
  * cells) matches the 8×18 sprite's aspect at the standard 1 cell : 2 sprite px,
  * so display and collision agree exactly as they do for the drum, the dynamite
- * and the smoke bomb. Slimmer than the smoke bomb (6.5 × 10) — a stun grenade is
- * a smaller thing than a smoke canister, and the two must not be mistaken for
- * each other at a glance.
+ * and the molotov. Slimmer than the stick of dynamite it sits beside in the
+ * palette, so the two are never mistaken for each other at a glance.
  */
 export const FLASHBANG_RADIUS = 2;
 export const FLASHBANG_HALF_LENGTH = 2.5;
@@ -1098,27 +977,57 @@ export const FLASHBANG_DENSITY = 3.2;
 export const FLASHBANG_RESTITUTION = 0.25;
 /** Max magnitude (rad/tick) of the small random spin a freshly-placed can spawns
  *  with, so it topples off its cap to one side instead of balancing — the same
- *  gentle nudge the dynamite and the smoke bomb get (see DYNAMITE_SPAWN_SPIN). */
+ *  gentle nudge the dynamite gets (see DYNAMITE_SPAWN_SPIN). */
 export const FLASHBANG_SPAWN_SPIN = 0.06;
 /** How long after it's created the can flashes (기획: 생성 시 몇 초 뒤 섬광폭발 —
  *  3초). Sized in *seconds* at the default sim rate like every other body's timer,
  *  so the sandbox's speed dial scales the wall-clock delay with everything else.
  *  Fixed rather than rolled per-can the way the dynamite's 3–5s fuse is: this one
  *  shows you nothing while it runs (no fuse, no wisp), so a random length would be
- *  an invisible random, and a throw you can't time is no fun. Shorter than the
- *  smoke bomb's 4s and at the floor of the dynamite's range. */
+ *  an invisible random, and a throw you can't time is no fun. Sits at the floor of
+ *  the dynamite's 3–5s range. */
 export const FLASHBANG_FUSE_TICKS = Math.round(3 * SIM_HZ_AT_1X);
 /** Footprint/reservoir temperature (°) at/above which external heat cooks the can
- *  off early. Set at Flash Powder's own autoignition point (200°, see
- *  materials/flashpowder.ts) rather than the dynamite's 1100°, because that is
- *  literally what is inside it — this is the most heat-sensitive charge in the
- *  game, and a can that has been sitting in a fire should already have gone. It's
- *  also free of the dynamite's constraint: that threshold has to clear its own
- *  fuse's 1000° Fire, and a flashbang emits nothing to be sensitive to. */
-export const FLASHBANG_IGNITE_TEMP = 200;
+ *  off early (가열 폭발 온도). It used to sit at Flash Powder's own 200°
+ *  autoignition point — literally what is inside it — but 200° is barely warm in
+ *  this sandbox: a can rolled anywhere near an ember, a bed of coals or a warm
+ *  metal floor popped before its own countdown ever mattered, which made the
+ *  timer, the object's entire mechanic, moot. Raised to 600°: comfortably clear of
+ *  every incidental warm surface and of the 300° both the molotov's wick and the
+ *  old smoke charge answered to, while still well under ordinary Fire's 1000° —
+ *  so throwing one into a fire (or lava, or a Blue Flame jet, or the 가열 브러시)
+ *  still cooks it off, which is the fun of it. Between this and the chill floor
+ *  below, the can now has a genuine working range instead of a hair trigger. */
+export const FLASHBANG_IGNITE_TEMP = 600;
 /** Sustained ticks above FLASHBANG_IGNITE_TEMP before the early trigger fires, so
  *  a single hot splash (a fleck of flung lava) doesn't instant-pop it. */
 const FLASHBANG_HEAT_TICKS = 5;
+/** Temperature (°) at/below which the can is *chilled* and its countdown drags at
+ *  FLASHBANG_CHILL_RATE (얼어붙으면 폭발 타이머가 느려진다). Water's own freezing
+ *  point, so the threshold is the one every player already reads off the world:
+ *  if the puddle the can is lying in has frozen over, the can's clock has slowed. */
+export const FLASHBANG_CHILL_TEMP = 0;
+/** Temperature (°) at/below which the countdown stops outright rather than merely
+ *  dragging. Sits at Snow's own resting cold and well inside what Liquid Nitrogen
+ *  or a sustained 냉각 브러시 reaches, so a deep freeze is something you have to
+ *  actually *build* — an ordinary frozen puddle only slows the can down. Still not
+ *  a defusal: the moment it thaws past this, the countdown resumes from exactly
+ *  where it paused (there is no state to reset — see fuseTicks). */
+export const FLASHBANG_DEEP_CHILL_TEMP = -30;
+/** Fraction of a tick a merely-chilled can's countdown spends per tick, so a 3s
+ *  fuse stretches to 9s in the cold. A third rather than a half because half reads
+ *  as "the sandbox is running slow", while a third reads as an effect. */
+export const FLASHBANG_CHILL_RATE = 1 / 3;
+
+/** How fast a flashbang's countdown runs this tick, as a fraction of a tick, given
+ *  the can's own heat reservoir, which is how a bath of liquid nitrogen (by contact)
+ *  and a 냉각 브러시 (which writes the reservoir directly) both reach it. Full speed
+ *  when the can is anywhere above freezing,
+ *  a third of speed when it is chilled, and nothing at all in a deep freeze. */
+function flashbangTickRate(chill: number): number {
+  if (chill > FLASHBANG_CHILL_TEMP) return 1;
+  return chill > FLASHBANG_DEEP_CHILL_TEMP ? FLASHBANG_CHILL_RATE : 0;
+}
 /** Flash reach (cells), before blast.ts's global 2/3 scale — so ~20 cells of
  *  actual radius. A grenade's worth: three times a single Flash Powder grain's
  *  own 10 and clearly inside the dynamite's 36-cell shockwave, so one can whites
@@ -1133,8 +1042,8 @@ export const FLASHBANG_POWER = 6;
 
 /**
  * Build a flashbang centered at (x,y), at rest and upright with its countdown
- * already running, plus the same weak random spin the dynamite and smoke bomb
- * spawn with so it topples to one side. Mass and moment of inertia follow the
+ * already running, plus the same weak random spin the dynamite spawns with so it
+ * topples to one side. Mass and moment of inertia follow the
  * shared capsule formulas.
  */
 export function createFlashbang(
@@ -1190,8 +1099,8 @@ export const WOOD_BOX_IGNITE_TEMP = 500;
  *  single hot fleck brushing past doesn't set a crate alight. */
 const WOOD_BOX_IGNITE_TICKS = 5;
 /** How long the whole crate burns before it gives way, and how long a single
- *  shard does. Sized in *seconds* at the default sim rate like the dynamite fuse
- *  and the smoke bomb's stages, so the sandbox's speed dial scales the burn along
+ *  shard does. Sized in *seconds* at the default sim rate like the dynamite fuse,
+ *  so the sandbox's speed dial scales the burn along
  *  with everything else. The crate outlasts a shard — there's more of it — and the
  *  two together make a burning crate a ~8-second event: it flames, falls apart
  *  into three burning shards, and those crumble to Sawdust. */
@@ -1406,7 +1315,7 @@ export const MOLOTOV_DENSITY = 2.6;
 export const MOLOTOV_RESTITUTION = 0.1;
 /** Max magnitude (rad/tick) of the small random spin a freshly-placed bottle
  *  spawns with, so it topples off its base to one side instead of balancing —
- *  the same gentle nudge the dynamite and the smoke bomb get. */
+ *  the same gentle nudge the dynamite and the flashbang get. */
 export const MOLOTOV_SPAWN_SPIN = 0.06;
 /**
  * Normal closing speed (cells/tick) at which meeting a wall or any solid shatters
@@ -1441,12 +1350,16 @@ export const MOLOTOV_FUEL_TICKS = Math.round(15 * SIM_HZ_AT_1X);
  *  contrast, water can't touch at all. */
 const MOLOTOV_DOUSE_FRAC = 0.1;
 /** Footprint/reservoir temperature (°) at/above which the bottle itself bursts
- *  from heat — the fuel boils and the glass lets go. Set at the dynamite's cook-off
- *  point and for the same reason: it is deliberately *above ordinary Fire's 1000°*,
- *  so the wick's OWN emitted Fire (which sits right beside the neck) can never burst
- *  the bottle it belongs to, while a genuinely hotter bath (Lava 1500°, Blue Flame
- *  1800°), the 가열 brush or a held Heat Ray does. */
-export const MOLOTOV_BURST_TEMP = 1100;
+ *  from heat (가열 폭발 온도). It is GLASS_MELT_TEMP, not a number of its own: the
+ *  bottle is a glass bottle, so the temperature at which it stops being one is the
+ *  temperature at which glass stops being glass, and tying the two together means a
+ *  pane and a bottle in the same fire give way at the same moment instead of at two
+ *  numbers that drifted apart. Comfortably above ordinary Fire's 1000°, so a
+ *  bottle merely sitting in flames doesn't melt — it wants Lava (1500°), a Blue
+ *  Flame jet (1800°), the 가열 brush or a held Heat Ray. (The wick's own Fire is a
+ *  separate matter and no longer relies on this margin at all: a lit body doesn't
+ *  read its own flame as heat — see WICK_PLUME_MARGIN.) */
+export const MOLOTOV_BURST_TEMP = GLASS_MELT_TEMP;
 /** Sustained ticks above MOLOTOV_BURST_TEMP before it bursts, so a single hot
  *  splash doesn't pop it. */
 const MOLOTOV_BURST_TICKS = 5;
@@ -1456,6 +1369,13 @@ const MOLOTOV_BURST_TICKS = 5;
  *  molotov is a puddle and a scatter of shards, not a drum's flood. */
 const MOLOTOV_GLASS_CHANCE = 0.22;
 const MOLOTOV_ALCOHOL_CHANCE = 0.55;
+/** Per-cell chance a bottle that MELTED (rather than being smashed — see
+ *  meltMolotov) claims that cell of its footprint at all. The claimed cells are
+ *  then split evenly between Molten Glass and Alcohol, so this is the total
+ *  coverage of the two together: level with what the smashed path lays down
+ *  (0.22 glass + 0.78·0.55 alcohol ≈ 0.65), because a bottle that melts open and a
+ *  bottle that is thrown at a wall are the same amount of bottle. */
+const MOLOTOV_MELT_CHANCE = 0.65;
 /** How hard the shards are thrown (the `out` budget launchDebris scales its speed
  *  from). Level with the wooden crate's Sawdust scatter — a bursting bottle sprays
  *  glass the way a bursting shard sprays shavings. */
@@ -1469,7 +1389,7 @@ export function molotovBottle(o: SimMolotov): MolotovBottle {
 /**
  * Build a Molotov cocktail centered at (x,y) — spawned upright with its wick
  * already lit (불붙은 상태로 스폰) and a full charge of fuel, plus the same weak
- * random spin the dynamite and the smoke bomb get so it topples to one side
+ * random spin the dynamite and the flashbang get so it topples to one side
  * instead of balancing on its base. Mass and moment of inertia follow the shared
  * capsule formulas; the geometry comes from the sprite (see MOLOTOV_CELLS_PER_PX).
  */
@@ -1863,7 +1783,7 @@ function rimFragments(cap: number, halfW: number): number {
  * with the fragment count/speed scaled to the entry speed and capped small. The
  * only place the object layer writes fluid cells; everywhere else it reads.
  *
- * Body-generic (bodyRim): the ball, the drums, the dynamite, the smoke bomb and
+ * Body-generic (bodyRim): the ball, the drums, the dynamite, the flashbang and
  * the wooden crate all splash through this one path.
  */
 function spawnSplash(o: SimObject | CapsuleBody, ctx: SimContext, entrySpeed: number): void {
@@ -2066,7 +1986,7 @@ function capsuleAxis(o: CapsuleBody): [number, number] {
 // the three ways that rectangle is allowed to degenerate:
 //
 //   hx = 0, hy = 0  →  a disc     — the rubber ball
-//   hx = 0, hy > 0  →  a stadium  — the dynamite, the smoke bomb, the molotov
+//   hx = 0, hy > 0  →  a stadium  — the dynamite, the flashbang, the molotov
 //   hx > 0, hy > 0  →  a box      — the drums (barrel and shards) and the crate
 //
 // The last case is why this exists. A capsule has no flat face anywhere: a
@@ -2693,46 +2613,210 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 }
 
 /**
+ * Flat (x, y) pairs of the footprint cells the last `scanBodyExposure` found the
+ * body genuinely *touching* — the cells it can trade heat with. Reused across
+ * calls so a per-tick, per-body scan allocates nothing; the first
+ * `2 * contactCount` entries are the live ones and everything past them is stale.
+ *
+ * Valid only until the next `scanBodyExposure` call, so a caller that wants the
+ * contact set must consume it immediately (evaluateTriggers does, in its
+ * conduction step, before running any trigger that could rescan).
+ */
+const contactCells: number[] = [];
+
+/**
+ * The plume a lit body throws off its own wick, which it is not allowed to read as
+ * heat — 도화선 불이 스스로를 가열하지 않게.
+ *
+ * A lit stick of dynamite and a lit molotov both throw a *real* 1000° Fire cell off
+ * the wick every tick (that is the whole point — the flame has to be able to light
+ * the oil slick the bottle is lying in), and that flame lands half a cell past the
+ * cap. The old defence against it was purely numeric: keep every heat threshold
+ * above Fire's 1000° and a body can't cook itself. Two changes broke that. The
+ * contact shell (OBJECT_CONTACT_MARGIN) now reaches exactly far enough to pick the
+ * wick flame up as *touching* matter, so a lit body pulled its own flame into its
+ * reservoir and sat there glowing red in the inspect overlay; and dynamite's
+ * autoignite point has come down to a realistic 220°, well under Fire, so the
+ * numeric defence is gone entirely.
+ *
+ * So the exclusion is geometric instead — and specifically a *column*, because
+ * Fire is a gas. The cell the wick spawned does not stay where it was put: it
+ * rises and flickers sideways, so within a few ticks the body's own flame is well
+ * outside any radius drawn around the wick, and a body lying fuse-down breathes
+ * its own plume straight up into its own footprint. A Fire cell is therefore taken
+ * to be the body's own when it sits over the wick — within the body's own reach
+ * (plus this margin) horizontally, at or above the wick vertically, with a cell of
+ * slack below for the tick the flame is born on. The width is the body's reach
+ * rather than a fixed number because that is how far a flame can wander and still
+ * be a flame *on it*: a bottle lying on its side is five cells long.
+ *
+ * The test is on Fire and nothing else. It is emphatically NOT "all Fire while
+ * lit", which is what the first cut did and which is far too blunt: it made a lit
+ * body deaf to fire it had nothing to do with, so a stick thrown into a bonfire
+ * read room temperature the whole way down and quietly finished its countdown —
+ * both the same overlay lie this change set out to kill, and the direct opposite
+ * of why DYNAMITE_AUTOIGNITE_TEMP was allowed down to 220° (불에 던지면 터진다).
+ *
+ * Two things it deliberately does NOT do.
+ *
+ * It does not un-read the ground the flame *scorches*, which an earlier cut did
+ * with a disc around the wick. Measured against a doused control, a lit molotov's
+ * whole residual self-heating is about seven degrees, and restoring the disc buys
+ * exactly ONE of them — a resting body holds its wick clear of the ground, and the
+ * little the stone picks up it sheds again into the body's whole cold contact
+ * patch. A constant and a condition for one degree is not a trade worth making.
+ * (The exception is a body *wedged* where its flame can't rise — a stick jammed in
+ * a shaft under a low ceiling re-heats the same touching stone and drifts to
+ * ~150° over six hundred ticks. That is under the 220° cook-off and under the 200°
+ * where the thermal wash begins, so nothing visible or fatal comes of it, and it
+ * is arguably just true: a flame trapped against a stick really does heat it.)
+ *
+ * And it cannot tell a body's own plume from a fire someone lit exactly where that
+ * plume goes. For a body lying on its side the column reaches across the near half
+ * of it, so fire resting on top of that half — and *only* there, with nothing at
+ * either tip and nothing below — is swallowed and the body reads room temperature.
+ * That is the irreducible cost of a geometric rule: the plume and the fire are the
+ * same material in the same place. It stays narrow in practice because fire
+ * spreads, and anything at a tip or underneath registers and cooks the body off
+ * normally (test/objectheat.ts scene 7d pins that boundary).
+ *
+ * All of it applies only while the wick is ALREADY lit, so an unlit dud is
+ * untouched: touching fire to a snuffed fuse still re-lights it, and leaving a
+ * stick in a fire still cooks it off.
+ */
+const WICK_PLUME_MARGIN = 1;
+/** Cells *below* the wick that a rising plume still counts as its own (y grows
+ *  down). One, for the tick the flame is born on and for flicker at the base. */
+const WICK_PLUME_BELOW = 1;
+
+/** Where a lit body's own wick throws its flame — the tip of the long axis, the
+ *  same point stepDynamite and emitMolotovFlame spawn Fire from — or null for a
+ *  body that has no burning wick of its own. A burning wooden crate is
+ *  deliberately NOT one of these: its flames are seeded across its own footprint
+ *  because the crate itself is what is on fire, so reading them as heat is
+ *  correct and it should show hot. */
+function wickPoint(o: SimBody): { x: number; y: number; halfW: number } | null {
+  if (o.kind !== 'dynamite' && o.kind !== 'molotov') return null;
+  if (!o.lit) return null;
+  const [ux, uy] = capsuleAxis(o);
+  const reach = o.halfLength + o.radius + 0.5;
+  return {
+    x: o.x - ux * reach,
+    y: o.y - uy * reach,
+    halfW: bodyReach(o) + WICK_PLUME_MARGIN,
+  };
+}
+
+/**
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
  * cleared cells become short-lived BLAST cells → instant destruction), a Nuclear Ray
  * beam cell overlapping it (the searing critical-mass beam — see nuclearray.ts —
  * which destroys everything it strikes on the CA grid and is no gentler on a
  * free-floating object it grazes: instant destruction, same as a direct blast),
- * the hottest footprint temperature (heat exposure, judged over time by the
- * caller), and the *fraction of the footprint buried in solid* (a wedged/entombed
- * body is crushed). Works for balls and drums alike via the segment+radius
- * footprint.
+ * and the *fraction of the footprint buried in solid* (a wedged/entombed body is
+ * crushed). Works for balls and drums alike via the segment+radius footprint.
+ *
+ * It also reports what the body is in thermal *contact* with: the cells it is
+ * actually touching matter in (`contactCount`, collected into `contactCells`) and
+ * the hottest of those (`contactTemp`), plus whether a Fan's wind is blowing
+ * through the footprint (`wind`) and how hot that moving air is (`windTemp`).
+ *
+ * It reports NO temperature for the footprint at large, and that omission is the
+ * point: heat reaches a body only through contact, and the melt/burn/cook-off
+ * triggers judge only what the body has absorbed. There used to be a `maxTemp`
+ * here — the hottest footprint cell, whatever it was standing in — and the
+ * triggers took the max of it and the reservoir, which let a Blue Flame drifting
+ * through the footprint melt a barrel that was itself barely warm. See the heat
+ * note in evaluateTriggers.
+ *
+ * A lit body's own wick flame is excluded from `contactTemp` — see
+ * WICK_PLUME_MARGIN.
  */
 function scanBodyExposure(
   o: SimBody,
   ctx: SimContext,
-): { blast: boolean; nuclearRay: boolean; maxTemp: number; solidFrac: number } {
+): {
+  blast: boolean;
+  nuclearRay: boolean;
+  solidFrac: number;
+  contactTemp: number;
+  contactCount: number;
+  wind: boolean;
+  windTemp: number;
+} {
   const core = bodyCore(o);
   const r2 = core.r * core.r;
+  // The contact shell is the footprint grown by one cell, and it has to be:
+  // collision resolves a resting body to just *outside* the ground, so a drum
+  // standing on sand never overlaps a single grain of it. Judged on the raw
+  // footprint, "touching" would have meant "embedded in", and a body could sit
+  // red-hot on a beach forever without warming it or losing a degree.
+  const rc = core.r + OBJECT_CONTACT_MARGIN;
+  const rc2 = rc * rc;
   const [spanX, spanY] = coreHalfSpan(core);
-  const x0 = Math.floor(o.x - spanX);
-  const x1 = Math.ceil(o.x + spanX);
-  const y0 = Math.floor(o.y - spanY);
-  const y1 = Math.ceil(o.y + spanY);
+  const x0 = Math.floor(o.x - spanX - OBJECT_CONTACT_MARGIN);
+  const x1 = Math.ceil(o.x + spanX + OBJECT_CONTACT_MARGIN);
+  const y0 = Math.floor(o.y - spanY - OBJECT_CONTACT_MARGIN);
+  const y1 = Math.ceil(o.y + spanY + OBJECT_CONTACT_MARGIN);
   let blast = false;
   let nuclearRay = false;
-  let maxTemp = -Infinity;
   let footprint = 0;
   let solid = 0;
+  let contactTemp = -Infinity;
+  let contactCount = 0;
+  let wind = false;
+  let windTemp = -Infinity;
+  // 도화선 불이 스스로를 가열하지 않게 — null for every body that isn't burning its
+  // own wick right now, which is the overwhelmingly common case.
+  const wick = wickPoint(o);
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
-      if (dx * dx + dy * dy > r2) continue;
-      footprint++;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rc2) continue;
+      // Inside the body proper, versus merely in the shell around it. What
+      // destroys a body outright — blast, beam, burial — stays on the strict
+      // footprint; only the thermal-contact set uses the grown shell.
+      const inFoot = d2 <= r2;
+      if (inFoot) footprint++;
       // Out-of-bounds cells count toward the footprint but NOT as burial: the
       // container's wall border bounces a body off rather than crushing it, so a
       // body resting against the world edge must not read as entombed.
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
       const m = id === EMPTY ? null : getMaterial(id);
+      // The plume off the body's own wick is not heat this body is allowed to feel
+      // (see WICK_PLUME_MARGIN). Everything else — including Fire that is not in
+      // its own plume — is read normally. The wind checks below stay outside this:
+      // a gust over the fuse is still a gust.
+      let ownFlame = false;
+      if (wick !== null && id === FIRE.id) {
+        const wx = cx + 0.5 - wick.x;
+        const wy = cy + 0.5 - wick.y;
+        ownFlame = wy <= WICK_PLUME_BELOW && wx <= wick.halfW && wx >= -wick.halfW;
+      }
+      if (!inFoot) {
+        // Shell-only cell: it can touch the body and it can blow on it, nothing
+        // more. Same skip list as the footprint below — a cell whose `temp` is
+        // packed bookkeeping has no reading to trade, and air/Wall never trade.
+        if (m !== null && (m.packedTemp || m.decorTemp)) continue;
+        if (ctx.getWind(cx, cy) !== 0) {
+          wind = true;
+          const ta = ctx.getTemp(cx, cy);
+          if (ta > windTemp) windTemp = ta;
+        }
+        if (ownFlame) continue;
+        if (m === null || m.isWall === true) continue;
+        const ts = ctx.getTemp(cx, cy);
+        if (ts > contactTemp) contactTemp = ts;
+        contactCells[contactCount * 2] = cx;
+        contactCells[contactCount * 2 + 1] = cy;
+        contactCount++;
+        continue;
+      }
       // Crush counts only *true* solid — a real Solid-phase material or the world
       // Wall, NOT a merely-frozen liquid (끼임 파괴 로직은 고체에만 적용). Collision
       // (isSolidCell) treats a frozen puddle as solid footing, but a body sitting
@@ -2745,21 +2829,48 @@ function scanBodyExposure(
       // Ember/Debris fragment, a Blast flash's own life counter, …) must not be
       // read as a real degree reading here — a water splash's Debris droplets
       // passing through a floating ball's footprint carry garbage "temperatures"
-      // in the tens of thousands that would otherwise instantly "burn" it away
+      // in the tens of thousands that would otherwise instantly cook the body
       // (물에 빠지면 공이 사라지는 문제). Skip them; a cell holding only such
-      // material contributes nothing to maxTemp, same as an empty footprint cell —
-      // so a footprint that is ALL packed cells yields maxTemp −Infinity, which
-      // evaluateTriggers already handles like an out-of-world body (freeze the
-      // reservoir, no conduction).
+      // material trades nothing, exactly like an empty one — so a footprint that is
+      // ALL packed cells reports no contact at all, which is the out-of-world case
+      // evaluateTriggers already handles (freeze the reservoir, no conduction).
       // A `decorTemp` cell (the Firework Burst flower) is skipped for the
       // opposite reason: its reading is real but purely cosmetic, so a volley
       // bursting over a wooden box must not cook it (see Material.decorTemp).
       if (m !== null && (m.packedTemp || m.decorTemp)) continue;
+      // A Fan's gust reaching the body is the one way *air* gets to carry heat
+      // off it (강제 대류). Wind is a transient effect layer, not a particle, so
+      // it is read off the same cells whether or not anything occupies them, and
+      // the air's own temperature is what the convection channel relaxes toward.
+      if (ctx.getWind(cx, cy) !== 0) {
+        wind = true;
+        const ta = ctx.getTemp(cx, cy);
+        if (ta > windTemp) windTemp = ta;
+      }
+      if (ownFlame) continue;
+      // Thermal contact. Air is excluded because it has zero conductivity in this
+      // world (see config.ts AMBIENT_TEMP: a lava blob with nothing touching it
+      // never cools), and Wall is excluded because it is held outside the
+      // temperature system entirely (wall.ts; the 가열/냉각 brush skips it for the
+      // same reason). What's left is real matter, and only real matter trades
+      // heat with a body.
+      if (m === null || m.isWall === true) continue;
       const t = ctx.getTemp(cx, cy);
-      if (t > maxTemp) maxTemp = t;
+      if (t > contactTemp) contactTemp = t;
+      contactCells[contactCount * 2] = cx;
+      contactCells[contactCount * 2 + 1] = cy;
+      contactCount++;
     }
   }
-  return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
+  return {
+    blast,
+    nuclearRay,
+    solidFrac: footprint > 0 ? solid / footprint : 0,
+    contactTemp,
+    contactCount,
+    wind,
+    windTemp,
+  };
 }
 
 /** Per-cell chance a shattered drum SHARD flings an Iron Powder fragment from that
@@ -2919,7 +3030,7 @@ function spawnFillSpill(o: SimCapsule, ctx: SimContext): void {
  * afterward by stepObjects, so this leaves the drum `intact` — it just moves it.
  * The surface-entry splash/scatter is here too, detected exactly as the ball's is
  * (edge-triggered on the medium sampled before vs. after the move), so a drum, a
- * stick of dynamite, a smoke bomb or a wooden crate dropped into a pond or a sand
+ * stick of dynamite, a flashbang or a wooden crate dropped into a pond or a sand
  * pit throws the same one-shot spray a ball does.
  * Returns the hardest normal closing speed it resolved against the grid this tick
  * (0 if it never met it), which is what a wooden box's smash test reads.
@@ -3060,14 +3171,64 @@ const WOOFER_KNOCK_SPIN = 0.1;
 /** Cells beyond a body's footprint a Fan's Wind trail can reach to push it. Small
  *  — a body only rides the gust when it's actually sitting in the stream. */
 const WIND_KNOCK_RADIUS = 2;
-/** Target drift speed (cells/tick) the wind carries a body along its blow
- *  direction. Applied as a floor on the along-wind velocity (not accumulated), so
- *  a body in the stream steadily drifts downwind rather than being rocketed. Raised
- *  half again (was 2.5) to match the 1.5× stronger matter push (밀어내기 효과 1.5배
- *  상향 — see materials/fan.ts WIND_PUSH_BOOST), so blown drums/balls keep pace. */
-const WIND_PUSH_SPEED = 3.75;
-/** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along. */
-const WIND_KNOCK_SPIN = 0.04;
+/** Top drift speed (cells/tick) the wind carries a *reference-mass* body along its
+ *  blow direction — the ceiling the push works toward, scaled down for anything
+ *  heavier (see WIND_REFERENCE_MASS).
+ *
+ *  Cut from 3.75 (바람에 지나치게 강하게 밀려남). Matching it to the matter push was
+ *  the mistake: a body is a chunky, heavy thing next to the loose grains a fan is
+ *  meant to sweep, and a drum caught in a stream shot off like it had been fired.
+ *  At this ceiling it still visibly rides the gust and can be herded across the
+ *  world, but it drifts rather than launches, and a wall or a pile stops it. */
+const WIND_PUSH_SPEED = 1.4;
+/** Mass at/below which a body rides the stream at the full WIND_PUSH_SPEED; above
+ *  it the ceiling falls off as REFERENCE/mass, so how blowable a thing is comes
+ *  out of how heavy it is rather than being declared per kind. Set just over the
+ *  light bodies' masses (ball ≈ 60, dynamite ≈ 95) and well under the heavy ones
+ *  (bottle/crate ≈ 198, drum ≈ 418), which is the split it exists to draw: paper
+ *  targets blow away, freight drifts. Drum tops out near 0.5 cells/tick against a
+ *  ball's 1.4. */
+const WIND_REFERENCE_MASS = 150;
+/** Per-tick along-wind acceleration the gust delivers, and the fix for a real bug.
+ *
+ *  This used to slam the along-wind velocity up to a fixed floor every tick no
+ *  matter what stood in the way, which is an *unbounded* force. A body pinned
+ *  against a wall therefore fed the contact a normal impulse of mass × 1.4 every
+ *  tick (≈ 585 for a drum), and Coulomb friction caps the tangential impulse at
+ *  μ·N — so the friction available to hold the body up (0.7 × 585 ≈ 410) came out
+ *  several times its own weight (mass × OBJECT_GRAVITY ≈ 105). The drum stuck to
+ *  the wall and hung there (벽을 등지고 바람을 맞으면 중력을 이기고 벽에 붙음).
+ *
+ *  Bounding the push fixes it, and the bound is chosen so the reasoning is
+ *  structural rather than tuned: the wind accelerates a body **at most as hard as
+ *  gravity does**. A blocked body's normal impulse is then no more than its own
+ *  weight, so the friction that impulse can buy is μ × weight, and with μ < 1
+ *  (every body here: 0.7–0.8) that is less than the weight it would have to hold
+ *  up. Press anything to a wall with wind and it slides down — independent of
+ *  mass, density and kind, so a future heavy body can't reintroduce the bug.
+ *
+ *  Two honest caveats. First, a *blocked* body's actual per-tick gain is
+ *  min(ceiling, this) — for anything heavy the mass-scaled ceiling is already the
+ *  smaller of the two, so this constant is the binding half only for light bodies,
+ *  and the measured slack before the solver really pins is several times either
+ *  bound (test/objectheat.ts scene 11 records the numbers). Second, it stays
+ *  comfortably above μ × weight in the *other* direction, which is what lets wind
+ *  still shove a body along the ground — a plain force small enough never to pin
+ *  would also have been too small to budge a crate. That window exists precisely
+ *  because μ < 1, and it is why the fix is a bound rather than a smaller number.
+ *
+ *  Not scaled by `ctx.gravityStrength`: a fan has to keep working in weightless
+ *  mode, where there is no gravity to beat and nothing to pin against. The trade
+ *  is that in *weak* gravity the inequality flips and wind can hold a body up —
+ *  left alone deliberately, since floaty-world wind-pinning reads as a feature. */
+const WIND_PUSH_ACCEL = OBJECT_GRAVITY;
+/** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along.
+ *  Unlike the push (bounded by a ceiling) this one *accumulates* every tick the
+ *  body spends in the stream, which made it the bigger half of the too-strong wind
+ *  — a stick parked in a gust wound itself up into a blur. Cut to about a third,
+ *  and scaled by the same mass factor as the push, since a barrel is as hard to
+ *  spin up as it is to shove. */
+const WIND_KNOCK_SPIN = 0.015;
 /** Speed (cells/tick) a live Electromagnet field drags a ferrous body toward
  *  itself at. Applied as a *floor* on the body's speed along the pull direction
  *  — the same shape as the Fan's wind push, not an accumulating force — which is
@@ -3099,12 +3260,100 @@ const WIND_DIRV: ReadonlyArray<readonly [number, number]> = [
  *  transient shove-into-terrain, so only a genuinely stuck body reaches it. */
 const CRUSH_SOLID_FRAC = 0.6;
 
-/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward its
- *  surrounding footprint temperature — Newtonian conduction between the object
- *  and the medium it sits in. Small, so brush-applied heat/cool lingers a couple
- *  of seconds and a body carries heat briefly after leaving a fire, rather than
- *  snapping to ambient in one tick. Feel knob. */
-const OBJECT_HEAT_CONDUCTION = 0.08;
+/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward the
+ *  matter it is *touching* — Newtonian conduction between the object and the
+ *  medium it sits in. Deliberately small: a body is a chunky, thermally massive
+ *  thing next to a single cell, so it should glow for a good while after being
+ *  lifted out of a fire and take a visible moment to come up to a lava pool's
+ *  temperature rather than snapping there. Feel knob. */
+const OBJECT_HEAT_CONDUCTION = 0.03;
+
+/** Thermal-mass divisor for the drum family (드럼통 비열). A sealed steel barrel is
+ *  the heaviest, thickest thing on this layer, and at the shared rate it changed
+ *  temperature exactly as fast as a rubber ball — a fan cooled a glowing drum in
+ *  the same beat it cooled a dynamite stick, which is the one place the object
+ *  layer's "everything is a body" shortcut showed through.
+ *
+ *  Deliberately a divisor on the BODY's two intake channels only (see
+ *  `heatCapacity`), never on the return leg into the cells: a high heat capacity
+ *  means the drum's own temperature is slow to move, NOT that it hands less heat
+ *  to the sand under it. Physically that is the same distinction — dT = Q/(m·c)
+ *  shrinks with c while Q does not — and in play it is the interesting half: a
+ *  drum pulled out of lava stays a hazard for a good while, and it takes a real,
+ *  watchable moment of fanning to put it out. */
+export const DRUM_HEAT_CAPACITY = 2.5;
+
+/**
+ * How thermally massive a body is, as a divisor on the rate its own reservoir
+ * moves. 1 is the layer's baseline (a ball, a stick, a bottle, a crate — all
+ * small enough that the difference wouldn't read); only the drum family, whose
+ * whole identity is being the big steel thing, is heavier than that.
+ *
+ * Keyed off `kind` because a body has no `Material` — the same way every other
+ * material judgement up here works (a drum melts to Molten Iron, a crate burns).
+ * Drum shards share the barrel's `kind`, so wreckage keeps the barrel's thermal
+ * inertia, which is what 드럼통 *계열* means.
+ */
+function heatCapacity(o: SimBody): number {
+  return o.kind === 'drum' ? DRUM_HEAT_CAPACITY : 1;
+}
+
+/** How far past its own surface (in cells) a body still counts as *touching*
+ *  matter for heat. One cell, because collision parks a resting body just clear
+ *  of the ground: without the margin nothing a body stands on would ever be in
+ *  thermal contact with it. See the shell test in scanBodyExposure. */
+const OBJECT_CONTACT_MARGIN = 1;
+
+/** Per-tick fraction a body's reservoir moves toward the air a Fan is pushing
+ *  through it — 강제 대류, and the *only* way air moves a body's heat at all (still
+ *  air conducts nothing in this world), so a fan is the tool for cooling something
+ *  red-hot without dunking it. It is a channel of its own, added on top of any
+ *  contact conduction rather than multiplying it: blowing on a drum that is also
+ *  sitting in lava must not slow the lava down.
+ *
+ *  Far gentler than conduction to matter — a quarter of OBJECT_HEAT_CONDUCTION —
+ *  because that is what it is physically (forced convection to air carries far
+ *  less than a solid contact patch), and because the old 3× multiplier made a fan
+ *  flash-cool a glowing drum in a fraction of a second (냉각 속도가 너무 빠름).
+ *  At this rate a red-hot body fans down over a couple of seconds, which is long
+ *  enough to watch. */
+const OBJECT_WIND_CONVECTION = 0.008;
+
+/** Per-tick fraction each touched cell moves toward the body's reservoir — the
+ *  return leg of the same conduction (양방향 열전도), so a red-hot drum warms the
+ *  sand under it and a deep-frozen can frosts the water it lies in. Lower than
+ *  the body's own rate: one cell is small next to a whole object, and this runs
+ *  on *every* touched cell at once, so a heavy hand here would let a body pump
+ *  an entire lava pool cold. */
+const CELL_HEAT_CONDUCTION = 0.02;
+
+/** Gap below which the return leg doesn't bother writing a cell. Keeps a body
+ *  sitting at equilibrium from dirtying its whole contact patch every tick for
+ *  a change no one can see. */
+const CELL_HEAT_EPSILON = 0.5;
+
+/**
+ * Push the body's own temperature back out into every cell it touches — the
+ * direction the object layer used to lack entirely (heat only ever flowed grid →
+ * object). `cells` is the scratch `contactCells` array `scanBodyExposure` just
+ * filled, so this must run before anything can rescan.
+ *
+ * No filtering happens here: the scan already dropped air, Wall and every cell
+ * whose `temp` holds packed bookkeeping rather than a reading, which is exactly
+ * the set the 가열/냉각 brush refuses to write too. Relaxation can't overshoot
+ * (the rate is well under 1), so a body never drives a cell past its own
+ * temperature — it can heat sand to red but never hotter than itself.
+ */
+function conductBodyHeatOut(o: SimBody, ctx: SimContext, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const cx = contactCells[i * 2];
+    const cy = contactCells[i * 2 + 1];
+    const t = ctx.getTemp(cx, cy);
+    const gap = o.temp - t;
+    if (gap < CELL_HEAT_EPSILON && gap > -CELL_HEAT_EPSILON) continue;
+    ctx.setTemp(cx, cy, t + gap * CELL_HEAT_CONDUCTION);
+  }
+}
 
 /**
  * Scan the body's footprint once for the contacts captured at the tick's *start*
@@ -3408,12 +3657,15 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
  * Carry a body along on a Fan's wind (see materials/fan.ts). Scan the cells around
  * the body's footprint for stamped wind-field cells (Grid.wind — a transient,
  * one-way effect layer, NOT a particle), sum each one's blow direction (a single
- * fan's cells all agree, crossing gusts partly cancel), and push the body along the
- * resultant as a *floor* on its along-wind speed (capped at WIND_PUSH_SPEED, not
- * accumulated), so it drifts steadily downwind instead of being flung. Directional,
+ * fan's cells all agree, crossing gusts partly cancel), and accelerate the body
+ * along the resultant at a bounded rate (WIND_PUSH_ACCEL per tick) up to a
+ * mass-scaled ceiling, so it drifts steadily downwind instead of being flung and
+ * a heavy body drifts slower than a light one. Directional,
  * unlike the radial blast/Woofer knockback — the push is the wind's own direction,
- * not "away from the cell". Never destroys a body; it only ever nudges it, and
- * gravity reclaims it the moment it leaves the stream.
+ * not "away from the cell". Never destroys a body; it only ever nudges it, gravity
+ * reclaims it the moment it leaves the stream, and — because the push is a force
+ * and not a velocity floor — it can never pin a body against a wall hard enough
+ * for friction to hold it up (see WIND_PUSH_ACCEL).
  */
 function applyWindPush(o: SimBody, ctx: SimContext): void {
   const reach = bodyReach(o) + WIND_KNOCK_RADIUS;
@@ -3444,13 +3696,21 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
   if (plen < 1e-6) return;
   const nx = px / plen;
   const ny = py / plen;
+  // How strongly this body couples to the stream: 1 for anything at or under the
+  // reference mass, falling off as REFERENCE/mass above it.
+  const grip = Math.min(1, WIND_REFERENCE_MASS / o.mass);
+  const ceiling = WIND_PUSH_SPEED * grip;
   const along = o.vx * nx + o.vy * ny;
-  if (along < WIND_PUSH_SPEED) {
-    const add = WIND_PUSH_SPEED - along;
+  if (along < ceiling) {
+    // A bounded acceleration, not a set-to: this is what keeps a blocked body's
+    // normal impulse (and so the friction holding it up) bounded too. Clamped at
+    // the remaining gap so the wind accelerates a body toward its ceiling and then
+    // just holds it there.
+    const add = Math.min(ceiling - along, WIND_PUSH_ACCEL);
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
+  o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx) * grip;
 }
 
 // ── Electromagnet attraction (자력) on the object layer ───────────────────────
@@ -3469,14 +3729,14 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
 
 /** True if the Electromagnet's field can grab this body. Steel bodies only: the
  *  드럼통 (every fill — an empty, an oil and an acid drum are one steel shell, so
- *  they behave identically here as they do everywhere else) and the two steel
- *  cans, the 연막탄 and the 섬광탄. A rubber ball, a wooden crate and a
+ *  they behave identically here as they do everywhere else) and the steel can of
+ *  the 섬광탄. A rubber ball, a wooden crate and a
  *  wax-and-paper stick of dynamite are not ferrous and sail right past a live
  *  magnet — which is the point: the magnet must stay a 자력 선별기 you can sort a
  *  pile with, not a vacuum. (A live flashbang being dragged in by a magnet it
  *  will then go off inside of is, of course, the fun of including it.) */
 function isMagneticBody(o: SimBody): boolean {
-  return o.kind === 'drum' || o.kind === 'smokebomb' || o.kind === 'flashbang';
+  return o.kind === 'drum' || o.kind === 'flashbang';
 }
 
 /** True if the magnet's pull can travel *through* this cell — `isFieldPassable`
@@ -3510,7 +3770,7 @@ function magnetRayPassable(ctx: SimContext, x: number, y: number): boolean {
  *  diagonal hop needs at least one of its two flanking cells open — without that,
  *  a ray slips through the point where two solids merely touch at a corner and any
  *  1-cell-thick 45° wall stops shielding. Same rule, and the same reason, as the
- *  smoke flood's own no-corner-cutting check in `puffDisc`. */
+ *  crater flood's own no-corner-cutting check in blast.ts. */
 function magnetRayClear(ctx: SimContext, ox: number, oy: number, cx: number, cy: number): boolean {
   const dx = cx + 0.5 - ox;
   const dy = cy + 0.5 - oy;
@@ -3938,9 +4198,11 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
       if (tipId === EMPTY) {
         // In open air the lit fuse throws a real Fire particle (not a painted-on
         // flame): it flickers, rises, and can ignite whatever the fuse leads to —
-        // a Gunpowder trail, a charge, a puddle of fuel. The tip sits cells beyond
-        // the body's footprint and the fire rises away from it, so the stick's own
-        // fuse doesn't cook it off early (the countdown stays the authority).
+        // a Gunpowder trail, a charge, a puddle of fuel. It cannot cook the stick
+        // off early — the countdown stays the sole authority — because a lit body
+        // doesn't read its own wick as heat at all (see WICK_PLUME_MARGIN). That
+        // used to rest on DYNAMITE_AUTOIGNITE_TEMP sitting above Fire's 1000°,
+        // which is no longer true now that it is a realistic 220°.
         ctx.spawn(tcx, tcy, FIRE.id);
       } else if (getMaterial(tipId).phase === Phase.Liquid && !ctx.isFrozen(tcx, tcy)) {
         // Submerged/wet: the flame doesn't die — instead it heats the liquid it
@@ -3959,306 +4221,6 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
     return false;
   }
   return true;
-}
-
-/** Place one Smoke cell at (x,y) if that cell is open. Smoke is a gas the CA
- *  already knows how to move (it rises, diffuses and fades on its own timer), so
- *  the canister's whole job is seeding cells and letting the grid take it from
- *  there. spawn() marks the cell moved, so a fresh puff isn't re-processed the
- *  same tick. Silently skipped on an occupied cell — a bomb buried in sand vents
- *  through whatever gaps it has rather than carving them — with ONE exception:
- *  liquid, which the charge shoves aside instead of being stopped by (see below). */
-function puffSmoke(ctx: SimContext, cx: number, cy: number): void {
-  if (!ctx.inBounds(cx, cy)) return;
-  const id = ctx.get(cx, cy);
-  if (id === EMPTY) {
-    ctx.spawn(cx, cy, SMOKE.id);
-    return;
-  }
-  // 액체 속에서도 연기 발생. A smoke composition doesn't need air — it makes its own
-  // gas — so water is not a lid on it, only something in the way. The plume used
-  // to travel *through* a pond (smokePassable) and yet only ever surface above it,
-  // which read as a canister that goes quiet the moment it sinks. Now the gas
-  // forms down there too: it takes the liquid's cell and the liquid it evicted
-  // goes up the column (displaceLiquidUp — the level rises to make room, nothing
-  // is destroyed), then bubbles up through the water on its own buoyancy like any
-  // other gas. A canister thrown in a pond now boils it and blooms at the surface.
-  const m = getMaterial(id);
-  if (m.phase !== Phase.Liquid || ctx.isFrozen(cx, cy)) return; // ice is a wall, not a pond
-  if (!ctx.chance(SMOKE_SUBMERGED_CHANCE)) return;
-  if (!displaceLiquidUp(ctx, cx, cy)) return;
-  // If the sandbox's smoke level thins this puff away (SimContext.spawn), the cell
-  // is simply left empty and the water that moved up falls straight back into it —
-  // no smoke, nothing lost.
-  ctx.spawn(cx, cy, SMOKE.id);
-}
-
-/** Per-cell chance a puff that lands on a LIQUID cell actually forms there, on
- *  top of the stage's own density. Well under 1 on purpose: underwater smoke has
- *  to shove real water out of the way to exist, and at full density a 2.5-second
- *  discharge would heave an entire pond out of its basin in a couple of seconds.
- *  At this rate a submerged canister reads as a rolling boil of bubbles that
- *  blooms into a proper cloud once it reaches the surface — which is what a smoke
- *  grenade dropped in water actually looks like. */
-const SMOKE_SUBMERGED_CHANCE = 0.35;
-
-/** How far up the column the evicted liquid may travel to find room, in cells.
- *  Deep enough for any ordinary pond; a canister sealed in a brim-full tank with
- *  nowhere for the water to go simply doesn't smoke inside it, which is the right
- *  answer for an incompressible liquid. */
-const SMOKE_DISPLACE_REACH = 64;
-
-/**
- * Make room for one cell of smoke inside a body of liquid by shoving that liquid
- * *up* the column (against gravity, so a flipped or sideways sandbox works too)
- * into the first open cell it finds. The water level rises to make room, which is
- * both what really happens when a charge gasses off underwater and what keeps the
- * pond conserved — no liquid is deleted anywhere in this path. Returns false, and
- * changes nothing, when there is nowhere for it to go.
- *
- * The walk passes through liquid AND gas. Gas matters: within a tick or two the
- * plume has laid its own Smoke over the pond, and stopping the search at it would
- * shut the bubbling off just as it got going. A liquid parked above a gas cell
- * falls straight back down through it under the ordinary density sort, so the only
- * cost is a cell of water briefly riding high.
- */
-function displaceLiquidUp(ctx: SimContext, x: number, y: number): boolean {
-  const ux = -ctx.gravityX;
-  const uy = -ctx.gravityY;
-  let cx = x;
-  let cy = y;
-  for (let i = 0; i < SMOKE_DISPLACE_REACH; i++) {
-    cx += ux;
-    cy += uy;
-    if (!ctx.inBounds(cx, cy)) return false; // out of the world — no room that way
-    const id = ctx.get(cx, cy);
-    if (id === EMPTY) {
-      ctx.swap(x, y, cx, cy); // the liquid (with its temp/aux/tint) rises; its cell frees up
-      return true;
-    }
-    const p = getMaterial(id).phase;
-    if (p === Phase.Gas) continue;
-    if (p === Phase.Liquid && !ctx.isFrozen(cx, cy)) continue;
-    return false; // solid, powder or ice caps the column
-  }
-  return false;
-}
-
-// Chamfer step costs for the smoke flood below, so the cloud grows as a round
-// front rather than a diamond (a diagonal step is ~√2 orthogonal ones) — the same
-// metric blast.ts uses for its crater.
-const SMOKE_STEPS: ReadonlyArray<readonly [number, number, number]> = [
-  [0, -1, 1],
-  [0, 1, 1],
-  [-1, 0, 1],
-  [1, 0, 1],
-  [-1, -1, 1.4142],
-  [1, -1, 1.4142],
-  [-1, 1, 1.4142],
-  [1, 1, 1.4142],
-];
-
-// Reused scratch for that flood, keyed by flat cell index: a monotonic stamp id
-// marks the cells this call has already queued, so nothing is allocated per tick
-// and the buffer never needs clearing between calls. Same trick as blast.ts's
-// visited buffer.
-let smokeStamp: Int32Array | null = null;
-let smokeStampW = 0;
-let smokeStampH = 0;
-let smokeStampId = 0;
-
-/** Fetch the flood's visited buffer (reallocating on a grid resize) and advance
- *  to a fresh stamp id for this call. */
-function nextSmokeStamp(ctx: SimContext): Int32Array {
-  if (!smokeStamp || smokeStampW !== ctx.width || smokeStampH !== ctx.height) {
-    smokeStampW = ctx.width;
-    smokeStampH = ctx.height;
-    smokeStamp = new Int32Array(smokeStampW * smokeStampH); // all zero; ids start at 1
-    smokeStampId = 0;
-  }
-  smokeStampId++;
-  if (smokeStampId >= 0x7fffffff) {
-    smokeStamp.fill(0);
-    smokeStampId = 1;
-  }
-  return smokeStamp;
-}
-
-/**
- * True if the smoke front can travel *through* this cell. Only *structure* stops
- * smoke — a wall, a stone block, a machine. Everything loose it seeps through:
- *
- *   - other gas, which crucially includes the Smoke it laid down on earlier ticks
- *     (otherwise a venting canister's own cloud walls its front in after a tick);
- *   - powder, because a sand bed is grains with gaps between them, not a seal;
- *   - liquid, so a canister dropped in a pond still sends its plume up through
- *     the water instead of going silent — but only while it's actually *liquid*.
- *     A frozen one (`SimContext.isFrozen`: a `freeze` material at or below its
- *     point) is a block of ice, and every other system in the engine already
- *     treats it as structure — movement refuses to displace it, and the object
- *     layer's own `solidLike` bounces bodies off it. Smoke is no different: an
- *     ice wall shelters what's behind it exactly like a stone one, so freezing a
- *     pond over is a real way to seal a room (언 액체가 고체 벽으로 취급되지 않던
- *     문제). It thaws back to a passable pond the moment it warms up;
- *   - a `porous` solid (Mesh, Turbine, Pump), which is built to let fluids pass
- *     through as if it weren't there — the engine's own overlap rule already says
- *     such a host admits a gas.
- *
- * Passing through is NOT the same as filling: `puffSmoke` decides separately what
- * a reached cell can actually take. Empty air always takes a puff; a LIQUID cell
- * takes one at a reduced rate, by shoving its liquid up the column to make room
- * (액체 속에서도 연기 발생 — see puffSmoke/displaceLiquidUp), so a submerged canister
- * boils the pond it sits in as well as blooming at the surface; a powder bed only
- * takes puffs in the pockets between its grains, so a buried canister fills the
- * gaps it has and the space above rather than being smothered outright.
- *
- * Deliberately not written into the 겹침 (overlay) slot of a host that could take
- * it: SimContext's movement seam is the sole enforcer of the (host, overlay)
- * invariant (see its `canHostOverlap` note), and the object layer is read-only
- * over the grid apart from the discrete spawns it already makes.
- */
-function smokePassable(ctx: SimContext, x: number, y: number): boolean {
-  const id = ctx.get(x, y);
-  if (id === EMPTY) return true;
-  const m = getMaterial(id);
-  if (m.phase === Phase.Solid) return m.porous === true;
-  // Frozen liquid is ice: a wall, not a pond. Gated on the material even being
-  // freezable so the common cell (air, gas, water, a grain of sand) doesn't pay
-  // for the temperature read.
-  return m.freeze === undefined || !ctx.isFrozen(x, y);
-}
-
-/**
- * Seed Smoke outward from (ox,oy) up to `radius` cells, each open cell reached
- * taking a puff with probability `density`. `density` 1 fills every open cell at
- * once.
- *
- * This is a FLOOD, not a radial scan, and that distinction is the whole point:
- * smoke has to travel to where it ends up, so a solid wall stops it and shelters
- * what's behind. A plain "every empty cell within r" scan (what this used to be)
- * let a canister sealed in a box fill the room outside it, and let one on the far
- * side of a wall smoke straight through it. The front spreads only through open
- * air, loose matter and existing gas (see smokePassable), so it rounds corners,
- * seeps through a sand bed or a pond, and pours out of a container's mouth
- * instead of ignoring it — the same geodesic treatment the Woofer's shockwave
- * gets, for the same reason. Only *structure* stops it.
- *
- * Both of the smoke bomb's stages are this one call with different numbers: a
- * small radius for the fuse-stage wisp, a large one for the discharge — both
- * anchored on the canister itself. Cost is bounded by the reachable area within `radius`,
- * so even the full-density rupture is one pass over a few thousand cells.
- */
-function puffDisc(
-  ctx: SimContext,
-  ox: number,
-  oy: number,
-  radius: number,
-  density: number,
-): void {
-  if (density <= 0 || radius <= 0) return;
-  const w = ctx.width;
-  const h = ctx.height;
-  const cx0 = Math.floor(ox);
-  const cy0 = Math.floor(oy);
-  const stamp = nextSmokeStamp(ctx);
-  const id_s = smokeStampId;
-  const qx: number[] = [];
-  const qy: number[] = [];
-  const qb: number[] = [];
-
-  // Seed the source cell and ONLY the source cell. Seeding its neighbours as a
-  // fallback (for a source whose own cell is occupied) is what let the front hop a
-  // 1-cell wall: a source sitting against a wall has a neighbour on the *far*
-  // side, and starting there put smoke outside a sealed room. The fallback also
-  // isn't needed any more — matter is passable now (see smokePassable), so the
-  // only thing that can occupy the source cell is solid structure, and a body
-  // can't come to rest inside that (collision resolution pushes it out). A source
-  // genuinely walled in emits nothing, which is the right answer.
-  if (!ctx.inBounds(cx0, cy0) || !smokePassable(ctx, cx0, cy0)) return;
-  stamp[cy0 * w + cx0] = id_s;
-  qx.push(cx0);
-  qy.push(cy0);
-  qb.push(radius);
-
-  let head = 0;
-  while (head < qx.length) {
-    const x = qx[head];
-    const y = qy[head];
-    const budget = qb[head];
-    head++;
-    if (density >= 1 || ctx.chance(density)) puffSmoke(ctx, x, y);
-    for (let i = 0; i < SMOKE_STEPS.length; i++) {
-      const dx = SMOKE_STEPS[i][0];
-      const dy = SMOKE_STEPS[i][1];
-      const nx = x + dx;
-      const ny = y + dy;
-      const left = budget - SMOKE_STEPS[i][2];
-      if (left < 0) continue;
-      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-      const nidx = ny * w + nx;
-      if (stamp[nidx] === id_s) continue;
-      if (!smokePassable(ctx, nx, ny)) continue; // structure stops the front and shelters what's behind
-      // No corner-cutting: a diagonal step needs at least one of its two flanking
-      // orthogonal cells open, so the front can't squeeze through the point where
-      // two solids merely touch at a corner. Without this the wall guarantee is
-      // only true for orthogonally-contiguous walls — smoke poured straight
-      // through any 1-cell-thick 45° wall or ramp (an ordinary thing to build),
-      // because every step crossing such a wall has BOTH flanks inside it.
-      // "At least one" rather than "both" is deliberate: it still lets the front
-      // round an ordinary convex corner, which is the behaviour that makes a
-      // cloud pour out of a doorway.
-      if (dx !== 0 && dy !== 0 && !smokePassable(ctx, x + dx, y) && !smokePassable(ctx, x, y + dy)) {
-        continue;
-      }
-      stamp[nidx] = id_s;
-      qx.push(nx);
-      qy.push(ny);
-      qb.push(left);
-    }
-  }
-}
-
-/** The heavy discharge: a dense puff over the whole canister's cloud radius (not
- *  just a thin plume — a venting or ruptured can gushes from everywhere at once). */
-function ventSmoke(o: SimSmokeBomb, ctx: SimContext, density: number): void {
-  puffDisc(ctx, o.x, o.y, bodyReach(o) * SMOKE_BOMB_VENT_SPREAD, density);
-}
-
-/**
- * Per-tick lifecycle for a smoke bomb, after this tick's heat conduction (called
- * from evaluateTriggers with the resolved `heat`). Two stages and nothing else:
- *   1. FUSE — a thin wisp seeps off the canister while `fuseTicks` runs down.
- *      Sustained external heat (fire, lava, the 가열 brush) cooks the charge off
- *      early and opens the vent now, cutting the rest of the fuse.
- *   2. VENT — the canister pours out a dense cloud every tick while `ventTicks`
- *      runs down (2.5s worth), and is dropped when it hits 0 (소멸).
- * Returns true to keep the canister, false once it's spent.
- */
-function stepSmokeBomb(o: SimSmokeBomb, ctx: SimContext, heat: number): boolean {
-  if (o.ventTicks <= 0) {
-    // --- Stage 1: the fuse. ---
-    if (heat >= SMOKE_BOMB_IGNITE_TEMP) {
-      o.heatTicks++;
-      if (o.heatTicks >= SMOKE_BOMB_HEAT_TICKS) o.fuseTicks = 0; // cooked off early
-    } else if (o.heatTicks > 0) {
-      o.heatTicks--;
-    }
-    if (o.fuseTicks > 0) {
-      o.fuseTicks--;
-      // A wisp seeping from around the canister. Deliberately anchored at the
-      // BODY, not at the nozzle tip: the tip sits 5.5 cells off-centre along the
-      // capsule's axis, and a canister lying against a wall can point it straight
-      // *into* (or through) that wall — which put the wisp on the far side of a
-      // sealed room. The body centre is always the canister's actual location, so
-      // the plume can only ever start where the canister really is.
-      puffDisc(ctx, o.x, o.y, SMOKE_BOMB_TRICKLE_RADIUS, SMOKE_BOMB_TRICKLE_DENSITY);
-      return true;
-    }
-    o.ventTicks = SMOKE_BOMB_VENT_TICKS; // fuse spent (or cooked off) — open the vent
-  }
-  // --- Stage 2: the discharge. ---
-  ventSmoke(o, ctx, SMOKE_BOMB_VENT_DENSITY);
-  return --o.ventTicks > 0;
 }
 
 // ─────────────────────────── Flashbang: the flash ───────────────────────────
@@ -4309,14 +4271,20 @@ function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
 
 /**
  * Per-tick lifecycle for a flashbang, after this tick's heat conduction (called
- * from evaluateTriggers with the resolved `heat`). It is the shortest step
- * function in this file, which is the point of the object:
+ * from evaluateTriggers with the resolved `heat`, which is the can's own reservoir
+ * and serves as both the cook-off reading and the chill one). It is the shortest
+ * step function in this file,
+ * which is the point of the object:
  *   1. Sustained external heat (fire, lava, the 가열 brush) cooks it off early.
- *   2. Otherwise the countdown runs, and at zero it flashes.
- * There is no third stage and nothing is emitted along the way — no fuse flame,
- * no wisp, no sound of any kind (기획: 터지기 전까지 도화선 효과 없음). A blast or a
- * crush sets it off too, but that arrives through destroyByproduct rather than
- * here. Returns true to keep the can, false once it has gone off.
+ *   2. Otherwise the countdown runs — at whatever rate the cold has left it (see
+ *      flashbangTickRate: full above freezing, a third when chilled, stopped in a
+ *      deep freeze) — and at zero it flashes.
+ * Cold is a *delay only*: the rate scales what the tick spends, never the charge
+ * itself, so a can pulled out of the ice picks up from exactly where it stopped and
+ * still goes off. Nothing is emitted along the way either — no fuse flame, no wisp,
+ * no sound of any kind (기획: 터지기 전까지 도화선 효과 없음). A blast or a crush sets
+ * it off too, but that arrives through destroyByproduct rather than here. Returns
+ * true to keep the can, false once it has gone off.
  */
 function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean {
   if (heat >= FLASHBANG_IGNITE_TEMP) {
@@ -4328,7 +4296,10 @@ function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean 
   } else if (o.heatTicks > 0) {
     o.heatTicks--;
   }
-  if (--o.fuseTicks <= 0) {
+  const rate = flashbangTickRate(heat);
+  if (rate <= 0) return true; // deep-frozen: the clock is stopped, not reset
+  o.fuseTicks -= rate;
+  if (o.fuseTicks <= 0) {
     detonateFlashbang(o, ctx);
     return false;
   }
@@ -4724,8 +4695,9 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
 }
 
 /**
- * Shatter the bottle across its own footprint. Two byproducts, and they leave in
- * deliberately different ways:
+ * Shatter the bottle across its own footprint — the SMASHED path, i.e. every way a
+ * bottle can end except melting (see meltMolotov for that one). Two byproducts, and
+ * they leave in deliberately different ways:
  *
  *   - BROKEN GLASS **flies**. Each shard launches as a blast fragment
  *     (`launchDebris`, the crate's Sawdust scatter), thrown outward from the
@@ -4757,9 +4729,9 @@ function emitMolotovFlame(o: SimMolotov, ctx: SimContext): void {
  * even though its phase is Solid — see its note — so a shard may launch from a
  * cell the fuel is turned away from).
  *
- * However the bottle died, this is what it leaves: there is no impact/collapse
- * split (contrast BreakCause), because a crate can give way without being
- * struck whereas glass only ever ends one way.
+ * There is no impact/collapse split within this path (contrast BreakCause): a crate
+ * can give way without being struck, whereas a bottle that is *struck at all* only
+ * ever ends the one way.
  */
 function breakMolotov(o: SimMolotov, ctx: SimContext): void {
   const fuelled = o.fuelTicks > 0;
@@ -4795,10 +4767,143 @@ function breakMolotov(o: SimMolotov, ctx: SimContext): void {
 }
 
 /**
+ * The bottle GIVES WAY TO HEAT rather than being broken (가열되어 터질 때), at
+ * MOLOTOV_BURST_TEMP — which is glass's own melting point, so by the time this runs
+ * the bottle is not a bottle any more, it is glass at the temperature glass runs at.
+ * That is the whole reason this is a separate path from breakMolotov: throwing
+ * BROKEN GLASS shards out of something that has already melted would be a lie the
+ * player can check (drop a pane in the same fire and it slumps into Molten Glass),
+ * and the shards would only re-melt where they landed anyway.
+ *
+ * So the bottle leaves MOLTEN GLASS and ALCOHOL **in equal amounts** (알콜과 녹은
+ * 유리를 동일한 양), both spawned in place — nothing flies. "Equal" is exact, not
+ * statistical: the eligible cells are gathered, sorted bottom-first (glass sinks,
+ * fuel floats) and split down the middle, so the two never come out lopsided on a
+ * small footprint the way two independent per-cell rolls would.
+ *
+ * The alcohol half is skipped entirely for a spent 빈 유리병 (it has no fuel left to
+ * give — the same rule breakMolotov applies), which leaves an empty bottle melting
+ * into half a footprint of glass and nothing else. Both halves are poured at the
+ * SAME temperature — the glass's own 1400°, or the bottle's reservoir where that ran
+ * hotter — because both came out of the same fire. That is well past FUEL_BURN_TEMP,
+ * so unlike the smashed path there is no `lit` check to make: nothing reaches this
+ * path cold.
+ *
+ * Both obey the poured-liquid guard (`Phase.Solid` — the object layer stays
+ * read-only over terrain it didn't put there), exactly as the spilled drum contents
+ * and the smashed bottle's alcohol do.
+ */
+function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
+  const core = bodyCore(o);
+  const r2 = core.r * core.r;
+  const [spanX, spanY] = coreHalfSpan(core);
+  const x0 = Math.floor(o.x - spanX);
+  const x1 = Math.ceil(o.x + spanX);
+  const y0 = Math.floor(o.y - spanY);
+  const y1 = Math.ceil(o.y + spanY);
+  // Pass 1 — gather the cells the melt may claim (inside the silhouette, not solid
+  // terrain), thinned by MOLOTOV_MELT_CHANCE so the puddle is a spatter rather than
+  // a solid stamp of the bottle.
+  const cells: number[] = [];
+  for (let cy = y0; cy < y1; cy++) {
+    for (let cx = x0; cx < x1; cx++) {
+      if (!ctx.inBounds(cx, cy)) continue;
+      const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
+      const dx = cx + 0.5 - spx;
+      const dy = cy + 0.5 - spy;
+      if (dx * dx + dy * dy > r2) continue;
+      if (!ctx.chance(MOLOTOV_MELT_CHANCE)) continue;
+      const cell = ctx.get(cx, cy);
+      if (cell !== EMPTY && getMaterial(cell).phase === Phase.Solid) continue;
+      cells.push(cx, cy);
+    }
+  }
+  // Sort BOTTOM-first, so the glass takes the lowest cells and the fuel the ones
+  // above it. This started as a Fisher-Yates shuffle, to break up the scan order's
+  // banding, and the shuffle was wrong twice over.
+  //
+  // Physically, molten glass has density 5 against alcohol's 1.9 — a band IS the
+  // right answer here, just not the one raw scan order gave (glass on top). The two
+  // would separate that way within a few ticks of flowing anyway.
+  //
+  // And thermally the shuffle was the bug the player hit: interleaving put every
+  // 1400° glass cell on its own, ringed by fuel and air, and a lone hot cell sheds
+  // its heat far faster than a pool that can hold its own. Kept together the glass
+  // reads as molten for a good while before it sets; scattered it flashed and was
+  // solid Glass almost at once (녹은 유리가 아니라 고체 유리가 나와버림).
+  //
+  // Ties are broken randomly so the boundary between the two is a ragged spatter
+  // rather than a ruled line.
+  const order: number[] = [];
+  for (let i = 0; i < cells.length / 2; i++) order.push(i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = ctx.randInt(i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  order.sort((a, b) => cells[b * 2 + 1] - cells[a * 2 + 1]);
+  const sorted: number[] = [];
+  for (const i of order) sorted.push(cells[i * 2], cells[i * 2 + 1]);
+  cells.length = 0;
+  cells.push(...sorted);
+  const n = cells.length / 2;
+  const glassCount = Math.ceil(n / 2); // the odd cell goes to the glass — the bottle itself
+  // `cells` is bottom-first, so the first glassCount entries are the bottom of the
+  // puddle: glass sinks, fuel floats.
+  const fuelled = o.fuelTicks > 0;
+  // BOTH halves come out at the same temperature, because they came out of the
+  // same fire. That is Molten Glass's own init (1400°), or the bottle's reservoir
+  // where the reservoir ran hotter — a bottle sunk in lava, held under a Heat Ray,
+  // or pinned by the 가열 브러시 leaves a correspondingly hotter puddle. Never
+  // *below* the glass init, so the molten phase can't come out shorter than fresh
+  // Molten Glass gets. (In the ordinary case the reservoir term changes nothing:
+  // the bottle bursts once it has held MOLOTOV_BURST_TEMP (1150°) for five ticks,
+  // short of 1400°.)
+  //
+  // The fuel used to be pinned to FUEL_BURN_TEMP (800°) instead — enough to be
+  // alight, which is what that pin was for, but a cold neighbour to 1400° glass all
+  // the same. Pouring it at the glass's own temperature is both simpler and truer:
+  // the fuel was in that same fire. Confirmed in play that hot alcohol does not
+  // burn away faster than lit alcohol does — a 2000° pool burns at very nearly the
+  // rate a freshly lit one does — so this costs the puddle none of its life.
+  const glassInit = MOLTEN_GLASS.thermal?.init ?? FUEL_BURN_TEMP;
+  const pourTemp = heat > glassInit ? heat : glassInit;
+  for (let i = 0; i < n; i++) {
+    const cx = cells[i * 2];
+    const cy = cells[i * 2 + 1];
+    if (i < glassCount) {
+      ctx.spawn(cx, cy, MOLTEN_GLASS.id);
+      ctx.setTemp(cx, cy, pourTemp);
+    } else if (fuelled) {
+      ctx.spawn(cx, cy, ALCOHOL.id);
+      // Alight, unconditionally — and this is load-bearing, not flavour.
+      //
+      // `spawn` resets a cell to its material's own initial temperature, which for
+      // Alcohol is room temperature. That put a 20° cell against every 1400° Molten
+      // Glass cell in the puddle — and back when the two halves were shuffled
+      // together rather than sorted bottom-first, the interleaving maximised
+      // exactly that contact. The fuel drained the glass
+      // below MOLTEN_GLASS_FREEZE_TEMP in about half a second even with the bottle
+      // still sitting in a 1600° bath, so what the player actually saw come out of
+      // a Blue Flame was solid glass (녹은 유리가 아니라 고체 유리가 나와버림).
+      //
+      // Room-temperature fuel was never right anyway: reaching this path means the
+      // bottle sat at GLASS_MELT_TEMP or above long enough to run, so its contents
+      // were in that same fire. Hence no `lit` check — unlike the smashed path,
+      // where a doused bottle really can spill cold fuel, nothing arrives here cold.
+      // `pourTemp` is at least 1400°, comfortably past FUEL_BURN_TEMP, so the fuel
+      // still reads as alight to combustion.ts.
+      ctx.setTemp(cx, cy, pourTemp);
+    }
+  }
+}
+
+/**
  * Per-tick wick logic for a molotov, after this tick's heat conduction (called
  * from evaluateTriggers with the resolved `heat`). Four steps:
- *   1. A sustained bath far hotter than its own flame bursts the bottle outright
- *      (see MOLOTOV_BURST_TEMP) — lava, a Blue Flame jet, a held Heat Ray.
+ *   1. A sustained bath at glass's own melting point MELTS the bottle open (see
+ *      MOLOTOV_BURST_TEMP / meltMolotov) — lava, a Blue Flame jet, a held Heat Ray.
+ *      That path leaves molten glass and fuel, not shards: nothing is *breaking*
+ *      here, the bottle is running.
  *   2. Any real soaking puts the wick out (물에 빠져도 소화). This is checked before
  *      the re-light, so a bottle sitting in a burning pool of its own fuel *in
  *      water* stays out rather than flickering on and off.
@@ -4813,7 +4918,7 @@ function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
   if (heat >= MOLOTOV_BURST_TEMP) {
     o.heatTicks++;
     if (o.heatTicks >= MOLOTOV_BURST_TICKS) {
-      breakMolotov(o, ctx);
+      meltMolotov(o, ctx, heat);
       return false;
     }
   } else if (o.heatTicks > 0) {
@@ -4837,8 +4942,7 @@ function stepMolotov(o: SimMolotov, ctx: SimContext, heat: number): boolean {
  *  three shards and, if it was carrying anything, gushes its contents (원유/산)
  *  across the wreckage — and a shard, having nothing left to break into, shatters
  *  into scattered Iron Powder (see breakDrum); a stick of dynamite detonates (a
- *  knock or a passing blast sets it off — chain reactions); a smoke bomb's canister
- *  ruptures and dumps its whole remaining charge at once; a wooden crate bursts
+ *  knock or a passing blast sets it off — chain reactions); a wooden crate bursts
  *  into its three shards (and a shard into Sawdust — see breakWoodBox), carrying
  *  its fire over to the wreckage if it was burning; a rubber ball leaves nothing.
  *  `cause` matters only to the two bodies that break into pieces, and only for how
@@ -4860,10 +4964,6 @@ function destroyByproduct(
     o.state = 'destroyed';
   } else if (o.kind === 'dynamite') {
     detonateDynamite(o, ctx);
-  } else if (o.kind === 'smokebomb') {
-    // Blown open rather than burned down: the charge that would have vented over a
-    // whole second goes up at once, filling the cloud disc in a single tick.
-    ventSmoke(o, ctx, 1);
   } else if (o.kind === 'flashbang') {
     // A knock or a passing blast sets it off exactly as it sets off a stick of
     // dynamite — so flashbangs chain, and one thrown into a blast flashes early.
@@ -4899,32 +4999,79 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
     destroyByproduct(o, ctx, spawn, blast ? 'impact' : 'collapse');
     return false; // ball: no byproduct
   }
-  // The body's own heat reservoir relaxes toward its surroundings each tick
-  // (Newtonian conduction): a body in a hot medium warms up, one in cool air (or
-  // cooled by the 냉각 brush) sheds heat back toward ambient — so brush-applied
-  // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
-  // briefly. `maxTemp` is -Infinity only when the footprint has NO in-bounds cell
-  // — a body that has drifted fully out of a `void` border — in which case we
-  // freeze the reservoir (skip conduction) rather than let it decay to −Infinity
-  // (then NaN the next such tick), which would permanently break the max() heat
-  // test if the body re-entered the world.
-  if (Number.isFinite(exp.maxTemp)) {
-    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  // The body's heat reservoir trades with what it is TOUCHING, both ways.
+  //
+  // What it touches, and nothing else: a body hanging in still air holds its
+  // temperature indefinitely. That isn't a shortcut, it is the same rule the cell
+  // layer already runs on — air has zero conductivity here, which is why a lava
+  // blob with no cold sink against it stays molten forever (config.ts
+  // AMBIENT_TEMP). Relaxing toward the hottest footprint cell instead, as this
+  // used to, quietly made every object the one thing in the world air could cool, so a
+  // red-hot ball flying through empty space faded on its way. Now it lands still
+  // glowing, and putting the heat *out* is something you do — drop it in water,
+  // bury it in sand, or point a Fan at it (the one way air carries heat off a
+  // body: 강제 대류, see OBJECT_WIND_CONVECTION).
+  //
+  // `contactTemp` is −Infinity precisely when the contact set is empty, which
+  // covers the out-of-world case for free (a body past a `void` border has no
+  // in-bounds cell to touch): no contact, no conduction, reservoir held. That
+  // also keeps the reservoir from decaying to −Infinity and NaN-ing the tick
+  // after, which would permanently break the heat test if it drifted back in.
+  //
+  // Both intake rates are divided by the body's thermal mass (`heatCapacity`), so
+  // a steel drum comes up to a fire's temperature — and back down off it — far
+  // more slowly than a rubber ball in the same spot.
+  const heatMass = heatCapacity(o);
+  if (exp.contactCount > 0) {
+    o.temp += ((exp.contactTemp - o.temp) * OBJECT_HEAT_CONDUCTION) / heatMass;
+    // …and the return leg, into every one of those cells — NOT divided by `heatMass`:
+    // a thermally massive body is slow to change, not stingy about what it gives
+    // the sand under it. Runs here, immediately after the scan, because it reads
+    // the scan's scratch contact list.
+    conductBodyHeatOut(o, ctx, exp.contactCount);
   }
-  // Judge heat by the hotter of the surroundings and the body's own reservoir:
-  // ambient heat (lava/fire under the footprint) still triggers instantly as
-  // before — no regression — while the 가열 brush, which writes only `temp`, can
-  // now melt/burn a body floating over empty air the cell heat brush can't warm.
-  // (An out-of-world body has maxTemp −Inf, so this picks its finite reservoir.)
-  const heat = exp.maxTemp > o.temp ? exp.maxTemp : o.temp;
+  // A gust is its own, separate channel — added on top of any contact rather than
+  // replacing or scaling it, so blowing on a drum that is also half-buried in lava
+  // doesn't slow the lava down. It relaxes toward the temperature of the moving
+  // air itself (`windTemp`), which is normally ambient but is whatever a
+  // brush-heated or LN2-chilled stream happens to be carrying.
+  if (exp.wind) o.temp += ((exp.windTemp - o.temp) * OBJECT_WIND_CONVECTION) / heatMass;
+  // Every heat judgement below runs off the body's OWN reservoir, and nothing
+  // else. This used to be `max(footprint cell temperature, o.temp)`, which let the
+  // surroundings condemn a body the surroundings had not actually heated: a Blue
+  // Flame is a *gas*, so it drifts in among the footprint cells on its own, and at
+  // 1800° it cleared the drum's 1200° bar on the first tick. The barrel then melted
+  // 24 ticks later while its own reservoir — the number the inspector shows, and
+  // the number the heat glow is drawn from — was still reading about 460°
+  // (푸른 불꽃으로 가열 시 약 200도를 넘자마자 녹아버림). Lava did the same at 390°
+  // whenever a body sank into it rather than floating on top.
+  //
+  // The conduction step above already stopped reading raw cell temperature, for
+  // the mirror-image reason (air conducts nothing, so it must not cool a body).
+  // Leaving the *trigger* on cell temperature kept exactly half of that rule and
+  // made air the one thing that could still destroy an object without warming it.
+  // Now both halves agree: heat reaches a body only by contact, and what the body
+  // has actually absorbed is what melts, burns, or cooks it off. What you see on
+  // the body is what kills it.
+  //
+  // The cost is deliberate: dropping a drum in lava is no longer instant death, it
+  // is ~2.5 seconds of the barrel visibly glowing its way up to 1200°. The 가열
+  // brush still works the same, because it writes this very reservoir.
+  const heat = o.temp;
   // A dynamite stick has its own terminal logic (fuse countdown + heat cook-off +
   // tip interactions); it never melts or burns away like a drum/ball.
   if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
-  // A smoke bomb likewise runs its own two-stage countdown (trickle → discharge →
-  // spent) rather than melting or burning.
-  if (o.kind === 'smokebomb') return stepSmokeBomb(o, ctx, heat);
   // A flashbang runs a bare countdown to its flash (plus a heat cook-off) and
   // emits nothing at all until then. See stepFlashbang.
+  //
+  // It is the one body that also judges COLD, and cold now reads the same single
+  // source heat does: the reservoir. Both used to blend in the footprint's own cell
+  // temperatures — heat taking the max of the pair, cold the min, because a max
+  // would have demanded that BOTH readings be cold and silently killed the 냉각
+  // 브러시 in an ordinary room. With cell temperature out of the judgement
+  // entirely that whole asymmetry, and the −Infinity guard an out-of-world body
+  // needed with it, simply goes away: liquid nitrogen chills the can by contact
+  // like everything else, and the brush writes the reservoir directly.
   if (o.kind === 'flashbang') return stepFlashbang(o, ctx, heat);
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
@@ -5028,7 +5175,16 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // ramps the body up to a destroying temperature over a second or so while a
     // beam that moves on lets it cool back down (드럼통은 녹고, 나무 상자는 불붙고,
     // 다이너마이트는 유폭한다).
-    if (hz.rayHeat > 0) o.temp += hz.rayHeat;
+    //
+    // Divided by the body's thermal mass like the other two intake channels, and
+    // for the same reason: this is delivered *energy*, and dT = Q/(m·c). Leaving it
+    // out would hand the drum family a free lunch — soaking up a beam as fast as a
+    // rubber ball while shedding it 2.5× slower — so a steel drum now takes
+    // correspondingly longer under the laser than the wood and rubber around it,
+    // which is the right shape for the toy anyway. (The 가열/냉각 브러시 is NOT
+    // divided: it *assigns* a temperature rather than delivering heat — see
+    // PointerPainter.)
+    if (hz.rayHeat > 0) o.temp += hz.rayHeat / heatCapacity(o);
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);

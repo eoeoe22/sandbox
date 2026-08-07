@@ -56,7 +56,7 @@ export const en = {
       'Shockwave — thumps a Woofer shockwave out of the brush area. No woofer needed, and it breaks nothing: only powder, liquid and objects are pushed outward (repeats on a steady beat while held)',
     inspect: 'Inspect',
     inspectTooltip:
-      'Inspect — shows the particle kinds, counts, ratios, and average temperature of the brush area (independent of drawing)',
+      'Inspect — shows the particle kinds, counts, ratios, and average temperature of the brush area, and labels every object on screen with its own temperature (independent of drawing)',
     settings: 'Settings',
     settingsTooltip: 'Settings',
     groupDraw: 'Draw mode',

@@ -9,11 +9,6 @@
 import { drumSpriteFor, DRUM_SPRITE_W, DRUM_SPRITE_H } from './drumSprite';
 import { DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, FUSE_CORD_COLOR } from './dynamiteSprite';
 import {
-  SMOKE_BOMB_SPRITE,
-  SMOKE_BOMB_SPRITE_W,
-  SMOKE_BOMB_SPRITE_H,
-} from './smokeBombSprite';
-import {
   FLASHBANG_SPRITE,
   FLASHBANG_SPRITE_W,
   FLASHBANG_SPRITE_H,
@@ -43,15 +38,6 @@ const dynamiteSvg = pixelSvg(
   DYN_SPRITE_H + FUSE_LEN,
   `<rect x="3" y="0" width="2" height="${FUSE_LEN + 1}" fill="${hex(FUSE_CORD_COLOR)}"/>` +
     spriteRects(DYN_SPRITE, DYN_SPRITE_W, DYN_SPRITE_H, 0, FUSE_LEN),
-);
-
-// The smoke bomb: the canister sprite straight through, with nothing drawn around
-// it — its smoke is real Smoke particles the engine spawns in-world (like the
-// dynamite's flame), so the static preview is the can alone.
-const smokeBombSvg = pixelSvg(
-  SMOKE_BOMB_SPRITE_W,
-  SMOKE_BOMB_SPRITE_H,
-  spriteRects(SMOKE_BOMB_SPRITE, SMOKE_BOMB_SPRITE_W, SMOKE_BOMB_SPRITE_H),
 );
 
 // The wooden crate: the whole box's sprite straight through — no extra art, the
@@ -107,7 +93,6 @@ const OBJECT_SVG: Record<ObjectKind, string> = {
   oildrum: drumSvg('oil'),
   aciddrum: drumSvg('acid'),
   dynamite: dynamiteSvg,
-  smokebomb: smokeBombSvg,
   flashbang: flashbangSvg,
   crate: crateSvg,
   molotov: molotovSvg,

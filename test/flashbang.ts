@@ -11,6 +11,9 @@
 //   3. The flash BREAKS nothing (파괴력 6, below every durability) but SHOVES the
 //      loose matter around it, mass-conservingly.
 //   4. 열·폭발·끼임 set it off early — heat cook-off, and a real blast reaching it.
+//   5. COLD drags the countdown instead: chilled it runs at a third speed, deep
+//      frozen it stops dead, and thawing resumes it from where it paused. This is
+//      the one thing that reaches the timer, and it is a delay, never a defusal.
 //
 // Run: `node test/run-flashbang.mjs`.
 import { Grid } from '../src/game/engine/Grid';
@@ -19,6 +22,10 @@ import {
   createFlashbang,
   createDynamite,
   FLASHBANG_FUSE_TICKS,
+  FLASHBANG_IGNITE_TEMP,
+  FLASHBANG_CHILL_TEMP,
+  FLASHBANG_DEEP_CHILL_TEMP,
+  FLASHBANG_CHILL_RATE,
   FLASHBANG_RADIUS,
   FLASHBANG_HALF_LENGTH,
 } from '../src/game/engine/objects';
@@ -82,6 +89,26 @@ function makeRoom(): { grid: Grid; sim: Simulation } {
   fill(grid, 0, 100, 139, 139, STONE);
   grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
   return { grid, sim };
+}
+
+/** Hold the cells around `body` at `t`°, re-applied every tick against diffusion —
+ *  the way a fire under it (or a sustained 냉각 브러시 over it) would. Writing the
+ *  SURROUNDINGS rather than the body's own reservoir is the only thing that works
+ *  for cold: the trigger reads max(surroundings, reservoir), so a chilled body in a
+ *  room-temperature world is judged at room temperature.
+ *
+ *  The box has to cover the footprint at ANY rotation — the can topples on landing,
+ *  so its long 4.5-cell half-extent ends up on whichever axis it came to rest on.
+ *  A box sized for the upright can leaves the ends of a fallen one lying against
+ *  ambient floor, and the can conducts with every cell it touches: those few warm
+ *  cells are enough to hold the reservoir above the chill point. */
+function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
+  for (let y = Math.floor(body.y) - 7; y <= Math.floor(body.y) + 7; y++) {
+    for (let x = Math.floor(body.x) - 7; x <= Math.floor(body.x) + 7; x++) {
+      if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+      grid.temp[grid.idx(x, y)] = t;
+    }
+  }
 }
 
 // 1. The headline: three seconds of nothing, then the flash.
@@ -156,15 +183,18 @@ function makeRoom(): { grid: Grid; sim: Simulation } {
 //    NOT tested with a lava pool, deliberately: the can is denser than water but
 //    lighter than lava, so it floats ON a lava pond with its footprint clear of it
 //    and never gets hot — which is the buoyancy layer working correctly, not a
-//    flashbang bug, and is true of the smoke bomb and the dynamite too.
+//    flashbang bug, and is true of the dynamite too.
 {
   const { grid, sim } = makeRoom();
   const can = createFlashbang(70, 90);
   grid.objects.push(can);
   for (let i = 0; i < 5; i++) sim.step(); // let it land
-  can.temp = 600; // 가열 브러시
   let popped = -1;
   for (let i = 0; i < FLASHBANG_FUSE_TICKS; i++) {
+    // The brush HELD on the can, not one stamp of it: the reservoir relaxes back
+    // toward the room every tick (OBJECT_HEAT_CONDUCTION), so a single stamp is a
+    // spike that fades, and the cook-off deliberately wants sustained heat.
+    can.temp = FLASHBANG_IGNITE_TEMP + 300; // 가열 브러시
     sim.step();
     if (grid.objects.length === 0) {
       popped = i;
@@ -178,21 +208,33 @@ function makeRoom(): { grid: Grid; sim: Simulation } {
   const can = createFlashbang(70, 90);
   grid.objects.push(can);
   let popped = -1;
+  let hottest = -Infinity;
   for (let i = 0; i < FLASHBANG_FUSE_TICKS; i++) {
     // A bath of hot surroundings held around the can, the way a fire under it
     // would: cells the footprint overlaps, re-held each tick against diffusion.
+    // `hold` writes the FLOOR the can is resting on as well as the air, which is
+    // the whole reason this scene still works — the can's reservoir only trades
+    // with matter it touches, and its cook-off is judged on that reservoir alone.
     for (let y = Math.floor(can.y) - 5; y <= Math.floor(can.y) + 5; y++) {
       for (let x = Math.floor(can.x) - 3; x <= Math.floor(can.x) + 3; x++) {
         grid.temp[grid.idx(x, y)] = 800;
       }
     }
     sim.step();
+    if (can.temp > hottest) hottest = can.temp;
     if (grid.objects.length === 0) {
       popped = i;
       break;
     }
   }
-  check('so does a hot bath around it', popped >= 0 && popped < FLASHBANG_FUSE_TICKS / 2, `went off at tick ${popped} of ${FLASHBANG_FUSE_TICKS}`);
+  // Well inside its own fuse, but not instantly: an 800° bath has to carry the
+  // can's reservoir up past its 600° cook-off point first, which is most of the
+  // wait. Paired with the reservoir reading so "it went off early" can't be
+  // satisfied by anything except the can actually getting hot.
+  check('so does a hot bath around it', popped >= 0 && popped < FLASHBANG_FUSE_TICKS * 0.75, `went off at tick ${popped} of ${FLASHBANG_FUSE_TICKS}`);
+  check('…because the can itself got hot, not just its surroundings',
+    hottest >= FLASHBANG_IGNITE_TEMP,
+    `reservoir reached ${hottest.toFixed(0)}° (cook-off is ${FLASHBANG_IGNITE_TEMP}°)`);
 }
 
 // 5. 폭발: a real blast reaching a can sets it off, whatever its timer says. The
@@ -232,6 +274,140 @@ function makeRoom(): { grid: Grid; sim: Simulation } {
   grid.objects.push(can);
   for (let i = 0; i < 30; i++) sim.step();
   check('being crushed sets it off too', grid.objects.length === 0, `${grid.objects.length} bodies left`);
+}
+
+// 8. 상향된 가열 폭발 온도: the cook-off point sits at 600°, not the 200° it used to,
+//    so a can lying somewhere merely warm — a bed of embers, a hot metal floor —
+//    rides it out and its own timer stays the thing that ends it. Its fuse is
+//    stretched here so a survival is unambiguous: if it goes off, heat did it.
+{
+  const { grid, sim } = makeRoom();
+  const can = createFlashbang(70, 90);
+  can.fuseTicks = 100_000;
+  grid.objects.push(can);
+  const warm = (FLASHBANG_IGNITE_TEMP + 200) / 2; // 400° — hot, but not cook-off hot
+  for (let i = 0; i < 200; i++) {
+    hold(grid, can, warm);
+    sim.step();
+    if (grid.objects.length === 0) break;
+  }
+  check(
+    `${warm}° is warm but not enough — the old 200° threshold would have popped it`,
+    grid.objects.length === 1,
+    `body temp ${can.temp.toFixed(0)}°, cook-off at ${FLASHBANG_IGNITE_TEMP}°`,
+  );
+}
+
+// 9. 얼어붙으면 타이머가 느려진다. Below freezing the countdown drags at
+//    FLASHBANG_CHILL_RATE, so the can outlives its own 3 seconds by roughly the
+//    reciprocal of that — and still goes off. Cold is a delay, not a defusal.
+{
+  const { grid, sim } = makeRoom();
+  const can = createFlashbang(70, 90);
+  grid.objects.push(can);
+  const chill = (FLASHBANG_CHILL_TEMP + FLASHBANG_DEEP_CHILL_TEMP) / 2; // chilled, not deep
+  let popped = -1;
+  const limit = Math.round(FLASHBANG_FUSE_TICKS / FLASHBANG_CHILL_RATE) * 2;
+  for (let i = 0; i < limit; i++) {
+    hold(grid, can, chill);
+    sim.step();
+    if (grid.objects.length === 0) {
+      popped = i;
+      break;
+    }
+  }
+  check(
+    'a chilled can outlives its own countdown',
+    popped > FLASHBANG_FUSE_TICKS * 2,
+    `went off at tick ${popped}, fuse is ${FLASHBANG_FUSE_TICKS}`,
+  );
+  check(
+    '…by about 1/rate, and it does still go off',
+    popped > 0 && popped < FLASHBANG_FUSE_TICKS / FLASHBANG_CHILL_RATE + 40,
+    `${popped} vs ~${Math.round(FLASHBANG_FUSE_TICKS / FLASHBANG_CHILL_RATE)} expected`,
+  );
+}
+
+// 10. A DEEP freeze stops the clock outright — and thawing it resumes from exactly
+//     where it paused rather than restarting or skipping ahead. The two halves are
+//     one test on purpose: "it never goes off" alone would also pass if the can had
+//     been quietly deleted, and "it goes off after thawing" alone would also pass
+//     if the freeze had done nothing at all.
+{
+  const { grid, sim } = makeRoom();
+  const can = createFlashbang(70, 90);
+  grid.objects.push(can);
+  const FROZEN = 400;
+  let midway = -1;
+  for (let i = 0; i < FROZEN; i++) {
+    hold(grid, can, FLASHBANG_DEEP_CHILL_TEMP - 40);
+    sim.step();
+    if (i === FROZEN / 2) midway = can.fuseTicks;
+    if (grid.objects.length === 0) break;
+  }
+  check('a deep-frozen can does not go off', grid.objects.length === 1, `after ${FROZEN} ticks`);
+  const left = can.fuseTicks;
+  // STOPPED, not merely slowed — the clock reads exactly the same after 400 frozen
+  // ticks as it did after 200. Stated that way rather than as a fraction of the
+  // fuse because the freeze costs a real handful of ticks to bite: the can is
+  // judged on its own reservoir, so the bath has to conduct it down from room
+  // temperature to -30° before the clock stops, and it runs at full speed on the
+  // way. That ramp-in is the behaviour, and pinning the reading to `midway` measures
+  // the claim (the clock stops) instead of the ramp.
+  check(
+    'and its countdown is stopped, not merely slowed',
+    left === midway && left > FLASHBANG_FUSE_TICKS * 0.7,
+    `${left.toFixed(1)} of ${FLASHBANG_FUSE_TICKS} ticks left, unchanged over the last ${FROZEN / 2} frozen ticks (chilling down from room temperature costs the first ${(FLASHBANG_FUSE_TICKS - left).toFixed(0)})`,
+  );
+  // Thaw: hold the same cells at room temperature again. Actively, not by simply
+  // stopping — this world has no ambient heat source, so cells the freeze drove to
+  // -70 just stay there and diffuse among themselves forever.
+  let popped = -1;
+  for (let i = 0; i < 600; i++) {
+    hold(grid, can, 20);
+    sim.step();
+    if (grid.objects.length === 0) {
+      popped = i;
+      break;
+    }
+  }
+  check('thawing resumes the countdown', popped >= 0, `went off ${popped} ticks after the thaw`);
+  check('and it really did flash', count(grid, FLASH) > 100, `${count(grid, FLASH)} Flash cells`);
+}
+
+// 11. 냉각 브러시 alone is enough — the regression this whole pair of readings
+//     exists for. The brush writes ONLY the body's own reservoir; the room around
+//     it stays at 20°. Cold and cook-off now read that one number, so the brush is
+//     simply believed; there was a spell when the two were resolved differently
+//     (heat as max(surroundings, reservoir), cold as the min) and getting that pair
+//     wrong made this case — the first thing a player tries — do nothing at all.
+//
+//     Deliberately NOT using hold() here — writing the surrounding cells is the
+//     path case 9/10 already cover, and it is precisely the path that masked this.
+{
+  const { grid, sim } = makeRoom();
+  const can = createFlashbang(70, 90);
+  grid.objects.push(can);
+  let popped = -1;
+  const limit = FLASHBANG_FUSE_TICKS * 4;
+  for (let i = 0; i < limit; i++) {
+    can.temp = FLASHBANG_DEEP_CHILL_TEMP - 20; // 냉각 브러시 held on it, in 20° air
+    sim.step();
+    if (grid.objects.length === 0) {
+      popped = i;
+      break;
+    }
+  }
+  check(
+    'the 냉각 브러시 alone stops the countdown, in an otherwise room-temperature world',
+    popped === -1,
+    popped === -1 ? `still ticking after ${limit} ticks` : `went off at tick ${popped}`,
+  );
+  check(
+    'and the timer really was held, not merely slowed',
+    can.fuseTicks > FLASHBANG_FUSE_TICKS * 0.8,
+    `${can.fuseTicks.toFixed(1)} of ${FLASHBANG_FUSE_TICKS} ticks left`,
+  );
 }
 
 // 7. Art and physics agree. The capsule box is 2·radius × 2·(halfLength+radius)

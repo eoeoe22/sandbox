@@ -211,12 +211,12 @@ export const materialCodexEn: Record<number, string> = {
 
 export const objectCodexEn: Record<ObjectKind, string> = {
   ball: 'A rubber ball with high elasticity. Bounces off walls and solids, and floats on water.',
-  drum: 'A metal drum barrel. Responds to electromagnets and floats on water.',
+  drum: 'A metal drum barrel. Responds to electromagnets and floats low in water. The heaviest body here, so wind barely shifts it, and thick enough steel to be slow both to heat and to cool.',
   oildrum: 'A drum barrel that leaks crude oil when broken.',
   aciddrum: 'A drum barrel that leaks acid when broken.',
-  dynamite: 'A stick of dynamite spawned in an ignited state that explodes shortly.',
-  smokebomb: 'Emits a large amount of smoke.',
-  flashbang: 'A flashbang that goes off in a blinding white flash three seconds after it is created, with no warning at all. It breaks nothing, but shoves the loose powder and liquid around it aside.',
+  dynamite:
+    'A stick of dynamite spawned in an ignited state that explodes shortly. It is heat-sensitive too: fire or anything hot sets it off without waiting for the fuse. Its own wick flame is the exception — that never heats the stick, so left alone it burns down to its countdown.',
+  flashbang: 'A flashbang that goes off in a blinding white flash three seconds after it is created, with no warning at all. It breaks nothing, but shoves the loose powder and liquid around it aside. Freezing one slows its countdown, and a deep freeze stops it altogether — so you can bury one in ice and set it off by thawing it.',
   crate: 'A wooden crate destroyed by strong impacts or fire.',
-  molotov: 'A Molotov cocktail that shatters to ignite alcohol flames.',
+  molotov: 'A Molotov cocktail that shatters to ignite alcohol flames. Smashed, it sprays broken glass; heated to glass\'s melting point instead, the whole bottle runs, leaving equal amounts of Molten Glass and Alcohol.',
 };
