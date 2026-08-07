@@ -450,7 +450,6 @@
     flex-direction: column;
     gap: 10px;
     min-width: min(420px, 74vw);
-    max-width: 720px;
   }
   .panel.drag-over {
     outline: 2px dashed #6ea8fe;

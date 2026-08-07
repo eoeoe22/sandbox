@@ -47,7 +47,7 @@
 </script>
 
 <div class="guide-shell">
-  <nav class="guide-tabs" role="tablist" aria-label={t('codex.tabMaterials')}>
+  <nav class="guide-tabs" role="tablist" aria-label={t('codex.tabGroup')}>
     <button
       role="tab"
       class="gtab"

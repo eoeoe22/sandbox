@@ -405,6 +405,7 @@ export const en = {
     title: 'Material Codex',
     tabMaterials: 'Material Codex',
     tabBasics: 'Game Guide',
+    tabGroup: 'Guide sections',
     search: 'Search materials',
     searchClear: 'Clear search',
     all: 'All',

@@ -402,6 +402,7 @@ export const ko = {
     title: '물질 도감',
     tabMaterials: '물질 도감',
     tabBasics: '게임 가이드',
+    tabGroup: '가이드 섹션',
     search: '물질 검색',
     searchClear: '검색어 지우기',
     all: '전체',
