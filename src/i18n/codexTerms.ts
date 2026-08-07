@@ -82,7 +82,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   // Stats — combustion
   flameOnly: {
     ko: {
-      label: '직화 전용',
+      label: '직화 연소',
       desc: '아무리 뜨거워도 열만으로는 불이 붙지 않고, 불꽃이 직접 닿아야 탑니다.',
     },
     en: {
@@ -288,8 +288,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   perishable: {
     ko: {
-      label: '썩는 것',
-      desc: '상하면 부패물이 됩니다. 다만 젖어 있거나(물·수증기가 닿아 있다) 곰팡이가 붙어 있어야 시계가 돌아, 마른 자리에 둔 것은 상하지 않습니다. 젖은 채로 어느 정도 상하면 그 자리에서 곰팡이가 피어나며, 물에 완전히 잠겨 있어도 물을 밀어내고 핍니다. 0℃ 아래로 얼리거나 60℃ 넘게 익히면 멈추고, 소금·알콜·꿀이 닿아 있어도 멈춥니다. 멈추는 것이지 되돌리는 것이 아니라, 치우면 그 자리에서 이어집니다.',
+      label: '습기로 부패',
+      desc: '물·수증기 또는 곰팡이에 닿으면 상하기 시작해 부패물이 됩니다. 0℃ 아래로 얼리거나 60℃ 넘게 가열하면 멈추며, 소금·알콜·꿀이 닿아 있어도 멈춥니다.',
     },
     en: {
       label: 'Perishable',
@@ -298,8 +298,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   rotsUnattended: {
     ko: {
-      label: '그냥 둬도 썩음',
-      desc: '젖지 않아도, 곰팡이가 없어도 혼자 상합니다. 「썩는 것」의 예외라, 이것만은 마른 선반에 둬도 보관되지 않습니다.',
+      label: '습기 없이도 부패',
+      desc: '습기나 곰팡이 없이도 시간이 지나면 부패합니다.',
     },
     en: {
       label: 'Rots unattended',
@@ -308,8 +308,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   moldsItself: {
     ko: {
-      label: '마른 데서도 곰팡이가 핌',
-      desc: '충분히 상하면 그 자리에서 곰팡이가 피어 포자를 날립니다 — 젖지 않아도 그렇습니다. 다른 식품도 곰팡이는 피지만 그건 젖었을 때 얘기라, 마른 창고 안에서 곰팡이가 시작될 수 있는 것은 이것뿐입니다.',
+      label: '건조해도 곰팡이 발생',
+      desc: '충분히 상하면 젖지 않아도 곰팡이가 피어 포자를 날립니다.',
     },
     en: {
       label: 'Molds even when dry',
@@ -318,8 +318,8 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
   neverMolds: {
     ko: {
-      label: '곰팡이가 안 핌',
-      desc: '아무리 젖어도 여기서 곰팡이가 피어나지는 않습니다. 그냥 놔두면 알아서 다음 단계로 넘어가는 종착점이라, 곰팡이밭이 되는 대신 흙이 됩니다. (밖에서 기어 들어온 곰팡이가 표면에 앉는 것은 별개입니다.)',
+      label: '곰팡이가 피어나지 않음',
+      desc: '곰팡이가 생성되지 않습니다.',
     },
     en: {
       label: 'Never grows mold',
@@ -329,7 +329,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   driedKeeps: {
     ko: {
       label: '말리면 안 썩음',
-      desc: '수분이 다 날아간 칸은 썩지 않습니다 — 육포가 이것입니다. 다만 익히지 않을 만큼 낮은 온도(45~70℃)에서 말려야 합니다. 그보다 뜨거우면 마르기 전에 익어 버리고, 익은 고기는 아무리 바싹 말라도 그냥 썩습니다 — 굽는 것은 말려서 보관하는 것과 다릅니다.',
+      desc: '수분이 다 날아간 칸은 썩지 않습니다.',
     },
     en: {
       label: 'Keeps when dried',
