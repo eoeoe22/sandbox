@@ -307,14 +307,22 @@ const SETTLE_TICKS = 40;
 //
 //     The temperature is therefore applied to the SURROUNDING CELLS, not by
 //     assigning the body's `temp` reservoir. Writing the reservoir directly does
-//     not hold: evaluateTriggers relaxes it toward the footprint's own temperature
-//     *before* it computes the heat it judges by (OBJECT_HEAT_CONDUCTION, 8% per
-//     tick), so a reservoir stamped at 1050° each tick in ~20° air is compared at
-//     ≈968° — under Fire's 1000°, i.e. not testing the claim at all. A cell bath
-//     enters through `exp.maxTemp`, which is read fresh with no relaxation.
-//     The check on the reservoir below is what makes that visible rather than
-//     assumed: the body warms toward the bath, so a reservoir past 1000° after the
-//     hold is direct evidence the bottle really did sit hotter than its own flame.
+//     not hold: evaluateTriggers relaxes it before it computes the heat it judges
+//     by, so a reservoir stamped at 1050° each tick in ~20° air is compared at
+//     rather less than that — under Fire's 1000°, i.e. not testing the claim at
+//     all. A cell bath enters through `exp.maxTemp`, which is read fresh with no
+//     relaxation.
+//
+//     What makes the control *bite* rather than merely pass is the pair of holds
+//     under it. The bath is applied to air, and air no longer conducts into a body
+//     at all (the reservoir only trades with matter it touches — see
+//     scanBodyExposure), so the reservoir is no longer evidence of anything here
+//     and asking it "are you past 1000°?" would now fail for a reason that has
+//     nothing to do with the claim. The claim is about the temperature the bottle
+//     is JUDGED at, so it is tested where it lives: the same bath at
+//     MOLOTOV_BURST_TEMP melts the bottle and at 1050° it does not. That is the
+//     boundary itself, one hundred degrees wide, and it proves both halves at once
+//     — the bath really does reach the bottle, and 1050° really is not enough.
 {
   /** Hold the body in a `deg` bath for `ticks` ticks. Only EMPTY cells are heated
    *  — the stone floor is left alone, since at 1600° it would melt and change the
@@ -332,7 +340,6 @@ const SETTLE_TICKS = 40;
     shards: number;
     molten: number;
     alcohol: number;
-    reservoir: number;
   } => {
     const { grid, sim } = makeWorld();
     floor(grid, 70);
@@ -358,7 +365,7 @@ const SETTLE_TICKS = 40;
         break;
       }
     }
-    return { survived: grid.objects.length === 1, shards, molten, alcohol, reservoir: m.temp };
+    return { survived: grid.objects.length === 1, shards, molten, alcohol };
   };
   const hot = hold(1600, 60);
   check('a sustained 1600° bath melts the bottle open', !hot.survived);
@@ -379,11 +386,18 @@ const SETTLE_TICKS = 40;
   // the same number as glass's own — so this is simultaneously "its own flame can
   // never do it" and "it gives way exactly when glass does".
   const warm = hold(1050, 200);
-  check("a 1050° bath really does get the bottle past Fire's own 1000°",
-    warm.reservoir > 1000, `reservoir settled at ${warm.reservoir.toFixed(0)}°`);
-  check('and it still never gives way (대조군)', warm.survived,
-    `melting point is ${MOLOTOV_BURST_TEMP}°`);
+  check("a 1050° bath — hotter than Fire's own 1000° — still never gives way (대조군)",
+    warm.survived, `melting point is ${MOLOTOV_BURST_TEMP}°`);
   check('and spills nothing', warm.molten + warm.alcohol + warm.shards === 0);
+  // The other side of that same boundary: one hundred degrees up, on the exact
+  // number, the identical bath does melt it. Without this the control above would
+  // pass just as well if the bath never reached the bottle at all.
+  const atPoint = hold(MOLOTOV_BURST_TEMP, 200);
+  check('while the same bath at the melting point itself does melt it',
+    !atPoint.survived, `${MOLOTOV_BURST_TEMP}°`);
+  check('and that one really does pour (녹은 유리 + 알콜)',
+    atPoint.molten > 0 && atPoint.alcohol > 0,
+    `${atPoint.molten} molten glass, ${atPoint.alcohol} alcohol`);
 }
 
 // 11. A blast直격 destroys it through the shared byproduct path (no special case).

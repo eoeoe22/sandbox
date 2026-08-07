@@ -217,6 +217,17 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
     },
   },
 
+  heatHeld: {
+    ko: {
+      label: '자체 온도',
+      desc: '오브젝트는 자기 온도를 지닙니다. 뜨겁거나 차가운 것에 직접 닿았을 때만 온도가 오가고, 닿은 쪽에도 자기 열을 나눠 줍니다 — 달군 물체를 모래에 파묻으면 모래가 달아오릅니다. 공기는 열을 옮기지 못하므로 허공에 뜬 물체는 온도를 그대로 유지하고, 식히려면 물이나 찬 바닥에 대거나 선풍기 바람을 쐬어야 합니다. 돋보기를 켜면 각 오브젝트의 온도가 숫자로 보입니다.',
+    },
+    en: {
+      label: 'Own heat',
+      desc: 'An object carries its own temperature. Heat only moves when it is touching something hotter or colder — and it flows the other way too, so a red-hot object buried in sand heats the sand. Air carries no heat here, so an object in mid-air holds its temperature: to cool it, set it in water or on cold ground, or point a fan at it. Turn on Inspect to read each object\'s temperature as a number.',
+    },
+  },
+
   // Traits — electricity
   conductive: {
     ko: { label: '전기 전도', desc: '스파크가 이 물질을 타고 옆 칸으로 흘러갑니다.' },

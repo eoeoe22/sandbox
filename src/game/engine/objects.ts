@@ -67,10 +67,13 @@ export interface SimObject {
    *  destruction is time-gated (like the drum's melt) so a stray hot pixel
    *  doesn't pop the ball — only sustained exposure does. */
   heatTicks: number;
-  /** The body's own heat reservoir (°). Relaxes toward the surrounding footprint
-   *  temperature each tick and is what the 가열/냉각 brush writes, so heat/cool
+  /** The body's own heat reservoir (°). Trades heat both ways with the matter the
+   *  footprint is *touching* — and only with that, so a body in still air holds
+   *  its temperature the way an uncooled lava blob does (see the conduction step
+   *  in evaluateTriggers). It is also what the 가열/냉각 brush writes, so heat/cool
    *  reaches a body even where it floats over empty air (which the cell heat brush
-   *  can't warm). The burn trigger judges by max(surroundings, this). */
+   *  can't warm), and it is what the 온도 오버레이 wash and the 돋보기 readout show.
+   *  The burn trigger judges by max(surroundings, this). */
   temp: number;
   /** Orientation (rad) of the 1-axis spin. The disc looks the same at every
    *  angle, so unlike a capsule this never changes what's drawn — it only lives
@@ -2593,6 +2596,18 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 }
 
 /**
+ * Flat (x, y) pairs of the footprint cells the last `scanBodyExposure` found the
+ * body genuinely *touching* — the cells it can trade heat with. Reused across
+ * calls so a per-tick, per-body scan allocates nothing; the first
+ * `2 * contactCount` entries are the live ones and everything past them is stale.
+ *
+ * Valid only until the next `scanBodyExposure` call, so a caller that wants the
+ * contact set must consume it immediately (evaluateTriggers does, in its
+ * conduction step, before running any trigger that could rescan).
+ */
+const contactCells: number[] = [];
+
+/**
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
  * cleared cells become short-lived BLAST cells → instant destruction), a Nuclear Ray
@@ -2603,36 +2618,81 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
  * caller), and the *fraction of the footprint buried in solid* (a wedged/entombed
  * body is crushed). Works for balls and drums alike via the segment+radius
  * footprint.
+ *
+ * It also reports what the body is in thermal *contact* with, which is a strictly
+ * narrower thing than `maxTemp`: the cells it is actually touching matter in
+ * (`contactCount`, collected into `contactCells`) and the hottest of those
+ * (`contactTemp`), plus whether a Fan's wind is blowing through the footprint
+ * (`wind`). Conduction runs off those rather than off `maxTemp` — see the
+ * conduction step in evaluateTriggers for why air alone must not cool a body.
  */
 function scanBodyExposure(
   o: SimBody,
   ctx: SimContext,
-): { blast: boolean; nuclearRay: boolean; maxTemp: number; solidFrac: number } {
+): {
+  blast: boolean;
+  nuclearRay: boolean;
+  maxTemp: number;
+  solidFrac: number;
+  contactTemp: number;
+  contactCount: number;
+  wind: boolean;
+} {
   const core = bodyCore(o);
   const r2 = core.r * core.r;
+  // The contact shell is the footprint grown by one cell, and it has to be:
+  // collision resolves a resting body to just *outside* the ground, so a drum
+  // standing on sand never overlaps a single grain of it. Judged on the raw
+  // footprint, "touching" would have meant "embedded in", and a body could sit
+  // red-hot on a beach forever without warming it or losing a degree.
+  const rc = core.r + OBJECT_CONTACT_MARGIN;
+  const rc2 = rc * rc;
   const [spanX, spanY] = coreHalfSpan(core);
-  const x0 = Math.floor(o.x - spanX);
-  const x1 = Math.ceil(o.x + spanX);
-  const y0 = Math.floor(o.y - spanY);
-  const y1 = Math.ceil(o.y + spanY);
+  const x0 = Math.floor(o.x - spanX - OBJECT_CONTACT_MARGIN);
+  const x1 = Math.ceil(o.x + spanX + OBJECT_CONTACT_MARGIN);
+  const y0 = Math.floor(o.y - spanY - OBJECT_CONTACT_MARGIN);
+  const y1 = Math.ceil(o.y + spanY + OBJECT_CONTACT_MARGIN);
   let blast = false;
   let nuclearRay = false;
   let maxTemp = -Infinity;
   let footprint = 0;
   let solid = 0;
+  let contactTemp = -Infinity;
+  let contactCount = 0;
+  let wind = false;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
       const dx = cx + 0.5 - spx;
       const dy = cy + 0.5 - spy;
-      if (dx * dx + dy * dy > r2) continue;
-      footprint++;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rc2) continue;
+      // Inside the body proper, versus merely in the shell around it. Everything
+      // the body is *destroyed* by — blast, beam, burial, and the `maxTemp` the
+      // heat triggers judge — stays on the strict footprint, unchanged; only the
+      // thermal-contact set uses the grown shell.
+      const inFoot = d2 <= r2;
+      if (inFoot) footprint++;
       // Out-of-bounds cells count toward the footprint but NOT as burial: the
       // container's wall border bounces a body off rather than crushing it, so a
       // body resting against the world edge must not read as entombed.
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
       const m = id === EMPTY ? null : getMaterial(id);
+      if (!inFoot) {
+        // Shell-only cell: it can touch the body and it can blow on it, nothing
+        // more. Same skip list as the footprint below — a cell whose `temp` is
+        // packed bookkeeping has no reading to trade, and air/Wall never trade.
+        if (m !== null && (m.packedTemp || m.decorTemp)) continue;
+        if (!wind && ctx.getWind(cx, cy) !== 0) wind = true;
+        if (m === null || m.isWall === true) continue;
+        const ts = ctx.getTemp(cx, cy);
+        if (ts > contactTemp) contactTemp = ts;
+        contactCells[contactCount * 2] = cx;
+        contactCells[contactCount * 2 + 1] = cy;
+        contactCount++;
+        continue;
+      }
       // Crush counts only *true* solid — a real Solid-phase material or the world
       // Wall, NOT a merely-frozen liquid (끼임 파괴 로직은 고체에만 적용). Collision
       // (isSolidCell) treats a frozen puddle as solid footing, but a body sitting
@@ -2655,11 +2715,34 @@ function scanBodyExposure(
       // opposite reason: its reading is real but purely cosmetic, so a volley
       // bursting over a wooden box must not cook it (see Material.decorTemp).
       if (m !== null && (m.packedTemp || m.decorTemp)) continue;
+      // A Fan's gust reaching the body is the one way *air* gets to carry heat
+      // off it (강제 대류). Wind is a transient effect layer, not a particle, so
+      // it is read off the same cells whether or not anything occupies them.
+      if (!wind && ctx.getWind(cx, cy) !== 0) wind = true;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
+      // Thermal contact. Air is excluded because it has zero conductivity in this
+      // world (see config.ts AMBIENT_TEMP: a lava blob with nothing touching it
+      // never cools), and Wall is excluded because it is held outside the
+      // temperature system entirely (wall.ts; the 가열/냉각 brush skips it for the
+      // same reason). What's left is real matter, and only real matter trades
+      // heat with a body.
+      if (m === null || m.isWall === true) continue;
+      if (t > contactTemp) contactTemp = t;
+      contactCells[contactCount * 2] = cx;
+      contactCells[contactCount * 2 + 1] = cy;
+      contactCount++;
     }
   }
-  return { blast, nuclearRay, maxTemp, solidFrac: footprint > 0 ? solid / footprint : 0 };
+  return {
+    blast,
+    nuclearRay,
+    maxTemp,
+    solidFrac: footprint > 0 ? solid / footprint : 0,
+    contactTemp,
+    contactCount,
+    wind,
+  };
 }
 
 /** Per-cell chance a shattered drum SHARD flings an Iron Powder fragment from that
@@ -2999,12 +3082,61 @@ const WIND_DIRV: ReadonlyArray<readonly [number, number]> = [
  *  transient shove-into-terrain, so only a genuinely stuck body reaches it. */
 const CRUSH_SOLID_FRAC = 0.6;
 
-/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward its
- *  surrounding footprint temperature — Newtonian conduction between the object
- *  and the medium it sits in. Small, so brush-applied heat/cool lingers a couple
- *  of seconds and a body carries heat briefly after leaving a fire, rather than
- *  snapping to ambient in one tick. Feel knob. */
-const OBJECT_HEAT_CONDUCTION = 0.08;
+/** Per-tick fraction a body's heat reservoir (SimBody.temp) moves toward the
+ *  matter it is *touching* — Newtonian conduction between the object and the
+ *  medium it sits in. Deliberately small: a body is a chunky, thermally massive
+ *  thing next to a single cell, so it should glow for a good while after being
+ *  lifted out of a fire and take a visible moment to come up to a lava pool's
+ *  temperature rather than snapping there. Feel knob. */
+const OBJECT_HEAT_CONDUCTION = 0.03;
+
+/** How far past its own surface (in cells) a body still counts as *touching*
+ *  matter for heat. One cell, because collision parks a resting body just clear
+ *  of the ground: without the margin nothing a body stands on would ever be in
+ *  thermal contact with it. See the shell test in scanBodyExposure. */
+const OBJECT_CONTACT_MARGIN = 1;
+
+/** Multiplier on that rate while a Fan's wind blows through the footprint —
+ *  강제 대류. This is the *only* way still air moves a body's heat at all (air
+ *  conducts nothing in this world), so a fan is the tool for cooling something
+ *  red-hot without dunking it. */
+const OBJECT_WIND_CONVECTION = 3;
+
+/** Per-tick fraction each touched cell moves toward the body's reservoir — the
+ *  return leg of the same conduction (양방향 열전도), so a red-hot drum warms the
+ *  sand under it and a deep-frozen can frosts the water it lies in. Lower than
+ *  the body's own rate: one cell is small next to a whole object, and this runs
+ *  on *every* touched cell at once, so a heavy hand here would let a body pump
+ *  an entire lava pool cold. */
+const CELL_HEAT_CONDUCTION = 0.02;
+
+/** Gap below which the return leg doesn't bother writing a cell. Keeps a body
+ *  sitting at equilibrium from dirtying its whole contact patch every tick for
+ *  a change no one can see. */
+const CELL_HEAT_EPSILON = 0.5;
+
+/**
+ * Push the body's own temperature back out into every cell it touches — the
+ * direction the object layer used to lack entirely (heat only ever flowed grid →
+ * object). `cells` is the scratch `contactCells` array `scanBodyExposure` just
+ * filled, so this must run before anything can rescan.
+ *
+ * No filtering happens here: the scan already dropped air, Wall and every cell
+ * whose `temp` holds packed bookkeeping rather than a reading, which is exactly
+ * the set the 가열/냉각 brush refuses to write too. Relaxation can't overshoot
+ * (the rate is well under 1), so a body never drives a cell past its own
+ * temperature — it can heat sand to red but never hotter than itself.
+ */
+function conductBodyHeatOut(o: SimBody, ctx: SimContext, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const cx = contactCells[i * 2];
+    const cy = contactCells[i * 2 + 1];
+    const t = ctx.getTemp(cx, cy);
+    const gap = o.temp - t;
+    if (gap < CELL_HEAT_EPSILON && gap > -CELL_HEAT_EPSILON) continue;
+    ctx.setTemp(cx, cy, t + gap * CELL_HEAT_CONDUCTION);
+  }
+}
 
 /**
  * Scan the body's footprint once for the contacts captured at the tick's *start*
@@ -4584,17 +4716,34 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
     destroyByproduct(o, ctx, spawn, blast ? 'impact' : 'collapse');
     return false; // ball: no byproduct
   }
-  // The body's own heat reservoir relaxes toward its surroundings each tick
-  // (Newtonian conduction): a body in a hot medium warms up, one in cool air (or
-  // cooled by the 냉각 brush) sheds heat back toward ambient — so brush-applied
-  // heat/cool fades naturally and a hot body pulled from a fire keeps melting only
-  // briefly. `maxTemp` is -Infinity only when the footprint has NO in-bounds cell
-  // — a body that has drifted fully out of a `void` border — in which case we
-  // freeze the reservoir (skip conduction) rather than let it decay to −Infinity
-  // (then NaN the next such tick), which would permanently break the max() heat
-  // test if the body re-entered the world.
-  if (Number.isFinite(exp.maxTemp)) {
-    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
+  // The body's heat reservoir trades with what it is TOUCHING, both ways.
+  //
+  // What it touches, and nothing else: a body hanging in still air holds its
+  // temperature indefinitely. That isn't a shortcut, it is the same rule the cell
+  // layer already runs on — air has zero conductivity here, which is why a lava
+  // blob with no cold sink against it stays molten forever (config.ts
+  // AMBIENT_TEMP). Relaxing toward `maxTemp` instead, as this used to, quietly
+  // made every object the one thing in the world that air could cool, so a
+  // red-hot ball flying through empty space faded on its way. Now it lands still
+  // glowing, and putting the heat *out* is something you do — drop it in water,
+  // bury it in sand, or point a Fan at it (the one way air carries heat off a
+  // body: 강제 대류, see OBJECT_WIND_CONVECTION).
+  //
+  // `contactTemp` is −Infinity precisely when the contact set is empty, which
+  // covers the out-of-world case for free (a body past a `void` border has no
+  // in-bounds cell to touch): no contact, no conduction, reservoir held. That
+  // also keeps the reservoir from decaying to −Infinity and NaN-ing the tick
+  // after, which would permanently break the heat test if it drifted back in.
+  if (exp.contactCount > 0) {
+    const rate = exp.wind ? OBJECT_HEAT_CONDUCTION * OBJECT_WIND_CONVECTION : OBJECT_HEAT_CONDUCTION;
+    o.temp += (exp.contactTemp - o.temp) * rate;
+    // …and the return leg, into every one of those cells. Runs here, immediately
+    // after the scan, because it reads the scan's scratch contact list.
+    conductBodyHeatOut(o, ctx, exp.contactCount);
+  } else if (exp.wind && Number.isFinite(exp.maxTemp)) {
+    // Nothing touched, but a gust is blowing over it: the air itself becomes the
+    // medium, at the boosted convective rate.
+    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION * OBJECT_WIND_CONVECTION;
   }
   // Judge heat by the hotter of the surroundings and the body's own reservoir:
   // ambient heat (lava/fire under the footprint) still triggers instantly as

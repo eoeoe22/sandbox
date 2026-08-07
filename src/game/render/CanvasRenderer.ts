@@ -29,7 +29,7 @@ import {
   wooferTileIndex,
 } from './wooferDriver';
 import type { SimCapsule, SimWoodBox } from '../engine/objects';
-import { molotovBottle } from '../engine/objects';
+import { bodyReach, molotovBottle } from '../engine/objects';
 
 /** Rubber-ball body color, packed 0xAABBGGRR for direct pixel-grid writes. The
  *  ball is rasterized into the same low-res buffer as the cells, so it reads as
@@ -45,6 +45,13 @@ const BALL_BORDER_COLOR = rgb(0x1a, 0x10, 0x12); // near-black rubber outline
  *  Still nearest-neighbor / no anti-aliasing, so it stays crisp pixel art, just
  *  finer. */
 const OBJECT_SCALE = 2;
+
+/** Type size (CSS px, scaled to device pixels at draw time) of the 돋보기 object
+ *  temperature label. Small enough to sit beside a 4-cell can without covering
+ *  it, large enough to read at the default zoom. */
+const OBJECT_TEMP_FONT_PX = 10;
+/** Gap (CSS px) between a body's right edge and its label. */
+const OBJECT_TEMP_GAP = 2;
 
 // ── 오브젝트 온도 오버레이 ────────────────────────────────────────────────────
 // A body carries its own heat reservoir (SimBody.temp — see engine/objects.ts), and
@@ -657,6 +664,10 @@ export class CanvasRenderer implements Renderer {
   /** When true, occupied cells are drawn by temperature (thermal camera) instead
    *  of their material colour (see setHeatOverlay / HEAT_LUT). */
   private heatOverlay = false;
+  /** When true, every free object is labelled with its own temperature (see
+   *  drawObjectTemps). Mirrors the 돋보기 overlay toggle, which reads out the cells
+   *  under the cursor — objects aren't cells, so this is how they get read out. */
+  private inspect = false;
   /** Reference-grid line spacing in cells; 0 = no overlay (see setGridDivision). */
   private gridDivision = 0;
   /** Packed temperature→colour lookup for the heat overlay, spanning
@@ -1563,6 +1574,13 @@ export class CanvasRenderer implements Renderer {
       this.rasterizeObjects(grid, heat);
       this.objCtx.putImageData(this.objImage, 0, 0);
       this.ctx.drawImage(this.objOff, rect.x, rect.y, rect.width, rect.height);
+      // 돋보기: the wash tells you a body is hot, this tells you how hot. Drawn as
+      // real text on the display canvas rather than into the pixel-art overlay —
+      // the overlay is nearest-neighbor upscaled, which would turn any glyph small
+      // enough to fit into mush.
+      if (this.inspect) {
+        this.drawObjectTemps(grid, rect.x, rect.y, rect.width, rect.height, scale);
+      }
     }
     if (this.gridDivision > 0) {
       this.drawGrid(rect.x, rect.y, rect.width, rect.height, grid.width, grid.height, scale);
@@ -2385,6 +2403,59 @@ export class CanvasRenderer implements Renderer {
     ctx.restore();
   }
 
+  /**
+   * 돋보기 오브젝트 온도: label every free body with its own reservoir temperature
+   * (SimBody.temp), small, just off its top-right corner.
+   *
+   * This exists because the 돋보기 overlay surveys *cells* — it reports what is
+   * under the cursor by reading the grid, and an object isn't on the grid, so the
+   * one layer whose temperature you can now see (the 온도 오버레이 wash) was also
+   * the one layer you couldn't get a number for. The wash answers "is this hot",
+   * this answers "how hot", and neither needs the thermal camera on.
+   *
+   * Anchored to the body's covering circle (`bodyReach`) rather than its sprite
+   * box so the label doesn't jitter as a capsule tumbles — the circle is the one
+   * extent that doesn't change with orientation. The number is clamped back
+   * inside the play area, so a drum shoved against the right wall labels itself
+   * inward instead of writing over the page.
+   */
+  private drawObjectTemps(
+    grid: Grid,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    scale: number,
+  ): void {
+    const ctx = this.ctx;
+    const cw = w / grid.width; // device px per cell
+    const ch = h / grid.height;
+    const size = Math.max(8, Math.round(OBJECT_TEMP_FONT_PX * scale));
+    ctx.save();
+    ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    // A dark halo under light text, so the number stays legible over lava, over
+    // snow and over the body's own art alike.
+    ctx.lineWidth = Math.max(2, Math.round(2 * scale));
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(6, 8, 12, 0.85)';
+    ctx.fillStyle = 'rgba(236, 242, 252, 0.96)';
+    for (const o of grid.objects) {
+      const reach = bodyReach(o);
+      const label = `${Math.round(o.temp)}°`;
+      let lx = x + (o.x + reach) * cw + OBJECT_TEMP_GAP * scale;
+      let ly = y + (o.y - reach) * ch;
+      const tw = ctx.measureText(label).width;
+      if (lx + tw > x + w) lx = x + w - tw; // shoved off the right edge
+      if (lx < x) lx = x;
+      if (ly - size < y) ly = y + size; // …or off the top
+      ctx.strokeText(label, lx, ly);
+      ctx.fillText(label, lx, ly);
+    }
+    ctx.restore();
+  }
+
   /** Pick which edge mode to signal in the boundary outline. */
   setBorderMode(mode: BorderMode): void {
     this.borderMode = mode;
@@ -2393,6 +2464,11 @@ export class CanvasRenderer implements Renderer {
   /** Toggle the temperature heat-map overlay (occupied cells drawn by temp). */
   setHeatOverlay(on: boolean): void {
     this.heatOverlay = on;
+  }
+
+  /** Toggle the 돋보기 object readout (each body labelled with its temperature). */
+  setInspect(on: boolean): void {
+    this.inspect = on;
   }
 
   /** Set the reference-grid line spacing in cells (0 = off). */

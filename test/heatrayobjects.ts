@@ -243,14 +243,28 @@ function columnHeat(grid: Grid, x: number): number {
 }
 
 // 4. Pull the beam away and the body cools back down instead of staying doomed —
-//    the reservoir relaxes toward its surroundings as it always did.
+//    the reservoir sheds its heat into the floor the drum is standing on.
+//
+//    The burst is deliberately SHORT, and the length is the whole design of the
+//    scene. A body only cools into what it touches now, at a rate meant to let it
+//    stay visibly glowing for a while (OBJECT_HEAT_CONDUCTION), so a drum roasted
+//    to two thousand degrees no longer has any way back: it will still be past
+//    iron's melting point when its melt clock runs out, and it melts — correctly.
+//    "Doomed" therefore has to mean *just* doomed. This burst puts the drum over
+//    DRUM_MELT_TEMP with its clock already running, which is exactly the state the
+//    scene claims a body can be pulled out of, and the check below asserts it
+//    rather than trusting the tick count to keep landing there.
 {
   const w = makeWorld();
   const drum = place(w, createDrum(TARGET_X, 0)) as SimCapsule;
   const aim = aimAt(drum);
-  run(w, FLIGHT_TICKS + 5, aim);
+  // A few strikes past the beam's flight time — plus the handful still in the air
+  // when the muzzle goes dark, which land regardless and are most of the heat.
+  run(w, FLIGHT_TICKS - 8, aim);
   const hot = drum.temp;
   run(w, 80, aim, false);
+  check('the burst really did doom it — over the melt point, clock running',
+    hot > DRUM_MELT_TEMP, `${hot.toFixed(0)}° vs ${DRUM_MELT_TEMP}°`);
   check('a body cools once the beam moves off it', drum.temp < hot * 0.5, `${hot.toFixed(0)}° → ${drum.temp.toFixed(0)}°`);
   check('and survives the near miss', w.grid.objects.includes(drum) && drum.state === 'intact');
 }

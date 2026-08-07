@@ -96,19 +96,19 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: BALL_BURN_TEMP },
       { key: 'burnTicks', unit: 'ticks', value: BALL_BURN_TICKS },
     ],
-    traits: [{ key: 'bouncy' }, { key: 'flammable' }],
+    traits: [{ key: 'heatHeld' }, { key: 'bouncy' }, { key: 'flammable' }],
   },
   drum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }],
   },
   oildrum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: OIL.id }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: OIL.id }],
   },
   aciddrum: {
     stats: drumStats(),
-    traits: [{ key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: ACID.id }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'blastOnly' }, { key: 'spills', refId: ACID.id }],
   },
   dynamite: {
     stats: [
@@ -117,7 +117,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: DYNAMITE_AUTOIGNITE_TEMP },
       { key: 'fuseTicks', unit: 'ticks', value: DYNAMITE_FUSE_MIN_TICKS },
     ],
-    traits: [{ key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
+    traits: [{ key: 'heatHeld' }, { key: 'explosive' }, { key: 'fuse', variant: 'waterproof' }],
   },
   flashbang: {
     stats: [
@@ -132,7 +132,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'blastRadius', unit: 'number', value: FLASHBANG_REACH },
       { key: 'destructivePower', unit: 'number', value: FLASHBANG_POWER },
     ],
-    traits: [{ key: 'magnetic' }, { key: 'explosive' }],
+    traits: [{ key: 'heatHeld' }, { key: 'magnetic' }, { key: 'explosive' }],
   },
   crate: {
     stats: [
@@ -141,7 +141,12 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'autoIgniteTemp', unit: 'temp', value: WOOD_BOX_IGNITE_TEMP },
       { key: 'smashSpeed', unit: 'number', value: WOOD_BOX_SMASH_SPEED },
     ],
-    traits: [{ key: 'flammable' }, { key: 'smashable', refId: SAWDUST.id }, { key: 'acidSoluble' }],
+    traits: [
+      { key: 'heatHeld' },
+      { key: 'flammable' },
+      { key: 'smashable', refId: SAWDUST.id },
+      { key: 'acidSoluble' },
+    ],
   },
   molotov: {
     stats: [
@@ -153,6 +158,7 @@ const SPECS: Record<ObjectKind, ObjectSpec> = {
       { key: 'burstTemp', unit: 'temp', value: MOLOTOV_BURST_TEMP },
     ],
     traits: [
+      { key: 'heatHeld' },
       { key: 'fuse', variant: 'quenchable' },
       { key: 'smashable', refId: ALCOHOL.id },
       { key: 'fragile' },
