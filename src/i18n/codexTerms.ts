@@ -82,7 +82,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   // Stats — combustion
   flameOnly: {
     ko: {
-      label: '직화 전용',
+      label: '직화 연소',
       desc: '아무리 뜨거워도 열만으로는 불이 붙지 않고, 불꽃이 직접 닿아야 탑니다.',
     },
     en: {
