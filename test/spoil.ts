@@ -16,7 +16,13 @@
 //   • 보존 넷. 저온·고온·염장·담금 each hold a cut indefinitely, and all four are
 //     a *pause*: unsalt it and it carries on from where it stopped rather than
 //     restarting or completing. That is the difference between this and a
-//     memoryless decay roll, so it is measured rather than asserted.
+//     memoryless decay roll, so it is measured rather than asserted. 절임 물질은
+//     여섯이고(소금·설탕·소금물·설탕물·꿀·알콜) 넷은 통에 담가서, 둘은 얹어서 잰다.
+//   • 잠김은 접촉이 아니다. 소금 더미에 **파묻은** 6×6 덩어리는 접촉 규칙의 사정
+//     거리 밖인 안쪽 16칸까지 남고, 같은 상자를 모래로 채우면 전부 사라진다 —
+//     밀폐가 아니라 절임 물질이 하는 일이라는 짝. 반쯤 잠긴 기둥은 잠긴 쪽만 남고
+//     소금 위로 나온 쪽은 썩으므로, 규칙이 「스며듦」이 아니라 「잠김」인 것도 같이
+//     고정된다.
 //   • 육포 대 웰던. A cut dried *below* cooking heat keeps forever, off the dryness
 //     counter meat.ts already maintains — and a cut grilled to well-done, which
 //     ends up every bit as dry, does not. That pair is the section: 건조 보존 once
@@ -101,8 +107,12 @@ const SPOILED = ID('Spoiled Food');
 const COMPOST = ID('Compost');
 const MOLD = ID('Mold');
 const SALT = ID('Salt');
+const SUGAR = ID('Sugar');
+const SALTWATER = ID('Saltwater');
+const SUGAR_WATER = ID('Sugar Water');
 const HONEY = ID('Honey');
 const ALCOHOL = ID('Alcohol');
+const SAND = ID('Sand');
 const STONE = ID('Stone');
 const GLASS = ID('Glass');
 const IRON = ID('Iron');
@@ -457,10 +467,15 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
     );
   }
 
-  // 4d. 담금 — a jar of honey, and the same in alcohol.
+  // 4d. 담금 — a jar of each of the four preservative *liquids*. 꿀·알콜 were the
+  // original pair; 소금물·설탕물 joined them because the pair they came from is
+  // already on the board: 소금 가루에 묻어 둔 고기 위로 물이 흐르면 소금이 녹아
+  // 소금물이 되고(salt.ts), 그 순간 저장고 전체가 상하기 시작하면 안 된다.
   for (const [id, label] of [
     [HONEY, '꿀'],
     [ALCOHOL, '알콜'],
+    [SALTWATER, '소금물'],
+    [SUGAR_WATER, '설탕물'],
   ] as const) {
     reseed();
     const { grid, sim } = makeWorld();
@@ -473,6 +488,129 @@ function box(grid: Grid, x0: number, y0: number, inner: number, wall: number): v
       `담금 — ${label}에 담가 두면 안 썩는다`,
       count(grid, RAW_MEAT) === before,
       `${count(grid, RAW_MEAT)} of ${before} left after 500s`,
+    );
+  }
+
+  // 4e. 당장 — 설탕 가루. Salt's sweet twin, on the same shelf geometry as 4c.
+  reseed();
+  {
+    const { grid, sim } = makeWorld();
+    fill(grid, 10, 21, 19, 21, RAW_MEAT);
+    fill(grid, 10, 20, 19, 20, SUGAR);
+    fill(grid, 9, 22, 20, 22, STONE);
+    const before = count(grid, RAW_MEAT);
+    run(sim, grid, KEEP);
+    check(
+      '당장 — 설탕에 절여도 안 썩는다',
+      count(grid, RAW_MEAT) === before,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s under sugar`,
+    );
+  }
+}
+
+// ── 4½. 잠김 — 파묻으면 속살까지 절여진다 ────────────────────────────────────
+// 접촉 규칙만 있던 시절의 한계이자 이 라운드가 고친 것: 소금은 `DIR8` 접촉이라 두꺼운
+// 덩어리에 얹으면 **닿은 겉껍질 한 겹만** 지켜지고 안쪽은 그대로 썩었다. 그래서 예전
+// 염장 장면은 「한 줄짜리 빵」이어야만 통과했고, 정작 플레이어가 「절인다」로 이해하는
+// 동작 — 통에 붓고 파묻기 — 이 안 먹히는 유일한 동작이었다.
+//
+// 아래 넷은 그 규칙(`spoil.ts` 의 `isSubmerged`)의 네 모서리를 각각 하나씩 잡는다.
+{
+  const KEEP = 500 * HZ;
+  /** 소금통 하나: 돌상자를 채운 절임 물질 속에 6×6 덩어리를 파묻는다. `packer` 로
+   *  소금 대신 무엇이든 채울 수 있어서, 대조군이 같은 기하로 만들어진다. */
+  function buried(packer: number): { grid: Grid; sim: Simulation } {
+    const w = makeWorld();
+    box(w.grid, 8, 8, 24, STONE); // 8..31 × 8..31
+    fill(w.grid, 8, 8, 31, 31, packer);
+    fill(w.grid, 17, 17, 22, 22, RAW_MEAT); // 6×6 — 안쪽 4×4 는 절임 물질에 안 닿는다
+    return w;
+  }
+
+  // 4½a. 완전히 파묻은 덩어리는 속살까지 남는다. 6×6 이라 **16칸이 접촉 규칙의 사정
+  // 거리 밖**이고, 고치기 전에는 정확히 그 16칸이 사라졌다.
+  reseed();
+  {
+    const { grid, sim } = buried(SALT);
+    const before = count(grid, RAW_MEAT);
+    run(sim, grid, KEEP);
+    check(
+      '잠김 — 소금에 파묻으면 겉껍질만이 아니라 속살까지 안 썩는다',
+      count(grid, RAW_MEAT) === before,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s buried in salt (안쪽 4×4 = 16칸)`,
+    );
+  }
+
+  // 4½b. 대조군 — 같은 상자, 같은 덩어리, 소금 대신 모래. 위 장면이 「밀폐된 상자
+  // 안이라 안 썩는다」를 재고 있는 게 아니라는 증거이고, 동시에 **밀폐는 보존이
+  // 아니다**라는 이 계통의 원칙 자체다.
+  reseed();
+  {
+    const { grid, sim } = buried(SAND);
+    const before = count(grid, RAW_MEAT);
+    run(sim, grid, KEEP);
+    check(
+      '…모래에 파묻은 것은 그대로 썩는다 — 밀폐는 보존이 아니다',
+      count(grid, RAW_MEAT) === 0,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s buried in sand`,
+    );
+  }
+
+  // 4½c. 한 덩어리가 소금 수면을 가로지르면 **잠긴 만큼만** 지켜진다. 이 장면이
+  // 이 라운드에서 유일하게 「잠김」과 「스며듦」을 가른다: 접촉에서 덩어리 전체로
+  // 번지는 규칙이었다면 소금 밖으로 나온 줄기까지 통째로 살아남는다.
+  //
+  // 모양이 **바닥 판 + 가는 줄기**인 것은 장면을 안정시키려는 것이다. 넓적한 덩어리를
+  // 반쯤 담그면 위쪽이 썩어 나가며 뚫린 굴이 그대로 통로가 돼서(트인 곳이 그만큼
+  // 내려온다) 침식 전선이 소금 수면 아래로 파고들고, 그걸 막는 것은 옆의 소금이
+  // 무너져 굴을 메우는 속도라 **두 속도의 경주**가 된다 — 씨앗에 따라 잠긴 24칸 중
+  // 13칸까지 사라졌다. 줄기를 두 칸 폭으로 두면 굴이 소금 수면 위에서만 생기고,
+  // 재는 것이 경주가 아니라 규칙이 된다.
+  reseed();
+  {
+    const { grid, sim } = makeWorld();
+    box(grid, 8, 8, 24, STONE);
+    fill(grid, 8, 20, 31, 31, SALT); // 소금은 y=20 부터 아래로만
+    fill(grid, 16, 22, 23, 27, RAW_MEAT); // 소금 속에 파묻힌 판
+    fill(grid, 19, 12, 20, 21, RAW_MEAT); // 거기서 공기 중으로 솟은 줄기
+    const cells = (x0: number, y0: number, x1: number, y1: number): number => {
+      let n = 0;
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) if (grid.cells[grid.idx(x, y)] === RAW_MEAT) n++;
+      return n;
+    };
+    const slabBefore = cells(16, 22, 23, 27);
+    // 줄기에서 수면 바로 위 한 줄(y=19)은 빼고 잰다. 그 줄은 대각선으로 소금 표면에
+    // 닿아 있어 **접촉 규칙**이 지키는 칸이고(그래서 실제로 두 칸이 남는다), 여기서
+    // 재려는 건 접촉이 아니라 잠김이다.
+    const stalkBefore = cells(19, 12, 20, 18);
+    run(sim, grid, KEEP);
+    check(
+      '한 덩어리가 수면을 가로지르면 — 잠긴 쪽은 그대로 남고',
+      cells(16, 22, 23, 27) === slabBefore,
+      `${cells(16, 22, 23, 27)} of ${slabBefore} left under the salt`,
+    );
+    check(
+      '…소금 위로 나온 쪽만 썩는다 — 절임은 번지는 게 아니라 잠기는 것이다',
+      cells(19, 12, 20, 18) === 0,
+      `${cells(19, 12, 20, 18)} of ${stalkBefore} left clear of the salt`,
+    );
+  }
+
+  // 4½d. 유리병 바닥. 벽을 「막힌 것」으로 치는 유저 결정이 없으면 이 장면이 실패한다 —
+  // 병 바닥에 가라앉은 것은 아래쪽이 유리에 닿아 있지 절임액에 닿아 있지 않다.
+  reseed();
+  {
+    const { grid, sim } = makeWorld();
+    box(grid, 10, 16, 12, GLASS);
+    fill(grid, 10, 16, 21, 27, HONEY);
+    fill(grid, 13, 24, 18, 27, RAW_MEAT); // 병 바닥에 가라앉아 유리에 붙어 있다
+    const before = count(grid, RAW_MEAT);
+    run(sim, grid, KEEP);
+    check(
+      '병 바닥에 가라앉은 것도 절여진다 — 벽은 트인 곳이 아니다',
+      count(grid, RAW_MEAT) === before,
+      `${count(grid, RAW_MEAT)} of ${before} left after 500s at the bottom of a honey jar`,
     );
   }
 }
