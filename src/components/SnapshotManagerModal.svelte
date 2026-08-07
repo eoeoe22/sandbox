@@ -40,8 +40,21 @@
     snapshots = listSnapshots();
   }
 
+  // Unlike SaveSlots.svelte — freshly mounted (and so freshly initialized)
+  // every time its own Modal opens — this component is mounted once by
+  // StartMenu and simply toggles `isOpen`, so its script-level state survives
+  // a close. Without resetting it here, closing the modal mid-rename (Escape,
+  // backdrop, ×) leaves `editingId` pointing at a snapshot and reopening
+  // lands straight back on the rename form, pre-filled with whatever was
+  // typed before.
   $effect(() => {
-    if (isOpen) refresh();
+    if (isOpen) {
+      refresh();
+      editingId = null;
+      flash = null;
+      clearTimeout(flashTimer);
+      dragOver = false;
+    }
   });
 
   function showFlash(msg: string, bad = false): void {
