@@ -2646,11 +2646,28 @@ const contactCells: number[] = [];
  * both the same overlay lie this change set out to kill, and the direct opposite
  * of why DYNAMITE_AUTOIGNITE_TEMP was allowed down to 220° (불에 던지면 터진다).
  *
- * It also does not try to un-read the ground the flame *scorches*, which an
- * earlier cut did with a disc around the wick. Measured, that path is worth about
- * three degrees over eighty ticks with the column in place — a resting body holds
- * its wick in the air, and the little the stone does pick up it sheds again into
- * the body's whole cold contact patch. Untestable and worth nothing, so it's gone.
+ * Two things it deliberately does NOT do.
+ *
+ * It does not un-read the ground the flame *scorches*, which an earlier cut did
+ * with a disc around the wick. Measured against a doused control, a lit molotov's
+ * whole residual self-heating is about seven degrees, and restoring the disc buys
+ * exactly ONE of them — a resting body holds its wick clear of the ground, and the
+ * little the stone picks up it sheds again into the body's whole cold contact
+ * patch. A constant and a condition for one degree is not a trade worth making.
+ * (The exception is a body *wedged* where its flame can't rise — a stick jammed in
+ * a shaft under a low ceiling re-heats the same touching stone and drifts to
+ * ~150° over six hundred ticks. That is under the 220° cook-off and under the 200°
+ * where the thermal wash begins, so nothing visible or fatal comes of it, and it
+ * is arguably just true: a flame trapped against a stick really does heat it.)
+ *
+ * And it cannot tell a body's own plume from a fire someone lit exactly where that
+ * plume goes. For a body lying on its side the column reaches across the near half
+ * of it, so fire resting on top of that half — and *only* there, with nothing at
+ * either tip and nothing below — is swallowed and the body reads room temperature.
+ * That is the irreducible cost of a geometric rule: the plume and the fire are the
+ * same material in the same place. It stays narrow in practice because fire
+ * spreads, and anything at a tip or underneath registers and cooks the body off
+ * normally (test/objectheat.ts scene 7d pins that boundary).
  *
  * All of it applies only while the wick is ALREADY lit, so an unlit dud is
  * untouched: touching fire to a snuffed fuse still re-lights it, and leaving a
