@@ -222,7 +222,7 @@ export const materialCodexKo: Record<number, string> = {
 
 export const objectCodexKo: Record<ObjectKind, string> = {
   ball: '강한 탄성을 가진 고무 공입니다. 벽과 고체에 튕기며 물에 뜹니다.',
-  drum: '금속 드럼통입니다. 전자석에 반응하며 물에 뜹니다.',
+  drum: '금속 드럼통입니다. 전자석에 반응하며 물에 낮게 뜹니다. 이 층에서 가장 무거워 바람에도 잘 밀리지 않고, 두꺼운 강철이라 열이 늦게 오르고 늦게 내립니다.',
   oildrum: '부서질 때 원유를 유출시키는 드럼통입니다.',
   aciddrum: '부서질 때 산을 유출시키는 드럼통입니다.',
   dynamite:

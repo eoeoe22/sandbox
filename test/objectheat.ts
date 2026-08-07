@@ -31,6 +31,8 @@ import {
   createDynamite,
   createMolotov,
   createRubberBall,
+  createWoodBox,
+  bodyReach,
   DYNAMITE_AUTOIGNITE_TEMP,
 } from '../src/game/engine/objects';
 import type { SimBody } from '../src/game/engine/objects';
@@ -251,16 +253,29 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
   // is the transfer, not how long the drum's own reservoir lasts. This is what a
   // player holding the 가열 브러시 on it does.
   let hottest = -Infinity;
+  let atTick60 = -Infinity;
   for (let t = 0; t < 200; t++) {
     drum.temp = 900;
     sim.step();
     const s = extremes(grid, SAND);
     if (s.hot > hottest) hottest = s.hot;
+    if (t === 59) atTick60 = s.hot;
   }
   check(
     '달궈진 오브젝트가 닿은 모래를 데운다 — a hot body heats what it lies on',
     hottest > 300,
     `sand reached ${hottest.toFixed(0)}° under a 900° drum`,
+  );
+  // Sampled early as well as at the peak, because the peak alone measures nothing
+  // but "the relaxation eventually saturates" — it lands within a few degrees of
+  // the drum whatever the rate is. This second reading is the RATE, and it is the
+  // one that would move if the outbound leg were ever divided by the body's heat
+  // capacity the way the two intake channels are. It must not be: a thermally
+  // massive body is slow to change, not stingy about what it gives the sand.
+  check(
+    '…빠르게: 비열은 물체가 내주는 열을 줄이지 않는다 — heat capacity slows the body, not its output',
+    atTick60 > 600,
+    `sand already at ${atTick60.toFixed(0)}° by tick 60`,
   );
   check(
     '…but never past its own temperature (relaxation cannot overshoot)',
@@ -344,6 +359,60 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
     `half-life ${ticks} ticks (was ~8 before the rate was lowered)`,
   );
   check('…and it does eventually get there', ticks > 0, `${ticks} ticks`);
+}
+
+// ── 6b. 드럼통 비열: 같은 자리에 놓아도 강철통은 느리다 ───────────────────────
+//
+// The scene above is a lower bound on one body's rate, so it would pass just as
+// happily with every body sharing one rate — which is exactly what the layer used
+// to do, and why a fan cooled a steel drum as fast as a rubber ball. The claim
+// here is *relative* and cannot be satisfied that way: same floor, same starting
+// temperature, two bodies, and the drum has to be the slow one.
+//
+// Measured through the FAN, not through the ground, and that choice is the scene.
+// Contact conduction is confounded by how big the body is: the return leg warms
+// the very cells the intake then reads, so a small body saturates its little
+// contact patch and stalls — a rubber ball on stone never even halves in 600 ticks,
+// while a drum, spread over far more cells, dumps into a bigger sink and beats it.
+// Size, not heat capacity, would be doing the talking.
+//
+// Forced convection has no such feedback: `windTemp` is the temperature of the air
+// the fan is moving, the body never writes to it, and `exp.wind` is a flag rather
+// than a cell count. So both bodies relax toward the same fixed 20° at the same
+// rate, and `heatCapacity` is the only thing left that can separate them — the
+// ratio below should land right on DRUM_HEAT_CAPACITY. (The seed number is just a
+// distinct stream id, not a position in the file.)
+{
+  const halfLife = (make: (x: number, y: number) => SimBody): number => {
+    scene(16);
+    const { grid, sim } = makeWorld(); // no floor: the body touches nothing (case 1)
+    const body = make(50, 20);
+    settle(sim, grid, body);
+    const fanY = Math.max(1, Math.round(body.y) - 14);
+    for (let dx = -4; dx <= 4; dx++) {
+      grid.set(Math.round(body.x) + dx, fanY, FAN);
+      grid.setAux(Math.round(body.x) + dx, fanY, (4000 << 2) | FAN_DOWN);
+    }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    // Warm, not red-hot: the rubber ball burns away at BALL_BURN_TEMP (300°), and a
+    // destroyed body's `temp` simply stops moving — which reads as "never cooled".
+    const start = 200;
+    body.temp = start;
+    const half = AMBIENT_TEMP + (start - AMBIENT_TEMP) / 2;
+    for (let t = 0; t < 900; t++) {
+      sim.step();
+      if (!grid.objects.includes(body)) throw new Error('body was destroyed mid-measurement');
+      if (body.temp <= half) return t + 1;
+    }
+    return 900;
+  };
+  const ball = halfLife((x, y) => createRubberBall(x, y));
+  const drum = halfLife((x, y) => createDrum(x, y));
+  check(
+    '드럼통은 비열이 커서 천천히 식는다 — the steel drum fans down far slower than a ball',
+    drum > ball * 2,
+    `drum half-life ${drum} ticks vs ball ${ball} under the same fan (they were equal when every body shared one rate)`,
+  );
 }
 
 // ── 7. 도화선 불이 스스로를 가열하지 않게 (다이너마이트) ───────────────────────
@@ -679,6 +748,147 @@ function cookOff(bathTemp: number, limit = 500): { gone: boolean; ticks: number 
     '…but it does still push — the fan is not a no-op',
     drum.x > x0 + 2,
     `drifted ${(drum.x - x0).toFixed(1)} cells downwind`,
+  );
+}
+
+// ── 11. 벽을 등지고 바람을 맞아도 중력을 이기지 못한다 ────────────────────────
+//
+// The bug the acceleration bound exists for. The push used to be a velocity floor
+// re-imposed every tick — an unbounded force — so a body blown against a wall fed
+// the contact a normal impulse of mass × WIND_PUSH_SPEED. Coulomb friction caps
+// the tangential impulse at μ·N, and that N made μ·N several times the body's own
+// weight, so the drum hung on the wall instead of sliding down it.
+//
+// Now the wind accelerates a body exactly as hard as gravity does, so the normal
+// impulse it can generate is at most the weight, and μ < 1 settles it. This scene
+// is the whole claim in one number: how far a body falls while being blown flat
+// against a wall.
+//
+// Run for a ball as well as a drum, so the claim is about the rule and not about
+// one body: the ball is the layer's lightest and rides at the full
+// WIND_PUSH_SPEED, which makes it the most demanding case for the bound.
+//
+// What this scene does and does not pin, measured rather than assumed. A blocked
+// body's per-tick gain is min(ceiling − 0, WIND_PUSH_ACCEL), and it is that
+// COMBINATION the drum's fall distance is sensitive to — quadrupling
+// WIND_PUSH_ACCEL alone changes nothing, because the drum's mass-scaled ceiling
+// (~0.5) is already the binding half. Removing both bounds (the historical
+// velocity floor) cuts the fall to 30 cells and removing the ceiling alone cuts it
+// to 47, so the threshold below sits between those and the real 62. The exact
+// value of WIND_PUSH_ACCEL is therefore NOT individually protected here; see
+// docs/TESTING.md.
+{
+  const fell = (make: (x: number, y: number) => SimBody): { drop: number; reached: number } => {
+    scene(14);
+    const { grid, sim } = makeWorld();
+    floor(grid, 90);
+    // A tall wall to be pinned against, and a fan column blowing into it.
+    fillRect(grid, 62, 0, 68, 90, STONE);
+    const body = make(50, 20);
+    grid.objects.push(body);
+    const y0 = body.y;
+    // The fan column runs the FULL height of the drop, not just a band around the
+    // start position. With a short column the body simply falls out of the stream
+    // after a few ticks and lands for reasons that have nothing to do with
+    // friction — the scene passed that way before this was noticed, measuring
+    // nothing at all.
+    for (let cy = 0; cy < 90; cy++) {
+      grid.set(30, cy, FAN);
+      grid.setAux(30, cy, (4000 << 2) | FAN_RIGHT);
+    }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    let reached = -Infinity;
+    for (let t = 0; t < 300; t++) {
+      sim.step();
+      const edge = body.x + bodyReach(body);
+      if (edge > reached) reached = edge;
+    }
+    return { drop: body.y - y0, reached };
+  };
+  const drum = fell((x, y) => createDrum(x, y));
+  const ball = fell((x, y) => createRubberBall(x, y));
+  check(
+    '전제: 바람이 물체를 실제로 벽까지 밀어붙였다 — the gust really does press them to the wall',
+    drum.reached > 60 && ball.reached > 60,
+    `drum edge reached x ${drum.reached.toFixed(1)}, ball ${ball.reached.toFixed(1)} (wall face at 62)`,
+  );
+  check(
+    '벽을 등지고 바람을 맞아도 중력을 이기지 못한다 (드럼통) — wind cannot pin the drum',
+    // 62 is the geometric maximum — the drum simply reaches the floor. Anything
+    // less means friction held it up on the way down for a while.
+    drum.drop > 55,
+    `fell ${drum.drop.toFixed(1)} cells of a possible 62 (it used to hang at its start height)`,
+  );
+  check(
+    '…고무공도 마찬가지 — nor the lightest body in the layer',
+    ball.drop > 55,
+    `fell ${ball.drop.toFixed(1)} cells`,
+  );
+}
+
+// ── 11b. 무거울수록 덜 밀린다 ────────────────────────────────────────────────
+//
+// Measured in free fall through a horizontal stream rather than on the ground: on
+// a floor a drum's drift is dominated by whether it happens to be rolling, which
+// swamps the thing being measured. In the air there is no other horizontal force,
+// so the along-wind speed converges on exactly the mass-scaled ceiling — the
+// number this claim is about — within a couple of ticks.
+{
+  const topSpeed = (make: (x: number, y: number) => SimBody): number => {
+    scene(15);
+    const { grid, sim } = makeWorld(); // no floor: it falls the whole way
+    const body = make(30, 20);
+    grid.objects.push(body);
+    for (let cy = 0; cy < 60; cy++) {
+      grid.set(10, cy, FAN);
+      grid.setAux(10, cy, (4000 << 2) | FAN_RIGHT);
+    }
+    grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+    let peak = 0;
+    for (let t = 0; t < 30; t++) {
+      sim.step();
+      if (body.vx > peak) peak = body.vx;
+    }
+    return peak;
+  };
+  const ball = topSpeed((x, y) => createRubberBall(x, y));
+  const drum = topSpeed((x, y) => createDrum(x, y));
+  check(
+    '가벼운 몸통은 바람을 온전히 탄다 — a light body rides the stream at full speed',
+    ball > 1.3,
+    `ball tops out at ${ball.toFixed(2)} cells/tick (WIND_PUSH_SPEED is 1.4)`,
+  );
+  check(
+    '무거운 드럼통은 절반도 못 낸다 — the heavy drum tops out far below it',
+    drum < 0.6,
+    `drum tops out at ${drum.toFixed(2)} cells/tick — this is DRUM_DENSITY and the mass-scaled ceiling together`,
+  );
+}
+
+// ── 11c. 그래도 안 구르는 몸통은 여전히 밀린다 ────────────────────────────────
+//
+// The other half of the μ < 1 window, and the thing a plain "make the push weaker"
+// fix would have broken: a push small enough never to pin is normally also too
+// small to overcome ground friction and budge anything. A crate is the case that
+// shows it, because unlike a drum it cannot cheat by rolling.
+{
+  scene(17);
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const crate = createWoodBox(40, 60);
+  settle(sim, grid, crate);
+  const fanX = Math.max(1, Math.round(crate.x) - 12);
+  for (let dy = -6; dy <= 1; dy++) {
+    grid.set(fanX, Math.round(crate.y) + dy, FAN);
+    grid.setAux(fanX, Math.round(crate.y) + dy, (4000 << 2) | FAN_RIGHT);
+  }
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const x0 = crate.x;
+  for (let t = 0; t < 200; t++) sim.step();
+  check(
+    '바람은 바닥 마찰을 이기고 상자를 민다 — the gust still slides a non-rolling body',
+    grid.objects.includes(crate) && crate.x > x0 + 20,
+    `crate drifted ${(crate.x - x0).toFixed(1)} cells`,
   );
 }
 

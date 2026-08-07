@@ -616,8 +616,12 @@ function shoveIntoWall(
     // Fan's would.
     sim.context.windStamped = false;
   });
+  // The liveness bar is lower than the Woofer's because the wind push is now
+  // mass-scaled (engine/objects.ts WIND_REFERENCE_MASS): a crate's top wind speed
+  // is ~1.06 cells/tick by design, so the old `> 1` sat right on the ceiling. The
+  // claim being tested — that the gust never smashes it — is untouched.
   check('a Fan\'s wind alone never smashes a crate',
-    wind.alive && wind.peakSpeed > 1, `shoved to ${wind.peakSpeed.toFixed(1)} cells/tick`);
+    wind.alive && wind.peakSpeed > 0.5, `shoved to ${wind.peakSpeed.toFixed(1)} cells/tick`);
 }
 {
   // A near-miss blast: its concussion shoves the crate hard, but the flash never

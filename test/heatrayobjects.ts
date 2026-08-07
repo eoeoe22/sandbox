@@ -260,12 +260,24 @@ function columnHeat(grid: Grid, x: number): number {
   const aim = aimAt(drum);
   // A few strikes past the beam's flight time — plus the handful still in the air
   // when the muzzle goes dark, which land regardless and are most of the heat.
-  run(w, FLIGHT_TICKS - 8, aim);
+  //
+  // Lengthened from FLIGHT_TICKS − 8 when the drum family gained a thermal mass
+  // (objects.ts DRUM_HEAT_CAPACITY): absorbed beam heat is energy, so it is divided
+  // by heat capacity like every other intake, and the old burst now lands the drum
+  // at 595° — nowhere near the melt point this scene needs it just past. The window
+  // is genuinely narrower at the top too, because the same capacity slows the
+  // cooling: at +8 the drum no longer sheds enough before its melt clock expires
+  // and it melts for real.
+  run(w, FLIGHT_TICKS + 7, aim);
   const hot = drum.temp;
   run(w, 80, aim, false);
   check('the burst really did doom it — over the melt point, clock running',
     hot > DRUM_MELT_TEMP, `${hot.toFixed(0)}° vs ${DRUM_MELT_TEMP}°`);
-  check('a body cools once the beam moves off it', drum.temp < hot * 0.5, `${hot.toFixed(0)}° → ${drum.temp.toFixed(0)}°`);
+  // Stated as "back under the melt point" rather than as a fraction of the peak:
+  // that is the claim the scene is actually about (pulled out in time), and unlike
+  // a fraction it does not need recalibrating every time the conduction rate moves.
+  check('a body cools once the beam moves off it', drum.temp < DRUM_MELT_TEMP,
+    `${hot.toFixed(0)}° → ${drum.temp.toFixed(0)}° (melt point ${DRUM_MELT_TEMP}°)`);
   check('and survives the near miss', w.grid.objects.includes(drum) && drum.state === 'intact');
 }
 

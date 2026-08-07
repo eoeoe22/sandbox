@@ -154,6 +154,16 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   },
 
   // Stats — objects only
+  heatCapacity: {
+    ko: {
+      label: '비열',
+      desc: '두꺼운 강철 몸통이라 열이 늦게 오르고 늦게 내립니다. 같은 불 위에서도 다른 물체보다 이 배수만큼 천천히 달아오르고, 꺼낸 뒤에도 그만큼 오래 뜨겁습니다. 선풍기로 식히는 데도 그만큼 오래 걸립니다.',
+    },
+    en: {
+      label: 'Heat capacity',
+      desc: 'A thick steel body is slow to warm and slow to cool. In the same fire it heats up this many times more slowly than anything else here, and it stays hot that much longer after you pull it out — including when you fan it.',
+    },
+  },
   shellMeltPoint: {
     ko: { label: '통 융점', desc: '이 온도에 오래 두면 통이 열려 조각 3개로 무너집니다.' },
     en: { label: 'Shell melting point', desc: 'Held here long enough, the barrel gives way and collapses into three shards.' },

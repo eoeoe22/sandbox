@@ -607,14 +607,26 @@ type CapsuleBody = {
 
 /**
  * Blue-drum defaults (the 빈 파란 드럼통). As an *empty* (hollow) drum its
- * effective density is well under Water (3) so it floats; restitution is low so
+ * effective density stays under Water (3) so it floats — low in the water, see
+ * DRUM_DENSITY; restitution is low so
  * it thuds rather than bounces, and contact friction is high enough to convert
  * sliding into rolling. Size follows the 24×32 sprite's aspect (2·radius wide by
  * 2·(halfLength+radius) tall ⇒ 12×16 cells at these values), medium in the world.
  */
 export const DRUM_RADIUS = 6;
 export const DRUM_HALF_LENGTH = 2;
-export const DRUM_DENSITY = 1.6;
+/** Raised 1.6 → 2.2 (더 무겁게). At 1.6 the biggest body in the world massed only
+ *  five rubber balls and less than a stick of dynamite, which read wrong the
+ *  moment anything pushed on it — a Fan sent the drum skating faster than the
+ *  crate beside it. Mass is density × footprint area, and it now divides both the
+ *  wind push and the magnet's grip, so this number is what makes a drum feel like
+ *  a drum rather than a prop.
+ *
+ *  Still under Water's 3 — an empty steel barrel has to float — but no longer
+ *  "well under": the float equilibrium is where the submerged fraction equals
+ *  density/3, so it rides at 53% submerged before and ~73% now. It floats low,
+ *  with its top quarter out, instead of bobbing like a beach ball. */
+export const DRUM_DENSITY = 2.2;
 export const DRUM_RESTITUTION = 0.26;
 /** Contact friction coefficient (μ): the tangential impulse cap as a fraction of
  *  the normal impulse. High enough that a landing drum grabs and rolls instead
@@ -3163,20 +3175,63 @@ const WOOFER_KNOCK_SPIN = 0.1;
 /** Cells beyond a body's footprint a Fan's Wind trail can reach to push it. Small
  *  — a body only rides the gust when it's actually sitting in the stream. */
 const WIND_KNOCK_RADIUS = 2;
-/** Target drift speed (cells/tick) the wind carries a body along its blow
- *  direction. Applied as a floor on the along-wind velocity (not accumulated), so
- *  a body in the stream steadily drifts downwind rather than being rocketed.
+/** Top drift speed (cells/tick) the wind carries a *reference-mass* body along its
+ *  blow direction — the ceiling the push works toward, scaled down for anything
+ *  heavier (see WIND_REFERENCE_MASS).
  *
  *  Cut from 3.75 (바람에 지나치게 강하게 밀려남). Matching it to the matter push was
  *  the mistake: a body is a chunky, heavy thing next to the loose grains a fan is
  *  meant to sweep, and a drum caught in a stream shot off like it had been fired.
- *  At this floor it still visibly rides the gust and can be herded across the
+ *  At this ceiling it still visibly rides the gust and can be herded across the
  *  world, but it drifts rather than launches, and a wall or a pile stops it. */
 const WIND_PUSH_SPEED = 1.4;
+/** Mass at/below which a body rides the stream at the full WIND_PUSH_SPEED; above
+ *  it the ceiling falls off as REFERENCE/mass, so how blowable a thing is comes
+ *  out of how heavy it is rather than being declared per kind. Set just over the
+ *  light bodies' masses (ball ≈ 60, dynamite ≈ 95) and well under the heavy ones
+ *  (bottle/crate ≈ 198, drum ≈ 418), which is the split it exists to draw: paper
+ *  targets blow away, freight drifts. Drum tops out near 0.5 cells/tick against a
+ *  ball's 1.4. */
+const WIND_REFERENCE_MASS = 150;
+/** Per-tick along-wind acceleration the gust delivers, and the fix for a real bug.
+ *
+ *  This used to slam the along-wind velocity up to a fixed floor every tick no
+ *  matter what stood in the way, which is an *unbounded* force. A body pinned
+ *  against a wall therefore fed the contact a normal impulse of mass × 1.4 every
+ *  tick (≈ 585 for a drum), and Coulomb friction caps the tangential impulse at
+ *  μ·N — so the friction available to hold the body up (0.7 × 585 ≈ 410) came out
+ *  several times its own weight (mass × OBJECT_GRAVITY ≈ 105). The drum stuck to
+ *  the wall and hung there (벽을 등지고 바람을 맞으면 중력을 이기고 벽에 붙음).
+ *
+ *  Bounding the push fixes it, and the bound is chosen so the reasoning is
+ *  structural rather than tuned: the wind accelerates a body **at most as hard as
+ *  gravity does**. A blocked body's normal impulse is then no more than its own
+ *  weight, so the friction that impulse can buy is μ × weight, and with μ < 1
+ *  (every body here: 0.7–0.8) that is less than the weight it would have to hold
+ *  up. Press anything to a wall with wind and it slides down — independent of
+ *  mass, density and kind, so a future heavy body can't reintroduce the bug.
+ *
+ *  Two honest caveats. First, a *blocked* body's actual per-tick gain is
+ *  min(ceiling, this) — for anything heavy the mass-scaled ceiling is already the
+ *  smaller of the two, so this constant is the binding half only for light bodies,
+ *  and the measured slack before the solver really pins is several times either
+ *  bound (test/objectheat.ts scene 11 records the numbers). Second, it stays
+ *  comfortably above μ × weight in the *other* direction, which is what lets wind
+ *  still shove a body along the ground — a plain force small enough never to pin
+ *  would also have been too small to budge a crate. That window exists precisely
+ *  because μ < 1, and it is why the fix is a bound rather than a smaller number.
+ *
+ *  Not scaled by `ctx.gravityStrength`: a fan has to keep working in weightless
+ *  mode, where there is no gravity to beat and nothing to pin against. The trade
+ *  is that in *weak* gravity the inequality flips and wind can hold a body up —
+ *  left alone deliberately, since floaty-world wind-pinning reads as a feature. */
+const WIND_PUSH_ACCEL = OBJECT_GRAVITY;
 /** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along.
- *  Unlike the push (a floor) this one *accumulates* every tick the body spends in
- *  the stream, which made it the bigger half of the too-strong wind — a stick
- *  parked in a gust wound itself up into a blur. Cut to about a third. */
+ *  Unlike the push (bounded by a ceiling) this one *accumulates* every tick the
+ *  body spends in the stream, which made it the bigger half of the too-strong wind
+ *  — a stick parked in a gust wound itself up into a blur. Cut to about a third,
+ *  and scaled by the same mass factor as the push, since a barrel is as hard to
+ *  spin up as it is to shove. */
 const WIND_KNOCK_SPIN = 0.015;
 /** Speed (cells/tick) a live Electromagnet field drags a ferrous body toward
  *  itself at. Applied as a *floor* on the body's speed along the pull direction
@@ -3216,6 +3271,36 @@ const CRUSH_SOLID_FRAC = 0.6;
  *  lifted out of a fire and take a visible moment to come up to a lava pool's
  *  temperature rather than snapping there. Feel knob. */
 const OBJECT_HEAT_CONDUCTION = 0.03;
+
+/** Thermal-mass divisor for the drum family (드럼통 비열). A sealed steel barrel is
+ *  the heaviest, thickest thing on this layer, and at the shared rate it changed
+ *  temperature exactly as fast as a rubber ball — a fan cooled a glowing drum in
+ *  the same beat it cooled a dynamite stick, which is the one place the object
+ *  layer's "everything is a body" shortcut showed through.
+ *
+ *  Deliberately a divisor on the BODY's two intake channels only (see
+ *  `heatCapacity`), never on the return leg into the cells: a high heat capacity
+ *  means the drum's own temperature is slow to move, NOT that it hands less heat
+ *  to the sand under it. Physically that is the same distinction — dT = Q/(m·c)
+ *  shrinks with c while Q does not — and in play it is the interesting half: a
+ *  drum pulled out of lava stays a hazard for a good while, and it takes a real,
+ *  watchable moment of fanning to put it out. */
+export const DRUM_HEAT_CAPACITY = 2.5;
+
+/**
+ * How thermally massive a body is, as a divisor on the rate its own reservoir
+ * moves. 1 is the layer's baseline (a ball, a stick, a bottle, a crate — all
+ * small enough that the difference wouldn't read); only the drum family, whose
+ * whole identity is being the big steel thing, is heavier than that.
+ *
+ * Keyed off `kind` because a body has no `Material` — the same way every other
+ * material judgement up here works (a drum melts to Molten Iron, a crate burns).
+ * Drum shards share the barrel's `kind`, so wreckage keeps the barrel's thermal
+ * inertia, which is what 드럼통 *계열* means.
+ */
+function heatCapacity(o: SimBody): number {
+  return o.kind === 'drum' ? DRUM_HEAT_CAPACITY : 1;
+}
 
 /** How far past its own surface (in cells) a body still counts as *touching*
  *  matter for heat. One cell, because collision parks a resting body just clear
@@ -3576,12 +3661,15 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
  * Carry a body along on a Fan's wind (see materials/fan.ts). Scan the cells around
  * the body's footprint for stamped wind-field cells (Grid.wind — a transient,
  * one-way effect layer, NOT a particle), sum each one's blow direction (a single
- * fan's cells all agree, crossing gusts partly cancel), and push the body along the
- * resultant as a *floor* on its along-wind speed (capped at WIND_PUSH_SPEED, not
- * accumulated), so it drifts steadily downwind instead of being flung. Directional,
+ * fan's cells all agree, crossing gusts partly cancel), and accelerate the body
+ * along the resultant at a bounded rate (WIND_PUSH_ACCEL per tick) up to a
+ * mass-scaled ceiling, so it drifts steadily downwind instead of being flung and
+ * a heavy body drifts slower than a light one. Directional,
  * unlike the radial blast/Woofer knockback — the push is the wind's own direction,
- * not "away from the cell". Never destroys a body; it only ever nudges it, and
- * gravity reclaims it the moment it leaves the stream.
+ * not "away from the cell". Never destroys a body; it only ever nudges it, gravity
+ * reclaims it the moment it leaves the stream, and — because the push is a force
+ * and not a velocity floor — it can never pin a body against a wall hard enough
+ * for friction to hold it up (see WIND_PUSH_FORCE).
  */
 function applyWindPush(o: SimBody, ctx: SimContext): void {
   const reach = bodyReach(o) + WIND_KNOCK_RADIUS;
@@ -3612,13 +3700,21 @@ function applyWindPush(o: SimBody, ctx: SimContext): void {
   if (plen < 1e-6) return;
   const nx = px / plen;
   const ny = py / plen;
+  // How strongly this body couples to the stream: 1 for anything at or under the
+  // reference mass, falling off as REFERENCE/mass above it.
+  const grip = Math.min(1, WIND_REFERENCE_MASS / o.mass);
+  const ceiling = WIND_PUSH_SPEED * grip;
   const along = o.vx * nx + o.vy * ny;
-  if (along < WIND_PUSH_SPEED) {
-    const add = WIND_PUSH_SPEED - along;
+  if (along < ceiling) {
+    // A bounded acceleration, not a set-to: this is what keeps a blocked body's
+    // normal impulse (and so the friction holding it up) bounded too. Clamped at
+    // the remaining gap so the wind accelerates a body toward its ceiling and then
+    // just holds it there.
+    const add = Math.min(ceiling - along, WIND_PUSH_ACCEL);
     o.vx += nx * add;
     o.vy += ny * add;
   }
-  o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx);
+  o.angularVelocity += WIND_KNOCK_SPIN * Math.sign(nx) * grip;
 }
 
 // ── Electromagnet attraction (자력) on the object layer ───────────────────────
@@ -4872,10 +4968,17 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // in-bounds cell to touch): no contact, no conduction, reservoir held. That
   // also keeps the reservoir from decaying to −Infinity and NaN-ing the tick
   // after, which would permanently break the heat test if it drifted back in.
+  //
+  // Both intake rates are divided by the body's thermal mass (`heatCapacity`), so
+  // a steel drum comes up to a fire's temperature — and back down off it — far
+  // more slowly than a rubber ball in the same spot.
+  const heatMass = heatCapacity(o);
   if (exp.contactCount > 0) {
-    o.temp += (exp.contactTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
-    // …and the return leg, into every one of those cells. Runs here, immediately
-    // after the scan, because it reads the scan's scratch contact list.
+    o.temp += ((exp.contactTemp - o.temp) * OBJECT_HEAT_CONDUCTION) / heatMass;
+    // …and the return leg, into every one of those cells — NOT divided by `heatMass`:
+    // a thermally massive body is slow to change, not stingy about what it gives
+    // the sand under it. Runs here, immediately after the scan, because it reads
+    // the scan's scratch contact list.
     conductBodyHeatOut(o, ctx, exp.contactCount);
   }
   // A gust is its own, separate channel — added on top of any contact rather than
@@ -4883,7 +4986,7 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // doesn't slow the lava down. It relaxes toward the temperature of the moving
   // air itself (`windTemp`), which is normally ambient but is whatever a
   // brush-heated or LN2-chilled stream happens to be carrying.
-  if (exp.wind) o.temp += (exp.windTemp - o.temp) * OBJECT_WIND_CONVECTION;
+  if (exp.wind) o.temp += ((exp.windTemp - o.temp) * OBJECT_WIND_CONVECTION) / heatMass;
   // Judge heat by the hotter of the surroundings and the body's own reservoir:
   // ambient heat (lava/fire under the footprint) still triggers instantly as
   // before — no regression — while the 가열 brush, which writes only `temp`, can
@@ -5016,7 +5119,16 @@ export function stepObjects(objects: SimBody[], ctx: SimContext): void {
     // ramps the body up to a destroying temperature over a second or so while a
     // beam that moves on lets it cool back down (드럼통은 녹고, 나무 상자는 불붙고,
     // 다이너마이트는 유폭한다).
-    if (hz.rayHeat > 0) o.temp += hz.rayHeat;
+    //
+    // Divided by the body's thermal mass like the other two intake channels, and
+    // for the same reason: this is delivered *energy*, and dT = Q/(m·c). Leaving it
+    // out would hand the drum family a free lunch — soaking up a beam as fast as a
+    // rubber ball while shedding it 2.5× slower — so a steel drum now takes
+    // correspondingly longer under the laser than the wood and rubber around it,
+    // which is the right shape for the toy anyway. (The 가열/냉각 브러시 is NOT
+    // divided: it *assigns* a temperature rather than delivering heat — see
+    // PointerPainter.)
+    if (hz.rayHeat > 0) o.temp += hz.rayHeat / heatCapacity(o);
     applyBlastKnockback(o, ctx);
     applyWooferKnockback(o, ctx);
     applyWindPush(o, ctx);

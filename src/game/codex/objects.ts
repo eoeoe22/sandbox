@@ -23,6 +23,7 @@ import {
   DRUM_RESTITUTION,
   DRUM_FRICTION,
   DRUM_MELT_TEMP,
+  DRUM_HEAT_CAPACITY,
   DRUM_MELT_TICKS,
   DRUM_PIECE_MELT_TEMP,
   DRUM_PIECE_MELT_TICKS,
@@ -82,6 +83,10 @@ const drumStats = (): CodexStat[] => [
   { key: 'density', unit: 'number', value: DRUM_DENSITY },
   { key: 'elasticity', unit: 'ratio', value: DRUM_RESTITUTION },
   { key: 'friction', unit: 'ratio', value: DRUM_FRICTION },
+  // The one stat here that is about how the drum *feels* to heat rather than what
+  // heat does to it, and the only body in the layer that has it — a multiplier of 1
+  // is the layer's baseline, so listing it anywhere else would be noise.
+  { key: 'heatCapacity', unit: 'number', value: DRUM_HEAT_CAPACITY },
   { key: 'shellMeltPoint', unit: 'temp', value: DRUM_MELT_TEMP },
   { key: 'shellMeltTicks', unit: 'ticks', value: DRUM_MELT_TICKS },
   { key: 'pieceMeltPoint', unit: 'temp', value: DRUM_PIECE_MELT_TEMP, refId: MOLTEN_IRON.id },

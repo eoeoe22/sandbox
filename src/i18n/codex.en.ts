@@ -211,7 +211,7 @@ export const materialCodexEn: Record<number, string> = {
 
 export const objectCodexEn: Record<ObjectKind, string> = {
   ball: 'A rubber ball with high elasticity. Bounces off walls and solids, and floats on water.',
-  drum: 'A metal drum barrel. Responds to electromagnets and floats on water.',
+  drum: 'A metal drum barrel. Responds to electromagnets and floats low in water. The heaviest body here, so wind barely shifts it, and thick enough steel to be slow both to heat and to cool.',
   oildrum: 'A drum barrel that leaks crude oil when broken.',
   aciddrum: 'A drum barrel that leaks acid when broken.',
   dynamite:
