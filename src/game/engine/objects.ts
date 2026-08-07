@@ -999,14 +999,14 @@ export const FLASHBANG_DEEP_CHILL_TEMP = -30;
 export const FLASHBANG_CHILL_RATE = 1 / 3;
 
 /** How fast a flashbang's countdown runs this tick, as a fraction of a tick, given
- *  the temperature the body resolved to (the hotter of its surroundings and its own
- *  reservoir — the same reading the cook-off test uses, so warm and cold are judged
- *  off one number rather than two that could disagree). Full speed when the can is
- *  anywhere above freezing, a third of speed when it is chilled, and nothing at all
- *  in a deep freeze. */
-function flashbangTickRate(heat: number): number {
-  if (heat > FLASHBANG_CHILL_TEMP) return 1;
-  return heat > FLASHBANG_DEEP_CHILL_TEMP ? FLASHBANG_CHILL_RATE : 0;
+ *  the COLDEST temperature the body resolved to — the cooler of its surroundings and
+ *  its own reservoir, so either a bath of liquid nitrogen or a 냉각 브러시 held on it
+ *  is enough on its own (see the note in evaluateTriggers on why this is a different
+ *  reading from the cook-off's). Full speed when the can is anywhere above freezing,
+ *  a third of speed when it is chilled, and nothing at all in a deep freeze. */
+function flashbangTickRate(chill: number): number {
+  if (chill > FLASHBANG_CHILL_TEMP) return 1;
+  return chill > FLASHBANG_DEEP_CHILL_TEMP ? FLASHBANG_CHILL_RATE : 0;
 }
 /** Flash reach (cells), before blast.ts's global 2/3 scale — so ~20 cells of
  *  actual radius. A grenade's worth: three times a single Flash Powder grain's
@@ -3909,8 +3909,10 @@ function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
 
 /**
  * Per-tick lifecycle for a flashbang, after this tick's heat conduction (called
- * from evaluateTriggers with the resolved `heat`). It is the shortest step
- * function in this file, which is the point of the object:
+ * from evaluateTriggers with the resolved `heat` and `chill` — the hottest and the
+ * coldest of {surroundings, own reservoir}; see the note at that call site for why
+ * one number can't serve both). It is the shortest step function in this file,
+ * which is the point of the object:
  *   1. Sustained external heat (fire, lava, the 가열 brush) cooks it off early.
  *   2. Otherwise the countdown runs — at whatever rate the cold has left it (see
  *      flashbangTickRate: full above freezing, a third when chilled, stopped in a
@@ -3922,7 +3924,12 @@ function detonateFlashbang(o: SimFlashbang, ctx: SimContext): void {
  * it off too, but that arrives through destroyByproduct rather than here. Returns
  * true to keep the can, false once it has gone off.
  */
-function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean {
+function stepFlashbang(
+  o: SimFlashbang,
+  ctx: SimContext,
+  heat: number,
+  chill: number,
+): boolean {
   if (heat >= FLASHBANG_IGNITE_TEMP) {
     o.heatTicks++;
     if (o.heatTicks >= FLASHBANG_HEAT_TICKS) {
@@ -3932,7 +3939,7 @@ function stepFlashbang(o: SimFlashbang, ctx: SimContext, heat: number): boolean 
   } else if (o.heatTicks > 0) {
     o.heatTicks--;
   }
-  const rate = flashbangTickRate(heat);
+  const rate = flashbangTickRate(chill);
   if (rate <= 0) return true; // deep-frozen: the clock is stopped, not reset
   o.fuseTicks -= rate;
   if (o.fuseTicks <= 0) {
@@ -4600,7 +4607,25 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   if (o.kind === 'dynamite') return stepDynamite(o, ctx, heat);
   // A flashbang runs a bare countdown to its flash (plus a heat cook-off) and
   // emits nothing at all until then. See stepFlashbang.
-  if (o.kind === 'flashbang') return stepFlashbang(o, ctx, heat);
+  //
+  // It is the one body that also judges COLD, and cold needs the OTHER end of the
+  // same pair — the coldest evidence, not the hottest. `heat` is a max because
+  // heat is an OR: the lava under it OR the 가열 브러시 on it should cook it off.
+  // Cold is the same OR, so it has to be a min: the liquid nitrogen it is lying in
+  // OR the 냉각 브러시 held on it should chill it. Reusing `heat` for both looks
+  // tidy and is wrong — `max(...) <= 0` demands that BOTH readings be cold, which
+  // silently makes the cooling brush (which writes only the reservoir) do nothing
+  // at all in an ordinary room, the exact case a player reaches for first.
+  //
+  // The finite guard is not symmetric with `heat`'s: an out-of-world body reads
+  // maxTemp −Infinity, which `heat`'s max discards for free but a min would latch
+  // onto — freezing the can's timer forever the moment it drifts past a void
+  // border. Same hazard the conduction step above guards, same answer.
+  if (o.kind === 'flashbang') {
+    const chill =
+      Number.isFinite(exp.maxTemp) && exp.maxTemp < o.temp ? exp.maxTemp : o.temp;
+    return stepFlashbang(o, ctx, heat, chill);
+  }
   // A wooden box burns rather than melting: it catches, flames for a few seconds,
   // then breaks into its shards (a shard into Sawdust). See stepWoodBox.
   if (o.kind === 'woodbox') return stepWoodBox(o, ctx, heat, spawn);

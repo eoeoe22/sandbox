@@ -354,6 +354,41 @@ function hold(grid: Grid, body: { x: number; y: number }, t: number): void {
   check('and it really did flash', count(grid, FLASH) > 100, `${count(grid, FLASH)} Flash cells`);
 }
 
+// 11. 냉각 브러시 alone is enough — the regression this whole pair of readings
+//     exists for. The brush writes ONLY the body's own reservoir; the room around
+//     it stays at 20°. Judging cold off the same max() the cook-off uses made this
+//     case do nothing at all (max(20, -50) = 20 → full speed), which is the first
+//     thing a player would try. It has to be a min: either the surroundings OR the
+//     reservoir being cold chills the can.
+//
+//     Deliberately NOT using hold() here — writing the surrounding cells is the
+//     path case 9/10 already cover, and it is precisely the path that masked this.
+{
+  const { grid, sim } = makeRoom();
+  const can = createFlashbang(70, 90);
+  grid.objects.push(can);
+  let popped = -1;
+  const limit = FLASHBANG_FUSE_TICKS * 4;
+  for (let i = 0; i < limit; i++) {
+    can.temp = FLASHBANG_DEEP_CHILL_TEMP - 20; // 냉각 브러시 held on it, in 20° air
+    sim.step();
+    if (grid.objects.length === 0) {
+      popped = i;
+      break;
+    }
+  }
+  check(
+    'the 냉각 브러시 alone stops the countdown, in an otherwise room-temperature world',
+    popped === -1,
+    popped === -1 ? `still ticking after ${limit} ticks` : `went off at tick ${popped}`,
+  );
+  check(
+    'and the timer really was held, not merely slowed',
+    can.fuseTicks > FLASHBANG_FUSE_TICKS * 0.8,
+    `${can.fuseTicks.toFixed(1)} of ${FLASHBANG_FUSE_TICKS} ticks left`,
+  );
+}
+
 // 7. Art and physics agree. The capsule box is 2·radius × 2·(halfLength+radius)
 //    cells and the sprite is drawn at 2 sprite px per cell, so the two aspect
 //    ratios must match exactly or the can renders outside the shape it collides
