@@ -30,7 +30,7 @@
 
   <a class="item" href="/guide">
     <i class="bi bi-book-half" aria-hidden="true"></i>
-    <span>도감</span>
+    <span>가이드</span>
   </a>
 </nav>
 

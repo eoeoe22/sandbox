@@ -40,6 +40,7 @@
   // stays out of the chunk the sandbox's islands share. See i18n/codex.ts.
   import { materialDescription, objectDescription, codexTerm } from '../i18n/codex';
   import type { ObjectKind } from '../state/store';
+  import { copyText } from '../lib/clipboard';
   import Modal from './Modal.svelte';
   // The card body itself — shared with the sandbox palette's hover tooltip, so
   // the in-game card and this dialog can't say different things. See CodexCard.
@@ -305,36 +306,8 @@
   let copyNotice = $state<{ where: 'list' | 'entry'; ok: boolean } | null>(null);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
-  /** The pre-async-clipboard route. `navigator.clipboard` needs a secure
-   *  context, and the guide page is the kind of thing that gets opened off a
-   *  LAN address or a `file://` copy of the build; falling back costs a dozen
-   *  lines and the alternative is a button that silently does nothing. */
-  function copyByExecCommand(text: string): boolean {
-    const area = document.createElement('textarea');
-    area.value = text;
-    // Off-screen but still focusable — `display: none` can't be selected.
-    area.setAttribute('readonly', '');
-    area.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
-    document.body.appendChild(area);
-    area.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    area.remove();
-    return ok;
-  }
-
   async function copy(text: string, where: 'list' | 'entry'): Promise<void> {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(text);
-      ok = true;
-    } catch {
-      ok = copyByExecCommand(text);
-    }
+    const ok = await copyText(text);
     clearTimeout(copyTimer);
     copyNotice = { where, ok };
     copyTimer = setTimeout(() => (copyNotice = null), 2200);
