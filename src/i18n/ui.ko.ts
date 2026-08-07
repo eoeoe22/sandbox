@@ -338,6 +338,17 @@ export const ko = {
     importFailed: '저장 공간이 부족해 불러오지 못했습니다.',
   },
 
+  // --- Start screen's 불러오기 modal: browse/manage slots with no live canvas
+  // to save from. Everything else it needs (rename·delete·export·import·view
+  // toggle wording) is shared with `save` above.
+  startLoad: {
+    title: '저장 슬롯',
+    subtitle: '저장된 슬롯을 선택해 바로 시작하거나, .psbx.json 파일을 드래그해 가져올 수 있습니다.',
+    dropAria: '스냅샷 드롭 존',
+    empty: '저장된 스냅샷이 없습니다.',
+    emptyHint: '게임 실행 중 저장 버튼을 누르면 이곳에 슬롯으로 기록됩니다.',
+  },
+
   // --- Snapshot load options (preview modal) ---
   load: {
     title: '불러오기 옵션',
@@ -389,6 +400,8 @@ export const ko = {
   // 여기는 페이지 골격 문구만.
   codex: {
     title: '물질 도감',
+    tabMaterials: '물질 도감',
+    tabBasics: '게임 가이드',
     search: '물질 검색',
     searchClear: '검색어 지우기',
     all: '전체',

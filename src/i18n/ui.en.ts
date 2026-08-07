@@ -341,6 +341,17 @@ export const en = {
     importFailed: 'Import failed (storage is full)',
   },
 
+  // --- Start screen's load modal: browse/manage slots with no live canvas to
+  // save from. Everything else it needs (rename·delete·export·import·view
+  // toggle wording) is shared with `save` above.
+  startLoad: {
+    title: 'Saved Slots',
+    subtitle: 'Pick a saved slot to jump right in, or drag in a .psbx.json file to import it.',
+    dropAria: 'Snapshot drop zone',
+    empty: 'No saved snapshots yet.',
+    emptyHint: 'Press Save during a game to record a slot here.',
+  },
+
   // --- Snapshot load options (preview modal) ---
   load: {
     title: 'Load options',
@@ -392,6 +403,8 @@ export const en = {
   // explanations in codexTerms.ts. This is only the page's own furniture.
   codex: {
     title: 'Material Codex',
+    tabMaterials: 'Material Codex',
+    tabBasics: 'Game Guide',
     search: 'Search materials',
     searchClear: 'Clear search',
     all: 'All',

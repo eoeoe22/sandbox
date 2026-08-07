@@ -11,7 +11,7 @@
 // The page's visible text is all inside the island — see Codex.svelte's note on
 // why the heading lives there rather than here.
 import Base from '../layouts/Base.astro';
-import Codex from '../components/Codex.svelte';
+import GuidePage from '../components/GuidePage.svelte';
 import { buildCodexEntries } from '../game/codex/entries';
 import { buildObjectEntries } from '../game/codex/objects';
 import { buildIconSprite } from '../game/codex/icons';
@@ -25,9 +25,9 @@ const tagGroups = buildTagGroups(materials, objects);
 const sprite = buildIconSprite();
 ---
 
-<Base title="Particle Sandbox - 물질 도감">
+<Base title="Particle Sandbox - 가이드">
   <div class="guide-page">
-    <Codex client:load materials={materials} objects={objects} tagGroups={tagGroups} />
+    <GuidePage client:load materials={materials} objects={objects} tagGroups={tagGroups} />
     <!-- The icon definitions, once per document. Every `<use href="#codex-…">`
          in the grid and the detail view points in here.
 
