@@ -511,7 +511,7 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
   );
 }
 
-// ── 7d. 기둥의 경계 — 반대쪽 끝의 불은 남의 불이다 ─────────────────────────────
+// ── 7d. 반대쪽 끝의 불은 남의 불이다 ─────────────────────────────────────────
 //
 // Where the plume column stops. 7c holds a lit stick flat and proves it ignores
 // its own flame; this holds the same stick the same way and puts a real fire at
