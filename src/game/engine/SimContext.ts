@@ -179,11 +179,11 @@ export class SimContext {
   sugarDebt = 0;
 
   /**
-   * The soap counterpart of `saltDebt`/`sugarDebt` (see soap.ts SOAP_WATER_RATIO).
-   * Kept separate so the three round trips never leak mass into each other. Much
-   * smaller ratio than the other two — Soap dissolves one-for-one rather than
-   * flood-salinating a pocket, so Soapy Water is a concentrated solution and
-   * doesn't need many evaporated cells to hand a grain back.
+   * The soap counterpart of `saltDebt`/`sugarDebt` (see soapywater.ts
+   * SOAP_WATER_RATIO). Kept separate so the three round trips never leak mass into
+   * each other. Much smaller ratio than the other two — Soap dissolves one-for-one
+   * rather than flood-salinating a pocket, so Soapy Water is a concentrated
+   * solution and doesn't need many evaporated cells to hand a grain back.
    */
   soapDebt = 0;
 

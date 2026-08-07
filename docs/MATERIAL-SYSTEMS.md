@@ -4849,9 +4849,15 @@ Water 세 solution 형제 중 유일하게 **끓지 않았다** — 100°까지 
   (물 계열 비등·소화 회귀 전부 통과 — 새 분기가 같은 헬퍼를 재사용하므로), `npm run
   test:miscible`(비눗물↔물·기름 유화 회귀 전부 통과), `npm run test:codex`. 전용
   회귀 시나리오는 따로 추가하지 않았다 — 손으로 만든 확인 스크립트(밀폐 안 된 10×10
-  비눗물 웅덩이를 150°로 고정하고 400틱 굴려 Soap·Steam이 실제로 나오는지 봄: 100칸
-  중 36칸 증발에 Soap 13알)로 동작을 검증한 뒤 스크립트는 지웠다 — 끓는 로직 자체가
-  Saltwater/Sugar Water와 동일한, 이미 검증된 헬퍼(`burningPetroleumAdjacent`/
+  비눗물 웅덩이를 150°로 고정하고 시드 고정 PRNG로 400틱 굴림, `test:extinguish` 등이
+  쓰는 것과 같은 mulberry32(20260807))로 동작을 검증한 뒤 스크립트는 지웠다 — 시드
+  기준 400틱 뒤 Soap 13알, `SimContext.soapDebt`는 정확히 0(끓은 칸이 정확히 26개 =
+  13×2였다는 뜻, `SOAP_WATER_RATIO`와 어긋남 없이 딱 맞아떨어진다). Soapy Water 칸
+  수 자체는 100→65로 그보다 더 줄었는데, 그 차액 9는 끓음이 아니라 거품(Bubble)
+  왕복 때문이다 — 스냅샷 순간 아직 안 터지고 떠 있는 거품이 있어 셀 카운트가
+  흔들리는 것뿐이고, `soapDebt`와는 무관하다(첫 측정 때 이 차이를 "증발 36칸"으로
+  잘못 뭉뚱그려 리뷰에서 지적받았다 — 재현 안 되는 수치를 문서에 남기지 말 것).
+  끓는 로직 자체가 Saltwater/Sugar Water와 동일한, 이미 검증된 헬퍼(`burningPetroleumAdjacent`/
   `fightingFire`/`steamHasRoom` 계열)의 재사용이라 새 헬퍼가 없기 때문이다.
 - **도감(ko/en)**: Soapy Water 설명문에 "끓이면 수증기로 증발하고 비누가 남습니다"
   한 문장을 추가(Saltwater "끓이면 소금이 석출" 문장과 같은 자리). Soap(101) 쪽은
