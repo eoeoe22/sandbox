@@ -517,13 +517,15 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
 // its own flame; this holds the same stick the same way and puts a real fire at
 // the FAR tip, outside the column, where it must be read like anyone else's.
 //
-// This is the honest boundary of the design, and it is worth pinning because the
-// design has a known soft edge on the other side of it: fire sitting *only* on
-// top of a lying body's middle IS inside the column and gets swallowed (see the
-// engine comment on WICK_PLUME_MARGIN). A rule that keeps a body blind to its own
-// rising plume cannot also tell that plume apart from a fire someone lit in the
-// exact place the plume goes. So this scene fixes where the line is: past the far
-// tip, it is not yours.
+// It is worth pinning because the design has a known soft edge on the other side:
+// fire sitting *only* on top of a lying body's near half IS inside the column and
+// gets swallowed (see the engine comment on WICK_PLUME_MARGIN). A rule that keeps
+// a body blind to its own rising plume cannot also tell that plume apart from a
+// fire someone lit in the exact place the plume goes.
+//
+// Deliberately generous, not a boundary-precision test: the column actually ends
+// around half a cell past the body's centre, and this fire sits some four cells
+// beyond that. Measuring the edge to the cell would only pin CA jitter.
 {
   scene(10);
   const { grid, sim } = makeWorld();
