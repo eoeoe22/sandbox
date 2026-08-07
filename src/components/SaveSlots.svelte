@@ -538,6 +538,7 @@
   open={pending !== null}
   title={t('load.title')}
   icon="bi-aspect-ratio"
+  width={460}
   onclose={() => (pending = null)}
 >
   {#if pending}
