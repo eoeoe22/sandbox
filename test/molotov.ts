@@ -451,6 +451,14 @@ const SETTLE_TICKS = 40;
       Math.max(...glassTemps) > 1450,
       `hottest glass cell ${Math.max(...glassTemps).toFixed(0)}° off a 1700° reservoir (Molten Glass's own birth temperature is 1400°)`,
     );
+    // Both halves came out of the same fire, so both are poured at the same
+    // temperature (meltMolotov's `pourTemp`). The fuel used to land at
+    // FUEL_BURN_TEMP — alight, but 600° colder than the glass beside it.
+    check(
+      '유리와 알콜이 같은 온도로 나온다 — the two halves are poured at one temperature',
+      Math.abs(Math.max(...fuelTemps) - Math.max(...glassTemps)) < 1,
+      `fuel ${Math.max(...fuelTemps).toFixed(0)}° vs glass ${Math.max(...glassTemps).toFixed(0)}° (fuel used to pour at ${FUEL_BURN_TEMP}°)`,
+    );
     check(
       '녹은 유리는 알콜 아래에 고인다 — the denser glass pools under the fuel',
       glassY > fuelY,

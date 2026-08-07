@@ -4777,17 +4777,17 @@ function breakMolotov(o: SimMolotov, ctx: SimContext): void {
  *
  * So the bottle leaves MOLTEN GLASS and ALCOHOL **in equal amounts** (알콜과 녹은
  * 유리를 동일한 양), both spawned in place — nothing flies. "Equal" is exact, not
- * statistical: the eligible cells are gathered, shuffled, and split down the middle,
- * so the two never come out lopsided on a small footprint the way two independent
- * per-cell rolls would.
+ * statistical: the eligible cells are gathered, sorted bottom-first (glass sinks,
+ * fuel floats) and split down the middle, so the two never come out lopsided on a
+ * small footprint the way two independent per-cell rolls would.
  *
  * The alcohol half is skipped entirely for a spent 빈 유리병 (it has no fuel left to
  * give — the same rule breakMolotov applies), which leaves an empty bottle melting
- * into half a footprint of glass and nothing else. And unlike the smashed path the
- * fuel is NOT pinned alight here: it lands beside 1400° Molten Glass inside a bath
- * hot enough to have melted the bottle, so it catches on its own within a tick or
- * two. Letting the world do it keeps the one interesting case honest — fuel dumped
- * into a place that somehow *isn't* burning stays unlit.
+ * into half a footprint of glass and nothing else. Both halves are poured at the
+ * SAME temperature — the glass's own 1400°, or the bottle's reservoir where that ran
+ * hotter — because both came out of the same fire. That is well past FUEL_BURN_TEMP,
+ * so unlike the smashed path there is no `lit` check to make: nothing reaches this
+ * path cold.
  *
  * Both obey the poured-liquid guard (`Phase.Solid` — the object layer stays
  * read-only over terrain it didn't put there), exactly as the spilled drum contents
@@ -4850,23 +4850,29 @@ function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
   // `cells` is bottom-first, so the first glassCount entries are the bottom of the
   // puddle: glass sinks, fuel floats.
   const fuelled = o.fuelTicks > 0;
+  // BOTH halves come out at the same temperature, because they came out of the
+  // same fire. That is Molten Glass's own init (1400°), or the bottle's reservoir
+  // where the reservoir ran hotter — a bottle sunk in lava, held under a Heat Ray,
+  // or pinned by the 가열 브러시 leaves a correspondingly hotter puddle. Never
+  // *below* the glass init, so the molten phase can't come out shorter than fresh
+  // Molten Glass gets. (In the ordinary case the reservoir term changes nothing:
+  // the bottle bursts once it has held MOLOTOV_BURST_TEMP (1150°) for five ticks,
+  // short of 1400°.)
+  //
+  // The fuel used to be pinned to FUEL_BURN_TEMP (800°) instead — enough to be
+  // alight, which is what that pin was for, but a cold neighbour to 1400° glass all
+  // the same. Pouring it at the glass's own temperature is both simpler and truer:
+  // the fuel was in that same fire. Confirmed in play that hot alcohol does not
+  // burn away faster than lit alcohol does — a 2000° pool burns at very nearly the
+  // rate a freshly lit one does — so this costs the puddle none of its life.
+  const glassInit = MOLTEN_GLASS.thermal?.init ?? FUEL_BURN_TEMP;
+  const pourTemp = heat > glassInit ? heat : glassInit;
   for (let i = 0; i < n; i++) {
     const cx = cells[i * 2];
     const cy = cells[i * 2 + 1];
     if (i < glassCount) {
       ctx.spawn(cx, cy, MOLTEN_GLASS.id);
-      // A bottle that came out of the fire hotter than Molten Glass's own 1400°
-      // init leaves a correspondingly hotter pool. Only ever *raises* the cell, so
-      // it can never shorten the molten phase below what fresh Molten Glass gets.
-      //
-      // In the ordinary case it changes nothing, and that is fine: `heat` is the
-      // bottle's reservoir, and the bottle bursts as soon as that has held
-      // MOLOTOV_BURST_TEMP (1150°) for five ticks — short of 1400°. It bites where
-      // it should, on a bottle whose reservoir kept climbing past 1400 anyway: one
-      // sunk in lava, one under a held Heat Ray, one the 가열 브러시 pinned high.
-      // What actually keeps the puddle molten in the common case is the fuel beside
-      // it arriving hot rather than at room temperature — see the next branch.
-      if (heat > ctx.getTemp(cx, cy)) ctx.setTemp(cx, cy, heat);
+      ctx.setTemp(cx, cy, pourTemp);
     } else if (fuelled) {
       ctx.spawn(cx, cy, ALCOHOL.id);
       // Alight, unconditionally — and this is load-bearing, not flavour.
@@ -4884,7 +4890,9 @@ function meltMolotov(o: SimMolotov, ctx: SimContext, heat: number): void {
       // bottle sat at GLASS_MELT_TEMP or above long enough to run, so its contents
       // were in that same fire. Hence no `lit` check — unlike the smashed path,
       // where a doused bottle really can spill cold fuel, nothing arrives here cold.
-      ctx.setTemp(cx, cy, FUEL_BURN_TEMP);
+      // `pourTemp` is at least 1400°, comfortably past FUEL_BURN_TEMP, so the fuel
+      // still reads as alight to combustion.ts.
+      ctx.setTemp(cx, cy, pourTemp);
     }
   }
 }
