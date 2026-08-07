@@ -233,7 +233,7 @@ function columnHeat(grid: Grid, x: number): number {
   check('a laser burns a rubber ball away', !w.grid.objects.includes(ball));
 }
 {
-  // A stick of dynamite cooks off (DYNAMITE_AUTOIGNITE_TEMP 1100) — 유폭.
+  // A stick of dynamite cooks off (DYNAMITE_AUTOIGNITE_TEMP 220) — 유폭.
   const w = makeWorld();
   const stick = place(w, createDynamite(TARGET_X, 0));
   run(w, 200, aimAt(stick));

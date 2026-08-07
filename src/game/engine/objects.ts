@@ -850,17 +850,23 @@ export const DYNAMITE_FUSE_MAX_TICKS = Math.round(5 * SIM_HZ_AT_1X);
 /** Tip temperature (°) at/above which a snuffed (dud) fuse catches again and the
  *  countdown resumes — a flame/ember/hot surface touched to the fuse re-lights it.
  *  Above ambient/boiling so warmth alone won't, but any real flame (Fire 1000°,
- *  embers, molten iron) or hotter will; below the autoignite temp, so re-lighting
- *  resumes the timer rather than detonating outright. */
+ *  embers, molten iron) or hotter will. It now sits just *under* the autoignite
+ *  temp rather than far below it, and the two are told apart by time instead of by
+ *  degrees: re-lighting is instant, while autoignition needs DYNAMITE_HEAT_TICKS
+ *  of sustained heat. So a flame brushed across the fuse re-lights a dud, and a
+ *  flame it is left lying in detonates it. */
 const FUSE_RELIGHT_TEMP = 200;
 /** Footprint temperature (°) at/above which an external heat source cooks the
- *  stick off (autoignition). Set deliberately *above ordinary Fire's 1000°* so the
- *  lit fuse's OWN emitted Fire (which sits right beside a resting stick) can never
- *  self-detonate it — the fuse countdown stays the sole timer — while a genuinely
- *  hotter bath (Lava 1500°, Blue Flame 1800°) or the 가열 brush (up to 2000°) still
- *  cooks it off. This also reads true: real dynamite burns rather than detonates
- *  in an open flame; it wants a blasting cap (here: the fuse, a blast, or a crush). */
-export const DYNAMITE_AUTOIGNITE_TEMP = 1100;
+ *  stick off (autoignition). Real nitroglycerin dynamite goes off somewhere around
+ *  200°, and that is now the number the sim uses: 불에 던지면 터진다 is both truer and
+ *  far more fun than the old 1100°, which was set that high for one mechanical
+ *  reason only — to sit above ordinary Fire's 1000° so a stick could never be
+ *  cooked off by its OWN lit fuse. That defence has moved to where it belongs
+ *  (WICK_HEAT_RADIUS: a lit body simply doesn't read its own flame as heat), which
+ *  frees the threshold to be a real material property instead of a workaround.
+ *  So: anything genuinely hot — Fire, Lava, molten metal, a lit crate, the 가열
+ *  brush — now sets a stick off, and the stick's own fuse still doesn't. */
+export const DYNAMITE_AUTOIGNITE_TEMP = 220;
 /** Sustained ticks above the autoignite temp before it goes off, so a single hot
  *  splash (a fleck of flung lava) doesn't instant-pop it — only a sustained bath
  *  does. Short enough that Lava still detonates it promptly. */
@@ -1337,11 +1343,11 @@ const MOLOTOV_DOUSE_FRAC = 0.1;
  *  bottle is a glass bottle, so the temperature at which it stops being one is the
  *  temperature at which glass stops being glass, and tying the two together means a
  *  pane and a bottle in the same fire give way at the same moment instead of at two
- *  numbers that drifted apart. Raised from the dynamite's 1100° cook-off point,
- *  which was picked only to clear ordinary Fire's 1000° — a constraint this still
- *  satisfies with room to spare, so the wick's OWN Fire (right beside the neck) can
- *  never burst the bottle it belongs to, while Lava (1500°), a Blue Flame jet
- *  (1800°), the 가열 brush or a held Heat Ray does. */
+ *  numbers that drifted apart. Comfortably above ordinary Fire's 1000°, so a
+ *  bottle merely sitting in flames doesn't melt — it wants Lava (1500°), a Blue
+ *  Flame jet (1800°), the 가열 brush or a held Heat Ray. (The wick's own Fire is a
+ *  separate matter and no longer relies on this margin at all: a lit body doesn't
+ *  read its own flame as heat — see WICK_HEAT_RADIUS.) */
 export const MOLOTOV_BURST_TEMP = GLASS_MELT_TEMP;
 /** Sustained ticks above MOLOTOV_BURST_TEMP before it bursts, so a single hot
  *  splash doesn't pop it. */
@@ -2608,6 +2614,50 @@ function sampleMediumCapsule(o: CapsuleBody, ctx: SimContext): {
 const contactCells: number[] = [];
 
 /**
+ * How far around its own burning wick (in cells) a body stops reading heat at all
+ * — 도화선 불이 스스로를 가열하지 않게.
+ *
+ * A lit stick of dynamite and a lit molotov both throw a *real* 1000° Fire cell
+ * off the wick every tick (that is the whole point — the flame has to be able to
+ * light the oil slick the bottle is lying in), and that flame lands half a cell
+ * past the cap. The old defence against it was purely numeric: keep every
+ * heat threshold above Fire's 1000° and the body can't cook itself. Two changes
+ * broke that. The contact shell (OBJECT_CONTACT_MARGIN) now reaches exactly far
+ * enough to pick the wick flame up as *touching* matter, so a lit body pulled its
+ * own flame into its reservoir and sat there glowing red in the inspect overlay;
+ * and dynamite's autoignite point has come down to a realistic 220°, well under
+ * Fire, so the numeric defence is gone entirely.
+ *
+ * So the exclusion is geometric instead, and it covers two things: the flame cell
+ * itself (skipped wherever it is in the footprint, since fire rises and a stick
+ * lying fuse-down would otherwise breathe its own flame straight up into itself),
+ * and everything within this radius of the wick — because the flame also *cooks
+ * the ground right under it*, and that heated cell is in the contact shell too.
+ * Two cells covers the flame and the ring it warms.
+ *
+ * It costs nothing in play, because it applies only while the wick is ALREADY
+ * lit: a body whose clock is already running has nothing left for an external
+ * flame to do to it. An unlit dud is untouched by any of this, so touching fire
+ * to a snuffed fuse still re-lights it and leaving a stick in a fire still cooks
+ * it off.
+ */
+const WICK_HEAT_RADIUS = 2;
+
+/** Where a lit body's own wick throws its flame — the tip of the long axis, the
+ *  same point stepDynamite and emitMolotovFlame spawn Fire from — or null for a
+ *  body that has no burning wick of its own. A burning wooden crate is
+ *  deliberately NOT one of these: its flames are seeded across its own footprint
+ *  because the crate itself is what is on fire, so reading them as heat is
+ *  correct and it should show hot. */
+function wickPoint(o: SimBody): { x: number; y: number } | null {
+  if (o.kind !== 'dynamite' && o.kind !== 'molotov') return null;
+  if (!o.lit) return null;
+  const [ux, uy] = capsuleAxis(o);
+  const reach = o.halfLength + o.radius + 0.5;
+  return { x: o.x - ux * reach, y: o.y - uy * reach };
+}
+
+/**
  * Scan any body's footprint for the terminal triggers (read-only): a Blast flash
  * cell overlapping it (an explosion swept directly over it — see blast.ts, whose
  * cleared cells become short-lived BLAST cells → instant destruction), a Nuclear Ray
@@ -2623,8 +2673,12 @@ const contactCells: number[] = [];
  * narrower thing than `maxTemp`: the cells it is actually touching matter in
  * (`contactCount`, collected into `contactCells`) and the hottest of those
  * (`contactTemp`), plus whether a Fan's wind is blowing through the footprint
- * (`wind`). Conduction runs off those rather than off `maxTemp` — see the
- * conduction step in evaluateTriggers for why air alone must not cool a body.
+ * (`wind`) and how hot that moving air is (`windTemp`). Conduction runs off those
+ * rather than off `maxTemp` — see the conduction step in evaluateTriggers for why
+ * air alone must not cool a body.
+ *
+ * A lit body's own wick flame is excluded from every temperature it reports, both
+ * `maxTemp` and `contactTemp` — see WICK_HEAT_RADIUS.
  */
 function scanBodyExposure(
   o: SimBody,
@@ -2637,6 +2691,7 @@ function scanBodyExposure(
   contactTemp: number;
   contactCount: number;
   wind: boolean;
+  windTemp: number;
 } {
   const core = bodyCore(o);
   const r2 = core.r * core.r;
@@ -2660,6 +2715,11 @@ function scanBodyExposure(
   let contactTemp = -Infinity;
   let contactCount = 0;
   let wind = false;
+  let windTemp = -Infinity;
+  // 도화선 불이 스스로를 가열하지 않게 — null for every body that isn't burning its
+  // own wick right now, which is the overwhelmingly common case.
+  const wick = wickPoint(o);
+  const wickR2 = WICK_HEAT_RADIUS * WICK_HEAT_RADIUS;
   for (let cy = y0; cy < y1; cy++) {
     for (let cx = x0; cx < x1; cx++) {
       const [spx, spy] = coreClosest(core, cx + 0.5, cy + 0.5);
@@ -2679,12 +2739,26 @@ function scanBodyExposure(
       if (!ctx.inBounds(cx, cy)) continue;
       const id = ctx.get(cx, cy);
       const m = id === EMPTY ? null : getMaterial(id);
+      // The body's own wick flame, and the ring of matter that flame is cooking,
+      // are not heat this body is allowed to feel (see WICK_HEAT_RADIUS). The
+      // wind checks below stay outside it — a gust over the fuse is still a gust.
+      let ownFlame = false;
+      if (wick !== null) {
+        const wx = cx + 0.5 - wick.x;
+        const wy = cy + 0.5 - wick.y;
+        ownFlame = id === FIRE.id || wx * wx + wy * wy <= wickR2;
+      }
       if (!inFoot) {
         // Shell-only cell: it can touch the body and it can blow on it, nothing
         // more. Same skip list as the footprint below — a cell whose `temp` is
         // packed bookkeeping has no reading to trade, and air/Wall never trade.
         if (m !== null && (m.packedTemp || m.decorTemp)) continue;
-        if (!wind && ctx.getWind(cx, cy) !== 0) wind = true;
+        if (ctx.getWind(cx, cy) !== 0) {
+          wind = true;
+          const ta = ctx.getTemp(cx, cy);
+          if (ta > windTemp) windTemp = ta;
+        }
+        if (ownFlame) continue;
         if (m === null || m.isWall === true) continue;
         const ts = ctx.getTemp(cx, cy);
         if (ts > contactTemp) contactTemp = ts;
@@ -2717,8 +2791,14 @@ function scanBodyExposure(
       if (m !== null && (m.packedTemp || m.decorTemp)) continue;
       // A Fan's gust reaching the body is the one way *air* gets to carry heat
       // off it (강제 대류). Wind is a transient effect layer, not a particle, so
-      // it is read off the same cells whether or not anything occupies them.
-      if (!wind && ctx.getWind(cx, cy) !== 0) wind = true;
+      // it is read off the same cells whether or not anything occupies them, and
+      // the air's own temperature is what the convection channel relaxes toward.
+      if (ctx.getWind(cx, cy) !== 0) {
+        wind = true;
+        const ta = ctx.getTemp(cx, cy);
+        if (ta > windTemp) windTemp = ta;
+      }
+      if (ownFlame) continue;
       const t = ctx.getTemp(cx, cy);
       if (t > maxTemp) maxTemp = t;
       // Thermal contact. Air is excluded because it has zero conductivity in this
@@ -2742,6 +2822,7 @@ function scanBodyExposure(
     contactTemp,
     contactCount,
     wind,
+    windTemp,
   };
 }
 
@@ -3045,12 +3126,19 @@ const WOOFER_KNOCK_SPIN = 0.1;
 const WIND_KNOCK_RADIUS = 2;
 /** Target drift speed (cells/tick) the wind carries a body along its blow
  *  direction. Applied as a floor on the along-wind velocity (not accumulated), so
- *  a body in the stream steadily drifts downwind rather than being rocketed. Raised
- *  half again (was 2.5) to match the 1.5× stronger matter push (밀어내기 효과 1.5배
- *  상향 — see materials/fan.ts WIND_PUSH_BOOST), so blown drums/balls keep pace. */
-const WIND_PUSH_SPEED = 3.75;
-/** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along. */
-const WIND_KNOCK_SPIN = 0.04;
+ *  a body in the stream steadily drifts downwind rather than being rocketed.
+ *
+ *  Cut from 3.75 (바람에 지나치게 강하게 밀려남). Matching it to the matter push was
+ *  the mistake: a body is a chunky, heavy thing next to the loose grains a fan is
+ *  meant to sweep, and a drum caught in a stream shot off like it had been fired.
+ *  At this floor it still visibly rides the gust and can be herded across the
+ *  world, but it drifts rather than launches, and a wall or a pile stops it. */
+const WIND_PUSH_SPEED = 1.4;
+/** Spin the wind kicks into a capsule body as it's blown, so a drum tumbles along.
+ *  Unlike the push (a floor) this one *accumulates* every tick the body spends in
+ *  the stream, which made it the bigger half of the too-strong wind — a stick
+ *  parked in a gust wound itself up into a blur. Cut to about a third. */
+const WIND_KNOCK_SPIN = 0.015;
 /** Speed (cells/tick) a live Electromagnet field drags a ferrous body toward
  *  itself at. Applied as a *floor* on the body's speed along the pull direction
  *  — the same shape as the Fan's wind push, not an accumulating force — which is
@@ -3096,11 +3184,20 @@ const OBJECT_HEAT_CONDUCTION = 0.03;
  *  thermal contact with it. See the shell test in scanBodyExposure. */
 const OBJECT_CONTACT_MARGIN = 1;
 
-/** Multiplier on that rate while a Fan's wind blows through the footprint —
- *  강제 대류. This is the *only* way still air moves a body's heat at all (air
- *  conducts nothing in this world), so a fan is the tool for cooling something
- *  red-hot without dunking it. */
-const OBJECT_WIND_CONVECTION = 3;
+/** Per-tick fraction a body's reservoir moves toward the air a Fan is pushing
+ *  through it — 강제 대류, and the *only* way air moves a body's heat at all (still
+ *  air conducts nothing in this world), so a fan is the tool for cooling something
+ *  red-hot without dunking it. It is a channel of its own, added on top of any
+ *  contact conduction rather than multiplying it: blowing on a drum that is also
+ *  sitting in lava must not slow the lava down.
+ *
+ *  Far gentler than conduction to matter — a quarter of OBJECT_HEAT_CONDUCTION —
+ *  because that is what it is physically (forced convection to air carries far
+ *  less than a solid contact patch), and because the old 3× multiplier made a fan
+ *  flash-cool a glowing drum in a fraction of a second (냉각 속도가 너무 빠름).
+ *  At this rate a red-hot body fans down over a couple of seconds, which is long
+ *  enough to watch. */
+const OBJECT_WIND_CONVECTION = 0.008;
 
 /** Per-tick fraction each touched cell moves toward the body's reservoir — the
  *  return leg of the same conduction (양방향 열전도), so a red-hot drum warms the
@@ -3970,9 +4067,11 @@ function stepDynamite(o: SimDynamite, ctx: SimContext, heat: number): boolean {
       if (tipId === EMPTY) {
         // In open air the lit fuse throws a real Fire particle (not a painted-on
         // flame): it flickers, rises, and can ignite whatever the fuse leads to —
-        // a Gunpowder trail, a charge, a puddle of fuel. The tip sits cells beyond
-        // the body's footprint and the fire rises away from it, so the stick's own
-        // fuse doesn't cook it off early (the countdown stays the authority).
+        // a Gunpowder trail, a charge, a puddle of fuel. It cannot cook the stick
+        // off early — the countdown stays the sole authority — because a lit body
+        // doesn't read its own wick as heat at all (see WICK_HEAT_RADIUS). That
+        // used to rest on DYNAMITE_AUTOIGNITE_TEMP sitting above Fire's 1000°,
+        // which is no longer true now that it is a realistic 220°.
         ctx.spawn(tcx, tcy, FIRE.id);
       } else if (getMaterial(tipId).phase === Phase.Liquid && !ctx.isFrozen(tcx, tcy)) {
         // Submerged/wet: the flame doesn't die — instead it heats the liquid it
@@ -4735,16 +4834,17 @@ function evaluateTriggers(o: SimBody, ctx: SimContext, spawn: SimBody[]): boolea
   // also keeps the reservoir from decaying to −Infinity and NaN-ing the tick
   // after, which would permanently break the heat test if it drifted back in.
   if (exp.contactCount > 0) {
-    const rate = exp.wind ? OBJECT_HEAT_CONDUCTION * OBJECT_WIND_CONVECTION : OBJECT_HEAT_CONDUCTION;
-    o.temp += (exp.contactTemp - o.temp) * rate;
+    o.temp += (exp.contactTemp - o.temp) * OBJECT_HEAT_CONDUCTION;
     // …and the return leg, into every one of those cells. Runs here, immediately
     // after the scan, because it reads the scan's scratch contact list.
     conductBodyHeatOut(o, ctx, exp.contactCount);
-  } else if (exp.wind && Number.isFinite(exp.maxTemp)) {
-    // Nothing touched, but a gust is blowing over it: the air itself becomes the
-    // medium, at the boosted convective rate.
-    o.temp += (exp.maxTemp - o.temp) * OBJECT_HEAT_CONDUCTION * OBJECT_WIND_CONVECTION;
   }
+  // A gust is its own, separate channel — added on top of any contact rather than
+  // replacing or scaling it, so blowing on a drum that is also half-buried in lava
+  // doesn't slow the lava down. It relaxes toward the temperature of the moving
+  // air itself (`windTemp`), which is normally ambient but is whatever a
+  // brush-heated or LN2-chilled stream happens to be carrying.
+  if (exp.wind) o.temp += (exp.windTemp - o.temp) * OBJECT_WIND_CONVECTION;
   // Judge heat by the hotter of the surroundings and the body's own reservoir:
   // ambient heat (lava/fire under the footprint) still triggers instantly as
   // before — no regression — while the 가열 brush, which writes only `temp`, can

@@ -14,14 +14,26 @@
 //   3. 양방향 — the heat goes the other way too. A red-hot body warms the ground
 //      under it; a deep-frozen one chills the water around it.
 //   4. 느린 전도 — and all of that happens slowly enough that a body stays visibly
-//      hot for seconds rather than snapping to ambient.
+//      hot for seconds rather than snapping to ambient. A Fan is gentler still: it
+//      is air, not a contact patch, so it fans a body down over seconds.
+//   5. 도화선 불이 스스로를 가열하지 않게 — a body burning its own wick throws a real
+//      1000° Fire cell right beside itself every tick, and must not read it (nor
+//      the ground that flame is scorching) as heat. This is what lets dynamite's
+//      cook-off point be a realistic 220° instead of a number chosen only to sit
+//      above Fire's 1000°.
 //
 // Run: `node test/run-objectheat.mjs`.
 import { Grid } from '../src/game/engine/Grid';
 import { Simulation } from '../src/game/engine/Simulation';
-import { createDrum, createRubberBall } from '../src/game/engine/objects';
+import {
+  createDrum,
+  createDynamite,
+  createMolotov,
+  createRubberBall,
+  DYNAMITE_AUTOIGNITE_TEMP,
+} from '../src/game/engine/objects';
 import type { SimBody } from '../src/game/engine/objects';
-import { FAN_DOWN } from '../src/game/materials/fan';
+import { FAN_DOWN, FAN_RIGHT } from '../src/game/materials/fan';
 import { getMaterial } from '../src/game/materials/registry';
 import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials';
@@ -55,6 +67,7 @@ const STONE = ID('Stone');
 const SAND = ID('Sand');
 const WATER = ID('Water');
 const FAN = ID('Fan');
+const FIRE = ID('Fire');
 
 const W = 100;
 const H = 100;
@@ -182,11 +195,25 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
   }
   grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
   drum.temp = 500;
-  for (let t = 0; t < 600; t++) sim.step();
+  const half = AMBIENT_TEMP + (500 - AMBIENT_TEMP) / 2;
+  let halfTick = -1;
+  for (let t = 0; t < 600; t++) {
+    sim.step();
+    if (halfTick < 0 && drum.temp <= half) halfTick = t + 1;
+  }
   check(
     '선풍기 바람은 허공의 오브젝트도 식힌다 — a fan cools a body air alone cannot',
     drum.temp < 300,
     `500° → ${drum.temp.toFixed(1)}° with the fan running (case 1: unchanged)`,
+  );
+  // …but as *air*, not as a contact patch. The old rate (a 3× multiplier on top of
+  // conduction) flash-cooled a glowing drum in well under a second — 냉각 속도가
+  // 너무 빠름 — so the convective channel is now a small rate of its own, and a
+  // fanned body is expected to take a couple of seconds (SIM_HZ_AT_1X is 30/s).
+  check(
+    '…gently: a fan takes seconds, not a moment, to bring it down',
+    halfTick > 40,
+    `half-life ${halfTick} ticks under the fan (was ~8)`,
   );
 }
 
@@ -295,6 +322,159 @@ function settle(sim: Simulation, grid: Grid, body: SimBody, limit = 200): number
     `half-life ${ticks} ticks (was ~8 before the rate was lowered)`,
   );
   check('…and it does eventually get there', ticks > 0, `${ticks} ticks`);
+}
+
+// ── 7. 도화선 불이 스스로를 가열하지 않게 (다이너마이트) ───────────────────────
+//
+// A lit stick throws a real Fire cell (1000°) off its fuse every tick, half a cell
+// past the cap — which is inside the contact shell — and that flame scorches the
+// ground right under it, which is inside the shell too. So a lit stick used to
+// read its own fuse as an external bath: it glowed red in the inspect overlay, and
+// once DYNAMITE_AUTOIGNITE_TEMP came down to a realistic 220° it would have blown
+// itself up long before its countdown ran out. It must stay at room temperature
+// for its whole fuse, on the ground, with its own flame burning beside it.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const stick = createDynamite(50, 60);
+  grid.objects.push(stick);
+  let hottest = -Infinity;
+  let sawFire = false;
+  let ticks = 0;
+  // The shortest fuse is 3 seconds (DYNAMITE_FUSE_MIN_TICKS, at SIM_HZ_AT_1X = 30),
+  // so 70 ticks is safely inside every roll: a stick gone before then went off for
+  // some reason other than its countdown, which is exactly the failure being hunted.
+  for (; ticks < 70; ticks++) {
+    sim.step();
+    if (!grid.objects.includes(stick)) break;
+    if (stick.temp > hottest) hottest = stick.temp;
+    if (!sawFire) {
+      for (let i = 0; i < grid.cells.length; i++) {
+        if (grid.cells[i] === FIRE) {
+          sawFire = true;
+          break;
+        }
+      }
+    }
+  }
+  // Precondition — without this the scene passes for the boring reason that no
+  // flame was ever emitted and there was nothing to be heated by.
+  check(
+    '전제: the lit fuse really is throwing Fire',
+    sawFire,
+    'Fire cells found on the grid while the stick burned',
+  );
+  check(
+    '도화선 불이 스스로를 가열하지 않는다 — a lit stick stays at room temperature',
+    hottest < AMBIENT_TEMP + 10,
+    `peaked at ${hottest.toFixed(1)}° over ${ticks} ticks (autoignite is ${DYNAMITE_AUTOIGNITE_TEMP}°)`,
+  );
+  check(
+    '…so it survives to its countdown instead of cooking itself off',
+    grid.objects.includes(stick) && stick.lit,
+    `${ticks} ticks in, fuse still burning`,
+  );
+}
+
+// ── 8. 폭발 온도 220° ────────────────────────────────────────────────────────
+//
+// The other half of the same change. With the self-heating defence moved into
+// geometry, the threshold is free to be a material property, and 220° is roughly
+// where real nitroglycerin dynamite goes: 불에 던지면 터진다. A dud stick (fuse
+// snuffed, countdown paused — so nothing but heat can act on it) is laid on a bed
+// held at a temperature that is over the new threshold but far under the old
+// 1100°. Under the old number this scene would have run forever.
+function cookOff(bathTemp: number, limit = 500): { gone: boolean; ticks: number } {
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const stick = createDynamite(50, 60);
+  stick.lit = false; // a dud: fuseTicks frozen, so only heat can end it
+  settle(sim, grid, stick, 120);
+  stick.lit = false; // …and it stays a dud even if it brushed something on the way down
+  for (let t = 0; t < limit; t++) {
+    // Hold the bed at temperature — a hot plate, not a one-off stamp, which is what
+    // lying in lava or under a held 가열 브러시 actually looks like.
+    for (let y = 70; y < grid.height; y++)
+      for (let x = 0; x < grid.width; x++) grid.temp[grid.idx(x, y)] = bathTemp;
+    sim.step();
+    if (!grid.objects.includes(stick)) return { gone: true, ticks: t + 1 };
+  }
+  return { gone: false, ticks: limit };
+}
+{
+  const hot = cookOff(300);
+  check(
+    '300° 바닥에 놓인 다이너마이트는 터진다 — well under the old 1100° cook-off',
+    hot.gone,
+    `detonated after ${hot.ticks} ticks on a 300° bed`,
+  );
+  const warm = cookOff(150);
+  check(
+    '대조군: 150°에서는 터지지 않는다 — the threshold is a threshold, not a slope',
+    !warm.gone,
+    `survived ${warm.ticks} ticks on a 150° bed (autoignite ${DYNAMITE_AUTOIGNITE_TEMP}°)`,
+  );
+}
+
+// ── 9. 도화선 불이 스스로를 가열하지 않게 (화염병) ────────────────────────────
+//
+// The bottle burns a wick the same way and had the same problem — a lit molotov
+// sitting in the overlay glowing like it was already in a furnace. It never
+// actually melted itself (MOLOTOV_BURST_TEMP is glass's 1150° melting point, over
+// Fire's 1000°), but the reading was a lie, and the overlay now shows it.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const bottle = createMolotov(50, 60);
+  grid.objects.push(bottle);
+  let hottest = -Infinity;
+  for (let t = 0; t < 150; t++) {
+    sim.step();
+    if (!grid.objects.includes(bottle)) break;
+    if (bottle.temp > hottest) hottest = bottle.temp;
+  }
+  check(
+    '불붙은 화염병도 스스로를 데우지 않는다 — a lit bottle reads room temperature',
+    hottest < AMBIENT_TEMP + 10,
+    `peaked at ${hottest.toFixed(1)}° with its wick burning`,
+  );
+  check('…and it is still burning, not shattered', grid.objects.includes(bottle) && bottle.lit);
+}
+
+// ── 10. 바람에 지나치게 강하게 밀려남 ────────────────────────────────────────
+//
+// Not heat, but the same Fan: a body caught in a stream used to be launched at the
+// matter push's own speed, which for something as chunky as a drum read as being
+// fired out of a cannon. It should ride the gust — clearly moving, herdable — and
+// still be stopped by a wall or a pile.
+{
+  const { grid, sim } = makeWorld();
+  floor(grid, 70);
+  const drum = createDrum(30, 60);
+  settle(sim, grid, drum);
+  // A column of Fan cells to the drum's left, blowing RIGHT along the floor.
+  const fanX = Math.max(1, Math.round(drum.x) - 12);
+  for (let dy = -6; dy <= 1; dy++) {
+    grid.set(fanX, Math.round(drum.y) + dy, FAN);
+    grid.setAux(fanX, Math.round(drum.y) + dy, (4000 << 2) | FAN_RIGHT);
+  }
+  grid.dirty.rebuild(grid.cells, grid.overlay, grid.width, grid.height);
+  const x0 = drum.x;
+  let peak = 0;
+  for (let t = 0; t < 200; t++) {
+    sim.step();
+    if (drum.vx > peak) peak = drum.vx;
+  }
+  check(
+    '바람은 오브젝트를 날려버리지 않는다 — a gust drifts a body rather than firing it',
+    peak < 2,
+    `peak downwind speed ${peak.toFixed(2)} cells/tick (was up to 3.75)`,
+  );
+  check(
+    '…but it does still push — the fan is not a no-op',
+    drum.x > x0 + 2,
+    `drifted ${(drum.x - x0).toFixed(1)} cells downwind`,
+  );
 }
 
 if (failures > 0) {
