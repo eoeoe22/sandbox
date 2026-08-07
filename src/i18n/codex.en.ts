@@ -53,7 +53,7 @@ export const materialCodexEn: Record<number, string> = {
 
   // Powders
   2: 'The most common powder. Melts into molten glass at 1250°C and turns into glass upon cooling.',
-  7: 'Dissolves easily in water. Becomes molten salt at 800°C or higher.',
+  7: 'Dissolves easily in water. Becomes molten salt at 800°C or higher. It steeps food: anything touching it — or buried in it — keeps, right through to the middle.',
   101: 'Turns into soapy water upon contact with water.',
   119: 'Broken glass powder fragments.',
   80: 'Powder fire extinguisher and acid neutralizer. Immediately extinguishes adjacent fires, and neutralizes acid into saltwater upon contact. Decomposes and vanishes when heated above 150°C.',
@@ -65,18 +65,18 @@ export const materialCodexEn: Record<number, string> = {
   144: 'State where liquid gallium has stripped the oxide film off aluminum powder. Immediately generates hydrogen bubbles upon contact with water, and melts back into regular aluminum at 660°C. Lacking an oxide layer, it burns twice as fast as normal aluminum powder in chlorine gas.',
   114: 'Rusted metal powder. Can be returned to iron through smelting.',
   86: 'Reacts violently with flames and hydrogen discharge upon contact with water or acid, causing an explosion. Reacts with chlorine gas to produce salt.',
-  95: 'Water-soluble sugar. Melts into caramel when heated above 160°C, and ferments into alcohol and CO₂ when contacting yeast.',
+  95: 'Water-soluble sugar. Melts into caramel when heated above 160°C, and ferments into alcohol and CO₂ when contacting yeast. Like salt, it steeps food: anything touching it — or buried in it — keeps, right through to the middle.',
 
   // Liquids
   3: 'Evaporates into steam at 100°C and turns into snow/ice below zero. Decomposes into hydrogen and oxygen when electricity flows through it.',
-  5: 'Heavier than water, so it sinks. Boiling precipitates salt, and it freezes at -18°C. Has high electrical conductivity.',
-  104: 'Water with dissolved sugar. Non-conductive, and ferments into alcohol and CO₂ upon contact with yeast.',
+  5: 'Heavier than water, so it sinks. Boiling precipitates salt, and it freezes at -18°C. Has high electrical conductivity. It steeps food too, so a salted store keeps even after water dissolves the salt around it.',
+  104: 'Water with dissolved sugar. Non-conductive, and ferments into alcohol and CO₂ upon contact with yeast. It steeps food, so anything left submerged in it keeps.',
   11: 'Corrodes solids and powders. Becomes acid gas when boiled, and freezes at -20°C. Releases hydrogen bubbles when corroding highly reactive metals.',
   40: 'Liquid metal at room temperature. Becomes mercury vapor when heated. Being less reactive than hydrogen, it does not produce hydrogen when dissolving in acid.',
   117: 'Molten gallium. Activates aluminum by stripping its oxide film, and solidifies into solid gallium below 28°C.',
-  41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C.',
+  41: 'Viscous, slow-flowing flammable liquid. Solidifies below 5°C. It steeps food, so anything left submerged in it keeps.',
   150: 'Hot syrup made by heating sugar above 160°C. It oozes even more thickly than honey, then sets hard where it stopped once it cools below 120°C — reheat it and it runs again. It darkens as it sets, so you can see at a glance whether it is still workable. Pour niter into it while it is still molten (120-250°C) and you get rocket candy; take it past 250°C and it chars to ash.',
-  42: 'Light liquid fuel. Extremely flammable, freezing at -80°C. Eradicates viruses.',
+  42: 'Light liquid fuel. Extremely flammable, freezing at -80°C. Eradicates viruses. It steeps food, so anything left submerged in it keeps.',
   102: 'Liquid soap dissolved in water. Forms bubbles and cleans viruses. Also mixes with oils (crude oil, gasoline, kerosene, diesel).',
   44: 'Wet soil. Hardens into dirt when dried, and freezes at -3°C.',
   88: 'Releases water and oxygen as it decomposes. Released oxygen feeds nearby fires and strongly sterilizes viruses.',
@@ -180,7 +180,7 @@ export const materialCodexEn: Record<number, string> = {
   146: 'A fish that swims through water. Can only live in water (saltwater), dies from high heat, explosive shockwaves, or radiation, and gets electrocuted if electricity flows through the water.',
   134: 'Reef organism growing in saltwater. Turns into bleached coral when exposed to radiation or high heat.',
   135: 'The calcareous skeleton left when coral dies. Slowly regenerates in saltwater at an appropriate temperature.',
-  159: 'Grows by covering the surface of materials, and spoils food. Cannot spoil food that has been salted, honeyed, steeped in alcohol, or cooled below zero. Dies above 60°C or below 0°C, and dies on contact with alcohol, hydrogen peroxide, soapy water, or acid.',
+  159: 'Grows by covering the surface of materials, and spoils food. Cannot spoil food that has been steeped in salt, sugar, brine, sugar water, honey or alcohol, or cooled below zero. Dies above 60°C or below 0°C, and dies on contact with alcohol, hydrogen peroxide, soapy water, or acid.',
   161: 'Black earth left when spoiled food fully decomposes. Plants grown in it come up far fuller.',
 
   // Cooking
