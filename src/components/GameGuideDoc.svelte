@@ -14,12 +14,36 @@
   // two). This component only picks the current language's object and renders
   // it — the same object also feeds the Markdown export, so the page and the
   // clipboard can't say something different.
+  //
+  // 설명 옆에는 **돌아가는 엔진**이 붙는다. 예시 사진이 들어갈 자리마다 작은
+  // 캔버스가 하나씩 놓이고, 그 안에서 실제 시뮬레이션이 대본대로 돈다
+  // (`game/guideDemo.ts` + `GuideDemo.svelte`). 벽으로 그은 선, 쌓이는 모래,
+  // 넘치는 그릇, 오르는 연기, 모래에 스미는 물, 한쪽 끝부터 달아오르는 히트파이프
+  // — 여섯 장면이다.
+  import { onMount } from 'svelte';
+  import type { Component } from 'svelte';
   import { $locale as locale, t, categoryLabel } from '../i18n';
   import { guideDocKo, guideDocEn, type GuideDocText, type ToolKey } from '../i18n/guideDoc';
   import { iconFor } from '../game/materials/categories';
   import { copyText } from '../lib/clipboard';
+  import type { GuideDemoKind } from '../game/guideDemo';
 
   const doc = $derived<GuideDocText>($locale === 'ko' ? guideDocKo : guideDocEn);
+
+  /**
+   * 데모 캔버스 컴포넌트. 정적 import 가 아니라 **마운트 뒤 동적 import** 인 것은
+   * 번들 때문이다 — `GuideDemo.svelte` 는 Grid·Simulation·CanvasRenderer 와 데모
+   * 물질 배럴을 끌어오는데, 정적으로 매달면 그 전부가 `/guide` 의 첫 청크에 들어가
+   * **물질 도감 탭만 보고 나가는 사람도 시뮬레이션을 내려받는다.** 도감이 애초에
+   * 빌드 타임 추출인 이유(§1 "왜 빌드 타임인가")를 이 탭이 되돌려 놓는 셈이다.
+   *
+   * `null` 인 동안은 자리만 비워 둔다. 문서는 캔버스 없이도 완결된 글이라,
+   * 스켈레톤이나 로딩 표시를 둘 이유가 없다.
+   */
+  let Demo = $state<Component<{ kind: GuideDemoKind }> | null>(null);
+  onMount(async () => {
+    Demo = (await import('./GuideDemo.svelte')).default;
+  });
 
   /** The four state cards, in display order. Titles come from `categoryLabel`
    *  and icons from `iconFor` — both already the palette's own source of
@@ -124,6 +148,9 @@
         <div class="phase-card">
           <i class={`bi ${iconFor(key)}`} aria-hidden="true"></i>
           <h3>{categoryLabel(key)}</h3>
+          {#if Demo}
+            <div class="demo-slot"><Demo kind={key} /></div>
+          {/if}
           <p>{doc.phases.desc[key]}</p>
         </div>
       {/each}
@@ -131,14 +158,25 @@
     <p class="hint">{doc.phases.hint}</p>
   </section>
 
+  <!-- 겹침·열전도의 데모는 첫 문단 **뒤**에 온다. 무엇을 보고 있는지 한 문단
+       읽고 나서 보는 그림이지, 설명 없이 먼저 만나면 그냥 움직이는 네모다.
+       `p` 가 두 칸짜리 튜플이라 each 대신 자리를 직접 적을 수 있다. -->
   <section class="sec">
     <h2><i class="bi bi-water" aria-hidden="true"></i> {doc.overlap.title}</h2>
-    {#each doc.overlap.p as p (p)}<p>{p}</p>{/each}
+    <p>{doc.overlap.p[0]}</p>
+    {#if Demo}
+      <div class="demo-wide"><Demo kind="overlap" /></div>
+    {/if}
+    <p>{doc.overlap.p[1]}</p>
   </section>
 
   <section class="sec">
     <h2><i class="bi bi-thermometer-half" aria-hidden="true"></i> {doc.heat.title}</h2>
-    {#each doc.heat.p as p (p)}<p>{p}</p>{/each}
+    <p>{doc.heat.p[0]}</p>
+    {#if Demo}
+      <div class="demo-wide"><Demo kind="heat" /></div>
+    {/if}
+    <p>{doc.heat.p[1]}</p>
   </section>
 
   <section class="sec">
@@ -299,9 +337,12 @@
     font-size: 0.86rem !important;
   }
 
+  /* 카드가 넷에서 둘씩 두 줄로 내려온 것은 카드마다 캔버스가 들어왔기 때문이다.
+     160px 카드에서는 52칸짜리 격자가 한 칸 3px가 되어, 모래가 쌓이는 것도 물이
+     수평을 맞추는 것도 점의 움직임으로만 보였다. */
   .phase-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 0.7rem;
     margin: 0.9rem 0;
   }
@@ -330,6 +371,18 @@
     font-size: 0.84rem;
     line-height: 1.5;
     color: #94a3b8;
+  }
+
+  /* --- 데모 캔버스 자리 ------------------------------------------------------
+     크기는 전부 자리가 정한다: 컴포넌트 쪽은 폭 100%에 장면별 화면비만 잡고,
+     칸 크기는 거기서 역산된다(GuideDemo.svelte). 그래서 여기서 폭을 바꾸면
+     알갱이가 굵어지거나 가늘어질 뿐, 장면이 달라지지는 않는다. --- */
+  .demo-slot {
+    margin: 0.6rem 0 0.65rem;
+  }
+
+  .demo-wide {
+    margin: 1rem 0 1.1rem;
   }
 
   .tool-list {
