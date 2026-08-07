@@ -329,7 +329,7 @@ export const codexTerms: Record<string, Record<Locale, CodexTerm>> = {
   driedKeeps: {
     ko: {
       label: '말리면 안 썩음',
-      desc: '수분이 다 날아간 칸은 썩지 않습니다. 육포가 이것입니다. 다만 익히지 않을 만큼 낮은 온도(45~70℃)에서 말려야 합니다. 그보다 뜨거우면 마르기 전에 익어 버리고, 익은 고기는 아무리 바싹 말라도 그냥 썩습니다. 굽는 것은 말려서 보관하는 것과 다릅니다.',
+      desc: '수분이 다 날아간 칸은 썩지 않습니다.',
     },
     en: {
       label: 'Keeps when dried',
