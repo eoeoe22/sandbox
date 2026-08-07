@@ -3669,7 +3669,7 @@ function applyWooferKnockback(o: SimBody, ctx: SimContext): void {
  * not "away from the cell". Never destroys a body; it only ever nudges it, gravity
  * reclaims it the moment it leaves the stream, and — because the push is a force
  * and not a velocity floor — it can never pin a body against a wall hard enough
- * for friction to hold it up (see WIND_PUSH_FORCE).
+ * for friction to hold it up (see WIND_PUSH_ACCEL).
  */
 function applyWindPush(o: SimBody, ctx: SimContext): void {
   const reach = bodyReach(o) + WIND_KNOCK_RADIUS;
