@@ -58,6 +58,8 @@ import {
   DEMO_SODA,
   DEMO_BATTER,
   DEMO_MOLTEN_URANIUM,
+  DEMO_SOAP,
+  DEMO_SOAPY_WATER,
 } from './materials/demo';
 import { GLASS } from './materials/glass';
 import { HYDROGEN } from './materials/hydrogen';
@@ -100,7 +102,8 @@ export type GuideDemoKind =
   | 'open_ignite'
   | 'brush_ignite'
   | 'glass_shockwave'
-  | 'hydrogen_oxygen';
+  | 'hydrogen_oxygen'
+  | 'soapywater';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -134,6 +137,7 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'brush_ignite',
   'glass_shockwave',
   'hydrogen_oxygen',
+  'soapywater',
 ];
 
 /**
@@ -172,6 +176,8 @@ export interface DemoCast {
   readonly recipe: readonly [number, number, number];
   /** `ammoniumnitrate` — 가운데·오른쪽 칸에 부을 연료 둘(알루미늄 가루·등유). */
   readonly fuels: readonly [number, number];
+  /** `soapywater` 2막 — 비눗물 웅덩이에 부을 바이러스·휘발유 둘. */
+  readonly soapyCleaners?: readonly [number, number];
 }
 
 export interface GuideDemoSpec {
@@ -234,6 +240,7 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   brush_ignite: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   glass_shockwave: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   hydrogen_oxygen: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
 };
 
 /**
@@ -272,6 +279,7 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   brush_ignite: 40, // 브러시 배치 후 점화 직전
   glass_shockwave: 25, // 유리 배치 후 충격파 직전
   hydrogen_oxygen: 85, // 수소+산소 생성 후 점화 직전
+  soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -411,6 +419,16 @@ const SODA_POUR = DEMO_TPS * 2;
 const SODA_REACT = DEMO_TPS * 3;
 const SODA_INTERLUDE = DEMO_TPS * 1;
 const SODA_CYCLE = (SODA_POUR + SODA_REACT) * 2 + SODA_INTERLUDE;
+
+/**
+ * soapywater: 두 액트. 액트1은 비누 용해(물 3초 -> 비누 1초 -> 3초 관찰 = 7초),
+ * 액트2는 비눗물 웅덩이에 바이러스 1초/3초 대기 -> 휘발유 1초/3초 대기 후 초기화.
+ */
+const SOAPY_VIRUS_POUR = DEMO_TPS * 1;
+const SOAPY_VIRUS_HOLD = DEMO_TPS * 3;
+const SOAPY_GAS_POUR = DEMO_TPS * 1;
+const SOAPY_GAS_HOLD = DEMO_TPS * 3;
+const SOAPY_CYCLE = DISSOLVE_CYCLE + SOAPY_VIRUS_POUR + SOAPY_VIRUS_HOLD + SOAPY_GAS_POUR + SOAPY_GAS_HOLD;
 
 /**
  * liquid: 넘칠 때까지 붓는다 — 길이가 대본이 아니라 **장면이 정한다**. 그릇 크기와
@@ -853,6 +871,10 @@ export class GuideDemoWorld {
         // 액트1 고정 배치: 바닥 산 웅덩이. 액트2 전환은 대본이 buildBatterPool 로.
         this.buildPool(DEMO_ACID.id);
         break;
+      case 'soapywater':
+        // 액트1 고정 배치: 그릇. 2막 전환은 대본이 buildSoapyWaterPool 로.
+        this.buildBowl();
+        break;
       case 'acid':
         // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
         this.buildFloor();
@@ -1103,6 +1125,9 @@ export class GuideDemoWorld {
         break;
       case 'hydrogen_oxygen':
         this.tickHydrogenOxygen();
+        break;
+      case 'soapywater':
+        this.tickSoapyWater();
         break;
     }
     this.sim.step();
@@ -1573,6 +1598,7 @@ export class GuideDemoWorld {
    * 단계: 물 3초 → 용질 1초 → 관찰 3초 → 초기화.
    */
   private tickDissolve(soluteId: number): void {
+    const solute = this.subjectId === DEMO_SOAP.id ? DEMO_SOAP.id : soluteId;
     const t = this.t;
     if (t >= DISSOLVE_CYCLE) {
       this.loop();
@@ -1583,7 +1609,7 @@ export class GuideDemoWorld {
       return;
     }
     if (t < DISSOLVE_WATER + DISSOLVE_SOLUTE) {
-      this.dropStream(soluteId, POUR_AT);
+      this.dropStream(solute, POUR_AT);
       return;
     }
     // DISSOLVE_HOLD: 섞이는 것을 관찰 후 loop()
@@ -2055,6 +2081,50 @@ export class GuideDemoWorld {
         }
       }
     }
+  }
+
+  /** soapywater: 1막 비누 용해 7초 후 2막 비눗물 웅덩이에서 바이러스 소독 및 휘발유 유화 (비눗물) */
+  private tickSoapyWater(): void {
+    const t = this.t;
+    if (t >= SOAPY_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    if (t < DISSOLVE_CYCLE) {
+      this.tickDissolve(DEMO_SOAP.id);
+      return;
+    }
+
+    const act2Start = DISSOLVE_CYCLE;
+    if (t === act2Start) {
+      this.buildSoapyWaterPool();
+      return;
+    }
+
+    const virusPourEnd = act2Start + SOAPY_VIRUS_POUR;
+    const virusHoldEnd = virusPourEnd + SOAPY_VIRUS_HOLD;
+    const gasPourEnd = virusHoldEnd + SOAPY_GAS_POUR;
+
+    const virusId = this.cast?.soapyCleaners?.[0] ?? DEMO_SAND.id;
+    const gasId = this.cast?.soapyCleaners?.[1] ?? DEMO_WATER.id;
+
+    if (t < virusPourEnd) {
+      this.dropStream(virusId, POUR_AT);
+      return;
+    }
+    if (t < virusHoldEnd) return;
+
+    if (t < gasPourEnd) {
+      this.dropStream(gasId, POUR_AT);
+      return;
+    }
+  }
+
+  private buildSoapyWaterPool(): void {
+    this.grid.clear();
+    this.buildPool(DEMO_SOAPY_WATER.id);
+    this.grid.randomizeTints();
   }
 }
 

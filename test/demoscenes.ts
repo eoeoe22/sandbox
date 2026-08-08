@@ -41,6 +41,9 @@ import { COAL } from '../src/game/materials/coal';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
 import { DIESEL } from '../src/game/materials/diesel';
 import { DIAMOND } from '../src/game/materials/diamond';
+import { HEATPIPE } from '../src/game/materials/heatpipe';
+import { SOAP } from '../src/game/materials/soap';
+import { SOAPY_WATER } from '../src/game/materials/soapywater';
 import { BLAST } from '../src/game/materials/blast';
 import { FIRE } from '../src/game/materials/fire';
 import { FLASH } from '../src/game/materials/flash';
@@ -169,6 +172,9 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['산소', OXYGEN.id, 'hydrogen_oxygen'],
     ['수소', HYDROGEN.id, 'hydrogen_oxygen'],
     ['다이아몬드', DIAMOND.id, 'wall'],
+    ['히트파이프', HEATPIPE.id, 'heat'],
+    ['비누', SOAP.id, 'saltwater'],
+    ['비눗물', SOAPY_WATER.id, 'soapywater'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);
@@ -561,8 +567,9 @@ console.log('\n== 움직임 최소화: 감아 둔 한 프레임이 빈 화면이
   for (const id of customDemoMaterials()) {
     const w = make(id);
     w.windToStill();
+    const allowFire = demoSceneFor(id)?.kind === 'heat';
     check(
-      w.loops === 0 && occupied(w) > 20 && count(w, FIRE.id) === 0,
+      w.loops === 0 && occupied(w) > 20 && (allowFire || count(w, FIRE.id) === 0),
       `${getMaterial(id).name}: 정지 화면이 터지기 직전의 더미다`,
       `loops=${w.loops}, ${occupied(w)}칸, 불 ${count(w, FIRE.id)}칸`,
     );

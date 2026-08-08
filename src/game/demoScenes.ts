@@ -48,6 +48,10 @@ import { ROCKET_CANDY } from './materials/rocketcandy';
 import { SALTPETER } from './materials/saltpeter';
 import { SAWDUST } from './materials/sawdust';
 import { SULFUR } from './materials/sulfur';
+import { HEATPIPE } from './materials/heatpipe';
+import { SOAP } from './materials/soap';
+import { SOAPY_WATER } from './materials/soapywater';
+import { VIRUS } from './materials/virus';
 import { WOOD } from './materials/wood';
 
 /** 한 물질에 배정된 연출: 어떤 대본을, 누구와 함께, 무엇으로 격발해서. */
@@ -76,6 +80,8 @@ const CAST: DemoCast = {
   recipe: [COAL_POWDER.id, SULFUR.id, SALTPETER.id],
   // 질산암모늄에 먹일 두 연료 — 가운데 칸이 암모날, 오른쪽 칸이 ANFO 가 된다.
   fuels: [ALUMINUM_POWDER.id, KEROSENE.id],
+  // 비눗물 웅덩이에 부을 세척 대상 둘 — 바이러스·휘발유.
+  soapyCleaners: [VIRUS.id, GASOLINE.id],
 };
 
 /**
@@ -118,8 +124,11 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [OXYGEN.id, 'hydrogen_oxygen'],
   [HYDROGEN.id, 'hydrogen_oxygen'],
 
-  // Group 6: 다이아몬드
+  // Group 6: 다이아몬드, 히트파이프, 비누, 비눗물
   [DIAMOND.id, 'wall'],
+  [HEATPIPE.id, 'heat'],
+  [SOAP.id, 'saltwater'],
+  [SOAPY_WATER.id, 'soapywater'],
 ]);
 
 /**
