@@ -22,6 +22,9 @@
   import { EMPTY } from '../game/engine/types';
   import { CATEGORY_META, PHASE_KEYS } from '../game/materials/categories';
   import { tagIdOf } from '../game/codex/tags';
+  import { onMount } from 'svelte';
+  import type { Component } from 'svelte';
+  import type { GuideDemoKind } from '../game/guideDemo';
   // The number/reaction formatters live beside the Markdown writers so the page
   // and the clipboard can't say different things — see codex/format.ts.
   import {
@@ -64,6 +67,10 @@
    *  is what this page needs on top of it to run the grid and the filters. */
   interface Card extends CodexCardData {
     key: string;
+    /** Material id for the live demo, or null for an object (which has no phase
+     *  and so no demo). Lifted out of the build-time entry so the detail dialog
+     *  can hand it to `<GuideDemo>` without re-parsing the `m-<id>` key. */
+    id: number | null;
     /** Sprite reference for the grid thumbnail — the same `<symbol>` the card's
      *  `iconHtml` points `<use>` at, without the wrapper. */
     symbol: string;
@@ -91,6 +98,7 @@
     void $locale;
     const mats = materials.map((e) => ({
       key: `m-${e.id}`,
+      id: e.id,
       symbol: `#codex-m-${e.id}`,
       iconHtml: heroHtml(`#codex-m-${e.id}`),
       name: materialName(e.id, e.name),
@@ -111,6 +119,7 @@
     }));
     const objs = objects.map((o) => ({
       key: `o-${o.kind}`,
+      id: null,
       symbol: `#codex-o-${o.kind}`,
       iconHtml: heroHtml(`#codex-o-${o.kind}`),
       name: objectLabel(o.kind as ObjectKind),
@@ -234,8 +243,44 @@
   let openKey = $state<string | null>(null);
   const openCard = $derived(openKey === null ? null : cards.find((c) => c.key === openKey) ?? null);
 
+  /**
+   * 카드 본문에 끼워 넣을 데모 컴포넌트. 정적 import 가 아니라 **마운트 뒤 동적
+   * import** 인 것은 이 페이지가 원래 시뮬레이션을 한 줄도 싣지 않기 때문이다 —
+   * 도감은 빌드 타임 추출이라 엔진·물질 레지스트리가 필요 없고, 그래서 도감만
+   * 보고 나가는 사람도 가벼운 청크를 받는다(§1 "왜 빌드 타임인가" 참고).
+   *
+   * 데모를 카드에 끼우려면 두 가지 무거운 것이 필요하다: 엔진(Grid·Simulation·
+   * CanvasRenderer)과, 카드의 **실제 물질**을 데모하려면 **전체 물질 배럴**(약 150종).
+   * 둘 다 가이드 페이지의 첫 청크에 들어가면 안 되므로 여기서 끌어온다. basics
+   * 탭(`GameGuideDoc`)이 같은 이유로 같은 패턴을 쓴다.
+   *
+   * `null` 인 동안은 데모 자리를 비운다 — 카드는 설명·수치·특성만으로도 완결된
+   * 글이므로 로딩 표시를 둘 이유가 없다.
+   */
+  let Demo = $state<Component<{ kind: GuideDemoKind; subjectId?: number }> | null>(null);
+  onMount(async () => {
+    // 전체 물질 배럴을 먼저 평가시킨다 — 카드의 실제 물질 id 가 레지스트리에
+    // 등록되어야 렌더러가 그 색을 알고, 시뮬레이션이 그 물질의 동작을 안다.
+    // 경량 데모 배럴(`materials/demo`)은 9종만 알아서 카드 물질이 검은 칸이 된다.
+    await import('../game/materials');
+    Demo = (await import('./GuideDemo.svelte')).default;
+  });
+
   const open = (key: string): void => void (openKey = key);
   const close = (): void => void (openKey = null);
+
+  /**
+   * 열려 있는 카드의 데모 종류와 주인공 id — material 의 4 상태 카드에만 해당하고,
+   * object(phase 없음)나 overlap·heat 는 데모가 없다. `phase` 는 네 상태 키와 정확히
+   * 같은 문자열이므로(categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   */
+  const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
+  const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number } | null>(() => {
+    const c = openCard;
+    if (c === null || c.id === null || c.phase === null) return null;
+    if (!PHASE_DEMOS.has(c.phase)) return null;
+    return { kind: c.phase as GuideDemoKind, id: c.id };
+  });
 
   // --- Formatting -----------------------------------------------------------
   // The number/reaction formatters now live in CodexCard (which renders them)
@@ -524,6 +569,11 @@
           <i class={`bi ${copyNotice?.where === 'entry' ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
           <span>{copyLabel('entry', t('codex.copy'))}</span>
         </button>
+      {/snippet}
+      {#snippet demo()}
+        {#if Demo !== null && cardDemo !== null}
+          <Demo kind={cardDemo.kind} subjectId={cardDemo.id} />
+        {/if}
       {/snippet}
     </CodexCard>
   </Modal>
