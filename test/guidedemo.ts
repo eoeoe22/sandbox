@@ -100,7 +100,9 @@ console.log('\n== 고체: 브러시가 선을 긋고, 지웠다가 다시 긋는
   check(count(w, DEMO_STONE.id) === 0, '대기 구간에는 아직 아무것도 안 그려졌다');
 
   const startX = w.brush!.x;
-  run(w, DEMO_TPS * 0.5 + DEMO_TPS - 5); // 대기 + 드래그가 끝난 시점
+  // 대기 + 드래그가 끝난 시점. 마지막 한 틱을 더 도는 것은 드래그의 끝 자리(p=1)가
+  // 실제로 찍힌 뒤에 재기 위해서다 — 안 그러면 선이 한 칸 못 미친 채로 측정된다.
+  run(w, DEMO_TPS * 0.5 + DEMO_TPS * 1.5 - 5 + 1);
   const endX = w.brush!.x;
   check(endX > startX + w.grid.width * 0.5, '브러시가 화면을 가로질렀다', `${startX} → ${endX}`);
 
@@ -108,6 +110,32 @@ console.log('\n== 고체: 브러시가 선을 긋고, 지웠다가 다시 긋는
   let lineCells = 0;
   for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, mid) === DEMO_STONE.id) lineCells++;
   check(lineCells > w.grid.width * 0.6, '가운데 줄이 돌로 이어졌다', `${lineCells}/${w.grid.width}칸`);
+
+  // **선이 꽉 찼는가.** 브러시가 한 틱에 한 칸을 넘게 뛰면 원판의 가장자리
+  // 줄(한 칸 굵기)에 중심이 안 밟은 칸이 남아 선의 위아래가 패인다. 가운데 줄은
+  // 다섯 칸 굵기라 멀쩡하므로 위의 `lineCells` 검사로는 이걸 못 잡는다.
+  // 걸음 폭을 여기 다시 계산하지 않고 **결과**를 본다 — 돌이 있는 모든 줄에서
+  // 첫 칸부터 끝 칸까지가 빈틈없이 이어졌는지.
+  let holes = 0;
+  let holeRow = -1;
+  for (let y = 0; y < w.grid.height; y++) {
+    let first = -1;
+    let last = -1;
+    let n = 0;
+    for (let x = 0; x < w.grid.width; x++) {
+      if (w.grid.get(x, y) !== DEMO_STONE.id) continue;
+      if (first < 0) first = x;
+      last = x;
+      n++;
+    }
+    if (first < 0) continue;
+    const gap = last - first + 1 - n;
+    if (gap > 0) {
+      holes += gap;
+      if (holeRow < 0) holeRow = y;
+    }
+  }
+  check(holes === 0, '선에 구멍이 없다 — 모든 줄이 끊김 없이 이어졌다', holes ? `y=${holeRow} 등 ${holes}칸` : '');
 
   const drawn = count(w, DEMO_STONE.id);
   check(drawn > 0, '돌이 그려졌다', `${drawn}칸`);
@@ -154,9 +182,11 @@ console.log('\n== 액체: 그릇이 넘칠 때까지 차고, 초기화 후 반�
   const wallsAtStart = count(w, DEMO_WALL.id);
   check(wallsAtStart > 20, '그릇이 벽으로 세워졌다', `${wallsAtStart}칸`);
 
-  // 넘쳐서 한 바퀴가 끝날 때까지 돌린다. 상한(20초)에 걸리면 그건 실패다.
+  // 넘쳐서 한 바퀴가 끝날 때까지 돌린다. 상한(20초)에 걸리면 그건 실패다 —
+  // 상한에 걸린 바퀴는 붓기 20초 + 대기 4초 = 24초라, 20초 안에 끝났다는 것
+  // 자체가 넘침이 끝냈다는 뜻이다.
   let ticks = 0;
-  const cap = DEMO_TPS * 25;
+  const cap = DEMO_TPS * 30;
   while (w.loops === 0 && ticks < cap) {
     w.tick();
     ticks++;
@@ -169,6 +199,23 @@ console.log('\n== 액체: 그릇이 넘칠 때까지 차고, 초기화 후 반�
   // 두 번째 바퀴도 같은 식으로 찬다.
   run(w, DEMO_TPS * 3);
   check(count(w, DEMO_WATER.id) > 20, '두 번째 바퀴에서 다시 찬다', `${count(w, DEMO_WATER.id)}칸`);
+
+  // 넘친 뒤 **4초**를 그대로 둔다. 가득 찬 그릇이 이 장면의 결론인데, 물이 벽을
+  // 넘는 순간만 보여 주고 곧장 화면을 비우면 그 결론이 안 남는다. 넘친 그 틱에서
+  // 멈추는 `windToStill()` 을 기준점으로 삼아 대기 길이를 잰다 — 넘침 시점이
+  // 굴림마다 달라서(209~223틱) 절대 틱으로는 못 잰다.
+  {
+    const s = make('liquid');
+    s.windToStill();
+    run(s, DEMO_TPS * 3);
+    check(
+      s.loops === 0 && count(s, DEMO_WATER.id) > 100,
+      '넘친 뒤 3초가 지나도 물이 그대로 있다',
+      `loops=${s.loops}, ${count(s, DEMO_WATER.id)}칸`,
+    );
+    run(s, DEMO_TPS + 2);
+    check(s.loops === 1, '4초를 채우면 초기화된다', `loops=${s.loops}`);
+  }
 }
 
 // --- 기체 --------------------------------------------------------------------

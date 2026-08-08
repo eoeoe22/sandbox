@@ -105,7 +105,7 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
  * 순간이다(`windToStill`).
  */
 export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
-  solid: 45, // 선을 다 그은 직후 (대본 75틱)
+  solid: 65, // 선을 다 그은 직후 (대본 90틱, 드래그가 60틱에 끝난다)
   powder: 150, // 더미가 앉은 뒤 (초기화 없음)
   liquid: 400, // 상한만. 실제로는 넘친 순간에 멈춘다 — 실측 209~223틱
   gas: 90, // 연기 기둥이 자리를 잡은 뒤 (초기화 없음)
@@ -115,9 +115,22 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
 
 // --- 대본 길이(틱) --------------------------------------------------------------
 
-/** solid: 나타나 0.5초 대기 → 1초 드래그 → 1초 대기 → 초기화. */
+/**
+ * solid: 나타나 0.5초 대기 → 1.5초 드래그 → 1초 대기 → 초기화.
+ *
+ * 드래그 길이는 연출이 아니라 **선이 꽉 차는가**가 정한다. 반지름 2 인 원판은
+ * 가장자리 줄(`dy = ±2`)이 `dx = 0` 한 칸뿐이라, 그 줄에 칠해지는 것은 브러시
+ * 중심이 실제로 밟은 칸들뿐이다. 1초(30틱)에 36칸을 가면 틱마다 1.2칸씩 뛰어
+ * 중심이 건너뛴 칸이 생기고, 그 자리가 선의 위아래 가장자리에 **패인 자국**으로
+ * 남는다(가운데 줄은 다섯 칸 굵기라 멀쩡해서 더 눈에 띈다).
+ *
+ * 그래서 한 틱에 **한 칸을 못 넘게** 잡는다 — 45틱에 36칸이면 0.8칸/틱이고,
+ * 반올림은 단조라 걸음이 1칸 미만이면 건너뛰는 칸이 없다. 폭이 52칸으로 고정인
+ * 덕에(§13.3) 이 여유는 화면 크기와 무관하게 유지된다. 검사는 이 산수가 아니라
+ * 결과 — 「모든 줄이 끊김 없이 이어졌는가」 — 를 본다.
+ */
 const SOLID_HOLD_IN = Math.round(DEMO_TPS * 0.5);
-const SOLID_DRAG = DEMO_TPS;
+const SOLID_DRAG = Math.round(DEMO_TPS * 1.5);
 const SOLID_HOLD_OUT = DEMO_TPS;
 const SOLID_CYCLE = SOLID_HOLD_IN + SOLID_DRAG + SOLID_HOLD_OUT;
 
@@ -139,8 +152,12 @@ const HEAT_CYCLE = HEAT_NORMAL + HEAT_THERMAL;
  * "덜 찼는데 멈추는" 장면이 된다. 대신 굳었을 때를 대비한 상한만 둔다.
  */
 const LIQUID_POUR_CAP = DEMO_TPS * 20;
-/** 넘친 뒤 그대로 두는 시간. 넘치는 순간을 보고 나서 초기화되도록. */
-const LIQUID_HOLD = DEMO_TPS * 1;
+/**
+ * 넘친 뒤 그대로 두는 시간. 1초는 **넘치는 순간을 보기에만** 충분했다 — 그릇이
+ * 가득 찬 그림이 이 장면의 결론인데, 물이 벽을 타고 넘어 바닥에 떨어지는 것을
+ * 눈으로 좇고 나면 곧장 화면이 비었다. 4초면 결론을 보고 나서도 한 박자 남는다.
+ */
+const LIQUID_HOLD = DEMO_TPS * 4;
 
 // --- 물줄기 --------------------------------------------------------------------
 
