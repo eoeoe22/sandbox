@@ -32,6 +32,7 @@ import { getMaterial } from '../src/game/materials/registry';
 import '../src/game/materials';
 import { ACID } from '../src/game/materials/acid';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
+import { AMBER } from '../src/game/materials/amber';
 import { AMMONAL } from '../src/game/materials/ammonal';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
 import { ANFO } from '../src/game/materials/anfo';
@@ -158,9 +159,10 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['등유', KEROSENE.id, 'open_ignite'],
     ['LPG', LPG.id, 'open_ignite'],
     ['톱밥', SAWDUST.id, 'open_ignite'],
+    ['레진', RESIN.id, 'open_ignite'],
     ['석탄', COAL.id, 'brush_ignite'],
     ['나무', WOOD.id, 'brush_ignite'],
-    ['레진', RESIN.id, 'brush_ignite'],
+    ['호박', AMBER.id, 'brush_ignite'],
     ['유리', GLASS.id, 'glass_shockwave'],
     ['깨진 유리', BROKEN_GLASS.id, 'glass_shockwave'],
     ['산소', OXYGEN.id, 'hydrogen_oxygen'],

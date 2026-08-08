@@ -36,8 +36,9 @@
 import { Grid } from './engine/Grid';
 import { Simulation } from './engine/Simulation';
 import { mixCells, sparkCells } from './engine/brushTools';
-import { EMPTY, type BorderMode } from './engine/types';
+import { Phase, EMPTY, type BorderMode } from './engine/types';
 import { TICK_HZ } from './config';
+import { getMaterial } from './materials/registry';
 import {
   DEMO_WALL,
   DEMO_STONE,
@@ -1913,7 +1914,7 @@ export class GuideDemoWorld {
 
   // --- 추가 맞춤 연출 -------------------------------------------------------------
 
-  /** open_ignite: 벽 용기 없이 3초 붓고 점화 (원유·휘발유·경유·등유·LPG·톱밥) */
+  /** open_ignite: 벽 용기 없이 3초 붓고 점화 (원유·휘발유·경유·등유·LPG·톱밥·레진) */
   private tickOpenIgnite(): void {
     const t = this.t;
     if (t >= OPEN_IGNITE_CYCLE) {
@@ -1921,11 +1922,30 @@ export class GuideDemoWorld {
       return;
     }
     if (t < OPEN_IGNITE_POUR) {
-      this.dropStream(this.subjectId, 0.5);
+      const isGas = getMaterial(this.subjectId).phase === Phase.Gas;
+      if (isGas) {
+        this.dropGasStream(this.subjectId, 0.5);
+      } else {
+        this.dropLiquidStream(this.subjectId, 0.5);
+      }
       return;
     }
     if (t >= OPEN_IGNITE_AT && t < OPEN_IGNITE_AT + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  /** 기체 전용: 아래에서 생성되어 위로 솟구친다. */
+  private dropGasStream(id: number, at: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
+    const x = Math.min(g.width - 1, Math.max(0, Math.round(g.width * at) + jitter));
+    const y = g.height - 2;
+    if (g.get(x, y) !== EMPTY) return;
+    this.sim.context.spawn(x, y, id);
+    if (x + 1 < g.width && g.get(x + 1, y) === EMPTY) {
+      this.sim.context.spawn(x + 1, y, id);
     }
   }
 

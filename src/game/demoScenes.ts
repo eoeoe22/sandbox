@@ -21,6 +21,7 @@ import type { DemoCast, DemoTrigger, GuideDemoKind } from './guideDemo';
 
 import { ACID } from './materials/acid';
 import { ALUMINUM_POWDER } from './materials/aluminumpowder';
+import { AMBER } from './materials/amber';
 import { AMMONAL } from './materials/ammonal';
 import { AMMONIUM_NITRATE } from './materials/ammoniumnitrate';
 import { ANFO } from './materials/anfo';
@@ -94,18 +95,19 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [ROCKET_CANDY.id, 'ignite'],
   [METHANE.id, 'ignite'],
 
-  // Group 2: 원유, 휘발유, 경유, 등유, LPG, 톱밥
+  // Group 2: 원유, 휘발유, 경유, 등유, LPG, 톱밥, 레진
   [OIL.id, 'open_ignite'],
   [GASOLINE.id, 'open_ignite'],
   [DIESEL.id, 'open_ignite'],
   [KEROSENE.id, 'open_ignite'],
   [LPG.id, 'open_ignite'],
   [SAWDUST.id, 'open_ignite'],
+  [RESIN.id, 'open_ignite'],
 
-  // Group 3: 석탄, 나무, 레진
+  // Group 3: 석탄, 나무, 호박
   [COAL.id, 'brush_ignite'],
   [WOOD.id, 'brush_ignite'],
-  [RESIN.id, 'brush_ignite'],
+  [AMBER.id, 'brush_ignite'],
 
   // Group 4: 유리, 깨진 유리
   [GLASS.id, 'glass_shockwave'],
