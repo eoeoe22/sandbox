@@ -20,17 +20,43 @@
 import type { DemoCast, DemoTrigger, GuideDemoKind } from './guideDemo';
 
 import { ACID } from './materials/acid';
+import { ACID_VAPOR } from './materials/acidvapor';
+import { ALCOHOL } from './materials/alcohol';
 import { ALUMINUM_POWDER } from './materials/aluminumpowder';
+import { AMBER } from './materials/amber';
+import { AMMONAL } from './materials/ammonal';
 import { AMMONIUM_NITRATE } from './materials/ammoniumnitrate';
+import { ANFO } from './materials/anfo';
+import { BROKEN_GLASS } from './materials/brokenglass';
+import { C4 } from './materials/c4';
+import { COAL } from './materials/coal';
 import { COAL_POWDER } from './materials/coalpowder';
+import { DIESEL } from './materials/diesel';
+import { DIAMOND } from './materials/diamond';
 import { FIREWORKS } from './materials/fireworks';
 import { FLASH_POWDER } from './materials/flashpowder';
+import { GASOLINE } from './materials/gasoline';
+import { GLASS } from './materials/glass';
 import { GUNPOWDER } from './materials/gunpowder';
+import { HYDROGEN } from './materials/hydrogen';
 import { IRON } from './materials/iron';
 import { KEROSENE } from './materials/kerosene';
+import { LPG } from './materials/lpg';
+import { METHANE } from './materials/methane';
 import { NITRO } from './materials/nitro';
+import { OIL } from './materials/oil';
+import { OXYGEN } from './materials/oxygen';
+import { RESIN } from './materials/resin';
+import { ROCKET_CANDY } from './materials/rocketcandy';
 import { SALTPETER } from './materials/saltpeter';
+import { SAWDUST } from './materials/sawdust';
 import { SULFUR } from './materials/sulfur';
+import { HEATPIPE } from './materials/heatpipe';
+import { TNT } from './materials/tnt';
+import { SOAP } from './materials/soap';
+import { SOAPY_WATER } from './materials/soapywater';
+import { VIRUS } from './materials/virus';
+import { WOOD } from './materials/wood';
 
 /** 한 물질에 배정된 연출: 어떤 대본을, 누구와 함께, 무엇으로 격발해서. */
 export interface GuideDemoScene {
@@ -58,25 +84,60 @@ const CAST: DemoCast = {
   recipe: [COAL_POWDER.id, SULFUR.id, SALTPETER.id],
   // 질산암모늄에 먹일 두 연료 — 가운데 칸이 암모날, 오른쪽 칸이 ANFO 가 된다.
   fuels: [ALUMINUM_POWDER.id, KEROSENE.id],
+  // 비눗물 웅덩이에 부을 세척 대상 둘 — 바이러스·휘발유.
+  soapyCleaners: [VIRUS.id, GASOLINE.id],
 };
 
 /**
  * 물질 id → 대본.
- *
- * 넷뿐이고 그중 `ignite` 하나가 넷을 겸한다. 「3초 붓고 1초 뒤 불을 댄다」는
- * 대본이 섬광화약·불꽃놀이 화약·황·니트로에 그대로 맞는 것은 이 넷이 **혼자서
- * 완결되는** 물질이기 때문이다 — 쌓아 놓고 불만 대면 각자의 성격(백색 섬광 /
- * 별이 흩어지는 소이 / 낮게 번지는 유황불 / 한 틱에 통째로 가는 액체)이 그대로
- * 나온다. 준비물이 필요한 물질(화약의 조합, 질산암모늄의 연료)만 자기 대본을 갖는다.
  */
 const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind>([
   [ACID.id, 'acid'],
+  [ACID_VAPOR.id, 'acid'],
   [GUNPOWDER.id, 'gunpowder'],
   [AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
   [FLASH_POWDER.id, 'ignite'],
   [FIREWORKS.id, 'ignite'],
-  [SULFUR.id, 'ignite'],
+  [SULFUR.id, 'gunpowder'],
   [NITRO.id, 'ignite'],
+
+  // Group 1: 암모날, ANFO, 로켓캔디, 메탄
+  [AMMONAL.id, 'ignite'],
+  [ANFO.id, 'ignite'],
+  [ROCKET_CANDY.id, 'ignite'],
+  [METHANE.id, 'ignite'],
+
+  // Group 2: 원유, 휘발유, 경유, 등유, LPG, 톱밥, 레진
+  [OIL.id, 'open_ignite'],
+  [GASOLINE.id, 'open_ignite'],
+  [DIESEL.id, 'open_ignite'],
+  [KEROSENE.id, 'open_ignite'],
+  [LPG.id, 'open_ignite'],
+  [SAWDUST.id, 'open_ignite'],
+  [RESIN.id, 'open_ignite'],
+
+  // Group 3: 석탄, 나무, 호박
+  [COAL.id, 'brush_ignite'],
+  [WOOD.id, 'brush_ignite'],
+  [AMBER.id, 'brush_ignite'],
+
+  // Group 4: 유리, 깨진 유리
+  [GLASS.id, 'glass_shockwave'],
+  [BROKEN_GLASS.id, 'glass_shockwave'],
+
+  // Group 5: 산소, 수소
+  [OXYGEN.id, 'hydrogen_oxygen'],
+  [HYDROGEN.id, 'hydrogen_oxygen'],
+
+  // Group 6: 다이아몬드, 히트파이프, 비누, 비눗물
+  [DIAMOND.id, 'wall'],
+  [HEATPIPE.id, 'heat'],
+  [SOAP.id, 'saltwater'],
+  [SOAPY_WATER.id, 'soapywater'],
+  [SALTPETER.id, 'saltpeter'],
+  [ALCOHOL.id, 'alcohol'],
+  [TNT.id, 'tnt'],
+  [C4.id, 'c4'],
 ]);
 
 /**
@@ -93,6 +154,8 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
  */
 const TRIGGERS: ReadonlyMap<number, DemoTrigger> = new Map<number, DemoTrigger>([
   [FLASH_POWDER.id, 'spark'],
+  [TNT.id, 'spark'],
+  [C4.id, 'spark'],
 ]);
 
 /**

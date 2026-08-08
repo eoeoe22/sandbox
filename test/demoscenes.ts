@@ -31,26 +31,50 @@ import { getMaterial } from '../src/game/materials/registry';
 // 물질이 색도 동작도 없는 칸이 된다(docs/CODEX.md §14.3).
 import '../src/game/materials';
 import { ACID } from '../src/game/materials/acid';
+import { ACID_VAPOR } from '../src/game/materials/acidvapor';
+import { ALCOHOL } from '../src/game/materials/alcohol';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
+import { AMBER } from '../src/game/materials/amber';
 import { AMMONAL } from '../src/game/materials/ammonal';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
 import { ANFO } from '../src/game/materials/anfo';
+import { BROKEN_GLASS } from '../src/game/materials/brokenglass';
+import { C4 } from '../src/game/materials/c4';
+import { COAL } from '../src/game/materials/coal';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
+import { DIESEL } from '../src/game/materials/diesel';
+import { DIAMOND } from '../src/game/materials/diamond';
+import { HEATPIPE } from '../src/game/materials/heatpipe';
+import { SOAP } from '../src/game/materials/soap';
+import { SOAPY_WATER } from '../src/game/materials/soapywater';
 import { BLAST } from '../src/game/materials/blast';
 import { FIRE } from '../src/game/materials/fire';
 import { FLASH } from '../src/game/materials/flash';
 import { FIREWORKS } from '../src/game/materials/fireworks';
 import { FLASH_POWDER } from '../src/game/materials/flashpowder';
+import { GASOLINE } from '../src/game/materials/gasoline';
+import { GLASS } from '../src/game/materials/glass';
 import { GUNPOWDER } from '../src/game/materials/gunpowder';
 import { HYDROGEN } from '../src/game/materials/hydrogen';
 import { IRON } from '../src/game/materials/iron';
 import { KEROSENE } from '../src/game/materials/kerosene';
+import { LPG } from '../src/game/materials/lpg';
+import { METHANE } from '../src/game/materials/methane';
 import { NITRO } from '../src/game/materials/nitro';
+import { OIL } from '../src/game/materials/oil';
+import { OXYGEN } from '../src/game/materials/oxygen';
+import { RESIN } from '../src/game/materials/resin';
+import { ROCKET_CANDY } from '../src/game/materials/rocketcandy';
 import { SALTPETER } from '../src/game/materials/saltpeter';
 import { SAND } from '../src/game/materials/sand';
+import { SAWDUST } from '../src/game/materials/sawdust';
 import { SULFUR } from '../src/game/materials/sulfur';
 import { WALL } from '../src/game/materials/wall';
+import { TNT } from '../src/game/materials/tnt';
+import { BATTERY } from '../src/game/materials/battery';
+import { WIRE } from '../src/game/materials/wire';
 import { WATER } from '../src/game/materials/water';
+import { WOOD } from '../src/game/materials/wood';
 
 let failures = 0;
 function check(ok: boolean, label: string, detail = ''): void {
@@ -129,19 +153,46 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
 {
   const want: [string, number, GuideDemoKind][] = [
     ['산', ACID.id, 'acid'],
+    ['산 증기', ACID_VAPOR.id, 'acid'],
     ['화약', GUNPOWDER.id, 'gunpowder'],
     ['질산암모늄', AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
     ['섬광화약', FLASH_POWDER.id, 'ignite'],
     ['불꽃놀이 화약', FIREWORKS.id, 'ignite'],
-    ['황', SULFUR.id, 'ignite'],
+    ['황', SULFUR.id, 'gunpowder'],
     ['니트로', NITRO.id, 'ignite'],
+    ['암모날', AMMONAL.id, 'ignite'],
+    ['ANFO', ANFO.id, 'ignite'],
+    ['로켓캔디', ROCKET_CANDY.id, 'ignite'],
+    ['메탄', METHANE.id, 'ignite'],
+    ['원유', OIL.id, 'open_ignite'],
+    ['휘발유', GASOLINE.id, 'open_ignite'],
+    ['경유', DIESEL.id, 'open_ignite'],
+    ['등유', KEROSENE.id, 'open_ignite'],
+    ['LPG', LPG.id, 'open_ignite'],
+    ['톱밥', SAWDUST.id, 'open_ignite'],
+    ['레진', RESIN.id, 'open_ignite'],
+    ['석탄', COAL.id, 'brush_ignite'],
+    ['나무', WOOD.id, 'brush_ignite'],
+    ['호박', AMBER.id, 'brush_ignite'],
+    ['유리', GLASS.id, 'glass_shockwave'],
+    ['깨진 유리', BROKEN_GLASS.id, 'glass_shockwave'],
+    ['산소', OXYGEN.id, 'hydrogen_oxygen'],
+    ['수소', HYDROGEN.id, 'hydrogen_oxygen'],
+    ['다이아몬드', DIAMOND.id, 'wall'],
+    ['히트파이프', HEATPIPE.id, 'heat'],
+    ['비누', SOAP.id, 'saltwater'],
+    ['비눗물', SOAPY_WATER.id, 'soapywater'],
+    ['질산칼륨', SALTPETER.id, 'saltpeter'],
+    ['알코올', ALCOHOL.id, 'alcohol'],
+    ['TNT', TNT.id, 'tnt'],
+    ['C4', C4.id, 'c4'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);
   }
   check(
     customDemoMaterials().length === want.length,
-    '표에 그 일곱뿐이다',
+    `표에 그 ${want.length}종뿐이다`,
     `${customDemoMaterials().length}종`,
   );
   // 배정 안 된 물질은 **기본 데모로 가라**는 뜻의 null 이어야 한다. 여기서 무언가를
@@ -263,8 +314,70 @@ console.log('\n== 산: 네 줄 두께의 금속 바닥을 갉아 뚫고 아래�
   check(count(w, ACID.id) === 0, '초기화로 산이 사라졌다');
 }
 
+// --- 산 증기 -----------------------------------------------------------------------
+console.log('\n== 산 증기: 하단에서 덮어쓰기 방식으로 증기 분출 후 정 가운데 철 바닥을 갉아 뚫는다 ==');
+{
+  const w = make(ACID_VAPOR.id);
+  const floor = rowSpan(w, IRON.id);
+  const midY = Math.round(w.grid.height * 0.5);
+  check(floor.top === midY, '철 바닥 높이가 정 가운데에 배치되었다', `top=${floor.top}, midY=${midY}`);
+
+  run(w, DEMO_TPS * 2);
+  check(count(w, ACID_VAPOR.id) > 5, '하단에서 산 증기가 분출되고 있다', `${count(w, ACID_VAPOR.id)}칸`);
+
+  run(w, DEMO_TPS * 6);
+  const floorAtStart = w.grid.width * 4;
+  const eaten = floorAtStart - count(w, IRON.id);
+  check(eaten > 0, '정 가운데 철 바닥이 갉여 나갔다', `${eaten}칸`);
+}
+
+// --- 수소 산소 ---------------------------------------------------------------------
+console.log('\n== 수소 산소: 4x2 픽셀 4틱 점화 불꽃으로 정밀 격발 ==');
+{
+  const w = make(HYDROGEN.id);
+  run(w, DEMO_TPS * 5 - 1); // HO_AT 직전까지
+  const hBefore = count(w, HYDROGEN.id);
+  check(count(w, FIRE.id) === 0, '점화 직전까지 불이 없다', `hBefore=${hBefore}`);
+
+  run(w, 4); // HO_AT 부터 4틱 동안 점화 불꽃 지속
+  const hAfter = count(w, HYDROGEN.id);
+  check(hAfter < hBefore, '점화 후 수소 산소 혼합 기체가 반응하여 연소했다', `before=${hBefore}, after=${hAfter}`);
+}
+
+// --- TNT ---------------------------------------------------------------------------
+console.log('\n== TNT: 가운데 사각형 블록 배치 시작 후 2초 후 전기 격발 ==');
+{
+  const w = make(TNT.id);
+  const startTnt = count(w, TNT.id);
+  check(startTnt > 15, '시작 시 가운데 TNT 사각형 블록이 놓였다', `${startTnt}칸`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, TNT.id) === startTnt, '2초 직전까지 TNT 블록 유지');
+
+  run(w, 30);
+  check(count(w, TNT.id) < startTnt, '2초 시점에 전기 격발되어 폭발했다');
+}
+
+// --- C4 ----------------------------------------------------------------------------
+console.log('\n== C4: 왼쪽 C4 블록 + 오른쪽 전선 배치 후 2초 후 리튬 배터리 투입 격발 ==');
+{
+  const w = make(C4.id);
+  const startC4 = count(w, C4.id);
+  const startWire = count(w, WIRE.id);
+  check(startC4 > 15 && startWire > 20, '시작 시 C4 블록과 전선이 놓였다', `C4: ${startC4}칸, 전선: ${startWire}칸`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, BATTERY.id) === 0, '2초 직전까지 배터리가 없다');
+
+  run(w, 2);
+  check(count(w, BATTERY.id) > 0, '2초 시점에 리튬 배터리가 투입되었다');
+
+  run(w, 30);
+  check(count(w, C4.id) < startC4, '전선을 통해 전기가 전달되어 C4가 격발 폭발했다');
+}
+
 // --- 격발 ---------------------------------------------------------------------------
-console.log('\n== 격발: 3초 붓고 1초 쉰 뒤 불을 댄다 (섬광화약·불꽃놀이 화약·황·니트로) ==');
+console.log('\n== 격발: 3초 생성, 2초 대기, 점화, 3초 대기, 초기화 사이클 (섬광화약·불꽃놀이 화약·황·니트로) ==');
 for (const [label, id] of [
   ['섬광화약', FLASH_POWDER.id],
   ['불꽃놀이 화약', FIREWORKS.id],
@@ -275,13 +388,13 @@ for (const [label, id] of [
   run(w, DEMO_TPS * 3);
   const piled = count(w, id);
   check(piled > 30, `${label}: 3초어치 더미가 쌓였다`, `${piled}칸`);
-  check(count(w, FIRE.id) === 0, `${label}: 아직 불은 없다`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, FIRE.id) === 0, `${label}: 2초 대기 동안 아직 불은 없다`);
   check(w.brush === null, `${label}: 브러시가 없는 장면이다`);
 
-  // 4초에 불이 붙는다. 「불이 났는가」가 아니라 **더미가 사라졌는가**로 본다 —
-  // 불 한 점만 나고 아무 일도 안 일어나는 판이 정확히 이 검사가 노리는 고장이다.
-  // 폭약 셋은 한 틱에 터지고 황은 번져 타므로, 둘 다 「줄어든다」로 잡힌다.
-  run(w, DEMO_TPS * 3);
+  // 5초(3초 생성+2초 대기) 시점에 불이 붙는다.
+  run(w, DEMO_TPS * 2);
   const left = count(w, id);
   check(left < piled * 0.5, `${label}: 불을 댄 뒤 더미가 사라졌다`, `${piled} → ${left}칸`);
 
@@ -294,11 +407,6 @@ for (const [label, id] of [
 // 섬광화약만 전기로 찌른다. 그 물질의 볼거리는 **순백색 섬광 한 장**이고, 이 카드가
 // 보여 줘야 할 것은 그것뿐이다. 그래서 검사도 「터졌는가」가 아니라 **「무슨 색으로
 // 터졌는가」**를 본다 — 주황색이 한 칸이라도 끼면 그게 이 연출의 실패다.
-//
-// 실제로 첫 판이 정확히 그 모양으로 실패했다. 전기 기폭 경로가 물질의
-// `detonateOptions` 를 잃어버려서(spark.ts 를 고쳤다) 흰 섬광 0칸 / 일반 폭발 355칸,
-// 즉 **의도한 것의 정반대**가 나왔다. 대본도 대사도 다 맞고 색만 틀린 고장이라,
-// 여기서 색을 안 세면 통과한다.
 console.log('\n== 섬광화약: 주황색 없이 흰 섬광만 ==');
 {
   let worstFlash = Infinity;
@@ -306,8 +414,8 @@ console.log('\n== 섬광화약: 주황색 없이 흰 섬광만 ==');
   let worstFire = 0;
   for (let trial = 0; trial < 4; trial++) {
     const w = make(FLASH_POWDER.id);
-    // 점화 틱(4초) 직전까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
-    run(w, DEMO_TPS * 4 - 1);
+    // 점화 틱(5초) 직전까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
+    run(w, DEMO_TPS * 5 - 1);
     worstFire = Math.max(worstFire, count(w, FIRE.id));
     // 그리고 터지는 것을 지켜본다. 섬광은 7틱이면 꺼지고 일반 폭발은 식으며 잔불로
     // 흩어지므로, 한 틱만 재면 둘 다 놓친다.
@@ -532,8 +640,13 @@ console.log('\n== 움직임 최소화: 감아 둔 한 프레임이 빈 화면이
   for (const id of customDemoMaterials()) {
     const w = make(id);
     w.windToStill();
+    const allowFire =
+      demoSceneFor(id)?.kind === 'heat' ||
+      demoSceneFor(id)?.kind === 'wall' ||
+      demoSceneFor(id)?.kind === 'tnt' ||
+      demoSceneFor(id)?.kind === 'c4';
     check(
-      w.loops === 0 && occupied(w) > 20 && count(w, FIRE.id) === 0,
+      w.loops === 0 && occupied(w) > 20 && (allowFire || count(w, FIRE.id) === 0),
       `${getMaterial(id).name}: 정지 화면이 터지기 직전의 더미다`,
       `loops=${w.loops}, ${occupied(w)}칸, 불 ${count(w, FIRE.id)}칸`,
     );

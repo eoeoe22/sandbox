@@ -36,8 +36,9 @@
 import { Grid } from './engine/Grid';
 import { Simulation } from './engine/Simulation';
 import { mixCells, sparkCells } from './engine/brushTools';
-import { EMPTY, type BorderMode } from './engine/types';
+import { Phase, EMPTY, type BorderMode } from './engine/types';
 import { TICK_HZ } from './config';
+import { getMaterial } from './materials/registry';
 import {
   DEMO_WALL,
   DEMO_STONE,
@@ -57,7 +58,19 @@ import {
   DEMO_SODA,
   DEMO_BATTER,
   DEMO_MOLTEN_URANIUM,
+  DEMO_SOAP,
+  DEMO_SOAPY_WATER,
+  DEMO_CARAMEL,
+  DEMO_ALCOHOL,
+  DEMO_C4,
+  DEMO_BATTERY,
+  DEMO_WIRE,
 } from './materials/demo';
+import { GLASS } from './materials/glass';
+import { HYDROGEN } from './materials/hydrogen';
+import { OXYGEN } from './materials/oxygen';
+import { fireShockwave } from './materials/woofer';
+
 
 // --- 박자 ---------------------------------------------------------------------
 // 본 게임 기본 속도(×1)와 같은 스텝 간격. 대본의 "1초" 는 전부 DEMO_TPS 틱이다.
@@ -90,7 +103,16 @@ export type GuideDemoKind =
   | 'acid'
   | 'ignite'
   | 'gunpowder'
-  | 'ammoniumnitrate';
+  | 'ammoniumnitrate'
+  | 'open_ignite'
+  | 'brush_ignite'
+  | 'glass_shockwave'
+  | 'hydrogen_oxygen'
+  | 'soapywater'
+  | 'saltpeter'
+  | 'alcohol'
+  | 'tnt'
+  | 'c4';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -120,6 +142,15 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'ignite',
   'gunpowder',
   'ammoniumnitrate',
+  'open_ignite',
+  'brush_ignite',
+  'glass_shockwave',
+  'hydrogen_oxygen',
+  'soapywater',
+  'saltpeter',
+  'alcohol',
+  'tnt',
+  'c4',
 ];
 
 /**
@@ -158,6 +189,8 @@ export interface DemoCast {
   readonly recipe: readonly [number, number, number];
   /** `ammoniumnitrate` — 가운데·오른쪽 칸에 부을 연료 둘(알루미늄 가루·등유). */
   readonly fuels: readonly [number, number];
+  /** `soapywater` 2막 — 비눗물 웅덩이에 부을 바이러스·휘발유 둘. */
+  readonly soapyCleaners?: readonly [number, number];
 }
 
 export interface GuideDemoSpec {
@@ -216,6 +249,15 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   ignite: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   gunpowder: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   ammoniumnitrate: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  open_ignite: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  brush_ignite: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  glass_shockwave: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  hydrogen_oxygen: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
+  saltpeter: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  alcohol: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  tnt: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  c4: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -247,9 +289,18 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   // 아니라 「뭔가 부서진 자리」로만 읽힌다. 쌓인 더미(그리고 그 옆에 뭘 부었는지)가
   // 한 장으로 훨씬 많은 것을 말한다.
   acid: 240, // 산이 바닥을 다 뚫고 아래로 고인 뒤 (대본 270틱)
-  ignite: 115, // 줄기가 다 떨어지고 점화(120틱) 직전 (대본 210틱)
+  ignite: 145, // 3초 생성 + 2초 대기 후 점화(150틱) 직전
   gunpowder: 120, // 1막에서 모래 둔덕 사이에 화약이 다 쌓인 순간 (점화 150틱)
   ammoniumnitrate: 175, // 세 칸에 연료까지 부은 뒤, 휘젓기 직전 (대본 360틱)
+  open_ignite: 85, // 3초 생성 후 점화 직전
+  brush_ignite: 40, // 브러시 배치 후 점화 직전
+  glass_shockwave: 25, // 유리 배치 후 충격파 직전
+  hydrogen_oxygen: 145, // 수소+산소 3초 생성 후 2초 대기, 점화 직전
+  soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
+  saltpeter: 140, // 1막 초석 더미가 다 쌓인 직후, 점화 직전
+  alcohol: 115, // 알코올 웅덩이에 바이러스 소독 직후, 점화 직전
+  tnt: 55, // 2초 전기 격발 직전
+  c4: 55, // 2초 리튬 배터리 투입 직전
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -391,6 +442,16 @@ const SODA_INTERLUDE = DEMO_TPS * 1;
 const SODA_CYCLE = (SODA_POUR + SODA_REACT) * 2 + SODA_INTERLUDE;
 
 /**
+ * soapywater: 두 액트. 액트1은 비누 용해(물 3초 -> 비누 1초 -> 3초 관찰 = 7초),
+ * 액트2는 비눗물 웅덩이에 바이러스 1초/3초 대기 -> 휘발유 1초/3초 대기 후 초기화.
+ */
+const SOAPY_VIRUS_POUR = DEMO_TPS * 1;
+const SOAPY_VIRUS_HOLD = DEMO_TPS * 3;
+const SOAPY_GAS_POUR = DEMO_TPS * 1;
+const SOAPY_GAS_HOLD = DEMO_TPS * 3;
+const SOAPY_CYCLE = DISSOLVE_CYCLE + SOAPY_VIRUS_POUR + SOAPY_VIRUS_HOLD + SOAPY_GAS_POUR + SOAPY_GAS_HOLD;
+
+/**
  * liquid: 넘칠 때까지 붓는다 — 길이가 대본이 아니라 **장면이 정한다**. 그릇 크기와
  * 물줄기 굵기는 칸 수에서 따라 나오므로 초를 못 박으면 화면비가 조금만 달라져도
  * "덜 찼는데 멈추는" 장면이 된다. 대신 굳었을 때를 대비한 상한만 둔다.
@@ -408,7 +469,7 @@ const LIQUID_HOLD = DEMO_TPS * 4;
 // 그 사이에 물질마다 다른 한 수가 끼어든다(바닥·둔덕·조합·연료).
 
 /** acid: 금속 바닥의 **윗면** 높이(세로 비율)와, 붓기·구경 시간. */
-const ACID_FLOOR_Y = 0.72;
+const ACID_FLOOR_Y = 0.5;
 /**
  * 바닥 두께(줄).
  *
@@ -437,12 +498,35 @@ const ACID_POUR = DEMO_TPS * 6;
 const ACID_HOLD = DEMO_TPS * 3;
 const ACID_CYCLE = ACID_POUR + ACID_HOLD;
 
-/** ignite: 3초 붓고 1초 쉰 뒤 불을 댄다. 섬광화약·불꽃놀이 화약·황·니트로 공용. */
+/** ignite: 3초 생성, 2초 대기, 점화, 3초 대기, 초기화 사이클 (암모날·ANFO·로켓캔디·메탄·섬광화약·불꽃놀이화약·황·니트로). */
 const IGNITE_POUR = DEMO_TPS * 3;
-const IGNITE_WAIT = DEMO_TPS;
+const IGNITE_WAIT = DEMO_TPS * 2;
 const IGNITE_TAIL = DEMO_TPS * 3;
 const IGNITE_AT = IGNITE_POUR + IGNITE_WAIT;
 const IGNITE_CYCLE = IGNITE_AT + IGNITE_TAIL;
+
+/** open_ignite: 벽 용기 없이 3초 붓고 점화 → 3초 관찰 → 초기화. (원유·휘발유·경유·등유·LPG·톱밥) */
+const OPEN_IGNITE_POUR = DEMO_TPS * 3;
+const OPEN_IGNITE_TAIL = DEMO_TPS * 3;
+const OPEN_IGNITE_AT = OPEN_IGNITE_POUR;
+const OPEN_IGNITE_CYCLE = OPEN_IGNITE_AT + OPEN_IGNITE_TAIL;
+
+/** brush_ignite: 브러시로 선을 긋고 아래에 불 생성으로 점화 → 5초 관찰 → 초기화. (석탄·나무·레진) */
+const BRUSH_IGNITE_DRAG = BRUSH_CYCLE;
+const BRUSH_IGNITE_TAIL = DEMO_TPS * 5;
+const BRUSH_IGNITE_CYCLE = BRUSH_IGNITE_DRAG + BRUSH_IGNITE_TAIL;
+
+/** glass_shockwave: 고체 유리 배치 → 1초 대기 → 아래에 충격파 → 3초 관찰 → 초기화. (유리·깨진 유리) */
+const GLASS_WAIT = DEMO_TPS * 1;
+const GLASS_TAIL = DEMO_TPS * 3;
+const GLASS_CYCLE = GLASS_WAIT + GLASS_TAIL;
+
+/** hydrogen_oxygen: 3초간 수소+산소 생성 후 2초 대기 후 점화 → 연소 물 반응 3초 관찰 → 초기화. (산소·수소) */
+const HO_POUR = DEMO_TPS * 3;
+const HO_WAIT = DEMO_TPS * 2;
+const HO_TAIL = DEMO_TPS * 3;
+const HO_AT = HO_POUR + HO_WAIT;
+const HO_CYCLE = HO_AT + HO_TAIL;
 
 /**
  * 불을 **한 틱만 대지 않는** 이유. 폭약은 불 이웃을 보면 그 틱에 터지지만
@@ -521,6 +605,38 @@ const AN_FIRE = AN_POUR + AN_WAIT1 + AN_FUEL + AN_STIR + AN_WAIT2;
 const AN_CYCLE = AN_FIRE + AN_TAIL;
 /** 세 칸의 한가운데(가로 비율). 칸막이가 1/3·2/3 에 서므로 1/6·1/2·5/6 이다. */
 const AN_CELL_AT: readonly number[] = [1 / 6, 0.5, 5 / 6];
+
+/** saltpeter: 두 액트. 1막은 둔덕 사이 초석 더미, 2막은 초석 3초 줄기 + 가운데 캐러멜 생성 3초 -> 4초 대기 -> 점화 → 3초 관찰 → 초기화 (질산칼륨) */
+const SP_BERM = DEMO_TPS * 2;
+const SP_PILE = DEMO_TPS * 4;
+const SP_WAIT1 = DEMO_TPS * 1;
+const SP_TAIL1 = DEMO_TPS * 2;
+const SP_ACT1_FIRE = SP_PILE + SP_WAIT1;
+const SP_ACT1 = SP_ACT1_FIRE + SP_TAIL1;
+
+const SP_POUR2 = DEMO_TPS * 3;
+const SP_WAIT2 = DEMO_TPS * 4;
+const SP_FIRE2 = SP_POUR2 + SP_WAIT2;
+const SP_TAIL2 = DEMO_TPS * 3;
+const SP_ACT2 = SP_FIRE2 + SP_TAIL2;
+const SP_CYCLE = SP_ACT1 + SP_ACT2;
+
+/** alcohol: 바닥 알코올 웅덩이에 바이러스 1초 붓기 -> 3초 소독 관찰 -> 1초 불 점화 및 연소 3초 관찰 후 초기화 (알코올) */
+const ALCOHOL_VIRUS_POUR = DEMO_TPS * 1;
+const ALCOHOL_VIRUS_HOLD = DEMO_TPS * 3;
+const ALCOHOL_IGNITE = ALCOHOL_VIRUS_POUR + ALCOHOL_VIRUS_HOLD;
+const ALCOHOL_TAIL = DEMO_TPS * 3;
+const ALCOHOL_CYCLE = ALCOHOL_IGNITE + ALCOHOL_TAIL;
+
+/** tnt: 가운데 TNT 사각형 블록 배치 → 2초 후 전기 격발 → 3초 관찰 후 초기화. */
+const TNT_WAIT = DEMO_TPS * 2;
+const TNT_TAIL = DEMO_TPS * 3;
+const TNT_CYCLE = TNT_WAIT + TNT_TAIL;
+
+/** c4: 왼쪽에 C4 사각형 블록, 오른쪽으로 전선 배치 → 2초 후 전선 끝에 리튬 배터리 닿게 배치 → 3초 대기 후 초기화. */
+const C4_BATTERY_AT = DEMO_TPS * 2;
+const C4_TAIL = DEMO_TPS * 3;
+const C4_CYCLE = C4_BATTERY_AT + C4_TAIL;
 
 /**
  * 섞기 브러시의 반지름(칸). 굵어야 한다 — 세 재료가 각자의 봉우리로 앉으므로,
@@ -793,8 +909,8 @@ export class GuideDemoWorld {
         this.buildPipe();
         break;
       case 'wall':
-        // 액트1 고정 배치: 중앙 벽 블록. 위협(TNT·산·U235)은 대본 안에서 놓는다.
-        this.buildBlock(DEMO_WALL.id);
+        // 액트1 고정 배치: 중앙 벽/다이아몬드 블록. 위협(TNT·산·U235)은 대본 안에서 놓는다.
+        this.buildBlock(this.subjectId);
         break;
       case 'obsidian':
         // 액트1 고정 배치: 바닥 용암 웅덩이(물이 닿으면 흑요석으로 급냉).
@@ -809,16 +925,53 @@ export class GuideDemoWorld {
         // 액트1 고정 배치: 바닥 산 웅덩이. 액트2 전환은 대본이 buildBatterPool 로.
         this.buildPool(DEMO_ACID.id);
         break;
+      case 'soapywater':
+        // 액트1 고정 배치: 그릇. 2막 전환은 대본이 buildSoapyWaterPool 로.
+        this.buildBowl();
+        break;
       case 'acid':
         // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
         this.buildFloor();
+        break;
+      case 'alcohol':
+        // 액트1 고정 배치: 바닥 알코올 웅덩이.
+        this.buildPool(this.subjectId);
         break;
       case 'ammoniumnitrate':
         // 격자를 세로로 완전히 가르는 칸막이 둘 — 3등분.
         this.buildPartitions();
         break;
+      case 'glass_shockwave':
+        this.buildGlassBlock();
+        break;
+      case 'tnt':
+        this.buildBlock(this.subjectId);
+        break;
+      case 'c4':
+        this.buildC4Scene();
+        break;
     }
     this.grid.randomizeTints();
+  }
+
+  /** c4 장면 고정 배치: 왼쪽에 C4 사각형 블록, 오른쪽으로 이어지는 전선. */
+  private buildC4Scene(): void {
+    const g = this.grid;
+    const cy = g.height >> 1;
+    const blockWidth = 5;
+    const blockHeight = 5;
+    const x0 = 4;
+    const y0 = cy - (blockHeight >> 1);
+    for (let dy = 0; dy < blockHeight; dy++) {
+      for (let dx = 0; dx < blockWidth; dx++) {
+        g.set(x0 + dx, y0 + dy, this.subjectId);
+      }
+    }
+    const wireX0 = x0 + blockWidth;
+    const wireX1 = g.width - 6;
+    for (let x = wireX0; x <= wireX1; x++) {
+      g.set(x, cy, DEMO_WIRE.id);
+    }
   }
 
   /**
@@ -958,12 +1111,12 @@ export class GuideDemoWorld {
    * 바닥에 가로 웅덩이를 깐다. obsidian 액트1(용암)·soda 액트1(산)이 쓴다. 깊이
    * POOL_DEPTH 칸, 가로는 POOL_X0..POOL_X1 비율. 테두리 바로 안쪽부터 채운다.
    */
-  private buildPool(id: number): void {
+  private buildPool(id: number, depth = POOL_DEPTH): void {
     const g = this.grid;
     const x0 = Math.round(g.width * POOL_X0);
     const x1 = Math.round(g.width * POOL_X1);
     const bottom = g.height - 1;
-    for (let dy = 0; dy < POOL_DEPTH; dy++) {
+    for (let dy = 0; dy < depth; dy++) {
       const y = bottom - dy;
       if (y < 0) break;
       for (let x = x0; x <= x1; x++) {
@@ -1044,6 +1197,33 @@ export class GuideDemoWorld {
         break;
       case 'ammoniumnitrate':
         this.tickAmmoniumNitrate();
+        break;
+      case 'open_ignite':
+        this.tickOpenIgnite();
+        break;
+      case 'brush_ignite':
+        this.tickBrushIgnite();
+        break;
+      case 'glass_shockwave':
+        this.tickGlassShockwave();
+        break;
+      case 'hydrogen_oxygen':
+        this.tickHydrogenOxygen();
+        break;
+      case 'soapywater':
+        this.tickSoapyWater();
+        break;
+      case 'saltpeter':
+        this.tickSaltpeter();
+        break;
+      case 'alcohol':
+        this.tickAlcohol();
+        break;
+      case 'tnt':
+        this.tickTnt();
+        break;
+      case 'c4':
+        this.tickC4();
         break;
     }
     this.sim.step();
@@ -1129,6 +1309,7 @@ export class GuideDemoWorld {
    */
   private paintDisc(cx: number, cy: number, r: number, id: number): void {
     const g = this.grid;
+    const initTemp = getMaterial(id).thermal?.init ?? 20;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy > r * r) continue;
@@ -1136,6 +1317,7 @@ export class GuideDemoWorld {
         const y = cy + dy;
         if (!g.inBounds(x, y) || g.get(x, y) !== EMPTY) continue;
         g.set(x, y, id);
+        g.setTemp(x, y, initTemp);
         g.setTint(x, y, (this.rand() * 256) | 0);
       }
     }
@@ -1227,13 +1409,15 @@ export class GuideDemoWorld {
 
   private tickGas(): void {
     const g = this.grid;
-    const floor = g.height - 2;
+    const mat = getMaterial(this.subjectId);
+    const isHeavy = (mat.density ?? 1) > 1;
+    const y = isHeavy ? STREAM_Y : g.height - 2;
     const lo = Math.round(g.width * SMOKE_X0);
     const hi = Math.round(g.width * SMOKE_X1);
     for (let k = 0; k < SMOKE_PER_TICK; k++) {
       const x = lo + Math.floor(this.rand() * (hi - lo + 1));
-      if (g.get(x, floor) !== EMPTY) continue;
-      this.sim.context.spawn(x, floor, this.subjectId);
+      if (g.get(x, y) !== EMPTY) continue;
+      this.sim.context.spawn(x, y, this.subjectId);
     }
   }
 
@@ -1412,9 +1596,9 @@ export class GuideDemoWorld {
     const half = size >> 1;
     const minDist = box.half + half + 1;
     for (let i = 0; i < 64; i++) {
-      const x0 = 2 + Math.floor(this.rand() * (g.width - size - 3));
-      // 위쪽에 배치해 흘러내릴 공간을 둔다(바닥 도달을 늦춰 임계가 이기게).
-      const y0 = 2 + Math.floor(this.rand() * Math.floor(g.height * 0.4));
+      const isLeft = this.rand() < 0.5;
+      const x0 = isLeft ? 3 : g.width - size - 3;
+      const y0 = 3;
       const cx = x0 + half;
       const cy = y0 + half;
       // box(중앙 벽 블록)와 겹치지 않게.
@@ -1512,6 +1696,7 @@ export class GuideDemoWorld {
    * 단계: 물 3초 → 용질 1초 → 관찰 3초 → 초기화.
    */
   private tickDissolve(soluteId: number): void {
+    const solute = this.subjectId === DEMO_SOAP.id ? DEMO_SOAP.id : soluteId;
     const t = this.t;
     if (t >= DISSOLVE_CYCLE) {
       this.loop();
@@ -1522,7 +1707,7 @@ export class GuideDemoWorld {
       return;
     }
     if (t < DISSOLVE_WATER + DISSOLVE_SOLUTE) {
-      this.dropStream(soluteId, POUR_AT);
+      this.dropStream(solute, POUR_AT);
       return;
     }
     // DISSOLVE_HOLD: 섞이는 것을 관찰 후 loop()
@@ -1606,7 +1791,7 @@ export class GuideDemoWorld {
       }
     }
     // 더미가 없으면 아무것도 안 한다 — 이미 터진 뒤라면 크레이터 위에 불만 남는다.
-    if (bestX < 0 || bestY === 0) return;
+    if (bestX < 0) return;
     // 꼭대기 한 점이 아니라 **봉우리 둘레의 등고선을 따라** 손을 댄다. 한 점만
     // 노리면 그 자리가 튀어나온 알갱이 하나일 때 불이 더미에서 몇 칸 뜬 채로 타다
     // 만다(실측: 여덟 판 중 한 판이 아무것도 안 터진 채 끝났다). 칸마다 그 칸의
@@ -1619,12 +1804,23 @@ export class GuideDemoWorld {
       const x = bestX + dx;
       if (x < lo || x > hi) continue;
       const top = this.topOf(x);
-      if (top <= 0) continue;
+      if (top < 0) continue;
       if (this.trigger === 'spark') {
-        spark.push(x, top);
+        spark.push(x, Math.max(0, top));
         continue;
       }
-      if (g.get(x, top - 1) !== EMPTY) continue;
+      if (top === 0) {
+        if (g.get(x, 0) !== DEMO_WALL.id) {
+          this.sim.context.spawn(x, 0, DEMO_FIRE.id);
+        }
+        continue;
+      }
+      if (g.get(x, top - 1) !== EMPTY) {
+        if (g.get(x, top) !== DEMO_WALL.id) {
+          this.sim.context.spawn(x, top, DEMO_FIRE.id);
+        }
+        continue;
+      }
       this.sim.context.spawn(x, top - 1, DEMO_FIRE.id);
     }
     // 게임의 전기 브러시와 같은 호출. 폭약을 만난 펄스는 곁에 불씨 한 칸을 앉히고
@@ -1718,7 +1914,26 @@ export class GuideDemoWorld {
       this.loop();
       return;
     }
-    if (t < ACID_POUR) this.dropStream(this.subjectId, 0.5);
+    if (t < ACID_POUR) {
+      if (getMaterial(this.subjectId).phase === Phase.Gas) {
+        this.dropGasStreamOverwrite(this.subjectId, 0.5);
+      } else {
+        this.dropStream(this.subjectId, 0.5);
+      }
+    }
+  }
+
+  /** 기체 전용(덮어쓰기): 아래쪽(y = height - 2)에서 산 액체가 고여도 막히지 않게 덮어쓰기로 생성되어 위로 솟구친다. */
+  private dropGasStreamOverwrite(id: number, at: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
+    const x = Math.min(g.width - 1, Math.max(0, Math.round(g.width * at) + jitter));
+    const y = g.height - 2;
+    this.sim.context.spawn(x, y, id);
+    if (x + 1 < g.width) {
+      this.sim.context.spawn(x + 1, y, id);
+    }
   }
 
   // --- 격발: 붓고, 쉬고, 불을 댄다 -------------------------------------------------
@@ -1846,6 +2061,294 @@ export class GuideDemoWorld {
   private partitions(): [number, number] {
     const g = this.grid;
     return [Math.round(g.width / 3), Math.round((g.width * 2) / 3)];
+  }
+
+  // --- 추가 맞춤 연출 -------------------------------------------------------------
+
+  /** open_ignite: 벽 용기 없이 3초 붓고 점화 (원유·휘발유·경유·등유·LPG·톱밥·레진) */
+  private tickOpenIgnite(): void {
+    const t = this.t;
+    if (t >= OPEN_IGNITE_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < OPEN_IGNITE_POUR) {
+      const isGas = getMaterial(this.subjectId).phase === Phase.Gas;
+      if (isGas) {
+        this.dropGasStream(this.subjectId, 0.5);
+      } else {
+        this.dropLiquidStream(this.subjectId, 0.5);
+      }
+      return;
+    }
+    if (t >= OPEN_IGNITE_AT && t < OPEN_IGNITE_AT + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+      const isGas = getMaterial(this.subjectId).phase === Phase.Gas;
+      if (isGas) {
+        const g = this.grid;
+        const midX = Math.round(g.width * 0.5);
+        for (let y = 0; y < g.height; y++) {
+          if (g.get(midX, y) === this.subjectId) {
+            this.sim.context.spawn(midX, y, DEMO_FIRE.id);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** 기체 전용: 아래에서 생성되어 위로 솟구친다. */
+  private dropGasStream(id: number, at: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
+    const x = Math.min(g.width - 1, Math.max(0, Math.round(g.width * at) + jitter));
+    const y = g.height - 2;
+    if (g.get(x, y) !== EMPTY) return;
+    this.sim.context.spawn(x, y, id);
+    if (x + 1 < g.width && g.get(x + 1, y) === EMPTY) {
+      this.sim.context.spawn(x + 1, y, id);
+    }
+  }
+
+  /** brush_ignite: 브러시로 생성 후 아래에 불 생성으로 점화 (석탄·나무·레진) */
+  private tickBrushIgnite(): void {
+    const t = this.t;
+    if (t >= BRUSH_IGNITE_CYCLE) {
+      this.loop();
+      return;
+    }
+    const lineY = Math.round(this.grid.height * 0.55);
+    if (t < BRUSH_IGNITE_DRAG) {
+      this.dragBrush(t, lineY, this.subjectId);
+      return;
+    }
+    this.brush = null;
+    if (t >= BRUSH_IGNITE_DRAG && t < BRUSH_IGNITE_DRAG + IGNITE_FLAME) {
+      const g = this.grid;
+      const x0 = Math.round(g.width * BRUSH_X0);
+      const x1 = Math.round(g.width * BRUSH_X1);
+      const fireY = lineY + BRUSH_R + 1;
+      for (let x = x0; x <= x1; x++) {
+        if (g.inBounds(x, fireY) && g.get(x, fireY) === EMPTY) {
+          this.sim.context.spawn(x, fireY, DEMO_FIRE.id);
+        }
+      }
+    }
+  }
+
+  /** glass_shockwave: 고체 유리 배치 후 1초 대기 후 충격파 (유리·깨진 유리) */
+  private buildGlassBlock(): void {
+    const g = this.grid;
+    const x0 = Math.round(g.width * 0.3);
+    const x1 = Math.round(g.width * 0.7);
+    const y0 = Math.round(g.height * 0.45);
+    const y1 = Math.round(g.height * 0.65);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        g.set(x, y, GLASS.id);
+      }
+    }
+  }
+
+  private triggerGlassShockwave(): void {
+    const g = this.grid;
+    const x0 = Math.round(g.width * 0.3);
+    const x1 = Math.round(g.width * 0.7);
+    const yUnder = Math.min(g.height - 1, Math.round(g.height * 0.65) + 1);
+    const cells: number[] = [];
+    for (let x = x0; x <= x1; x++) {
+      cells.push(x, yUnder);
+    }
+    fireShockwave(this.sim.context, cells);
+  }
+
+  private tickGlassShockwave(): void {
+    const t = this.t;
+    if (t >= GLASS_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t === GLASS_WAIT) {
+      this.triggerGlassShockwave();
+    }
+  }
+
+  /** 기체 전용: 특정 X 좌표 아래에서 생성되어 위로 솟구친다. */
+  private dropGasStreamAtX(id: number, x: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const y = g.height - 2;
+    if (!g.inBounds(x, y) || g.get(x, y) !== EMPTY) return;
+    this.sim.context.spawn(x, y, id);
+  }
+
+  /** hydrogen_oxygen: 3초간 수소+산소 가운데 한 칸 차이로 아래에서 생성 후 2초 대기 후 점화 (산소·수소) */
+  private tickHydrogenOxygen(): void {
+    const t = this.t;
+    if (t >= HO_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < HO_POUR) {
+      const midX = this.grid.width >> 1;
+      this.dropGasStreamAtX(HYDROGEN.id, midX - 1);
+      this.dropGasStreamAtX(OXYGEN.id, midX + 1);
+      return;
+    }
+    if (t < HO_AT) return;
+    if (t >= HO_AT && t < HO_AT + 4) {
+      const g = this.grid;
+      const midX = g.width >> 1;
+      const topY = this.topOf(midX);
+      const cy = topY >= 0 ? topY : Math.max(1, Math.round(g.height * 0.2));
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = -2; dx < 2; dx++) {
+          const x = midX + dx;
+          const y = cy + dy;
+          if (g.inBounds(x, y)) {
+            this.sim.context.spawn(x, y, DEMO_FIRE.id);
+          }
+        }
+      }
+    }
+  }
+
+  /** soapywater: 1막 비누 용해 7초 후 2막 비눗물 웅덩이에서 바이러스 소독 및 휘발유 유화 (비눗물) */
+  private tickSoapyWater(): void {
+    const t = this.t;
+    if (t >= SOAPY_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    if (t < DISSOLVE_CYCLE) {
+      this.tickDissolve(DEMO_SOAP.id);
+      return;
+    }
+
+    const act2Start = DISSOLVE_CYCLE;
+    if (t === act2Start) {
+      this.buildSoapyWaterPool();
+      return;
+    }
+
+    const virusPourEnd = act2Start + SOAPY_VIRUS_POUR;
+    const virusHoldEnd = virusPourEnd + SOAPY_VIRUS_HOLD;
+    const gasPourEnd = virusHoldEnd + SOAPY_GAS_POUR;
+
+    const virusId = this.cast?.soapyCleaners?.[0] ?? DEMO_SAND.id;
+    const gasId = this.cast?.soapyCleaners?.[1] ?? DEMO_WATER.id;
+
+    if (t < virusPourEnd) {
+      this.dropStream(virusId, POUR_AT);
+      return;
+    }
+    if (t < virusHoldEnd) return;
+
+    if (t < gasPourEnd) {
+      this.dropStream(gasId, POUR_AT);
+      return;
+    }
+  }
+
+  private buildSoapyWaterPool(): void {
+    this.grid.clear();
+    this.buildPool(DEMO_SOAPY_WATER.id, 9);
+    this.grid.randomizeTints();
+  }
+
+  /** saltpeter: 1막 초석 단독 연소 후 2막에서 초석 3초 줄기 + 캐러멜 3초 생성 → 4초 대기 → 점화 (질산칼륨) */
+  private tickSaltpeter(): void {
+    const t = this.t;
+    if (t >= SP_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    if (t < SP_ACT1) {
+      if (t < SP_BERM) {
+        for (const at of GP_BERM_AT) this.dropStream(DEMO_SAND.id, at);
+      }
+      if (t < SP_PILE) {
+        this.dropStream(this.subjectId, GP_PILE_AT);
+      }
+      if (t >= SP_ACT1_FIRE && t < SP_ACT1_FIRE + IGNITE_FLAME) {
+        this.ignitePile(0, this.grid.width - 1);
+      }
+      return;
+    }
+
+    const act2T = t - SP_ACT1;
+    if (act2T === 0) {
+      this.grid.clear();
+      return;
+    }
+
+    if (act2T < SP_POUR2) {
+      this.dropStream(this.subjectId, 0.4);
+      this.dropStream(DEMO_CARAMEL.id, 0.5);
+      return;
+    }
+    if (act2T < SP_FIRE2) return;
+
+    if (act2T >= SP_FIRE2 && act2T < SP_FIRE2 + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  /** alcohol: 바닥 알코올 웅덩이에 바이러스 1초 붓기 -> 3초 소독 관찰 -> 1초 불 점화 및 연소 3초 관찰 후 초기화 (알코올) */
+  private tickAlcohol(): void {
+    const t = this.t;
+    if (t >= ALCOHOL_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    const virusId = this.cast?.soapyCleaners?.[0] ?? DEMO_SAND.id;
+    if (t < ALCOHOL_VIRUS_POUR) {
+      this.dropStream(virusId, POUR_AT);
+      return;
+    }
+    if (t < ALCOHOL_IGNITE) return;
+
+    if (t >= ALCOHOL_IGNITE && t < ALCOHOL_IGNITE + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  /** tnt: 가운데 TNT 사각형 블록 배치 후 2초 후 전기 격발 (TNT) */
+  private tickTnt(): void {
+    const t = this.t;
+    if (t >= TNT_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t === TNT_WAIT) {
+      const box = this.blockBox();
+      this.igniteNearestTnt(box);
+    }
+  }
+
+  /** c4: 왼쪽에 C4 사각형 블록, 오른쪽으로 전선 배치 후 2초 후 전선 끝에 리튬 배터리 닿게 배치 후 3초 관찰 (C4) */
+  private tickC4(): void {
+    const t = this.t;
+    if (t >= C4_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t === C4_BATTERY_AT) {
+      const g = this.grid;
+      const cy = g.height >> 1;
+      const wireX1 = g.width - 6;
+      const battX = wireX1 + 1;
+      if (g.inBounds(battX, cy)) {
+        this.sim.context.spawn(battX, cy, DEMO_BATTERY.id);
+        if (g.inBounds(battX + 1, cy)) {
+          this.sim.context.spawn(battX + 1, cy, DEMO_BATTERY.id);
+        }
+      }
+    }
   }
 }
 
