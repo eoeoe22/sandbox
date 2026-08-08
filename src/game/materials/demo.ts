@@ -1,7 +1,7 @@
 // 가이드 데모 물질 배럴 — `/guide?tab=basics` 의 여섯 데모 캔버스가 로드하는 최소
 // 물질 집합. 시작 화면의 `materials/lite.ts` 와 같은 이유로 존재한다: 전체
 // 배럴(`./index`)은 150종 가까운 물질과 그 `update` 클로저를 한꺼번에 끌어오는데,
-// 가이드 문서가 보여 주는 것은 벽·돌·모래·물·연기·히트파이프·불·Clone 여덟뿐이다.
+// 가이드 문서가 보여 주는 것은 벽·돌·체·모래·물·연기·히트파이프·불·Clone 아홉뿐이다.
 //
 // 시작 화면 배럴을 그대로 쓰지 않은 이유는 집합이 다르기 때문이다 — 저쪽은
 // 휘발유·톱밥을 떨어뜨리고 벽/연기/히트파이프/Clone 을 모르며, 이쪽은 그 반대다.
@@ -24,6 +24,7 @@ export * from './registry';
 import { EMPTY_MAT } from './empty';
 import { WALL } from './wall';
 import { STONE } from './stone';
+import { MESH } from './mesh';
 import { SAND } from './sand';
 import { WATER } from './water';
 import { SMOKE } from './smoke';
@@ -39,6 +40,7 @@ void EMPTY_MAT;
  *  배럴을 실수로 import 하면 가이드 페이지가 시뮬레이션 전체를 내려받게 된다. */
 export const DEMO_WALL: Material = WALL;
 export const DEMO_STONE: Material = STONE;
+export const DEMO_MESH: Material = MESH;
 export const DEMO_SAND: Material = SAND;
 export const DEMO_WATER: Material = WATER;
 export const DEMO_SMOKE: Material = SMOKE;

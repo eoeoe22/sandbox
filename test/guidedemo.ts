@@ -28,6 +28,7 @@ import {
   DEMO_SAND,
   DEMO_WATER,
   DEMO_SMOKE,
+  DEMO_MESH,
   DEMO_HEATPIPE,
   DEMO_CLONE,
 } from '../src/game/materials/demo';
@@ -68,6 +69,53 @@ function occupied(w: GuideDemoWorld): number {
 
 function run(w: GuideDemoWorld, ticks: number): void {
   for (let i = 0; i < ticks; i++) w.tick();
+}
+
+/**
+ * 브러시가 `id` 로 그은 선에 뚫린 칸이 몇 개인가 — 칠해진 줄마다 첫 칸부터 끝
+ * 칸까지 세어 빠진 것을 센다.
+ *
+ * 브러시가 한 틱에 한 칸을 넘게 뛰면 원판의 **가장자리 줄**(반지름 2에서 한 칸
+ * 굵기)에 중심이 안 밟은 칸이 남아 선의 위아래가 패인다. 가운데 줄은 다섯 칸
+ * 굵기라 멀쩡하므로 "줄이 이어졌다" 류의 검사로는 안 잡힌다(CODEX.md §13.10).
+ * 고체(돌)와 겹침(체)이 같은 손놀림을 쓰므로 검사도 같은 것을 쓴다.
+ */
+function brushHoles(w: GuideDemoWorld, id: number): { holes: number; row: number } {
+  let holes = 0;
+  let row = -1;
+  for (let y = 0; y < w.grid.height; y++) {
+    let first = -1;
+    let last = -1;
+    let n = 0;
+    for (let x = 0; x < w.grid.width; x++) {
+      if (w.grid.get(x, y) !== id) continue;
+      if (first < 0) first = x;
+      last = x;
+      n++;
+    }
+    if (first < 0) continue;
+    const gap = last - first + 1 - n;
+    if (gap > 0) {
+      holes += gap;
+      if (row < 0) row = y;
+    }
+  }
+  return { holes, row };
+}
+
+/** `id` 가 놓인 줄 중 가장 위/아래. 없으면 둘 다 -1. */
+function rowSpan(w: GuideDemoWorld, id: number): { top: number; bottom: number } {
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < w.grid.height; y++) {
+    for (let x = 0; x < w.grid.width; x++) {
+      if (w.grid.get(x, y) !== id) continue;
+      if (top < 0) top = y;
+      bottom = y;
+      break;
+    }
+  }
+  return { top, bottom };
 }
 
 console.log('== 박자 ==');
@@ -111,30 +159,8 @@ console.log('\n== 고체: 브러시가 선을 긋고, 지웠다가 다시 긋는
   for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, mid) === DEMO_STONE.id) lineCells++;
   check(lineCells > w.grid.width * 0.6, '가운데 줄이 돌로 이어졌다', `${lineCells}/${w.grid.width}칸`);
 
-  // **선이 꽉 찼는가.** 브러시가 한 틱에 한 칸을 넘게 뛰면 원판의 가장자리
-  // 줄(한 칸 굵기)에 중심이 안 밟은 칸이 남아 선의 위아래가 패인다. 가운데 줄은
-  // 다섯 칸 굵기라 멀쩡하므로 위의 `lineCells` 검사로는 이걸 못 잡는다.
-  // 걸음 폭을 여기 다시 계산하지 않고 **결과**를 본다 — 돌이 있는 모든 줄에서
-  // 첫 칸부터 끝 칸까지가 빈틈없이 이어졌는지.
-  let holes = 0;
-  let holeRow = -1;
-  for (let y = 0; y < w.grid.height; y++) {
-    let first = -1;
-    let last = -1;
-    let n = 0;
-    for (let x = 0; x < w.grid.width; x++) {
-      if (w.grid.get(x, y) !== DEMO_STONE.id) continue;
-      if (first < 0) first = x;
-      last = x;
-      n++;
-    }
-    if (first < 0) continue;
-    const gap = last - first + 1 - n;
-    if (gap > 0) {
-      holes += gap;
-      if (holeRow < 0) holeRow = y;
-    }
-  }
+  // **선이 꽉 찼는가.** 걸음 폭을 여기 다시 계산하지 않고 결과를 본다.
+  const { holes, row: holeRow } = brushHoles(w, DEMO_STONE.id);
   check(holes === 0, '선에 구멍이 없다 — 모든 줄이 끊김 없이 이어졌다', holes ? `y=${holeRow} 등 ${holes}칸` : '');
 
   const drawn = count(w, DEMO_STONE.id);
@@ -242,31 +268,73 @@ console.log('\n== 기체: 연기가 아래에서 계속 올라온다 ==');
 }
 
 // --- 겹침 --------------------------------------------------------------------
-console.log('\n== 겹침: 모래 더미에 물이 스민다 ==');
+console.log('\n== 겹침: 체를 통과한 물이 모래 더미에 스민다 ==');
 {
   const w = make('overlap');
-  run(w, DEMO_TPS * 4); // 모래 4초
-  const sand = count(w, DEMO_SAND.id);
-  check(sand > 40, '모래 더미가 생겼다', `${sand}칸`);
 
+  // 1) 모래 6초. 이 구간에는 체도 브러시도 없다.
+  run(w, DEMO_TPS * 6);
+  const sand = count(w, DEMO_SAND.id);
+  check(sand > 80, '모래 더미가 생겼다', `${sand}칸`);
+  check(count(w, DEMO_MESH.id) === 0, '아직 체는 안 그어졌다');
+  check(w.brush === null, '모래가 떨어지는 동안에는 브러시가 안 보인다');
   let soaked = 0;
   for (let i = 0; i < w.grid.overlay.length; i++) if (w.grid.overlay[i] !== 0) soaked++;
   check(soaked === 0, '아직 스며든 것은 없다', `${soaked}칸`);
 
-  run(w, DEMO_TPS * 6); // 대기 1초 + 물 4초 + 여유
+  // 2) 체 선 3초 — 고체 데모와 같은 손놀림이다.
+  run(w, DEMO_TPS);
+  check(w.brush !== null, '체를 긋는 동안에는 브러시가 보인다');
+  run(w, DEMO_TPS * 2);
+  const meshCells = count(w, DEMO_MESH.id);
+  check(meshCells > 150, '체 선이 그어졌다', `${meshCells}칸`);
+  const meshHoles = brushHoles(w, DEMO_MESH.id);
+  check(
+    meshHoles.holes === 0,
+    '체 선에도 구멍이 없다',
+    meshHoles.holes ? `y=${meshHoles.row} 등 ${meshHoles.holes}칸` : '',
+  );
+
+  // 체는 더미 **위에 떠 있어야** 한다. 브러시는 빈 칸에만 칠하므로 더미에 걸치면
+  // 선이 거기서 끊기는데, 하필 그 자리가 물줄기가 떨어지는 한가운데다.
+  const mesh = rowSpan(w, DEMO_MESH.id);
+  const pile = rowSpan(w, DEMO_SAND.id);
+  check(
+    mesh.bottom >= 0 && pile.top > mesh.bottom,
+    '체가 더미 봉우리보다 위에 있다',
+    `체 y=${mesh.top}..${mesh.bottom}, 더미 봉우리 y=${pile.top}`,
+  );
+
+  // 3) 물 4초. 물은 체를 **통과해서** 내려온다 — 체의 겹침 칸에 물이 들어앉는
+  // 것이 이 절이 말하는 「스며든 액체」 그 자체다(체는 `porous`, 가루는 막고
+  // 액체만 통과시킨다). 한 틱만 재면 지나가는 순간을 놓치므로 물 구간 내내
+  // 지켜보고 가장 많았던 때를 본다.
+  let peakInMesh = 0;
+  for (let i = 0; i < DEMO_TPS * 5; i++) {
+    w.tick();
+    let n = 0;
+    for (let k = 0; k < w.grid.overlay.length; k++) {
+      if (w.grid.overlay[k] === DEMO_WATER.id && w.grid.cells[k] === DEMO_MESH.id) n++;
+    }
+    if (n > peakInMesh) peakInMesh = n;
+  }
+  check(peakInMesh >= 3, '물이 체의 겹침 칸을 지나갔다', `한때 ${peakInMesh}칸`);
+  check(w.brush === null, '물이 내리는 동안에는 브러시가 없다');
+
   soaked = 0;
   for (let i = 0; i < w.grid.overlay.length; i++) if (w.grid.overlay[i] === DEMO_WATER.id) soaked++;
   check(soaked > 0, '물이 모래에 스몄다', `겹침 ${soaked}칸`);
 
-  // 12초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야 한다 — 다음 바퀴의
+  // 4) 16초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야 한다 — 다음 바퀴의
   // 모래가 곧바로 떨어지기 시작하므로 몇 틱만 더 돌려도 격자는 이미 비어 있지 않다.
   let spun = 0;
-  while (w.loops === 0 && spun < DEMO_TPS * 20) {
+  while (w.loops === 0 && spun < DEMO_TPS * 25) {
     w.tick();
     spun++;
   }
   check(w.loops === 1, '한 바퀴 돌고 초기화됐다', `${(spun / DEMO_TPS).toFixed(1)}초`);
   check(occupied(w) === 0, '초기화로 격자가 비었다', `${occupied(w)}칸`);
+  check(count(w, DEMO_MESH.id) === 0, '체도 같이 지워졌다');
 }
 
 // --- 열전도 -------------------------------------------------------------------
