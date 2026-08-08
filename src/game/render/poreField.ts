@@ -60,13 +60,15 @@
 // falls out of "a pore never leaves its period": the period a cell sits in is the
 // only thing that can put a pore on it. (The spill version had to check the three
 // periods a pore could reach in from, at 2.25 hashes a cell.) A Node microbenchmark
-// of `poreAt` ALONE — a 400 × 300 board, every cell aerogel, 60 passes — runs 0.6 ms
-// per pass, against 2.4 ms for the spill version. That is not a render-loop profile
-// and should not be read as one: it excludes the branch dispatch around it, every
-// other per-cell cost, and the canvas paint. It bounds this function's share,
-// nothing more, and the browser measurement is still unmade
-// (docs/MATERIAL-ICONS.md §5, item 3 — the render loop's cost, which is a different
-// subsystem from the palette gallery's unmeasured DOM cost in item 2).
+// of `poreAt` ALONE — a 400 × 300 board, every cell aerogel, 60 passes — runs about
+// 0.6 ms per pass here, against 2.4 ms for the spill version. Treat the ratio, not the
+// figure: an independent run of the same comparison on other hardware read 1.1 vs 2.4,
+// so what is stable across harnesses is "the checkerboard is the cheaper one by a
+// factor of two or more". And it is not a render-loop profile either way — it excludes
+// the branch dispatch around it, every other per-cell cost, and the canvas paint. It
+// bounds this function's share, nothing more, and the browser measurement is still
+// unmade (docs/MATERIAL-ICONS.md §5, item 3 — the render loop's cost, which is a
+// different subsystem from the palette gallery's unmeasured DOM cost in item 2).
 
 /** Cells per period. One period in two carries a pore (see `poreAt`), so there is a
  *  pore every PORE_P cells along each diagonal and every 2·PORE_P along each axis. */
