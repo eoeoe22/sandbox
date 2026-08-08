@@ -36,7 +36,9 @@ import { AMMONAL } from '../src/game/materials/ammonal';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
 import { ANFO } from '../src/game/materials/anfo';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
+import { BLAST } from '../src/game/materials/blast';
 import { FIRE } from '../src/game/materials/fire';
+import { FLASH } from '../src/game/materials/flash';
 import { FIREWORKS } from '../src/game/materials/fireworks';
 import { FLASH_POWDER } from '../src/game/materials/flashpowder';
 import { GUNPOWDER } from '../src/game/materials/gunpowder';
@@ -214,8 +216,16 @@ console.log('\n== 산: 네 줄 두께의 금속 바닥을 갉아 뚫고 아래�
   const floorAtStart = count(w, IRON.id);
   check(floorAtStart === w.grid.width * 4, '바닥이 네 줄 전부 채워졌다', `${floorAtStart}칸`);
 
+  // 문턱이 헐거운 데에는 이유가 있다. 이 숫자는 **부은 양이 아니라 잔고**다 — 산은
+  // 떨어지는 족족(확률 0.7 굴림) 바닥에 닿아 갉기 시작하고, 갉을 때마다 자기도 확률로
+  // 소모된다(corrosion.ts). 그래서 2초 시점의 칸 수는 「부었나」가 아니라 「부은 것에서
+  // 먹힌 것을 뺀 나머지」이고, 300판을 굴리면 18~40칸 사이에서 흔들린다. 실제로 첫 판이
+  // 문턱을 20으로 잡았다가 **50판에 한 번꼴로 19~20칸이 나와** 빨갛게 떴다.
+  //
+  // 이 줄이 잡으려는 고장은 「줄기가 아예 안 나온다」(0칸)이지 유량의 미세한 차이가
+  // 아니므로, 관측된 최저(18)의 절반쯤에 둔다.
   run(w, DEMO_TPS * 2);
-  check(count(w, ACID.id) > 20, '산이 부어지고 있다', `${count(w, ACID.id)}칸`);
+  check(count(w, ACID.id) > 10, '산이 부어지고 있다', `${count(w, ACID.id)}칸`);
 
   // 붓기 6초 + 구경 3초. 이 사이에 바닥 **네 줄이 전부** 뚫려야 한다.
   run(w, DEMO_TPS * 6);
@@ -281,27 +291,40 @@ for (const [label, id] of [
   check(count(w, id) > 10, `${label}: 두 번째 바퀴에서 다시 쌓는다`, `${count(w, id)}칸`);
 }
 
-// 섬광화약만 전기로 찌른다. 그 물질의 볼거리는 순백색 섬광 한 장인데, 앞에 주황색
-// 불꽃이 서 있으면 눈이 그걸 먼저 먹고 섬광은 「그 불이 밝아진 것」으로 읽힌다.
-// 그래서 **격발 순간에 불이 한 칸도 없어야** 한다 — 터진 뒤 잔불(Blast 가 식으며
-// 남기는 것)은 폭발 자체의 산물이라 상관없고, 재는 것은 딱 그 앞의 한 틱이다.
-console.log('\n== 섬광화약: 불꽃 없이 전기로 격발한다 ==');
+// 섬광화약만 전기로 찌른다. 그 물질의 볼거리는 **순백색 섬광 한 장**이고, 이 카드가
+// 보여 줘야 할 것은 그것뿐이다. 그래서 검사도 「터졌는가」가 아니라 **「무슨 색으로
+// 터졌는가」**를 본다 — 주황색이 한 칸이라도 끼면 그게 이 연출의 실패다.
+//
+// 실제로 첫 판이 정확히 그 모양으로 실패했다. 전기 기폭 경로가 물질의
+// `detonateOptions` 를 잃어버려서(spark.ts 를 고쳤다) 흰 섬광 0칸 / 일반 폭발 355칸,
+// 즉 **의도한 것의 정반대**가 나왔다. 대본도 대사도 다 맞고 색만 틀린 고장이라,
+// 여기서 색을 안 세면 통과한다.
+console.log('\n== 섬광화약: 주황색 없이 흰 섬광만 ==');
 {
-  let worstBefore = 0;
-  let missed = 0;
-  for (let trial = 0; trial < 6; trial++) {
+  let worstFlash = Infinity;
+  let worstBlast = 0;
+  let worstFire = 0;
+  for (let trial = 0; trial < 4; trial++) {
     const w = make(FLASH_POWDER.id);
-    // 점화 틱(4초)의 **직전**까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
+    // 점화 틱(4초) 직전까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
     run(w, DEMO_TPS * 4 - 1);
-    worstBefore = Math.max(worstBefore, count(w, FIRE.id));
-    const piled = count(w, FLASH_POWDER.id);
-    // 그리고 그 다음 두 틱 안에 터진다 — 아크가 불씨를 앉히고 바로 다음 틱에
-    // 기폭하므로(spark.ts), 주황색이 화면에 머무는 시간이 사실상 없다.
-    run(w, 2);
-    if (count(w, FLASH_POWDER.id) > piled * 0.5) missed++;
+    worstFire = Math.max(worstFire, count(w, FIRE.id));
+    // 그리고 터지는 것을 지켜본다. 섬광은 7틱이면 꺼지고 일반 폭발은 식으며 잔불로
+    // 흩어지므로, 한 틱만 재면 둘 다 놓친다.
+    let flash = 0;
+    let blast = 0;
+    for (let i = 0; i < DEMO_TPS; i++) {
+      w.tick();
+      flash = Math.max(flash, count(w, FLASH.id));
+      blast = Math.max(blast, count(w, BLAST.id));
+      worstFire = Math.max(worstFire, count(w, FIRE.id));
+    }
+    worstFlash = Math.min(worstFlash, flash);
+    worstBlast = Math.max(worstBlast, blast);
   }
-  check(worstBefore === 0, '격발 직전까지 불이 한 칸도 없다', `최악의 판 ${worstBefore}칸`);
-  check(missed === 0, '전기를 대면 두 틱 안에 기폭한다', `안 터진 판 ${missed}/6`);
+  check(worstFlash > 100, '반경이 흰 섬광으로 찬다', `최악의 판 ${worstFlash}칸`);
+  check(worstBlast === 0, '일반 폭발 섬광은 한 칸도 안 난다', `최악의 판 ${worstBlast}칸`);
+  check(worstFire === 0, '주황색 불도 한 칸도 안 난다', `최악의 판 ${worstFire}칸`);
 }
 
 // --- 화약 -----------------------------------------------------------------------------

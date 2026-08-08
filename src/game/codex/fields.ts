@@ -73,6 +73,14 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   // an implementation shape rather than anything a player can act on. It briefly
   // had one ('스며든 상태 반응'), left over from making soaked acid work at all.
   overlapUpdate: 'engine: hook shape of an interaction the codex already shows',
+  // 폭발 옵션도 같은 갈래다. `detonateOptions` 는 「이 물질이 어떻게 터지는가」를
+  // 들고 있지만, 그 답은 이미 **자기 이름을 가진 다른 자리**에 있다 — 반경·파괴력은
+  // 수치 표에, 「흰 섬광으로 채운다」·「관통 제트를 쏜다」 같은 성격은 설명문에.
+  // 이 필드가 존재하는 이유는 오로지 **다른 코드가 이 물질을 터뜨릴 때**(전기
+  // 기폭 — spark.ts) 그 성격을 잃지 않게 하려는 것이고, 그건 배선이지 성질이 아니다.
+  // 카드에 띄우면 「이 물질은 특별한 폭발 옵션이 있습니다」라고만 하고 그게 무엇인지는
+  // 한 글자도 못 말한다(값이 콜백이라 건너가지도 않는다 — CODEX.md §1).
+  detonateOptions: 'engine: wiring that keeps a charge’s own blast shape on non-self triggers',
 
   // --- Engine bookkeeping about how `temp` is stored ----------------------
   // These say what the number in the temperature slot MEANS for the engine's own

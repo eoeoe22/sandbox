@@ -8,7 +8,7 @@ import { WATER } from './water';
 import { SALTWATER } from './saltwater';
 import { FIRE } from './fire';
 import { LAVA } from './lava';
-import { BLAST, detonate } from './blast';
+import { BLAST, detonate, type DetonateOptions } from './blast';
 import { flashLight } from './flash';
 
 // Flash Powder (섬광화약) — the aluminum line's answer to black powder, and the
@@ -93,6 +93,24 @@ function paintFlash(sim: SimContext, x: number, y: number, prevId: number): bool
   return false;
 }
 
+/**
+ * How this charge goes off, **wherever it is set off from.**
+ *
+ * One object, two callers: its own `update` below (flame / heat / adjacent
+ * blast), and the electric detonator, which reads it off the material
+ * (`Material.detonateOptions` → spark.ts's `tryArcExplosive`). That second
+ * caller is the reason this is a named constant instead of an inline literal:
+ * the spark path used to fire a bare `detonate()`, so an electrically fired
+ * charge dropped `paintFlash` and went off as **an ordinary orange crater** —
+ * precisely the thing the header above says this material must never look like.
+ * Two spellings of "how flash powder explodes" is how that happens; there is one.
+ *
+ * No rim embers either way (power is already too low for those; see
+ * EMBER_MIN_POWER in blast.ts) — the pressure ring (concussion beyond the
+ * crater, on by default) is left on, same as Woofer's own pulse.
+ */
+const FLASH_POWDER_OPTS: DetonateOptions = { onCell: paintFlash };
+
 function updateFlashPowder(x: number, y: number, sim: SimContext): void {
   let wet = false;
   // Hot enough on its own — no flame contact needed. Checked before the
@@ -114,10 +132,7 @@ function updateFlashPowder(x: number, y: number, sim: SimContext): void {
   }
 
   if (!wet && trigger) {
-    // No rim embers either way (power is already too low for those; see
-    // EMBER_MIN_POWER in blast.ts) — the pressure ring (concussion beyond the
-    // crater, on by default) is left on, same as Woofer's own pulse.
-    detonate(sim, x, y, undefined, { onCell: paintFlash });
+    detonate(sim, x, y, undefined, FLASH_POWDER_OPTS);
     return;
   }
   updatePowder(x, y, sim);
@@ -142,6 +157,10 @@ export const FLASH_POWDER = register({
   destructivePower: DESTRUCTIVE_POWER, // weak: cracks nothing, shoves loose matter (Woofer-level shove)
   // A Spark detonates it directly, on the spot — see Material.electricDetonate.
   electricDetonate: true,
+  // …and it goes off as *itself* when it does. Without this the electric path
+  // fires the generic crater and the white flash — the whole point of this
+  // material — never happens. See FLASH_POWDER_OPTS above.
+  detonateOptions: FLASH_POWDER_OPTS,
   category: 'explosive',
   thermal: { conductivity: 0.35 },
   update: updateFlashPowder,

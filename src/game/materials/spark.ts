@@ -327,12 +327,19 @@ function arcFireBeside(sim: SimContext, nx: number, ny: number): boolean {
  *  of Fire seated beside it so its own ignition rules catch it — electricity
  *  still doesn't ignite ordinary fuels or flammable gas. Returns false for a
  *  non-explosive neighbor, or for an ordinary explosive with no open cell free
- *  to seat the arcing Fire in (a full arcFireBeside miss). */
+ *  to seat the arcing Fire in (a full arcFireBeside miss).
+ *
+ *  **The charge's own `detonateOptions` ride along.** This used to fire a bare
+ *  `detonate()`, which is the plain round crater — fine for C4, wrong for a
+ *  charge whose signature lives in those options: an electrically fired Flash
+ *  Powder charge was dropping `onCell: paintFlash` and going off as one more
+ *  orange bomb instead of the white flash its own file says it must always be.
+ *  Omitting the field still means the default blast, so C4 is untouched. */
 export function tryArcExplosive(sim: SimContext, nx: number, ny: number, nid: number): boolean {
   const m = getMaterial(nid);
   if (!m.explosive) return false;
   if (m.electricDetonate) {
-    detonate(sim, nx, ny);
+    detonate(sim, nx, ny, undefined, m.detonateOptions);
     return true;
   }
   return arcFireBeside(sim, nx, ny);

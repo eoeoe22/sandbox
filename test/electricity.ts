@@ -46,6 +46,12 @@ import { STEAM } from '../src/game/materials/steam';
 import { SLIME } from '../src/game/materials/slime';
 import { ACID_SLIME } from '../src/game/materials/acidslime';
 import { NICHROME } from '../src/game/materials/nichrome';
+import { FLASH_POWDER } from '../src/game/materials/flashpowder';
+import { FLASH } from '../src/game/materials/flash';
+import { C4 } from '../src/game/materials/c4';
+import { BLAST } from '../src/game/materials/blast';
+import { FIRE } from '../src/game/materials/fire';
+import { sparkCells } from '../src/game/engine/brushTools';
 import { emitHeatRay } from '../src/game/materials/heatray';
 import { AMBIENT_TEMP } from '../src/game/config';
 import '../src/game/materials'; // register all materials (side effect)
@@ -1611,6 +1617,112 @@ function beatTicks(
     cut.length > 0 && cut.every((t) => t < 80 + 24 + PULSE_PERIOD),
     `${cut.length} beats, last at ${cut[cut.length - 1]} (steam cut at 80)`,
   );
+}
+
+// --- 12. 전기 기폭: 폭약은 **자기 방식대로** 터진다 ------------------------------
+// `electricDetonate` 를 단 폭약은 전기 펄스가 그 자리에서 직접 터뜨린다(불씨를 곁에
+// 놓아 주는 평범한 인계 대신 — spark.ts 의 `tryArcExplosive`). 그런데 그 호출은 오랫동안
+// **인자 없는 `detonate()`** 였고, 그건 곧 기본 둥근 크레이터다.
+//
+// C4 에게는 맞는 답이다. 문제는 **폭발 모양 자체가 정체성인 폭약**이었다: 섬광화약의
+// 존재 이유는 반경을 주황색 충격파 대신 흰 `Flash` 빛으로 채우는 것인데(`onCell:
+// paintFlash`), 전기로 기폭하면 그 옵션이 통째로 사라져 「그냥 작은 폭탄」으로 터졌다.
+// 자기 파일이 「절대 그렇게 보이면 안 된다」고 적어 둔 바로 그 모습으로.
+// (shapedcharge.ts 는 이 한계를 먼저 만나 `electricDetonate` 를 포기하고 `directPulse`
+// 훅으로 우회했다 — 그 주석이 이 검사의 출처다.)
+//
+// 이제 `Material.detonateOptions` 가 그 모양을 선언으로 들고 있고 전기 경로가 그대로
+// 넘긴다. 고장은 예외가 아니라 **색깔**이라 — 폭발은 나고 격자도 멀쩡하다 — 검사는
+// 「터졌는가」가 아니라 **「무엇을 남겼는가」**를 본다.
+{
+  const W = 61;
+  const H = 41;
+  /** 한가운데에 `matId` 덩어리를 놓고 전기 브러시로 찌른 뒤, 남은 것을 세어 준다. */
+  function sparkCharge(matId: number): { flash: number; blast: number; fire: number } {
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    const cx = W >> 1;
+    const cy = H >> 1;
+    // 3×3 덩어리. 한 칸이면 연결 질량이 최소라 반경이 너무 작아 「무엇으로 채웠나」를
+    // 셀 표본이 안 나온다.
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) grid.set(cx + dx, cy + dy, matId);
+    }
+    // 게임의 전기 브러시가 하는 그 호출. 도체를 타고 온 펄스든 브러시로 직접 찌른
+    // 것이든 `reactToPulse` 한 지점으로 모이므로, 이 한 줄이 전기 경로 전부다.
+    sparkCells(sim.context, [cx, cy]);
+    let flash = 0;
+    let blast = 0;
+    let fire = 0;
+    // 몇 틱 돌려 최댓값을 본다 — Blast 는 식으며 Fire 로 흩어지고 Flash 는 7틱이면
+    // 꺼지므로, 한 틱만 재면 둘 다 놓칠 수 있다.
+    for (let t = 0; t < 6; t++) {
+      sim.step();
+      let f = 0;
+      let b = 0;
+      let r = 0;
+      for (let i = 0; i < grid.cells.length; i++) {
+        if (grid.cells[i] === FLASH.id) f++;
+        else if (grid.cells[i] === BLAST.id) b++;
+        else if (grid.cells[i] === FIRE.id) r++;
+      }
+      flash = Math.max(flash, f);
+      blast = Math.max(blast, b);
+      fire = Math.max(fire, r);
+    }
+    return { flash, blast, fire };
+  }
+
+  const fp = sparkCharge(FLASH_POWDER.id);
+  check(
+    '전기로 기폭한 섬광화약은 흰 섬광으로 채운다',
+    fp.flash > 50,
+    `Flash ${fp.flash}칸`,
+  );
+  check(
+    '  …그리고 주황색 폭발도 잔불도 안 남긴다',
+    fp.blast === 0 && fp.fire === 0,
+    `Blast ${fp.blast}칸 / Fire ${fp.fire}칸`,
+  );
+  // 대조군. 옵션을 안 단 폭약은 **여전히** 기본 크레이터여야 한다 — 위 수정이
+  // 「전기 기폭은 전부 섬광」으로 번지지 않았다는 뜻이고, 이게 없으면 위 두 줄은
+  // 「전기 기폭이 통째로 바뀌었다」와 구별되지 않는다.
+  const c4 = sparkCharge(C4.id);
+  check(
+    '옵션을 안 단 C4 는 여전히 평범한 크레이터로 터진다',
+    c4.blast > 50 && c4.flash === 0,
+    `Blast ${c4.blast}칸 / Flash ${c4.flash}칸`,
+  );
+  // 그리고 같은 폭약을 **불로** 터뜨린 것과 같은 그림이어야 한다. 두 경로가 갈리면
+  // 「전기로 터뜨렸을 때만 다르게 생긴 폭발」이 되는데, 그게 정확히 원래 버그였다.
+  {
+    const grid = new Grid(W, H);
+    const sim = new Simulation(grid);
+    const cx = W >> 1;
+    const cy = H >> 1;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) grid.set(cx + dx, cy + dy, FLASH_POWDER.id);
+    }
+    grid.set(cx, cy - 2, FIRE.id);
+    let flash = 0;
+    let blast = 0;
+    for (let t = 0; t < 6; t++) {
+      sim.step();
+      let f = 0;
+      let b = 0;
+      for (let i = 0; i < grid.cells.length; i++) {
+        if (grid.cells[i] === FLASH.id) f++;
+        else if (grid.cells[i] === BLAST.id) b++;
+      }
+      flash = Math.max(flash, f);
+      blast = Math.max(blast, b);
+    }
+    check(
+      '  …불로 터뜨린 것과 같은 그림이다 (두 경로가 안 갈린다)',
+      blast === 0 && Math.abs(flash - fp.flash) < fp.flash * 0.35,
+      `불 Flash ${flash}칸 vs 전기 Flash ${fp.flash}칸, Blast ${blast}칸`,
+    );
+  }
 }
 
 console.log(
