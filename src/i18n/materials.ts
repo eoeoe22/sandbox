@@ -152,7 +152,7 @@ export const materialNamesKo: Record<number, string> = {
   62: '아스팔트',
   63: 'U235',
   65: '용융 U235',
-  66: '핵 광선',
+  66: '방사열선',
   67: '철광석',
   68: '슬래그',
   69: '석회석',
