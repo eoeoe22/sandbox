@@ -273,11 +273,35 @@
    * 열려 있는 카드의 데모 종류와 주인공 id — material 의 4 상태 카드에만 해당하고,
    * object(phase 없음)나 overlap·heat 는 데모가 없다. `phase` 는 네 상태 키와 정확히
    * 같은 문자열이므로(categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   *
+   * 일부 물질은 phase 기본 데모가 아니라 **맞춤 다단계 데모**를 가진다(벽은 TNT·산·
+   * 핵광에 견디는 것, 흑요석은 생성과 폭발 내성, 소금물/설탕물은 용해, 베이킹소다는
+   * 산 중화와 반죽 반응). 이 표가 그 매핑이다 — 물질 id → 맞춤 kind. phase 기반
+   * 매핑보다 **앞서** 조회한다.
+   *
+   * id 를 리터럴로 적는 것은 의도적이다. 이 컴포넌트는 도감 페이지 청크를 가볍게
+   * 두려고 전체 물질 배럴을 정적 import 하지 않는다 — onMount 의 동적 import 로만
+   * 평가한다. 매핑에 물질 객체를 끌어오면 그 정적 의존성이 첫 청크에 들어간다. 대신
+   * id 만으로 가리키고, 실제 물질·엔진은 데모가 마운트될 때(이미 배럴이 평가된 뒤)
+   * 로드된다. 숫자가 틀어지면 데모가 검은 캔버스로 드러나므로 `check:material-ids`
+   * 와 함께 자주 확인할 자리다.
    */
   const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
+  // 맞춤 데모 매핑: 물질 id → GuideDemoKind. id 출처는 materials/*.ts(변경 시 갱신).
+  const DEMO_OVERRIDE: Record<number, GuideDemoKind> = {
+    1: 'wall', // WALL
+    124: 'obsidian', // OBSIDIAN
+    5: 'saltwater', // SALTWATER
+    104: 'sugarwater', // SUGAR_WATER
+    80: 'soda', // SODA (베이킹소다)
+  };
   const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number } | null>(() => {
     const c = openCard;
     if (c === null || c.id === null || c.phase === null) return null;
+    // (1) 맞춤 데모가 있으면 그것이 최우선.
+    const override = DEMO_OVERRIDE[c.id];
+    if (override !== undefined) return { kind: override, id: c.id };
+    // (2) 그 외에는 phase 기반 기본 데모(상태 4종).
     if (!PHASE_DEMOS.has(c.phase)) return null;
     return { kind: c.phase as GuideDemoKind, id: c.id };
   });
