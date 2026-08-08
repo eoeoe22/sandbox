@@ -11,7 +11,8 @@
 //   • Branch order. Most of the electric/exotic materials set more than one
 //     visual hint (a Laser is `lattice` AND `windArrow`; Diamond is `lattice` AND
 //     `checker2x2`; a Solar Panel is `lattice` AND `solarPattern`; a Fan and a
-//     Turbine are `lattice` AND `rotorPattern`), and only the
+//     Turbine are `lattice` AND `rotorPattern`; Aerogel is `lattice` AND
+//     `poresPattern`), and only the
 //     first matching branch draws — `lattice` on those is just supplying the
 //     second tone. The golden tiles below are what catches someone reordering
 //     the chain and turning half the electric tab into checkerboards.
@@ -624,7 +625,7 @@ checkThrows('battery staircase is flat black', () => {
   // of a period were covered by many more (size, offset) pairs than the edge ones:
   // it measured ×2.89 here — a six-cell rhythm in density that no single hole shows
   // but a whole wall does. Anchoring holes uniformly and letting them spill into the
-  // next period (poreField.ts) flattens it to ×1.07.
+  // next period (poreField.ts) flattens it to ×1.06.
   checkThrows('no phase of the period is favoured', () => {
     const col = new Array(PORE_P).fill(0);
     const row = new Array(PORE_P).fill(0);

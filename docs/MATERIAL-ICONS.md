@@ -54,10 +54,11 @@
 Diamond는 `lattice` **이면서** `checker2x2`, Solar Panel은 `lattice` **이면서**
 `solarPattern`, Wall은 `lattice` **이면서** `brickPattern`, Woofer는 `lattice` **이면서**
 `wooferPattern`, TNT는 `lattice` **이면서** `tntPattern`, Turbine·Fan은 `lattice`
-**이면서** `rotorPattern`이라, 먼저 걸리는 분기만 그린다.
+**이면서** `rotorPattern`, Aerogel은 `lattice` **이면서** `poresPattern`이라, 먼저 걸리는
+분기만 그린다.
 (TNT의 `lattice`는 그중에서도 특수하다 — 두 번째 톤이 아니라 **막대의 그늘진 쪽**이다.)
 그런 물질의 `lattice`는 **두 번째 톤을 공급하는 역할일 뿐**이다. 순서를 바꾸면
-전기 탭 절반이 조용히 체커보드가 된다 — `test/materialicons.ts`의 골든 타일 11종이 이걸
+전기 탭 절반이 조용히 체커보드가 된다 — `test/materialicons.ts`의 골든 타일 12종이 이걸
 잡는다.
 
 | 계통 | 수식 |
@@ -985,7 +986,7 @@ Turbine · Mercury · Liquid Gallium), **한 칸만 고친 것 하나**(Gallium 
 `npm run test:materialicons` (`test/materialicons.ts`). 지키는 것:
 
 - **결정론** — 파일 첫 줄에서 `Math.random`을 throw로 교체.
-- **분기 순서** — 13개 패턴 계통의 골든 타일 ASCII. 사슬을 재정렬하면 그림이 바뀐다.
+- **분기 순서** — 패턴 계통별 골든 타일 ASCII(`GOLDEN` 12종). 사슬을 재정렬하면 그림이 바뀐다.
   Wall의 벽돌 골든은 **켜가 엇갈리는지**까지 본다 — 줄눈이 세로로 일렬이 되면 벽이 아니라
   격자이므로, `BRICK_OFFSET`이 사라지면 그림이 바뀐다. TNT의 골든은 16칸 타일 전체이고
   **글자가 읽히는지**까지 본다 — 비트맵은 수식과 달리 "산술이 틀리는" 방식이 아니라 "아무도
@@ -1155,7 +1156,8 @@ AI**라, 시스템 프롬프트에 그대로 붙여 넣고 **아래 목록(대�
 ### 7.1 대상
 
 **1순위 — 완료** (11). 전부 그려져 배선까지 끝났다. 아래 표는 발주 기록이라 "현재" 칸은
-**발주 시점의** 유도 결과다(Wall은 그 뒤 벽돌 패턴을 받았다 — §4.1).
+**발주 시점의** 유도 결과다(Wall은 그 뒤 벽돌 패턴을, Aerogel은 다공성 필드를 받았다 —
+§4.1 · §4.3).
 
 | 물질 | 색 | 현재 | | 물질 | 색 | 현재 |
 |---|---|---|---|---|---|---|
