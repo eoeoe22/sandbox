@@ -2044,10 +2044,13 @@ export class GuideDemoWorld {
     if (t >= HO_AT && t < HO_AT + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
       const g = this.grid;
-      const midX = Math.round(g.width * 0.5);
-      const midY = Math.round(g.height * 0.5);
-      if (g.inBounds(midX, midY)) {
-        this.sim.context.spawn(midX, midY, DEMO_FIRE.id);
+      const x0 = Math.round(g.width * 0.3);
+      const x1 = Math.round(g.width * 0.7);
+      const upperY = Math.max(1, Math.round(g.height * 0.2));
+      for (let x = x0; x <= x1; x += 2) {
+        if (g.inBounds(x, upperY)) {
+          this.sim.context.spawn(x, upperY, DEMO_FIRE.id);
+        }
       }
     }
   }
