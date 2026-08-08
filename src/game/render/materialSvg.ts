@@ -430,8 +430,8 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // leading edge and shaded on its trailing one. A bitmap, like TNT's bundle.
         c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
       } else if (m.poresPattern) {
-        // Aerogel: a checkerboard lattice of `lattice`-coloured pores, 2 cells square
-        // (3 one time in eight), each nudged by at most one cell. The chip drawn over this one is the
+        // Aerogel: a checkerboard lattice of `lattice`-coloured pores, all one size,
+        // each nudged by at most one cell. The chip drawn over this one is the
         // hand-drawn original the pattern was taken from, so this tile is what keeps
         // the two honest: a branch that stopped firing would leave a flat pale slab
         // here, which is exactly what the canvas used to be.

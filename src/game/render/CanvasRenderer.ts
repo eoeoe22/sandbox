@@ -1368,9 +1368,8 @@ export class CanvasRenderer implements Renderer {
         c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (poresPattern[id]) {
         // Aerogel draws a fine foam: `lattice`-coloured pores on a checkerboard
-        // lattice, 2 cells square (3 one time in eight), each nudged by at most one
-        // cell off its period's corner (see poreField.ts, which the palette chip
-        // generator shares). Positional like the Wall's courses, so a dragged block is one
+        // lattice, all one size, each nudged by at most one cell off its period's
+        // corner (see poreField.ts, which the palette chip generator shares). Positional like the Wall's courses, so a dragged block is one
         // continuous piece of foam and a pore stays where it was.
         //
         // One hash per cell and no state: a pore cannot leave the period it is

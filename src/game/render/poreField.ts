@@ -16,55 +16,47 @@
 // so the one material whose whole identity is "it is full of nothing" was the one
 // that looked solid.
 //
-// The field is a **checkerboard lattice of small square pores, each nudged by at
-// most one cell**: a pore sits in every other period (PORE_P), is 2 cells square —
-// 3 one time in eight — and starts either on its period's corner or one cell in from
-// it. That is the whole rule. About a quarter of the surface ends up void, a little
-// more open than the chip's 22% grey, which is what the finer pitch buys.
+// The field is a **checkerboard lattice of one small square pore per period, each
+// nudged by at most one cell**. Every pore is the same size (PORE_SIZE); the only
+// thing that varies is where in its period it sits. That is the whole rule, and it
+// leaves the surface 22.2% void — the same fraction of grey as the chip.
 //
 // It is a hash and not `Math.random()` for two reasons: the field has to be the
 // same on every frame (a re-rolled field would boil), and it has to be the same
 // for the icon generator, which is forbidden randomness outright.
 //
-// ── Why so little randomness — the version that had more ────────────────────
-// The first field went the other way. Its pores were anchored anywhere in their
-// period, at 2-4 cells, with one period in four left empty, and they were allowed
-// to spill across period boundaries so that no phase of the period was favoured
-// (measured: every column of a period within 1.07× of every other, where confining
-// the pores made a period's middle column 2.05× as likely to be void as its edge —
-// a rhythm in density that no single pore shows but a whole wall does).
+// ── How little randomness, and why ──────────────────────────────────────────
+// This pattern has been tuned down four times, each time toward *less* variation,
+// and the record is worth keeping because every step removed something that had a
+// real argument behind it:
 //
-// **That field read as styrofoam** (스티로폼 같은데), and the spill is exactly why.
-// Pores from neighbouring periods overlapped and merged into large irregular voids,
-// which is the structure of expanded polystyrene: big lumpy cells with thin walls
-// between them. Aerogel is the opposite — a fine, even, glassy foam. So the trade
-// got made the other way round:
+//   1. **Free placement, pores spilling across period edges** (2-4 cells, one
+//      period in four empty, anchored anywhere). The spill was deliberate: confining
+//      a pore makes its offset range shrink as its size grows, which made a period's
+//      middle 2.05× as likely to be void as its edge — a rhythm a whole wall shows
+//      even though no single pore does. Spilling flattened that to 1.07×.
+//   2. **That field read as styrofoam** (스티로폼 같은데). The spill is exactly why:
+//      pores from neighbouring periods overlapped and merged into large irregular
+//      voids, which is the structure of expanded polystyrene — big lumpy cells with
+//      thin walls. Aerogel is the opposite, a fine even glassy foam. So the trade
+//      reversed: pores confined, never merging, on a deliberately visible lattice.
+//   3. **Pitch 6 → 4 → 3**, on two rounds of "smaller and closer together".
+//   4. **Size fixed at the smaller of the two** (점 크기는 항상 똑같게 작은쪽으로).
+//      The size roll was the last of the original three rolls to go.
 //
-//   • pores **may not merge**. A pore is confined to its own period: its nudge is
-//     whatever room its own size leaves it (`PORE_P − s`), so the fit is structural
-//     rather than a bound someone has to remember. Measured over 300 × 300 cells, the
-//     longest run of void in either axis is 3 — the widest a single pore can be, i.e.
-//     no two pores ever touch.
-//   • the lattice **is** visible as a lattice, and that is now intended rather than
-//     tolerated: the arrangement is regular, and the jitter is there to keep it from
-//     being *rigid*, not to hide it. Density therefore varies by phase within a
-//     period — the middle of a period is void more often than its edges, which is
-//     what happens whenever a pore smaller than its period has to fit inside it, at
-//     any pitch. The old field's checks would have failed that. They are gone; what
-//     replaced them is in test/materialicons.ts.
+// What is left is one roll: **a pore is nudged 0 or 1 cell in each axis**. The
+// lattice is meant to read as a lattice; the nudge only keeps it from reading as a
+// stamp. Density therefore varies by phase within a period — the middle of a period
+// is void more often than its edges, which is what happens whenever a pore smaller
+// than its period has to fit inside it, at any pitch. The first field's checks would
+// have failed that. They are gone; what replaced them is in test/materialicons.ts.
 //
-// The checkerboard, rather than a pore in every period, is what buys the wall between
-// pores at this pitch: a pore every 3 cells in both axes would leave no wall at all in
-// places, and even at the previous 4-cell pitch it left a single cell, which reads as
-// a crack rather than as a strut. Every other period keeps a whole period of solid
-// between pores on the axes, and lets them meet only corner to corner on the diagonal.
-//
-// **The pitch has come down twice on the same instruction** (더 작게·촘촘하게, then
-// 간격 좀더 촘촘하게): 6 → 4 → 3, with the pore following it down 2-4 → 2-3 cells. At 3
-// the two rolls stop being independent — a 3-cell pore fills its period exactly and has
-// nowhere to be nudged to — so the nudge is read out of the room the size leaves rather
-// than rolled separately. That is why one pore in eight is both the biggest and the only
-// perfectly lattice-aligned one.
+// The checkerboard, rather than a pore in every period, is what buys the wall
+// between pores at this pitch: a pore every 3 cells in both axes would leave no wall
+// at all in places, and even at the previous 4-cell pitch it left a single cell,
+// which reads as a crack rather than as a strut. Every other period keeps a whole
+// period of solid between pores on the axes, and lets them meet only corner to
+// corner on the diagonal.
 //
 // ── What it costs ──────────────────────────────────────────────────────────
 // One hash per drawn cell, and nothing else — no state, no neighbour scan. That
@@ -72,34 +64,33 @@
 // only thing that can put a pore on it. (The spill version had to check the three
 // periods a pore could reach in from, at 2.25 hashes a cell.) A Node microbenchmark
 // of `poreAt` ALONE — a 400 × 300 board, every cell aerogel, 60 passes — runs about
-// 0.7 ms per pass here, against 2.4 ms for the spill version. Treat the ratio, not the
-// figure: an independent run of the same comparison on other hardware read 1.1 vs 2.4,
-// so what is stable across harnesses is "the checkerboard is the cheaper one by a
-// factor of two or more". And it is not a render-loop profile either way — it excludes
-// the branch dispatch around it, every other per-cell cost, and the canvas paint. It
-// bounds this function's share, nothing more, and the browser measurement is still
-// unmade (docs/MATERIAL-ICONS.md §5, item 3 — the render loop's cost, which is a
-// different subsystem from the palette gallery's unmeasured DOM cost in item 2).
+// 0.7 ms per pass here, against 2.4 ms for the spill version. Treat the ratio, not
+// the figure: an independent run of the same comparison on other hardware read 1.1
+// vs 2.4, so what is stable across harnesses is "the confined field is the cheaper
+// one by a factor of two or more". And it is not a render-loop profile either way —
+// it excludes the branch dispatch around it, every other per-cell cost, and the
+// canvas paint. It bounds this function's share, nothing more, and the browser
+// measurement is still unmade (docs/MATERIAL-ICONS.md §5, item 3 — the render loop's
+// cost, which is a different subsystem from the palette gallery's unmeasured DOM
+// cost in item 2).
 
-/** Cells per period. One period in two carries a pore (see `poreAt`), so there is a
- *  pore every PORE_P cells along each diagonal and every 2·PORE_P along each axis. */
+/** Cells per period. One period in two carries a pore (see `poreAt`). */
 export const PORE_P = 3;
 
-/** The two pore sizes, in cells square — the whole of the size roll (크기를 1픽셀만),
- *  with the larger drawn one time in eight.
+/** Every pore, in cells square — one size, always, and the smaller of the two this
+ *  pattern used to roll between.
  *
- *  `PORE_MAX ≤ PORE_P` is a correctness precondition, not taste: a pore has to fit in
- *  the period it is anchored in, because that is what lets `poreAt` read one period
- *  instead of scanning neighbours. Break it and the widest pores are silently
- *  **clipped** at the period edge — drawn as rectangles with a slice missing.
+ *  Two bounds, both pinned in `test/materialicons.ts` because nothing here enforces
+ *  them:
  *
- *  `PORE_P − s` is used as a bit mask for the nudge, so every size must leave a room
- *  that is one less than a power of two. Both are pinned in `test/materialicons.ts`.
- *
- *  PORE_MIN is 2 and not 1 because a 1-cell void is indistinguishable from the
- *  per-grain speckle every powder carries — a pore has to read as a hole. */
-export const PORE_MIN = 2;
-export const PORE_MAX = 3;
+ *   • `PORE_SIZE < PORE_P`, so a pore fits its period *with room to be nudged*. It is
+ *     what lets `poreAt` read one period instead of scanning neighbours; break it and
+ *     pores are silently **clipped** at the period edge — still drawn, still the right
+ *     colour, just missing a slice on the side they spilled toward. `PORE_P − PORE_SIZE`
+ *     is also used as a bit mask, so it has to come out one less than a power of two.
+ *   • `PORE_SIZE ≥ 2`, because a 1-cell void is indistinguishable from the per-grain
+ *     speckle every powder carries. A pore has to read as a hole. */
+export const PORE_SIZE = 2;
 
 /** Patch edge for a `poresPattern` icon.
  *
@@ -117,15 +108,12 @@ export const PORE_N = 18;
 
 /** Salt mixed into the field's hash.
  *
- *  Any value gives the same statistics; this one is chosen so that the corner of
- *  the field the icon samples — cells (0,0)…(17,17), since a palette chip has no
- *  world position to sample at — comes out at 25.3% void against the field's 25.9%
- *  average, with both pore sizes and every jitter position in it. The larger pore is
- *  one in eight, and a window this size holds few enough of them that plenty of salts
- *  show none at all; a chip drawn from one of those says the pores are all one size,
- *  which is not what the wall does.
- *  Nothing about the wall the player paints changes with this number — only which
- *  patch of foam the chip generator is looking at. */
+ *  With one pore size left, every salt gives the same void fraction — the chip's
+ *  window is 22.2% whichever one is picked, because the arrangement, not the sampling,
+ *  decides it. What the salt still moves is which nudges land in the corner the icon
+ *  samples (cells (0,0)…(17,17), since a palette chip has no world position), and this
+ *  value shows every one of them. Nothing about the wall the player paints changes
+ *  with this number. */
 const PORE_SALT = 13;
 
 /**
@@ -133,9 +121,9 @@ const PORE_SALT = 13;
  *
  * This is `tintNoise.hash8`'s mixer with one extra fold on the end. `hash8` hands
  * back its *top* byte and says so — that is the part a multiply mixes best, since
- * bit 0 of a product depends only on bit 0 of its inputs. This field slices the low
- * bits instead (the size roll is bit 0), so it folds the high half down over them
- * first and gets the same guarantee for one xor.
+ * bit 0 of a product depends only on bit 0 of its inputs. This field slices further
+ * down (the nudge reads bits 5 and 6), so it folds the high half down over the low
+ * one first and gets the same guarantee for one xor.
  *
  * Measured, this particular mixer's low bits come out even without the fold — the
  * `h ^= h >>> 13` before the last multiply has already carried the high bits down.
@@ -160,24 +148,18 @@ function poreHash(cx: number, cy: number): number {
  * rather than a fresh pattern per stroke — and so a pore stays where it was while
  * the player builds around it.
  *
- * Two rolls, both sliced out of the one hash, and each moves the pore by exactly one
- * cell:
+ * One roll, out of one hash: the pore's top-left corner is its period's own corner,
+ * or one cell right, or one cell down, or both.
  *
- *   • **size** — 2 cells square, or 3 one time in eight.
- *   • **jitter** — the pore's top-left corner is its period's own corner, or one cell
- *     right, or one cell down, or both. A 3-cell pore fills its period and so has no
- *     room to be nudged: it always sits on the corner.
+ * Pores are square because the chip's are, and because at world scale a pore is two
+ * cells across: a rasterised circle of that radius IS a square, and there is nothing
+ * left to round off.
  *
- * Pores are square because the chip's are, and because at world scale a pore is 2-3
- * cells across: a rasterised circle of that radius IS a square with at most its
- * corners nipped, and nipping them costs a compare per cell to draw the same
- * picture.
- *
- * The jitter runs forward only, never backward, for the same reason the pore is capped
- * at PORE_MAX: a pore that could start one cell *before* its period would reach into
- * the previous one, and then a cell would have to ask its neighbours too. Nudging the
- * whole lattice one way is the same picture anyway — it is the spacing between pores
- * that the eye reads, not their offset from an origin it cannot see.
+ * The nudge runs forward only, never backward, for the same reason the pore is capped
+ * below the period: a pore that could start one cell *before* its period would reach
+ * into the previous one, and then a cell would have to ask its neighbours too.
+ * Nudging the whole lattice one way is the same picture anyway — it is the spacing
+ * between pores that the eye reads, not their offset from an origin it cannot see.
  *
  * Callers pass non-negative grid coordinates; the truncating divide below is a floor
  * only for those (the render loop's x/y and the icon patch's both are).
@@ -189,12 +171,11 @@ export function poreAt(x: number, y: number): boolean {
   // around it on the axes and meets its diagonal neighbours corner to corner.
   if (((cx + cy) & 1) !== 0) return false;
   const h = poreHash(cx, cy);
-  const s = (h & 7) === 0 ? PORE_MAX : PORE_MIN;
-  // Whatever room this size leaves inside the period — 1 cell for the small pore, none
-  // for the large one. Used as a mask, which is why the room has to be 0 or 1 (or any
-  // 2ⁿ − 1); the alternative, a modulo, would cost a divide per drawn cell.
-  const room = PORE_P - s;
+  // The room the pore leaves inside its period, used as a mask — which is why it has
+  // to be 0 or 1 (or any 2ⁿ − 1). The alternative, a modulo, would cost a divide per
+  // drawn cell.
+  const room = PORE_P - PORE_SIZE;
   const ox = cx * PORE_P + ((h >>> 5) & room);
   const oy = cy * PORE_P + ((h >>> 6) & room);
-  return x >= ox && x < ox + s && y >= oy && y < oy + s;
+  return x >= ox && x < ox + PORE_SIZE && y >= oy && y < oy + PORE_SIZE;
 }

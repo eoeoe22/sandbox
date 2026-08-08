@@ -1308,17 +1308,17 @@ export interface Material {
   rotorSpinShift?: number;
   /**
    * Draw a fine foam (Aerogel): square pores in the `lattice` colour pitting a block
-   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — 2 cells
-   * square (3 one time in eight), each nudged at most one cell off its period's corner.
-   * About a quarter of the surface is void, a little more open than the grey of the
-   * hand-drawn Aerogel chip the pattern comes from, because the world's pores are much
-   * smaller and much more closely spaced than that chip's (see render/poreField.ts).
+   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — every pore
+   * the same size, each nudged at most one cell off its period's corner. It leaves the
+   * surface about as void as the hand-drawn Aerogel chip the pattern comes from is
+   * grey, out of pores much smaller and much more closely spaced than that chip's (see
+   * render/poreField.ts).
    *
-   * The arrangement is deliberately regular and the randomness deliberately tiny: one
-   * cell of size and one of position, enough that the lattice reads as hand-set
-   * rather than stamped. An earlier version randomised far more and let pores merge,
-   * which read as *styrofoam* — big lumpy voids with thin walls — rather than as
-   * aerogel. Both rolls come from a hash of the period's coordinates, which lives in
+   * The arrangement is deliberately regular and the randomness deliberately tiny —
+   * one cell of position, and nothing else, which is enough that the lattice reads as
+   * hand-set rather than stamped. An earlier version randomised far more and let pores
+   * merge, which read as *styrofoam* — big lumpy voids with thin walls — rather than as
+   * aerogel. The roll comes from a hash of the period's coordinates, which lives in
    * `render/poreField.ts`, shared with the palette icon generator rather than restated
    * on both sides — a mirrored hash with one bit-slice off draws an equally plausible
    * field that nobody could see was the wrong one.
