@@ -423,9 +423,9 @@ const GOLDEN: Record<string, string> = {
   ].join('\n'),
   // Aerogel: a checkerboard lattice of small square pores, each nudged by at most one
   // cell — a pore in every other 3-cell period, 2 cells square (3 one time in eight),
-  // starting on its period's corner or one cell in. The tile is six periods across
-  // (PORE_N) rather than the usual nine cells, because a sample of a *field* has to be
-  // big enough to show what it is.
+  // starting on its period's corner or one cell in. The tile is PORE_N cells rather
+  // than the usual nine, because a sample of a *field* has to be big enough to show
+  // what it is.
   //
   // Two things are visible here and both are the point (docs/MATERIAL-ICONS.md §4.3):
   //

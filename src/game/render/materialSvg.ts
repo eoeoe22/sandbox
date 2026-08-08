@@ -311,10 +311,11 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
   // not this.
   //
   // A `poresPattern` material takes its own edge for the opposite reason to those
-  // three: its field is not one centred object but a *lattice*, and 9 cells is three
-  // periods — a handful of pores, too small a sample to show either the arrangement or
-  // how much of the surface it opens up. PORE_N is six periods and, unlike those three,
-  // stays on the device-pixel grid (see N).
+  // three: its field is not one centred object but a *lattice*, and 9 cells holds only
+  // a handful of pores — too small a sample to show either the arrangement or how much
+  // of the surface it opens up. PORE_N is the other edge that stays on the device-pixel
+  // grid (see N), which is the whole of why it is that value and not one matched to the
+  // pore period.
   const n = m.tntPattern
     ? TNT_N
     : m.rotorPattern
