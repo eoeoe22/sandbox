@@ -236,11 +236,11 @@ const HEAT_CYCLE = HEAT_NORMAL + HEAT_THERMAL;
  *     인접 불이 TNT 의 자연 기폭 경로(updateTNT 의 이웃 검사)를 건드린다.
  *  2) WALL_ACID(2초) 동안 위에서 산 줄기. 벽은 부식되지 않고 줄기는 벽 주변으로
  *     흘러내린다.
- *  3) 랜덤 자리에 녹은 U235 3×3 덩어리를 **WALL 울타리 안에 가둬** 배치 →
- *     WALL_U235(3초) 대기. 액체 U235 는 흘러내려 흩어지면 이웃이 줄어 자가발열이
- *     멎고 굳어버리므로, 울타리가 가둬 이웃을 유지해야 임계(2000°)에 다다른다.
+ *  3) 랜덤 자리에 녹은 U235 5×5 덩어리 배치 → WALL_U235(3초) 대기. 덩어리가
+ *     충분히 커야 중심의 자가발열이 가장자리의 흩어짐을 이기고 임계(2000°)에
+ *     다다른다 — 작은 덩어리는 흘러 흩어져 굳어버린다(spawnU235Clump 주석).
  *     배치 후 약 1초에 임계를 넘겨 핵광(Nuclear Ray)을 뿜고 U235 는 연소해 빠지
- *     지만 — **울타리 벽은 핵광에도 살아 남는다**(`isWall` 이 빔을 반사).
+ *     지만 — **벽 블록은 핵광에도 살아 남는다**(`isWall` 이 빔을 반사).
  *  4) WALL_TAIL(1초) 관찰 → 초기화.
  */
 const WALL_TNT_FUSE = DEMO_TPS * 1;
@@ -386,15 +386,19 @@ const POOL_DEPTH = 3;
 /** 산/소다/소금/설탕 줄기가 떨어지는 가로 비율. 그릇 중앙 또는 웅덩이 중앙. */
 const POUR_AT = 0.5;
 
+/** wall·obsidian 데모가 놓는 TNT 블록의 한 변(칸). 단일 칸은 화면에서 점이라서. */
+const TNT_BLOCK = 3;
+
 /**
- * 녹은 U235 덩어리의 반지름(칸). 1이면 3×3. 임계(2000°) 폭주를 일으키려면 액체가
- * 흩어지지 않게 서로 붙어 있어야 하는데 — MOLTEN_URANIUM 은 중력으로 흘러내려
- * 이웃이 줄어 자가발열(+3/이웃)이 멎고, 바닥에 닿으면 전도로 열이 빠져 굳어버린다.
- * 그래서 {@link spawnU235Clump} 가 WALL 울타리 안에 이 반지름의 덩어리를 가둬
- * 놓는다 — 벽이 가둬 이웃을 유지해(발열 유지) 임계에 다다르게 하고, 동시에 그 벽이
- * 임계폭주의 열·핵광에도 살아남는 것(이 데모의 결론)을 한 장면에 담는다.
+ * 녹은 U235 덩어리의 한 변(칸). 임계(2000°) 폭주를 일으키려면 액체가 흩어지지 않게
+ * 서로 붙어 있어야 하는데 — MOLTEN_URANIUM 은 중력으로 흘러내려 이웃이 줄어
+ * 자가발열(+3/이웃)이 멎고, 바닥에 닿으면 전도로 열이 빠져 굳어버린다. 5×5(=25칸)면
+ * 중심 셀의 이웃이 충분해 배치 후 약 30틱(1초) 안에 임계에 다다른다 — 덩어리가
+ * 충분히 커서 가장자리가 흘러내리는 동안 중심은 자리를 지키며 발열이 누적한다.
+ * (관측: 1600°→임계 2000°까지 8/8 seed 에서 29틱.) 작은 덩어리(3×3 이하)는
+ * 흩어지는 속도가 발열을 이기지 못해 임계에 못 다다른다.
  */
-const U235_CLUMP_R = 1;
+const U235_CLUMP_SIZE = 5;
 
 /**
  * 상태별 **기본 주인공 물질**. basics 탭이 넘기는 여섯 데모는 주인공 id 를 따로
@@ -946,25 +950,7 @@ export class GuideDemoWorld {
   // 한 동작만 하며 early return. 마지막 단계가 지나면 loop() 로 격자를 비우고
   // 처음부터(build 가 고정 배치를 다시 놓는다).
 
-  /**
-   * 블록(Box)에서 `margin` 칸 이상 떨어진, 비어 있는 칸 하나를 고른다. wall·obsidian
-   * 액트2 가 TNT·U235 를 "블록과 겹치지 않는 랜덤 자리"에 놓을 때 쓴다. 블록 중심에서
-   * margin 칸 이내는 피한다(TNT blastRadius 가 커서 블록에 바짝 붙으면 그림자 안으로
-   * 들어가 폭발이 안 보인다). 최대 32번 굴려 보고, 맞는 자리가 없으면 가장자리로
-   * 빠진다 — 빈 격자가 거의 없는 극단적 경우의 안전장치일 뿐, 정상 장면에선 한두 번에
-   * 걸린다.
-   */
-  private pickClearSpot(box: { cx: number; cy: number; half: number }, margin: number): { x: number; y: number } | null {
-    const g = this.grid;
-    for (let i = 0; i < 32; i++) {
-      const x = 1 + Math.floor(this.rand() * (g.width - 2));
-      const y = 1 + Math.floor(this.rand() * (g.height - 2));
-      if (g.get(x, y) !== EMPTY) continue;
-      if (Math.abs(x - box.cx) <= box.half + margin && Math.abs(y - box.cy) <= box.half + margin) continue;
-      return { x, y };
-    }
-    return null;
-  }
+
 
   /**
    * wall: 가운데 벽 블록이 TNT → 산 → 녹은 U235 세 위협에 모두 살아남는 것을
@@ -986,10 +972,9 @@ export class GuideDemoWorld {
     const box = this.blockBox();
 
     if (t === 0) {
-      // 0틱에 TNT 한 칸 배치. 다음 사이클에선 loop()→reset()→build() 로 블록만
+      // 0틱에 TNT 사각형 블록 배치. 다음 사이클에선 loop()→reset()→build() 로 블록만
       // 다시 놓이고, TNT 자리는 비워지므로 매 사이클 새 위치.
-      const spot = this.pickClearSpot(box, 2);
-      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      this.spawnTntBlock(box);
       return;
     }
     if (t < WALL_TNT_FUSE) return; // 도화선 대기
@@ -1011,13 +996,13 @@ export class GuideDemoWorld {
     const u235Start = acidEnd;
     const u235End = u235Start + WALL_U235;
     if (t === u235Start) {
-      // 녹은 U235 3×3 덩어리를 WALL 울타리 안에 가둬 배치. 빈 공간에 놓으면 액체가
-      // 흘러 흩어져 임계에 못 다다르므로 울타리가 이웃을 유지해 준다(spawnU235Clump
-      // 주석 참고). spawn 으로 놓아 init 온도(1600°)가 보장되게 한다.
+      // 녹은 U235 5×5 덩어리를 배치. 작은 덩어리는 흘러 흩어져 임계에 못 다다르므로
+      // 충분히 크게 놓는다(spawnU235Clump 주석 참고). spawn 으로 놓아 init 온도
+      // (1600°)가 보장되게 한다.
       this.spawnU235Clump(box);
       return;
     }
-    if (t < u235End) return; // 임계 도달 → 핵광이 화면을 쓸고 울타리 벽이 살아남는다
+    if (t < u235End) return; // 임계 도달 → 핵광이 화면을 쓸고 벽 블록이 살아남는다
     // WALL_TAIL: 관찰 후 loop() 가 격자를 비운다.
   }
 
@@ -1041,57 +1026,83 @@ export class GuideDemoWorld {
   }
 
   /**
-   * 녹은 U235 (3×3) 를 WALL 울타리 안에 가둬 box 에서 떨어진 자리에 놓는다.
-   *
-   * **왜 울타리인가** — MOLTEN_URANIUM 은 액체라 중력으로 흘러내린다. 빈 공간에
-   * 놓으면 아래로 퍼지면서 이웃 수가 줄어 자가발열(+3/이웃)이 멎고, 바닥에 닿는 순간
-   * 전도로 열이 빠져 1400° 이하로 굳어버린다 — 임계(2000°)에 다다르지 못한다.
-   * WALL 울타리가 액체를 가두면 이웃 수가 유지돼 자가발열이 누적하고, 약 30틱(1초)
-   * 만에 임계를 넘겨 폭주한다(관측: 1600°→1748(10틱)→1881(20틱)→2014(30틱)→
-   * 3930(40틱)→5376(50틱)). 임계 후엔 Nuclear Ray 가 울타리 안팎을 쓸고, U235 는
-   * 연소해 Smoke 로 빠지지만 — **울타리 벽은 핵광에도 살아 남는다**(`isWall` 이
-   * nuclearray 의 첫 차단 검사). 이것이 이 데모의 결론이자, 벽이 왜 울타리로 쓰였
-   * 는지의 이유다.
-   *
-   * 울타리 안쪽 영역이 box(벽 블록)와 겹치지 않는 자리를 고른다.
+   * TNT 를 `TNT_BLOCK`×`TNT_BLOCK` 블록으로 box(벽/흑요석 블록)에서 떨어진 자리에
+   * 놓는다. 단일 칸은 화면에서 점이라 보이지 않으므로 작은 덩어리로 놓는다 — 폭발
+   * 규모는 blastRadius 가 정하므로 칸 수가 결과를 바꾸진 않는다.
    */
-  private spawnU235Clump(box: { cx: number; cy: number; half: number }): void {
+  private spawnTntBlock(box: { cx: number; cy: number; half: number }): void {
     const g = this.grid;
-    const r = U235_CLUMP_R;
-    const span = 2 * (r + 1) + 1; // 울타리 외곽 한 변: (r+1)*2+1. r=1 → 5
-    const halfSpan = span >> 1;
-    // 울타리 외곽과 box(벽 블록) 외곽이 한 칸 이상 떨어지면 충분 — 두 영역의 외곽
-    // 반경을 합한 것보다 큰 거리면 겹칠 일이 없다. box.half + span 전부를 여유로 두면
-    // 빈 자리가 줄어 ~6% 사이클에서 자리를 못 찾았다(리뷰 지적). 한 칸 여유로 좁힌다.
-    const minDist = box.half + halfSpan + 1;
+    const size = TNT_BLOCK;
+    const half = size >> 1;
+    const minDist = box.half + half + 1;
     for (let i = 0; i < 64; i++) {
-      const x0 = 2 + Math.floor(this.rand() * (g.width - span - 3));
-      const y0 = 2 + Math.floor(this.rand() * (g.height - span - 3));
-      const cx = x0 + halfSpan;
-      const cy = y0 + halfSpan;
-      // box(중앙 벽 블록)와 겹치지 않게. 한 축에서라도 가까우면 겹칠 수 있으므로
-      // 각 축을 따로 검사한다.
+      const x0 = 2 + Math.floor(this.rand() * (g.width - size - 3));
+      const y0 = 2 + Math.floor(this.rand() * (g.height - size - 3));
+      const cx = x0 + half;
+      const cy = y0 + half;
       if (Math.abs(cx - box.cx) < minDist) continue;
       if (Math.abs(cy - box.cy) < minDist) continue;
-      // 울타리 외곽 영역이 전부 빈 칸인지 확인(기존 장면을 덮어쓰지 않게).
       let clear = true;
-      for (let dy = 0; dy < span && clear; dy++) {
-        for (let dx = 0; dx < span && clear; dx++) {
+      for (let dy = 0; dy < size && clear; dy++) {
+        for (let dx = 0; dx < size && clear; dx++) {
           if (g.get(x0 + dx, y0 + dy) !== EMPTY) clear = false;
         }
       }
       if (!clear) continue;
-      // 울타리(테두리 한 줄)를 WALL, 안쪽 (2r+1)×(2r+1) 을 MOLTEN_U 로.
-      for (let dy = 0; dy < span; dy++) {
-        for (let dx = 0; dx < span; dx++) {
-          const isEdge = dx === 0 || dy === 0 || dx === span - 1 || dy === span - 1;
-          const x = x0 + dx;
-          const y = y0 + dy;
-          if (isEdge) {
-            g.set(x, y, DEMO_WALL.id);
-          } else {
-            this.sim.context.spawn(x, y, DEMO_MOLTEN_URANIUM.id);
-          }
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          this.sim.context.spawn(x0 + dx, y0 + dy, DEMO_TNT.id);
+        }
+      }
+      return;
+    }
+  }
+
+  /**
+   * 녹은 U235 를 box(벽 블록)에서 떨어진 자리에 `U235_CLUMP_SIZE`×같 크기 덩어리로
+   * 놓는다. **울타리 없이** 순수한 액체 덩어리다.
+   *
+   * **왜 큰 덩어리인가** — MOLTEN_URANIUM 은 액체라 중력으로 흘러내린다. 작은
+   * 덩어리(3×3 이하)는 가장자리가 흘러 흩어지는 속도가 중심의 자가발열(+3/이웃)이
+   * 임계(2000°)에 다다르는 속도를 이긴다 — 바닥에 닿아 전도로 열이 빠지면 굳어버린다.
+   * 5×5(=25칸)면 중심 셀의 이웃이 충분히 많아 발열이 누적해 약 29틱(1초)에 임계에
+   * 다다른다(8/8 seed 관측). 가장자리는 흘러내리지만 중심은 그 사이 임계를 넘겨
+   * Nuclear Ray 를 뿜기 시작하고, 광선이 닿은 다른 우라늄을 즉시 녹여 가열하므로
+   * 연쇄가 퍼진다(nuclearray 의 URANIUM→MOLTEN 즉변 + 800° 주입).
+   *
+   * 이전에는 WALL 울타리로 액체를 가뒀지만, 벽 카드에서 **벽으로 U235 를 가둬**
+   * 보이는 것은 "벽이 위협에 견딘다"는 결론을 흐린다. 울타리 없는 순수 덩어리가
+   * 시각적으로도 솔직하다 — 핵광이 화면을 쓸고 난 뒤 벽 블록이 멀쩡히 남는 것으로
+   * 결론이 말해진다.
+   *
+   * 배치 영역이 box(벽 블록)와 겹치지 않고 전부 빈 칸인 자리를 고른다. 격자 위쪽에
+   * 가깝게(아래에 여유) 두어 흘러내릴 공간을 준다.
+   */
+  private spawnU235Clump(box: { cx: number; cy: number; half: number }): void {
+    const g = this.grid;
+    const size = U235_CLUMP_SIZE;
+    const half = size >> 1;
+    const minDist = box.half + half + 1;
+    for (let i = 0; i < 64; i++) {
+      const x0 = 2 + Math.floor(this.rand() * (g.width - size - 3));
+      // 위쪽에 배치해 흘러내릴 공간을 둔다(바닥 도달을 늦춰 임계가 이기게).
+      const y0 = 2 + Math.floor(this.rand() * Math.floor(g.height * 0.4));
+      const cx = x0 + half;
+      const cy = y0 + half;
+      // box(중앙 벽 블록)와 겹치지 않게.
+      if (Math.abs(cx - box.cx) < minDist) continue;
+      if (Math.abs(cy - box.cy) < minDist) continue;
+      // 배치 영역이 전부 빈 칸인지 확인.
+      let clear = true;
+      for (let dy = 0; dy < size && clear; dy++) {
+        for (let dx = 0; dx < size && clear; dx++) {
+          if (g.get(x0 + dx, y0 + dy) !== EMPTY) clear = false;
+        }
+      }
+      if (!clear) continue;
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          this.sim.context.spawn(x0 + dx, y0 + dy, DEMO_MOLTEN_URANIUM.id);
         }
       }
       return;
@@ -1144,8 +1155,7 @@ export class GuideDemoWorld {
     const tnt2Hold = tnt2Blast + OBS_TNT_BLAST;
 
     if (t === tnt1Fuse) {
-      const spot = this.pickClearSpot(box, 2);
-      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      this.spawnTntBlock(box);
       return;
     }
     if (t === tnt1Blast) {
@@ -1155,8 +1165,7 @@ export class GuideDemoWorld {
     if (t < tnt1Hold) return;
 
     if (t === tnt2Fuse) {
-      const spot = this.pickClearSpot(box, 2);
-      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      this.spawnTntBlock(box);
       return;
     }
     if (t === tnt2Blast) {
