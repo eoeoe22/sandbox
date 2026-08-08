@@ -311,10 +311,11 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
   // not this.
   //
   // A `poresPattern` material takes its own edge for the opposite reason to those
-  // three: its field is not one centred object but a *statistic*, and 9 cells is 1½
-  // periods — one or two holes, or none at all where the field happens to be sparse,
-  // which is a sample too small to be honest about a quarter-void surface. PORE_N is
-  // three whole periods and stays on the device-pixel grid (see N).
+  // three: its field is not one centred object but a *statistic*, and 9 cells is a
+  // handful of holes — too small a sample to be honest about a quarter-void surface,
+  // and small enough that where the field happens to be sparse the chip would read as
+  // a solid block. PORE_N is 4½ periods and, unlike those three, stays on the
+  // device-pixel grid (see N).
   const n = m.tntPattern
     ? TNT_N
     : m.rotorPattern
@@ -430,7 +431,7 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
       } else if (m.poresPattern) {
         // Aerogel: open-cell foam — `lattice`-coloured voids at a rolled size and
-        // offset within each period, one period in eight left solid. The chip drawn
+        // offset within each period, one period in four left solid. The chip drawn
         // over this one is the hand-drawn original the pattern was taken from, so
         // this tile is what keeps the two honest: a branch that stopped firing would
         // leave a flat pale slab here, which is exactly what the canvas used to be.
