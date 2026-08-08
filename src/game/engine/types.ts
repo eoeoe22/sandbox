@@ -1307,6 +1307,27 @@ export interface Material {
    */
   rotorSpinShift?: number;
   /**
+   * Draw an open-cell foam (Aerogel): square voids in the `lattice` colour pitting
+   * a block of the base `color`, one void per PORE_P-cell period at a randomised
+   * size and offset, with one period in eight left solid. About a quarter of the
+   * surface is void — the same proportion of grey as the hand-drawn Aerogel chip,
+   * which is where the pattern comes from.
+   *
+   * The randomisation is the substance of it and not a garnish: a fixed hole on a
+   * fixed grid reads as perforated sheet at the scale walls are actually built at,
+   * so the size, the position within the period and the presence of the hole at all
+   * are each rolled from a hash of the period's coordinates. That hash lives in
+   * `render/poreField.ts`, shared with the palette icon generator rather than
+   * restated on both sides — a mirrored hash with one bit-slice off draws an equally
+   * plausible field that nobody could see was the wrong one.
+   *
+   * Positional (tied to x/y, not to the particle) like the Wall's courses, so a
+   * dragged-out block is one continuous piece of foam. Purely a rendering hint the
+   * simulation never reads — the voids are drawn, not simulated; an aerogel cell is
+   * as solid to the physics as any other.
+   */
+  poresPattern?: boolean;
+  /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound
    * before it slowly flattens. It never blocks straight-down fall (a viscous blob

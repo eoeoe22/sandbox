@@ -19,6 +19,7 @@ import { WOOD_BOX_SPRITES } from './woodenBoxSprite';
 import { MOLOTOV_SPRITES, MOLOTOV_SPRITE_W, MOLOTOV_SPRITE_H } from './molotovSprite';
 import { TNT_N, buildTntTile } from './tntTile';
 import { ROTOR_N, buildRotorTile, rotorAccumulate, rotorBlockIndex, rotorFrame } from './rotorTile';
+import { poreAt } from './poreField';
 import {
   WOOFER_P,
   WOOFER_CAP_R2,
@@ -540,6 +541,12 @@ export class CanvasRenderer implements Renderer {
   private rotorTile: (Uint32Array | null)[];
   private rotorTileSpun: (Uint32Array | null)[];
   private rotorSpinShift: Uint8Array;
+  /** id → 1 if the material draws an open-cell foam — `lattice`-coloured voids of a
+   *  randomised size and position pitting the base colour (Aerogel — see
+   *  Material.poresPattern). Nothing to precompute alongside it the way `brickLit`
+   *  sits beside `brickPattern`: both tones are the material's own, and the field
+   *  itself is a hash rather than a table (see poreField.ts). */
+  private poresPattern: Uint8Array;
   /** The spin counter of each ROTOR_N × ROTOR_N *tile* — one entry per drawn wheel,
    *  not per cell — plus the accumulator the current pass is filling.
    *
@@ -732,6 +739,7 @@ export class CanvasRenderer implements Renderer {
     this.rotorTile = new Array(256).fill(null);
     this.rotorTileSpun = new Array(256).fill(null);
     this.rotorSpinShift = new Uint8Array(256);
+    this.poresPattern = new Uint8Array(256);
     // Sized on the first render (the grid's dimensions aren't known here); empty
     // until then, which the render loop reads as "every wheel is at rest".
     this.rotorBlockFrame = new Uint8Array(0);
@@ -790,6 +798,7 @@ export class CanvasRenderer implements Renderer {
           this.rotorTileSpun[i] = buildRotorTile(m.rotorPattern, m.color, lat, true);
           this.rotorSpinShift[i] = m.rotorSpinShift ?? 0;
         }
+        if (m.poresPattern) this.poresPattern[i] = 1;
         // A block edge of B clears the low log2(B) bits of x and y, which is only a
         // block for a power of two — `~(3 - 1)` clears bit 1 and leaves bit 0, giving
         // a lattice nobody asked for rather than a 3×3 flake.
@@ -936,6 +945,7 @@ export class CanvasRenderer implements Renderer {
     const tntPattern = this.tntPattern;
     const tntTile = this.tntTile;
     const rotorPattern = this.rotorPattern;
+    const poresPattern = this.poresPattern;
     const rotorTile = this.rotorTile;
     const rotorTileSpun = this.rotorTileSpun;
     const rotorSpinShift = this.rotorSpinShift;
@@ -1356,6 +1366,22 @@ export class CanvasRenderer implements Renderer {
         rotorAccumulate(rotorNext, bi, auxArr[i], rotorSpinShift[id]);
         const rt = rotorFrame(rotorFrames[bi]) ? rotorTileSpun[id]! : rotorTile[id]!;
         c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
+      } else if (poresPattern[id]) {
+        // Aerogel draws open-cell foam: `lattice`-coloured voids pitting the base
+        // colour, one per PORE_P-cell period, each rolling its own size, its own
+        // offset inside that period, and whether it is there at all — so a wall of
+        // it is porous rather than perforated (see poreField.ts, which the palette
+        // chip generator shares). Positional like the Wall's courses, so a dragged
+        // block is one continuous piece of foam and a void stays where it was.
+        //
+        // No state and a bounded cost: a cell is decided by the period it falls in
+        // and at most the three that can spill into it (2.25 hashes on average).
+        // That bound is the whole reason the voids are anchored to a lattice rather
+        // than scattered freely — a free field has no limit on how far away a hole
+        // covering this cell might have been placed.
+        const x = i % w;
+        const y = (i / w) | 0;
+        c = poreAt(x, y) ? latCol[id] : pal[id];
       } else if (chk2x2[id]) {
         // 2x2 positional checkerboard (Diamond), with low dynamic range tint variation.
         const x = i % w;

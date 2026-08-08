@@ -53,6 +53,7 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
+import { PORE_P, PORE_N, PORE_MAX, poreAt } from '../src/game/render/poreField';
 import {
   ROTOR_N,
   ROTOR_TILE_ROWS,
@@ -419,6 +420,50 @@ const GOLDEN: Record<string, string> = {
     '............',
     '............',
   ].join('\n'),
+  // Aerogel: open-cell foam — one void per 6-cell period, each rolling its own size
+  // (2, 3 or 4 cells square), its own offset inside that period, and whether it is
+  // there at all. The tile is three periods across (PORE_N) rather than the usual
+  // nine cells, because a sample of a *field* has to be big enough to show its
+  // statistics: 1½ periods can only ever show one or two voids.
+  //
+  // What this golden is really holding is the randomness, which is the whole feature
+  // (docs/MATERIAL-ICONS.md §4.3). Three properties are visible in it and none would
+  // survive a regression to a fixed grid of fixed holes — which is what the material
+  // would look like if `poreAt` lost its rolls and is exactly what the chip's own
+  // regular grid of holes would have given if it had been copied down literally:
+  //
+  //   • sizes differ — 2-, 3- and 4-cell voids all appear
+  //   • offsets differ — the voids line up into no column and no row
+  //   • voids merge — the six-cell run on row 3 and the five on row 12 are each two
+  //     holes meeting across a period edge, which is what a hole confined to its own
+  //     period could never produce
+  //   • some periods are solid — rows 6 and 17 carry no void at all, so the eye has
+  //     no row pitch to lock onto
+  //
+  // A golden that came back as an even grid of identical squares means the hash
+  // stopped being read — all three rolls come out of one `poreHash` call, so they
+  // fail together. The field's statistics, which an 18-cell window is far too small
+  // to speak for, are measured separately below.
+  Aerogel: [
+    'o.....oooo........',
+    '......oooo........',
+    '......oooo........',
+    '....oooooo........',
+    '....ooo...........',
+    '....ooo...........',
+    '..................',
+    'ooo...............',
+    'ooo.........oooo..',
+    'ooo.........oooo..',
+    '............oooo..',
+    '.......oo...oooo..',
+    '....ooooo.oo......',
+    '....ooo...oo......',
+    '....ooo.........oo',
+    '................oo',
+    '................oo',
+    '..................',
+  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -518,16 +563,143 @@ checkThrows('battery staircase is flat black', () => {
   // woofer tiles (12). For those a 9-cell window would be a *crop* of the object
   // rather than a sample of the material — two sliced glyphs, a rotor missing two
   // blades, three quarters of a driver — which is the whole reason they carry their
-  // own edge. Everything else must still come out at 9 (or at 18, for the gases and
-  // the hazard chips that already had their own).
+  // own edge. Everything else must still come out at 9 (or at 18, for the gases, the
+  // hazard chips that already had their own, and the pore field, whose 6-cell period
+  // needs three of itself before the tile is a fair sample rather than one or two
+  // holes — PORE_N).
   checkThrows('only the object-shaped tiles derive at their own edge', () => {
     const own = (m: Material): number | null =>
-      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.wooferPattern ? 12 : null;
+      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.wooferPattern ? 12 : m.poresPattern ? PORE_N : null;
     const odd = all
       .map((m) => [m.name, raster(generatedSvgFor(m)).n, own(m)] as const)
       .filter(([, n, want]) => (want === null ? n !== 9 && n !== 18 : n !== want));
     check('only the object-shaped tiles derive at their own edge', odd.length === 0,
       odd.map(([name, n, want]) => `${name} ${n} (want ${want ?? '9/18'})`).join(', '));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 2b. The pore field, as statistics rather than as a picture.
+//
+// The Aerogel golden above is one 18-cell window. That window is a fair sample by
+// construction (PORE_SALT is picked so it is), which is exactly why it cannot pin
+// the property the field exists for: a wall is hundreds of cells across, and what
+// has to hold over hundreds of cells is that the eye finds no grid in it. These
+// measure the field over a 300 × 300 patch — bigger than any wall a player builds,
+// so a defect that only shows up at scale shows up here.
+//
+// The failure this guards against is a specific one and not hypothetical: the
+// pattern was taken from a hand-drawn chip whose holes ARE on a fixed grid at a
+// fixed size, and copying that down literally is the obvious implementation. It
+// reads as perforated sheet metal rather than as foam (docs/MATERIAL-ICONS.md §4.3).
+{
+  const SPAN = 300;
+  const holes: boolean[] = [];
+  let filled = 0;
+  for (let y = 0; y < SPAN; y++)
+    for (let x = 0; x < SPAN; x++) {
+      const on = poreAt(x, y);
+      holes.push(on);
+      if (on) filled++;
+    }
+  const at = (x: number, y: number) => holes[y * SPAN + x];
+
+  // The chip is 22% grey (128 of its 576 cells). The field is drawn to match it, so
+  // the canvas and the palette read as the same material at two scales — and so the
+  // block stays a pale block with holes in it rather than a grey block with pale
+  // flecks, which is what a field over about a third would become.
+  checkThrows('the pore field is about as void as the chip is grey', () => {
+    const pct = (100 * filled) / (SPAN * SPAN);
+    check('the pore field is about as void as the chip is grey', pct > 18 && pct < 28, `${pct.toFixed(1)}%`);
+  });
+
+  // No phase of the period may be favoured. This is the measurement that says
+  // "no grid": if the void were a fixed 3-cell hole at a fixed offset, three of the
+  // six columns of every period would be 100% void and the other three 0%, and the
+  // eye would read 6-cell stripes.
+  //
+  // It is also the check that caught the first implementation, which is why the
+  // bound is tight rather than generous. That version confined each hole to its own
+  // period, so a hole's offset had to shrink as its size grew and the middle columns
+  // of a period were covered by many more (size, offset) pairs than the edge ones:
+  // it measured ×2.89 here — a six-cell rhythm in density that no single hole shows
+  // but a whole wall does. Anchoring holes uniformly and letting them spill into the
+  // next period (poreField.ts) flattens it to ×1.07.
+  checkThrows('no phase of the period is favoured', () => {
+    const col = new Array(PORE_P).fill(0);
+    const row = new Array(PORE_P).fill(0);
+    for (let y = 0; y < SPAN; y++)
+      for (let x = 0; x < SPAN; x++)
+        if (at(x, y)) {
+          col[x % PORE_P]++;
+          row[y % PORE_P]++;
+        }
+    const spread = (a: number[]) => Math.max(...a) / Math.min(...a);
+    check('no phase of the period is favoured', spread(col) < 1.2 && spread(row) < 1.2,
+      `columns ×${spread(col).toFixed(2)}, rows ×${spread(row).toFixed(2)}`);
+  });
+
+  // The three rolls, each measured on the thing it is supposed to vary. All three
+  // come out of one hash, so a broken read collapses them together — but they can
+  // also be broken one at a time (a mis-sliced bit range that always lands on the
+  // same value), and each failure looks different on the board: identical holes,
+  // holes in a grid, or a hole in every single period.
+  //
+  // Measured off the drawn field rather than off `poreHash`, so what is pinned is
+  // what a player sees. Holes overlap once they spill across period edges, so an
+  // isolated one is found by walking the field for void cells whose left and top
+  // neighbours are solid — a hole's own top-left corner — and reading its extent
+  // from there. Merged clumps are skipped rather than mis-measured: the extent of a
+  // corner cell only reports one hole's size where nothing else touches it.
+  checkThrows('every hole size, anchor and skip actually occurs', () => {
+    const sizes = new Set<number>();
+    const anchors = new Set<number>();
+    let holes = 0;
+    for (let y = 1; y < SPAN - PORE_MAX; y++)
+      for (let x = 1; x < SPAN - PORE_MAX; x++) {
+        if (!at(x, y) || at(x - 1, y) || at(x, y - 1)) continue;
+        let wide = 0;
+        while (at(x + wide, y)) wide++;
+        let tall = 0;
+        while (at(x, y + tall)) tall++;
+        holes++;
+        anchors.add(x % PORE_P);
+        // A square, so a clump reads wide ≠ tall or a size out of range; only count
+        // the ones that are unambiguously one hole.
+        if (wide === tall && wide <= PORE_MAX) sizes.add(wide);
+      }
+    check('every hole size occurs', sizes.size === 3 && Math.max(...sizes) === PORE_MAX,
+      [...sizes].sort().join(', '));
+    check('…at every anchor within the period', anchors.size === PORE_P, [...anchors].sort().join(', '));
+    // Skipped periods are what keeps the band pitch from being findable. Counted as
+    // "fewer holes than periods" rather than by locating the gaps: a spilled hole is
+    // not inside the period that owns it, so an empty period is not an empty square.
+    const periods = Math.pow(SPAN / PORE_P, 2);
+    check('…and some periods have no hole at all', holes < periods && holes > periods / 2,
+      `${holes} holes over ${periods} periods`);
+  });
+
+  // A hole is a hole and not a speck: a 1-cell void is indistinguishable from the
+  // per-grain speckle every powder carries. At the far end, merged holes must not run
+  // away — a void several periods wide would take the wall with it and leave grey.
+  checkThrows('no void is a speck, and none runs away', () => {
+    let worst = 0;
+    let lone = 0;
+    for (let y = 0; y < SPAN; y++) {
+      let run = 0;
+      for (let x = 0; x < SPAN; x++) {
+        if (at(x, y)) run++;
+        else {
+          // Runs touching either edge of the window are cut by the window, not by
+          // the field, so they are measured but not judged.
+          if (run === 1 && x > 1) lone++;
+          if (run > worst) worst = run;
+          run = 0;
+        }
+      }
+    }
+    check('no 1-cell speck', lone === 0, `${lone} lone cells`);
+    check('…and no void more than three periods wide', worst <= 3 * PORE_P, `widest run ${worst}`);
   });
 }
 

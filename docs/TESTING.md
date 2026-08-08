@@ -69,7 +69,7 @@
 | `npm run test:heat` | `npm test` | 열 커널 골든/통합 (Rust/WASM) | [`wasm/README.md`](../wasm/README.md) |
 | `npm run test:snapshot-file` | `npm test` | `.psbx.json` 내보내기/가져오기 포맷 | [SNAPSHOTS.md](./SNAPSHOTS.md) |
 | `npm run test:plantcoral` | `npm test` | Plant 성장·Coral 백화 | [LIFE.md](./LIFE.md) |
-| `npm run test:materialicons` | `npm test` | 물질 아이콘 생성기 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
+| `npm run test:materialicons` | `npm test` | 물질 아이콘 생성기 + **렌더러 패턴 계통의 골든**(`render/`의 `materialSvg`·`tntTile`·`rotorTile`·`wooferDriver`·`poreField`나 `CanvasRenderer`의 분기 사슬을 건드리면 이걸 돌릴 것) | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
 | `npm run check:hand-icons` | **`npm run build`** | 손그림 아이콘 빌드 산출물 최신 여부 | [MATERIAL-ICONS.md](./MATERIAL-ICONS.md) |
 
 ---
