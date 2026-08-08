@@ -252,6 +252,31 @@ const FIREBOX_W = 4;
 const FIREBOX_H = 3;
 const FIREBOX_GAP = 1;
 
+/**
+ * 상태별 **기본 주인공 물질**. basics 탭이 넘기는 여섯 데모는 주인공 id 를 따로
+ * 고르지 않으므로 이 값으로 돌아간다 — 가이드 문서의 "고체/가루/액체/기체" 절이
+ * 원래 보여 주던 것(돌·모래·물·연기)이 곧 기본값이다.
+ *
+ * 물질 카드의 데모는 이 표를 거치지 않는다 — 카드가 **자기 물질 id** 를 직접
+ * 주므로(철 카드는 철, 모래 카드는 모래), 기본값은 basics 의 여섯 장면에만 쓰인다.
+ * overlap·heat 는 복합 세팅이라 주인공이 없다.
+ */
+function defaultSubject(kind: GuideDemoKind): number {
+  switch (kind) {
+    case 'solid':
+      return DEMO_STONE.id;
+    case 'powder':
+      return DEMO_SAND.id;
+    case 'liquid':
+      return DEMO_WATER.id;
+    case 'gas':
+      return DEMO_SMOKE.id;
+    default:
+      // overlap·heat 는 subjectId 자체를 읽지 않는다 — 의미 있는 값 하나만 둔다.
+      return DEMO_WALL.id;
+  }
+}
+
 /** 브러시 커서. 고체 데모에서만 값이 있고 나머지는 `null`이다. */
 export interface DemoBrush {
   /** 칸 좌표(중심). */
@@ -275,6 +300,13 @@ export class GuideDemoWorld {
   /** 열 뷰(열지도)로 그려야 하는지. 열전도 데모만 도중에 켠다. */
   heatView = false;
 
+  /**
+   * 이 세계의 **주인공 물질 id**. 상태 4종 데모가 칠하고 붓고 떨어뜨리는 것이 이
+   * 물질이다. basics 탭이 주지 않으면 `defaultSubject(kind)` 로 정해진다(돌·모래·물·연기).
+   * 물질 카드는 자기 물질 id 를 직접 넘긴다. overlap·heat 는 읽지 않는다.
+   */
+  readonly subjectId: number;
+
   /** 대본이 한 바퀴를 돌아 초기화된 횟수. 검사가 반복을 확인하는 창구다. */
   loops = 0;
 
@@ -289,9 +321,16 @@ export class GuideDemoWorld {
 
   private readonly rand: () => number;
 
-  constructor(kind: GuideDemoKind, width: number, height: number, rand: () => number = Math.random) {
+  constructor(
+    kind: GuideDemoKind,
+    width: number,
+    height: number,
+    rand: () => number = Math.random,
+    subjectId?: number,
+  ) {
     this.kind = kind;
     this.rand = rand;
+    this.subjectId = subjectId ?? defaultSubject(kind);
     this.grid = new Grid(width, height);
     this.sim = new Simulation(this.grid);
     this.sim.setBorderMode(GUIDE_DEMO_SPECS[kind].borderMode);
@@ -473,7 +512,10 @@ export class GuideDemoWorld {
     // 없는 예외적인 물질이라 상태의 대표로 세우면 「고체는 아무것도 안 일어나는
     // 것」으로 읽힌다 — 돌은 그냥 평범한 고체다. 벽은 액체 데모의 그릇처럼
     // 「장면을 담는 틀」로만 남는다.
-    this.dragBrush(t, Math.round(this.grid.height * 0.5), DEMO_STONE.id);
+    //
+    // 물질 카드의 데모에서는 주인공이 카드의 실제 물질(철·얼음·…)이므로
+    // `subjectId` 로 긋는다. basics 는 이 값이 돌이다(`defaultSubject`).
+    this.dragBrush(t, Math.round(this.grid.height * 0.5), this.subjectId);
   }
 
   /**
@@ -523,7 +565,7 @@ export class GuideDemoWorld {
   // --- 가루: 모래 한 줄기 ---------------------------------------------------------
 
   private tickPowder(): void {
-    this.dropStream(DEMO_SAND.id, 0.5);
+    this.dropStream(this.subjectId, 0.5);
     this.drainFloor();
   }
 
@@ -574,16 +616,16 @@ export class GuideDemoWorld {
     }
     const g = this.grid;
     const x = Math.round((x0 + x1) / 2);
-    this.sim.context.spawn(x, STREAM_Y, DEMO_WATER.id);
+    this.sim.context.spawn(x, STREAM_Y, this.subjectId);
     // 두 칸씩 부어야 그릇이 볼 만한 시간 안에 찬다. 좌우로 한 칸 벌려 두면
     // 줄기가 한 칸 굵기 그대로 보이면서 유량만 두 배가 된다.
-    if (x + 1 < g.width) this.sim.context.spawn(x + 1, STREAM_Y, DEMO_WATER.id);
+    if (x + 1 < g.width) this.sim.context.spawn(x + 1, STREAM_Y, this.subjectId);
   }
 
-  /** 그릇 밖(바닥 줄 아래)에 물이 있는가. */
+  /** 그릇 밖(바닥 줄 아래)에 붓는 물질이 있는가. */
   private spilled(x0: number, x1: number, bottom: number): boolean {
     const g = this.grid;
-    const wid = DEMO_WATER.id;
+    const wid = this.subjectId;
     for (let y = bottom + 1; y < g.height; y++) {
       for (let x = 0; x < g.width; x++) {
         if (x > x0 && x < x1) continue; // 그릇 바로 아래는 벽에 막혀 있다
@@ -603,7 +645,7 @@ export class GuideDemoWorld {
     for (let k = 0; k < SMOKE_PER_TICK; k++) {
       const x = lo + Math.floor(this.rand() * (hi - lo + 1));
       if (g.get(x, floor) !== EMPTY) continue;
-      this.sim.context.spawn(x, floor, DEMO_SMOKE.id);
+      this.sim.context.spawn(x, floor, this.subjectId);
     }
   }
 

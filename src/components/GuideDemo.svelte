@@ -32,8 +32,12 @@
 
   interface Props {
     kind: GuideDemoKind;
+    /** 상태 4종 데모의 **주인공 물질 id**. basics 탭은 넘기지 않아 기본값(돌·모래·
+     *  물·연기)으로 돌아가고, 물질 카드는 자기 물질 id 를 넘겨 그 물질로 데모한다.
+     *  overlap·heat 는 이 값을 쓰지 않는다. */
+    subjectId?: number;
   }
-  let { kind }: Props = $props();
+  let { kind, subjectId }: Props = $props();
 
   const spec = GUIDE_DEMO_SPECS[kind];
 
@@ -63,7 +67,7 @@
     }
 
     const first = measure();
-    const world = new GuideDemoWorld(kind, first.w, first.h);
+    const world = new GuideDemoWorld(kind, first.w, first.h, Math.random, subjectId);
     const renderer = new CanvasRenderer(canvasEl, world.grid, layout);
     renderer.setBorderMode(spec.borderMode);
 

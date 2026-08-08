@@ -41,8 +41,13 @@
      *  마크다운 복사 button. Rendered in the caller's own style scope, which is
      *  why only its box is styled here. */
     actions?: Snippet;
+    /** A live engine demo to sit between the description and the stats. Only the
+     *  guide dialog hands one in (its own `<GuideDemo>`); the sandbox's hover/sheet
+     *  tip omits it, so the card renders exactly as before there. The card stays
+     *  agnostic about what runs inside — it just reserves the slot. */
+    demo?: Snippet;
   }
-  let { card, term, refName, actions }: Props = $props();
+  let { card, term, refName, actions, demo }: Props = $props();
 
   const statValue = (s: CodexStat): string => formatStatValue(s, t);
   const notesOf = (r: CodexReaction): string[] => formatReactionNotes(r, t, refName);
@@ -71,6 +76,11 @@
   </header>
 
   <p class="desc">{card.desc}</p>
+
+  {#if demo}
+    <div class="demo-slot">{@render demo()}</div>
+  {/if}
+
   {#if card.note}
     <p class="note">{card.note}</p>
   {/if}
@@ -230,6 +240,15 @@
     margin: 0.5rem 0 0 0;
     color: #6b7684;
     font-size: 0.82rem;
+  }
+
+  /* 설명과 수치 사이의 살아 있는 데모 자리. 카드는 안에 뭘 돌릴지 모르고 자리만
+     비운다 — 호출자가 `<GuideDemo>` 를 끼워 넣는다(가이드 모달만). 둥근 테두리로
+     캔버스가 카드 안의 한 구획으로 보이게 한다. */
+  .demo-slot {
+    margin: 1.1rem 0 0 0;
+    border-radius: 0.5rem;
+    overflow: hidden;
   }
 
   .detail section {
