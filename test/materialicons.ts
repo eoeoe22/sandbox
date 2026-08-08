@@ -604,6 +604,29 @@ checkThrows('battery staircase is flat black', () => {
     }
   const at = (x: number, y: number) => holes[y * SPAN + x];
 
+  // The two constants are related, and nothing in poreField.ts makes them stay that
+  // way. Both relations are pinned here because breaking either is silent:
+  //
+  //   • `PORE_MAX ≤ PORE_P` is a CORRECTNESS precondition. `poreAt` searches a 2×2 of
+  //     periods, which is only enough while a hole cannot cross more than one period
+  //     boundary. A wider hole would still draw — with a bite missing from whichever
+  //     side it spilled from, on cells whose own period is two away from its anchor.
+  //     Nothing else in this file would notice: the field would stay the right density
+  //     and the right shape everywhere else.
+  //   • `PORE_MAX − 1 === PORE_P / 2` is not required for correctness at all. It is
+  //     what makes exactly half of each period exempt from the neighbour lookups, and
+  //     therefore what the "2.25 hashes per cell" and the timing figure beside it in
+  //     poreField.ts rest on. A retune that changes one constant and not the other
+  //     leaves a working field and a comment that quietly lies about its cost — the
+  //     same failure this file already had once, in the arithmetic rather than the
+  //     constants (PORE_MAX − 2 where it meant PORE_MAX − 1).
+  checkThrows('the pore constants hold their two relations', () => {
+    // Details read as the values, not as the failure: these print on pass too.
+    check('a hole fits within one period boundary', PORE_MAX <= PORE_P, `max ${PORE_MAX}, period ${PORE_P}`);
+    check('…and exactly half of each period skips the neighbour lookups',
+      PORE_MAX - 1 === PORE_P / 2, `${PORE_MAX} - 1 vs ${PORE_P} / 2 = ${PORE_P / 2}`);
+  });
+
   // The chip is 22% grey (128 of its 576 cells). The field is drawn to match it, so
   // the canvas and the palette read as the same material at two scales — and so the
   // block stays a pale block with holes in it rather than a grey block with pale

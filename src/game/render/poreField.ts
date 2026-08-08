@@ -176,10 +176,15 @@ function poreAnchored(cx: number, cy: number, x: number, y: number): boolean {
  * reach of everything to its left, and the same holds downward. So the columns that
  * need the left lookup are the PORE_MAX − 1 of them at offsets 0 ‥ PORE_MAX − 2 —
  * 2 of 4 here, 3 of 6 before — and the rows likewise. Both sets are exactly half the
- * period, because this pattern has always sized its widest hole at PORE_P / 2 + 1,
- * which takes the average from 3.4 hashes per cell to 2.25. Measured: a board filled
- * edge to edge with aerogel, the worst case there is, costs 2.4 ms a frame at
- * 400 × 300.
+ * period, because this pattern has always sized its widest hole at PORE_P / 2 + 1
+ * (`test/materialicons.ts` pins that, since nothing here enforces it), which takes
+ * the average from 3.4 hashes per cell to 2.25.
+ *
+ * For scale: a Node microbenchmark of `poreAt` ALONE — a 400 × 300 board, every cell
+ * aerogel, 60 passes — runs 2.4 ms per pass. That is not a render-loop profile and
+ * should not be read as one: it excludes the branch dispatch around it, every other
+ * per-cell cost, and the canvas paint. It bounds this function's share, nothing more,
+ * and the browser measurement is still unmade (docs/MATERIAL-ICONS.md §5).
  *
  * Callers pass non-negative grid coordinates; the truncating divide below is a
  * floor only for those (the render loop's x/y and the icon patch's both are).
