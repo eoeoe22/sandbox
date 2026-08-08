@@ -21,16 +21,32 @@ import type { DemoCast, DemoTrigger, GuideDemoKind } from './guideDemo';
 
 import { ACID } from './materials/acid';
 import { ALUMINUM_POWDER } from './materials/aluminumpowder';
+import { AMMONAL } from './materials/ammonal';
 import { AMMONIUM_NITRATE } from './materials/ammoniumnitrate';
+import { ANFO } from './materials/anfo';
+import { BROKEN_GLASS } from './materials/brokenglass';
+import { COAL } from './materials/coal';
 import { COAL_POWDER } from './materials/coalpowder';
+import { DIESEL } from './materials/diesel';
 import { FIREWORKS } from './materials/fireworks';
 import { FLASH_POWDER } from './materials/flashpowder';
+import { GASOLINE } from './materials/gasoline';
+import { GLASS } from './materials/glass';
 import { GUNPOWDER } from './materials/gunpowder';
+import { HYDROGEN } from './materials/hydrogen';
 import { IRON } from './materials/iron';
 import { KEROSENE } from './materials/kerosene';
+import { LPG } from './materials/lpg';
+import { METHANE } from './materials/methane';
 import { NITRO } from './materials/nitro';
+import { OIL } from './materials/oil';
+import { OXYGEN } from './materials/oxygen';
+import { RESIN } from './materials/resin';
+import { ROCKET_CANDY } from './materials/rocketcandy';
 import { SALTPETER } from './materials/saltpeter';
+import { SAWDUST } from './materials/sawdust';
 import { SULFUR } from './materials/sulfur';
+import { WOOD } from './materials/wood';
 
 /** 한 물질에 배정된 연출: 어떤 대본을, 누구와 함께, 무엇으로 격발해서. */
 export interface GuideDemoScene {
@@ -62,12 +78,6 @@ const CAST: DemoCast = {
 
 /**
  * 물질 id → 대본.
- *
- * 넷뿐이고 그중 `ignite` 하나가 넷을 겸한다. 「3초 붓고 1초 뒤 불을 댄다」는
- * 대본이 섬광화약·불꽃놀이 화약·황·니트로에 그대로 맞는 것은 이 넷이 **혼자서
- * 완결되는** 물질이기 때문이다 — 쌓아 놓고 불만 대면 각자의 성격(백색 섬광 /
- * 별이 흩어지는 소이 / 낮게 번지는 유황불 / 한 틱에 통째로 가는 액체)이 그대로
- * 나온다. 준비물이 필요한 물질(화약의 조합, 질산암모늄의 연료)만 자기 대본을 갖는다.
  */
 const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind>([
   [ACID.id, 'acid'],
@@ -77,6 +87,33 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [FIREWORKS.id, 'ignite'],
   [SULFUR.id, 'ignite'],
   [NITRO.id, 'ignite'],
+
+  // Group 1: 암모날, ANFO, 로켓캔디, 메탄
+  [AMMONAL.id, 'ignite'],
+  [ANFO.id, 'ignite'],
+  [ROCKET_CANDY.id, 'ignite'],
+  [METHANE.id, 'ignite'],
+
+  // Group 2: 원유, 휘발유, 경유, 등유, LPG, 톱밥
+  [OIL.id, 'open_ignite'],
+  [GASOLINE.id, 'open_ignite'],
+  [DIESEL.id, 'open_ignite'],
+  [KEROSENE.id, 'open_ignite'],
+  [LPG.id, 'open_ignite'],
+  [SAWDUST.id, 'open_ignite'],
+
+  // Group 3: 석탄, 나무, 레진
+  [COAL.id, 'brush_ignite'],
+  [WOOD.id, 'brush_ignite'],
+  [RESIN.id, 'brush_ignite'],
+
+  // Group 4: 유리, 깨진 유리
+  [GLASS.id, 'glass_shockwave'],
+  [BROKEN_GLASS.id, 'glass_shockwave'],
+
+  // Group 5: 산소, 수소
+  [OXYGEN.id, 'hydrogen_oxygen'],
+  [HYDROGEN.id, 'hydrogen_oxygen'],
 ]);
 
 /**
