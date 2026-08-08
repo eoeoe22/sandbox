@@ -22,12 +22,12 @@
 
   type GuideTab = 'materials' | 'basics';
 
-  /** Deep-linkable via `?tab=basics` — read once on mount; SSR has no
-   *  location, so it falls back to the materials tab (the page's long-standing
-   *  default) until hydration. */
+  /** Deep-linkable via `?tab=materials` — read once on mount; SSR has no
+   *  location, so it falls back to the basics tab (the page's default) until
+   *  hydration. */
   function initialTab(): GuideTab {
-    if (typeof location === 'undefined') return 'materials';
-    return new URLSearchParams(location.search).get('tab') === 'basics' ? 'basics' : 'materials';
+    if (typeof location === 'undefined') return 'basics';
+    return new URLSearchParams(location.search).get('tab') === 'materials' ? 'materials' : 'basics';
   }
 
   let tab = $state<GuideTab>(initialTab());
@@ -40,7 +40,7 @@
     tab = next;
     if (typeof history === 'undefined') return;
     const url = new URL(location.href);
-    if (next === 'materials') url.searchParams.delete('tab');
+    if (next === 'basics') url.searchParams.delete('tab');
     else url.searchParams.set('tab', next);
     history.replaceState(null, '', url);
   }
