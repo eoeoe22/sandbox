@@ -837,8 +837,8 @@ export class GuideDemoWorld {
         this.buildPipe();
         break;
       case 'wall':
-        // 액트1 고정 배치: 중앙 벽 블록. 위협(TNT·산·U235)은 대본 안에서 놓는다.
-        this.buildBlock(DEMO_WALL.id);
+        // 액트1 고정 배치: 중앙 벽/다이아몬드 블록. 위협(TNT·산·U235)은 대본 안에서 놓는다.
+        this.buildBlock(this.subjectId);
         break;
       case 'obsidian':
         // 액트1 고정 배치: 바닥 용암 웅덩이(물이 닿으면 흑요석으로 급냉).
@@ -1188,6 +1188,7 @@ export class GuideDemoWorld {
    */
   private paintDisc(cx: number, cy: number, r: number, id: number): void {
     const g = this.grid;
+    const initTemp = getMaterial(id).thermal?.init ?? 20;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy > r * r) continue;
@@ -1195,6 +1196,7 @@ export class GuideDemoWorld {
         const y = cy + dy;
         if (!g.inBounds(x, y) || g.get(x, y) !== EMPTY) continue;
         g.set(x, y, id);
+        g.setTemp(x, y, initTemp);
         g.setTint(x, y, (this.rand() * 256) | 0);
       }
     }
@@ -1471,9 +1473,9 @@ export class GuideDemoWorld {
     const half = size >> 1;
     const minDist = box.half + half + 1;
     for (let i = 0; i < 64; i++) {
-      const x0 = 2 + Math.floor(this.rand() * (g.width - size - 3));
-      // 위쪽에 배치해 흘러내릴 공간을 둔다(바닥 도달을 늦춰 임계가 이기게).
-      const y0 = 2 + Math.floor(this.rand() * Math.floor(g.height * 0.4));
+      const isLeft = this.rand() < 0.5;
+      const x0 = isLeft ? 3 : g.width - size - 3;
+      const y0 = 3;
       const cx = x0 + half;
       const cy = y0 + half;
       // box(중앙 벽 블록)와 겹치지 않게.
@@ -2037,8 +2039,8 @@ export class GuideDemoWorld {
       return;
     }
     if (t < HO_POUR) {
-      this.dropGasStream(HYDROGEN.id, 0.35);
-      this.dropGasStream(OXYGEN.id, 0.65);
+      this.dropGasStream(HYDROGEN.id, 0.42);
+      this.dropGasStream(OXYGEN.id, 0.58);
       return;
     }
     if (t >= HO_AT && t < HO_AT + IGNITE_FLAME) {

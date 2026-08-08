@@ -29,6 +29,7 @@ import { BROKEN_GLASS } from './materials/brokenglass';
 import { COAL } from './materials/coal';
 import { COAL_POWDER } from './materials/coalpowder';
 import { DIESEL } from './materials/diesel';
+import { DIAMOND } from './materials/diamond';
 import { FIREWORKS } from './materials/fireworks';
 import { FLASH_POWDER } from './materials/flashpowder';
 import { GASOLINE } from './materials/gasoline';
@@ -116,6 +117,9 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   // Group 5: 산소, 수소
   [OXYGEN.id, 'hydrogen_oxygen'],
   [HYDROGEN.id, 'hydrogen_oxygen'],
+
+  // Group 6: 다이아몬드
+  [DIAMOND.id, 'wall'],
 ]);
 
 /**

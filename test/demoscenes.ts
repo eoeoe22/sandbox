@@ -40,6 +40,7 @@ import { BROKEN_GLASS } from '../src/game/materials/brokenglass';
 import { COAL } from '../src/game/materials/coal';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
 import { DIESEL } from '../src/game/materials/diesel';
+import { DIAMOND } from '../src/game/materials/diamond';
 import { BLAST } from '../src/game/materials/blast';
 import { FIRE } from '../src/game/materials/fire';
 import { FLASH } from '../src/game/materials/flash';
@@ -167,6 +168,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['깨진 유리', BROKEN_GLASS.id, 'glass_shockwave'],
     ['산소', OXYGEN.id, 'hydrogen_oxygen'],
     ['수소', HYDROGEN.id, 'hydrogen_oxygen'],
+    ['다이아몬드', DIAMOND.id, 'wall'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);

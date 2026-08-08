@@ -17,7 +17,7 @@ import { tryPhaseChange } from './phasechange';
 // Ice eventually melts rather than freezing the whole pool forever (the exact
 // mirror of how Lava heats water while itself cooling to Stone). Air conducts
 // nothing, so Ice left in open space never warms and persists indefinitely.
-const ICE_INIT_TEMP = -20;
+const ICE_INIT_TEMP = -50;
 
 function updateIce(x: number, y: number, sim: SimContext): void {
   if (tryPhaseChange(x, y, sim)) return;
