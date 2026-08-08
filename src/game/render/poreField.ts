@@ -173,11 +173,13 @@ function poreAnchored(cx: number, cy: number, x: number, y: number): boolean {
  * Most cells do not need all four. A hole anchored in the period to the left starts
  * at worst on that period's last cell and is at worst PORE_MAX wide, so it cannot
  * reach further than PORE_MAX − 2 cells into this one — a cell past that is out of
- * reach of everything to its left, and the same holds downward. Half the columns and
- * half the rows of a period are therefore exempt (PORE_MAX − 2 of PORE_P, which is
- * 2 of 4 here and was 3 of 6 before), which takes the average from 3.4 hashes per
- * cell to 2.25. Measured: a board filled edge to edge with aerogel, the worst case
- * there is, costs 2.4 ms a frame at 400 × 300.
+ * reach of everything to its left, and the same holds downward. So the columns that
+ * need the left lookup are the PORE_MAX − 1 of them at offsets 0 ‥ PORE_MAX − 2 —
+ * 2 of 4 here, 3 of 6 before — and the rows likewise. Both sets are exactly half the
+ * period, because this pattern has always sized its widest hole at PORE_P / 2 + 1,
+ * which takes the average from 3.4 hashes per cell to 2.25. Measured: a board filled
+ * edge to edge with aerogel, the worst case there is, costs 2.4 ms a frame at
+ * 400 × 300.
  *
  * Callers pass non-negative grid coordinates; the truncating divide below is a
  * floor only for those (the render loop's x/y and the icon patch's both are).
