@@ -31,6 +31,17 @@ import { SMOKE } from './smoke';
 import { HEATPIPE } from './heatpipe';
 import { FIRE } from './fire';
 import { CLONE } from './clone';
+import { TNT } from './tnt';
+import { ACID } from './acid';
+import { LAVA } from './lava';
+import { OBSIDIAN } from './obsidian';
+import { SALTWATER } from './saltwater';
+import { SUGAR_WATER } from './sugarwater';
+import { SALT } from './salt';
+import { SUGAR } from './sugar';
+import { SODA } from './soda';
+import { BATTER } from './batter';
+import { MOLTEN_URANIUM } from './moltenuranium';
 
 // EMPTY_MAT은 값으로 쓰이지 않고 등록 부수효과만 필요하다. import 자체는 tree
 // shaking으로 사라지지 않지만(모듈 부수효과), 미사용 경고를 피하려고 한 번 참조한다.
@@ -47,3 +58,17 @@ export const DEMO_SMOKE: Material = SMOKE;
 export const DEMO_HEATPIPE: Material = HEATPIPE;
 export const DEMO_FIRE: Material = FIRE;
 export const DEMO_CLONE: Material = CLONE;
+// 물질별 맞춤 데모가 직접 놓는 물질들(벽·흑요석·소금물·설탕물·베이킹소다 카드).
+// basics 의 여섯 장면은 쓰지 않는다 — 여기에 있는 것은 카드 데모가 이름으로 집을
+// 수 있게 하려는 것뿐(배럴 주석 참고).
+export const DEMO_TNT: Material = TNT;
+export const DEMO_ACID: Material = ACID;
+export const DEMO_LAVA: Material = LAVA;
+export const DEMO_OBSIDIAN: Material = OBSIDIAN;
+export const DEMO_SALTWATER: Material = SALTWATER;
+export const DEMO_SUGAR_WATER: Material = SUGAR_WATER;
+export const DEMO_SALT: Material = SALT;
+export const DEMO_SUGAR: Material = SUGAR;
+export const DEMO_SODA: Material = SODA;
+export const DEMO_BATTER: Material = BATTER;
+export const DEMO_MOLTEN_URANIUM: Material = MOLTEN_URANIUM;

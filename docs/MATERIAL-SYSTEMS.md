@@ -2082,7 +2082,7 @@ Thermite의 순간판). 구현은 "이미 만들어 둔 기계장치에 배선�
 센다 — 전기 기폭 섬광화약이 흰 섬광으로 차고 Blast·Fire를 한 칸도 안 남기는지, 대조군인
 C4는 **여전히** 평범한 크레이터인지(수정이 전기 기폭 전체로 번지지 않았다는 뜻), 그리고
 같은 장약을 불로 터뜨린 것과 같은 그림인지. 발견 경로는 물질 도감의 섬광화약 카드
-데모였다(docs/CODEX.md §15.3).
+데모였다(docs/CODEX.md §16.3).
 
 향후 추가 아이디어·팔레트 확장안은 [docs/PROPOSALS.md](https://github.com/eoeoe22/sandbox/blob/main/docs/PROPOSALS.md) 참조.
 

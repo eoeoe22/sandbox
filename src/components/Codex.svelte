@@ -285,16 +285,38 @@
   const close = (): void => void (openKey = null);
 
   /**
-   * 열려 있는 카드가 무슨 데모를 도는가.
+   * 열려 있는 카드가 무슨 데모를 도는가. **맞춤 연출이 phase 기본 데모보다 먼저다.**
    *
-   * **맞춤 연출이 먼저다.** 산·화약·섬광화약·질산암모늄·불꽃놀이 화약·황·니트로는
-   * 자기 대본이 있고(`game/demoScenes.ts`), 그게 없는 물질만 상(phase)으로 상태
-   * 4종 데모를 고른다. `phase` 는 네 상태 키와 정확히 같은 문자열이므로
-   * (categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   * 맞춤 연출을 배정하는 자리가 **둘**이고, 둘 다 봐야 한다. 서로 다른 라운드에서 서로
+   * 다른 제약을 안고 태어났고, 다루는 물질이 겹치지 않아 지금은 나란히 산다.
    *
-   * object 는 phase 가 없고 맞춤 연출도 없으므로 어느 쪽으로도 안 간다 — 데모 없음.
+   *  - `DEMO_OVERRIDE`(바로 아래) — 벽·흑요석·소금물·설탕물·베이킹소다. 대본이 놓는
+   *    물질을 경량 배럴(`materials/demo.ts`)에 이름으로 들여놓고, 여기서는 **id
+   *    리터럴**로만 가리킨다. 리터럴인 것은 의도다: 이 컴포넌트는 도감 첫 청크를
+   *    가볍게 두려고 전체 물질 배럴을 정적 import 하지 않으므로(onMount 의 동적
+   *    import 로만 평가한다), 매핑에 물질 객체를 끌어오면 그 정적 의존성이 첫 청크에
+   *    들어간다. 대가로 숫자가 틀어지면 데모가 검은 캔버스가 되므로
+   *    `check:material-ids` 와 함께 볼 자리다.
+   *  - `sceneFor`(`game/demoScenes.ts`) — 산·화약·섬광화약·질산암모늄·불꽃놀이 화약·
+   *    황·니트로. 이쪽은 대본이 모르는 물질을 `DemoCast` 배역표로 건네고, 표 자체가
+   *    전체 배럴에 매달려 있어 **동적 import** 로만 온다(CODEX.md §16.1). 그래서 id 를
+   *    리터럴로 적을 필요가 없다 — 물질을 이름으로 집는다.
+   *
+   * **순서가 못 박혀 있다.** 두 표의 id 는 지금 겹치지 않지만, 겹치는 날에는 위쪽이
+   * 이긴다. 한 물질에 대본을 둘 배정한 것 자체가 실수이므로 조용히 섞이는 것보다
+   * 한쪽으로 확정되는 편이 낫다.
+   *
+   * object 는 phase 도 맞춤 연출도 없으므로(`id === null`) 어느 쪽으로도 안 간다.
    */
   const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
+  // 맞춤 데모 매핑: 물질 id → GuideDemoKind. id 출처는 materials/*.ts(변경 시 갱신).
+  const DEMO_OVERRIDE: Record<number, GuideDemoKind> = {
+    1: 'wall', // WALL
+    124: 'obsidian', // OBSIDIAN
+    5: 'saltwater', // SALTWATER
+    104: 'sugarwater', // SUGAR_WATER
+    80: 'soda', // SODA (베이킹소다)
+  };
   const cardDemo = $derived.by<{
     kind: GuideDemoKind;
     id: number;
@@ -303,9 +325,14 @@
   } | null>(() => {
     const c = openCard;
     if (c === null || c.id === null) return null;
+    // (1) id 리터럴 표.
+    const override = DEMO_OVERRIDE[c.id];
+    if (override !== undefined) return { kind: override, id: c.id };
+    // (2) 배역표가 딸린 맞춤 연출. 도착 전(동적 import)에는 null 이라 (3)으로 간다.
     const custom = sceneFor?.(c.id) ?? null;
     if (custom !== null)
       return { kind: custom.kind, id: c.id, cast: custom.cast, trigger: custom.trigger };
+    // (3) 그 외에는 phase 기반 기본 데모(상태 4종).
     if (c.phase === null || !PHASE_DEMOS.has(c.phase)) return null;
     return { kind: c.phase as GuideDemoKind, id: c.id };
   });
