@@ -102,12 +102,14 @@ export const PORE_MAX = 3;
 
 /** Patch edge for a `poresPattern` icon.
  *
- *  18 rather than a multiple of PORE_P, because the constraint that actually binds
- *  is the device-pixel grid: 9 and 18 are the only edges whose cells land on whole
- *  device pixels in the 18 px swatch (see materialSvg's `N`), and 12 — three
- *  periods — would not. The tile is a crop of the field rather than a repeating
- *  tile, so it does not need to close on a period boundary; it needs to be a big
- *  enough *sample*, and six periods each way is about eighteen pores. */
+ *  The binding constraint is the device-pixel grid, not the period: 9 and 18 are the
+ *  only edges whose cells land on whole device pixels in the 18 px swatch (see
+ *  materialSvg's `N`). 9 of those two is three periods — a handful of pores, too small
+ *  a sample to show either the arrangement or how open the surface is — so 18 it is,
+ *  which at the current pitch happens to be six whole periods and about eighteen
+ *  pores. The tile is a crop of the field rather than a repeating tile, so closing on
+ *  a period boundary is a coincidence here and not a requirement; if the pitch moves
+ *  again, this stays 18. */
 export const PORE_N = 18;
 
 /** Salt mixed into the field's hash.
