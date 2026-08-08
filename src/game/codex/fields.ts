@@ -49,6 +49,7 @@ export const EXCLUDED_FIELDS: Readonly<Record<string, string>> = {
   wooferPattern: 'rendering: speaker cone overlay',
   tntPattern: 'rendering: TNT stencil',
   rotorPattern: 'rendering: rotor blade overlay',
+  poresPattern: 'rendering: aerogel pore tiling',
   crustPattern: 'rendering: palette-icon crust band vs progress ramp',
   rotorSpinShift: 'rendering: rotor spin rate',
   // The Fish's tail. It is the one hint here that paints a *neighbouring* cell,

@@ -21,6 +21,19 @@ export const AEROGEL = register({
   color: rgb(214, 224, 232),
   density: 1000,
   category: 'solid',
+  // Pitted with pores on the board, the way the palette chip has always drawn it:
+  // the material that is 99% air used to render as a flat pale slab, which is the
+  // one thing it should never look like. The chip's holes are on a fixed grid; a
+  // wall's sit on a checkerboard lattice of same-sized pores with a cell of jitter in
+  // position, so it reads as a fine even foam — and pores never merge, which is what
+  // would turn it into styrofoam (see render/poreField.ts).
+  //
+  // `lattice` is the void tone — the exact grey the chip pits with (#9aabb8), so
+  // the chip and the canvas are one picture at two scales. It is only a second
+  // colour supply here: `poresPattern` is matched before the weave in the
+  // renderer's branch chain, so this never draws a Mesh-style checkerboard.
+  poresPattern: true,
+  lattice: rgb(0x9a, 0xab, 0xb8),
   // The defining property: a perfect insulator. min(conductivity) gating means a
   // 0 here blocks all conduction through the material, whatever it's touching.
   thermal: { conductivity: 0 },

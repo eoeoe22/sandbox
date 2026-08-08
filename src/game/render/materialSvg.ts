@@ -43,6 +43,7 @@ import { spritePaths, pixelSvg } from './spriteSvg';
 import { HAND_ICONS } from './handIcons';
 import { TNT_N, buildTntTile } from './tntTile';
 import { ROTOR_N, buildRotorTile } from './rotorTile';
+import { PORE_N, poreAt } from './poreField';
 import {
   WOOFER_P,
   WOOFER_CAP_R2,
@@ -308,13 +309,22 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
   // `generatedSvgFor` exists to keep the branches pinned. A future material setting one
   // of these patterns with no hand art would want the resampling `hazardPatch` does,
   // not this.
+  //
+  // A `poresPattern` material takes its own edge for the opposite reason to those
+  // three: its field is not one centred object but a *lattice*, and 9 cells holds only
+  // a handful of pores — too small a sample to show either the arrangement or how much
+  // of the surface it opens up. PORE_N is the other edge that stays on the device-pixel
+  // grid (see N), which is the whole of why it is that value and not one matched to the
+  // pore period.
   const n = m.tntPattern
     ? TNT_N
     : m.rotorPattern
       ? ROTOR_N
       : m.wooferPattern
         ? WOOFER_P
-        : N;
+        : m.poresPattern
+          ? PORE_N
+          : N;
   const tntTile = m.tntPattern ? buildTntTile(base, lat) : null;
   const rotorTile = m.rotorPattern ? buildRotorTile(m.rotorPattern, base, lat) : null;
   const buf = new Uint32Array(n * n);
@@ -419,6 +429,13 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // Turbine (8 blades) / Fan (4): one bladed wheel per tile, lit on each blade's
         // leading edge and shaded on its trailing one. A bitmap, like TNT's bundle.
         c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
+      } else if (m.poresPattern) {
+        // Aerogel: a checkerboard lattice of `lattice`-coloured pores, all one size,
+        // each nudged by at most one cell. The chip drawn over this one is the
+        // hand-drawn original the pattern was taken from, so this tile is what keeps
+        // the two honest: a branch that stopped firing would leave a flat pale slab
+        // here, which is exactly what the canvas used to be.
+        c = poreAt(x, y) ? lat : base;
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
         c = grain(m, ((x >> 1) ^ (y >> 1)) & 1 ? lat : base, x, y);

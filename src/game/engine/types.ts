@@ -1307,6 +1307,29 @@ export interface Material {
    */
   rotorSpinShift?: number;
   /**
+   * Draw a fine foam (Aerogel): square pores in the `lattice` colour pitting a block
+   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — every pore
+   * the same size, each nudged at most one cell off its period's corner. It leaves the
+   * surface about as void as the hand-drawn Aerogel chip the pattern comes from is
+   * grey, out of pores much smaller and much more closely spaced than that chip's (see
+   * render/poreField.ts).
+   *
+   * The arrangement is deliberately regular and the randomness deliberately tiny —
+   * one cell of position, and nothing else, which is enough that the lattice reads as
+   * hand-set rather than stamped. An earlier version randomised far more and let pores
+   * merge, which read as *styrofoam* — big lumpy voids with thin walls — rather than as
+   * aerogel. The roll comes from a hash of the period's coordinates, which lives in
+   * `render/poreField.ts`, shared with the palette icon generator rather than restated
+   * on both sides — a mirrored hash with one bit-slice off draws an equally plausible
+   * field that nobody could see was the wrong one.
+   *
+   * Positional (tied to x/y, not to the particle) like the Wall's courses, so a
+   * dragged-out block is one continuous piece of foam. Purely a rendering hint the
+   * simulation never reads — the voids are drawn, not simulated; an aerogel cell is
+   * as solid to the physics as any other.
+   */
+  poresPattern?: boolean;
+  /**
    * 점도 (viscosity), 0..1 — for a Liquid, the per-tick chance it *resists*
    * spreading sideways to level out, so a thick liquid holds a slumping mound
    * before it slowly flattens. It never blocks straight-down fall (a viscous blob

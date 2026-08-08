@@ -11,7 +11,8 @@
 //   • Branch order. Most of the electric/exotic materials set more than one
 //     visual hint (a Laser is `lattice` AND `windArrow`; Diamond is `lattice` AND
 //     `checker2x2`; a Solar Panel is `lattice` AND `solarPattern`; a Fan and a
-//     Turbine are `lattice` AND `rotorPattern`), and only the
+//     Turbine are `lattice` AND `rotorPattern`; Aerogel is `lattice` AND
+//     `poresPattern`), and only the
 //     first matching branch draws — `lattice` on those is just supplying the
 //     second tone. The golden tiles below are what catches someone reordering
 //     the chain and turning half the electric tab into checkerboards.
@@ -53,6 +54,7 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
+import { PORE_P, PORE_N, PORE_SIZE, poreAt } from '../src/game/render/poreField';
 import {
   ROTOR_N,
   ROTOR_TILE_ROWS,
@@ -419,6 +421,46 @@ const GOLDEN: Record<string, string> = {
     '............',
     '............',
   ].join('\n'),
+  // Aerogel: a checkerboard lattice of one small square pore per period, each nudged by
+  // at most one cell — a pore in every other 3-cell period, always PORE_SIZE cells
+  // square, starting on its period's corner or one cell in. The tile is PORE_N cells
+  // rather than the usual nine, because a sample of a *field* has to be big enough to
+  // show what it is.
+  //
+  // Two things are visible here and both are the point (docs/MATERIAL-ICONS.md §4.3):
+  //
+  //   • **the arrangement is regular** — pores march diagonally, and no pore shares an
+  //     edge with another anywhere in the tile. The field this replaced let pores merge
+  //     across period edges, and the merged blobs read as styrofoam rather than as
+  //     aerogel; a golden that comes back with a run of three or more void cells means
+  //     they are merging again.
+  //   • **the nudge is one cell** — the pores are all the same size, so the only thing
+  //     keeping this off exact 3-cell centres is that each one sits at its own offset
+  //     inside its period. That is the pattern's last remaining roll: a golden of
+  //     squares on exact centres means the hash stopped being read at all.
+  //
+  // The field's statistics, which an 18-cell window is far too small to speak for, are
+  // measured separately below.
+  Aerogel: [
+    '.......oo.........',
+    'oo.....oo...oo....',
+    'oo..........oo....',
+    '..................',
+    '...oo....oo.....oo',
+    '...oo....oo.....oo',
+    '............oo....',
+    'oo....oo....oo....',
+    'oo....oo..........',
+    '...............oo.',
+    '....oo...oo....oo.',
+    '....oo...oo.......',
+    '..................',
+    '.oo....oo....oo...',
+    '.oo....oo....oo...',
+    '.........oo.......',
+    '....oo...oo.....oo',
+    '....oo..........oo',
+  ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
     '.o.o.o.o.',
@@ -518,16 +560,199 @@ checkThrows('battery staircase is flat black', () => {
   // woofer tiles (12). For those a 9-cell window would be a *crop* of the object
   // rather than a sample of the material — two sliced glyphs, a rotor missing two
   // blades, three quarters of a driver — which is the whole reason they carry their
-  // own edge. Everything else must still come out at 9 (or at 18, for the gases and
-  // the hazard chips that already had their own).
+  // own edge. Everything else must still come out at 9 (or at 18, for the gases, the
+  // hazard chips that already had their own, and the pore field, which needs more than
+  // a couple of periods before the tile is a fair sample rather than one or two pores
+  // — PORE_N).
   checkThrows('only the object-shaped tiles derive at their own edge', () => {
     const own = (m: Material): number | null =>
-      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.wooferPattern ? 12 : null;
+      m.tntPattern ? TNT_N : m.rotorPattern ? ROTOR_N : m.wooferPattern ? 12 : m.poresPattern ? PORE_N : null;
     const odd = all
       .map((m) => [m.name, raster(generatedSvgFor(m)).n, own(m)] as const)
       .filter(([, n, want]) => (want === null ? n !== 9 && n !== 18 : n !== want));
     check('only the object-shaped tiles derive at their own edge', odd.length === 0,
       odd.map(([name, n, want]) => `${name} ${n} (want ${want ?? '9/18'})`).join(', '));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 2b. The pore field, as statistics rather than as a picture.
+//
+// The Aerogel golden above is one 18-cell window. That window is a fair sample by
+// construction (PORE_SALT is picked so it is), which is exactly why it cannot pin
+// what the field has to be over a whole wall. These measure it over a 300 × 300
+// patch — bigger than any wall a player builds, so a defect that only shows at
+// scale shows here.
+//
+// **What is being pinned changed once, and the reason is worth keeping.** The first
+// field spread its pores freely and let them spill across period boundaries, and
+// these checks measured that: that no phase of a period was favoured, that the
+// density wandered, that some periods were empty. It passed all of it and still
+// looked wrong — the spilled pores merged into big lumpy voids, i.e. styrofoam
+// rather than aerogel (스티로폼 같은데). So the design inverted: a regular
+// checkerboard lattice, one cell of jitter, and pores that cannot touch. The checks
+// below are the inverse of the old ones, and deliberately so — a *visible* lattice
+// is now correct, and merging is the defect (docs/MATERIAL-ICONS.md §4.3).
+{
+  const SPAN = 300;
+  const holes: boolean[] = [];
+  let filled = 0;
+  for (let y = 0; y < SPAN; y++)
+    for (let x = 0; x < SPAN; x++) {
+      const on = poreAt(x, y);
+      holes.push(on);
+      if (on) filled++;
+    }
+  const at = (x: number, y: number) => holes[y * SPAN + x];
+
+  // The size/period relation is a CORRECTNESS precondition, and nothing in
+  // poreField.ts enforces it. `poreAt` reads exactly one period — the cell's own —
+  // which is only sound while a pore fits in the period it is anchored in *with room
+  // to be nudged*. Break it and pores are silently clipped at the period edge: still
+  // drawn, still the right colour, just missing a slice on the side they spilled
+  // toward. Nothing else in this file would report that as such — the field would keep
+  // its density and its spacing, and the clipped pores would read as a second, smaller
+  // pore size, which is the sort of thing a reviewer sees as texture.
+  //
+  // The room a pore leaves (`PORE_P − PORE_SIZE`) is also used as a mask, so it has to
+  // come out one less than a power of two. A room of 2 would nudge by 0 or 2 and never
+  // 1 — half the offsets missing, silently.
+  checkThrows('a pore cannot leave its own period', () => {
+    const room = PORE_P - PORE_SIZE;
+    check('a pore cannot leave its own period', PORE_SIZE < PORE_P,
+      `pore ${PORE_SIZE}, period ${PORE_P}`);
+    check('…and the room it leaves is a usable mask', room >= 0 && ((room + 1) & room) === 0,
+      `${PORE_SIZE} in ${PORE_P} leaves ${room}`);
+    // A 1-cell pore is indistinguishable from the per-grain speckle every powder
+    // carries; the field's own speck check below would catch it, but by then it is a
+    // picture problem rather than a stated bound.
+    check('…and a pore is still a pore, not a speck', PORE_SIZE >= 2, `${PORE_SIZE}`);
+  });
+
+  // The chip is 22% grey (128 of its 576 cells). The field is drawn to match it, so
+  // the canvas and the palette read as the same material at two scales — and so the
+  // block stays a pale block with pores in it rather than a grey block with pale
+  // flecks, which is what a field over about a third would become.
+  checkThrows('the pore field is about as void as the chip is grey', () => {
+    // The band is wide on purpose: the pitch has come down twice on the user's own
+    // instruction, and a finer pitch at the same pore size opens the surface up. What
+    // the ceiling is really guarding is the reading — past about a third, a pale block
+    // with pores becomes a grey block with pale flecks.
+    const pct = (100 * filled) / (SPAN * SPAN);
+    check('the pore field is about as void as the chip is grey', pct > 17 && pct < 30, `${pct.toFixed(1)}%`);
+  });
+
+  // **The anti-styrofoam pin.** Aerogel is a fine even foam; expanded polystyrene is
+  // big lumpy cells with thin walls. What separates the two pictures, mechanically, is
+  // whether neighbouring pores are allowed to merge — so the invariant is that no run
+  // of void, on either axis, is longer than a single pore. This is the check that
+  // would have caught the field this one replaced (its runs reached 10 cells).
+  checkThrows('no two pores ever touch', () => {
+    let worstH = 0;
+    let worstV = 0;
+    let lone = 0;
+    for (let y = 0; y < SPAN; y++) {
+      let run = 0;
+      for (let x = 0; x < SPAN; x++) {
+        if (at(x, y)) run++;
+        else {
+          // Runs cut by the window's own edge are measured but not judged.
+          if (run === 1 && x > 1) lone++;
+          if (run > worstH) worstH = run;
+          run = 0;
+        }
+      }
+    }
+    for (let x = 0; x < SPAN; x++) {
+      let run = 0;
+      for (let y = 0; y < SPAN; y++) {
+        if (at(x, y)) run++;
+        else {
+          if (run > worstV) worstV = run;
+          run = 0;
+        }
+      }
+    }
+    // "Along a row or column" is the whole claim, and it is the one that matters: two
+    // pores meeting corner to corner across a period diagonal is normal here (see
+    // poreField.ts) and leaves the wall between them intact, while two sharing an edge
+    // would be the merge that made the earlier field read as styrofoam.
+    check('no two pores ever touch along a row or column', worstH <= PORE_SIZE && worstV <= PORE_SIZE,
+      `longest void run ${worstH} across, ${worstV} down (a pore is ${PORE_SIZE})`);
+    // Implied by "every pore is PORE_SIZE" below, but measured off the drawn field
+    // rather than off the constant: a 1-cell void is indistinguishable from the
+    // per-grain speckle every powder carries, which is the one thing a pore must not
+    // look like.
+    check('…and none is a 1-cell speck', lone === 0, `${lone} lone cells`);
+  });
+
+  // The lattice itself: a pore in every period whose coordinates sum even, none in
+  // the others, exactly one each. Measured by walking the periods rather than by
+  // re-deriving the rule — a pore cannot leave its period, so a period's contents are
+  // its own pore and nothing else.
+  //
+  // The three rolls this reads back are the whole of the pattern's randomness, and
+  // each fails differently on the board: no size roll is a stamped grid, no jitter is
+  // a rigid one, and a checkerboard that lost its parity is twice the density with
+  // pores touching everywhere.
+  checkThrows('every other period carries exactly one pore, jittered by one cell', () => {
+    const sizes = new Set<number>();
+    const offsets = new Set<string>();
+    let occupied = 0;
+    let even = 0;
+    let odd = 0;
+    let malformed = '';
+    const periods = SPAN / PORE_P;
+    for (let cy = 0; cy < periods; cy++)
+      for (let cx = 0; cx < periods; cx++) {
+        // Everything this period draws, as a bounding box.
+        let x0 = PORE_P;
+        let y0 = PORE_P;
+        let x1 = -1;
+        let y1 = -1;
+        for (let py = 0; py < PORE_P; py++)
+          for (let px = 0; px < PORE_P; px++)
+            if (at(cx * PORE_P + px, cy * PORE_P + py)) {
+              if (px < x0) x0 = px;
+              if (py < y0) y0 = py;
+              if (px > x1) x1 = px;
+              if (py > y1) y1 = py;
+            }
+        const empty = x1 < 0;
+        if (((cx + cy) & 1) !== 0) {
+          if (!empty) odd++; // a pore on an odd period — the checkerboard is gone
+          continue;
+        }
+        // Counted here rather than as `periods² / 2`: a grid with an odd number of
+        // periods to a side holds one more even parity than odd.
+        even++;
+        if (empty) continue;
+        occupied++;
+        const w = x1 - x0 + 1;
+        const h = y1 - y0 + 1;
+        // The box must be a filled square, or what is in this period is not one pore.
+        if (w !== h) malformed ||= `${w}×${h} at period (${cx}, ${cy})`;
+        for (let py = y0; py <= y1; py++)
+          for (let px = x0; px <= x1; px++)
+            if (!at(cx * PORE_P + px, cy * PORE_P + py))
+              malformed ||= `hole in the pore at period (${cx}, ${cy})`;
+        sizes.add(w);
+        offsets.add(`${x0},${y0}`);
+      }
+    check('a pore in every even period', occupied === even, `${occupied} of ${even}`);
+    check('…and none in an odd one', odd === 0, `${odd} strays`);
+    check('…each a filled square', malformed === '', malformed);
+    // One size, always — the size roll was removed on purpose (점 크기는 항상 똑같게
+    // 작은쪽으로), so a second size appearing here means either the roll came back or a
+    // pore is being clipped at a period edge.
+    check('…all of one size', sizes.size === 1 && sizes.has(PORE_SIZE), [...sizes].sort().join(', '));
+    // Every offset the pore's room allows must actually occur — this is now the only
+    // roll the pattern has, so it is the only thing standing between this lattice and a
+    // stamped grid. Spelled as arithmetic rather than as a number, for the reason
+    // PORE_N's comment gives: a literal here goes stale the next time the pitch moves.
+    const room = PORE_P - PORE_SIZE + 1;
+    check(`…at every one of the ${room * room} jitter offsets`, offsets.size === room * room,
+      [...offsets].sort().join(' '));
   });
 }
 
