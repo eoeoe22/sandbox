@@ -155,7 +155,7 @@ export const ko = {
     bottomDeadzoneHint: ' (화면 아래 가림 방지)',
     bottomDeadzoneAria: '아래 데드존',
     bottomDeadzoneNote:
-      '태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스 아래에 빈 공간을 확보합니다. PC에서는 0을 권장합니다.',
+      '태블릿·모바일 브라우저에서 화면 아래가 주소창 등에 가릴 때, 이 값을 올려 샌드박스 아래에 빈 공간을 확보합니다. 별다른 문제가 없다면 0을 권장합니다.',
   },
 
   // --- Brush detail settings ---
