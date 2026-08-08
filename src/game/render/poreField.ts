@@ -104,12 +104,14 @@ export const PORE_MAX = 3;
  *
  *  The binding constraint is the device-pixel grid, not the period: 9 and 18 are the
  *  only edges whose cells land on whole device pixels in the 18 px swatch (see
- *  materialSvg's `N`). 9 of those two is three periods — a handful of pores, too small
- *  a sample to show either the arrangement or how open the surface is — so 18 it is,
- *  which at the current pitch happens to be six whole periods and about eighteen
- *  pores. The tile is a crop of the field rather than a repeating tile, so closing on
- *  a period boundary is a coincidence here and not a requirement; if the pitch moves
- *  again, this stays 18. */
+ *  materialSvg's `N`), so the choice is between those two and nothing else. 9 holds
+ *  too few pores at any pitch this pattern would plausibly take — too small a sample
+ *  to show either the arrangement or how open the surface is — so 18 it is.
+ *
+ *  Deliberately says nothing about how many periods that is. The tile is a crop of the
+ *  field rather than a repeating tile, so it never had to close on a period boundary,
+ *  and every version of this comment that counted periods went stale the next time the
+ *  pitch moved (it has moved twice). If the pitch moves again, this stays 18. */
 export const PORE_N = 18;
 
 /** Salt mixed into the field's hash.
