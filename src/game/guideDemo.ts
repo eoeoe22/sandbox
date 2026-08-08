@@ -32,6 +32,15 @@ import {
   DEMO_HEATPIPE,
   DEMO_FIRE,
   DEMO_CLONE,
+  DEMO_TNT,
+  DEMO_ACID,
+  DEMO_LAVA,
+  DEMO_OBSIDIAN,
+  DEMO_SALT,
+  DEMO_SUGAR,
+  DEMO_SODA,
+  DEMO_BATTER,
+  DEMO_MOLTEN_URANIUM,
 } from './materials/demo';
 
 // --- 박자 ---------------------------------------------------------------------
@@ -47,9 +56,23 @@ const DEMO_SMOKE_LEVEL = 'medium' as const;
 
 // --- 장면 목록 -----------------------------------------------------------------
 
-export type GuideDemoKind = 'solid' | 'powder' | 'liquid' | 'gas' | 'overlap' | 'heat';
+export type GuideDemoKind =
+  | 'solid'
+  | 'powder'
+  | 'liquid'
+  | 'gas'
+  | 'overlap'
+  | 'heat'
+  | 'wall'
+  | 'obsidian'
+  | 'saltwater'
+  | 'sugarwater'
+  | 'soda';
 
-/** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. */
+/** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
+ *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
+ *  카드가 열릴 때만 보인다. 검사의 세워짐/정지화면 루프가 같은 목록을 훑으므로 여기
+ *  있어야 검증도 빠지지 않는다. */
 export const GUIDE_DEMO_KINDS: readonly GuideDemoKind[] = [
   'solid',
   'powder',
@@ -57,6 +80,11 @@ export const GUIDE_DEMO_KINDS: readonly GuideDemoKind[] = [
   'gas',
   'overlap',
   'heat',
+  'wall',
+  'obsidian',
+  'saltwater',
+  'sugarwater',
+  'soda',
 ];
 
 export interface GuideDemoSpec {
@@ -95,6 +123,13 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   // 한가운데가 0.45 → 8줄이라 9줄이 남는다. 이 여유가 깨지면 검사의 「불 Clone 이
   // 덩어리로 놓였다」가 잡는다.
   heat: { cols: 56, aspect: 3, borderMode: 'wall' },
+  // 물질별 맞춤 데모는 다단계 타임라인이라 폭이 넉넉한 가로장면이 낫다. 겹침 데모와
+  // 같은 56칸·2:1 비율 — 폭이 충분해야 TNT 폭발·핵광·산 줄기가 한 장면에 들어온다.
+  wall: { cols: 56, aspect: 2, borderMode: 'wall' },
+  obsidian: { cols: 56, aspect: 2, borderMode: 'wall' },
+  saltwater: { cols: 56, aspect: 2, borderMode: 'wall' },
+  sugarwater: { cols: 56, aspect: 2, borderMode: 'wall' },
+  soda: { cols: 56, aspect: 2, borderMode: 'wall' },
 };
 
 /**
@@ -114,6 +149,12 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   gas: 90, // 연기 기둥이 자리를 잡은 뒤 (초기화 없음)
   overlap: 420, // 물이 체를 통과해 아래로 고인 뒤 (대본 450틱, 물 구간이 360틱에 끝난다)
   heat: 200, // 열 뷰로 넘어가 기울기가 다 보이는 무렵 (대본 210틱)
+  // 물질별 맞춤 데모 — 각 대본의 첫 액트 결론이 보이는 틱. 대본 상수 정의 아래 참고.
+  wall: 200, // U235 울타리 배치 후 임계 폭주가 일어나는 무렵 (대본 wall 9초/270틱)
+  obsidian: 240, // 흑요석이 급냉으로 생성되는 액트1 결론 (대본 obsidian 약 13초/390틱)
+  saltwater: 150, // 물 그릇에 소금 줄기가 떨어져 섞이는 무렵 (대본 7초/210틱)
+  sugarwater: 150, // 소금물과 동일
+  soda: 210, // 산 웅덩이에 소다가 떨어져 중화되는 무렵 (대본 10초/300틱)
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -173,6 +214,86 @@ const OVERLAP_CYCLE = OVERLAP_MESH + OVERLAP_SAND + OVERLAP_WATER + OVERLAP_TAIL
 const HEAT_NORMAL = DEMO_TPS * 2;
 const HEAT_THERMAL = DEMO_TPS * 5;
 const HEAT_CYCLE = HEAT_NORMAL + HEAT_THERMAL;
+
+// --- 물질별 맞춤 데모의 대본 길이 ----------------------------------------------
+//
+// 여기서부터는 basics 의 여섯 장면이 아니라 **특정 물질 카드**가 열릴 때 보이는
+// 다단계 데모다. 모두 tickOverlap 과 같은 구조로 짰다 — 누적 틱 t 를 단계별
+// 창으로 쪼개고, 각 창에서 한 동작만 하며 early return, 마지막엔 loop().
+//
+// 흑요석·소다 는 "액트1(생성/반응) → 장면전환 → 액트2(내성/반응)" 두 액트다.
+// 전환 틱에서 격자를 지우고 두 번째 액트의 고정 배치를 직접 놓는다.
+
+/**
+ * wall: 벽이 왜 「파괴 불가」인지를 세 가지 위협으로 보여 준다. 가운데 정사각형
+ * 벽 블록을 두고, 그 주위에 TNT(폭발) → 산(부식) → 녹은 U235(핵광)를 차례로
+ * 들이댄다. 셋 다 벽을 못 뚫는다 — `isWall` 이 폭발(`blocksBlast`)과 핵광
+ * (`nuclearray`)의 첫 검사고, `acidResistant` 가 산을 막는다. 한 사이클이 끝나면
+ * 격자를 비우고 처음부터(벽 블록은 build 가 다시 놓는다).
+ *
+ * 단계:
+ *  1) 랜덤 자리에 TNT 배치 → WALL_TNT_FUSE(1초) 후 인접 칸에 FIRE 스폰으로 격발.
+ *     인접 불이 TNT 의 자연 기폭 경로(updateTNT 의 이웃 검사)를 건드린다.
+ *  2) WALL_ACID(2초) 동안 위에서 산 줄기. 벽은 부식되지 않고 줄기는 벽 주변으로
+ *     흘러내린다.
+ *  3) 랜덤 자리에 녹은 U235 3×3 덩어리를 **WALL 울타리 안에 가둬** 배치 →
+ *     WALL_U235(3초) 대기. 액체 U235 는 흘러내려 흩어지면 이웃이 줄어 자가발열이
+ *     멎고 굳어버리므로, 울타리가 가둬 이웃을 유지해야 임계(2000°)에 다다른다.
+ *     배치 후 약 1초에 임계를 넘겨 핵광(Nuclear Ray)을 뿜고 U235 는 연소해 빠지
+ *     지만 — **울타리 벽은 핵광에도 살아 남는다**(`isWall` 이 빔을 반사).
+ *  4) WALL_TAIL(1초) 관찰 → 초기화.
+ */
+const WALL_TNT_FUSE = DEMO_TPS * 1;
+const WALL_BLAST = DEMO_TPS * 2;
+const WALL_ACID = DEMO_TPS * 2;
+const WALL_U235 = DEMO_TPS * 3;
+const WALL_TAIL = DEMO_TPS * 1;
+const WALL_CYCLE = WALL_TNT_FUSE + WALL_BLAST + WALL_ACID + WALL_U235 + WALL_TAIL;
+
+/**
+ * obsidian: 두 액트. 액트1은 **생성** — 바닥 용암 웅덩이에 위에서 물을 부어
+ * 급냉시키면 닿은 면에 흑요석이 생긴다(lava 의 quench). 4초 두고 생성물을
+ * 보여 준 뒤, 액트2로 장면 전환 — 이번엔 흑요석 블록을 미리 두고 그 **내성**을
+ * 보여 준다. 흑요석은 `explosionProof`라 TNT 두 번을 맞아도 부서지지 않는다.
+ * (산·핵광엔 약하지만 이 데모엔 등장하지 않는다.)
+ *
+ * 액트2 단계: 흑요석 블록 배치 → TNT1(1초 후 격발) → OBSidian_TNT_BLAST(1.5초
+ * 관찰) → TNT2(1초 후 격발) → 테일 → 초기화.
+ */
+const OBS_WATER = DEMO_TPS * 1.5;
+const OBS_FORM = DEMO_TPS * 4;
+const OBS_INTERLUDE = DEMO_TPS * 1;
+const OBS_TNT_FUSE = DEMO_TPS * 1;
+const OBS_TNT_BLAST = DEMO_TPS * 1.5;
+const OBS_TAIL = DEMO_TPS * 1;
+const OBS_CYCLE =
+  OBS_WATER + OBS_FORM + OBS_INTERLUDE + (OBS_TNT_FUSE + OBS_TNT_BLAST) * 2 + OBS_TAIL;
+
+/**
+ * saltwater / sugarwater: 같은 대본, 다른 용질. 그릇에 물을 부은 뒤 같은 자리에서
+ * 소금/설탕을 떨어뜨리면 가루가 담수 주머니를 녹아든 용액(Saltwater/Sugar Water)으로
+ * 바꾼다. 열린 공간에선 가루가 흩어져 반응이 안 보이므로 liquid 데모의 그릇을
+ * 빌린다. tickDissolve(soluteId) 하나로 두 종류를 돌린다.
+ *
+ * 단계: 물 3초(DISSOLVE_WATER) → 용질 1초(DISSOLVE_SOLUTE) → 관찰 3초 → 초기화.
+ */
+const DISSOLVE_WATER = DEMO_TPS * 3;
+const DISSOLVE_SOLUTE = DEMO_TPS * 1;
+const DISSOLVE_HOLD = DEMO_TPS * 3;
+const DISSOLVE_CYCLE = DISSOLVE_WATER + DISSOLVE_SOLUTE + DISSOLVE_HOLD;
+
+/**
+ * soda: 두 액트. 액트1은 산 중화 — 바닥 산 웅덩이에 위에서 소다를 떨어뜨리면
+ * 한 알갱이가 산 한 칸을 소금물+가스로 바꾸며 소모된다(건식 중화). 3초 두고
+ * 보여 준 뒤, 액트2로 전환 — 이번엔 바닥에 반죽 웅덩이를 두고 같은 소다 줄기를
+ * 부어 반죽이 부풀 준비를 하는 것(soda 접촉 플래그)을 보여 준 뒤 완전 초기화.
+ *
+ * 단계(각 액트): SODA_POUR(2초) 소다 줄기 → SODA_REACT(3초) 관찰.
+ */
+const SODA_POUR = DEMO_TPS * 2;
+const SODA_REACT = DEMO_TPS * 3;
+const SODA_INTERLUDE = DEMO_TPS * 1;
+const SODA_CYCLE = (SODA_POUR + SODA_REACT) * 2 + SODA_INTERLUDE;
 
 /**
  * liquid: 넘칠 때까지 붓는다 — 길이가 대본이 아니라 **장면이 정한다**. 그릇 크기와
@@ -252,6 +373,29 @@ const FIREBOX_W = 4;
 const FIREBOX_H = 3;
 const FIREBOX_GAP = 1;
 
+// --- 물질별 맞춤 데모의 장면 좌표 ----------------------------------------------
+
+/** wall·obsidian 액트2 의 중앙 정사각형 블록: 변의 길이(세로 비율). 56×28 → 약 7칸. */
+const BLOCK_SIZE = 0.25;
+
+/** obsidian·soda 액트1 의 바닥 웅덩이: 가로 구간(비율)과 깊이(칸). */
+const POOL_X0 = 0.28;
+const POOL_X1 = 0.72;
+const POOL_DEPTH = 3;
+
+/** 산/소다/소금/설탕 줄기가 떨어지는 가로 비율. 그릇 중앙 또는 웅덩이 중앙. */
+const POUR_AT = 0.5;
+
+/**
+ * 녹은 U235 덩어리의 반지름(칸). 1이면 3×3. 임계(2000°) 폭주를 일으키려면 액체가
+ * 흩어지지 않게 서로 붙어 있어야 하는데 — MOLTEN_URANIUM 은 중력으로 흘러내려
+ * 이웃이 줄어 자가발열(+3/이웃)이 멎고, 바닥에 닿으면 전도로 열이 빠져 굳어버린다.
+ * 그래서 {@link spawnU235Clump} 가 WALL 울타리 안에 이 반지름의 덩어리를 가둬
+ * 놓는다 — 벽이 가둬 이웃을 유지해(발열 유지) 임계에 다다르게 하고, 동시에 그 벽이
+ * 임계폭주의 열·핵광에도 살아남는 것(이 데모의 결론)을 한 장면에 담는다.
+ */
+const U235_CLUMP_R = 1;
+
 /**
  * 상태별 **기본 주인공 물질**. basics 탭이 넘기는 여섯 데모는 주인공 id 를 따로
  * 고르지 않으므로 이 값으로 돌아간다 — 가이드 문서의 "고체/가루/액체/기체" 절이
@@ -272,7 +416,8 @@ function defaultSubject(kind: GuideDemoKind): number {
     case 'gas':
       return DEMO_SMOKE.id;
     default:
-      // overlap·heat 는 subjectId 자체를 읽지 않는다 — 의미 있는 값 하나만 둔다.
+      // overlap·heat·wall·obsidian·saltwater·sugarwater·soda 는 subjectId 를 읽지
+      // 않는다 — 각자 자기 물질을 대본 안에서 직접 다룬다. 의미 있는 값 하나만 둔다.
       return DEMO_WALL.id;
   }
 }
@@ -360,10 +505,33 @@ export class GuideDemoWorld {
 
   // --- 고정 배치 ---------------------------------------------------------------
 
-  /** 장면의 움직이지 않는 부분(그릇·파이프·불씨)을 놓는다. */
+  /** 장면의 움직이지 않는 부분(그릇·파이프·불씨·블록·웅덩이)을 놓는다. */
   private build(): void {
-    if (this.kind === 'liquid') this.buildBowl();
-    else if (this.kind === 'heat') this.buildPipe();
+    switch (this.kind) {
+      case 'liquid':
+        this.buildBowl();
+        break;
+      case 'heat':
+        this.buildPipe();
+        break;
+      case 'wall':
+        // 액트1 고정 배치: 중앙 벽 블록. 위협(TNT·산·U235)은 대본 안에서 놓는다.
+        this.buildBlock(DEMO_WALL.id);
+        break;
+      case 'obsidian':
+        // 액트1 고정 배치: 바닥 용암 웅덩이(물이 닿으면 흑요석으로 급냉).
+        this.buildPool(DEMO_LAVA.id);
+        break;
+      case 'saltwater':
+      case 'sugarwater':
+        // 그릇 안에서 물→용질 순서로 부어 섞인다.
+        this.buildBowl();
+        break;
+      case 'soda':
+        // 액트1 고정 배치: 바닥 산 웅덩이. 액트2 전환은 대본이 buildBatterPool 로.
+        this.buildPool(DEMO_ACID.id);
+        break;
+    }
     this.grid.randomizeTints();
   }
 
@@ -444,6 +612,77 @@ export class GuideDemoWorld {
     return { y, top, bottom, x0, x1 };
   }
 
+  // --- 물질별 데모의 고정 배치 헬퍼 --------------------------------------------
+
+  /**
+   * 격자 한가운데에 정사각형 `id` 블록을 놓는다. wall·obsidian 액트2 의 대상.
+   * 변 길이는 격자 세로의 BLOCK_SIZE 비율 — 56×28 → 약 7칸짜리 7×7.
+   */
+  private buildBlock(id: number): { cx: number; cy: number; half: number } {
+    const g = this.grid;
+    const size = Math.max(3, Math.round(g.height * BLOCK_SIZE));
+    const half = size >> 1;
+    const cx = g.width >> 1;
+    const cy = g.height >> 1;
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (g.inBounds(x, y)) g.set(x, y, id);
+      }
+    }
+    return { cx, cy, half };
+  }
+
+  /** 블록 좌표(buildBlock 과 같은 공식). 대본이 블록 영역을 피할 때 쓴다. */
+  private blockBox(): { cx: number; cy: number; half: number } {
+    const g = this.grid;
+    const size = Math.max(3, Math.round(g.height * BLOCK_SIZE));
+    return { cx: g.width >> 1, cy: g.height >> 1, half: size >> 1 };
+  }
+
+  /**
+   * 바닥에 가로 웅덩이를 깐다. obsidian 액트1(용암)·soda 액트1(산)이 쓴다. 깊이
+   * POOL_DEPTH 칸, 가로는 POOL_X0..POOL_X1 비율. 테두리 바로 안쪽부터 채운다.
+   */
+  private buildPool(id: number): void {
+    const g = this.grid;
+    const x0 = Math.round(g.width * POOL_X0);
+    const x1 = Math.round(g.width * POOL_X1);
+    const bottom = g.height - 1;
+    for (let dy = 0; dy < POOL_DEPTH; dy++) {
+      const y = bottom - dy;
+      if (y < 0) break;
+      for (let x = x0; x <= x1; x++) {
+        if (g.inBounds(x, y)) {
+          g.set(x, y, id);
+          // 액체/고온 물질은 init 온도가 안 들어가므로 spawn 경로와 비슷하게 세팅.
+          this.sim.context.setTemp(x, y, this.poolInitTemp(id));
+        }
+      }
+    }
+  }
+
+  /** 웅덩이 물질의 자연 시작 온도. 용암 1500°, 산은 ambient. */
+  private poolInitTemp(id: number): number {
+    if (id === DEMO_LAVA.id) return 1500;
+    return 20;
+  }
+
+  /** obsidian 액트2 전환: 격자를 비우고 흑요석 블록만 놓는다. */
+  private buildObsidianBlock(): void {
+    this.grid.clear();
+    this.buildBlock(DEMO_OBSIDIAN.id);
+    this.grid.randomizeTints();
+  }
+
+  /** soda 액트2 전환: 격자를 비우고 바닥 반죽 웅덩이를 놓는다. */
+  private buildBatterPool(): void {
+    this.grid.clear();
+    this.buildPool(DEMO_BATTER.id);
+    this.grid.randomizeTints();
+  }
+
   // --- 한 틱 -------------------------------------------------------------------
 
   tick(): void {
@@ -465,6 +704,21 @@ export class GuideDemoWorld {
         break;
       case 'heat':
         this.tickHeat();
+        break;
+      case 'wall':
+        this.tickWall();
+        break;
+      case 'obsidian':
+        this.tickObsidian();
+        break;
+      case 'saltwater':
+        this.tickDissolve(DEMO_SALT.id);
+        break;
+      case 'sugarwater':
+        this.tickDissolve(DEMO_SUGAR.id);
+        break;
+      case 'soda':
+        this.tickSoda();
         break;
     }
     this.sim.step();
@@ -685,4 +939,293 @@ export class GuideDemoWorld {
     }
     this.heatView = t >= HEAT_NORMAL;
   }
+
+  // --- 물질별 맞춤 데모 ---------------------------------------------------------
+  //
+  // 모두 tickOverlap 과 같은 구조: 누적 틱 t 를 단계별 창으로 쪼개고, 각 창에서
+  // 한 동작만 하며 early return. 마지막 단계가 지나면 loop() 로 격자를 비우고
+  // 처음부터(build 가 고정 배치를 다시 놓는다).
+
+  /**
+   * 블록(Box)에서 `margin` 칸 이상 떨어진, 비어 있는 칸 하나를 고른다. wall·obsidian
+   * 액트2 가 TNT·U235 를 "블록과 겹치지 않는 랜덤 자리"에 놓을 때 쓴다. 블록 중심에서
+   * margin 칸 이내는 피한다(TNT blastRadius 가 커서 블록에 바짝 붙으면 그림자 안으로
+   * 들어가 폭발이 안 보인다). 최대 32번 굴려 보고, 맞는 자리가 없으면 가장자리로
+   * 빠진다 — 빈 격자가 거의 없는 극단적 경우의 안전장치일 뿐, 정상 장면에선 한두 번에
+   * 걸린다.
+   */
+  private pickClearSpot(box: { cx: number; cy: number; half: number }, margin: number): { x: number; y: number } | null {
+    const g = this.grid;
+    for (let i = 0; i < 32; i++) {
+      const x = 1 + Math.floor(this.rand() * (g.width - 2));
+      const y = 1 + Math.floor(this.rand() * (g.height - 2));
+      if (g.get(x, y) !== EMPTY) continue;
+      if (Math.abs(x - box.cx) <= box.half + margin && Math.abs(y - box.cy) <= box.half + margin) continue;
+      return { x, y };
+    }
+    return null;
+  }
+
+  /**
+   * wall: 가운데 벽 블록이 TNT → 산 → 녹은 U235 세 위협에 모두 살아남는 것을
+   * 보여 준다. 매 사이클마다 위협의 위치가 랜덤으로 바뀐다.
+   *
+   * 단계(대본 상수 참고):
+   *  [0, TNT_FUSE)        TNT 배치는 0틱에 한 번. 이 구간은 도화선 타는 시간.
+   *  [TNT_FUSE, +BLAST)   도화선 끝: TNT 인접 칸에 FIRE 스폰 → 다음 틱에 기폭.
+   *  [+BLAST, +ACID)      위에서 산 줄기 2초.
+   *  [+ACID, +U235)       0틱에 U235 2×2 배치. 이 구간은 임계 도달 대기.
+   *  [+U235, +TAIL)       관찰 → 초기화.
+   */
+  private tickWall(): void {
+    const t = this.t;
+    if (t >= WALL_CYCLE) {
+      this.loop();
+      return;
+    }
+    const box = this.blockBox();
+
+    if (t === 0) {
+      // 0틱에 TNT 한 칸 배치. 다음 사이클에선 loop()→reset()→build() 로 블록만
+      // 다시 놓이고, TNT 자리는 비워지므로 매 사이클 새 위치.
+      const spot = this.pickClearSpot(box, 2);
+      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      return;
+    }
+    if (t < WALL_TNT_FUSE) return; // 도화선 대기
+
+    if (t === WALL_TNT_FUSE) {
+      // 도화선 점화: TNT 인접 빈 칸에 FIRE 스폰 → updateTNT 가 이웃 검사로 기폭.
+      this.igniteNearestTnt(box);
+      return;
+    }
+    if (t < WALL_TNT_FUSE + WALL_BLAST) return; // 폭발이 지나가도록 관찰
+
+    const acidEnd = WALL_TNT_FUSE + WALL_BLAST + WALL_ACID;
+    if (t < acidEnd) {
+      // 위에서 산 줄기. 벽은 산에 부식되지 않고 줄기는 벽 주변으로 흘러내린다.
+      this.dropStream(DEMO_ACID.id, POUR_AT);
+      return;
+    }
+
+    const u235Start = acidEnd;
+    const u235End = u235Start + WALL_U235;
+    if (t === u235Start) {
+      // 녹은 U235 3×3 덩어리를 WALL 울타리 안에 가둬 배치. 빈 공간에 놓으면 액체가
+      // 흘러 흩어져 임계에 못 다다르므로 울타리가 이웃을 유지해 준다(spawnU235Clump
+      // 주석 참고). spawn 으로 놓아 init 온도(1600°)가 보장되게 한다.
+      this.spawnU235Clump(box);
+      return;
+    }
+    if (t < u235End) return; // 임계 도달 → 핵광이 화면을 쓸고 울타리 벽이 살아남는다
+    // WALL_TAIL: 관찰 후 loop() 가 격자를 비운다.
+  }
+
+  /** box 근처의 TNT 한 칸을 찾아 그 이웃 빈 칸에 FIRE 를 스폰한다(자연 기폭 경로). */
+  private igniteNearestTnt(box: { cx: number; cy: number; half: number }): void {
+    const g = this.grid;
+    for (let y = 0; y < g.height; y++) {
+      for (let x = 0; x < g.width; x++) {
+        if (g.get(x, y) !== DEMO_TNT.id) continue;
+        // TNT 의 8이웃 중 빈 칸 하나에 불을 올린다.
+        for (const [dx, dy] of NEIGHBORS_8) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!g.inBounds(nx, ny) || g.get(nx, ny) !== EMPTY) continue;
+          this.sim.context.spawn(nx, ny, DEMO_FIRE.id);
+          return;
+        }
+      }
+    }
+    void box;
+  }
+
+  /**
+   * 녹은 U235 (3×3) 를 WALL 울타리 안에 가둬 box 에서 떨어진 자리에 놓는다.
+   *
+   * **왜 울타리인가** — MOLTEN_URANIUM 은 액체라 중력으로 흘러내린다. 빈 공간에
+   * 놓으면 아래로 퍼지면서 이웃 수가 줄어 자가발열(+3/이웃)이 멎고, 바닥에 닿는 순간
+   * 전도로 열이 빠져 1400° 이하로 굳어버린다 — 임계(2000°)에 다다르지 못한다.
+   * WALL 울타리가 액체를 가두면 이웃 수가 유지돼 자가발열이 누적하고, 약 30틱(1초)
+   * 만에 임계를 넘겨 폭주한다(관측: 1600°→1748(10틱)→1881(20틱)→2014(30틱)→
+   * 3930(40틱)→5376(50틱)). 임계 후엔 Nuclear Ray 가 울타리 안팎을 쓸고, U235 는
+   * 연소해 Smoke 로 빠지지만 — **울타리 벽은 핵광에도 살아 남는다**(`isWall` 이
+   * nuclearray 의 첫 차단 검사). 이것이 이 데모의 결론이자, 벽이 왜 울타리로 쓰였
+   * 는지의 이유다.
+   *
+   * 울타리 안쪽 영역이 box(벽 블록)와 겹치지 않는 자리를 고른다.
+   */
+  private spawnU235Clump(box: { cx: number; cy: number; half: number }): void {
+    const g = this.grid;
+    const r = U235_CLUMP_R;
+    const span = 2 * (r + 1) + 1; // 울타리 외곽 한 변: (r+1)*2+1. r=1 → 5
+    for (let i = 0; i < 32; i++) {
+      const x0 = 2 + Math.floor(this.rand() * (g.width - span - 3));
+      const y0 = 2 + Math.floor(this.rand() * (g.height - span - 3));
+      const cx = x0 + r + 1;
+      const cy = y0 + r + 1;
+      // box(중앙 벽 블록)와 겹치지 않게.
+      if (Math.abs(cx - box.cx) <= box.half + span) continue;
+      if (Math.abs(cy - box.cy) <= box.half + span) continue;
+      // 울타리 외곽 영역이 전부 빈 칸인지 확인(기존 장면을 덮어쓰지 않게).
+      let clear = true;
+      for (let dy = 0; dy < span && clear; dy++) {
+        for (let dx = 0; dx < span && clear; dx++) {
+          if (g.get(x0 + dx, y0 + dy) !== EMPTY) clear = false;
+        }
+      }
+      if (!clear) continue;
+      // 울타리(테두리 한 줄)를 WALL, 안쪽 (2r+1)×(2r+1) 을 MOLTEN_U 로.
+      for (let dy = 0; dy < span; dy++) {
+        for (let dx = 0; dx < span; dx++) {
+          const isEdge = dx === 0 || dy === 0 || dx === span - 1 || dy === span - 1;
+          const x = x0 + dx;
+          const y = y0 + dy;
+          if (isEdge) {
+            g.set(x, y, DEMO_WALL.id);
+          } else {
+            this.sim.context.spawn(x, y, DEMO_MOLTEN_URANIUM.id);
+          }
+        }
+      }
+      return;
+    }
+  }
+
+  /**
+   * obsidian: 두 액트. 액트1은 생성(용암+물→흑요석 급냉), 액트2는 내성(TNT×2).
+   * 중간에 buildObsidianBlock() 으로 장면을 전환한다.
+   *
+   * 단계:
+   *  [0, OBS_WATER)                위에서 물 1.5초 → 용암에 닿아 흑요석 생성.
+   *  [OBS_WATER, +OBS_FORM)        4초 관찰.
+   *  [+OBS_FORM, +INTERLUDE)       장면 전환: 격자 비우고 흑요석 블록.
+   *  그 뒤 TNT(1초 도화선→격발→1.5초 관찰) ×2, OBS_TAIL 관찰 → 초기화.
+   */
+  private tickObsidian(): void {
+    const t = this.t;
+    if (t >= OBS_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    const formEnd = OBS_WATER + OBS_FORM;
+    const act2Start = formEnd + OBS_INTERLUDE;
+
+    // --- 액트1: 생성 ---
+    if (t < OBS_WATER) {
+      this.dropStream(DEMO_WATER.id, POUR_AT);
+      return;
+    }
+    if (t < formEnd) return; // 흑요석이 굳는 것을 관찰
+
+    // --- 장면 전환 ---
+    if (t === act2Start) {
+      this.buildObsidianBlock();
+      return;
+    }
+
+    // --- 액트2: 내성 (TNT ×2) ---
+    const box = this.blockBox();
+    const tnt1Fuse = act2Start; // 전환 틱에 TNT1 배치
+    const tnt1Blast = tnt1Fuse + OBS_TNT_FUSE;
+    const tnt1Hold = tnt1Blast + OBS_TNT_BLAST;
+    const tnt2Fuse = tnt1Hold; // 이어서 TNT2 배치
+    const tnt2Blast = tnt2Fuse + OBS_TNT_FUSE;
+    const tnt2Hold = tnt2Blast + OBS_TNT_BLAST;
+
+    if (t === tnt1Fuse) {
+      const spot = this.pickClearSpot(box, 2);
+      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      return;
+    }
+    if (t === tnt1Blast) {
+      this.igniteNearestTnt(box);
+      return;
+    }
+    if (t < tnt1Hold) return;
+
+    if (t === tnt2Fuse) {
+      const spot = this.pickClearSpot(box, 2);
+      if (spot) this.sim.context.spawn(spot.x, spot.y, DEMO_TNT.id);
+      return;
+    }
+    if (t === tnt2Blast) {
+      this.igniteNearestTnt(box);
+      return;
+    }
+    if (t < tnt2Hold) return;
+    // OBS_TAIL: 관찰 후 loop()
+  }
+
+  /**
+   * saltwater·sugarwater 공통: 그릇에 물을 부은 뒤 같은 자리에서 용질(소금/설탕)을
+   * 떨어뜨린다. 가루가 담수 주머니를 녹아든 용액으로 바꾼다.
+   *
+   * 단계: 물 3초 → 용질 1초 → 관찰 3초 → 초기화.
+   */
+  private tickDissolve(soluteId: number): void {
+    const t = this.t;
+    if (t >= DISSOLVE_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < DISSOLVE_WATER) {
+      this.dropStream(DEMO_WATER.id, POUR_AT);
+      return;
+    }
+    if (t < DISSOLVE_WATER + DISSOLVE_SOLUTE) {
+      this.dropStream(soluteId, POUR_AT);
+      return;
+    }
+    // DISSOLVE_HOLD: 섞이는 것을 관찰 후 loop()
+  }
+
+  /**
+   * soda: 두 액트. 액트1은 산 중화(소다+산→소금물+가스), 액트2는 반죽과 반응.
+   * 중간에 buildBatterPool() 로 장면을 전환한다.
+   *
+   * 단계(각 액트): 소다 2초 → 관찰 3초. 사이에 SODA_INTERLUDE 틱의 전환.
+   */
+  private tickSoda(): void {
+    const t = this.t;
+    if (t >= SODA_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    const act1Pour = SODA_POUR;
+    const act1End = act1Pour + SODA_REACT;
+    const act2Start = act1End + SODA_INTERLUDE;
+    const act2Pour = act2Start + SODA_POUR;
+    const act2End = act2Pour + SODA_REACT;
+
+    // --- 액트1: 산 중화 ---
+    if (t < act1Pour) {
+      this.dropStream(DEMO_SODA.id, POUR_AT);
+      return;
+    }
+    if (t < act1End) return; // 중화 반응 관찰
+
+    // --- 장면 전환 ---
+    if (t === act2Start) {
+      this.buildBatterPool();
+      return;
+    }
+
+    // --- 액트2: 반죽과 반응 ---
+    if (t < act2Pour) {
+      this.dropStream(DEMO_SODA.id, POUR_AT);
+      return;
+    }
+    if (t < act2End) return; // 반죽이 부풀 준비를 하는 것을 관찰
+    // loop() 가 완전 초기화(격자 비움 → build 가 산 웅덩이를 다시 놓는다)
+  }
 }
+
+/** 8이웃(대각선 포함) 오프셋. TNT 기폭의 이웃 검사와 같은 범위. */
+const NEIGHBORS_8: readonly [number, number][] = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0], [1, 0],
+  [-1, 1], [0, 1], [1, 1],
+];
