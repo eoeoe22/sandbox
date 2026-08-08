@@ -28,6 +28,7 @@ import { AMMONAL } from './materials/ammonal';
 import { AMMONIUM_NITRATE } from './materials/ammoniumnitrate';
 import { ANFO } from './materials/anfo';
 import { BROKEN_GLASS } from './materials/brokenglass';
+import { C4 } from './materials/c4';
 import { COAL } from './materials/coal';
 import { COAL_POWDER } from './materials/coalpowder';
 import { DIESEL } from './materials/diesel';
@@ -51,6 +52,7 @@ import { SALTPETER } from './materials/saltpeter';
 import { SAWDUST } from './materials/sawdust';
 import { SULFUR } from './materials/sulfur';
 import { HEATPIPE } from './materials/heatpipe';
+import { TNT } from './materials/tnt';
 import { SOAP } from './materials/soap';
 import { SOAPY_WATER } from './materials/soapywater';
 import { VIRUS } from './materials/virus';
@@ -91,7 +93,7 @@ const CAST: DemoCast = {
  */
 const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind>([
   [ACID.id, 'acid'],
-  [ACID_VAPOR.id, 'acidvapor'],
+  [ACID_VAPOR.id, 'acid'],
   [GUNPOWDER.id, 'gunpowder'],
   [AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
   [FLASH_POWDER.id, 'ignite'],
@@ -134,6 +136,8 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [SOAPY_WATER.id, 'soapywater'],
   [SALTPETER.id, 'saltpeter'],
   [ALCOHOL.id, 'alcohol'],
+  [TNT.id, 'tnt'],
+  [C4.id, 'c4'],
 ]);
 
 /**
@@ -150,6 +154,8 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
  */
 const TRIGGERS: ReadonlyMap<number, DemoTrigger> = new Map<number, DemoTrigger>([
   [FLASH_POWDER.id, 'spark'],
+  [TNT.id, 'spark'],
+  [C4.id, 'spark'],
 ]);
 
 /**

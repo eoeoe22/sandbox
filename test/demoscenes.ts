@@ -39,6 +39,7 @@ import { AMMONAL } from '../src/game/materials/ammonal';
 import { AMMONIUM_NITRATE } from '../src/game/materials/ammoniumnitrate';
 import { ANFO } from '../src/game/materials/anfo';
 import { BROKEN_GLASS } from '../src/game/materials/brokenglass';
+import { C4 } from '../src/game/materials/c4';
 import { COAL } from '../src/game/materials/coal';
 import { COAL_POWDER } from '../src/game/materials/coalpowder';
 import { DIESEL } from '../src/game/materials/diesel';
@@ -69,6 +70,9 @@ import { SAND } from '../src/game/materials/sand';
 import { SAWDUST } from '../src/game/materials/sawdust';
 import { SULFUR } from '../src/game/materials/sulfur';
 import { WALL } from '../src/game/materials/wall';
+import { TNT } from '../src/game/materials/tnt';
+import { BATTERY } from '../src/game/materials/battery';
+import { WIRE } from '../src/game/materials/wire';
 import { WATER } from '../src/game/materials/water';
 import { WOOD } from '../src/game/materials/wood';
 
@@ -149,7 +153,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
 {
   const want: [string, number, GuideDemoKind][] = [
     ['산', ACID.id, 'acid'],
-    ['산 증기', ACID_VAPOR.id, 'acidvapor'],
+    ['산 증기', ACID_VAPOR.id, 'acid'],
     ['화약', GUNPOWDER.id, 'gunpowder'],
     ['질산암모늄', AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
     ['섬광화약', FLASH_POWDER.id, 'ignite'],
@@ -180,6 +184,8 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['비눗물', SOAPY_WATER.id, 'soapywater'],
     ['질산칼륨', SALTPETER.id, 'saltpeter'],
     ['알코올', ALCOHOL.id, 'alcohol'],
+    ['TNT', TNT.id, 'tnt'],
+    ['C4', C4.id, 'c4'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);
@@ -306,6 +312,68 @@ console.log('\n== 산: 네 줄 두께의 금속 바닥을 갉아 뚫고 아래�
   check(ticks > 0, '한 바퀴가 끝났다', `${((DEMO_TPS * 8 + ticks) / DEMO_TPS).toFixed(1)}초`);
   check(count(w, IRON.id) === floorAtStart, '초기화하면 바닥이 다시 온전하다', `${count(w, IRON.id)}칸`);
   check(count(w, ACID.id) === 0, '초기화로 산이 사라졌다');
+}
+
+// --- 산 증기 -----------------------------------------------------------------------
+console.log('\n== 산 증기: 하단에서 덮어쓰기 방식으로 증기 분출 후 정 가운데 철 바닥을 갉아 뚫는다 ==');
+{
+  const w = make(ACID_VAPOR.id);
+  const floor = rowSpan(w, IRON.id);
+  const midY = Math.round(w.grid.height * 0.5);
+  check(floor.top === midY, '철 바닥 높이가 정 가운데에 배치되었다', `top=${floor.top}, midY=${midY}`);
+
+  run(w, DEMO_TPS * 2);
+  check(count(w, ACID_VAPOR.id) > 5, '하단에서 산 증기가 분출되고 있다', `${count(w, ACID_VAPOR.id)}칸`);
+
+  run(w, DEMO_TPS * 6);
+  const floorAtStart = w.grid.width * 4;
+  const eaten = floorAtStart - count(w, IRON.id);
+  check(eaten > 0, '정 가운데 철 바닥이 갉여 나갔다', `${eaten}칸`);
+}
+
+// --- 수소 산소 ---------------------------------------------------------------------
+console.log('\n== 수소 산소: 4x2 픽셀 4틱 점화 불꽃으로 정밀 격발 ==');
+{
+  const w = make(HYDROGEN.id);
+  run(w, DEMO_TPS * 5 - 1); // HO_AT 직전까지
+  const hBefore = count(w, HYDROGEN.id);
+  check(count(w, FIRE.id) === 0, '점화 직전까지 불이 없다', `hBefore=${hBefore}`);
+
+  run(w, 4); // HO_AT 부터 4틱 동안 점화 불꽃 지속
+  const hAfter = count(w, HYDROGEN.id);
+  check(hAfter < hBefore, '점화 후 수소 산소 혼합 기체가 반응하여 연소했다', `before=${hBefore}, after=${hAfter}`);
+}
+
+// --- TNT ---------------------------------------------------------------------------
+console.log('\n== TNT: 가운데 사각형 블록 배치 시작 후 2초 후 전기 격발 ==');
+{
+  const w = make(TNT.id);
+  const startTnt = count(w, TNT.id);
+  check(startTnt > 15, '시작 시 가운데 TNT 사각형 블록이 놓였다', `${startTnt}칸`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, TNT.id) === startTnt, '2초 직전까지 TNT 블록 유지');
+
+  run(w, 30);
+  check(count(w, TNT.id) < startTnt, '2초 시점에 전기 격발되어 폭발했다');
+}
+
+// --- C4 ----------------------------------------------------------------------------
+console.log('\n== C4: 왼쪽 C4 블록 + 오른쪽 전선 배치 후 2초 후 리튬 배터리 투입 격발 ==');
+{
+  const w = make(C4.id);
+  const startC4 = count(w, C4.id);
+  const startWire = count(w, WIRE.id);
+  check(startC4 > 15 && startWire > 20, '시작 시 C4 블록과 전선이 놓였다', `C4: ${startC4}칸, 전선: ${startWire}칸`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, BATTERY.id) === 0, '2초 직전까지 배터리가 없다');
+
+  run(w, 2);
+  check(count(w, BATTERY.id) > 0, '2초 시점에 리튬 배터리가 투입되었다');
+
+  run(w, 30);
+  check(count(w, C4.id) < startC4, '전선을 통해 전기가 전달되어 C4가 격발 폭발했다');
 }
 
 // --- 격발 ---------------------------------------------------------------------------
@@ -572,7 +640,11 @@ console.log('\n== 움직임 최소화: 감아 둔 한 프레임이 빈 화면이
   for (const id of customDemoMaterials()) {
     const w = make(id);
     w.windToStill();
-    const allowFire = demoSceneFor(id)?.kind === 'heat';
+    const allowFire =
+      demoSceneFor(id)?.kind === 'heat' ||
+      demoSceneFor(id)?.kind === 'wall' ||
+      demoSceneFor(id)?.kind === 'tnt' ||
+      demoSceneFor(id)?.kind === 'c4';
     check(
       w.loops === 0 && occupied(w) > 20 && (allowFire || count(w, FIRE.id) === 0),
       `${getMaterial(id).name}: 정지 화면이 터지기 직전의 더미다`,

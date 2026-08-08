@@ -62,7 +62,9 @@ import {
   DEMO_SOAPY_WATER,
   DEMO_CARAMEL,
   DEMO_ALCOHOL,
-  DEMO_ACID_VAPOR,
+  DEMO_C4,
+  DEMO_BATTERY,
+  DEMO_WIRE,
 } from './materials/demo';
 import { GLASS } from './materials/glass';
 import { HYDROGEN } from './materials/hydrogen';
@@ -109,7 +111,8 @@ export type GuideDemoKind =
   | 'soapywater'
   | 'saltpeter'
   | 'alcohol'
-  | 'acidvapor';
+  | 'tnt'
+  | 'c4';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -146,7 +149,8 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'soapywater',
   'saltpeter',
   'alcohol',
-  'acidvapor',
+  'tnt',
+  'c4',
 ];
 
 /**
@@ -252,7 +256,8 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
   saltpeter: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   alcohol: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
-  acidvapor: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  tnt: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  c4: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -294,7 +299,8 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
   saltpeter: 140, // 1막 초석 더미가 다 쌓인 직후, 점화 직전
   alcohol: 115, // 알코올 웅덩이에 바이러스 소독 직후, 점화 직전
-  acidvapor: 150, // 중앙 철 바닥에 산 증기가 솟구쳐 뚫기 시작하는 무렵
+  tnt: 55, // 2초 전기 격발 직전
+  c4: 55, // 2초 리튬 배터리 투입 직전
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -463,7 +469,7 @@ const LIQUID_HOLD = DEMO_TPS * 4;
 // 그 사이에 물질마다 다른 한 수가 끼어든다(바닥·둔덕·조합·연료).
 
 /** acid: 금속 바닥의 **윗면** 높이(세로 비율)와, 붓기·구경 시간. */
-const ACID_FLOOR_Y = 0.72;
+const ACID_FLOOR_Y = 0.5;
 /**
  * 바닥 두께(줄).
  *
@@ -621,6 +627,16 @@ const ALCOHOL_VIRUS_HOLD = DEMO_TPS * 3;
 const ALCOHOL_IGNITE = ALCOHOL_VIRUS_POUR + ALCOHOL_VIRUS_HOLD;
 const ALCOHOL_TAIL = DEMO_TPS * 3;
 const ALCOHOL_CYCLE = ALCOHOL_IGNITE + ALCOHOL_TAIL;
+
+/** tnt: 가운데 TNT 사각형 블록 배치 → 2초 후 전기 격발 → 3초 관찰 후 초기화. */
+const TNT_WAIT = DEMO_TPS * 2;
+const TNT_TAIL = DEMO_TPS * 3;
+const TNT_CYCLE = TNT_WAIT + TNT_TAIL;
+
+/** c4: 왼쪽에 C4 사각형 블록, 오른쪽으로 전선 배치 → 2초 후 전선 끝에 리튬 배터리 닿게 배치 → 3초 대기 후 초기화. */
+const C4_BATTERY_AT = DEMO_TPS * 2;
+const C4_TAIL = DEMO_TPS * 3;
+const C4_CYCLE = C4_BATTERY_AT + C4_TAIL;
 
 /**
  * 섞기 브러시의 반지름(칸). 굵어야 한다 — 세 재료가 각자의 봉우리로 앉으므로,
@@ -917,10 +933,6 @@ export class GuideDemoWorld {
         // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
         this.buildFloor();
         break;
-      case 'acidvapor':
-        // 정 중앙에 위치하는 네 줄 두께의 금속 바닥.
-        this.buildCenterFloor();
-        break;
       case 'alcohol':
         // 액트1 고정 배치: 바닥 알코올 웅덩이.
         this.buildPool(this.subjectId);
@@ -932,8 +944,34 @@ export class GuideDemoWorld {
       case 'glass_shockwave':
         this.buildGlassBlock();
         break;
+      case 'tnt':
+        this.buildBlock(this.subjectId);
+        break;
+      case 'c4':
+        this.buildC4Scene();
+        break;
     }
     this.grid.randomizeTints();
+  }
+
+  /** c4 장면 고정 배치: 왼쪽에 C4 사각형 블록, 오른쪽으로 이어지는 전선. */
+  private buildC4Scene(): void {
+    const g = this.grid;
+    const cy = g.height >> 1;
+    const blockWidth = 5;
+    const blockHeight = 5;
+    const x0 = 4;
+    const y0 = cy - (blockHeight >> 1);
+    for (let dy = 0; dy < blockHeight; dy++) {
+      for (let dx = 0; dx < blockWidth; dx++) {
+        g.set(x0 + dx, y0 + dy, this.subjectId);
+      }
+    }
+    const wireX0 = x0 + blockWidth;
+    const wireX1 = g.width - 6;
+    for (let x = wireX0; x <= wireX1; x++) {
+      g.set(x, cy, DEMO_WIRE.id);
+    }
   }
 
   /**
@@ -948,19 +986,6 @@ export class GuideDemoWorld {
     const id = this.cast?.floor;
     if (id === undefined) return;
     const top = Math.round(g.height * ACID_FLOOR_Y);
-    for (let dy = 0; dy < ACID_FLOOR_THICK; dy++) {
-      const y = top + dy;
-      if (y >= g.height) break;
-      for (let x = 0; x < g.width; x++) g.set(x, y, id);
-    }
-  }
-
-  /** 산 증기 데모: 정 중앙에 위치하는 네 줄 두께의 금속 바닥. */
-  private buildCenterFloor(): void {
-    const g = this.grid;
-    const id = this.cast?.floor ?? DEMO_STONE.id;
-    const cy = g.height >> 1;
-    const top = cy - 2;
     for (let dy = 0; dy < ACID_FLOOR_THICK; dy++) {
       const y = top + dy;
       if (y >= g.height) break;
@@ -1194,8 +1219,11 @@ export class GuideDemoWorld {
       case 'alcohol':
         this.tickAlcohol();
         break;
-      case 'acidvapor':
-        this.tickAcidVapor();
+      case 'tnt':
+        this.tickTnt();
+        break;
+      case 'c4':
+        this.tickC4();
         break;
     }
     this.sim.step();
@@ -1381,13 +1409,15 @@ export class GuideDemoWorld {
 
   private tickGas(): void {
     const g = this.grid;
-    const floor = g.height - 2;
+    const mat = getMaterial(this.subjectId);
+    const isHeavy = (mat.density ?? 1) > 1;
+    const y = isHeavy ? STREAM_Y : g.height - 2;
     const lo = Math.round(g.width * SMOKE_X0);
     const hi = Math.round(g.width * SMOKE_X1);
     for (let k = 0; k < SMOKE_PER_TICK; k++) {
       const x = lo + Math.floor(this.rand() * (hi - lo + 1));
-      if (g.get(x, floor) !== EMPTY) continue;
-      this.sim.context.spawn(x, floor, this.subjectId);
+      if (g.get(x, y) !== EMPTY) continue;
+      this.sim.context.spawn(x, y, this.subjectId);
     }
   }
 
@@ -1884,7 +1914,26 @@ export class GuideDemoWorld {
       this.loop();
       return;
     }
-    if (t < ACID_POUR) this.dropStream(this.subjectId, 0.5);
+    if (t < ACID_POUR) {
+      if (getMaterial(this.subjectId).phase === Phase.Gas) {
+        this.dropGasStreamOverwrite(this.subjectId, 0.5);
+      } else {
+        this.dropStream(this.subjectId, 0.5);
+      }
+    }
+  }
+
+  /** 기체 전용(덮어쓰기): 아래쪽(y = height - 2)에서 산 액체가 고여도 막히지 않게 덮어쓰기로 생성되어 위로 솟구친다. */
+  private dropGasStreamOverwrite(id: number, at: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
+    const x = Math.min(g.width - 1, Math.max(0, Math.round(g.width * at) + jitter));
+    const y = g.height - 2;
+    this.sim.context.spawn(x, y, id);
+    if (x + 1 < g.width) {
+      this.sim.context.spawn(x + 1, y, id);
+    }
   }
 
   // --- 격발: 붓고, 쉬고, 불을 댄다 -------------------------------------------------
@@ -2148,12 +2197,19 @@ export class GuideDemoWorld {
       return;
     }
     if (t < HO_AT) return;
-    if (t === HO_AT) {
+    if (t >= HO_AT && t < HO_AT + 4) {
       const g = this.grid;
       const midX = g.width >> 1;
-      const upperY = Math.max(1, Math.round(g.height * 0.2));
-      if (g.inBounds(midX, upperY)) {
-        this.sim.context.spawn(midX, upperY, DEMO_FIRE.id);
+      const topY = this.topOf(midX);
+      const cy = topY >= 0 ? topY : Math.max(1, Math.round(g.height * 0.2));
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = -2; dx < 2; dx++) {
+          const x = midX + dx;
+          const y = cy + dy;
+          if (g.inBounds(x, y)) {
+            this.sim.context.spawn(x, y, DEMO_FIRE.id);
+          }
+        }
       }
     }
   }
@@ -2261,29 +2317,35 @@ export class GuideDemoWorld {
     }
   }
 
-  /** acidvapor: 정 중앙 철 바닥을 두고 하단에서 덮어쓰기로 산 증기 분출 (산 증기) */
-  private tickAcidVapor(): void {
+  /** tnt: 가운데 TNT 사각형 블록 배치 후 2초 후 전기 격발 (TNT) */
+  private tickTnt(): void {
     const t = this.t;
-    if (t >= ACID_CYCLE) {
+    if (t >= TNT_CYCLE) {
       this.loop();
       return;
     }
-    if (t < ACID_POUR) {
-      this.spawnAcidVaporStream();
+    if (t === TNT_WAIT) {
+      const box = this.blockBox();
+      this.igniteNearestTnt(box);
     }
   }
 
-  private spawnAcidVaporStream(): void {
-    if (this.rand() > SAND_CHANCE) return;
-    const g = this.grid;
-    const y = g.height - 2;
-    const x0 = Math.round(g.width * 0.4);
-    const x1 = Math.round(g.width * 0.6);
-    for (let x = x0; x <= x1; x++) {
-      if (this.rand() < 0.3) {
-        if (g.inBounds(x, y)) {
-          g.set(x, y, DEMO_ACID_VAPOR.id);
-          this.sim.context.setTemp(x, y, 100);
+  /** c4: 왼쪽에 C4 사각형 블록, 오른쪽으로 전선 배치 후 2초 후 전선 끝에 리튬 배터리 닿게 배치 후 3초 관찰 (C4) */
+  private tickC4(): void {
+    const t = this.t;
+    if (t >= C4_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t === C4_BATTERY_AT) {
+      const g = this.grid;
+      const cy = g.height >> 1;
+      const wireX1 = g.width - 6;
+      const battX = wireX1 + 1;
+      if (g.inBounds(battX, cy)) {
+        this.sim.context.spawn(battX, cy, DEMO_BATTERY.id);
+        if (g.inBounds(battX + 1, cy)) {
+          this.sim.context.spawn(battX + 1, cy, DEMO_BATTERY.id);
         }
       }
     }
