@@ -236,13 +236,20 @@ console.log('\n== 열전도: 파이프 띠가 아래의 불에서부터 달아�
     if (n > w.grid.width * 0.7) pipeRows.push(y);
   }
   check(pipeRows.length >= 3, '파이프가 여러 줄 두께의 띠로 놓였다', `${pipeRows.length}줄`);
+  // `length >= 1` 을 앞에 붙이는 것은 빈 배열에서 **연속성 검사가 저절로
+  // 통과하는 것**을 막기 위해서다. 파이프가 아예 안 놓인 판이 곧장 위 검사에
+  // 걸리기는 하지만, 그때 이 줄까지 ok 로 찍히면 「띠가 붙어 있는데 줄 수만
+  // 모자란다」로 읽힌다.
   check(
-    pipeRows.length === 0 || pipeRows[pipeRows.length - 1] - pipeRows[0] === pipeRows.length - 1,
+    pipeRows.length >= 1 && pipeRows[pipeRows.length - 1] - pipeRows[0] === pipeRows.length - 1,
     '띠가 끊기지 않고 붙어 있다',
     `y=${pipeRows[0]}..${pipeRows[pipeRows.length - 1]}`,
   );
-  const pipeTop = pipeRows[0];
-  const pipeBottom = pipeRows[pipeRows.length - 1];
+  // 파이프가 한 줄도 없으면 위 두 검사가 이미 실패했다. 그래도 0 으로 받아 두는
+  // 것은 아래 온도 검사가 `undefined` 줄을 읽어 **NaN 을 찍는 것**을 막기
+  // 위해서다 — 그러면 진짜 원인이 뒤따르는 잡음에 묻힌다.
+  const pipeTop = pipeRows[0] ?? 0;
+  const pipeBottom = pipeRows[pipeRows.length - 1] ?? 0;
 
   // 불 Clone 은 파이프 **아래**에 있어야 한다(불은 위로 오른다). 그리고 파이프에
   // 딱 붙어 있으면 위로는 뱉을 자리가 없어 불이 옆구리로만 샌다 — 사이에 빈 줄이
