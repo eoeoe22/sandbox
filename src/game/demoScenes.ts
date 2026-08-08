@@ -20,6 +20,7 @@
 import type { DemoCast, DemoTrigger, GuideDemoKind } from './guideDemo';
 
 import { ACID } from './materials/acid';
+import { ALCOHOL } from './materials/alcohol';
 import { ALUMINUM_POWDER } from './materials/aluminumpowder';
 import { AMBER } from './materials/amber';
 import { AMMONAL } from './materials/ammonal';
@@ -130,6 +131,7 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [SOAP.id, 'saltwater'],
   [SOAPY_WATER.id, 'soapywater'],
   [SALTPETER.id, 'saltpeter'],
+  [ALCOHOL.id, 'alcohol'],
 ]);
 
 /**

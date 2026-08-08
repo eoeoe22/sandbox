@@ -31,6 +31,7 @@ import { getMaterial } from '../src/game/materials/registry';
 // 물질이 색도 동작도 없는 칸이 된다(docs/CODEX.md §14.3).
 import '../src/game/materials';
 import { ACID } from '../src/game/materials/acid';
+import { ALCOHOL } from '../src/game/materials/alcohol';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
 import { AMBER } from '../src/game/materials/amber';
 import { AMMONAL } from '../src/game/materials/ammonal';
@@ -176,6 +177,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['비누', SOAP.id, 'saltwater'],
     ['비눗물', SOAPY_WATER.id, 'soapywater'],
     ['질산칼륨', SALTPETER.id, 'saltpeter'],
+    ['알코올', ALCOHOL.id, 'alcohol'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);

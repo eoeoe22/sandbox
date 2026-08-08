@@ -61,6 +61,7 @@ import {
   DEMO_SOAP,
   DEMO_SOAPY_WATER,
   DEMO_CARAMEL,
+  DEMO_ALCOHOL,
 } from './materials/demo';
 import { GLASS } from './materials/glass';
 import { HYDROGEN } from './materials/hydrogen';
@@ -105,7 +106,8 @@ export type GuideDemoKind =
   | 'glass_shockwave'
   | 'hydrogen_oxygen'
   | 'soapywater'
-  | 'saltpeter';
+  | 'saltpeter'
+  | 'alcohol';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -141,6 +143,7 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'hydrogen_oxygen',
   'soapywater',
   'saltpeter',
+  'alcohol',
 ];
 
 /**
@@ -245,6 +248,7 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   hydrogen_oxygen: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
   saltpeter: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  alcohol: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -285,6 +289,7 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   hydrogen_oxygen: 145, // 수소+산소 3초 생성 후 2초 대기, 점화 직전
   soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
   saltpeter: 140, // 1막 초석 더미가 다 쌓인 직후, 점화 직전
+  alcohol: 115, // 알코올 웅덩이에 바이러스 소독 직후, 점화 직전
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -605,6 +610,13 @@ const SP_TAIL2 = DEMO_TPS * 3;
 const SP_ACT2 = SP_FIRE2 + SP_TAIL2;
 const SP_CYCLE = SP_ACT1 + SP_ACT2;
 
+/** alcohol: 바닥 알코올 웅덩이에 바이러스 1초 붓기 -> 3초 소독 관찰 -> 1초 불 점화 및 연소 3초 관찰 후 초기화 (알코올) */
+const ALCOHOL_VIRUS_POUR = DEMO_TPS * 1;
+const ALCOHOL_VIRUS_HOLD = DEMO_TPS * 3;
+const ALCOHOL_IGNITE = ALCOHOL_VIRUS_POUR + ALCOHOL_VIRUS_HOLD;
+const ALCOHOL_TAIL = DEMO_TPS * 3;
+const ALCOHOL_CYCLE = ALCOHOL_IGNITE + ALCOHOL_TAIL;
+
 /**
  * 섞기 브러시의 반지름(칸). 굵어야 한다 — 세 재료가 각자의 봉우리로 앉으므로,
  * 발자국이 봉우리 하나보다 좁으면 같은 재료끼리만 섞어 놓고 지나간다.
@@ -900,6 +912,10 @@ export class GuideDemoWorld {
         // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
         this.buildFloor();
         break;
+      case 'alcohol':
+        // 액트1 고정 배치: 바닥 알코올 웅덩이.
+        this.buildPool(this.subjectId);
+        break;
       case 'ammoniumnitrate':
         // 격자를 세로로 완전히 가르는 칸막이 둘 — 3등분.
         this.buildPartitions();
@@ -1048,12 +1064,12 @@ export class GuideDemoWorld {
    * 바닥에 가로 웅덩이를 깐다. obsidian 액트1(용암)·soda 액트1(산)이 쓴다. 깊이
    * POOL_DEPTH 칸, 가로는 POOL_X0..POOL_X1 비율. 테두리 바로 안쪽부터 채운다.
    */
-  private buildPool(id: number): void {
+  private buildPool(id: number, depth = POOL_DEPTH): void {
     const g = this.grid;
     const x0 = Math.round(g.width * POOL_X0);
     const x1 = Math.round(g.width * POOL_X1);
     const bottom = g.height - 1;
-    for (let dy = 0; dy < POOL_DEPTH; dy++) {
+    for (let dy = 0; dy < depth; dy++) {
       const y = bottom - dy;
       if (y < 0) break;
       for (let x = x0; x <= x1; x++) {
@@ -1152,6 +1168,9 @@ export class GuideDemoWorld {
         break;
       case 'saltpeter':
         this.tickSaltpeter();
+        break;
+      case 'alcohol':
+        this.tickAlcohol();
         break;
     }
     this.sim.step();
@@ -2158,7 +2177,7 @@ export class GuideDemoWorld {
 
   private buildSoapyWaterPool(): void {
     this.grid.clear();
-    this.buildPool(DEMO_SOAPY_WATER.id);
+    this.buildPool(DEMO_SOAPY_WATER.id, 9);
     this.grid.randomizeTints();
   }
 
@@ -2197,6 +2216,26 @@ export class GuideDemoWorld {
     if (act2T < SP_FIRE2) return;
 
     if (act2T >= SP_FIRE2 && act2T < SP_FIRE2 + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  /** alcohol: 바닥 알코올 웅덩이에 바이러스 1초 붓기 -> 3초 소독 관찰 -> 1초 불 점화 및 연소 3초 관찰 후 초기화 (알코올) */
+  private tickAlcohol(): void {
+    const t = this.t;
+    if (t >= ALCOHOL_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    const virusId = this.cast?.soapyCleaners?.[0] ?? DEMO_SAND.id;
+    if (t < ALCOHOL_VIRUS_POUR) {
+      this.dropStream(virusId, POUR_AT);
+      return;
+    }
+    if (t < ALCOHOL_IGNITE) return;
+
+    if (t >= ALCOHOL_IGNITE && t < ALCOHOL_IGNITE + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
     }
   }
