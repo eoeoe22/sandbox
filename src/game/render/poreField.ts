@@ -69,9 +69,15 @@
 export const PORE_P = 4;
 
 /** Widest a hole can be, and therefore how far past its own period one can reach.
- *  The neighbour scan in `poreAt` is a 2×2 of periods, which is only enough while
- *  this stays ≤ PORE_P: a hole wider than a period could reach in from two periods
- *  away and would be missed, leaving a bite out of its own side. */
+ *
+ *  The neighbour scan in `poreAt` is a 2×2 of periods, and the exact width at which
+ *  that stops being enough is **PORE_P + 2**: a hole anchored two periods to the left
+ *  starts at worst at `cx*PORE_P − PORE_P − 1`, so it needs `PORE_P + 2` cells to
+ *  touch this period's first one. At PORE_P + 1 it still cannot, so the scan is
+ *  correct for anything up to and including that. (Verified by sweeping the width
+ *  against a wide ground-truth scan: at PORE_P 4, widths 3-5 match it exactly and
+ *  width 6 misses about 1% of cells.) Past that a hole still *draws* — with a bite
+ *  out of whichever side it spilled from, on the cells it reached furthest. */
 export const PORE_MAX = 3;
 
 /** Patch edge for a `poresPattern` icon.
@@ -184,7 +190,9 @@ function poreAnchored(cx: number, cy: number, x: number, y: number): boolean {
  * aerogel, 60 passes — runs 2.4 ms per pass. That is not a render-loop profile and
  * should not be read as one: it excludes the branch dispatch around it, every other
  * per-cell cost, and the canvas paint. It bounds this function's share, nothing more,
- * and the browser measurement is still unmade (docs/MATERIAL-ICONS.md §5).
+ * and the browser measurement is still unmade (docs/MATERIAL-ICONS.md §5, item 3 —
+ * the render loop's cost, which is a different subsystem from the palette gallery's
+ * unmeasured DOM cost in item 2).
  *
  * Callers pass non-negative grid coordinates; the truncating divide below is a
  * floor only for those (the render loop's x/y and the icon patch's both are).

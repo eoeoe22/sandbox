@@ -607,12 +607,19 @@ checkThrows('battery staircase is flat black', () => {
   // The two constants are related, and nothing in poreField.ts makes them stay that
   // way. Both relations are pinned here because breaking either is silent:
   //
-  //   • `PORE_MAX ≤ PORE_P` is a CORRECTNESS precondition. `poreAt` searches a 2×2 of
-  //     periods, which is only enough while a hole cannot cross more than one period
-  //     boundary. A wider hole would still draw — with a bite missing from whichever
-  //     side it spilled from, on cells whose own period is two away from its anchor.
-  //     Nothing else in this file would notice: the field would stay the right density
-  //     and the right shape everywhere else.
+  //   • The width bound is a CORRECTNESS precondition. `poreAt` searches a 2×2 of
+  //     periods, and a hole needs PORE_P + 2 cells to reach in from two periods away
+  //     (see PORE_MAX), so anything up to PORE_P + 1 is safe. Past that a hole still
+  //     draws — with a bite missing from whichever side it spilled from, on the cells
+  //     it reached furthest.
+  //
+  //     The other checks here may not catch that. Constructing broken fields to see:
+  //     a hole two or more cells over the period usually also blows up the merged-run
+  //     length or invents intermediate sizes, so `runOK` or the size check often trips
+  //     — but a field whose jumbo hole is rare (about one period in a thousand) passed
+  //     density, phase spread, anchors, solid periods, runs and the speck check, and
+  //     was caught only incidentally by the size count. "Often caught by accident" is
+  //     not a check, hence this one.
   //   • `PORE_MAX − 1 === PORE_P / 2` is not required for correctness at all. It is
   //     what makes exactly half of each period exempt from the neighbour lookups, and
   //     therefore what the "2.25 hashes per cell" and the timing figure beside it in
@@ -622,7 +629,8 @@ checkThrows('battery staircase is flat black', () => {
   //     constants (PORE_MAX − 2 where it meant PORE_MAX − 1).
   checkThrows('the pore constants hold their two relations', () => {
     // Details read as the values, not as the failure: these print on pass too.
-    check('a hole fits within one period boundary', PORE_MAX <= PORE_P, `max ${PORE_MAX}, period ${PORE_P}`);
+    check('a hole cannot reach in from two periods away', PORE_MAX <= PORE_P + 1,
+      `max ${PORE_MAX}, breaks at ${PORE_P + 2}`);
     check('…and exactly half of each period skips the neighbour lookups',
       PORE_MAX - 1 === PORE_P / 2, `${PORE_MAX} - 1 vs ${PORE_P} / 2 = ${PORE_P / 2}`);
   });
