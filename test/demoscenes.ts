@@ -31,6 +31,7 @@ import { getMaterial } from '../src/game/materials/registry';
 // 물질이 색도 동작도 없는 칸이 된다(docs/CODEX.md §14.3).
 import '../src/game/materials';
 import { ACID } from '../src/game/materials/acid';
+import { ACID_VAPOR } from '../src/game/materials/acidvapor';
 import { ALCOHOL } from '../src/game/materials/alcohol';
 import { ALUMINUM_POWDER } from '../src/game/materials/aluminumpowder';
 import { AMBER } from '../src/game/materials/amber';
@@ -148,6 +149,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
 {
   const want: [string, number, GuideDemoKind][] = [
     ['산', ACID.id, 'acid'],
+    ['산 증기', ACID_VAPOR.id, 'acid'],
     ['화약', GUNPOWDER.id, 'gunpowder'],
     ['질산암모늄', AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
     ['섬광화약', FLASH_POWDER.id, 'ignite'],

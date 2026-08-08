@@ -20,6 +20,7 @@
 import type { DemoCast, DemoTrigger, GuideDemoKind } from './guideDemo';
 
 import { ACID } from './materials/acid';
+import { ACID_VAPOR } from './materials/acidvapor';
 import { ALCOHOL } from './materials/alcohol';
 import { ALUMINUM_POWDER } from './materials/aluminumpowder';
 import { AMBER } from './materials/amber';
@@ -90,6 +91,7 @@ const CAST: DemoCast = {
  */
 const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind>([
   [ACID.id, 'acid'],
+  [ACID_VAPOR.id, 'acid'],
   [GUNPOWDER.id, 'gunpowder'],
   [AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
   [FLASH_POWDER.id, 'ignite'],
