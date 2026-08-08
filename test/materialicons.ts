@@ -745,11 +745,14 @@ checkThrows('battery staircase is flat black', () => {
     check('…each a filled square', malformed === '', malformed);
     check('…of both sizes', sizes.size === 2 && Math.min(...sizes) === PORE_MIN
       && Math.max(...sizes) === PORE_MAX, [...sizes].sort().join(', '));
-    // The small pore has a cell of room in each axis, so all four of its offsets must
-    // occur; the large one fills its period and can only sit on the corner, which is
-    // why the expected count comes off PORE_MIN rather than off a jitter constant.
+    // Every offset the smallest pore's room allows must actually occur. The count comes
+    // off PORE_MIN rather than off a jitter constant because the room is what the size
+    // leaves: the largest pore fills its period and can only sit on the corner, so it
+    // contributes nothing new here. Spelled as arithmetic rather than as a number, for
+    // the reason PORE_N's comment gives — a literal here goes stale the next time the
+    // pitch moves.
     const room = PORE_P - PORE_MIN + 1;
-    check('…at all four jitter offsets', offsets.size === room * room,
+    check(`…at every one of the ${room * room} jitter offsets`, offsets.size === room * room,
       [...offsets].sort().join(' '));
   });
 }

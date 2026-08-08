@@ -48,8 +48,9 @@
 //   • the lattice **is** visible as a lattice, and that is now intended rather than
 //     tolerated: the arrangement is regular, and the jitter is there to keep it from
 //     being *rigid*, not to hide it. Density therefore varies by phase within a
-//     period (a period's last row is void about a quarter as often as its second),
-//     which the old field's checks would have failed. Those checks are gone; what
+//     period — the middle of a period is void more often than its edges, which is
+//     what happens whenever a pore smaller than its period has to fit inside it, at
+//     any pitch. The old field's checks would have failed that. They are gone; what
 //     replaced them is in test/materialicons.ts.
 //
 // The checkerboard, rather than a pore in every period, is what buys the wall between
