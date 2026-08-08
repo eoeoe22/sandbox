@@ -54,7 +54,7 @@ import { EMPTY, Phase, type Material } from '../src/game/engine/types';
 import { getMaterial } from '../src/game/materials/registry';
 import { hex } from '../src/game/render/color';
 import { TNT_N, TNT_TILE_ROWS } from '../src/game/render/tntTile';
-import { PORE_P, PORE_N, PORE_MAX, PORE_JITTER, poreAt } from '../src/game/render/poreField';
+import { PORE_P, PORE_N, PORE_MIN, PORE_MAX, poreAt } from '../src/game/render/poreField';
 import {
   ROTOR_N,
   ROTOR_TILE_ROWS,
@@ -422,10 +422,10 @@ const GOLDEN: Record<string, string> = {
     '............',
   ].join('\n'),
   // Aerogel: a checkerboard lattice of small square pores, each nudged by at most one
-  // cell — a pore in every other 4-cell period, 2 or 3 cells square, starting on its
-  // period's corner or one cell in. The tile is 4½ periods across (PORE_N) rather than
-  // the usual nine cells, because a sample of a *field* has to be big enough to show
-  // what it is.
+  // cell — a pore in every other 3-cell period, 2 cells square (3 one time in eight),
+  // starting on its period's corner or one cell in. The tile is six periods across
+  // (PORE_N) rather than the usual nine cells, because a sample of a *field* has to be
+  // big enough to show what it is.
   //
   // Two things are visible here and both are the point (docs/MATERIAL-ICONS.md §4.3):
   //
@@ -434,33 +434,34 @@ const GOLDEN: Record<string, string> = {
   //     period edges, and the merged blobs read as styrofoam rather than as aerogel;
   //     a golden that comes back with a run of four or more void cells means they are
   //     merging again.
-  //   • **the jitter is one cell** — both sizes appear (rows 13-15 carry 3-cell pores
-  //     where rows 8-10 carry 2-cell ones) and pores sit at different offsets within
-  //     their periods, so the lattice reads as hand-set rather than stamped. A golden
-  //     of identical squares on exact 4-cell centres means the hash stopped being
-  //     read; both rolls come out of one `poreHash` call, so they fail together.
+  //   • **the jitter is one cell** — both sizes appear (the 3-cell pores at rows 0-2
+  //     and rows 9-11 against 2-cell ones everywhere else) and pores sit at different
+  //     offsets within their periods, so the lattice reads as hand-set rather than
+  //     stamped. A golden of identical squares on exact 3-cell centres means the hash
+  //     stopped being read; both rolls come out of one `poreHash` call, so they fail
+  //     together.
   //
   // The field's statistics, which an 18-cell window is far too small to speak for, are
   // measured separately below.
   Aerogel: [
-    '.........oo......o',
-    'oo.......oo......o',
-    'oo................',
+    'ooo....oo.........',
+    'ooo....oo...oo....',
+    'ooo.........oo....',
     '..................',
+    '...oo....oo.....oo',
+    '...oo....oo.....oo',
+    '............oo....',
+    'oo....oo....oo....',
+    'oo....oo..........',
+    '.........ooo...oo.',
+    '....oo...ooo...oo.',
+    '....oo...ooo......',
     '..................',
-    '.....oo.....ooo...',
-    '.....oo.....ooo...',
-    '............ooo...',
-    '.oo...............',
-    '.oo......oo.....oo',
-    '.........oo.....oo',
-    '................oo',
-    '..................',
-    '....ooo.....ooo...',
-    '....ooo.....ooo...',
-    '....ooo.....ooo...',
-    '.........ooo....oo',
-    '.oo......ooo....oo',
+    '.oo....oo....oo...',
+    '.oo....oo....oo...',
+    '.........oo.......',
+    '....oo...oo.....oo',
+    '....oo..........oo',
   ].join('\n'),
   // Mesh: the plain lattice weave, the branch all of the above sit in front of.
   Mesh: [
@@ -606,22 +607,32 @@ checkThrows('battery staircase is flat black', () => {
     }
   const at = (x: number, y: number) => holes[y * SPAN + x];
 
-  // The size/jitter/period relation is a CORRECTNESS precondition, and nothing in
+  // The size/period relation is a CORRECTNESS precondition, and nothing in
   // poreField.ts enforces it. `poreAt` reads exactly one period — the cell's own —
-  // which is only sound while a pore cannot leave the period it is anchored in.
-  // Break it and the widest, most jittered pores are silently clipped at the period
-  // edge: still drawn, still the right colour, just missing a slice on the side they
-  // spilled toward. Nothing else in this file would report that as such — the field
-  // would keep its density and its spacing, and the clipped pores would read as an
-  // extra, smaller pore size, which is the sort of thing a reviewer sees as texture.
+  // which is only sound while a pore fits in the period it is anchored in. Break it
+  // and the widest pores are silently clipped at the period edge: still drawn, still
+  // the right colour, just missing a slice on the side they spilled toward. Nothing
+  // else in this file would report that as such — the field would keep its density and
+  // its spacing, and the clipped pores would read as an extra, smaller pore size,
+  // which is the sort of thing a reviewer sees as texture.
   //
-  // PORE_JITTER is also a mask (`h & PORE_JITTER`), so a value that is not one less
-  // than a power of two would quietly jitter by less than it says.
+  // The room a size leaves (`PORE_P − s`) is also used as a mask, so every size has to
+  // leave one less than a power of two. A size that left room 2 would jitter by 0 or 2
+  // and never 1 — half the offsets missing, silently.
   checkThrows('a pore cannot leave its own period', () => {
-    check('a pore cannot leave its own period', PORE_MAX + PORE_JITTER <= PORE_P,
-      `${PORE_MAX} + ${PORE_JITTER} vs ${PORE_P}`);
-    check('…and the jitter is a usable mask',
-      ((PORE_JITTER + 1) & PORE_JITTER) === 0, `${PORE_JITTER}`);
+    check('a pore cannot leave its own period', PORE_MAX <= PORE_P,
+      `widest ${PORE_MAX}, period ${PORE_P}`);
+    const badRoom: number[] = [];
+    for (let s = PORE_MIN; s <= PORE_MAX; s++) {
+      const room = PORE_P - s;
+      if (((room + 1) & room) !== 0) badRoom.push(s);
+    }
+    check('…and every size leaves a usable mask for its nudge', badRoom.length === 0,
+      badRoom.map((s) => `size ${s} leaves ${PORE_P - s}`).join(', '));
+    // A 1-cell pore is indistinguishable from the per-grain speckle every powder
+    // carries; the field's own speck check below would catch it, but by then it is a
+    // picture problem rather than a stated bound.
+    check('…and the smallest pore is still a pore', PORE_MIN >= 2, `${PORE_MIN}`);
   });
 
   // The chip is 22% grey (128 of its 576 cells). The field is drawn to match it, so
@@ -629,8 +640,12 @@ checkThrows('battery staircase is flat black', () => {
   // block stays a pale block with pores in it rather than a grey block with pale
   // flecks, which is what a field over about a third would become.
   checkThrows('the pore field is about as void as the chip is grey', () => {
+    // The band is wide on purpose: the pitch has come down twice on the user's own
+    // instruction, and a finer pitch at the same pore size opens the surface up. What
+    // the ceiling is really guarding is the reading — past about a third, a pale block
+    // with pores becomes a grey block with pale flecks.
     const pct = (100 * filled) / (SPAN * SPAN);
-    check('the pore field is about as void as the chip is grey', pct > 17 && pct < 26, `${pct.toFixed(1)}%`);
+    check('the pore field is about as void as the chip is grey', pct > 17 && pct < 30, `${pct.toFixed(1)}%`);
   });
 
   // **The anti-styrofoam pin.** Aerogel is a fine even foam; expanded polystyrene is
@@ -728,10 +743,14 @@ checkThrows('battery staircase is flat black', () => {
     check('a pore in every even period', occupied === even, `${occupied} of ${even}`);
     check('…and none in an odd one', odd === 0, `${odd} strays`);
     check('…each a filled square', malformed === '', malformed);
-    check('…of both sizes', sizes.size === 2 && Math.min(...sizes) === 2 && Math.max(...sizes) === PORE_MAX,
-      [...sizes].sort().join(', '));
-    check('…at all four jitter offsets',
-      offsets.size === (PORE_JITTER + 1) * (PORE_JITTER + 1), [...offsets].sort().join(' '));
+    check('…of both sizes', sizes.size === 2 && Math.min(...sizes) === PORE_MIN
+      && Math.max(...sizes) === PORE_MAX, [...sizes].sort().join(', '));
+    // The small pore has a cell of room in each axis, so all four of its offsets must
+    // occur; the large one fills its period and can only sit on the corner, which is
+    // why the expected count comes off PORE_MIN rather than off a jitter constant.
+    const room = PORE_P - PORE_MIN + 1;
+    check('…at all four jitter offsets', offsets.size === room * room,
+      [...offsets].sort().join(' '));
   });
 }
 

@@ -1308,11 +1308,11 @@ export interface Material {
   rotorSpinShift?: number;
   /**
    * Draw a fine foam (Aerogel): square pores in the `lattice` colour pitting a block
-   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — 2 or 3
-   * cells square, each nudged at most one cell off its period's corner. About a fifth
-   * of the surface is void, near the proportion of grey in the hand-drawn Aerogel
-   * chip, which is where the pattern comes from (the world's pores are smaller and
-   * more closely spaced than that chip's — see render/poreField.ts).
+   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — 2 cells
+   * square (3 one time in eight), each nudged at most one cell off its period's corner.
+   * About a quarter of the surface is void, a little more open than the grey of the
+   * hand-drawn Aerogel chip the pattern comes from, because the world's pores are much
+   * smaller and much more closely spaced than that chip's (see render/poreField.ts).
    *
    * The arrangement is deliberately regular and the randomness deliberately tiny: one
    * cell of size and one of position, enough that the lattice reads as hand-set
