@@ -129,6 +129,17 @@ function sandOnMesh(w: GuideDemoWorld): number {
   return n;
 }
 
+/** 체 띠보다 **아래**에 있는 물 칸 수. 체가 하나도 없으면 0. */
+function waterBelowMesh(w: GuideDemoWorld): number {
+  const meshBottom = rowSpan(w, DEMO_MESH.id).bottom;
+  if (meshBottom < 0) return 0;
+  let n = 0;
+  for (let y = meshBottom + 1; y < w.grid.height; y++) {
+    for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, y) === DEMO_WATER.id) n++;
+  }
+  return n;
+}
+
 console.log('== 박자 ==');
 check(DEMO_TPS === 30, '초당 30틱', `STEP_MS=${DEMO_STEP_MS.toFixed(2)}`);
 
@@ -279,21 +290,12 @@ console.log('\n== 기체: 연기가 아래에서 계속 올라온다 ==');
 }
 
 // --- 겹침 --------------------------------------------------------------------
-console.log('\n== 겹침: 물은 체를 지나 모래에 스미고, 모래는 체 위에 쌓인다 ==');
+console.log('\n== 겹침: 모래는 체 위에 쌓이고, 물은 체를 뚫고 아래로 샌다 ==');
 {
   const w = make('overlap');
 
-  // 1) 모래 6초. 이 구간에는 체도 브러시도 없다.
-  run(w, DEMO_TPS * 6);
-  const sand = count(w, DEMO_SAND.id);
-  check(sand > 80, '모래 더미가 생겼다', `${sand}칸`);
-  check(count(w, DEMO_MESH.id) === 0, '아직 체는 안 그어졌다');
-  check(w.brush === null, '모래가 떨어지는 동안에는 브러시가 안 보인다');
-  let soaked = 0;
-  for (let i = 0; i < w.grid.overlay.length; i++) if (w.grid.overlay[i] !== 0) soaked++;
-  check(soaked === 0, '아직 스며든 것은 없다', `${soaked}칸`);
-
-  // 2) 체 선 3초 — 고체 데모와 같은 손놀림이다.
+  // 1) 체 선 3초 — 고체 데모와 같은 손놀림이다. 체를 **바닥에서 약간 띄운** 자리에
+  // 깐다. 이 장면의 전제가 되는 배치다: 모래는 체 위에 쌓고, 물은 체 아래로 뺀다.
   run(w, DEMO_TPS);
   check(w.brush !== null, '체를 긋는 동안에는 브러시가 보인다');
   run(w, DEMO_TPS * 2);
@@ -305,23 +307,34 @@ console.log('\n== 겹침: 물은 체를 지나 모래에 스미고, 모래는 �
     '체 선에도 구멍이 없다',
     meshHoles.holes ? `y=${meshHoles.row} 등 ${meshHoles.holes}칸` : '',
   );
+  // 이 구간에는 아직 모래도 물도 없다.
+  check(count(w, DEMO_SAND.id) === 0, '체를 긋는 동안에는 모래가 없다');
+  check(count(w, DEMO_WATER.id) === 0, '체를 긋는 동안에는 물이 없다');
 
-  // 체는 더미 **위에 떠 있어야** 한다. 브러시는 빈 칸에만 칠하므로 더미에 걸치면
-  // 선이 거기서 끊기는데, 하필 그 자리가 물줄기가 떨어지는 한가운데다.
+  // 체는 바닥에서 **띄워져** 있어야 한다. 딱 바닥에 붙으면 통과한 물이 보이지
+  // 않는다. 체 아랫줄과 격자 바닥 사이에 한 줄 이상 있어야 한다.
   const mesh = rowSpan(w, DEMO_MESH.id);
-  const pile = rowSpan(w, DEMO_SAND.id);
   check(
-    mesh.bottom >= 0 && pile.top > mesh.bottom,
-    '체가 더미 봉우리보다 위에 있다',
-    `체 y=${mesh.top}..${mesh.bottom}, 더미 봉우리 y=${pile.top}`,
+    mesh.bottom >= 0 && mesh.bottom < w.grid.height - 2,
+    '체가 바닥에서 떠 있다',
+    `체 y=${mesh.top}..${mesh.bottom}, 바닥 y=${w.grid.height - 1}`,
   );
 
-  // 3) 물 6초. 물은 체를 **통과해서** 내려온다 — 체의 겹침 칸에 물이 들어앉는
-  // 것이 이 절이 말하는 「스며든 액체」 그 자체다(체는 `porous`, 가루는 막고
-  // 액체만 통과시킨다). 한 틱만 재면 지나가는 순간을 놓치므로 물 구간 내내
-  // 지켜보고 가장 많았던 때를 본다.
+  // 2) 모래 6초. 체가 깔려 있으므로 더미는 **체 위**에 쌓인다(체는 가루에게
+  // 평범한 고체라 막는다). 체 아래에는 모래가 한 알도 없어야 한다.
+  run(w, DEMO_TPS * 6);
+  const sand = count(w, DEMO_SAND.id);
+  check(sand > 80, '체 위에 모래 더미가 쌓였다', `${sand}칸`);
+  check(w.brush === null, '모래가 떨어지는 동안에는 브러시가 안 보인다');
+  const sandBelow = count(w, DEMO_SAND.id) - sandOnMesh(w);
+  check(sandBelow === 0, '체 아래로 모래가 떨어지지 않는다', `${sandBelow}칸`);
+
+  // 3) 물 3초. 물은 모래 알갱이 사이를 스며내려 체에 닿고, 체는 `porous` +
+  // `latticeFilter` 로 액체만 통과시키므로 밝은 격자 칸으로 빠져나가 **체 아래**에
+  // 고인다. 한 틱만 재면 지나가는 순간을 놓치므로 물 구간 내내 지켜보고 가장
+  // 많았던 때를 본다 — 체의 겹침 칸에 물이 들어앉는 것이 「스며든 액체」 그 자체다.
   let peakInMesh = 0;
-  for (let i = 0; i < DEMO_TPS * 6; i++) {
+  for (let i = 0; i < DEMO_TPS * 3; i++) {
     w.tick();
     let n = 0;
     for (let k = 0; k < w.grid.overlay.length; k++) {
@@ -329,22 +342,17 @@ console.log('\n== 겹침: 물은 체를 지나 모래에 스미고, 모래는 �
     }
     if (n > peakInMesh) peakInMesh = n;
   }
-  check(peakInMesh >= 3, '물이 체의 겹침 칸을 지나갔다', `한때 ${peakInMesh}칸`);
+  check(peakInMesh >= 1, '물이 체의 겹침 칸을 지나갔다', `한때 ${peakInMesh}칸`);
   check(w.brush === null, '물이 내리는 동안에는 브러시가 없다');
+  check(waterBelowMesh(w) > 0, '물이 체를 통과해 아래로 빠졌다', `${waterBelowMesh(w)}칸`);
 
-  soaked = 0;
-  for (let i = 0; i < w.grid.overlay.length; i++) if (w.grid.overlay[i] === DEMO_WATER.id) soaked++;
-  check(soaked > 0, '물이 모래에 스몄다', `겹침 ${soaked}칸`);
-  check(sandOnMesh(w) === 0, '아직 체 위에 얹힌 모래는 없다', `${sandOnMesh(w)}칸`);
+  // 모래는 여전히 체 위에 남아 있다 — 가루는 못 지나가고 액체만 지나가는 것이
+  // 한 흐름 안에서 저절로 드러난다.
+  check(sandOnMesh(w) > 50, '모래는 체 위에 그대로 남아 있다', `${sandOnMesh(w)}칸`);
 
-  // 4) 마지막 모래 1.5초 — **대조군**이다. 같은 체 위로 이번엔 가루를 부으면
-  // 통과하지 못하고 그 위에 쌓인다. 물은 지나갔는데 모래는 못 지나가는 것이
-  // 한 화면에 잇달아 남는 것이 이 장면의 결론이다.
-  run(w, Math.round(DEMO_TPS * 1.5) + Math.round(DEMO_TPS * 1.5)); // 붓는 1.5초 + 앉는 1.5초
-  check(sandOnMesh(w) > 15, '마지막 모래는 체를 못 넘고 그 위에 쌓였다', `${sandOnMesh(w)}칸`);
-
-  // 5) 19.5초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야 한다 — 다음 바퀴의
-  // 모래가 곧바로 떨어지기 시작하므로 몇 틱만 더 돌려도 격자는 이미 비어 있지 않다.
+  // 4) 3초 대기 뒤 15초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야
+  // 한다 — 다음 바퀴의 체가 곧바로 그어지기 시작하므로 몇 틱만 더 돌려도 격자는
+  // 이미 비어 있지 않다.
   let spun = 0;
   while (w.loops === 0 && spun < DEMO_TPS * 25) {
     w.tick();
