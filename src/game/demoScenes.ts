@@ -91,7 +91,7 @@ const CAST: DemoCast = {
  */
 const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind>([
   [ACID.id, 'acid'],
-  [ACID_VAPOR.id, 'acid'],
+  [ACID_VAPOR.id, 'acidvapor'],
   [GUNPOWDER.id, 'gunpowder'],
   [AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
   [FLASH_POWDER.id, 'ignite'],

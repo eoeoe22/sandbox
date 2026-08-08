@@ -62,6 +62,7 @@ import {
   DEMO_SOAPY_WATER,
   DEMO_CARAMEL,
   DEMO_ALCOHOL,
+  DEMO_ACID_VAPOR,
 } from './materials/demo';
 import { GLASS } from './materials/glass';
 import { HYDROGEN } from './materials/hydrogen';
@@ -107,7 +108,8 @@ export type GuideDemoKind =
   | 'hydrogen_oxygen'
   | 'soapywater'
   | 'saltpeter'
-  | 'alcohol';
+  | 'alcohol'
+  | 'acidvapor';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -144,6 +146,7 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'soapywater',
   'saltpeter',
   'alcohol',
+  'acidvapor',
 ];
 
 /**
@@ -249,6 +252,7 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
   saltpeter: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   alcohol: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  acidvapor: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -290,6 +294,7 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
   saltpeter: 140, // 1막 초석 더미가 다 쌓인 직후, 점화 직전
   alcohol: 115, // 알코올 웅덩이에 바이러스 소독 직후, 점화 직전
+  acidvapor: 150, // 중앙 철 바닥에 산 증기가 솟구쳐 뚫기 시작하는 무렵
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -912,6 +917,10 @@ export class GuideDemoWorld {
         // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
         this.buildFloor();
         break;
+      case 'acidvapor':
+        // 정 중앙에 위치하는 네 줄 두께의 금속 바닥.
+        this.buildCenterFloor();
+        break;
       case 'alcohol':
         // 액트1 고정 배치: 바닥 알코올 웅덩이.
         this.buildPool(this.subjectId);
@@ -939,6 +948,19 @@ export class GuideDemoWorld {
     const id = this.cast?.floor;
     if (id === undefined) return;
     const top = Math.round(g.height * ACID_FLOOR_Y);
+    for (let dy = 0; dy < ACID_FLOOR_THICK; dy++) {
+      const y = top + dy;
+      if (y >= g.height) break;
+      for (let x = 0; x < g.width; x++) g.set(x, y, id);
+    }
+  }
+
+  /** 산 증기 데모: 정 중앙에 위치하는 네 줄 두께의 금속 바닥. */
+  private buildCenterFloor(): void {
+    const g = this.grid;
+    const id = this.cast?.floor ?? DEMO_STONE.id;
+    const cy = g.height >> 1;
+    const top = cy - 2;
     for (let dy = 0; dy < ACID_FLOOR_THICK; dy++) {
       const y = top + dy;
       if (y >= g.height) break;
@@ -1171,6 +1193,9 @@ export class GuideDemoWorld {
         break;
       case 'alcohol':
         this.tickAlcohol();
+        break;
+      case 'acidvapor':
+        this.tickAcidVapor();
         break;
     }
     this.sim.step();
@@ -2123,16 +2148,12 @@ export class GuideDemoWorld {
       return;
     }
     if (t < HO_AT) return;
-    if (t >= HO_AT && t < HO_AT + IGNITE_FLAME) {
-      this.ignitePile(0, this.grid.width - 1);
+    if (t === HO_AT) {
       const g = this.grid;
-      const x0 = Math.round(g.width * 0.3);
-      const x1 = Math.round(g.width * 0.7);
+      const midX = g.width >> 1;
       const upperY = Math.max(1, Math.round(g.height * 0.2));
-      for (let x = x0; x <= x1; x += 2) {
-        if (g.inBounds(x, upperY)) {
-          this.sim.context.spawn(x, upperY, DEMO_FIRE.id);
-        }
+      if (g.inBounds(midX, upperY)) {
+        this.sim.context.spawn(midX, upperY, DEMO_FIRE.id);
       }
     }
   }
@@ -2237,6 +2258,34 @@ export class GuideDemoWorld {
 
     if (t >= ALCOHOL_IGNITE && t < ALCOHOL_IGNITE + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  /** acidvapor: 정 중앙 철 바닥을 두고 하단에서 덮어쓰기로 산 증기 분출 (산 증기) */
+  private tickAcidVapor(): void {
+    const t = this.t;
+    if (t >= ACID_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < ACID_POUR) {
+      this.spawnAcidVaporStream();
+    }
+  }
+
+  private spawnAcidVaporStream(): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const y = g.height - 2;
+    const x0 = Math.round(g.width * 0.4);
+    const x1 = Math.round(g.width * 0.6);
+    for (let x = x0; x <= x1; x++) {
+      if (this.rand() < 0.3) {
+        if (g.inBounds(x, y)) {
+          g.set(x, y, DEMO_ACID_VAPOR.id);
+          this.sim.context.setTemp(x, y, 100);
+        }
+      }
     }
   }
 }
