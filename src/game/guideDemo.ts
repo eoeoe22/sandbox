@@ -4,12 +4,12 @@
 //
 // 장면은 여섯이고 문서의 여섯 자리에 하나씩 붙는다.
 //
-//   solid   브러시가 캔버스 가운데에 벽으로 선을 하나 긋고, 지웠다가 다시 긋는다.
+//   solid   브러시가 캔버스 가운데에 돌로 선을 하나 긋고, 지웠다가 다시 긋는다.
 //   powder  모래가 위에서 한 줄기로 떨어져 더미를 쌓는다. 초기화 없이 계속.
 //   liquid  벽으로 만든 그릇에 물이 떨어져 넘칠 때까지 차고, 초기화 후 반복.
 //   gas     맨 아래에서 연기가 계속 올라온다. 초기화 없음.
 //   overlap 모래를 한 줄기 쌓고, 그 위로 물을 부어 스며드는 것을 보여 준다.
-//   heat    가로로 놓인 히트파이프 한 줄의 한쪽 끝을 불 Clone 이 달군다.
+//   heat    가로로 놓인 히트파이프 띠를 그 아래의 불 Clone 이 한쪽 끝부터 달군다.
 //
 // **여기 있는 것은 브라우저 없이 검증할 수 있는 부분 전부다** — 장면 배치, 틱
 // 단위 대본, 넘침 판정, 열 뷰 전환 시점. 컴포넌트에 남는 것은 캔버스 크기에서
@@ -22,6 +22,7 @@ import { EMPTY, type BorderMode } from './engine/types';
 import { TICK_HZ } from './config';
 import {
   DEMO_WALL,
+  DEMO_STONE,
   DEMO_SAND,
   DEMO_WATER,
   DEMO_SMOKE,
@@ -170,12 +171,16 @@ const SMOKE_X0 = 0.3;
 const SMOKE_X1 = 0.7;
 const SMOKE_PER_TICK = 2;
 
-/** 열전도 데모: 파이프가 놓이는 높이(세로 비율)와 좌우 여백(칸). */
-const PIPE_Y = 0.5;
-const PIPE_PAD_LEFT = 6;
+/** 열전도 데모: 파이프 띠의 **한가운데** 높이(세로 비율)와 좌우 여백(칸). */
+const PIPE_Y = 0.45;
+const PIPE_PAD_LEFT = 5;
 const PIPE_PAD_RIGHT = 4;
-/** 불 Clone 기둥의 세로 반경(칸). 파이프 끝을 위아래로 감싸 불이 고이게 한다. */
-const FIREBOX_R = 2;
+/** 파이프 두께(칸). 홀수라야 PIPE_Y 가 가리키는 줄이 띠의 한가운데로 떨어진다. */
+const PIPE_THICK = 3;
+/** 불 Clone 덩어리의 가로·세로(칸)와, 파이프 아랫줄과의 사이에 비워 둘 줄 수. */
+const FIREBOX_W = 4;
+const FIREBOX_H = 3;
+const FIREBOX_GAP = 1;
 
 /** 브러시 커서. 고체 데모에서만 값이 있고 나머지는 `null`이다. */
 export interface DemoBrush {
@@ -280,30 +285,54 @@ export class GuideDemoWorld {
   }
 
   /**
-   * 열전도 데모: 가로로 히트파이프 한 줄, 왼쪽 끝에 불을 문 Clone 기둥.
+   * 열전도 데모: 가로로 놓인 히트파이프 띠와, 그 **왼쪽 끝 아래**에서 불을 뿜는
+   * Clone 덩어리.
    *
-   * Clone 은 이웃의 **빈 칸**으로만 복제본을 뱉으므로, 기둥을 파이프보다 위아래로
-   * 두 칸 넓게 세워 파이프 끝의 위아래가 불로 덮이게 한다. 열 교환은 상하좌우
-   * 4이웃이라, 대각선으로만 닿는 배치였다면 파이프가 데워지지 않는다.
+   * 셋 다 한 칸이 아니라 덩어리인 데에는 이유가 있다.
+   *
+   * - **파이프가 세 칸 두께**인 것은 이 장면의 볼거리가 색이기 때문이다. 열지도로
+   *   넘어가면 칸 하나하나의 색이 곧 온도인데, 한 줄짜리 파이프는 그 기울기가
+   *   1픽셀 두께의 선으로만 보인다.
+   * - **불은 파이프 아래**에 둔다. 불은 위로 오르므로 아래에서 달구는 편이 옆에서
+   *   대는 것보다 자연스럽고, 열이 파이프 밑면을 따라 들어가 위로 배어 나오는
+   *   것까지 보인다.
+   * - **사이를 한 줄 비워 둔다.** Clone 은 이웃의 **빈 칸**으로만 복제본을
+   *   뱉으므로, 덩어리를 파이프에 딱 붙이면 위쪽으로는 뱉을 자리가 없어 불이
+   *   옆구리로만 새어 나간다. 한 줄을 비워 두면 그 줄이 불로 차서 파이프 밑면
+   *   전체와 상하좌우로 맞닿는다 — 열 교환은 4이웃이라, 대각선으로만 닿는
+   *   배치였다면 파이프가 데워지지 않는다.
    *
    * `aux` 에 불의 id 를 미리 박아 두는 것은 팔레트의 더블클릭 Clone 단축키와 같은
    * 수법이다(clone.ts 의 `canAdopt` 주석). 그냥 두면 Clone 이 처음 닿은 것 —
    * 즉 히트파이프 — 를 물어 버려 불 대신 파이프를 뿜는다.
    */
-  private buildPipe(): { y: number; x0: number; x1: number; cloneX: number } {
+  private buildPipe(): { y: number; top: number; bottom: number; x0: number; x1: number } {
     const g = this.grid;
     const y = Math.round(g.height * PIPE_Y);
+    // 두께가 홀수면 위아래로 똑같이 벌어지고, 짝수면 아래로 한 줄 더 간다.
+    const half = (PIPE_THICK - 1) >> 1;
+    const top = y - half;
+    const bottom = top + PIPE_THICK - 1;
     const x0 = PIPE_PAD_LEFT;
     const x1 = g.width - 1 - PIPE_PAD_RIGHT;
-    for (let x = x0; x <= x1; x++) g.set(x, y, DEMO_HEATPIPE.id);
-    const cloneX = x0 - 1;
-    for (let dy = -FIREBOX_R; dy <= FIREBOX_R; dy++) {
-      const cy = y + dy;
-      if (!g.inBounds(cloneX, cy)) continue;
-      g.set(cloneX, cy, DEMO_CLONE.id);
-      g.setAux(cloneX, cy, DEMO_FIRE.id);
+    for (let py = top; py <= bottom; py++) {
+      for (let x = x0; x <= x1; x++) {
+        if (g.inBounds(x, py)) g.set(x, py, DEMO_HEATPIPE.id);
+      }
     }
-    return { y, x0, x1, cloneX };
+    // 불 덩어리는 파이프 왼쪽 끝 아래. 가로로는 파이프의 왼쪽 끝과 겹쳐 두어
+    // 사이의 빈 줄에 고인 불이 파이프 밑면에 그대로 닿게 한다.
+    const fy = bottom + 1 + FIREBOX_GAP;
+    for (let dy = 0; dy < FIREBOX_H; dy++) {
+      for (let dx = 0; dx < FIREBOX_W; dx++) {
+        const cx = x0 + dx;
+        const cy = fy + dy;
+        if (!g.inBounds(cx, cy)) continue;
+        g.set(cx, cy, DEMO_CLONE.id);
+        g.setAux(cx, cy, DEMO_FIRE.id);
+      }
+    }
+    return { y, top, bottom, x0, x1 };
   }
 
   // --- 한 틱 -------------------------------------------------------------------
@@ -384,8 +413,17 @@ export class GuideDemoWorld {
     if (t >= SOLID_HOLD_IN) this.paintDisc(x, y, BRUSH_R);
   }
 
-  /** (cx,cy) 중심 반지름 r의 원을 벽으로 칠한다. 브러시가 칸을 직접 쓰는 것은
-   *  게임의 브러시와 같다(반응 컨텍스트를 거치지 않는다). */
+  /**
+   * (cx,cy) 중심 반지름 r의 원을 돌로 칠한다. 브러시가 칸을 직접 쓰는 것은 게임의
+   * 브러시와 같다(반응 컨텍스트를 거치지 않는다). 칸마다 tint 를 굴리는 것도
+   * `PointerPainter` 와 같은 식이라, 여기 그어지는 선은 손으로 칠한 것과 같은
+   * 알갱이를 갖는다.
+   *
+   * 벽이 아니라 **돌**인 것은 이 카드가 「고체」라는 상태를 보여 주는 자리이기
+   * 때문이다. 벽은 파괴도 반응도 상변화도 없는 예외적인 물질이라 고체의 대표로는
+   * 오해를 부른다 — 돌은 그냥 평범한 고체다. 벽은 액체 데모의 그릇처럼 「장면을
+   * 담는 틀」로만 남는다.
+   */
   private paintDisc(cx: number, cy: number, r: number): void {
     const g = this.grid;
     for (let dy = -r; dy <= r; dy++) {
@@ -394,7 +432,7 @@ export class GuideDemoWorld {
         const x = cx + dx;
         const y = cy + dy;
         if (!g.inBounds(x, y) || g.get(x, y) !== EMPTY) continue;
-        g.set(x, y, DEMO_WALL.id);
+        g.set(x, y, DEMO_STONE.id);
         g.setTint(x, y, (this.rand() * 256) | 0);
       }
     }

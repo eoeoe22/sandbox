@@ -17,7 +17,7 @@
   //
   // 설명 옆에는 **돌아가는 엔진**이 붙는다. 예시 사진이 들어갈 자리마다 작은
   // 캔버스가 하나씩 놓이고, 그 안에서 실제 시뮬레이션이 대본대로 돈다
-  // (`game/guideDemo.ts` + `GuideDemo.svelte`). 벽으로 그은 선, 쌓이는 모래,
+  // (`game/guideDemo.ts` + `GuideDemo.svelte`). 돌로 그은 선, 쌓이는 모래,
   // 넘치는 그릇, 오르는 연기, 모래에 스미는 물, 한쪽 끝부터 달아오르는 히트파이프
   // — 여섯 장면이다.
   import { onMount } from 'svelte';

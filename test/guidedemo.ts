@@ -24,10 +24,12 @@ import { EMPTY } from '../src/game/engine/types';
 import { AMBIENT_TEMP } from '../src/game/config';
 import {
   DEMO_WALL,
+  DEMO_STONE,
   DEMO_SAND,
   DEMO_WATER,
   DEMO_SMOKE,
   DEMO_HEATPIPE,
+  DEMO_CLONE,
 } from '../src/game/materials/demo';
 
 let failures = 0;
@@ -95,7 +97,7 @@ console.log('\n== 고체: 브러시가 선을 긋고, 지웠다가 다시 긋는
 
   run(w, 5);
   check(w.brush !== null, '대기 구간에도 브러시가 보인다');
-  check(count(w, DEMO_WALL.id) === 0, '대기 구간에는 아직 아무것도 안 그려졌다');
+  check(count(w, DEMO_STONE.id) === 0, '대기 구간에는 아직 아무것도 안 그려졌다');
 
   const startX = w.brush!.x;
   run(w, DEMO_TPS * 0.5 + DEMO_TPS - 5); // 대기 + 드래그가 끝난 시점
@@ -104,20 +106,22 @@ console.log('\n== 고체: 브러시가 선을 긋고, 지웠다가 다시 긋는
 
   // 선은 가운데 줄에 놓이고, 브러시 반지름만큼 굵다.
   let lineCells = 0;
-  for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, mid) === DEMO_WALL.id) lineCells++;
-  check(lineCells > w.grid.width * 0.6, '가운데 줄이 벽으로 이어졌다', `${lineCells}/${w.grid.width}칸`);
+  for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, mid) === DEMO_STONE.id) lineCells++;
+  check(lineCells > w.grid.width * 0.6, '가운데 줄이 돌로 이어졌다', `${lineCells}/${w.grid.width}칸`);
 
-  const drawn = count(w, DEMO_WALL.id);
-  check(drawn > 0, '벽이 그려졌다', `${drawn}칸`);
+  const drawn = count(w, DEMO_STONE.id);
+  check(drawn > 0, '돌이 그려졌다', `${drawn}칸`);
+  // 「고체」 카드가 보여 주는 것은 상태이지 벽이라는 예외적인 물질이 아니다.
+  check(count(w, DEMO_WALL.id) === 0, '벽은 한 칸도 안 쓴다');
 
   // 마지막 대기 구간이 지나면 초기화된다.
   run(w, DEMO_TPS + 2);
   check(w.loops === 1, '한 바퀴 돌고 초기화됐다', `loops=${w.loops}`);
-  check(count(w, DEMO_WALL.id) < drawn * 0.5, '초기화로 선이 지워졌다', `${count(w, DEMO_WALL.id)}칸`);
+  check(count(w, DEMO_STONE.id) < drawn * 0.5, '초기화로 선이 지워졌다', `${count(w, DEMO_STONE.id)}칸`);
 
   // 그리고 다시 긋는다.
   run(w, DEMO_TPS * 2);
-  check(count(w, DEMO_WALL.id) > 0, '두 번째 바퀴에서 다시 그린다');
+  check(count(w, DEMO_STONE.id) > 0, '두 번째 바퀴에서 다시 그린다');
 }
 
 // --- 가루 --------------------------------------------------------------------
@@ -219,12 +223,42 @@ console.log('\n== 겹침: 모래 더미에 물이 스민다 ==');
 }
 
 // --- 열전도 -------------------------------------------------------------------
-console.log('\n== 열전도: 파이프 한 줄이 한쪽 끝부터 달아오른다 ==');
+console.log('\n== 열전도: 파이프 띠가 아래의 불에서부터 달아오른다 ==');
 {
   const w = make('heat');
-  const pipeY = Math.round(w.grid.height * 0.5);
-  const pipes = count(w, DEMO_HEATPIPE.id);
-  check(pipes > w.grid.width * 0.7, '파이프가 가로로 한 줄 놓였다', `${pipes}칸`);
+
+  // 파이프가 놓인 줄을 격자에서 직접 찾는다. 대본 상수(PIPE_Y·PIPE_THICK)를 여기
+  // 한 벌 더 적으면 배치를 옮겼을 때 검사가 **엉뚱한 빈 줄을 재고도 통과**한다.
+  const pipeRows: number[] = [];
+  for (let y = 0; y < w.grid.height; y++) {
+    let n = 0;
+    for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, y) === DEMO_HEATPIPE.id) n++;
+    if (n > w.grid.width * 0.7) pipeRows.push(y);
+  }
+  check(pipeRows.length >= 3, '파이프가 여러 줄 두께의 띠로 놓였다', `${pipeRows.length}줄`);
+  check(
+    pipeRows.length === 0 || pipeRows[pipeRows.length - 1] - pipeRows[0] === pipeRows.length - 1,
+    '띠가 끊기지 않고 붙어 있다',
+    `y=${pipeRows[0]}..${pipeRows[pipeRows.length - 1]}`,
+  );
+  const pipeTop = pipeRows[0];
+  const pipeBottom = pipeRows[pipeRows.length - 1];
+
+  // 불 Clone 은 파이프 **아래**에 있어야 한다(불은 위로 오른다). 그리고 파이프에
+  // 딱 붙어 있으면 위로는 뱉을 자리가 없어 불이 옆구리로만 샌다 — 사이에 빈 줄이
+  // 있는지까지 본다.
+  let cloneTop = -1;
+  let cloneCells = 0;
+  for (let y = 0; y < w.grid.height; y++) {
+    for (let x = 0; x < w.grid.width; x++) {
+      if (w.grid.get(x, y) !== DEMO_CLONE.id) continue;
+      cloneCells++;
+      if (cloneTop < 0) cloneTop = y;
+    }
+  }
+  check(cloneCells >= 9, '불 Clone 이 덩어리로 놓였다', `${cloneCells}칸`);
+  check(cloneTop > pipeBottom, 'Clone 이 파이프 아래에 있다', `clone y=${cloneTop} > pipe y=${pipeBottom}`);
+  check(cloneTop - pipeBottom >= 2, '파이프와 Clone 사이가 비어 있다', `${cloneTop - pipeBottom - 1}줄`);
 
   // 2초분(60틱)을 돌린 동안은 t=0..59라 전부 일반 뷰이고, t=60인 다음 틱이
   // 열 뷰로 넘어간다.
@@ -236,15 +270,17 @@ console.log('\n== 열전도: 파이프 한 줄이 한쪽 끝부터 달아오른�
   run(w, DEMO_TPS * 4);
 
   // 파이프를 따라 왼쪽(불) → 오른쪽으로 온도가 내려가는 기울기가 있어야 한다.
+  // 재는 줄은 불에서 가장 먼 **맨 윗줄**이다: 아랫줄만 달아오르고 위까지 배어
+  // 나오지 않으면 열지도에서 띠가 한 줄짜리로 보인다.
   const temps: number[] = [];
   for (let x = 0; x < w.grid.width; x++) {
-    if (w.grid.get(x, pipeY) === DEMO_HEATPIPE.id) temps.push(w.grid.getTemp(x, pipeY));
+    if (w.grid.get(x, pipeTop) === DEMO_HEATPIPE.id) temps.push(w.grid.getTemp(x, pipeTop));
   }
   const near = temps[0];
   const far = temps[temps.length - 1];
   check(near > AMBIENT_TEMP + 100, '불이 닿은 끝이 달아올랐다', `${near.toFixed(0)}℃`);
   // 열지도가 절반만 칠해진 채로 초기화되면 「열전도」 데모가 아니다. 반대쪽 끝이
-  // 눈에 띄게 데워졌는지를 본다(파이프 길이를 늘리면 여기서 먼저 걸린다).
+  // 눈에 띄게 데워졌는지를 본다(파이프를 늘리거나 두껍게 하면 여기서 먼저 걸린다).
   check(far > AMBIENT_TEMP + 40, '반대쪽 끝까지 열이 갔다', `${far.toFixed(0)}℃`);
   check(near > far, '가까운 쪽이 더 뜨겁다', `${near.toFixed(0)}℃ > ${far.toFixed(0)}℃`);
 
@@ -252,7 +288,7 @@ console.log('\n== 열전도: 파이프 한 줄이 한쪽 끝부터 달아오른�
   run(w, DEMO_TPS * 2);
   check(w.loops === 1, '한 바퀴 돌고 초기화됐다', `loops=${w.loops}`);
   check(!w.heatView, '초기화하면 일반 뷰로 돌아온다');
-  const backToAmbient = w.grid.getTemp(w.grid.width - 8, pipeY);
+  const backToAmbient = w.grid.getTemp(w.grid.width - 8, pipeTop);
   check(Math.abs(backToAmbient - AMBIENT_TEMP) < 1, '초기화로 온도도 되돌아온다', `${backToAmbient.toFixed(0)}℃`);
 }
 
