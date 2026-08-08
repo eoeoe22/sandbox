@@ -1665,7 +1665,7 @@ export class GuideDemoWorld {
       }
     }
     // 더미가 없으면 아무것도 안 한다 — 이미 터진 뒤라면 크레이터 위에 불만 남는다.
-    if (bestX < 0 || bestY === 0) return;
+    if (bestX < 0) return;
     // 꼭대기 한 점이 아니라 **봉우리 둘레의 등고선을 따라** 손을 댄다. 한 점만
     // 노리면 그 자리가 튀어나온 알갱이 하나일 때 불이 더미에서 몇 칸 뜬 채로 타다
     // 만다(실측: 여덟 판 중 한 판이 아무것도 안 터진 채 끝났다). 칸마다 그 칸의
@@ -1678,9 +1678,15 @@ export class GuideDemoWorld {
       const x = bestX + dx;
       if (x < lo || x > hi) continue;
       const top = this.topOf(x);
-      if (top <= 0) continue;
+      if (top < 0) continue;
       if (this.trigger === 'spark') {
-        spark.push(x, top);
+        spark.push(x, Math.max(0, top));
+        continue;
+      }
+      if (top === 0) {
+        if (g.get(x, 0) !== DEMO_WALL.id) {
+          this.sim.context.spawn(x, 0, DEMO_FIRE.id);
+        }
         continue;
       }
       if (g.get(x, top - 1) !== EMPTY) {
@@ -1932,6 +1938,17 @@ export class GuideDemoWorld {
     }
     if (t >= OPEN_IGNITE_AT && t < OPEN_IGNITE_AT + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
+      const isGas = getMaterial(this.subjectId).phase === Phase.Gas;
+      if (isGas) {
+        const g = this.grid;
+        const midX = Math.round(g.width * 0.5);
+        for (let y = 0; y < g.height; y++) {
+          if (g.get(midX, y) === this.subjectId) {
+            this.sim.context.spawn(midX, y, DEMO_FIRE.id);
+            break;
+          }
+        }
+      }
     }
   }
 
