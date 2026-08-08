@@ -294,7 +294,7 @@ console.log('\n== 산: 네 줄 두께의 금속 바닥을 갉아 뚫고 아래�
 }
 
 // --- 격발 ---------------------------------------------------------------------------
-console.log('\n== 격발: 3초 붓고 격발, 1초 대기 후 초기화 (섬광화약·불꽃놀이 화약·황·니트로) ==');
+console.log('\n== 격발: 3초 생성, 2초 대기, 점화, 3초 대기, 초기화 사이클 (섬광화약·불꽃놀이 화약·황·니트로) ==');
 for (const [label, id] of [
   ['섬광화약', FLASH_POWDER.id],
   ['불꽃놀이 화약', FIREWORKS.id],
@@ -302,16 +302,16 @@ for (const [label, id] of [
   ['니트로', NITRO.id],
 ] as [string, number][]) {
   const w = make(id);
-  run(w, DEMO_TPS * 3 - 1);
+  run(w, DEMO_TPS * 3);
   const piled = count(w, id);
   check(piled > 30, `${label}: 3초어치 더미가 쌓였다`, `${piled}칸`);
-  check(count(w, FIRE.id) === 0, `${label}: 아직 불은 없다`);
+
+  run(w, DEMO_TPS * 2 - 1);
+  check(count(w, FIRE.id) === 0, `${label}: 2초 대기 동안 아직 불은 없다`);
   check(w.brush === null, `${label}: 브러시가 없는 장면이다`);
 
-  // 3초 직후에 불이 붙는다. 「불이 났는가」가 아니라 **더미가 사라졌는가**로 본다 —
-  // 불 한 점만 나고 아무 일도 안 일어나는 판이 정확히 이 검사가 노리는 고장이다.
-  // 폭약 셋은 한 틱에 터지고 황은 번져 타므로, 둘 다 「줄어든다」로 잡힌다.
-  run(w, DEMO_TPS * 1);
+  // 5초(3초 생성+2초 대기) 시점에 불이 붙는다.
+  run(w, DEMO_TPS * 2);
   const left = count(w, id);
   check(left < piled * 0.5, `${label}: 불을 댄 뒤 더미가 사라졌다`, `${piled} → ${left}칸`);
 
@@ -331,8 +331,8 @@ console.log('\n== 섬광화약: 주황색 없이 흰 섬광만 ==');
   let worstFire = 0;
   for (let trial = 0; trial < 4; trial++) {
     const w = make(FLASH_POWDER.id);
-    // 점화 틱(3초) 직전까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
-    run(w, DEMO_TPS * 3 - 1);
+    // 점화 틱(5초) 직전까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
+    run(w, DEMO_TPS * 5 - 1);
     worstFire = Math.max(worstFire, count(w, FIRE.id));
     // 그리고 터지는 것을 지켜본다. 섬광은 7틱이면 꺼지고 일반 폭발은 식으며 잔불로
     // 흩어지므로, 한 틱만 재면 둘 다 놓친다.

@@ -264,7 +264,7 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   // 아니라 「뭔가 부서진 자리」로만 읽힌다. 쌓인 더미(그리고 그 옆에 뭘 부었는지)가
   // 한 장으로 훨씬 많은 것을 말한다.
   acid: 240, // 산이 바닥을 다 뚫고 아래로 고인 뒤 (대본 270틱)
-  ignite: 85, // 3초 줄기 낙하 후 점화 직전
+  ignite: 145, // 3초 생성 + 2초 대기 후 점화(150틱) 직전
   gunpowder: 120, // 1막에서 모래 둔덕 사이에 화약이 다 쌓인 순간 (점화 150틱)
   ammoniumnitrate: 175, // 세 칸에 연료까지 부은 뒤, 휘젓기 직전 (대본 360틱)
   open_ignite: 85, // 3초 생성 후 점화 직전
@@ -458,10 +458,10 @@ const ACID_POUR = DEMO_TPS * 6;
 const ACID_HOLD = DEMO_TPS * 3;
 const ACID_CYCLE = ACID_POUR + ACID_HOLD;
 
-/** ignite: 3초 붓고 격발, 1초 대기 후 초기화 (암모날·ANFO·로켓캔디·메탄·섬광화약·불꽃놀이화약·황·니트로). */
+/** ignite: 3초 생성, 2초 대기, 점화, 3초 대기, 초기화 사이클 (암모날·ANFO·로켓캔디·메탄·섬광화약·불꽃놀이화약·황·니트로). */
 const IGNITE_POUR = DEMO_TPS * 3;
-const IGNITE_WAIT = 0;
-const IGNITE_TAIL = DEMO_TPS * 1;
+const IGNITE_WAIT = DEMO_TPS * 2;
+const IGNITE_TAIL = DEMO_TPS * 3;
 const IGNITE_AT = IGNITE_POUR + IGNITE_WAIT;
 const IGNITE_CYCLE = IGNITE_AT + IGNITE_TAIL;
 
