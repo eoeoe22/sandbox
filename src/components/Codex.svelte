@@ -24,7 +24,7 @@
   import { tagIdOf } from '../game/codex/tags';
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
-  import type { DemoCast, GuideDemoKind } from '../game/guideDemo';
+  import type { DemoCast, DemoTrigger, GuideDemoKind } from '../game/guideDemo';
   import type { GuideDemoScene } from '../game/demoScenes';
   // The number/reaction formatters live beside the Markdown writers so the page
   // and the clipboard can't say different things — see codex/format.ts.
@@ -262,6 +262,7 @@
     kind: GuideDemoKind;
     subjectId?: number;
     cast?: DemoCast;
+    trigger?: DemoTrigger;
   }> | null>(null);
   /**
    * 맞춤 연출 표(`game/demoScenes.ts`)를 찾는 함수. 같은 이유로 동적이다 — 그
@@ -294,11 +295,17 @@
    * object 는 phase 가 없고 맞춤 연출도 없으므로 어느 쪽으로도 안 간다 — 데모 없음.
    */
   const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
-  const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number; cast?: DemoCast } | null>(() => {
+  const cardDemo = $derived.by<{
+    kind: GuideDemoKind;
+    id: number;
+    cast?: DemoCast;
+    trigger?: DemoTrigger;
+  } | null>(() => {
     const c = openCard;
     if (c === null || c.id === null) return null;
     const custom = sceneFor?.(c.id) ?? null;
-    if (custom !== null) return { kind: custom.kind, id: c.id, cast: custom.cast };
+    if (custom !== null)
+      return { kind: custom.kind, id: c.id, cast: custom.cast, trigger: custom.trigger };
     if (c.phase === null || !PHASE_DEMOS.has(c.phase)) return null;
     return { kind: c.phase as GuideDemoKind, id: c.id };
   });
@@ -593,7 +600,12 @@
       {/snippet}
       {#snippet demo()}
         {#if Demo !== null && cardDemo !== null}
-          <Demo kind={cardDemo.kind} subjectId={cardDemo.id} cast={cardDemo.cast} />
+          <Demo
+            kind={cardDemo.kind}
+            subjectId={cardDemo.id}
+            cast={cardDemo.cast}
+            trigger={cardDemo.trigger}
+          />
         {/if}
       {/snippet}
     </CodexCard>

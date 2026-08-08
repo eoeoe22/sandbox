@@ -65,14 +65,11 @@ function make(id: number): GuideDemoWorld {
   const scene = demoSceneFor(id);
   if (scene === null) throw new Error(`맞춤 연출이 배정되지 않은 물질: ${id}`);
   const spec = GUIDE_DEMO_SPECS[scene.kind];
-  return new GuideDemoWorld(
-    scene.kind,
-    spec.cols,
-    Math.round(spec.cols / spec.aspect),
-    Math.random,
-    id,
-    scene.cast,
-  );
+  return new GuideDemoWorld(scene.kind, spec.cols, Math.round(spec.cols / spec.aspect), Math.random, {
+    subjectId: id,
+    cast: scene.cast,
+    trigger: scene.trigger,
+  });
 }
 
 function run(w: GuideDemoWorld, ticks: number): void {
@@ -167,6 +164,20 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     '질산암모늄의 연료는 알루미늄 가루·등유',
     cast.fuels.map((id) => getMaterial(id).name).join('+'),
   );
+
+  // 격발 방식. 섬광화약만 전기이고 나머지는 전부 불이다 — 표가 뒤집히면 황이
+  // 전기로 안 붙어(전기는 평범한 연료를 점화하지 않는다) 조용히 안 타 버린다.
+  check(demoSceneFor(FLASH_POWDER.id)?.trigger === 'spark', '섬광화약만 전기로 격발한다');
+  for (const [label, id] of [
+    ['산', ACID.id],
+    ['화약', GUNPOWDER.id],
+    ['질산암모늄', AMMONIUM_NITRATE.id],
+    ['불꽃놀이 화약', FIREWORKS.id],
+    ['황', SULFUR.id],
+    ['니트로', NITRO.id],
+  ] as [string, number][]) {
+    check(demoSceneFor(id)?.trigger === 'fire', `${label} 은 불로 격발한다`);
+  }
 }
 
 console.log('\n== 네 대본이 전부 세워진다 ==');
@@ -176,31 +187,47 @@ for (const kind of CUSTOM_DEMO_KINDS) {
 }
 
 // --- 산 ---------------------------------------------------------------------------
-console.log('\n== 산: 금속 바닥 한 줄을 갉아 뚫고 아래로 샌다 ==');
+console.log('\n== 산: 네 줄 두께의 금속 바닥을 갉아 뚫고 아래로 샌다 ==');
 {
-  const w = make(ACID.id);
-  const floorRow = rowSpan(w, IRON.id).top;
-  check(floorRow > 0, '금속 바닥이 한 줄 놓였다', `y=${floorRow}`);
+  const w = new GuideDemoWorld(
+    'acid',
+    GUIDE_DEMO_SPECS.acid.cols,
+    Math.round(GUIDE_DEMO_SPECS.acid.cols / GUIDE_DEMO_SPECS.acid.aspect),
+    Math.random,
+    { subjectId: ACID.id, cast: demoSceneFor(ACID.id)!.cast },
+  );
+  const floor = rowSpan(w, IRON.id);
+  check(floor.top > 0, '금속 바닥이 놓였다', `y=${floor.top}..${floor.bottom}`);
 
-  // 바닥은 **끝에서 끝까지** 막고 있어야 한다. 한 칸이라도 비면 산은 갉는 대신
-  // 그리로 흘러내리고, 장면이 「부식」에서 「틈으로 샌다」가 된다.
+  // 바닥은 **끝에서 끝까지, 네 줄 두께로** 막고 있어야 한다. 한 칸이라도 비면 산은
+  // 갉는 대신 그리로 흘러내려 장면이 「부식」에서 「틈으로 샌다」가 되고, 한 줄로
+  // 얇아지면 표면 한 겹이 사라지는 순간 곧장 관통이라 갉는 과정 자체가 안 보인다.
   let gaps = 0;
-  for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, floorRow) !== IRON.id) gaps++;
-  check(gaps === 0, '바닥이 격자를 가로로 완전히 막는다', `빈 칸 ${gaps}`);
+  for (let y = floor.top; y <= floor.bottom; y++) {
+    for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, y) !== IRON.id) gaps++;
+  }
+  check(
+    floor.bottom - floor.top + 1 === 4 && gaps === 0,
+    '바닥이 네 줄 두께로 격자를 가로로 완전히 막는다',
+    `${floor.bottom - floor.top + 1}줄, 빈 칸 ${gaps}`,
+  );
   const floorAtStart = count(w, IRON.id);
+  check(floorAtStart === w.grid.width * 4, '바닥이 네 줄 전부 채워졌다', `${floorAtStart}칸`);
 
   run(w, DEMO_TPS * 2);
   check(count(w, ACID.id) > 20, '산이 부어지고 있다', `${count(w, ACID.id)}칸`);
 
-  // 붓기 6초 + 구경 5초. 이 사이에 바닥이 뚫려야 한다.
-  run(w, DEMO_TPS * 8);
+  // 붓기 6초 + 구경 3초. 이 사이에 바닥 **네 줄이 전부** 뚫려야 한다.
+  run(w, DEMO_TPS * 6);
   const eaten = floorAtStart - count(w, IRON.id);
-  check(eaten >= 3, '바닥이 갉여 나갔다', `${eaten}칸`);
+  check(eaten >= 12, '바닥이 갉여 나갔다', `${eaten}칸`);
+  // 「아래로 샜다」는 바닥의 **맨 아랫줄보다 더 아래**에서 재야 네 줄을 다 뚫었다는
+  // 뜻이 된다. 윗줄만 파먹은 판도 `floor.top + 1` 기준으로는 통과해 버린다.
   let below = 0;
-  for (let y = floorRow + 1; y < w.grid.height; y++) {
+  for (let y = floor.bottom + 1; y < w.grid.height; y++) {
     for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, y) === ACID.id) below++;
   }
-  check(below > 0, '뚫린 자리로 산이 아래까지 내려갔다', `${below}칸`);
+  check(below > 10, '네 줄을 다 뚫고 산이 아래까지 내려갔다', `${below}칸`);
 
   // 철은 이온화 경향이 수소보다 커서 **기포를 내며** 녹는다(`acidHydrogen`). 이게
   // 안 보이면 바닥을 아무 금속으로나 바꿔도 티가 안 난다는 뜻이라 배역이 헛돈다.
@@ -209,7 +236,7 @@ console.log('\n== 산: 금속 바닥 한 줄을 갉아 뚫고 아래로 샌다 =
     let sawFizz = false;
     for (let trial = 0; trial < 5 && !sawFizz; trial++) {
       const s = make(ACID.id);
-      for (let i = 0; i < DEMO_TPS * 11; i++) {
+      for (let i = 0; i < DEMO_TPS * 9; i++) {
         s.tick();
         if (count(s, HYDROGEN.id) > 0) {
           sawFizz = true;
@@ -221,7 +248,7 @@ console.log('\n== 산: 금속 바닥 한 줄을 갉아 뚫고 아래로 샌다 =
   }
 
   const ticks = spinToLoop(w, DEMO_TPS * 20);
-  check(ticks > 0, '한 바퀴가 끝났다', `${((DEMO_TPS * 10 + ticks) / DEMO_TPS).toFixed(1)}초`);
+  check(ticks > 0, '한 바퀴가 끝났다', `${((DEMO_TPS * 8 + ticks) / DEMO_TPS).toFixed(1)}초`);
   check(count(w, IRON.id) === floorAtStart, '초기화하면 바닥이 다시 온전하다', `${count(w, IRON.id)}칸`);
   check(count(w, ACID.id) === 0, '초기화로 산이 사라졌다');
 }
@@ -252,6 +279,29 @@ for (const [label, id] of [
   check(ticks > 0, `${label}: 한 바퀴 돌고 초기화됐다`);
   run(w, DEMO_TPS * 2);
   check(count(w, id) > 10, `${label}: 두 번째 바퀴에서 다시 쌓는다`, `${count(w, id)}칸`);
+}
+
+// 섬광화약만 전기로 찌른다. 그 물질의 볼거리는 순백색 섬광 한 장인데, 앞에 주황색
+// 불꽃이 서 있으면 눈이 그걸 먼저 먹고 섬광은 「그 불이 밝아진 것」으로 읽힌다.
+// 그래서 **격발 순간에 불이 한 칸도 없어야** 한다 — 터진 뒤 잔불(Blast 가 식으며
+// 남기는 것)은 폭발 자체의 산물이라 상관없고, 재는 것은 딱 그 앞의 한 틱이다.
+console.log('\n== 섬광화약: 불꽃 없이 전기로 격발한다 ==');
+{
+  let worstBefore = 0;
+  let missed = 0;
+  for (let trial = 0; trial < 6; trial++) {
+    const w = make(FLASH_POWDER.id);
+    // 점화 틱(4초)의 **직전**까지. 여기서 불이 보이면 대본이 불로 붙이고 있다는 뜻이다.
+    run(w, DEMO_TPS * 4 - 1);
+    worstBefore = Math.max(worstBefore, count(w, FIRE.id));
+    const piled = count(w, FLASH_POWDER.id);
+    // 그리고 그 다음 두 틱 안에 터진다 — 아크가 불씨를 앉히고 바로 다음 틱에
+    // 기폭하므로(spark.ts), 주황색이 화면에 머무는 시간이 사실상 없다.
+    run(w, 2);
+    if (count(w, FLASH_POWDER.id) > piled * 0.5) missed++;
+  }
+  check(worstBefore === 0, '격발 직전까지 불이 한 칸도 없다', `최악의 판 ${worstBefore}칸`);
+  check(missed === 0, '전기를 대면 두 틱 안에 기폭한다', `안 터진 판 ${missed}/6`);
 }
 
 // --- 화약 -----------------------------------------------------------------------------
@@ -301,12 +351,34 @@ console.log('\n== 화약 2막: 세 재료를 휘저어 흑색화약을 만든 �
   check(w.brush !== null && w.brush.icon === 'mix', '섞기 브러시가 나온다', `icon=${w.brush?.icon}`);
   let minX = w.grid.width;
   let maxX = 0;
+  const ys = new Set<number>();
+  // 가로로 어디까지 갔나를 획별로 나눠 센다 — 왕복 **한 번**이면 x 가 왼쪽 끝에서
+  // 오른쪽 끝까지 갔다가 되돌아오는 한 번의 봉우리를 그린다. 방향이 몇 번 바뀌는지가
+  // 곧 획 수라, 「왕복 한 번」을 숫자로 잴 수 있는 유일한 값이다.
+  let turns = 0;
+  let prevX = -1;
+  let dir = 0;
   for (let i = 0; i < DEMO_TPS * 3 - 1; i++) {
     w.tick();
     if (w.brush === null) continue;
     minX = Math.min(minX, w.brush.x);
     maxX = Math.max(maxX, w.brush.x);
+    ys.add(w.brush.y);
+    if (prevX >= 0 && w.brush.x !== prevX) {
+      const d = w.brush.x > prevX ? 1 : -1;
+      if (dir !== 0 && d !== dir) turns++;
+      dir = d;
+    }
+    prevX = w.brush.x;
   }
+  // **높이가 안 변한다.** 브러시가 바닥에 붙어 있어야 반지름이 더미를 통째로 덮는다.
+  check(ys.size === 1, '브러시가 한 줄에서만 오간다', `줄 ${[...ys].join(',')}`);
+  check(
+    [...ys][0] >= w.grid.height - 3,
+    '그 줄은 캔버스 맨 아래다',
+    `y=${[...ys][0]} / 바닥 y=${w.grid.height - 1}`,
+  );
+  check(turns === 1, '왕복은 딱 한 번이다', `방향 전환 ${turns}회`);
   check(
     minX < w.grid.width * 0.15 && maxX > w.grid.width * 0.85,
     '브러시가 캔버스를 끝에서 끝까지 훑는다',

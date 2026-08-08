@@ -28,6 +28,7 @@
     type DemoBrush,
     type DemoBrushIcon,
     type DemoCast,
+    type DemoTrigger,
     type GuideDemoKind,
   } from '../game/guideDemo';
   import { t } from '../i18n';
@@ -42,8 +43,10 @@
      *  배정하는 `game/demoScenes.ts` 가 같이 넘겨 준다 — 대본 파일은 경량 배럴만
      *  보므로 자기 힘으로는 철도 등유도 집을 수 없다. 나머지 장면은 안 쓴다. */
     cast?: DemoCast;
+    /** 격발 장면이 불로 붙이는가 전기로 찌르는가. 안 주면 불(섬광화약만 전기). */
+    trigger?: DemoTrigger;
   }
-  let { kind, subjectId, cast }: Props = $props();
+  let { kind, subjectId, cast, trigger }: Props = $props();
 
   const spec = GUIDE_DEMO_SPECS[kind];
 
@@ -76,7 +79,11 @@
     }
 
     const first = measure();
-    const world = new GuideDemoWorld(kind, first.w, first.h, Math.random, subjectId, cast);
+    const world = new GuideDemoWorld(kind, first.w, first.h, Math.random, {
+      subjectId,
+      cast,
+      trigger,
+    });
     const renderer = new CanvasRenderer(canvasEl, world.grid, layout);
     renderer.setBorderMode(spec.borderMode);
 
