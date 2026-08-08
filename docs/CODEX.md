@@ -1041,11 +1041,7 @@ TNT 격발은 `spawnTntBlock`으로 사각형 TNT 블록(3×3)을 배치한 뒤 
 
 ### 15.3 saltwater·sugarwater — 한 대본, 두 용질
 
-같은 대본에 용질만 바꾼다. 그릇에 물을 부은 뒤 같은 자리에서 소금/설탕을
-떨어뜨리면 가루가 담수 주머니를 녹아든 용액(Saltwater/Sugar Water)으로 바꾼다.
-열린 공간에선 가루가 흩어져 반응이 안 보이므로 liquid 데모의 `buildBowl` 을 빌린다.
-`tickDissolve(soluteId)` 하나로 두 종류를 돌린다 — saltwater 카드는 `DEMO_SALT`,
-sugarwater 카드는 `DEMO_SUGAR` 를 넘긴다.
+같은 대본에 용질만 바꾼다. 그릇에 물을 부은 뒤(2칸 굵기의 `dropLiquidStream`으로 유량을 두 배로 부어 수심을 넉넉히 확보) 같은 자리에서 소금/설탕을 떨어뜨리면 가루가 담수 주머니를 녹아든 용액(Saltwater/Sugar Water)으로 바꾼다. 열린 공간에선 가루가 흩어져 반응이 안 보이므로 liquid 데모의 `buildBowl` 을 빌린다. `tickDissolve(soluteId)` 하나로 두 종류를 돌린다 — saltwater 카드는 `DEMO_SALT`, sugarwater 카드는 `DEMO_SUGAR` 를 넘긴다.
 
 ### 15.4 soda — 산 중화와 반죽, 두 액트
 

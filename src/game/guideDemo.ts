@@ -1178,7 +1178,8 @@ export class GuideDemoWorld {
 
   /**
    * saltwater·sugarwater 공통: 그릇에 물을 부은 뒤 같은 자리에서 용질(소금/설탕)을
-   * 떨어뜨린다. 가루가 담수 주머니를 녹아든 용액으로 바꾼다.
+   * 떨어뜨린다. 가루가 담수 주머니를 녹아든 용액으로 바꾼다. 물은 2칸 줄기로 두 배 부어
+   * 수심을 넉넉히 잡는다.
    *
    * 단계: 물 3초 → 용질 1초 → 관찰 3초 → 초기화.
    */
@@ -1189,7 +1190,7 @@ export class GuideDemoWorld {
       return;
     }
     if (t < DISSOLVE_WATER) {
-      this.dropStream(DEMO_WATER.id, POUR_AT);
+      this.dropLiquidStream(DEMO_WATER.id, POUR_AT);
       return;
     }
     if (t < DISSOLVE_WATER + DISSOLVE_SOLUTE) {
@@ -1197,6 +1198,14 @@ export class GuideDemoWorld {
       return;
     }
     // DISSOLVE_HOLD: 섞이는 것을 관찰 후 loop()
+  }
+
+  /** 가로 비율 `at` 자리에 2칸 굵기 액체 줄기를 부어 유량을 두 배로 만든다. */
+  private dropLiquidStream(id: number, at: number): void {
+    const g = this.grid;
+    const x = Math.round(g.width * at);
+    this.sim.context.spawn(x, STREAM_Y, id);
+    if (x + 1 < g.width) this.sim.context.spawn(x + 1, STREAM_Y, id);
   }
 
   /**
