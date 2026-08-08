@@ -60,6 +60,7 @@ import {
   DEMO_MOLTEN_URANIUM,
   DEMO_SOAP,
   DEMO_SOAPY_WATER,
+  DEMO_CARAMEL,
 } from './materials/demo';
 import { GLASS } from './materials/glass';
 import { HYDROGEN } from './materials/hydrogen';
@@ -103,7 +104,8 @@ export type GuideDemoKind =
   | 'brush_ignite'
   | 'glass_shockwave'
   | 'hydrogen_oxygen'
-  | 'soapywater';
+  | 'soapywater'
+  | 'saltpeter';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
@@ -138,6 +140,7 @@ export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
   'glass_shockwave',
   'hydrogen_oxygen',
   'soapywater',
+  'saltpeter',
 ];
 
 /**
@@ -241,6 +244,7 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   glass_shockwave: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   hydrogen_oxygen: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
   soapywater: { cols: 56, aspect: 2, borderMode: 'wall' },
+  saltpeter: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -278,8 +282,9 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   open_ignite: 85, // 3초 생성 후 점화 직전
   brush_ignite: 40, // 브러시 배치 후 점화 직전
   glass_shockwave: 25, // 유리 배치 후 충격파 직전
-  hydrogen_oxygen: 85, // 수소+산소 생성 후 점화 직전
+  hydrogen_oxygen: 145, // 수소+산소 3초 생성 후 2초 대기, 점화 직전
   soapywater: 360, // 비눗물 웅덩이에 바이러스·휘발유가 투입된 2막 무렵
+  saltpeter: 140, // 1막 초석 더미가 다 쌓인 직후, 점화 직전
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -500,10 +505,11 @@ const GLASS_WAIT = DEMO_TPS * 1;
 const GLASS_TAIL = DEMO_TPS * 3;
 const GLASS_CYCLE = GLASS_WAIT + GLASS_TAIL;
 
-/** hydrogen_oxygen: 3초간 수소+산소 둘다 생성 후 점화 → 연소 물 반응 3초 관찰 → 초기화. (산소·수소) */
+/** hydrogen_oxygen: 3초간 수소+산소 생성 후 2초 대기 후 점화 → 연소 물 반응 3초 관찰 → 초기화. (산소·수소) */
 const HO_POUR = DEMO_TPS * 3;
+const HO_WAIT = DEMO_TPS * 2;
 const HO_TAIL = DEMO_TPS * 3;
-const HO_AT = HO_POUR;
+const HO_AT = HO_POUR + HO_WAIT;
 const HO_CYCLE = HO_AT + HO_TAIL;
 
 /**
@@ -583,6 +589,21 @@ const AN_FIRE = AN_POUR + AN_WAIT1 + AN_FUEL + AN_STIR + AN_WAIT2;
 const AN_CYCLE = AN_FIRE + AN_TAIL;
 /** 세 칸의 한가운데(가로 비율). 칸막이가 1/3·2/3 에 서므로 1/6·1/2·5/6 이다. */
 const AN_CELL_AT: readonly number[] = [1 / 6, 0.5, 5 / 6];
+
+/** saltpeter: 두 액트. 1막은 둔덕 사이 초석 더미, 2막은 초석 3초 줄기 + 가운데 캐러멜 생성 3초 -> 4초 대기 -> 점화 → 3초 관찰 → 초기화 (질산칼륨) */
+const SP_BERM = DEMO_TPS * 2;
+const SP_PILE = DEMO_TPS * 4;
+const SP_WAIT1 = DEMO_TPS * 1;
+const SP_TAIL1 = DEMO_TPS * 2;
+const SP_ACT1_FIRE = SP_PILE + SP_WAIT1;
+const SP_ACT1 = SP_ACT1_FIRE + SP_TAIL1;
+
+const SP_POUR2 = DEMO_TPS * 3;
+const SP_WAIT2 = DEMO_TPS * 4;
+const SP_FIRE2 = SP_POUR2 + SP_WAIT2;
+const SP_TAIL2 = DEMO_TPS * 3;
+const SP_ACT2 = SP_FIRE2 + SP_TAIL2;
+const SP_CYCLE = SP_ACT1 + SP_ACT2;
 
 /**
  * 섞기 브러시의 반지름(칸). 굵어야 한다 — 세 재료가 각자의 봉우리로 앉으므로,
@@ -1128,6 +1149,9 @@ export class GuideDemoWorld {
         break;
       case 'soapywater':
         this.tickSoapyWater();
+        break;
+      case 'saltpeter':
+        this.tickSaltpeter();
         break;
     }
     this.sim.step();
@@ -2057,7 +2081,16 @@ export class GuideDemoWorld {
     }
   }
 
-  /** hydrogen_oxygen: 3초간 수소+산소 아래에서 생성 후 점화 (산소·수소) */
+  /** 기체 전용: 특정 X 좌표 아래에서 생성되어 위로 솟구친다. */
+  private dropGasStreamAtX(id: number, x: number): void {
+    if (this.rand() > SAND_CHANCE) return;
+    const g = this.grid;
+    const y = g.height - 2;
+    if (!g.inBounds(x, y) || g.get(x, y) !== EMPTY) return;
+    this.sim.context.spawn(x, y, id);
+  }
+
+  /** hydrogen_oxygen: 3초간 수소+산소 가운데 한 칸 차이로 아래에서 생성 후 2초 대기 후 점화 (산소·수소) */
   private tickHydrogenOxygen(): void {
     const t = this.t;
     if (t >= HO_CYCLE) {
@@ -2065,10 +2098,12 @@ export class GuideDemoWorld {
       return;
     }
     if (t < HO_POUR) {
-      this.dropGasStream(HYDROGEN.id, 0.42);
-      this.dropGasStream(OXYGEN.id, 0.58);
+      const midX = this.grid.width >> 1;
+      this.dropGasStreamAtX(HYDROGEN.id, midX - 1);
+      this.dropGasStreamAtX(OXYGEN.id, midX + 1);
       return;
     }
+    if (t < HO_AT) return;
     if (t >= HO_AT && t < HO_AT + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
       const g = this.grid;
@@ -2125,6 +2160,45 @@ export class GuideDemoWorld {
     this.grid.clear();
     this.buildPool(DEMO_SOAPY_WATER.id);
     this.grid.randomizeTints();
+  }
+
+  /** saltpeter: 1막 초석 단독 연소 후 2막에서 초석 3초 줄기 + 캐러멜 3초 생성 → 4초 대기 → 점화 (질산칼륨) */
+  private tickSaltpeter(): void {
+    const t = this.t;
+    if (t >= SP_CYCLE) {
+      this.loop();
+      return;
+    }
+
+    if (t < SP_ACT1) {
+      if (t < SP_BERM) {
+        for (const at of GP_BERM_AT) this.dropStream(DEMO_SAND.id, at);
+      }
+      if (t < SP_PILE) {
+        this.dropStream(this.subjectId, GP_PILE_AT);
+      }
+      if (t >= SP_ACT1_FIRE && t < SP_ACT1_FIRE + IGNITE_FLAME) {
+        this.ignitePile(0, this.grid.width - 1);
+      }
+      return;
+    }
+
+    const act2T = t - SP_ACT1;
+    if (act2T === 0) {
+      this.grid.clear();
+      return;
+    }
+
+    if (act2T < SP_POUR2) {
+      this.dropStream(this.subjectId, 0.4);
+      this.dropStream(DEMO_CARAMEL.id, 0.5);
+      return;
+    }
+    if (act2T < SP_FIRE2) return;
+
+    if (act2T >= SP_FIRE2 && act2T < SP_FIRE2 + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+    }
   }
 }
 

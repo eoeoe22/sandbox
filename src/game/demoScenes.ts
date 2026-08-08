@@ -93,7 +93,7 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
   [FLASH_POWDER.id, 'ignite'],
   [FIREWORKS.id, 'ignite'],
-  [SULFUR.id, 'ignite'],
+  [SULFUR.id, 'gunpowder'],
   [NITRO.id, 'ignite'],
 
   // Group 1: 암모날, ANFO, 로켓캔디, 메탄
@@ -129,6 +129,7 @@ const SCENES: ReadonlyMap<number, GuideDemoKind> = new Map<number, GuideDemoKind
   [HEATPIPE.id, 'heat'],
   [SOAP.id, 'saltwater'],
   [SOAPY_WATER.id, 'soapywater'],
+  [SALTPETER.id, 'saltpeter'],
 ]);
 
 /**

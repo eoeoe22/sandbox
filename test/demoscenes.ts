@@ -151,7 +151,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['질산암모늄', AMMONIUM_NITRATE.id, 'ammoniumnitrate'],
     ['섬광화약', FLASH_POWDER.id, 'ignite'],
     ['불꽃놀이 화약', FIREWORKS.id, 'ignite'],
-    ['황', SULFUR.id, 'ignite'],
+    ['황', SULFUR.id, 'gunpowder'],
     ['니트로', NITRO.id, 'ignite'],
     ['암모날', AMMONAL.id, 'ignite'],
     ['ANFO', ANFO.id, 'ignite'],
@@ -175,6 +175,7 @@ console.log('== 배정표: 누가 맞춤 연출을 받는가 ==');
     ['히트파이프', HEATPIPE.id, 'heat'],
     ['비누', SOAP.id, 'saltwater'],
     ['비눗물', SOAPY_WATER.id, 'soapywater'],
+    ['질산칼륨', SALTPETER.id, 'saltpeter'],
   ];
   for (const [label, id, kind] of want) {
     check(demoSceneFor(id)?.kind === kind, `${label} → ${kind}`, `실제 ${demoSceneFor(id)?.kind}`);

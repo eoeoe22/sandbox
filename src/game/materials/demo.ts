@@ -44,6 +44,7 @@ import { BATTER } from './batter';
 import { MOLTEN_URANIUM } from './moltenuranium';
 import { SOAP } from './soap';
 import { SOAPY_WATER } from './soapywater';
+import { CARAMEL } from './caramel';
 
 // EMPTY_MAT은 값으로 쓰이지 않고 등록 부수효과만 필요하다. import 자체는 tree
 // shaking으로 사라지지 않지만(모듈 부수효과), 미사용 경고를 피하려고 한 번 참조한다.
@@ -76,3 +77,4 @@ export const DEMO_BATTER: Material = BATTER;
 export const DEMO_MOLTEN_URANIUM: Material = MOLTEN_URANIUM;
 export const DEMO_SOAP: Material = SOAP;
 export const DEMO_SOAPY_WATER: Material = SOAPY_WATER;
+export const DEMO_CARAMEL: Material = CARAMEL;
