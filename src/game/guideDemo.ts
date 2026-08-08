@@ -2012,7 +2012,7 @@ export class GuideDemoWorld {
     }
   }
 
-  /** hydrogen_oxygen: 3초간 수소+산소 생성 후 점화 (산소·수소) */
+  /** hydrogen_oxygen: 3초간 수소+산소 아래에서 생성 후 점화 (산소·수소) */
   private tickHydrogenOxygen(): void {
     const t = this.t;
     if (t >= HO_CYCLE) {
@@ -2020,12 +2020,18 @@ export class GuideDemoWorld {
       return;
     }
     if (t < HO_POUR) {
-      this.dropStream(HYDROGEN.id, 0.35);
-      this.dropStream(OXYGEN.id, 0.65);
+      this.dropGasStream(HYDROGEN.id, 0.35);
+      this.dropGasStream(OXYGEN.id, 0.65);
       return;
     }
     if (t >= HO_AT && t < HO_AT + IGNITE_FLAME) {
       this.ignitePile(0, this.grid.width - 1);
+      const g = this.grid;
+      const midX = Math.round(g.width * 0.5);
+      const midY = Math.round(g.height * 0.5);
+      if (g.inBounds(midX, midY)) {
+        this.sim.context.spawn(midX, midY, DEMO_FIRE.id);
+      }
     }
   }
 }
