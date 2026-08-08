@@ -24,7 +24,8 @@
   import { tagIdOf } from '../game/codex/tags';
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
-  import type { GuideDemoKind } from '../game/guideDemo';
+  import type { DemoCast, GuideDemoKind } from '../game/guideDemo';
+  import type { GuideDemoScene } from '../game/demoScenes';
   // The number/reaction formatters live beside the Markdown writers so the page
   // and the clipboard can't say different things — see codex/format.ts.
   import {
@@ -257,12 +258,25 @@
    * `null` 인 동안은 데모 자리를 비운다 — 카드는 설명·수치·특성만으로도 완결된
    * 글이므로 로딩 표시를 둘 이유가 없다.
    */
-  let Demo = $state<Component<{ kind: GuideDemoKind; subjectId?: number }> | null>(null);
+  let Demo = $state<Component<{
+    kind: GuideDemoKind;
+    subjectId?: number;
+    cast?: DemoCast;
+  }> | null>(null);
+  /**
+   * 맞춤 연출 표(`game/demoScenes.ts`)를 찾는 함수. 같은 이유로 동적이다 — 그
+   * 표는 산·화약·질산암모늄을 이름으로 집으므로 전체 배럴에 매달려 있고, 정적으로
+   * 걸면 위 문단이 막아 둔 것이 도로 열린다. 도착 전에는 `null` 이라 상태별 기본
+   * 데모로 도는데, 두 import 가 같은 `await` 줄에 있어 그 창은 첫 카드가 열리기
+   * 전에 닫힌다.
+   */
+  let sceneFor = $state<((id: number) => GuideDemoScene | null) | null>(null);
   onMount(async () => {
     // 전체 물질 배럴을 먼저 평가시킨다 — 카드의 실제 물질 id 가 레지스트리에
     // 등록되어야 렌더러가 그 색을 알고, 시뮬레이션이 그 물질의 동작을 안다.
     // 경량 데모 배럴(`materials/demo`)은 9종만 알아서 카드 물질이 검은 칸이 된다.
     await import('../game/materials');
+    sceneFor = (await import('../game/demoScenes')).demoSceneFor;
     Demo = (await import('./GuideDemo.svelte')).default;
   });
 
@@ -270,15 +284,22 @@
   const close = (): void => void (openKey = null);
 
   /**
-   * 열려 있는 카드의 데모 종류와 주인공 id — material 의 4 상태 카드에만 해당하고,
-   * object(phase 없음)나 overlap·heat 는 데모가 없다. `phase` 는 네 상태 키와 정확히
-   * 같은 문자열이므로(categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   * 열려 있는 카드가 무슨 데모를 도는가.
+   *
+   * **맞춤 연출이 먼저다.** 산·화약·섬광화약·질산암모늄·불꽃놀이 화약·황·니트로는
+   * 자기 대본이 있고(`game/demoScenes.ts`), 그게 없는 물질만 상(phase)으로 상태
+   * 4종 데모를 고른다. `phase` 는 네 상태 키와 정확히 같은 문자열이므로
+   * (categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   *
+   * object 는 phase 가 없고 맞춤 연출도 없으므로 어느 쪽으로도 안 간다 — 데모 없음.
    */
   const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
-  const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number } | null>(() => {
+  const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number; cast?: DemoCast } | null>(() => {
     const c = openCard;
-    if (c === null || c.id === null || c.phase === null) return null;
-    if (!PHASE_DEMOS.has(c.phase)) return null;
+    if (c === null || c.id === null) return null;
+    const custom = sceneFor?.(c.id) ?? null;
+    if (custom !== null) return { kind: custom.kind, id: c.id, cast: custom.cast };
+    if (c.phase === null || !PHASE_DEMOS.has(c.phase)) return null;
     return { kind: c.phase as GuideDemoKind, id: c.id };
   });
 
@@ -572,7 +593,7 @@
       {/snippet}
       {#snippet demo()}
         {#if Demo !== null && cardDemo !== null}
-          <Demo kind={cardDemo.kind} subjectId={cardDemo.id} />
+          <Demo kind={cardDemo.kind} subjectId={cardDemo.id} cast={cardDemo.cast} />
         {/if}
       {/snippet}
     </CodexCard>

@@ -26,6 +26,8 @@
     GUIDE_DEMO_SPECS,
     DEMO_STEP_MS,
     type DemoBrush,
+    type DemoBrushIcon,
+    type DemoCast,
     type GuideDemoKind,
   } from '../game/guideDemo';
   import { t } from '../i18n';
@@ -36,16 +38,23 @@
      *  물·연기)으로 돌아가고, 물질 카드는 자기 물질 id 를 넘겨 그 물질로 데모한다.
      *  overlap·heat 는 이 값을 쓰지 않는다. */
     subjectId?: number;
+    /** 맞춤 연출(acid·ignite·gunpowder·ammoniumnitrate)의 조연 물질들. 그 넷을
+     *  배정하는 `game/demoScenes.ts` 가 같이 넘겨 준다 — 대본 파일은 경량 배럴만
+     *  보므로 자기 힘으로는 철도 등유도 집을 수 없다. 나머지 장면은 안 쓴다. */
+    cast?: DemoCast;
   }
-  let { kind, subjectId }: Props = $props();
+  let { kind, subjectId, cast }: Props = $props();
 
   const spec = GUIDE_DEMO_SPECS[kind];
 
   let stageEl: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
 
-  /** 그려야 할 브러시 원(고체 데모만) — CSS px 기준의 화면 좌표로 옮긴 것. */
-  let brushBox = $state<{ x: number; y: number; d: number } | null>(null);
+  /** 그려야 할 브러시 원 — CSS px 기준의 화면 좌표로 옮긴 것. `icon` 이 있으면
+   *  원 안에 그 도구의 글리프를 겹친다(지금은 섞기 하나). */
+  let brushBox = $state<{ x: number; y: number; d: number; icon: DemoBrushIcon | null } | null>(
+    null,
+  );
   /** 열 뷰 뱃지에 쓸 현재 렌더링 모드(열전도 데모만 화면에 띄운다). */
   let heatView = $state(false);
 
@@ -67,7 +76,7 @@
     }
 
     const first = measure();
-    const world = new GuideDemoWorld(kind, first.w, first.h, Math.random, subjectId);
+    const world = new GuideDemoWorld(kind, first.w, first.h, Math.random, subjectId, cast);
     const renderer = new CanvasRenderer(canvasEl, world.grid, layout);
     renderer.setBorderMode(spec.borderMode);
 
@@ -92,6 +101,7 @@
         x: rect.x + (b.x + 0.5) * cell - d / 2,
         y: rect.y + (b.y + 0.5) * cell - d / 2,
         d,
+        icon: b.icon,
       };
     }
 
@@ -224,7 +234,17 @@
     <div
       class="cursor"
       style={`left: ${brushBox.x}px; top: ${brushBox.y}px; width: ${brushBox.d}px; height: ${brushBox.d}px;`}
-    ></div>
+    >
+      {#if brushBox.icon === 'mix'}
+        <!-- 섞기 도구. 팔레트의 그 버튼과 **같은 글리프**(bi-tornado)라, 데모에서
+             본 손놀림을 게임에서 어느 버튼으로 하는지가 바로 이어진다. -->
+        <i
+          class="bi bi-tornado"
+          style={`font-size: ${(brushBox.d * 0.62).toFixed(1)}px;`}
+          aria-hidden="true"
+        ></i>
+      {/if}
+    </div>
   {/if}
   {#if kind === 'heat'}
     <span class="badge" class:hot={heatView}>
@@ -255,10 +275,22 @@
   /* 브러시 원: 게임의 브러시 미리보기와 같은 흰 테두리 원. */
   .cursor {
     position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: 50%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
     pointer-events: none;
+  }
+
+  /* 도구 글리프. 크기는 마크업이 원 지름에서 계산해 인라인으로 준다 — 데모
+     캔버스는 폭에 따라 칸 크기가 변하므로(§13.3) 원의 픽셀 지름이 고정이 아니고,
+     rem 으로 박아 두면 좁은 화면에서 아이콘이 원 밖으로 삐져나온다. */
+  .cursor i {
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
   }
 
   /* 지금 무엇으로 그리고 있는지 — 열전도 데모가 도중에 열지도로 넘어가므로,
