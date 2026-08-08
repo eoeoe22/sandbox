@@ -120,10 +120,10 @@ export const PORE_N = 18;
  *  Any value gives the same statistics; this one is chosen so that the corner of
  *  the field the icon samples — cells (0,0)…(17,17), since a palette chip has no
  *  world position to sample at — comes out at 25.3% void against the field's 25.9%
- *  average, with both pore sizes and all four jitter positions in it. Salts that miss
- *  the 3-cell pore entirely in that window are common (it is one pore in eight and the
- *  window holds about twenty), and a chip drawn from one of those says the pores are
- *  all one size, which is not what the wall does.
+ *  average, with both pore sizes and every jitter position in it. The larger pore is
+ *  one in eight, and a window this size holds few enough of them that plenty of salts
+ *  show none at all; a chip drawn from one of those says the pores are all one size,
+ *  which is not what the wall does.
  *  Nothing about the wall the player paints changes with this number — only which
  *  patch of foam the chip generator is looking at. */
 const PORE_SALT = 13;
