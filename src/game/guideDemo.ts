@@ -257,7 +257,7 @@ const WALL_CYCLE = WALL_TNT_FUSE + WALL_BLAST + WALL_ACID + WALL_U235 + WALL_TAI
  * 보여 준다. 흑요석은 `explosionProof`라 TNT 두 번을 맞아도 부서지지 않는다.
  * (산·핵광엔 약하지만 이 데모엔 등장하지 않는다.)
  *
- * 액트2 단계: 흑요석 블록 배치 → TNT1(1초 후 격발) → OBSidian_TNT_BLAST(1.5초
+ * 액트2 단계: 흑요석 블록 배치 → TNT1(1초 후 격발) → OBS_TNT_BLAST(1.5초
  * 관찰) → TNT2(1초 후 격발) → 테일 → 초기화.
  */
 const OBS_WATER = DEMO_TPS * 1.5;
@@ -1059,14 +1059,20 @@ export class GuideDemoWorld {
     const g = this.grid;
     const r = U235_CLUMP_R;
     const span = 2 * (r + 1) + 1; // 울타리 외곽 한 변: (r+1)*2+1. r=1 → 5
-    for (let i = 0; i < 32; i++) {
+    const halfSpan = span >> 1;
+    // 울타리 외곽과 box(벽 블록) 외곽이 한 칸 이상 떨어지면 충분 — 두 영역의 외곽
+    // 반경을 합한 것보다 큰 거리면 겹칠 일이 없다. box.half + span 전부를 여유로 두면
+    // 빈 자리가 줄어 ~6% 사이클에서 자리를 못 찾았다(리뷰 지적). 한 칸 여유로 좁힌다.
+    const minDist = box.half + halfSpan + 1;
+    for (let i = 0; i < 64; i++) {
       const x0 = 2 + Math.floor(this.rand() * (g.width - span - 3));
       const y0 = 2 + Math.floor(this.rand() * (g.height - span - 3));
-      const cx = x0 + r + 1;
-      const cy = y0 + r + 1;
-      // box(중앙 벽 블록)와 겹치지 않게.
-      if (Math.abs(cx - box.cx) <= box.half + span) continue;
-      if (Math.abs(cy - box.cy) <= box.half + span) continue;
+      const cx = x0 + halfSpan;
+      const cy = y0 + halfSpan;
+      // box(중앙 벽 블록)와 겹치지 않게. 한 축에서라도 가까우면 겹칠 수 있으므로
+      // 각 축을 따로 검사한다.
+      if (Math.abs(cx - box.cx) < minDist) continue;
+      if (Math.abs(cy - box.cy) < minDist) continue;
       // 울타리 외곽 영역이 전부 빈 칸인지 확인(기존 장면을 덮어쓰지 않게).
       let clear = true;
       for (let dy = 0; dy < span && clear; dy++) {
@@ -1126,8 +1132,11 @@ export class GuideDemoWorld {
     }
 
     // --- 액트2: 내성 (TNT ×2) ---
+    // 전환 틱(act2Start)은 위에서 잡아 return 했으므로, 여기서부턴 t >= act2Start+1.
+    // tnt1Fuse 를 act2Start 가 아닌 그 다음 틱으로 두어 같은-틱 충돌을 피한다(soda 의
+    // act2Pour 패턴과 같다).
     const box = this.blockBox();
-    const tnt1Fuse = act2Start; // 전환 틱에 TNT1 배치
+    const tnt1Fuse = act2Start + 1; // 블록 세팅 다음 틱에 TNT1 배치
     const tnt1Blast = tnt1Fuse + OBS_TNT_FUSE;
     const tnt1Hold = tnt1Blast + OBS_TNT_BLAST;
     const tnt2Fuse = tnt1Hold; // 이어서 TNT2 배치
