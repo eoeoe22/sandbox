@@ -20,15 +20,22 @@
   // (`game/guideDemo.ts` + `GuideDemo.svelte`). 돌로 그은 선, 쌓이는 모래,
   // 넘치는 그릇, 오르는 연기, 모래 더미와 체를 뚫고 아래로 빠지는 물(그리고 체
   // 위에 그대로 쌓이는 모래), 아래의 불에서부터 달아오르는 히트파이프 띠 — 여섯 장면이다.
-  import { onMount } from 'svelte';
-  import type { Component } from 'svelte';
-  import { $locale as locale, t, categoryLabel } from '../i18n';
-  import { guideDocKo, guideDocEn, type GuideDocText, type ToolKey } from '../i18n/guideDoc';
-  import { iconFor } from '../game/materials/categories';
-  import { copyText } from '../lib/clipboard';
-  import type { GuideDemoKind } from '../game/guideDemo';
+  import { onMount } from "svelte";
+  import type { Component } from "svelte";
+  import { $locale as locale, t, categoryLabel } from "../i18n";
+  import {
+    guideDocKo,
+    guideDocEn,
+    type GuideDocText,
+    type ToolKey,
+  } from "../i18n/guideDoc";
+  import { iconFor } from "../game/materials/categories";
+  import { copyText } from "../lib/clipboard";
+  import type { GuideDemoKind } from "../game/guideDemo";
 
-  const doc = $derived<GuideDocText>($locale === 'ko' ? guideDocKo : guideDocEn);
+  const doc = $derived<GuideDocText>(
+    $locale === "ko" ? guideDocKo : guideDocEn,
+  );
 
   /**
    * 데모 캔버스 컴포넌트. 정적 import 가 아니라 **마운트 뒤 동적 import** 인 것은
@@ -42,42 +49,42 @@
    */
   let Demo = $state<Component<{ kind: GuideDemoKind }> | null>(null);
   onMount(async () => {
-    Demo = (await import('./GuideDemo.svelte')).default;
+    Demo = (await import("./GuideDemo.svelte")).default;
   });
 
   /** The four state cards, in display order. Titles come from `categoryLabel`
    *  and icons from `iconFor` — both already the palette's own source of
    *  truth for these keys, so this page can't drift from what the palette
    *  tabs actually show. */
-  const PHASE_ORDER = ['solid', 'powder', 'liquid', 'gas'] as const;
+  const PHASE_ORDER = ["solid", "powder", "liquid", "gas"] as const;
 
   const TOOL_ORDER: ToolKey[] = [
-    'eraser',
-    'blend',
-    'heatCool',
-    'mix',
-    'electric',
-    'shock',
-    'view',
-    'areaSelect',
-    'inspect',
+    "eraser",
+    "blend",
+    "heatCool",
+    "mix",
+    "electric",
+    "shock",
+    "view",
+    "areaSelect",
+    "inspect",
   ];
   const TOOL_ICONS: Record<ToolKey, string> = {
-    eraser: 'bi-eraser-fill',
-    blend: 'bi-palette-fill',
-    heatCool: 'bi-fire',
-    mix: 'bi-shuffle',
-    electric: 'bi-lightning-charge-fill',
-    shock: 'bi-broadcast',
-    view: 'bi-eye',
-    areaSelect: 'bi-bounding-box',
-    inspect: 'bi-search',
+    eraser: "bi-eraser-fill",
+    blend: "bi-palette-fill",
+    heatCool: "bi-fire",
+    mix: "bi-tornado",
+    electric: "bi-lightning-charge-fill",
+    shock: "bi-broadcast",
+    view: "bi-eye",
+    areaSelect: "bi-bounding-box",
+    inspect: "bi-search",
   };
 
   /** One Markdown section: a heading plus its paragraphs/lists, blank-line
    *  separated — the same shape `codex/format.ts`'s writers produce. */
   function section(heading: string, blocks: string[]): string {
-    return [`## ${heading}`, ...blocks].join('\n\n');
+    return [`## ${heading}`, ...blocks].join("\n\n");
   }
 
   /** The whole document as Markdown, built from the same `GuideDocText` the
@@ -89,19 +96,23 @@
       section(d.grid.title, d.grid.p),
       section(d.phases.title, [
         d.phases.intro,
-        PHASE_ORDER.map((k) => `- ${categoryLabel(k)}: ${d.phases.desc[k]}`).join('\n'),
+        PHASE_ORDER.map(
+          (k) => `- ${categoryLabel(k)}: ${d.phases.desc[k]}`,
+        ).join("\n"),
         d.phases.hint,
       ]),
       section(d.overlap.title, d.overlap.p),
       section(d.heat.title, d.heat.p),
       section(d.tools.title, [
         d.tools.intro,
-        TOOL_ORDER.map((k) => `- ${d.tools.items[k].term}: ${d.tools.items[k].desc}`).join('\n'),
+        TOOL_ORDER.map(
+          (k) => `- ${d.tools.items[k].term}: ${d.tools.items[k].desc}`,
+        ).join("\n"),
         d.tools.hint,
       ]),
       section(d.save.title, [d.save.p]),
     ];
-    return [`# ${title}`, ...sections].join('\n\n') + '\n';
+    return [`# ${title}`, ...sections].join("\n\n") + "\n";
   }
 
   /** Whether the last copy attempt succeeded, or `null` before the first
@@ -110,25 +121,32 @@
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function handleCopy(): Promise<void> {
-    const ok = await copyText(toMarkdown(doc, t('codex.tabBasics')));
+    const ok = await copyText(toMarkdown(doc, t("codex.tabBasics")));
     clearTimeout(copyTimer);
     copied = ok;
     copyTimer = setTimeout(() => (copied = null), 2200);
   }
 
-  const copyLabel = $derived(copied === null ? t('codex.copy') : t(copied ? 'codex.copied' : 'codex.copyFailed'));
+  const copyLabel = $derived(
+    copied === null
+      ? t("codex.copy")
+      : t(copied ? "codex.copied" : "codex.copyFailed"),
+  );
 </script>
 
 <div class="guide-doc">
   <header class="page-head">
     <a class="home" href="/">
       <i class="bi bi-arrow-left" aria-hidden="true"></i>
-      <span>{t('brand')}</span>
+      <span>{t("brand")}</span>
     </a>
     <div class="head-row">
-      <h1>{t('codex.tabBasics')}</h1>
+      <h1>{t("codex.tabBasics")}</h1>
       <button class="copy" class:done={copied !== null} onclick={handleCopy}>
-        <i class={`bi ${copied === true ? 'bi-check2' : 'bi-clipboard'}`} aria-hidden="true"></i>
+        <i
+          class={`bi ${copied === true ? "bi-check2" : "bi-clipboard"}`}
+          aria-hidden="true"
+        ></i>
         <span>{copyLabel}</span>
       </button>
     </div>
@@ -136,12 +154,18 @@
   </header>
 
   <section class="sec">
-    <h2><i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i> {doc.grid.title}</h2>
+    <h2>
+      <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
+      {doc.grid.title}
+    </h2>
     {#each doc.grid.p as p (p)}<p>{p}</p>{/each}
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-layers-fill" aria-hidden="true"></i> {doc.phases.title}</h2>
+    <h2>
+      <i class="bi bi-layers-fill" aria-hidden="true"></i>
+      {doc.phases.title}
+    </h2>
     <p>{doc.phases.intro}</p>
     <div class="phase-grid">
       {#each PHASE_ORDER as key (key)}
@@ -171,7 +195,10 @@
   </section>
 
   <section class="sec">
-    <h2><i class="bi bi-thermometer-half" aria-hidden="true"></i> {doc.heat.title}</h2>
+    <h2>
+      <i class="bi bi-thermometer-half" aria-hidden="true"></i>
+      {doc.heat.title}
+    </h2>
     <p>{doc.heat.p[0]}</p>
     {#if Demo}
       <div class="demo-wide"><Demo kind="heat" /></div>
@@ -204,11 +231,11 @@
   <footer class="page-foot">
     <a class="btn primary" href="/sandbox">
       <i class="bi bi-play-circle-fill" aria-hidden="true"></i>
-      <span>{t('codex.toSandbox')}</span>
+      <span>{t("codex.toSandbox")}</span>
     </a>
     <a class="btn" href="/">
       <i class="bi bi-house-door" aria-hidden="true"></i>
-      <span>{t('codex.toHome')}</span>
+      <span>{t("codex.toHome")}</span>
     </a>
   </footer>
 </div>
