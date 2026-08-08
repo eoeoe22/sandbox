@@ -24,7 +24,8 @@
   import { tagIdOf } from '../game/codex/tags';
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
-  import type { GuideDemoKind } from '../game/guideDemo';
+  import type { DemoCast, DemoTrigger, GuideDemoKind } from '../game/guideDemo';
+  import type { GuideDemoScene } from '../game/demoScenes';
   // The number/reaction formatters live beside the Markdown writers so the page
   // and the clipboard can't say different things — see codex/format.ts.
   import {
@@ -257,12 +258,26 @@
    * `null` 인 동안은 데모 자리를 비운다 — 카드는 설명·수치·특성만으로도 완결된
    * 글이므로 로딩 표시를 둘 이유가 없다.
    */
-  let Demo = $state<Component<{ kind: GuideDemoKind; subjectId?: number }> | null>(null);
+  let Demo = $state<Component<{
+    kind: GuideDemoKind;
+    subjectId?: number;
+    cast?: DemoCast;
+    trigger?: DemoTrigger;
+  }> | null>(null);
+  /**
+   * 맞춤 연출 표(`game/demoScenes.ts`)를 찾는 함수. 같은 이유로 동적이다 — 그
+   * 표는 산·화약·질산암모늄을 이름으로 집으므로 전체 배럴에 매달려 있고, 정적으로
+   * 걸면 위 문단이 막아 둔 것이 도로 열린다. 도착 전에는 `null` 이라 상태별 기본
+   * 데모로 도는데, 두 import 가 같은 `await` 줄에 있어 그 창은 첫 카드가 열리기
+   * 전에 닫힌다.
+   */
+  let sceneFor = $state<((id: number) => GuideDemoScene | null) | null>(null);
   onMount(async () => {
     // 전체 물질 배럴을 먼저 평가시킨다 — 카드의 실제 물질 id 가 레지스트리에
     // 등록되어야 렌더러가 그 색을 알고, 시뮬레이션이 그 물질의 동작을 안다.
     // 경량 데모 배럴(`materials/demo`)은 9종만 알아서 카드 물질이 검은 칸이 된다.
     await import('../game/materials');
+    sceneFor = (await import('../game/demoScenes')).demoSceneFor;
     Demo = (await import('./GuideDemo.svelte')).default;
   });
 
@@ -270,21 +285,28 @@
   const close = (): void => void (openKey = null);
 
   /**
-   * 열려 있는 카드의 데모 종류와 주인공 id — material 의 4 상태 카드에만 해당하고,
-   * object(phase 없음)나 overlap·heat 는 데모가 없다. `phase` 는 네 상태 키와 정확히
-   * 같은 문자열이므로(categories 의 `PHASE_KEYS`) 그대로 kind 로 쓴다.
+   * 열려 있는 카드가 무슨 데모를 도는가. **맞춤 연출이 phase 기본 데모보다 먼저다.**
    *
-   * 일부 물질은 phase 기본 데모가 아니라 **맞춤 다단계 데모**를 가진다(벽은 TNT·산·
-   * 핵광에 견디는 것, 흑요석은 생성과 폭발 내성, 소금물/설탕물은 용해, 베이킹소다는
-   * 산 중화와 반죽 반응). 이 표가 그 매핑이다 — 물질 id → 맞춤 kind. phase 기반
-   * 매핑보다 **앞서** 조회한다.
+   * 맞춤 연출을 배정하는 자리가 **둘**이고, 둘 다 봐야 한다. 서로 다른 라운드에서 서로
+   * 다른 제약을 안고 태어났고, 다루는 물질이 겹치지 않아 지금은 나란히 산다.
    *
-   * id 를 리터럴로 적는 것은 의도적이다. 이 컴포넌트는 도감 페이지 청크를 가볍게
-   * 두려고 전체 물질 배럴을 정적 import 하지 않는다 — onMount 의 동적 import 로만
-   * 평가한다. 매핑에 물질 객체를 끌어오면 그 정적 의존성이 첫 청크에 들어간다. 대신
-   * id 만으로 가리키고, 실제 물질·엔진은 데모가 마운트될 때(이미 배럴이 평가된 뒤)
-   * 로드된다. 숫자가 틀어지면 데모가 검은 캔버스로 드러나므로 `check:material-ids`
-   * 와 함께 자주 확인할 자리다.
+   *  - `DEMO_OVERRIDE`(바로 아래) — 벽·흑요석·소금물·설탕물·베이킹소다. 대본이 놓는
+   *    물질을 경량 배럴(`materials/demo.ts`)에 이름으로 들여놓고, 여기서는 **id
+   *    리터럴**로만 가리킨다. 리터럴인 것은 의도다: 이 컴포넌트는 도감 첫 청크를
+   *    가볍게 두려고 전체 물질 배럴을 정적 import 하지 않으므로(onMount 의 동적
+   *    import 로만 평가한다), 매핑에 물질 객체를 끌어오면 그 정적 의존성이 첫 청크에
+   *    들어간다. 대가로 숫자가 틀어지면 데모가 검은 캔버스가 되므로
+   *    `check:material-ids` 와 함께 볼 자리다.
+   *  - `sceneFor`(`game/demoScenes.ts`) — 산·화약·섬광화약·질산암모늄·불꽃놀이 화약·
+   *    황·니트로. 이쪽은 대본이 모르는 물질을 `DemoCast` 배역표로 건네고, 표 자체가
+   *    전체 배럴에 매달려 있어 **동적 import** 로만 온다(CODEX.md §16.1). 그래서 id 를
+   *    리터럴로 적을 필요가 없다 — 물질을 이름으로 집는다.
+   *
+   * **순서가 못 박혀 있다.** 두 표의 id 는 지금 겹치지 않지만, 겹치는 날에는 위쪽이
+   * 이긴다. 한 물질에 대본을 둘 배정한 것 자체가 실수이므로 조용히 섞이는 것보다
+   * 한쪽으로 확정되는 편이 낫다.
+   *
+   * object 는 phase 도 맞춤 연출도 없으므로(`id === null`) 어느 쪽으로도 안 간다.
    */
   const PHASE_DEMOS = new Set<string>(PHASE_KEYS);
   // 맞춤 데모 매핑: 물질 id → GuideDemoKind. id 출처는 materials/*.ts(변경 시 갱신).
@@ -295,14 +317,23 @@
     104: 'sugarwater', // SUGAR_WATER
     80: 'soda', // SODA (베이킹소다)
   };
-  const cardDemo = $derived.by<{ kind: GuideDemoKind; id: number } | null>(() => {
+  const cardDemo = $derived.by<{
+    kind: GuideDemoKind;
+    id: number;
+    cast?: DemoCast;
+    trigger?: DemoTrigger;
+  } | null>(() => {
     const c = openCard;
-    if (c === null || c.id === null || c.phase === null) return null;
-    // (1) 맞춤 데모가 있으면 그것이 최우선.
+    if (c === null || c.id === null) return null;
+    // (1) id 리터럴 표.
     const override = DEMO_OVERRIDE[c.id];
     if (override !== undefined) return { kind: override, id: c.id };
-    // (2) 그 외에는 phase 기반 기본 데모(상태 4종).
-    if (!PHASE_DEMOS.has(c.phase)) return null;
+    // (2) 배역표가 딸린 맞춤 연출. 도착 전(동적 import)에는 null 이라 (3)으로 간다.
+    const custom = sceneFor?.(c.id) ?? null;
+    if (custom !== null)
+      return { kind: custom.kind, id: c.id, cast: custom.cast, trigger: custom.trigger };
+    // (3) 그 외에는 phase 기반 기본 데모(상태 4종).
+    if (c.phase === null || !PHASE_DEMOS.has(c.phase)) return null;
     return { kind: c.phase as GuideDemoKind, id: c.id };
   });
 
@@ -596,7 +627,12 @@
       {/snippet}
       {#snippet demo()}
         {#if Demo !== null && cardDemo !== null}
-          <Demo kind={cardDemo.kind} subjectId={cardDemo.id} />
+          <Demo
+            kind={cardDemo.kind}
+            subjectId={cardDemo.id}
+            cast={cardDemo.cast}
+            trigger={cardDemo.trigger}
+          />
         {/if}
       {/snippet}
     </CodexCard>

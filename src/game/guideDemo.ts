@@ -2,7 +2,7 @@
 // 끼워 넣은 것으로, 시작 화면(`startScreen.ts`)과 같은 구조를 따른다: 세계는 여기,
 // 캔버스·RAF·가시성은 `components/GuideDemo.svelte`.
 //
-// 장면은 여섯이고 문서의 여섯 자리에 하나씩 붙는다.
+// 장면은 열이고, 앞의 여섯이 basics 문서의 여섯 자리에 하나씩 붙는다.
 //
 //   solid   브러시가 캔버스 가운데에 돌로 선을 하나 긋고, 지웠다가 다시 긋는다.
 //   powder  모래가 위에서 한 줄기로 떨어져 더미를 쌓는다. 초기화 없이 계속.
@@ -13,6 +13,21 @@
 //           아래로 빠져나온다 — 고체(체)와 가루(모래)를 뚫고 액체가 지나간다.
 //   heat    가로로 놓인 히트파이프 띠를 그 아래의 불 Clone 이 한쪽 끝부터 달군다.
 //
+// 나머지 넷은 **특정 물질의 카드에만** 붙는 맞춤 연출이다(§14.4 가 후속으로
+// 미뤄 뒀던 것). 어떤 물질이 어떤 연출을 받는지는 여기가 아니라 `demoScenes.ts`
+// 가 정한다 — 그 표만 전체 물질 배럴을 알고, 이 파일은 여전히 경량 배럴
+// (`materials/demo`)만 본다. 이 파일이 모르는 물질은 `DemoCast` 로 건네받는다.
+//
+//   acid            아래쪽에 네 줄 두께의 금속 바닥, 위에서 산 줄기. 바닥이 갉여 뚫린다.
+//   ignite          3초 줄기 낙하 → 1초 대기 → 점화(불, 섬광화약만 전기).
+//                   섬광화약·불꽃놀이 화약·황·니트로가 이 대본을 나눠 쓴다.
+//   gunpowder       두 막짜리. 1막은 좌우 모래 둔덕 사이에 화약을 쌓아 터뜨리고,
+//                   2막은 석탄가루·황·초석 세 줄기를 섞기 브러시로 휘저어
+//                   흑색화약을 만든 뒤 터뜨린다.
+//   ammoniumnitrate 벽으로 3등분한 칸에 각각 질산암모늄을 쌓고, 가운데·오른쪽에만
+//                   알루미늄 가루·등유를 부어 휘저은 뒤 셋을 동시에 격발한다 —
+//                   맨 프릴 / 암모날 / ANFO 의 위력 차이가 한 화면에 나란히 선다.
+//
 // **여기 있는 것은 브라우저 없이 검증할 수 있는 부분 전부다** — 장면 배치, 틱
 // 단위 대본, 넘침 판정, 열 뷰 전환 시점. 컴포넌트에 남는 것은 캔버스 크기에서
 // 격자 크기를 얻는 일과 브러시 원을 화면 좌표로 옮기는 일뿐이다.
@@ -20,6 +35,7 @@
 
 import { Grid } from './engine/Grid';
 import { Simulation } from './engine/Simulation';
+import { mixCells, sparkCells } from './engine/brushTools';
 import { EMPTY, type BorderMode } from './engine/types';
 import { TICK_HZ } from './config';
 import {
@@ -63,16 +79,27 @@ export type GuideDemoKind =
   | 'gas'
   | 'overlap'
   | 'heat'
+  // 물질 카드에만 붙는 맞춤 연출. basics 문서는 이 아홉을 쓰지 않는다.
+  // 두 라운드에서 각각 붙었고(§15 / §16) 구조가 다르다 — 아래 다섯은 대본이 놓는
+  // 물질을 경량 배럴에서 이름으로 집고, 위 넷은 `DemoCast` 로 건네받는다.
   | 'wall'
   | 'obsidian'
   | 'saltwater'
   | 'sugarwater'
-  | 'soda';
+  | 'soda'
+  | 'acid'
+  | 'ignite'
+  | 'gunpowder'
+  | 'ammoniumnitrate';
 
 /** 장면 목록. 문서가 붙이는 순서이자 검사가 훑는 순서다. 뒤의 다섯(wall·obsidian·
  *  saltwater·sugarwater·soda)은 basics 문서에 붙지 않는 **물질별 맞춤 데모**로,
  *  카드가 열릴 때만 보인다. 검사의 세워짐/정지화면 루프가 같은 목록을 훑으므로 여기
- *  있어야 검증도 빠지지 않는다. */
+ *  있어야 검증도 빠지지 않는다.
+ *
+ *  `DemoCast` 가 필요한 넷(acid·ignite·gunpowder·ammoniumnitrate)은 여기 **없다** —
+ *  배역표 없이 세우면 아무것도 안 하는 장면이 되므로 그 넷은 `CUSTOM_DEMO_KINDS` 와
+ *  전용 하네스(`test/demoscenes.ts`)가 맡는다. */
 export const GUIDE_DEMO_KINDS: readonly GuideDemoKind[] = [
   'solid',
   'powder',
@@ -86,6 +113,52 @@ export const GUIDE_DEMO_KINDS: readonly GuideDemoKind[] = [
   'sugarwater',
   'soda',
 ];
+
+/** 맞춤 연출 목록. 문서에는 안 붙고 `demoScenes.ts` 가 물질에 배정한다. */
+export const CUSTOM_DEMO_KINDS: readonly GuideDemoKind[] = [
+  'acid',
+  'ignite',
+  'gunpowder',
+  'ammoniumnitrate',
+];
+
+/**
+ * 맞춤 연출의 **조연 물질 id**.
+ *
+ * 이 파일은 경량 배럴(`materials/demo`)만 import 한다 — basics 탭이 같은 모듈을
+ * 로드하므로(§13.6) 여기서 화약·질산암모늄을 이름으로 집으면 가이드 문서를 여는
+ * 사람이 그 반응 그래프를 통째로 내려받게 된다. 그래서 장면 코드는 **주인공
+ * (`subjectId`)과 이 배역표에서만** 물질을 얻고, 표를 채우는 것은 전체 배럴을 이미
+ * 들고 있는 `demoScenes.ts` 다.
+ *
+ * 위의 다섯 장면(wall·obsidian·…)은 반대로 쓰는 물질을 그 경량 배럴에 이름으로
+ * 들여놓았다 — 두 방식이 나란히 있는 이유는 CODEX.md §16.1 에 적어 뒀다.
+ *
+ * 값이 없으면 그 장면은 아무것도 하지 않는다(빈 네모). 프로그래밍 실수이지
+ * 런타임에 생길 수 있는 상태가 아니라서 검사 쪽에서 잡는다 —
+ * `test/demoscenes.ts` 가 네 장면을 모두 배역표와 함께 돌려 본다.
+ */
+/**
+ * 격발 장면이 **무엇으로** 불을 붙이는가.
+ *
+ * - `'fire'`(기본) — 더미 봉우리에 불을 댄다. 라이터를 갖다 대는 그림이고,
+ *   폭약이든 연료든 다 받는다.
+ * - `'spark'` — 전기 브러시로 더미를 찌른다(게임의 전기 도구와 같은 `sparkCells`).
+ *   **섬광화약**이 이걸 쓴다. 그 물질의 볼거리는 순백색 섬광 한 장인데, 앞에
+ *   1초짜리 주황색 불꽃이 서 있으면 그게 눈을 다 먹는다. 전기로 찌르면 아크가
+ *   곁에 불씨 한 칸을 앉히고 **다음 틱에** 터지므로(spark.ts 의 `tryArcExplosive`),
+ *   화면에 남는 것은 사실상 섬광뿐이다.
+ */
+export type DemoTrigger = 'fire' | 'spark';
+
+export interface DemoCast {
+  /** `acid` — 산이 갉아먹을 바닥 금속(여러 줄 두께, 철). */
+  readonly floor: number;
+  /** `gunpowder` 2막 — 흑색화약 조합의 세 재료. 배열 순서가 왼쪽부터의 줄기 순서다. */
+  readonly recipe: readonly [number, number, number];
+  /** `ammoniumnitrate` — 가운데·오른쪽 칸에 부을 연료 둘(알루미늄 가루·등유). */
+  readonly fuels: readonly [number, number];
+}
 
 export interface GuideDemoSpec {
   /**
@@ -130,6 +203,19 @@ export const GUIDE_DEMO_SPECS: Record<GuideDemoKind, GuideDemoSpec> = {
   saltwater: { cols: 56, aspect: 2, borderMode: 'wall' },
   sugarwater: { cols: 56, aspect: 2, borderMode: 'wall' },
   soda: { cols: 56, aspect: 2, borderMode: 'wall' },
+
+  // 뒤의 넷은 반대로 **상태 4종 카드와 같은 칸**을 쓴다. 이 장면들은 한 자리에서
+  // 쌓고 터뜨리는 세로 구도라 가로 폭이 남아돌고, 카드 안에서 데모 자리의 높이가
+  // 물질마다 달라지면 카드를 넘겨 볼 때 설명문 아래가 들썩인다.
+  //
+  // 폭발이 이 칸을 넘치는 것은 사고가 아니라 결론이다 — 암모날·ANFO 는 쌓인
+  // 질량만큼 반경이 자라므로(blast.ts 의 √-법칙) 3초어치 더미면 52×34 를 통째로
+  // 덮는다. 칸을 키워 크레이터 모양을 담는 대신, 「이 물질은 이만큼 세다」가
+  // 화면을 꽉 채우는 쪽을 고른 것이다.
+  acid: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  ignite: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  gunpowder: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
+  ammoniumnitrate: { cols: 52, aspect: 3 / 2, borderMode: 'wall' },
 };
 
 /**
@@ -155,6 +241,15 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   saltwater: 150, // 물 그릇에 소금 줄기가 떨어져 섞이는 무렵 (대본 7초/210틱)
   sugarwater: 150, // 소금물과 동일
   soda: 210, // 산 웅덩이에 소다가 떨어져 중화되는 무렵 (대본 10초/300틱)
+
+  // 배역표가 딸린 넷은 전부 **터지기 직전**에 멈춘다. 폭발 뒤의 크레이터가 이
+  // 장면들의 결론이기는 해도, 정지 화면 한 장으로는 「무엇이 어떻게 터졌는지」가
+  // 아니라 「뭔가 부서진 자리」로만 읽힌다. 쌓인 더미(그리고 그 옆에 뭘 부었는지)가
+  // 한 장으로 훨씬 많은 것을 말한다.
+  acid: 240, // 산이 바닥을 다 뚫고 아래로 고인 뒤 (대본 270틱)
+  ignite: 115, // 줄기가 다 떨어지고 점화(120틱) 직전 (대본 210틱)
+  gunpowder: 120, // 1막에서 모래 둔덕 사이에 화약이 다 쌓인 순간 (점화 150틱)
+  ammoniumnitrate: 175, // 세 칸에 연료까지 부은 뒤, 휘젓기 직전 (대본 360틱)
 };
 
 // --- 대본 길이(틱) --------------------------------------------------------------
@@ -308,6 +403,144 @@ const LIQUID_POUR_CAP = DEMO_TPS * 20;
  */
 const LIQUID_HOLD = DEMO_TPS * 4;
 
+// --- 맞춤 연출의 박자 ------------------------------------------------------------
+// 넷 다 「붓는다 → 한 박 쉰다 → 불을 댄다 → 결과를 보여 준다」는 같은 골격이고,
+// 그 사이에 물질마다 다른 한 수가 끼어든다(바닥·둔덕·조합·연료).
+
+/** acid: 금속 바닥의 **윗면** 높이(세로 비율)와, 붓기·구경 시간. */
+const ACID_FLOOR_Y = 0.72;
+/**
+ * 바닥 두께(줄).
+ *
+ * 한 줄짜리 바닥은 뚫리는 순간이 **너무 싱거웠다** — 표면 한 겹이 사라지면 곧장
+ * 관통이라, 「산이 금속을 갉는다」가 아니라 「닿으면 없어진다」로 읽혔다. 네 줄이면
+ * 구멍이 위에서부터 파고들어 좁아지는 과정이 보이고, 아래로 새기 시작하는 순간에
+ * 무게가 생긴다.
+ *
+ * 두께가 대본 길이를 늘리지는 않는다. 실측으로 산이 네 줄을 뚫는 데 걸리는 시간은
+ * 한 줄일 때와 별로 다르지 않았다(2초 무렵 첫 방울이 아래로 샌다) — 부식이
+ * 접촉면마다 굴러가므로, 넓게 고인 웅덩이는 좁은 구멍을 파는 게 아니라 판 전체를
+ * 동시에 갉아 내려간다. 두꺼워지면서 달라지는 것은 걸리는 시간이 아니라 **뚫린
+ * 자리의 모양**이다.
+ */
+const ACID_FLOOR_THICK = 4;
+const ACID_POUR = DEMO_TPS * 6;
+/**
+ * 부은 뒤 그대로 두는 시간. 산은 **부으면서** 갉는 게 아니라 고인 뒤에도 계속
+ * 갉으므로(부식은 확률이고 자기 소모도 확률이다 — corrosion.ts), 붓기를 멈춘
+ * 다음이 오히려 볼거리다: 뚫린 구멍으로 산이 새고 철에서는 수소가 올라온다.
+ *
+ * 3초다. 5초였을 때 실측으로 **마지막 4초가 정지 화면**이었다 — 7초쯤이면 남은 산이
+ * 전부 아래로 빠져 철이 더 줄지 않는다. 볼 것이 끝난 자리에서 기다리느니 다음
+ * 바퀴를 시작하는 편이 낫다.
+ */
+const ACID_HOLD = DEMO_TPS * 3;
+const ACID_CYCLE = ACID_POUR + ACID_HOLD;
+
+/** ignite: 3초 붓고 1초 쉰 뒤 불을 댄다. 섬광화약·불꽃놀이 화약·황·니트로 공용. */
+const IGNITE_POUR = DEMO_TPS * 3;
+const IGNITE_WAIT = DEMO_TPS;
+const IGNITE_TAIL = DEMO_TPS * 3;
+const IGNITE_AT = IGNITE_POUR + IGNITE_WAIT;
+const IGNITE_CYCLE = IGNITE_AT + IGNITE_TAIL;
+
+/**
+ * 불을 **한 틱만 대지 않는** 이유. 폭약은 불 이웃을 보면 그 틱에 터지지만
+ * (gunpowder.ts 의 id 기반 판정), 황 같은 연료는 `burnChance` 굴림이라 한 번에
+ * 안 붙는 편이 정상이다(0.08). 불꽃 한 점만 놓고 마는 대본은 물질에 따라 **아무
+ * 일도 안 일어나는 판**을 만든다 — 실측으로 12틱 × 세 칸짜리 불씨는 황 더미에
+ * 여섯 판 중 두 판만 붙었고, 나머지 네 판은 불이 몇 틱 반짝하다 꺼진 채 대본이
+ * 끝났다. 그래서 점화 순간부터 1초 동안 다섯 칸 폭으로 계속 불을 댄다 — 라이터를
+ * 갖다 대고 있는 그림이고, 폭약 쪽은 어차피 첫 틱에 터지므로 손해가 없다.
+ */
+const IGNITE_FLAME = DEMO_TPS;
+/** 불을 대는 폭(봉우리 꼭대기에서 좌우 몇 칸까지). */
+const IGNITE_SPREAD = 4;
+
+/**
+ * gunpowder 1막 — 좌우 모래 둔덕 사이에 화약을 쌓는다.
+ *
+ * 모래가 있는 것은 화약의 성격이 **파괴가 아니라 밀어내기**이기 때문이다.
+ * 흑색화약은 파괴력이 낮아(gunpowder.ts 의 `destructivePower`) 단단한 것은 못
+ * 부수고 헐거운 것을 Debris 로 밀쳐 낸다. 좌우에 모래 둔덕이 있어야 그 「밀쳐
+ * 냄」이 보인다 — 빈 화면에서 터뜨리면 반짝하고 끝난다.
+ *
+ * 모래가 2초에 멈추고 화약이 2초 더 떨어지는 것은 화약 더미가 둔덕보다 높이
+ * 솟아 있어야 「가운데 것이 터졌다」가 읽히기 때문이다.
+ */
+const GP_BERM = DEMO_TPS * 2;
+const GP_PILE = DEMO_TPS * 4;
+const GP_WAIT = DEMO_TPS;
+const GP_TAIL = DEMO_TPS * 2;
+const GP_ACT1_FIRE = GP_PILE + GP_WAIT;
+const GP_ACT1 = GP_ACT1_FIRE + GP_TAIL;
+
+/**
+ * gunpowder 2막 — 화약을 **만든다**. 석탄가루·황·초석 세 줄기를 나란히 떨어뜨린
+ * 뒤 섞기 브러시로 휘저으면 세 알갱이가 맞닿은 자리마다 흑색화약이 된다
+ * (gunpowdermix.ts 의 3체 레시피). 팔레트에서 꺼내는 것 말고 조합이라는 길이
+ * 있다는 것이 이 물질 카드가 할 수 있는 가장 좋은 말이다.
+ *
+ * 휘젓고 나서 한 박 쉬는 것은 연출이 아니라 **레시피에 시간을 주는 것**이다.
+ * 성립 확률이 틱당 0.25 라 접촉 직후가 아니라 몇 틱 뒤에 알갱이가 검게 바뀐다.
+ */
+const GP_MIX_POUR = DEMO_TPS * 2;
+const GP_MIX_STIR = DEMO_TPS * 3;
+const GP_MIX_WAIT = DEMO_TPS;
+const GP_MIX_TAIL = DEMO_TPS * 2;
+const GP_ACT2_FIRE = GP_MIX_POUR + GP_MIX_STIR + GP_MIX_WAIT;
+const GP_ACT2 = GP_ACT2_FIRE + GP_MIX_TAIL;
+const GP_CYCLE = GP_ACT1 + GP_ACT2;
+
+/** 2막의 세 줄기가 떨어지는 자리(가로 비율). 더미가 서로 맞물릴 만큼 가깝다. */
+const GP_MIX_AT: readonly number[] = [0.35, 0.5, 0.65];
+/** 1막의 좌우 모래 둔덕과 가운데 화약 줄기 자리(가로 비율). */
+const GP_BERM_AT: readonly number[] = [0.25, 0.75];
+const GP_PILE_AT = 0.5;
+
+/**
+ * ammoniumnitrate — 벽으로 3등분한 칸에 같은 프릴을 쌓아 놓고, 가운데와
+ * 오른쪽에만 연료를 붓는다. 왼쪽은 그대로 둔다.
+ *
+ * 이 물질의 설명문이 하는 말이 「혼자서는 팔레트에서 가장 약한 폭약이고, 연료를
+ * 먹이면 달라진다」(ammoniumnitrate.ts)인데, 그건 **나란히 놓고 동시에 터뜨려야만**
+ * 보이는 종류의 사실이다. 왼쪽 맨 프릴(반경 6) / 가운데 암모날(17.5) / 오른쪽
+ * ANFO(14) 가 한 틱에 같이 간다.
+ *
+ * 알루미늄 가루는 접촉 레시피(0.25 굴림)이고 등유는 겹침으로 스며드는 것이라,
+ * 둘 다 부어 놓고 가만두면 표면만 반응한다. 아래쪽 절반을 휘젓는 한 획이 그
+ * 둘을 더미 속으로 밀어 넣는다.
+ */
+const AN_POUR = DEMO_TPS * 3;
+const AN_WAIT1 = DEMO_TPS;
+const AN_FUEL = DEMO_TPS * 2;
+const AN_STIR = DEMO_TPS * 2;
+const AN_WAIT2 = DEMO_TPS;
+const AN_TAIL = DEMO_TPS * 3;
+const AN_FIRE = AN_POUR + AN_WAIT1 + AN_FUEL + AN_STIR + AN_WAIT2;
+const AN_CYCLE = AN_FIRE + AN_TAIL;
+/** 세 칸의 한가운데(가로 비율). 칸막이가 1/3·2/3 에 서므로 1/6·1/2·5/6 이다. */
+const AN_CELL_AT: readonly number[] = [1 / 6, 0.5, 5 / 6];
+
+/**
+ * 섞기 브러시의 반지름(칸). 굵어야 한다 — 세 재료가 각자의 봉우리로 앉으므로,
+ * 발자국이 봉우리 하나보다 좁으면 같은 재료끼리만 섞어 놓고 지나간다.
+ */
+const STIR_R = 5;
+
+/**
+ * 가로 획 수. 장면마다 다르다.
+ *
+ * - **화약 2막은 왕복 한 번**(2획)이고 높이가 안 변한다. 브러시를 바닥에 붙여 두면
+ *   반지름 5가 더미 높이를 통째로 덮으므로 위아래로 움직일 이유가 없고, 획이 적을수록
+ *   브러시가 한 칸에 오래 머물러(획당 1.5초에 46칸이면 틱당 한 칸꼴) 같은 자리를
+ *   반복해서 섞는다. 여러 번 빨리 지나가는 것보다 이쪽이 조합을 더 잘 건다.
+ * - **질산암모늄은 여러 획**이다. 이쪽 브러시는 아래쪽 절반을 훑어 내려갔다 올라오는
+ *   모양이라 한 자리에 머무는 시간이 짧고, 대신 칸막이가 획을 세 도막으로 끊는다.
+ */
+const STIR_SWEEPS_FLAT = 2;
+const STIR_SWEEPS_BAND = 8;
+
 // --- 물줄기 --------------------------------------------------------------------
 
 /** 줄기가 태어나는 높이(위에서 몇 번째 줄). y=0이 천장이다. */
@@ -422,17 +655,47 @@ function defaultSubject(kind: GuideDemoKind): number {
     default:
       // overlap·heat·wall·obsidian·saltwater·sugarwater·soda 는 subjectId 를 읽지
       // 않는다 — 각자 자기 물질을 대본 안에서 직접 다룬다. 의미 있는 값 하나만 둔다.
+      //
+      // 배역표가 딸린 넷(acid·ignite·gunpowder·ammoniumnitrate)은 반대로 **언제나**
+      // 주인공을 받는다(물질 카드에서만 켜지므로) — 여기 걸린다면 배선이 잘못된
+      // 것이고, 벽이 쏟아지는 그림이 조용한 실패보다 눈에 띈다.
       return DEMO_WALL.id;
   }
 }
 
-/** 브러시 커서. 고체 데모에서만 값이 있고 나머지는 `null`이다. */
+/**
+ * 브러시 커서 안에 그릴 도구 아이콘. `null` 이면 빈 원 — 게임의 재료 브러시
+ * 미리보기와 같은 모양이다. `'mix'` 는 섞기 도구(`bi-tornado`)로, 커서가 무엇을
+ * 하고 있는지가 그림만으로는 안 읽히기 때문에 붙는다: 빈 원이 더미 위를 지나가면
+ * 「무언가를 칠하는 중」으로 읽히지 「휘젓는 중」으로는 읽히지 않는다.
+ */
+export type DemoBrushIcon = 'mix';
+
+/** 브러시 커서. 커서를 쓰는 장면에서만 값이 있고 나머지는 `null`이다. */
 export interface DemoBrush {
   /** 칸 좌표(중심). */
   x: number;
   y: number;
   /** 반지름(칸). */
   r: number;
+  /** 원 안에 겹칠 도구 아이콘. 재료 브러시면 `null`. */
+  icon: DemoBrushIcon | null;
+}
+
+/**
+ * 장면 하나를 세우는 데 필요한, 종류(`kind`)와 크기 말고 전부.
+ *
+ * 셋 다 **물질 카드에서만** 채워진다. basics 탭의 여섯 장면은 이 객체를 통째로
+ * 생략하고, 그러면 기본값(상태별 대표 물질 · 배역 없음 · 불로 점화)으로 돌아간다 —
+ * §13 의 여섯은 이 라운드 뒤에도 한 줄도 안 바뀐다.
+ */
+export interface GuideDemoOptions {
+  /** 주인공 물질 id. 없으면 `defaultSubject(kind)`. */
+  subjectId?: number;
+  /** 맞춤 연출의 조연들. `demoScenes.ts` 만 채운다. */
+  cast?: DemoCast;
+  /** 격발 방식. 기본은 불. */
+  trigger?: DemoTrigger;
 }
 
 /**
@@ -456,6 +719,15 @@ export class GuideDemoWorld {
    */
   readonly subjectId: number;
 
+  /**
+   * 맞춤 연출의 조연 물질들. 맞춤 연출이 아닌 장면은 읽지 않으므로 `null`이다
+   * — basics 탭과 상태 4종 카드는 배역표 없이 그대로 돈다.
+   */
+  readonly cast: DemoCast | null;
+
+  /** 격발 장면이 무엇으로 불을 붙이는가. 안 주면 불이다. */
+  readonly trigger: DemoTrigger;
+
   /** 대본이 한 바퀴를 돌아 초기화된 횟수. 검사가 반복을 확인하는 창구다. */
   loops = 0;
 
@@ -475,11 +747,13 @@ export class GuideDemoWorld {
     width: number,
     height: number,
     rand: () => number = Math.random,
-    subjectId?: number,
+    opts: GuideDemoOptions = {},
   ) {
     this.kind = kind;
     this.rand = rand;
-    this.subjectId = subjectId ?? defaultSubject(kind);
+    this.subjectId = opts.subjectId ?? defaultSubject(kind);
+    this.cast = opts.cast ?? null;
+    this.trigger = opts.trigger ?? 'fire';
     this.grid = new Grid(width, height);
     this.sim = new Simulation(this.grid);
     this.sim.setBorderMode(GUIDE_DEMO_SPECS[kind].borderMode);
@@ -509,7 +783,7 @@ export class GuideDemoWorld {
 
   // --- 고정 배치 ---------------------------------------------------------------
 
-  /** 장면의 움직이지 않는 부분(그릇·파이프·불씨·블록·웅덩이)을 놓는다. */
+  /** 장면의 움직이지 않는 부분(그릇·파이프·불씨·블록·웅덩이·바닥·칸막이)을 놓는다. */
   private build(): void {
     switch (this.kind) {
       case 'liquid':
@@ -535,8 +809,43 @@ export class GuideDemoWorld {
         // 액트1 고정 배치: 바닥 산 웅덩이. 액트2 전환은 대본이 buildBatterPool 로.
         this.buildPool(DEMO_ACID.id);
         break;
+      case 'acid':
+        // 격자를 가로로 완전히 막는 네 줄 두께의 금속 바닥.
+        this.buildFloor();
+        break;
+      case 'ammoniumnitrate':
+        // 격자를 세로로 완전히 가르는 칸막이 둘 — 3등분.
+        this.buildPartitions();
+        break;
     }
     this.grid.randomizeTints();
+  }
+
+  /**
+   * 산 장면의 금속 바닥: 격자를 가로로 완전히 막는 한 줄.
+   *
+   * **끝에서 끝까지** 놓는 것이 요점이다. 한 칸이라도 비면 산은 갉는 대신 그리로
+   * 흘러내리고, 장면은 「부식」이 아니라 「액체가 틈으로 샌다」가 된다. 아래로
+   * 가는 길이 바닥을 뚫는 것뿐이어야 부식이 유일한 사건이 된다.
+   */
+  private buildFloor(): void {
+    const g = this.grid;
+    const id = this.cast?.floor;
+    if (id === undefined) return;
+    const top = Math.round(g.height * ACID_FLOOR_Y);
+    for (let dy = 0; dy < ACID_FLOOR_THICK; dy++) {
+      const y = top + dy;
+      if (y >= g.height) break;
+      for (let x = 0; x < g.width; x++) g.set(x, y, id);
+    }
+  }
+
+  /** 질산암모늄 장면의 칸막이 둘: 격자를 세로로 완전히 가르는 벽 두 줄. */
+  private buildPartitions(): void {
+    const g = this.grid;
+    for (const x of this.partitions()) {
+      for (let y = 0; y < g.height; y++) g.set(x, y, DEMO_WALL.id);
+    }
   }
 
   /** 액체 데모의 그릇: 바닥 한 줄과 좌우 벽 두 줄로 된, 위가 트인 상자. */
@@ -724,6 +1033,18 @@ export class GuideDemoWorld {
       case 'soda':
         this.tickSoda();
         break;
+      case 'acid':
+        this.tickAcid();
+        break;
+      case 'ignite':
+        this.tickIgnite();
+        break;
+      case 'gunpowder':
+        this.tickGunpowder();
+        break;
+      case 'ammoniumnitrate':
+        this.tickAmmoniumNitrate();
+        break;
     }
     this.sim.step();
     this.t++;
@@ -791,7 +1112,7 @@ export class GuideDemoWorld {
     // 붙어 있으므로 브러시는 계속 보이고 자리만 안 움직인다.
     const p = t < BRUSH_HOLD_IN ? 0 : t < BRUSH_HOLD_IN + BRUSH_DRAG ? (t - BRUSH_HOLD_IN) / BRUSH_DRAG : 1;
     const x = Math.round(x0 + (x1 - x0) * p);
-    this.brush = { x, y, r: BRUSH_R };
+    this.brush = { x, y, r: BRUSH_R, icon: null };
     // 대기 구간에도 계속 찍는다 — 멈춘 브러시가 같은 자리를 덧칠하는 것은
     // 실제 브러시와 같은 동작이고, 드래그 첫 틱에 선이 갑자기 나타나지 않는다.
     if (t >= BRUSH_HOLD_IN) this.paintDisc(x, y, BRUSH_R, id);
@@ -827,12 +1148,21 @@ export class GuideDemoWorld {
     this.drainFloor();
   }
 
-  /** 가로 비율 `at` 자리에서 한 알갱이를 떨어뜨린다(확률 SAND_CHANCE). */
+  /**
+   * 가로 비율 `at` 자리에서 한 알갱이를 떨어뜨린다(확률 SAND_CHANCE).
+   *
+   * **빈 칸에만** 놓는다. 흔들림(`STREAM_JITTER`)이 줄기를 좌우로 한 칸씩 흔드는데,
+   * 질산암모늄 장면은 칸막이 벽이 천장까지 서 있어서 그 한 칸이 벽 위에 떨어질 수
+   * 있다 — `spawn` 은 있던 것을 덮으므로, 막지 않으면 줄기가 **자기 칸막이에
+   * 구멍을 뚫는다.** 더미가 천장까지 차오른 판에서 줄기가 자기 꼭대기를 덮어쓰는
+   * 것도 같은 이유로 막힌다.
+   */
   private dropStream(id: number, at: number): void {
     if (this.rand() > SAND_CHANCE) return;
     const g = this.grid;
     const jitter = Math.round((this.rand() * 2 - 1) * STREAM_JITTER);
     const x = Math.min(g.width - 1, Math.max(0, Math.round(g.width * at) + jitter));
+    if (g.get(x, STREAM_Y) !== EMPTY) return;
     this.sim.context.spawn(x, STREAM_Y, id);
   }
 
@@ -949,8 +1279,6 @@ export class GuideDemoWorld {
   // 모두 tickOverlap 과 같은 구조: 누적 틱 t 를 단계별 창으로 쪼개고, 각 창에서
   // 한 동작만 하며 early return. 마지막 단계가 지나면 loop() 로 격자를 비우고
   // 처음부터(build 가 고정 배치를 다시 놓는다).
-
-
 
   /**
    * wall: 가운데 벽 블록이 TNT → 산 → 녹은 U235 세 위협에 모두 살아남는 것을
@@ -1247,6 +1575,277 @@ export class GuideDemoWorld {
     }
     if (t < act2End) return; // 반죽이 부풀 준비를 하는 것을 관찰
     // loop() 가 완전 초기화(격자 비움 → build 가 산 웅덩이를 다시 놓는다)
+  }
+
+  // --- 배역표가 딸린 맞춤 연출: 공용 손놀림 ------------------------------------
+  //
+  // 위의 다섯과 갈리는 지점은 **물질을 어디서 얻는가** 하나다. 저쪽은 경량 배럴에
+  // 이름으로 들여놓은 것을 직접 집고, 이쪽은 대본이 모르는 물질을 `DemoCast` 로
+  // 건네받는다(CODEX.md §16.1). 박자를 쪼개는 방식은 똑같다.
+
+  /**
+   * `x0..x1` 칸 구간에서 **가장 높이 쌓인 자리**를 찾아 그 봉우리에 불을 붙인다.
+   * 격발·점화는 전부 이 한 손을 거치고, `trigger` 가 불이냐 전기냐만 가른다.
+   *
+   * 좌표를 대본에 박지 않고 매번 격자에서 찾는 이유는, 같은 대본이 가루와 액체
+   * 모두를 상대하기 때문이다 — 3초어치 니트로는 넓고 얕은 웅덩이가 되고 같은
+   * 3초의 섬광화약은 좁고 높은 봉우리가 된다. 「꼭대기」는 둘 다에서 뜻이 통하는
+   * 유일한 자리다.
+   */
+  private ignitePile(x0: number, x1: number): void {
+    const g = this.grid;
+    const lo = Math.max(0, x0);
+    const hi = Math.min(g.width - 1, x1);
+    let bestX = -1;
+    let bestY = g.height;
+    for (let x = lo; x <= hi; x++) {
+      const y = this.topOf(x);
+      if (y >= 0 && y < bestY) {
+        bestY = y;
+        bestX = x;
+      }
+    }
+    // 더미가 없으면 아무것도 안 한다 — 이미 터진 뒤라면 크레이터 위에 불만 남는다.
+    if (bestX < 0 || bestY === 0) return;
+    // 꼭대기 한 점이 아니라 **봉우리 둘레의 등고선을 따라** 손을 댄다. 한 점만
+    // 노리면 그 자리가 튀어나온 알갱이 하나일 때 불이 더미에서 몇 칸 뜬 채로 타다
+    // 만다(실측: 여덟 판 중 한 판이 아무것도 안 터진 채 끝났다). 칸마다 그 칸의
+    // 꼭대기를 다시 찾으면 손이 더미 표면에 붙어 내려앉는다.
+    //
+    // 전기는 더미 **자체**를 찌르고(전극을 갖다 대는 그림), 불은 더미 **위 칸**에
+    // 놓는다(불은 빈 칸에만 앉는다). 그래서 두 갈래가 겨누는 줄이 한 칸 다르다.
+    const spark: number[] = [];
+    for (let dx = -IGNITE_SPREAD; dx <= IGNITE_SPREAD; dx++) {
+      const x = bestX + dx;
+      if (x < lo || x > hi) continue;
+      const top = this.topOf(x);
+      if (top <= 0) continue;
+      if (this.trigger === 'spark') {
+        spark.push(x, top);
+        continue;
+      }
+      if (g.get(x, top - 1) !== EMPTY) continue;
+      this.sim.context.spawn(x, top - 1, DEMO_FIRE.id);
+    }
+    // 게임의 전기 브러시와 같은 호출. 폭약을 만난 펄스는 곁에 불씨 한 칸을 앉히고
+    // 그 칸이 **다음 틱에** 기폭시키므로(spark.ts 의 `tryArcExplosive`), 화면에
+    // 남는 주황색은 한 틱짜리 한 칸뿐이다.
+    if (spark.length > 0) sparkCells(this.sim.context, spark);
+  }
+
+  /**
+   * `x` 칸에서 가장 위에 있는 **실체**의 줄 번호. 없으면 -1.
+   *
+   * 불과 연기는 건너뛴다 — 둘 다 **이 손이 방금 만든 것**이라, 세지 않으면 불을
+   * 대고 있는 1초 동안 커서가 자기 불꽃을 더미로 착각해 위로 기어오른다. 벽을
+   * 만나면 그 칸은 통째로 칸막이라는 뜻이라 없는 것으로 친다(질산암모늄 장면의
+   * 칸막이는 천장까지 서 있어서, 안 그러면 언제나 그것이 「가장 높은 것」이 된다).
+   */
+  private topOf(x: number): number {
+    const g = this.grid;
+    for (let y = 0; y < g.height; y++) {
+      const id = g.get(x, y);
+      if (id === EMPTY || id === DEMO_FIRE.id || id === DEMO_SMOKE.id) continue;
+      return id === DEMO_WALL.id ? -1 : y;
+    }
+    return -1;
+  }
+
+  /**
+   * 섞기 브러시가 `x0..x1` 을 `sweeps` 번의 가로 획으로 훑는다. `p` 는 이 구간의
+   * 진행도(0→1)이고, 세로로는 그동안 `y0` 에서 `y1` 까지 **내려갔다 올라온다**.
+   * `y0 === y1` 이면 높이 변화 없이 한 줄에서만 오간다.
+   *
+   * 세로 왕복이 있는 이유는 더미가 앉은 띠를 여러 번 지나가야 하기 때문이다.
+   * 훑고 내려가기만 하면 그 띠를 한 번밖에 안 지나가고, 그러면 알갱이가 「지나가면서
+   * 조금 흐트러진」 정도로 끝나 서로 다른 세 재료가 맞닿아야 성립하는 조합이 거의
+   * 안 걸린다(실측: 세 줄기 130알에 화약 3칸). 브러시를 아예 바닥에 붙여 두면
+   * (`y0 === y1`) 반지름이 더미 높이를 통째로 덮으므로 세로로 움직일 이유가 없어진다.
+   *
+   * 칠하는 게 아니라 `mixCells` 를 부른다. 게임의 섞기 도구가 쓰는 바로 그
+   * 함수라, 여기서 일어나는 일은 플레이어가 같은 도구로 하는 일과 같다(고체는
+   * 안 섞이고, 벽으로 갈린 칸끼리는 섞이지 않는다 — 질산암모늄 장면의 3등분이
+   * 휘젓는 동안에도 유지되는 것이 그 덕이다).
+   */
+  private stir(
+    p: number,
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+    sweeps: number,
+  ): void {
+    const g = this.grid;
+    const q = Math.min(Math.max(p, 0), 1);
+    const u = q * sweeps;
+    // 짝수 획은 왼쪽 → 오른쪽, 홀수 획은 되돌아온다. `p === 1` 이면 u 가 정확히
+    // sweeps 라 나머지가 0으로 떨어지는데, 그때는 다음 획의 시작이 아니라 **마지막
+    // 획의 끝**에 서 있어야 한다.
+    const legIndex = Math.min(Math.floor(u), sweeps - 1);
+    const legP = u >= sweeps ? 1 : u - legIndex;
+    const along = legIndex % 2 === 0 ? legP : 1 - legP;
+    const x = Math.round(x0 + (x1 - x0) * along);
+    const down = q < 0.5 ? q * 2 : (1 - q) * 2;
+    const y = Math.round(y0 + (y1 - y0) * down);
+    this.brush = { x, y, r: STIR_R, icon: 'mix' };
+    // 브러시 발자국을 평평한 [x,y,x,y,…] 로. mixCells 가 기대하는 모양이고,
+    // 게임의 원형 브러시와 같은 원판 마스크다.
+    const cells: number[] = [];
+    for (let dy = -STIR_R; dy <= STIR_R; dy++) {
+      for (let dx = -STIR_R; dx <= STIR_R; dx++) {
+        if (dx * dx + dy * dy > STIR_R * STIR_R) continue;
+        const cx = x + dx;
+        const cy = y + dy;
+        if (!g.inBounds(cx, cy)) continue;
+        cells.push(cx, cy);
+      }
+    }
+    mixCells(g, cells, this.rand);
+  }
+
+  /** 막이 바뀔 때 무대만 치운다 — `loop()` 과 달리 바퀴 수도 시계도 안 건드린다. */
+  private clearStage(): void {
+    this.brush = null;
+    this.grid.clear();
+    this.build();
+  }
+
+  // --- 산: 금속 바닥을 갉아 뚫는다 ------------------------------------------------
+
+  private tickAcid(): void {
+    const t = this.t;
+    if (t >= ACID_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < ACID_POUR) this.dropStream(this.subjectId, 0.5);
+  }
+
+  // --- 격발: 붓고, 쉬고, 불을 댄다 -------------------------------------------------
+
+  private tickIgnite(): void {
+    const t = this.t;
+    if (t >= IGNITE_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < IGNITE_POUR) {
+      this.dropStream(this.subjectId, 0.5);
+      return;
+    }
+    if (t >= IGNITE_AT && t < IGNITE_AT + IGNITE_FLAME) this.ignitePile(0, this.grid.width - 1);
+  }
+
+  // --- 화약: 1막 둔덕, 2막 조합 ----------------------------------------------------
+
+  private tickGunpowder(): void {
+    const t = this.t;
+    if (t >= GP_CYCLE) {
+      this.loop();
+      return;
+    }
+    if (t < GP_ACT1) {
+      this.tickGunpowderBerm(t);
+      return;
+    }
+    // 막의 첫 틱에 무대를 치운다. `loop()` 이 아니라 `clearStage()` 인 것은 이게
+    // 한 바퀴의 끝이 아니라 **같은 바퀴의 2막**이기 때문이다.
+    const at = t - GP_ACT1;
+    if (at === 0) this.clearStage();
+    this.tickGunpowderMix(at);
+  }
+
+  /** 1막: 좌우 모래 둔덕 2초, 가운데 화약 4초, 1초 뒤 점화. */
+  private tickGunpowderBerm(t: number): void {
+    if (t < GP_BERM) for (const at of GP_BERM_AT) this.dropStream(DEMO_SAND.id, at);
+    if (t < GP_PILE) {
+      this.dropStream(this.subjectId, GP_PILE_AT);
+      return;
+    }
+    if (t >= GP_ACT1_FIRE && t < GP_ACT1_FIRE + IGNITE_FLAME) {
+      // 가운데 더미만 겨눈다 — 좌우 모래 둔덕이 화약보다 높은 판에서 「가장 높은
+      // 자리」를 화면 전체에서 찾으면 불이 모래 위에 붙어 아무 일도 안 일어난다.
+      const g = this.grid;
+      const mid = Math.round(g.width * GP_PILE_AT);
+      this.ignitePile(mid - 4, mid + 4);
+    }
+  }
+
+  /** 2막: 세 재료 2초 → 섞기 브러시 3초 → 1초 대기 → 격발. */
+  private tickGunpowderMix(t: number): void {
+    const recipe = this.cast?.recipe;
+    if (recipe === undefined) return;
+    if (t < GP_MIX_POUR) {
+      for (let i = 0; i < recipe.length; i++) this.dropStream(recipe[i], GP_MIX_AT[i]);
+      return;
+    }
+    const st = t - GP_MIX_POUR;
+    if (st < GP_MIX_STIR) {
+      const g = this.grid;
+      // **맨 아래에서 왕복 한 번.** 높이는 안 변한다 — 반지름 5짜리 발자국이 바닥에
+      // 붙어 있으면 더미 높이를 통째로 덮으므로, 위아래로 움직이는 것은 알갱이가
+      // 없는 허공을 훑는 시간만 늘린다. 가로로는 여전히 캔버스를 끝에서 끝까지 간다.
+      const floor = g.height - 2;
+      this.stir(st / GP_MIX_STIR, 2, g.width - 3, floor, floor, STIR_SWEEPS_FLAT);
+      return;
+    }
+    this.brush = null;
+    if (t >= GP_ACT2_FIRE && t < GP_ACT2_FIRE + IGNITE_FLAME) {
+      this.ignitePile(0, this.grid.width - 1);
+    }
+  }
+
+  // --- 질산암모늄: 3등분한 칸에서 맨 프릴 · 암모날 · ANFO ------------------------------
+
+  private tickAmmoniumNitrate(): void {
+    const t = this.t;
+    if (t >= AN_CYCLE) {
+      this.loop();
+      return;
+    }
+    const g = this.grid;
+    if (t < AN_POUR) {
+      for (const at of AN_CELL_AT) this.dropStream(this.subjectId, at);
+      return;
+    }
+    const fuels = this.cast?.fuels;
+    const ft = t - AN_POUR - AN_WAIT1;
+    // 왼쪽 칸에는 아무것도 안 붓는다 — 그게 이 장면의 대조군이다.
+    if (fuels !== undefined && ft >= 0 && ft < AN_FUEL) {
+      this.dropStream(fuels[0], AN_CELL_AT[1]);
+      this.dropStream(fuels[1], AN_CELL_AT[2]);
+      return;
+    }
+    const st = ft - AN_FUEL;
+    if (st >= 0 && st < AN_STIR) {
+      // 아래쪽 절반만. 더미가 앉은 자리이고, 칸막이가 획을 세 도막으로 끊어 주므로
+      // (`mixCells` 는 고체를 못 넘는다) 한 번 지나가는 것으로 세 칸이 **각자**
+      // 섞인다 — 브러시 하나가 세 칸을 한꺼번에 훑는데도 재료가 옆 칸으로 새지 않는다.
+      this.stir(
+        st / AN_STIR,
+        2,
+        g.width - 3,
+        Math.round(g.height * 0.6),
+        g.height - 2,
+        STIR_SWEEPS_BAND,
+      );
+      return;
+    }
+    this.brush = null;
+    if (t >= AN_FIRE && t < AN_FIRE + IGNITE_FLAME) {
+      // 세 칸을 **같은 틱에** 겨눈다. 시차가 생기면 먼저 간 쪽의 충격파가 나머지를
+      // 물고 들어가 「셋을 나란히 비교한다」가 성립하지 않는다.
+      const [a, b] = this.partitions();
+      this.ignitePile(0, a - 1);
+      this.ignitePile(a + 1, b - 1);
+      this.ignitePile(b + 1, g.width - 1);
+    }
+  }
+
+  /** 칸막이 두 줄의 x 좌표. 배치와 대본이 같은 값을 읽도록 계산을 한 군데 둔다. */
+  private partitions(): [number, number] {
+    const g = this.grid;
+    return [Math.round(g.width / 3), Math.round((g.width * 2) / 3)];
   }
 }
 

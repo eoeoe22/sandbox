@@ -1,4 +1,9 @@
 import type { SimContext } from './SimContext';
+// 타입만 가져온다 — `import type` 은 컴파일에서 지워지므로 엔진이 물질 모듈에
+// 런타임으로 매달리지 않는다. `Material.detonateOptions` 가 폭발 옵션을 **선언으로**
+// 들고 있으려면 그 모양을 알아야 하는데, 모양을 여기 한 벌 더 적으면 blast.ts 와
+// 조용히 갈라진다.
+import type { DetonateOptions } from '../materials/blast';
 
 /** A material identifier — an index into the material registry. */
 export type MatId = number;
@@ -653,6 +658,30 @@ export interface Material {
    * position-independent. Only meaningful alongside `explosive`.
    */
   electricDetonate?: boolean;
+  /**
+   * How this charge detonates **when something other than its own `update` sets
+   * it off** — today that is exactly one caller, the electric detonator
+   * (`electricDetonate`, spark.ts's `tryArcExplosive`).
+   *
+   * It exists because that caller has no way to know what a charge's own
+   * detonation looks like. It fires `detonate()` with no options, which is the
+   * plain round crater — right for C4, **wrong for any charge whose signature
+   * lives in its `DetonateOptions`.** Flash Powder is the case that found it:
+   * its whole point is that it fills its reach with white `Flash` light instead
+   * of the fire-coloured shockwave (`onCell: paintFlash`, flashpowder.ts), and
+   * an electrically fired charge was dropping that and going off as one more
+   * orange bomb — the exact thing its own design note says it must never look
+   * like. `shapedcharge.ts` had already met this and worked around it by
+   * declining `electricDetonate` in favour of a `directPulse` hook; declaring
+   * the options here means the next charge doesn't have to.
+   *
+   * The charge's own `update` should pass the **same object** rather than an
+   * inline duplicate, so the two paths can't drift into two different-looking
+   * explosions for the same material.
+   *
+   * Omitted ⇒ the default round blast, which is what nearly every charge wants.
+   */
+  detonateOptions?: DetonateOptions;
   /**
    * Blast reach (in cells) a *lone* charge of this material detonates with, and —
    * unless `blastYield` overrides it — the yield each cell contributes to a
