@@ -224,7 +224,11 @@ console.log('\n== 겹침: 모래 더미에 물이 스민다 ==');
 
 // --- 열전도 -------------------------------------------------------------------
 console.log('\n== 열전도: 파이프 띠가 아래의 불에서부터 달아오른다 ==');
-{
+// 이 절만 블록이 아니라 함수인 것은 **중간에 빠져나가야 하기 때문**이다. 파이프가
+// 한 줄도 안 놓인 판에서 뒤의 검사를 계속 돌리면, 없는 좌표를 실수로 0 같은
+// 「그럴듯한 줄 번호」로 채우게 되고 그러면 「Clone 이 파이프 아래에 있다」가
+// **저절로 통과한다** — 불 덩어리는 언제나 0보다 아래에 있으니까.
+function heatChecks(): void {
   const w = make('heat');
 
   // 파이프가 놓인 줄을 격자에서 직접 찾는다. 대본 상수(PIPE_Y·PIPE_THICK)를 여기
@@ -245,11 +249,10 @@ console.log('\n== 열전도: 파이프 띠가 아래의 불에서부터 달아�
     '띠가 끊기지 않고 붙어 있다',
     `y=${pipeRows[0]}..${pipeRows[pipeRows.length - 1]}`,
   );
-  // 파이프가 한 줄도 없으면 위 두 검사가 이미 실패했다. 그래도 0 으로 받아 두는
-  // 것은 아래 온도 검사가 `undefined` 줄을 읽어 **NaN 을 찍는 것**을 막기
-  // 위해서다 — 그러면 진짜 원인이 뒤따르는 잡음에 묻힌다.
-  const pipeTop = pipeRows[0] ?? 0;
-  const pipeBottom = pipeRows[pipeRows.length - 1] ?? 0;
+  // 파이프가 한 줄도 없으면 위 두 검사가 이미 실패했고, 아래는 잴 것이 없다.
+  if (pipeRows.length === 0) return;
+  const pipeTop = pipeRows[0];
+  const pipeBottom = pipeRows[pipeRows.length - 1];
 
   // 불 Clone 은 파이프 **아래**에 있어야 한다(불은 위로 오른다). 그리고 파이프에
   // 딱 붙어 있으면 위로는 뱉을 자리가 없어 불이 옆구리로만 샌다 — 사이에 빈 줄이
@@ -298,6 +301,7 @@ console.log('\n== 열전도: 파이프 띠가 아래의 불에서부터 달아�
   const backToAmbient = w.grid.getTemp(w.grid.width - 8, pipeTop);
   check(Math.abs(backToAmbient - AMBIENT_TEMP) < 1, '초기화로 온도도 되돌아온다', `${backToAmbient.toFixed(0)}℃`);
 }
+heatChecks();
 
 // --- 정지 화면 ----------------------------------------------------------------
 console.log('\n== 움직임 최소화: 감아 둔 한 프레임이 빈 화면이 아니다 ==');
