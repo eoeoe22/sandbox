@@ -21,11 +21,12 @@ export const AEROGEL = register({
   color: rgb(214, 224, 232),
   density: 1000,
   category: 'solid',
-  // Pitted with voids on the board, the way the palette chip has always drawn it:
+  // Pitted with pores on the board, the way the palette chip has always drawn it:
   // the material that is 99% air used to render as a flat pale slab, which is the
-  // one thing it should never look like. The chip's holes are on a fixed grid;
-  // a wall's are randomised in size, position and presence so fifty cells of it
-  // read as foam rather than as perforated sheet (see render/poreField.ts).
+  // one thing it should never look like. The chip's holes are on a fixed grid; a
+  // wall's sit on a checkerboard lattice with a cell of jitter in size and position,
+  // so it reads as a fine even foam — and pores never merge, which is what would
+  // turn it into styrofoam (see render/poreField.ts).
   //
   // `lattice` is the void tone — the exact grey the chip pits with (#9aabb8), so
   // the chip and the canvas are one picture at two scales. It is only a second

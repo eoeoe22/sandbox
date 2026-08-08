@@ -1367,18 +1367,16 @@ export class CanvasRenderer implements Renderer {
         const rt = rotorFrame(rotorFrames[bi]) ? rotorTileSpun[id]! : rotorTile[id]!;
         c = rt[(y2 % ROTOR_N) * ROTOR_N + (x2 % ROTOR_N)];
       } else if (poresPattern[id]) {
-        // Aerogel draws open-cell foam: `lattice`-coloured voids pitting the base
-        // colour, one per PORE_P-cell period, each rolling its own size, its own
-        // offset inside that period, and whether it is there at all — so a wall of
-        // it is porous rather than perforated (see poreField.ts, which the palette
-        // chip generator shares). Positional like the Wall's courses, so a dragged
-        // block is one continuous piece of foam and a void stays where it was.
+        // Aerogel draws a fine foam: `lattice`-coloured pores on a checkerboard
+        // lattice, 2 or 3 cells square, each nudged by at most one cell off its
+        // period's corner (see poreField.ts, which the palette chip generator
+        // shares). Positional like the Wall's courses, so a dragged block is one
+        // continuous piece of foam and a pore stays where it was.
         //
-        // No state and a bounded cost: a cell is decided by the period it falls in
-        // and at most the three that can spill into it (2.25 hashes on average).
-        // That bound is the whole reason the voids are anchored to a lattice rather
-        // than scattered freely — a free field has no limit on how far away a hole
-        // covering this cell might have been placed.
+        // One hash per cell and no state: a pore cannot leave the period it is
+        // anchored in, so the period this cell falls in is the only thing that can
+        // put a pore on it. The earlier field let pores spill and merge, which cost
+        // 2.25 hashes a cell and — the reason it is gone — read as styrofoam.
         const x = i % w;
         const y = (i / w) | 0;
         c = poreAt(x, y) ? latCol[id] : pal[id];

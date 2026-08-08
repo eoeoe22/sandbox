@@ -1307,20 +1307,21 @@ export interface Material {
    */
   rotorSpinShift?: number;
   /**
-   * Draw an open-cell foam (Aerogel): square voids in the `lattice` colour pitting
-   * a block of the base `color`, one void per PORE_P-cell period at a randomised
-   * size and offset, with one period in four left solid. About a quarter of the
-   * surface is void — the same proportion of grey as the hand-drawn Aerogel chip,
-   * which is where the pattern comes from, though the world's holes are smaller and
-   * more closely spaced than that chip's (see render/poreField.ts).
+   * Draw a fine foam (Aerogel): square pores in the `lattice` colour pitting a block
+   * of the base `color`, on a checkerboard lattice of PORE_P-cell periods — 2 or 3
+   * cells square, each nudged at most one cell off its period's corner. About a fifth
+   * of the surface is void, near the proportion of grey in the hand-drawn Aerogel
+   * chip, which is where the pattern comes from (the world's pores are smaller and
+   * more closely spaced than that chip's — see render/poreField.ts).
    *
-   * The randomisation is the substance of it and not a garnish: a fixed hole on a
-   * fixed grid reads as perforated sheet at the scale walls are actually built at,
-   * so the size, the position within the period and the presence of the hole at all
-   * are each rolled from a hash of the period's coordinates. That hash lives in
-   * `render/poreField.ts`, shared with the palette icon generator rather than
-   * restated on both sides — a mirrored hash with one bit-slice off draws an equally
-   * plausible field that nobody could see was the wrong one.
+   * The arrangement is deliberately regular and the randomness deliberately tiny: one
+   * cell of size and one of position, enough that the lattice reads as hand-set
+   * rather than stamped. An earlier version randomised far more and let pores merge,
+   * which read as *styrofoam* — big lumpy voids with thin walls — rather than as
+   * aerogel. Both rolls come from a hash of the period's coordinates, which lives in
+   * `render/poreField.ts`, shared with the palette icon generator rather than restated
+   * on both sides — a mirrored hash with one bit-slice off draws an equally plausible
+   * field that nobody could see was the wrong one.
    *
    * Positional (tied to x/y, not to the particle) like the Wall's courses, so a
    * dragged-out block is one continuous piece of foam. Purely a rendering hint the

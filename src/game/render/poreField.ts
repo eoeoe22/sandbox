@@ -16,69 +16,77 @@
 // so the one material whose whole identity is "it is full of nothing" was the one
 // that looked solid.
 //
-// The chip's holes sit on a regular row-and-column grid, which is fine for a
-// 24-cell picture read at 18 px but not for a wall the player drags out fifty
-// cells wide: a fixed period with a fixed hole size stops reading as foam and
-// starts reading as *perforated sheet metal*. So the world field keeps the one
-// proportion that carries the material — about 22% of the surface is void, as in
-// the chip — and randomises what would otherwise be legible about the rest: size,
-// position within the period, and whether a given period has a hole at all, all
-// from a hash of the period's coordinates.
-//
-// The grain is deliberately FINER than the chip's. The chip draws holes 3-4 cells
-// wide on a 6-cell pitch because that is what reads at 18 px; on the board the same
-// void fraction was asked to come as more, smaller holes (2-3 cells on a 4-cell
-// pitch — 구멍 크기 더 작게, 촘촘하게). The chip is a picture of the material at
-// icon size, not a tile the world has to match cell for cell.
+// The field is a **checkerboard lattice of small square pores, each nudged by at
+// most one cell**: a pore sits in every other period (PORE_P), is 2 or 3 cells
+// square, and starts either on its period's corner or one cell in from it. That is
+// the whole rule. About a fifth of the surface ends up void, against 22% grey in
+// the chip.
 //
 // It is a hash and not `Math.random()` for two reasons: the field has to be the
 // same on every frame (a re-rolled field would boil), and it has to be the same
 // for the icon generator, which is forbidden randomness outright.
 //
-// ── Why a lattice of holes rather than a free scatter ───────────────────────
-// One hole per period keeps this affordable in the render loop. A free (Poisson)
-// scatter has no bound on how far away a hole that covers a given cell might have
-// been placed, so every cell would have to test a whole neighbourhood of
-// candidates; anchoring one hole per period bounds it at four.
+// ── Why so little randomness — the version that had more ────────────────────
+// The first field went the other way. Its pores were anchored anywhere in their
+// period, at 2-4 cells, with one period in four left empty, and they were allowed
+// to spill across period boundaries so that no phase of the period was favoured
+// (measured: every column of a period within 1.07× of every other, where confining
+// the pores made a period's middle column 2.05× as likely to be void as its edge —
+// a rhythm in density that no single pore shows but a whole wall does).
 //
-// Four, and not one, because the hole is anchored anywhere in its period and may
-// extend past the period's right and bottom edges — see PORE_MAX. The cheaper
-// version, where a hole is confined to its own period, was measurably worse in a
-// way that is easy to miss by eye but is exactly what this pattern exists to
-// avoid: confining the hole means its offset has to shrink as its size grows, so
-// the middle columns of every period end up covered by far more (size, offset)
-// combinations than the edge columns. Measured over 300 × 300 cells at the current
-// period, the middle of a period is **2.05× as likely to be void** as its edge — a
-// four-cell rhythm in density, faint per hole but coherent across a whole wall. (At
-// the 6-cell period this pattern first shipped with, the same defect measured 2.89×.)
-// Letting holes spill over the edges makes every phase of the period equally likely
-// (the anchor is uniform over the period, and a hole covers `s` consecutive cells
-// from it), and the measured spread falls to 1.07×. `test/materialicons.ts` pins it.
+// **That field read as styrofoam** (스티로폼 같은데), and the spill is exactly why.
+// Pores from neighbouring periods overlapped and merged into large irregular voids,
+// which is the structure of expanded polystyrene: big lumpy cells with thin walls
+// between them. Aerogel is the opposite — a fine, even, glassy foam. So the trade
+// got made the other way round:
 //
-// The spill is worth something in itself: holes from neighbouring periods now
-// overlap and merge into larger irregular voids, which is what an open-cell foam
-// actually looks like.
+//   • pores **may not merge**. A pore is confined to its own period, and its size
+//     and jitter are bounded so it cannot reach the next one (PORE_MAX + PORE_JITTER
+//     ≤ PORE_P). Measured over 300 × 300 cells, the longest run of void in either
+//     axis is 3 — the widest a single pore can be, i.e. no two pores ever touch.
+//   • the lattice **is** visible as a lattice, and that is now intended rather than
+//     tolerated: the arrangement is regular, and the jitter is there to keep it from
+//     being *rigid*, not to hide it. Density therefore varies by phase within a
+//     period (a period's last row is void about a quarter as often as its second),
+//     which the old field's checks would have failed. Those checks are gone; what
+//     replaced them is in test/materialicons.ts.
+//
+// The checkerboard, rather than a pore in every period, is what buys the wall
+// between pores at this pitch: a pore every 4 cells in both axes would leave a
+// 1-cell wall, and a 1-cell wall reads as a crack rather than as a strut.
+//
+// ── What it costs ──────────────────────────────────────────────────────────
+// One hash per drawn cell, and nothing else — no state, no neighbour scan. That
+// falls out of "a pore never leaves its period": the period a cell sits in is the
+// only thing that can put a pore on it. (The spill version had to check the three
+// periods a pore could reach in from, at 2.25 hashes a cell.) A Node microbenchmark
+// of `poreAt` ALONE — a 400 × 300 board, every cell aerogel, 60 passes — runs 0.6 ms
+// per pass, against 2.4 ms for the spill version. That is not a render-loop profile
+// and should not be read as one: it excludes the branch dispatch around it, every
+// other per-cell cost, and the canvas paint. It bounds this function's share,
+// nothing more, and the browser measurement is still unmade
+// (docs/MATERIAL-ICONS.md §5, item 3 — the render loop's cost, which is a different
+// subsystem from the palette gallery's unmeasured DOM cost in item 2).
 
-/** Cells per period, one hole to a period — the pitch of the foam.
- *
- *  Four, where the chip's own pitch is six (its 24-cell tile carries four holes
- *  across). The void fraction is held at the chip's ~22% and spent on more, smaller
- *  holes instead: at this pitch a wall carries roughly twice as many holes as the
- *  6-cell version did, which is what makes it read as fine foam rather than as a
- *  punched plate. */
+/** Cells per period. One period in two carries a pore (see `poreAt`), so there is a
+ *  pore every PORE_P cells along each diagonal and every 2·PORE_P along each axis. */
 export const PORE_P = 4;
 
-/** Widest a hole can be, and therefore how far past its own period one can reach.
- *
- *  The neighbour scan in `poreAt` is a 2×2 of periods, and the exact width at which
- *  that stops being enough is **PORE_P + 2**: a hole anchored two periods to the left
- *  starts at worst at `cx*PORE_P − PORE_P − 1`, so it needs `PORE_P + 2` cells to
- *  touch this period's first one. At PORE_P + 1 it still cannot, so the scan is
- *  correct for anything up to and including that. (Verified by sweeping the width
- *  against a wide ground-truth scan: at PORE_P 4, widths 3-5 match it exactly and
- *  width 6 misses about 1% of cells.) Past that a hole still *draws* — with a bite
- *  out of whichever side it spilled from, on the cells it reached furthest. */
+/** Widest a pore can be. */
 export const PORE_MAX = 3;
+
+/** How far a pore may be nudged off its period's corner, in cells — that and the one
+ *  cell of size are the whole of the pattern's randomness (위치 및 크기를 각각
+ *  1픽셀씩만).
+ *
+ *  `PORE_MAX + PORE_JITTER ≤ PORE_P` is a correctness precondition, not taste: it is
+ *  what keeps a pore inside its own period, and therefore what lets `poreAt` read one
+ *  period instead of scanning neighbours. Break it and the widest, most jittered
+ *  pores are silently **clipped** at the period edge — drawn as rectangles with a
+ *  slice missing, on the side they spilled toward. `test/materialicons.ts` pins it.
+ *
+ *  It is also a mask, so it has to stay one less than a power of two. */
+export const PORE_JITTER = 1;
 
 /** Patch edge for a `poresPattern` icon.
  *
@@ -87,40 +95,34 @@ export const PORE_MAX = 3;
  *  device pixels in the 18 px swatch (see materialSvg's `N`), and 12 — three
  *  periods — would not. The tile is a crop of the field rather than a repeating
  *  tile, so it does not need to close on a period boundary; it needs to be a big
- *  enough *sample*, and 4½ periods each way is about twenty holes. */
+ *  enough *sample*, and 4½ periods each way is about ten pores. */
 export const PORE_N = 18;
 
 /** Salt mixed into the field's hash.
  *
  *  Any value gives the same statistics; this one is chosen so that the corner of
  *  the field the icon samples — cells (0,0)…(17,17), since a palette chip has no
- *  world position to sample at — comes out at 24.7% void against the field's 23.7%
- *  average, with both hole sizes in it. At salt 0 that same window happens to land
- *  on a run of skipped and small holes and reads 15%, which would make the derived
- *  tile (and the golden pinned on it in test/materialicons.ts) a picture of an
- *  aerogel block that is barely porous. Nothing about the wall the player paints
- *  changes with this number — only which patch of foam the chip generator is
- *  looking at. */
-const PORE_SALT = 3;
+ *  world position to sample at — comes out at 20.7% void against the field's 20.2%
+ *  average, with both pore sizes and all four jitter positions in it. At salt 0 that
+ *  same window reads 17.9%, a thinner-looking block than the material actually is.
+ *  Nothing about the wall the player paints changes with this number — only which
+ *  patch of foam the chip generator is looking at. */
+const PORE_SALT = 11;
 
 /**
  * Pure 32-bit mix of a period's lattice coordinates.
  *
  * This is `tintNoise.hash8`'s mixer with one extra fold on the end. `hash8` hands
  * back its *top* byte and says so — that is the part a multiply mixes best, since
- * bit 0 of a product depends only on bit 0 of its inputs. This field slices the
- * low bits instead (the skip flag is bits 0..2), so it folds the high half down
- * over them first and gets the same guarantee for one xor.
+ * bit 0 of a product depends only on bit 0 of its inputs. This field slices the low
+ * bits instead (the size roll is bit 0), so it folds the high half down over them
+ * first and gets the same guarantee for one xor.
  *
  * Measured, this particular mixer's low bits come out even without the fold — the
  * `h ^= h >>> 13` before the last multiply has already carried the high bits down.
  * The fold stays anyway: it costs one instruction per period, and it makes the
- * field's evenness a property of the code rather than of a measurement someone
- * took once and wrote in a comment.
- *
- * Lattice coordinates may be −1: a cell in the world's first row or column is
- * tested against the period *before* it, which is what keeps the board's edge from
- * being the one place where no hole ever spills in.
+ * field's evenness a property of the code rather than of a measurement someone took
+ * once and wrote in a comment.
  */
 function poreHash(cx: number, cy: number): number {
   let h = (PORE_SALT + Math.imul(cx | 0, 0x27d4eb2d)) ^ Math.imul(cy | 0, 0x165667b1);
@@ -132,80 +134,44 @@ function poreHash(cx: number, cy: number): number {
 }
 
 /**
- * Is cell (x, y) inside the hole anchored in period (cx, cy)?
+ * Is this cell inside a pore?
  *
- * The three rolls, all sliced out of the one hash:
+ * Positional (keyed to x/y, not to the particle) like the Mesh weave and the Wall's
+ * courses, so a block dragged out with the brush is one continuous piece of foam
+ * rather than a fresh pattern per stroke — and so a pore stays where it was while
+ * the player builds around it.
  *
- *   • **solid period** — 1 in 4 periods has no hole at all. This is what breaks up
- *     the rows: without it every 4-cell band across a wall contains a hole
- *     somewhere, and the eye finds the band. It is a quarter rather than the eighth
- *     the 6-cell version skipped because the pitch is shorter — the same fraction of
- *     *wall* has to survive between holes for the block to still read as a block.
- *   • **size** — 2 or 3 cells square, 3 one time in four. Two sizes rather than the
- *     three a wider hole allowed: at this pitch a 4-cell hole would leave a 1-cell
- *     wall, and a wall that thin reads as a crack, not as a strut.
- *   • **anchor** — any of the four cells of the period, top-left corner of the hole.
+ * Two rolls, both sliced out of the one hash, and each moves the pore by exactly one
+ * cell:
  *
- * Holes are square because the chip's are, and because at world scale a hole is 2-3
+ *   • **size** — 2 or 3 cells square, evenly.
+ *   • **jitter** — the pore's top-left corner is its period's own corner, or one
+ *     cell right, or one cell down, or both.
+ *
+ * Pores are square because the chip's are, and because at world scale a pore is 2-3
  * cells across: a rasterised circle of that radius IS a square with at most its
  * corners nipped, and nipping them costs a compare per cell to draw the same
  * picture.
- */
-function poreAnchored(cx: number, cy: number, x: number, y: number): boolean {
-  const h = poreHash(cx, cy);
-  if ((h & 3) === 0) return false; // solid period, 1 in 4
-  const s = 2 + (((h >>> 3) & (h >>> 4)) & 1); // 3 when both bits are set, else 2
-  // Wide slices so `% PORE_P` is near-uniform — 8192 is a whole number of periods
-  // at PORE_P 4, so there is no bias at all here, and at a period that does not
-  // divide it the worst case is a remainder of 3 in 8192.
-  const ox = cx * PORE_P + (((h >>> 5) & 0x1fff) % PORE_P);
-  const oy = cy * PORE_P + (((h >>> 18) & 0x1fff) % PORE_P);
-  return x >= ox && x < ox + s && y >= oy && y < oy + s;
-}
-
-/**
- * Is this cell inside a hole?
  *
- * Positional (keyed to x/y, not to the particle) like the Mesh weave and the
- * Wall's courses, so a block dragged out with the brush is one continuous piece of
- * foam rather than a fresh pattern per stroke — and so a void stays where it was
- * while the player builds around it.
+ * The jitter runs 0…+PORE_JITTER rather than ±PORE_JITTER for the same reason the
+ * pore is capped at PORE_MAX: a pore that could start one cell *before* its period
+ * would reach into the previous one, and then a cell would have to ask its
+ * neighbours too. Nudging the whole lattice one way is the same picture anyway — it
+ * is the spacing between pores that the eye reads, not their offset from an origin
+ * it cannot see.
  *
- * A cell is covered by the hole of its own period or by one spilling in from the
- * period to its left, above, or diagonally up-left; holes only ever extend right
- * and down from their anchor, so those four are the whole search (PORE_MAX).
- * Average coverage works out at 23.7%, against 22% grey in the chip.
- *
- * Most cells do not need all four. A hole anchored in the period to the left starts
- * at worst on that period's last cell and is at worst PORE_MAX wide, so it cannot
- * reach further than PORE_MAX − 2 cells into this one — a cell past that is out of
- * reach of everything to its left, and the same holds downward. So the columns that
- * need the left lookup are the PORE_MAX − 1 of them at offsets 0 ‥ PORE_MAX − 2 —
- * 2 of 4 here, 3 of 6 before — and the rows likewise. Both sets are exactly half the
- * period, because this pattern has always sized its widest hole at PORE_P / 2 + 1
- * (`test/materialicons.ts` pins that, since nothing here enforces it), which takes
- * the average from 3.4 hashes per cell to 2.25.
- *
- * For scale: a Node microbenchmark of `poreAt` ALONE — a 400 × 300 board, every cell
- * aerogel, 60 passes — runs 2.4 ms per pass. That is not a render-loop profile and
- * should not be read as one: it excludes the branch dispatch around it, every other
- * per-cell cost, and the canvas paint. It bounds this function's share, nothing more,
- * and the browser measurement is still unmade (docs/MATERIAL-ICONS.md §5, item 3 —
- * the render loop's cost, which is a different subsystem from the palette gallery's
- * unmeasured DOM cost in item 2).
- *
- * Callers pass non-negative grid coordinates; the truncating divide below is a
- * floor only for those (the render loop's x/y and the icon patch's both are).
+ * Callers pass non-negative grid coordinates; the truncating divide below is a floor
+ * only for those (the render loop's x/y and the icon patch's both are).
  */
 export function poreAt(x: number, y: number): boolean {
   const cx = (x / PORE_P) | 0;
   const cy = (y / PORE_P) | 0;
-  const spillX = x - cx * PORE_P < PORE_MAX - 1;
-  const spillY = y - cy * PORE_P < PORE_MAX - 1;
-  return (
-    poreAnchored(cx, cy, x, y) ||
-    (spillX && poreAnchored(cx - 1, cy, x, y)) ||
-    (spillY && poreAnchored(cx, cy - 1, x, y)) ||
-    (spillX && spillY && poreAnchored(cx - 1, cy - 1, x, y))
-  );
+  // The checkerboard: every other period, so each pore keeps a wall of whole cells
+  // around it on the axes and meets its diagonal neighbours corner to corner.
+  if (((cx + cy) & 1) !== 0) return false;
+  const h = poreHash(cx, cy);
+  const s = 2 + (h & 1);
+  const ox = cx * PORE_P + ((h >>> 5) & PORE_JITTER);
+  const oy = cy * PORE_P + ((h >>> 6) & PORE_JITTER);
+  return x >= ox && x < ox + s && y >= oy && y < oy + s;
 }

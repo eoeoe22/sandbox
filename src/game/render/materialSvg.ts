@@ -311,11 +311,10 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
   // not this.
   //
   // A `poresPattern` material takes its own edge for the opposite reason to those
-  // three: its field is not one centred object but a *statistic*, and 9 cells is a
-  // handful of holes — too small a sample to be honest about a quarter-void surface,
-  // and small enough that where the field happens to be sparse the chip would read as
-  // a solid block. PORE_N is 4½ periods and, unlike those three, stays on the
-  // device-pixel grid (see N).
+  // three: its field is not one centred object but a *lattice*, and 9 cells is two
+  // periods — a couple of pores, too small a sample to show either the arrangement or
+  // how much of the surface it opens up. PORE_N is 4½ periods and, unlike those three,
+  // stays on the device-pixel grid (see N).
   const n = m.tntPattern
     ? TNT_N
     : m.rotorPattern
@@ -430,11 +429,11 @@ function patchFor(m: Material): { buf: Uint32Array; n: number } {
         // leading edge and shaded on its trailing one. A bitmap, like TNT's bundle.
         c = rotorTile![(y % ROTOR_N) * ROTOR_N + (x % ROTOR_N)];
       } else if (m.poresPattern) {
-        // Aerogel: open-cell foam — `lattice`-coloured voids at a rolled size and
-        // offset within each period, one period in four left solid. The chip drawn
-        // over this one is the hand-drawn original the pattern was taken from, so
-        // this tile is what keeps the two honest: a branch that stopped firing would
-        // leave a flat pale slab here, which is exactly what the canvas used to be.
+        // Aerogel: a checkerboard lattice of `lattice`-coloured pores, 2 or 3 cells
+        // square, each nudged by at most one cell. The chip drawn over this one is the
+        // hand-drawn original the pattern was taken from, so this tile is what keeps
+        // the two honest: a branch that stopped firing would leave a flat pale slab
+        // here, which is exactly what the canvas used to be.
         c = poreAt(x, y) ? lat : base;
       } else if (m.checker2x2) {
         // Diamond: 2×2 positional checkerboard with a low-range grain on top.
