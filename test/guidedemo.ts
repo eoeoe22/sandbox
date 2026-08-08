@@ -118,6 +118,17 @@ function rowSpan(w: GuideDemoWorld, id: number): { top: number; bottom: number }
   return { top, bottom };
 }
 
+/** 체 띠보다 **위**에 있는 모래 칸 수. 체가 하나도 없으면 0. */
+function sandOnMesh(w: GuideDemoWorld): number {
+  const meshTop = rowSpan(w, DEMO_MESH.id).top;
+  if (meshTop < 0) return 0;
+  let n = 0;
+  for (let y = 0; y < meshTop; y++) {
+    for (let x = 0; x < w.grid.width; x++) if (w.grid.get(x, y) === DEMO_SAND.id) n++;
+  }
+  return n;
+}
+
 console.log('== 박자 ==');
 check(DEMO_TPS === 30, '초당 30틱', `STEP_MS=${DEMO_STEP_MS.toFixed(2)}`);
 
@@ -268,7 +279,7 @@ console.log('\n== 기체: 연기가 아래에서 계속 올라온다 ==');
 }
 
 // --- 겹침 --------------------------------------------------------------------
-console.log('\n== 겹침: 체를 통과한 물이 모래 더미에 스민다 ==');
+console.log('\n== 겹침: 물은 체를 지나 모래에 스미고, 모래는 체 위에 쌓인다 ==');
 {
   const w = make('overlap');
 
@@ -305,12 +316,12 @@ console.log('\n== 겹침: 체를 통과한 물이 모래 더미에 스민다 =='
     `체 y=${mesh.top}..${mesh.bottom}, 더미 봉우리 y=${pile.top}`,
   );
 
-  // 3) 물 4초. 물은 체를 **통과해서** 내려온다 — 체의 겹침 칸에 물이 들어앉는
+  // 3) 물 6초. 물은 체를 **통과해서** 내려온다 — 체의 겹침 칸에 물이 들어앉는
   // 것이 이 절이 말하는 「스며든 액체」 그 자체다(체는 `porous`, 가루는 막고
   // 액체만 통과시킨다). 한 틱만 재면 지나가는 순간을 놓치므로 물 구간 내내
   // 지켜보고 가장 많았던 때를 본다.
   let peakInMesh = 0;
-  for (let i = 0; i < DEMO_TPS * 5; i++) {
+  for (let i = 0; i < DEMO_TPS * 6; i++) {
     w.tick();
     let n = 0;
     for (let k = 0; k < w.grid.overlay.length; k++) {
@@ -324,8 +335,15 @@ console.log('\n== 겹침: 체를 통과한 물이 모래 더미에 스민다 =='
   soaked = 0;
   for (let i = 0; i < w.grid.overlay.length; i++) if (w.grid.overlay[i] === DEMO_WATER.id) soaked++;
   check(soaked > 0, '물이 모래에 스몄다', `겹침 ${soaked}칸`);
+  check(sandOnMesh(w) === 0, '아직 체 위에 얹힌 모래는 없다', `${sandOnMesh(w)}칸`);
 
-  // 4) 16초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야 한다 — 다음 바퀴의
+  // 4) 마지막 모래 1.5초 — **대조군**이다. 같은 체 위로 이번엔 가루를 부으면
+  // 통과하지 못하고 그 위에 쌓인다. 물은 지나갔는데 모래는 못 지나가는 것이
+  // 한 화면에 잇달아 남는 것이 이 장면의 결론이다.
+  run(w, Math.round(DEMO_TPS * 1.5) + Math.round(DEMO_TPS * 1.5)); // 붓는 1.5초 + 앉는 1.5초
+  check(sandOnMesh(w) > 15, '마지막 모래는 체를 못 넘고 그 위에 쌓였다', `${sandOnMesh(w)}칸`);
+
+  // 5) 19.5초 대본이 끝나면 초기화된다. 초기화된 **그 틱**을 봐야 한다 — 다음 바퀴의
   // 모래가 곧바로 떨어지기 시작하므로 몇 틱만 더 돌려도 격자는 이미 비어 있지 않다.
   let spun = 0;
   while (w.loops === 0 && spun < DEMO_TPS * 25) {

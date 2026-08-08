@@ -8,8 +8,8 @@
 //   powder  모래가 위에서 한 줄기로 떨어져 더미를 쌓는다. 초기화 없이 계속.
 //   liquid  벽으로 만든 그릇에 물이 떨어져 넘칠 때까지 차고, 초기화 후 반복.
 //   gas     맨 아래에서 연기가 계속 올라온다. 초기화 없음.
-//   overlap 모래 더미를 쌓고 그 위에 체를 한 줄 그은 뒤, 체를 통과해 뿌려지는
-//           물이 더미 전체에 스며드는 것을 보여 준다.
+//   overlap 모래 더미를 쌓고 그 위에 체를 한 줄 그은 뒤, 물은 체를 통과해 더미에
+//           스미고 마지막에 부은 모래는 체 위에 쌓이는 것을 보여 준다.
 //   heat    가로로 놓인 히트파이프 띠를 그 아래의 불 Clone 이 한쪽 끝부터 달군다.
 //
 // **여기 있는 것은 브라우저 없이 검증할 수 있는 부분 전부다** — 장면 배치, 틱
@@ -111,7 +111,7 @@ export const GUIDE_DEMO_STILL_TICKS: Record<GuideDemoKind, number> = {
   powder: 150, // 더미가 앉은 뒤 (초기화 없음)
   liquid: 400, // 상한만. 실제로는 넘친 순간에 멈춘다 — 실측 209~223틱
   gas: 90, // 연기 기둥이 자리를 잡은 뒤 (초기화 없음)
-  overlap: 400, // 뿌린 물이 더미에 스민 뒤 (대본 480틱, 물 구간이 390틱에 끝난다)
+  overlap: 540, // 모래가 체 위에 앉은 뒤 (대본 585틱, 모래 구간이 495틱에 끝난다)
   heat: 200, // 열 뷰로 넘어가 기울기가 다 보이는 무렵 (대본 210틱)
 };
 
@@ -140,23 +140,28 @@ const BRUSH_HOLD_OUT = DEMO_TPS;
 const BRUSH_CYCLE = BRUSH_HOLD_IN + BRUSH_DRAG + BRUSH_HOLD_OUT;
 
 /**
- * overlap: 모래 6초 → 체 선 3초(브러시 대본 그대로) → 물 4초 → 3초 대기 → 초기화.
+ * overlap: 모래 6초 → 체 선 3초(브러시 대본 그대로) → 물 6초 → **모래 1.5초** →
+ * 3초 대기 → 초기화.
  *
  * 물을 곧장 더미에 붓지 않고 **체를 한 겹 거는** 것은 이 절이 「스며든 액체」를
- * 다루기 때문이다. 한 줄기를 그대로 부으면 더미 한가운데 한 자리만 젖고 나머지는
- * 마른 채로 남아, 정작 볼거리인 **겹침이 번지는 범위**가 안 보인다. 체는 가루는
- * 막고 액체만 통과시키므로(`porous` + `latticeFilter`, 통과하는 것은 밝은 격자
- * 칸뿐이라 두께만큼 지그재그로 샌다), 물이 체 위에 잠깐 고였다 좌우로 퍼진 뒤
- * 더미 전체에 **뿌려진다**.
+ * 다루기 때문이다. 체는 `porous` + `latticeFilter` 로 선언된 고체라 가루는 막고
+ * 액체만 통과시키는데, 그 통과란 곧 **물이 체 칸의 겹침 슬롯에 들어앉는 것**이다
+ * (열린 것은 밝은 격자 칸뿐이라 두께만큼 지그재그로 샌다). 물이 체를 지나는
+ * 동안 화면에는 「고체 안에 든 액체」가 그대로 보이고, 그 아래 모래에서 벌어지는
+ * 일과 같은 일이라 한 장면이 겹침을 두 번 말한다.
  *
- * 모래 구간이 4초에서 6초로 는 것은 더미를 그만큼 크게 만들기 위해서다 — 뿌릴
- * 면적이 넓어야 체를 건 보람이 있다.
+ * **마지막 모래 1.5초가 그 대조군이다.** 같은 체 위로 이번엔 가루를 부으면
+ * 통과하지 못하고 그 위에 그대로 쌓인다 — 물은 지나갔는데 모래는 못 지나가는
+ * 것을 한 화면에서 잇달아 보여 준다. 앞의 모래 구간이 4초에서 6초로 는 것은
+ * 더미를 크게 만들기 위해서고, 물이 4초에서 6초로 는 것은 체를 지나 더미까지
+ * 닿는 데 시간이 걸리기 때문이다.
  */
 const OVERLAP_SAND = DEMO_TPS * 6;
 const OVERLAP_MESH = BRUSH_CYCLE;
-const OVERLAP_WATER = DEMO_TPS * 4;
+const OVERLAP_WATER = DEMO_TPS * 6;
+const OVERLAP_SAND2 = Math.round(DEMO_TPS * 1.5);
 const OVERLAP_TAIL = DEMO_TPS * 3;
-const OVERLAP_CYCLE = OVERLAP_SAND + OVERLAP_MESH + OVERLAP_WATER + OVERLAP_TAIL;
+const OVERLAP_CYCLE = OVERLAP_SAND + OVERLAP_MESH + OVERLAP_WATER + OVERLAP_SAND2 + OVERLAP_TAIL;
 
 /** heat: 일반 뷰 2초 → 열 뷰 5초 → 초기화. */
 const HEAT_NORMAL = DEMO_TPS * 2;
@@ -617,7 +622,10 @@ export class GuideDemoWorld {
       return;
     }
     this.brush = null;
-    if (mt - OVERLAP_MESH < OVERLAP_WATER) this.dropStream(DEMO_WATER.id, 0.5);
+    const wt = mt - OVERLAP_MESH;
+    if (wt < OVERLAP_WATER) this.dropStream(DEMO_WATER.id, 0.5);
+    // 물이 다 내린 뒤 같은 자리에 모래를 한 번 더. 이번엔 체를 못 지나간다.
+    else if (wt - OVERLAP_WATER < OVERLAP_SAND2) this.dropStream(DEMO_SAND.id, 0.5);
   }
 
   // --- 열전도: 파이프 한 줄과 불 --------------------------------------------------
